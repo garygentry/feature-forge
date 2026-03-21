@@ -1,6 +1,6 @@
 ---
 name: forge-1-prd
-description: "Create a requirements PRD for a feature through structured interview."
+description: "Create a requirements PRD for a feature through structured interview. Use when user runs /feature-forge:forge-1-prd or explicitly asks to start the forge pipeline for a new feature. Do NOT trigger for general requirements discussions, project scoping outside forge, or PRD questions unrelated to the forge pipeline."
 argument-hint: "<feature-name>"
 disable-model-invocation: true
 ---
@@ -100,17 +100,14 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 1. Create or update `{specsDir}/{feature}/.pipeline-state.json`:
    - Set `currentStage` to `forge-2-tech`
-   - Set `stages.forge-1-prd.status` to `complete`
    - Set `stages.forge-1-prd.version` to 1 (or increment if revising)
    - Record `artifacts`, `completedAt`
    - Set `stages.forge-1-prd.basedOnVersions` to `{}` (no upstream dependencies)
    - Check downstream stages (`forge-2-tech`, `forge-3-specs`, `forge-4-backlog`, `forge-5-docs`). If any have `basedOnVersions` referencing an older version of `forge-1-prd`, set their status to `stale`.
 2. Ask the user: "Anything you want to note before we wrap? (preserved across sessions)"
    - If yes, store in the `notes` field
-3. If `gitCommitAfterStage` is true:
-  `git add {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): complete PRD v{n}"`
-4. Record the commit hash in pipeline state
-5. Tell the user: "PRD complete. Next steps:\n  - `/forge-verify {feature}` to verify the PRD\n  - `/forge-2-tech {feature}` to start the tech spec\n  - `/forge {feature}` to see full pipeline status"
+3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete PRD v{n}"`, then set `stages.forge-1-prd.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
+5. Tell the user: "PRD complete. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the PRD\n  - `/feature-forge:forge-2-tech {feature}` to start the tech spec\n  - `/feature-forge:forge {feature}` to see full pipeline status"
 
 ## Gotchas
 

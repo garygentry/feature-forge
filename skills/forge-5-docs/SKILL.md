@@ -1,6 +1,6 @@
 ---
 name: forge-5-docs
-description: "Generate developer-focused architecture documentation for a feature."
+description: "Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs /feature-forge:forge-5-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline."
 argument-hint: "<feature-name>"
 disable-model-invocation: true
 ---
@@ -140,13 +140,10 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 1. Update `{specsDir}/{feature}/.pipeline-state.json`:
    - Set `currentStage` to `complete`
-   - Set `stages.forge-5-docs.status` to `complete`
    - Record `artifacts`
    - Set `stages.forge-5-docs.basedOnVersions` to include versions for all completed upstream stages. Always include forge-1-prd, forge-2-tech, forge-3-specs. Include forge-4-backlog ONLY if it has status `complete`.
-2. If `gitCommitAfterStage` is true:
-  `git add {docsDir}/{feature}/ {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): complete architecture docs"`
-3. Record commit hash
-4. Tell user: "Documentation complete. Feature pipeline for '{feature}' is finished!\n  `/forge {feature}` to see the final pipeline status."
+2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (`git add {docsDir}/{feature}/ {specsDir}/{feature}/`), attempt commit with message `"{commitPrefix}({feature}): complete architecture docs"`, then set `stages.forge-5-docs.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
+4. Tell user: "Documentation complete. Feature pipeline for '{feature}' is finished!\n  `/feature-forge:forge {feature}` to see the final pipeline status."
 
 ## Gotchas
 

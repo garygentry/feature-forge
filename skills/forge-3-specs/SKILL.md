@@ -1,6 +1,6 @@
 ---
 name: forge-3-specs
-description: "Generate implementation spec documents from PRD and tech spec."
+description: "Generate numbered implementation spec documents from PRD and tech spec in the forge pipeline. Use when user runs /feature-forge:forge-3-specs or asks to create detailed implementation specs for a forge feature after tech spec completion. Do NOT trigger for general specification writing, design docs, or implementation planning outside the forge pipeline."
 argument-hint: "<feature-name>"
 disable-model-invocation: true
 ---
@@ -63,6 +63,8 @@ If the spec suite requires more than 5 documents:
 
 This prevents quality degradation from context pressure. The first documents you write should be the foundation (types, architecture) since later documents reference them.
 
+**Incremental artifact tracking:** After writing each spec document, immediately update the `artifacts` array in `.pipeline-state.json` with the new file path. This enables crash recovery if the session is interrupted mid-batch (see shared-conventions.md "Crash Recovery").
+
 ## Step 4: Write the Spec Suite
 
 For each document:
@@ -108,15 +110,12 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 1. Update `{specsDir}/{feature}/.pipeline-state.json`:
    - Set `currentStage` to `forge-4-backlog` (or verification if they want to verify first)
-   - Set `stages.forge-3-specs.status` to `complete`
    - Record all created files in `artifacts`, including `TRACEABILITY.md`
    - Set `stages.forge-3-specs.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>}`
    - Check downstream stages (forge-4-backlog, forge-5-docs). If any have `basedOnVersions` referencing older versions, set their status to `stale`
 2. Ask about notes to persist
-3. If `gitCommitAfterStage` is true:
-  `git add {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): complete implementation specs v{n}"`
-4. Record commit hash
-5. Tell user next steps: `/forge-verify {feature}` (strongly recommended) or `/forge-4-backlog {feature}`
+3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete implementation specs v{n}"`, then set `stages.forge-3-specs.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
+5. Tell user next steps: `/feature-forge:forge-verify {feature}` (strongly recommended) or `/feature-forge:forge-4-backlog {feature}`
 
 ## Gotchas
 

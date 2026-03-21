@@ -1,6 +1,6 @@
 ---
 name: forge
-description: "Feature-forge pipeline navigator and status dashboard. Use when the user references the forge pipeline, asks about forge status or progress, types /forge, or wants to check what stage a feature is at in the forge pipeline. Do NOT use for general feature requests, project status, or tasks unrelated to the forge development pipeline."
+description: "Feature-forge pipeline navigator and status dashboard. Use when the user references the forge pipeline, asks about forge status or progress, types /feature-forge:forge, or wants to check what stage a feature is at in the forge pipeline. Do NOT use for general feature requests, project status, or tasks unrelated to the forge development pipeline."
 argument-hint: "<feature-name> (optional — lists all active features if omitted)"
 ---
 
@@ -12,27 +12,22 @@ You are the navigator for the feature-forge development pipeline. Your job is to
 
 ### 1. Read Configuration
 
-Read `forge.config.json` from the project root. If it doesn't exist, use defaults:
-- specsDir: `./specs`
-- docsDir: `./docs/architecture`
-- backlogDir: (null — backlog defaults to `{specsDir}/{feature}/backlog.json`)
-
-If `forge.config.json` does not exist and no `.pipeline-state.json` files exist anywhere in `{specsDir}/`, suggest: "No forge.config.json found. Run `/forge-init` to create one with defaults, or I'll use built-in defaults. Want me to continue with defaults?"
+Read and follow `references/shared-conventions.md` for configuration reading (feature name validation, config defaults, force mode).
 
 For pipeline architecture details, read `references/process-overview.md`.
 
 ### 2. Determine Context
 
-**If a feature name is provided** (e.g., `/forge auth`):
+**If a feature name is provided** (e.g., `/feature-forge:forge auth`):
 - Look for `{specsDir}/{feature}/.pipeline-state.json`
 - If found, display the pipeline status dashboard (see format below)
-- If not found, ask: "No pipeline exists for '{feature}'. Want to start one? Run `/forge-1-prd {feature}` to begin."
+- If not found, ask: "No pipeline exists for '{feature}'. Want to start one? Run `/feature-forge:forge-1-prd {feature}` to begin."
 
 **If no feature name is provided:**
 - Scan `{specsDir}/` for all subdirectories containing `.pipeline-state.json`
 - If exactly one active (non-complete) pipeline exists, show its dashboard
 - If multiple exist, list them all with a one-line summary each and ask which one to focus on
-- If none exist, say: "No active feature pipelines found. Start one with `/forge-1-prd <feature-name>`."
+- If none exist, say: "No active feature pipelines found. Start one with `/feature-forge:forge-1-prd <feature-name>`."
 
 The feature name must be a single kebab-case token. If the user provides multiple words (e.g., "user auth flow"), convert to kebab-case: `user-auth-flow`.
 
@@ -56,8 +51,8 @@ Stage: {currentStage} ({status}, started {relative time})
 ⬜ forge-verify     (backlog)      ← show only if forge-4-backlog is complete
 ⬜ forge-5-docs
 
-Next: Continue with /forge-3-specs {feature}
-      Or verify tech-spec with /forge-verify {feature}
+Next: Continue with /feature-forge:forge-3-specs {feature}
+      Or verify tech-spec with /feature-forge:forge-verify {feature}
 
 Notes: "{any persisted notes}"
 ```
@@ -69,6 +64,7 @@ Use these status indicators:
 - ⬜ = pending
 - ❌ = verification found issues (not yet fixed)
 - ✅🔍 = verified and fixes applied
+- ⏭️ = verification skipped (user chose to proceed without verifying)
 - ⚠️ = stale (built against an older version of an upstream artifact)
 
 ### 4. Notes Management
@@ -81,22 +77,22 @@ When showing the dashboard, include a compact reference:
 
 ```
 Commands:
-  /forge-1-prd <feature>      Create requirements document
-  /forge-2-tech <feature>     Create technical spec
-  /forge-3-specs <feature>    Create implementation specs
-  /forge-4-backlog <feature>  Generate ralph backlog
-  /forge-5-docs <feature>     Generate architecture docs
-  /forge-verify <feature>     Run verification on current stage
+  /feature-forge:forge-1-prd <feature>      Create requirements document
+  /feature-forge:forge-2-tech <feature>     Create technical spec
+  /feature-forge:forge-3-specs <feature>    Create implementation specs
+  /feature-forge:forge-4-backlog <feature>  Generate ralph backlog
+  /feature-forge:forge-5-docs <feature>     Generate architecture docs
+  /feature-forge:forge-verify <feature>     Run verification on current stage
 ```
 
 ### 6. Pipeline Lifecycle Commands
 
 Support these sub-commands for pipeline lifecycle management:
-- `/forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
-- `/forge resume {feature}` — Set `pipelineStatus` back to `"active"`. Calculate how long the feature was paused (from `updatedAt` to now). If paused for more than 24 hours, show a hint: "This feature was paused for {duration}. Session context may have been lost — consider re-running `/forge-{currentStage} {feature}` to rebuild context."
-- `/forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Confirm with user first. Note: abandoned pipelines can be resumed with `/forge resume {feature}` if the user changes their mind.
+- `/feature-forge:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
+- `/feature-forge:forge resume {feature}` — Set `pipelineStatus` back to `"active"`. Calculate how long the feature was paused (from `updatedAt` to now). If paused for more than 24 hours, show a hint: "This feature was paused for {duration}. Session context may have been lost — consider re-running `/feature-forge:forge-{currentStage} {feature}` to rebuild context."
+- `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Confirm with user first. Note: abandoned pipelines can be resumed with `/feature-forge:forge resume {feature}` if the user changes their mind.
 
-When listing features, show active pipelines by default. Include a count of paused/abandoned: "3 active pipelines (1 paused, 1 abandoned — use `/forge list all` to see them)."
+When listing features, show active pipelines by default. Include a count of paused/abandoned: "3 active pipelines (1 paused, 1 abandoned — use `/feature-forge:forge list all` to see them)."
 
 ## Gotchas
 

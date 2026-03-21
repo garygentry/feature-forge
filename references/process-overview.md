@@ -8,44 +8,44 @@ This document describes the end-to-end feature development pipeline managed by t
 forge-1-prd → forge-2-tech → forge-3-specs → forge-verify → forge-4-backlog → forge-verify → [ralph loop] → forge-verify → forge-5-docs
 ```
 
-### Stage 1: PRD (`/forge-1-prd <feature>`)
+### Stage 1: PRD (`/feature-forge:forge-1-prd <feature>`)
 **Input:** User's feature idea and domain knowledge
 **Output:** `{specsDir}/{feature}/PRD.md`
 **Method:** Structured interview focused exclusively on requirements. No technology decisions.
 
-### Stage 2: Tech Spec (`/forge-2-tech <feature>`)
+### Stage 2: Tech Spec (`/feature-forge:forge-2-tech <feature>`)
 **Input:** PRD.md
 **Output:** `{specsDir}/{feature}/tech-spec.md`
 **Method:** Structured interview for technology decisions, grounded in PRD requirements.
 
-### Stage 3: Implementation Specs (`/forge-3-specs <feature>`)
+### Stage 3: Implementation Specs (`/feature-forge:forge-3-specs <feature>`)
 **Input:** PRD.md + tech-spec.md
 **Output:** `{specsDir}/{feature}/##-<name>.md` (suite of numbered documents)
 **Method:** Generate detailed implementation documents from spec archetypes.
 
-### Verification Gate (`/forge-verify <feature>`)
+### Verification Gate (`/feature-forge:forge-verify <feature>`)
 **Input:** All artifacts from current and prior stages
 **Output:** `{specsDir}/{feature}/VERIFY-<stage>-<timestamp>.md` (includes both findings and a Fix Execution Plan)
 **Method:** Clean-context analysis producing actionable findings with an ordered fix plan.
 
 After verification, fixes can be applied via:
-- `/forge-fix <feature>` — reads the Fix Execution Plan from the findings document and applies changes (works in any session)
+- `/feature-forge:forge-fix <feature>` — reads the Fix Execution Plan from the findings document and applies changes (works in any session)
 - Plan mode workflow — enter plan mode, run verify, review plan, exit and execute
 - Manual — read findings and apply fixes by hand
 
-### Stage 4: Backlog (`/forge-4-backlog <feature>`)
+### Stage 4: Backlog (`/feature-forge:forge-4-backlog <feature>`)
 **Input:** Full spec suite
 **Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if backlogDir is configured)
 **Method:** Generate structured backlog items with spec references, acceptance criteria, and dependencies. Backlog is collocated with feature specs by default.
 
-### Stage 5: Documentation (`/forge-5-docs <feature>`)
+### Stage 5: Documentation (`/feature-forge:forge-5-docs <feature>`)
 **Input:** Specs + implementation
 **Output:** `{docsDir}/{feature}/` documentation suite
 **Method:** Generate developer-focused architecture documentation.
 
 ## Pipeline State
 
-State is tracked in `{specsDir}/{feature}/.pipeline-state.json` and persists across session clears. The `/forge <feature>` navigator reads this file to show current progress.
+State is tracked in `{specsDir}/{feature}/.pipeline-state.json` and persists across session clears. The `/feature-forge:forge <feature>` navigator reads this file to show current progress.
 
 ## Git Discipline
 

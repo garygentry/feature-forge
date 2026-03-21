@@ -1,52 +1,210 @@
 # feature-forge
 
-End-to-end feature development pipeline: PRD → tech spec → implementation specs → backlog → documentation, with verification gates, pipeline state tracking, and specialized subagents.
+End-to-end feature development pipeline for Claude Code. Transforms a feature idea into a complete, implementation-ready specification suite through structured interviews, automated verification, and persistent state tracking.
+
+## Overview
+
+Building features well requires disciplined planning. **feature-forge** encodes that discipline into a repeatable pipeline: starting from a structured requirements interview, progressing through technical design and implementation specifications, and finishing with a validated backlog and architecture documentation.
+
+Each stage produces versioned artifacts that trace back to the original requirements. Verification gates between stages catch gaps, inconsistencies, and quality issues before they compound downstream. Specialized subagents handle codebase research and artifact verification in isolated contexts, keeping the main session focused and efficient.
+
+The pipeline is stack-aware, with built-in profiles for TypeScript, Python, Go, and Rust that tailor spec conventions, verification checks, and acceptance criteria to your project's toolchain.
+
+## Install
+
+```bash
+/plugin install feature-forge@garygentry-agent-plugins --scope project
+```
+
+## Quick Start
+
+```
+1. /feature-forge:forge-init                        # Create forge.config.json
+2. /feature-forge:forge-1-prd user-authentication    # Start with requirements
+3. /feature-forge:forge user-authentication          # Check status anytime
+```
+
+The pipeline guides you through each subsequent stage. Run `/feature-forge:forge <feature>` at any point to see what's complete, what's next, and what needs attention.
+
+## Pipeline
+
+```
+                                    Verification Gates
+                                    ─────────────────
+forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
+                                                               │
+                    ┌──────────────────────────────────────────┘
+                    │
+                    ▼
+              forge-4-backlog ─► forge-verify ─► [implement] ─► forge-verify ─► forge-5-docs
+```
+
+| Stage | Skill | Artifact | Purpose |
+|-------|-------|----------|---------|
+| 1 | `forge-1-prd` | `PRD.md` | Capture requirements through structured interview |
+| 2 | `forge-2-tech` | `tech-spec.md` | Define technical approach grounded in PRD |
+| 3 | `forge-3-specs` | Numbered spec suite | Generate implementation specifications |
+| -- | `forge-verify` | `VERIFY-*.md` | Verify artifacts for completeness and consistency |
+| 4 | `forge-4-backlog` | `backlog.json` | Generate structured work items for implementation |
+| -- | `forge-verify` | `VERIFY-*.md` | Verify backlog coverage and quality |
+| -- | *implement* | Source code | Build the feature (outside forge pipeline) |
+| -- | `forge-verify` | `VERIFY-*.md` | Verify implementation against specs |
+| 5 | `forge-5-docs` | Documentation suite | Generate architecture documentation |
 
 ## Pipeline Stages
 
+### Stage 1: Requirements (forge-1-prd)
+
 ```
-/forge-1-prd → /forge-2-tech → /forge-3-specs → /forge-verify → /forge-4-backlog → /forge-verify → [implement] → /forge-5-docs
+/feature-forge:forge-1-prd <feature-name>
 ```
 
-See `references/process-overview.md` for detailed pipeline flow.
+Conducts a structured interview to capture **what** the feature must do, deliberately excluding **how** it will be built. Produces a requirements-only PRD with unique requirement identifiers (e.g., `REQ-AUTH-01`, `REQ-PERF-03`) that serve as traceability anchors throughout the pipeline.
 
-## Skills
+The interview covers functional requirements, non-functional requirements (performance, security, accessibility, observability), edge cases, and acceptance criteria.
 
-| Skill | Purpose |
+**Output:** `{specsDir}/{feature}/PRD.md`
+
+### Stage 2: Technical Specification (forge-2-tech)
+
+```
+/feature-forge:forge-2-tech <feature-name>
+```
+
+Interviews you about technology decisions, grounding every choice in PRD requirements. Dispatches the **forge-researcher** subagent to explore your codebase for existing patterns, integration surfaces, and conventions before the interview begins.
+
+During this stage, the plugin detects your project's stack (from `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, etc.) and persists the detection in `forge.config.json` for use by downstream stages.
+
+Covers package structure, data model, API design, dependencies, error handling, testing strategy, configuration, and migration/deployment considerations.
+
+**Output:** `{specsDir}/{feature}/tech-spec.md`
+
+### Stage 3: Implementation Specs (forge-3-specs)
+
+```
+/feature-forge:forge-3-specs <feature-name>
+```
+
+Generates a comprehensive suite of numbered implementation specification documents from the PRD and tech spec. Each document provides everything needed to implement a specific concern: complete type definitions, function signatures, error hierarchies, integration contracts, and test strategies.
+
+Every spec document includes a requirement traceability table mapping back to PRD requirements. A cross-reference validation pass ensures full coverage. For large suites, documents are generated in batches of 3-5 to manage context.
+
+**Standard document set:**
+
+| Document | Purpose |
+|----------|---------|
+| `00-core-definitions.md` | Types, error classes, contracts, constants |
+| `01-architecture-layout.md` | Directory structure, exports, dependency map |
+| `02-NN-*.md` | Feature-specific implementation specs |
+| `NN-testing-strategy.md` | Test approach, coverage targets, fixtures |
+| `TRACEABILITY.md` | Complete REQ-XXX-NN to spec section mapping |
+
+**Output:** `{specsDir}/{feature}/` (multiple documents)
+
+### Stage 4: Backlog (forge-4-backlog)
+
+```
+/feature-forge:forge-4-backlog <feature-name>
+```
+
+Generates a structured `backlog.json` from implementation specs, producing work items scoped for single implementation iterations. Each item includes a title, description, acceptance criteria, dependency ordering, spec references, and estimated iterations.
+
+Items are validated for quality: descriptions must include exact file paths, type signatures, and import paths. Granularity is enforced at 5-8 files per item maximum.
+
+The output is validated against the backlog schema using the bundled `validate-backlog.py` script.
+
+**Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if configured)
+
+### Stage 5: Documentation (forge-5-docs)
+
+```
+/feature-forge:forge-5-docs <feature-name>
+```
+
+Generates developer-focused architecture documentation by reading the actual implementation (not just specs). Suitable for onboarding, reference, and maintenance.
+
+Documentation depth scales with feature complexity — from a single README to a full suite including architecture overview, API reference, configuration guide, integration guides, troubleshooting, and architectural decision records.
+
+Marks the pipeline as complete upon successful generation.
+
+**Output:** `{docsDir}/{feature}/` (README.md and optional supplementary documents)
+
+## Verification and Remediation
+
+### forge-verify
+
+```
+/feature-forge:forge-verify <feature-name> [stage: prd|tech|specs|backlog|impl]
+```
+
+Runs a comprehensive verification pass against pipeline artifacts. The stage is auto-detected from pipeline state if not specified. Dispatches the **forge-verifier** subagent for clean-context analysis when available.
+
+Each finding includes a unique identifier (e.g., `V-001`), severity level, precise location, issue description, suggested fix, and requirement references. Findings are organized into a Fix Execution Plan with grouped steps and dependency ordering.
+
+**Severity levels:**
+
+| Level | Meaning |
 |-------|---------|
-| **forge** | Pipeline navigator and status dashboard |
-| **forge-1-prd** | Requirements interviewer — creates PRD.md |
-| **forge-2-tech** | Tech spec driver — creates tech-spec.md |
-| **forge-3-specs** | Implementation spec generator — creates numbered spec suite |
-| **forge-4-backlog** | Ralph backlog generator — creates backlog.json |
-| **forge-5-docs** | Architecture documentation generator |
-| **forge-verify** | Verification gate — produces findings + fix execution plan |
+| `error` | Blocks progress — must be fixed |
+| `gap` | Missing requirement coverage |
+| `inconsistency` | Contradictions between artifacts |
+| `improvement` | Quality enhancement opportunity |
 
-## Agents
+**Output:** `{specsDir}/{feature}/VERIFY-{mode}-{YYYY-MM-DD}.md`
 
-| Agent | Purpose | Model |
-|-------|---------|-------|
-| **forge-researcher** | Codebase exploration for tech-spec planning | Sonnet |
-| **forge-verifier** | Read-only artifact verification with persistent memory | Opus |
+### forge-fix
 
-## Commands
+```
+/feature-forge:forge-fix <feature-name>
+```
 
-| Command | Description |
-|---------|-------------|
-| `/forge` | View pipeline status |
-| `/forge-init` | Initialize forge.config.json |
-| `/forge-1-prd` | Create requirements PRD |
-| `/forge-2-tech` | Create technical specification |
-| `/forge-3-specs` | Generate implementation specs |
-| `/forge-4-backlog` | Generate ralph backlog |
-| `/forge-5-docs` | Generate architecture docs |
-| `/forge-verify` | Run verification on artifacts |
-| `/forge-fix` | Apply fixes from verification report |
-| `/forge-status` | Show status for all active features |
+Applies fixes from the most recent verification findings document. Parses the Fix Execution Plan, resolves any user decisions required, and executes fixes step-by-step with progress tracking. Supports crash recovery — if interrupted, resumes from the last completed step.
+
+**Output:** Modified spec/implementation files, updated findings document with fix progress
+
+## Pipeline Navigator
+
+```
+/feature-forge:forge <feature-name>
+/feature-forge:forge                    # Lists all active features
+```
+
+Displays a status dashboard showing pipeline progress with stage indicators. Supports lifecycle commands to pause, resume, or abandon features. Maintains free-form notes that persist across sessions.
+
+## Specialized Agents
+
+feature-forge delegates specific workloads to specialized subagents that operate in isolated contexts, reducing pressure on the main session's context window.
+
+| Agent | Model | Purpose |
+|-------|-------|---------|
+| **forge-researcher** | Sonnet | Explores codebase structure, integration surfaces, existing patterns, and conventions. Dispatched during Stage 2 to inform technical decisions. Read-only access. |
+| **forge-verifier** | Opus | Verifies pipeline artifacts against structured checklists. Produces findings with actionable fix suggestions and execution plans. Read-only access with persistent project-scoped memory. |
+
+Both agents are restricted to read-only operations — they cannot modify files, run package managers, or execute git commands.
+
+## Stack Profiles
+
+Built-in profiles tailor spec conventions, verification checks, and acceptance criteria to your project's toolchain.
+
+| Stack | Profile |
+|-------|---------|
+| TypeScript | `references/stacks/typescript.md` |
+| Python | `references/stacks/python.md` |
+| Go | `references/stacks/go.md` |
+| Rust | `references/stacks/rust.md` |
+| Generic | `references/stacks/_generic.md` (fallback) |
+
+**Resolution order** (highest precedence first):
+
+1. `.claude/references/stack-decisions.md` — Project-level overrides you define
+2. `references/stacks/{stack}.md` — Detected stack profile
+3. `references/stacks/_generic.md` — Language-neutral fallback
+
+Stack detection occurs automatically during Stage 2 (`forge-2-tech`) by examining project manifest and build files. The detected stack, type-check command, and test command are persisted in `forge.config.json`.
 
 ## Configuration
 
-Create `forge.config.json` in your project root (or run `/forge-init`):
+Create `forge.config.json` in your project root, or run `/feature-forge:forge-init` to generate one with defaults.
 
 ```json
 {
@@ -54,24 +212,95 @@ Create `forge.config.json` in your project root (or run `/forge-init`):
   "docsDir": "./docs/architecture",
   "backlogDir": null,
   "gitCommitAfterStage": true,
-  "commitPrefix": "forge"
+  "commitPrefix": "forge",
+  "stack": null,
+  "typeCheckCommand": null,
+  "testCommand": null
 }
 ```
 
-## Quick Start
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `specsDir` | string | `"./specs"` | Root directory for feature specification artifacts |
+| `docsDir` | string | `"./docs/architecture"` | Root directory for generated documentation |
+| `backlogDir` | string | `null` | Override location for `backlog.json`. When null, backlog is placed alongside specs |
+| `gitCommitAfterStage` | boolean | `true` | Automatically commit artifacts after each stage completes |
+| `commitPrefix` | string | `"forge"` | Prefix for conventional commit messages (e.g., `forge(auth): complete PRD v1`) |
+| `stack` | string | `null` | Stack identifier (e.g., `"typescript"`, `"python"`, `"go"`, `"rust"`). Auto-detected in Stage 2 |
+| `typeCheckCommand` | string | `null` | Type-check command used in acceptance criteria and verification. Set during Stage 2 |
+| `testCommand` | string | `null` | Test command used in acceptance criteria and verification. Set during Stage 2 |
 
-1. Run `/forge-init` to create configuration
-2. Run `/forge-1-prd <feature-name>` to start the pipeline
-3. Run `/forge <feature-name>` at any time to check status
+## Pipeline State
 
-Use `--force` on any stage command to skip prerequisite checks.
+Each feature's progress is tracked in `{specsDir}/{feature}/.pipeline-state.json`, which persists across sessions. The state file records:
 
-## Notes
+- **Stage status** — `pending`, `in-progress`, `complete`, or `stale` for each pipeline stage
+- **Verification status** — `pending`, `passed`, `findings-reported`, `findings-applied`, or `skipped`
+- **Artifact inventory** — Relative paths to all generated files per stage
+- **Version tracking** — Integer versions incremented on revision, with `basedOnVersions` references for staleness detection
+- **Commit hashes** — Git SHA recorded after each successful stage commit
+- **Timestamps** — ISO 8601 timestamps for stage start, completion, and verification
 
-This plugin's reference materials (spec archetypes, backlog examples, stack discovery) are currently optimized for TypeScript monorepo projects. A stack-agnostic rewrite is planned.
+**Staleness detection:** When an upstream stage is revised (e.g., PRD updated after tech spec is written), downstream stages are flagged as potentially stale based on version comparisons.
 
-## Install
+**Crash recovery:** If a stage is interrupted mid-execution, the pipeline inventories existing artifacts on disk, compares them against the state file, and offers to resume from the last completed artifact or restart the stage.
+
+## Validation Scripts
+
+### validate-backlog.py
 
 ```bash
-/plugin install feature-forge@garygentry-agent-plugins --scope project
+python3 scripts/validate-backlog.py <path-to-backlog.json> [--specs-dir <path>] [--json]
 ```
+
+Validates `backlog.json` for schema compliance and logical consistency: required fields, valid types and statuses, unique IDs, non-empty acceptance criteria, dependency reference integrity, spec file existence, description quality, and circular dependency detection.
+
+### validate-traceability.py
+
+```bash
+python3 scripts/validate-traceability.py <prd-path> <specs-dir> [--json]
+```
+
+Validates requirement traceability between the PRD and implementation specs. Extracts `REQ-XXX-NN` identifiers from the PRD, checks that every requirement is referenced in at least one spec, reports orphaned references, and generates a per-requirement coverage map.
+
+## Hooks
+
+| Event | Behavior |
+|-------|----------|
+| **SessionStart** | Checks for `forge.config.json`. If absent but pipeline state files exist, warns that configuration is missing and suggests running `/feature-forge:forge-init`. |
+
+## Advanced Usage
+
+### Force Mode
+
+Append `--force` to any stage command to skip prerequisite validation. Useful when revising a single stage without re-running the full pipeline. Existing artifacts are still read for context.
+
+```
+/feature-forge:forge-2-tech my-feature --force
+```
+
+### Lifecycle Commands
+
+Use the pipeline navigator to manage feature lifecycle:
+
+```
+/feature-forge:forge my-feature          # View status
+```
+
+Supported lifecycle actions: **pause**, **resume**, and **abandon**. Notes added through the navigator persist across sessions in the pipeline state file.
+
+### Git Integration
+
+When `gitCommitAfterStage` is enabled, each completed stage automatically commits its artifacts with a conventional commit message:
+
+```
+forge(my-feature): complete PRD v1
+forge(my-feature): complete tech spec v1
+forge(my-feature): complete implementation specs v1
+```
+
+Commits are scoped to stage-specific files only — never uses `git add -A` or `--force`.
+
+### Revision Workflow
+
+Any stage can be re-run to produce a new version. The pipeline increments the stage version, updates downstream staleness tracking, and optionally creates a new commit. Use `--force` to revise a stage without re-running prerequisites.

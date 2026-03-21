@@ -84,7 +84,7 @@
       "properties": {
         "status": {
           "type": "string",
-          "enum": ["pending", "passed", "findings-reported", "findings-applied"]
+          "enum": ["pending", "passed", "findings-reported", "findings-applied", "skipped"]
         },
         "findingsFile": {
           "type": ["string", "null"],

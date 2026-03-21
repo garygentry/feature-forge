@@ -1,6 +1,6 @@
 ---
 name: forge-2-tech
-description: "Create a technical specification from an existing PRD."
+description: "Create a technical specification from an existing PRD in the forge pipeline. Use when user runs /feature-forge:forge-2-tech or asks to create a tech spec for a forge feature after PRD completion. Do NOT trigger for general technical design discussions, architecture reviews, or tech specs outside the forge pipeline."
 argument-hint: "<feature-name>"
 disable-model-invocation: true
 ---
@@ -15,7 +15,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 ## Step 1: Validate Prerequisites
 
-**Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode and `forge-1-prd` is not `complete`, STOP and tell the user: "The PRD for '{feature}' isn't complete yet. Run `/forge-1-prd {feature}` first."
+**Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode and `forge-1-prd` is not `complete`, STOP and tell the user: "The PRD for '{feature}' isn't complete yet. Run `/feature-forge:forge-1-prd {feature}` first."
 
 Read `{specsDir}/{feature}/PRD.md` into context. This is your foundation — every technology decision must trace back to a PRD requirement.
 
@@ -47,7 +47,7 @@ After researching the codebase, identify the primary stack (language, build tool
 1. Check if `forge.config.json` already has a `stack` field — if so, use it
 2. Otherwise, detect from project files and ask the user to confirm: "I detected this as a {stack} project. Correct?"
 3. Update `forge.config.json` with `stack`, `typeCheckCommand`, and `testCommand`
-4. If a matching stack profile exists at `references/stacks/{stack}.md`, load it for stack-specific guidance during this and all subsequent stages. If no profile exists, use `references/stacks/_generic.md`.
+4. Verify that a matching stack profile exists at `references/stacks/{stack}.md`. If it does, load it for stack-specific guidance during this and all subsequent stages. If no profile exists, inform the user: "No dedicated profile for {stack}. Using generic fallback — spec conventions, verification checks, and examples will be language-neutral. Consider creating a project-level override at `.claude/references/stack-decisions.md`." Then load `references/stacks/_generic.md`.
 
 ## Step 3: Conduct the Interview
 
@@ -151,15 +151,12 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 1. Update `{specsDir}/{feature}/.pipeline-state.json`:
    - Set `currentStage` to `forge-3-specs`
-   - Set `stages.forge-2-tech.status` to `complete`
    - Record `artifacts`, `completedAt`, `version`
    - Set `stages.forge-2-tech.basedOnVersions` to `{"forge-1-prd": <current forge-1-prd version>}`
    - Check downstream stages (forge-3-specs, forge-4-backlog, forge-5-docs). If any have `basedOnVersions` referencing an older version of forge-2-tech, set their status to `stale`
 2. Ask about notes to persist
-3. If `gitCommitAfterStage` is true:
-  `git add {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): complete tech-spec v{n}"`
-4. Record commit hash in pipeline state
-5. Tell the user next steps: `/forge-verify {feature}` or `/forge-3-specs {feature}`
+3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete tech-spec v{n}"`, then set `stages.forge-2-tech.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
+5. Tell the user next steps: `/feature-forge:forge-verify {feature}` or `/feature-forge:forge-3-specs {feature}`
 
 ## Gotchas
 

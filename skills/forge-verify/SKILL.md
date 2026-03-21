@@ -1,6 +1,6 @@
 ---
 name: forge-verify
-description: "Verify feature artifacts for completeness, consistency, and quality."
+description: "Verify forge pipeline artifacts for completeness, consistency, and quality. Use when user runs /feature-forge:forge-verify or asks to check forge specs, backlog, or implementation for gaps. Do NOT trigger for general code review, quality checks, or verification tasks outside the forge pipeline."
 argument-hint: "<feature-name> [stage: prd|tech|specs|backlog|impl]"
 disable-model-invocation: true
 ---
@@ -16,7 +16,7 @@ This skill should be delegated to the `forge-verifier` subagent via the Agent to
 - **Persistent memory** — it accumulates knowledge about this project's recurring issues and patterns across sessions
 - **The forge-verify skill pre-loaded** — so it has all verification checklists and guidance at startup
 
-To delegate: use the Agent tool with `subagent_type="forge-verifier"` and pass the feature name and optional mode in the prompt.
+To delegate: use the Agent tool with `subagent_type="forge-verifier"` and pass the feature name and optional mode in the prompt. The verifier is read-only — it returns findings as its response. After the verifier completes, **you** (the parent agent) write the findings to `{specsDir}/{feature}/VERIFY-{mode}-{YYYY-MM-DD}.md`.
 
 If the `forge-verifier` subagent is not available (not installed, or running in an environment that doesn't support subagents), fall back to running verification inline in the current session.
 
@@ -32,7 +32,7 @@ Read `{specsDir}/{feature}/.pipeline-state.json` to understand current pipeline 
 
 ### Mode Selection
 
-If a stage is specified as a second argument (e.g., `/forge-verify auth specs`), use that mode. Otherwise, auto-detect based on pipeline state:
+If a stage is specified as a second argument (e.g., `/feature-forge:forge-verify auth specs`), use that mode. Otherwise, auto-detect based on pipeline state:
 
 - **prd mode**: If `forge-1-prd` is complete but `forge-verify-prd` is not `passed` or `findings-applied`
 - **tech mode**: If `forge-2-tech` is complete but `forge-verify-tech` is not `passed` or `findings-applied`
@@ -185,8 +185,8 @@ When building the Fix Execution Plan:
 "Findings and fix plan written to `{findings-file}`.
 Next steps:
   - Review the findings and fix plan
-  - Run `/forge-fix {feature}` to apply fixes (recommended — works in any session)
-  - Or enter plan mode and re-run `/forge-verify {feature}` for plan-mode workflow"
+  - Run `/feature-forge:forge-fix {feature}` to apply fixes (recommended — works in any session)
+  - Or enter plan mode and re-run `/feature-forge:forge-verify {feature}` for plan-mode workflow"
 
 ## Step 6: Update Pipeline State
 
@@ -206,3 +206,4 @@ Do NOT mark as `findings-applied` — that happens after the fix pass.
 - If you find zero issues, say so honestly. Don't manufacture findings to seem thorough. But zero findings on a complex feature is suspicious — double-check.
 - The findings document must be self-contained. A fresh agent reading it should be able to apply every fix without needing conversational context from this session.
 - For backlog verification, also run `${CLAUDE_PLUGIN_ROOT}/scripts/validate-backlog.py` if it exists, and include any schema violations as findings.
+- For specs verification, also run `${CLAUDE_PLUGIN_ROOT}/scripts/validate-traceability.py {specsDir}/{feature}/PRD.md {specsDir}/{feature}/ --json` to supplement agent-driven traceability checks with deterministic validation. Include any uncovered requirements or orphaned references as findings.
