@@ -4,41 +4,41 @@ This reference defines the types of implementation spec documents and their inte
 
 ## Always Required
 
-### 00-core-types-shared.md
-The shared type system for the feature. Every other spec document references types defined here.
+### 00-core-definitions.md
+The shared type system and data contracts for the feature. Every other spec document references definitions here.
 
 **Sections:**
-- Type aliases and union types
-- Core interfaces (with JSDoc on every field)
-- Error class hierarchy (base error, domain-specific errors, each with typed properties)
-- Constants and enums
+- Type aliases, union types, enums, or language-equivalent constructs
+- Core types/interfaces/structs with documentation comments on every field
+- Error/exception hierarchy (base error, domain-specific errors, each with typed properties)
+- Constants and enumerations
 - Utility types (if any)
 
 **Rules:**
-- Every type must have JSDoc explaining its purpose
-- Error classes must include `code`, `message`, and domain-specific context fields
-- Export everything from a barrel `index.ts`
+- Every type must have documentation comments explaining its purpose (JSDoc, docstrings, godoc, etc.)
+- Error types must include `code`, `message`, and domain-specific context fields
+- Export everything through the module's entry point following project conventions
 
 ### 01-architecture-layout.md
-How the feature is structured in the monorepo.
+How the feature is structured in the project.
 
 **Sections:**
 - Directory tree (full, not abbreviated)
-- Package.json: name, exports map (subpath exports), dependencies, scripts
-- tsconfig.json: key compiler options
-- Barrel export structure: what each index.ts re-exports
-- Build and bundle considerations
+- Project manifest: name, exports/entry points, dependencies, build scripts
+- Build/compiler configuration: key options
+- Module export structure: what each entry point exposes
+- Build and deployment considerations
 
 **Rules:**
-- Exports map must be explicit — list every subpath export
+- Exports/entry points must be explicit — list every public module or subpath
 - Dependencies should distinguish runtime vs dev dependencies
-- Internal monorepo dependencies must reference exact package names
+- Internal project dependencies must reference exact module/package names
 
 ### NN-testing-strategy.md (always last numbered document)
 How to test this feature.
 
 **Sections:**
-- Testing framework and tooling (vitest, testing-library, etc.)
+- Testing framework and tooling (match project conventions — e.g., vitest, pytest, go test)
 - Unit test approach: what to test, what to mock
 - Integration test approach: how to test cross-package interactions
 - Test fixtures and factories
@@ -61,7 +61,7 @@ Use when the feature has distinct subsystems that warrant separate specification
 - Dependencies: on types from 00, on other subsystems, on external packages
 
 ### ##-integration-points.md
-Use when the feature interacts with existing packages (almost always in a monorepo).
+Use when the feature interacts with existing modules or packages.
 
 **Sections:**
 - Integration map: which packages, which direction (depends-on vs depended-upon-by)
@@ -87,7 +87,7 @@ Use when the feature has a frontend surface.
 Use when the feature involves schema changes or data migration.
 
 **Sections:**
-- Schema definition (Drizzle, Prisma, or raw SQL — match project conventions)
+- Schema definition (using project's ORM/migration tool, or raw SQL — match project conventions)
 - Migration steps
 - Rollback strategy
 - Data seeding / fixtures
@@ -98,8 +98,8 @@ Use when the feature involves schema changes or data migration.
 Before finalizing any spec document, verify:
 
 - [ ] Every section references PRD requirement IDs
-- [ ] All TypeScript is valid syntax (not pseudocode)
-- [ ] All type references resolve to definitions in 00-core-types-shared.md or clearly stated external packages
+- [ ] All code is valid syntax in the project's language (not pseudocode)
+- [ ] All type references resolve to definitions in 00-core-definitions.md or clearly stated external packages
 - [ ] Error scenarios are covered, not just happy paths
 - [ ] Cross-references to other spec docs use exact filenames
 - [ ] A "Dependencies" section states which other spec docs must be implemented first

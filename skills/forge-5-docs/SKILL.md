@@ -108,11 +108,13 @@ Present the plan and ask the user to confirm.
 
 {Table of subpath exports and what each contains.}
 
-| Export | Description |
-|--------|-------------|
-| `@repo/{feature}` | Shared types and utilities |
-| `@repo/{feature}/server` | Server-side functionality |
+| Export / Entry Point | Description |
+|---------------------|-------------|
+| `{module}` | Shared types and utilities |
+| `{module}/server` | Server-side functionality |
 | ...    | ... |
+
+Adapt export paths to match the project's module/package conventions.
 
 ## Configuration
 

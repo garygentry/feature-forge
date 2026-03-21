@@ -24,7 +24,7 @@ Read both `{specsDir}/{feature}/PRD.md` and `{specsDir}/{feature}/tech-spec.md` 
 1. **Read the PRD and tech spec thoroughly**: These are your source of truth
 2. **Examine the existing codebase**: Look at how other packages are structured, what patterns they follow, what types they export
 3. **Check other features' implementation specs**: Look at `{specsDir}/*/[0-9][0-9]-*.md` for consistency in format and depth
-4. **Read integration target code**: For every package listed as an integration point in the tech spec, read its actual source — types, exports, patterns. For every integration point, include the EXACT function signature and import path you read from the source code. Include the file path where you found it. If you cannot locate an expected export, say so explicitly: 'WARNING: Could not locate X export in @repo/package — verify this exists before implementing.'
+4. **Read integration target code**: For every package listed as an integration point in the tech spec, read its actual source — types, exports, patterns. For every integration point, include the EXACT function signature and import path you read from the source code. Include the file path where you found it. If you cannot locate an expected export, say so explicitly: 'WARNING: Could not locate X export in {module} — verify this exists before implementing.'
 5. **Read spec examples**: Read `references/spec-examples.md` for the expected depth and quality of spec sections. These examples are your quality bar.
 
 ## Step 3: Plan the Document Suite
@@ -37,14 +37,14 @@ Based on the feature's complexity, propose a document plan to the user before wr
 I'll create the following spec documents for {feature}:
 
 Required:
-  00-core-types-shared.md     — Type definitions, error hierarchy, shared contracts
+  00-core-definitions.md     — Type definitions, error hierarchy, shared contracts
   01-architecture-layout.md   — Directory structure, exports map, dependency graph
   NN-testing-strategy.md      — Test approach, coverage targets, fixture patterns
 
 Feature-specific:
   02-{subsystem-a}.md         — {Brief description}
   03-{subsystem-b}.md         — {Brief description}
-  04-integration-points.md    — Integration with @repo/config, @repo/auth, etc.
+  04-integration-points.md    — Integration with existing project modules
 
 Does this look right? Should I add or remove any documents?
 ```
@@ -58,7 +58,7 @@ If the spec suite requires more than 5 documents:
 2. After each batch, present to the user for review
 3. If `gitCommitAfterStage` is true:
      `git add {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): specs batch {n}"`
-4. For the next batch, re-read only the shared types document (00-core-types-shared.md) and the specific upstream docs relevant to the next batch — do not re-load everything
+4. For the next batch, re-read only the shared types document (00-core-definitions.md) and the specific upstream docs relevant to the next batch — do not re-load everything
 5. Continue until all documents are complete
 
 This prevents quality degradation from context pressure. The first documents you write should be the foundation (types, architecture) since later documents reference them.
@@ -70,7 +70,7 @@ For each document:
 1. Number sequentially: `00-`, `01-`, `02-`, etc.
 2. Every implementation detail MUST trace to either a PRD requirement (REQ-XXX-NN) or a tech-spec decision
 3. Before writing each spec document, include a `## Requirement Coverage` table at the top mapping every REQ-XXX-NN this document covers to the section that implements it
-4. Include complete TypeScript interfaces, types, and function signatures — not pseudocode
+4. Include complete type definitions, data structures, and function signatures in the project's language — not pseudocode. If a stack profile exists at `references/stacks/{stack}.md` (where `{stack}` comes from `forge.config.json`), follow its conventions for type definitions, error hierarchies, and documentation comments.
 5. Include error handling for every operation
 6. Include example usage where it aids clarity
 7. Cross-reference other spec documents by filename when one document depends on definitions from another
@@ -120,8 +120,8 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 ## Gotchas
 
-- Don't create specs for things that are already fully specified in the tech spec. If the tech spec has complete TypeScript interfaces, the implementation spec should reference them, not duplicate them.
-- Every spec document should include complete type definitions with JSDoc comments. The backlog generator and implementing engineer depend on these being exact, not approximate.
+- Don't create specs for things that are already fully specified in the tech spec. If the tech spec has complete type definitions, the implementation spec should reference them, not duplicate them.
+- Every spec document should include complete type definitions and function signatures in the project's language with documentation comments. The backlog generator and implementing engineer depend on these being exact, not approximate.
 - Resist the urge to create too many documents. Each document should represent a major concern. If a "document" would be under 50 lines, it probably belongs as a section in another document.
 - Watch for implicit dependencies between subsystems. If subsystem A's types are used by subsystem B, the spec should explicitly state this and ensure the types are defined in the shared types document.
 - If the feature is large, the spec suite might be 8-12 documents. If it's simple, 3-4 is fine. Match complexity to the feature, not a fixed template.

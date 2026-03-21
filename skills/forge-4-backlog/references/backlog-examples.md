@@ -2,6 +2,8 @@
 
 These examples demonstrate the quality, detail, and format expected for backlog items. Use them as a reference when generating items.
 
+> **Note:** These examples use a TypeScript monorepo stack (Bun, Hono, `@repo/*` packages). Adapt naming, commands, and file paths to your project's stack. The STRUCTURE and DETAIL level is the quality bar regardless of stack. Use `{typeCheckCommand}` and `{testCommand}` from `forge.config.json` for acceptance criteria.
+
 ## Example 1: Foundation / Scaffold Item
 
 ```json
@@ -36,6 +38,8 @@ These examples demonstrate the quality, detail, and format expected for backlog 
 - Single concern: just the scaffold, not the types or logic
 - Clear spec reference
 
+**Adapting to other stacks:** For a Python project, this might scaffold `src/auth/` with `__init__.py`, `pyproject.toml` dependency additions, and pytest configuration. Acceptance criteria would use `mypy src/auth/` and `pytest tests/auth/` instead of `bun run typecheck`.
+
 ## Example 2: Type System Item
 
 ```json
@@ -59,7 +63,7 @@ These examples demonstrate the quality, detail, and format expected for backlog 
   "notes": "Use EXACT TypeScript from spec 00 — every interface and class is fully specified with JSDoc. Do not simplify or abbreviate.",
   "estimatedIterations": 1,
   "specReferences": [
-    "specs/auth/00-core-types-shared.md"
+    "specs/auth/00-core-definitions.md"
   ]
 }
 ```

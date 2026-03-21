@@ -2,6 +2,8 @@
 
 These examples demonstrate the expected depth and quality for implementation spec sections. Match this level of detail.
 
+> **Note:** The following examples use TypeScript. Adapt the language, idioms, and documentation style to match your project's stack. The STRUCTURE and DEPTH shown here is the quality bar regardless of language. See `references/stacks/{stack}.md` for language-specific conventions.
+
 ## Example: Function Specification (from a session management spec)
 
 ### 3.2 Token Refresh (REQ-AUTH-05, REQ-SEC-03)
@@ -41,8 +43,8 @@ interface RefreshOptions {
 - Returns `null` (no error): Token is valid but not yet within the refresh threshold. No action needed.
 
 **Dependencies:**
-- Types from `00-core-types-shared.md`: `SessionToken`, `SessionExpiredError`, `TokenValidationError`, `RefreshOptions`
-- Constants from `00-core-types-shared.md`: `SESSION_DURATION_MS`, `REFRESH_THRESHOLD_MS`
+- Types from `00-core-definitions.md`: `SessionToken`, `SessionExpiredError`, `TokenValidationError`, `RefreshOptions`
+- Constants from `00-core-definitions.md`: `SESSION_DURATION_MS`, `REFRESH_THRESHOLD_MS`
 - `jose` library for JWT verification and signing
 
 **Verification:**

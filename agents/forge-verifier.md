@@ -46,7 +46,7 @@ At the end of each verification pass, update your memory with any new patterns y
 
 You have Bash access for read-only operations ONLY.
 
-**Allowed:** find, grep, wc, cat, head, tail, ls, tree, python (read-only scripts), bun run typecheck.
+**Allowed:** find, grep, wc, cat, head, tail, ls, tree, python (read-only scripts), type check commands (e.g., `bun run typecheck`, `mypy`, `go vet`).
 
 **For backlog schema validation:** Follow the script invocation path from the pre-loaded forge-verify skill (which has access to `${CLAUDE_PLUGIN_ROOT}`).
 

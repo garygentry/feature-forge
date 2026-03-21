@@ -27,6 +27,18 @@
       "type": "string",
       "default": "forge",
       "description": "Prefix for conventional commit messages, e.g., forge(auth): complete PRD"
+    },
+    "stack": {
+      "type": "string",
+      "description": "Detected or configured project stack identifier. Selects guidance from references/stacks/{stack}.md. Set during forge-2-tech or manually. Examples: 'typescript', 'python', 'go', 'rust'."
+    },
+    "typeCheckCommand": {
+      "type": "string",
+      "description": "Command to verify type correctness or lint. Examples: 'bun run typecheck', 'mypy .', 'go vet ./...'. Used in acceptance criteria and verification."
+    },
+    "testCommand": {
+      "type": "string",
+      "description": "Command to run tests. Examples: 'bun test', 'pytest', 'go test ./...'. Used in acceptance criteria and verification."
     }
   }
 }

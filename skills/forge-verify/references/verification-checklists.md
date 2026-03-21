@@ -2,6 +2,8 @@
 
 Detailed checklists for each verification mode. Execute EVERY check — do not skip.
 
+> **Stack-specific details:** When a stack profile exists at `references/stacks/{stack}.md`, load it alongside this checklist for language-specific check criteria (e.g., what "valid syntax" means, what the type check command is, how module exports work).
+
 ## PRD Mode Checklist
 
 ### Completeness
@@ -71,11 +73,11 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 - [ ] **CHECK-S08**: No implementation spec contradicts a tech-spec decision
 
 ### Type System Integrity
-- [ ] **CHECK-S09**: All types in 00-core-types-shared.md are valid TypeScript (not pseudocode)
-- [ ] **CHECK-S10**: All types referenced in other spec docs are defined in 00-core-types-shared.md or an explicit external package
+- [ ] **CHECK-S09**: All type definitions in 00-core-definitions.md are valid syntax in the project's language (not pseudocode)
+- [ ] **CHECK-S10**: All types referenced in other spec docs are defined in 00-core-definitions.md or an explicit external package
 - [ ] **CHECK-S11**: Error classes form a consistent hierarchy with no gaps
 - [ ] **CHECK-S12**: No duplicate or conflicting type definitions across documents
-- [ ] **CHECK-S13**: Every interface has JSDoc on every field
+- [ ] **CHECK-S13**: Every type/interface/struct has documentation comments on every field (JSDoc, docstrings, godoc, etc.)
 
 ### Cross-Reference Consistency
 - [ ] **CHECK-S14**: All file references between spec documents point to actual files
@@ -109,7 +111,7 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 - [ ] **CHECK-S34**: Test approach covers unit, integration, and e2e as appropriate
 - [ ] **CHECK-S35**: Mock/fixture strategy is defined for external dependencies
 - [ ] **CHECK-S36**: Coverage targets are stated
-- [ ] **CHECK-S37**: Test fixtures and mocks defined in specs align with real interface shapes from 00-core-types-shared.md
+- [ ] **CHECK-S37**: Test fixtures and mocks defined in specs align with real interface shapes from 00-core-definitions.md
 
 ### Traceability
 - [ ] **CHECK-S38**: Build a complete traceability matrix from every REQ-XXX-NN to the spec document and section that implements it. Any REQ ID not found in at least one spec is a gap finding.
@@ -156,7 +158,7 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 ### Spec Compliance
 - [ ] **CHECK-I01**: Every file listed in 01-architecture-layout.md exists
 - [ ] **CHECK-I02**: Package.json exports map matches what the spec describes
-- [ ] **CHECK-I03**: Every type in 00-core-types-shared.md is implemented
+- [ ] **CHECK-I03**: Every type in 00-core-definitions.md is implemented
 - [ ] **CHECK-I04**: Every error class is implemented with correct properties
 
 ### Backlog Completion
@@ -166,10 +168,10 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 
 ### Integration
 - [ ] **CHECK-I08**: Import paths work (no broken imports)
-- [ ] **CHECK-I09**: Barrel exports (index.ts) re-export everything the spec says they should
+- [ ] **CHECK-I09**: Module exports/entry points re-export everything the spec says they should
 - [ ] **CHECK-I10**: Types shared with other packages are compatible
-- [ ] **CHECK-I11**: No type errors when building the package
-- [ ] **CHECK-I12**: No type errors when building packages that depend on this one
+- [ ] **CHECK-I11**: Type checking / linting passes for the module (`{typeCheckCommand}` from forge.config.json succeeds)
+- [ ] **CHECK-I12**: Type checking / linting passes for modules that depend on this one
 
 ### Code Quality
 - [ ] **CHECK-I13**: No placeholder or TODO comments that should have been resolved
@@ -180,5 +182,5 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 
 ### Documentation
 - [ ] **CHECK-I18**: Package has a README or the docs directory has been populated
-- [ ] **CHECK-I19**: Exported functions/classes have JSDoc comments
+- [ ] **CHECK-I19**: Exported functions/classes have documentation comments (JSDoc, docstrings, godoc, etc.)
 - [ ] **CHECK-I20**: Configuration options are documented

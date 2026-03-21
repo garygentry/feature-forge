@@ -79,11 +79,11 @@ Every forge skill requires a feature name as the first argument. If not provided
 When creating specs, always examine the existing codebase for patterns, conventions, and integration points. Check:
 - Other feature specs in `{specsDir}/`
 - Existing documentation in `{docsDir}/`
-- Package structure and exports in the monorepo
+- Module/package structure and exports in the project
 - Shared types, utilities, and conventions
 
 ### Stack Context
-The project may have a `stack-decisions.md` in `.claude/references/` with established technology decisions. If present, use it. The plugin also ships a default reference that can be overridden at the project level.
+The project's stack is detected during forge-2-tech and persisted in `forge.config.json` (the `stack`, `typeCheckCommand`, and `testCommand` fields). See `references/stack-resolution.md` for the full resolution protocol. The project may also have a `stack-decisions.md` in `.claude/references/` with established technology decisions — if present, it takes highest precedence.
 
 ## Subagents
 
@@ -101,6 +101,6 @@ The plugin includes two specialized subagents in `agents/` that enhance specific
 - **Used by:** `forge-2-tech` skill (spawned before the tech-spec interview)
 - **Tools:** Read, Glob, Grep, Bash (read-only)
 - **Model:** Sonnet (cost-efficient for exploration tasks)
-- **Why a subagent:** Tech-spec planning requires reading many files across the monorepo to understand integration points. Running this in a separate context returns a concise report without consuming the main session's context, keeping the interview focused.
+- **Why a subagent:** Tech-spec planning requires reading many files across the project to understand integration points. Running this in a separate context returns a concise report without consuming the main session's context, keeping the interview focused.
 
 Both subagents are optional. If the agents are not installed or the environment doesn't support subagents, the corresponding skills fall back to running inline.

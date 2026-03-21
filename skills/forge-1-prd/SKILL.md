@@ -26,7 +26,7 @@ If `.pipeline-state.json` exists for this feature and `forge-1-prd` is already m
 
 Before starting the interview:
 
-1. **Check the monorepo structure**: Read the top-level `package.json`, `turbo.json`, or workspace config to understand what packages exist
+1. **Check the project structure**: Read the project's build configuration and dependency manifests to understand what modules/packages exist. Look for `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `pom.xml`, workspace configs, or equivalent.
 2. **Check existing specs**: Look at `{specsDir}/` for other features' PRDs to understand conventions and the overall system
 3. **Check existing docs**: Look at the docs directory for architecture documentation
 4. **Note integration surfaces**: Identify which existing packages might be relevant to this feature

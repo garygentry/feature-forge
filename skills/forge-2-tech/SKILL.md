@@ -21,13 +21,13 @@ Read `{specsDir}/{feature}/PRD.md` into context. This is your foundation — eve
 
 ## Step 2: Examine Existing Context
 
-Before interviewing, you need to understand the existing codebase. This involves reading many files across the monorepo, which consumes context.
+Before interviewing, you need to understand the existing codebase. This involves reading many files across the project, which consumes context.
 
 ### Recommended: Delegate to forge-researcher Subagent
 
 Spawn the `forge-researcher` subagent via the Agent tool to scan the codebase. Pass a prompt like: "Research the codebase for planning the {feature} feature. Focus on integration points, established patterns, and relevant packages."
 
-The researcher runs in its own context window, reads the entire monorepo structure, and returns a concise integration report. This keeps your main conversation context clean for the interactive interview.
+The researcher runs in its own context window, reads the project structure, and returns a concise integration report. This keeps your main conversation context clean for the interactive interview.
 
 If the `forge-researcher` subagent is not available, perform the research inline (steps below).
 
@@ -40,17 +40,26 @@ If the `forge-researcher` subagent is not available, perform the research inline
 5. **Review other features' tech specs**: Check `{specsDir}/*/tech-spec.md` for consistency in approach and to identify shared infrastructure.
 6. **Identify integration points**: For each existing package that this feature touches, read its exports, types, and public API. Document these as constraints.
 
+### Stack Detection and Persistence
+
+After researching the codebase, identify the primary stack (language, build tool, package manager, framework). Read `references/stack-resolution.md` for the full resolution protocol.
+
+1. Check if `forge.config.json` already has a `stack` field — if so, use it
+2. Otherwise, detect from project files and ask the user to confirm: "I detected this as a {stack} project. Correct?"
+3. Update `forge.config.json` with `stack`, `typeCheckCommand`, and `testCommand`
+4. If a matching stack profile exists at `references/stacks/{stack}.md`, load it for stack-specific guidance during this and all subsequent stages. If no profile exists, use `references/stacks/_generic.md`.
+
 ## Step 3: Conduct the Interview
 
 Interview the user about technology decisions. Unlike the PRD interview, here you SHOULD discuss specific technologies, libraries, patterns, and architecture.
 
 ### Interview Approach
 
-- Present what you learned from examining the codebase first: "I see the monorepo uses Bun + Hono + TanStack Router. The auth package would naturally fit as `packages/auth/`. Does that match your thinking?"
+- Present what you discovered from examining the codebase first: "I see the project uses [detected language/framework/build tool]. The [feature] module would naturally fit at [suggested location based on existing structure]. Does that match your thinking?" Always use the actual technologies and paths you found — never use a canned example.
 - For each PRD requirement, propose a technical approach and ask for confirmation or alternatives
 - Proactively suggest approaches consistent with the established stack
 - Challenge over-engineering: "Do we need X here, or is the simpler approach sufficient for the requirements?"
-- Ask about every integration point: "How should this interact with @repo/config?"
+- Ask about every integration point: "How should this interact with [existing module]?"
 
 **Parking lot:** If the user raises a concern that belongs to a different pipeline stage (e.g., backlog granularity, documentation format), acknowledge it and note it in the pipeline state's `notes` field: "Good point — I've noted that for the [specs/backlog/docs stage]. Let's continue with the tech spec."
 
@@ -87,7 +96,7 @@ Before finalizing the tech spec, this section is MANDATORY:
    - Which types or contracts are shared
    - How data flows between packages
    - Any patterns established by existing code that must be followed
-   - The EXACT function signatures and import paths verified from source code. If you cannot locate an expected export, note explicitly: "WARNING: Could not locate X export in @repo/package — verify this exists before implementing."
+   - The EXACT function signatures and import paths verified from source code. If you cannot locate an expected export, note explicitly: "WARNING: Could not locate X export in {module} — verify this exists before implementing."
 4. Check for potential conflicts with in-progress features (other spec directories)
 
 ## Step 5: Write the Tech Spec
@@ -100,8 +109,8 @@ Write `{specsDir}/{feature}/tech-spec.md` with this structure:
 ## 1. Overview
 Brief technical summary and key architectural decisions.
 
-## 2. Package Structure
-Monorepo location, directory layout, exports map.
+## 2. Module Structure
+Project location, directory layout, public API surface.
 
 ## 3. Technical Decisions
 ### 3.1 {Decision Area} (REQ-XXX-NN)

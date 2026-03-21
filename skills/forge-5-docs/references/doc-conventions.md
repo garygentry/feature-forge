@@ -8,7 +8,7 @@ Standards and patterns for feature architecture documentation.
 - Use second person for guides ("You can configure..." not "One can configure...")
 - Include code examples for every exported function, class, or component
 - Code examples must be runnable — no pseudocode, no incomplete snippets
-- Use TypeScript for all code examples
+- Use the project's primary language for all code examples
 
 ## Heading Structure
 
@@ -18,6 +18,8 @@ Standards and patterns for feature architecture documentation.
 - Don't go deeper than H4
 
 ## Code Examples
+
+The following examples use TypeScript. Adapt language and import syntax to your project's stack. The principle — always include imports, show complete runnable examples — applies to all languages.
 
 Always include import statements:
 ```typescript

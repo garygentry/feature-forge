@@ -47,13 +47,13 @@ Present the plan as a numbered list:
 ```
 Proposed backlog for {feature} ({N} items):
 
-  001 [P1] Scaffold package with package.json, tsconfig, barrel exports
+  001 [P1] Scaffold module with project manifest, build config, and entry points
       Depends on: (none)
-      Specs: 00-core-types-shared.md, 01-architecture-layout.md
+      Specs: 00-core-definitions.md, 01-architecture-layout.md
 
   002 [P1] Implement shared types and error hierarchy
       Depends on: 001
-      Specs: 00-core-types-shared.md
+      Specs: 00-core-definitions.md
 
   003 [P2] Implement provider registry
       Depends on: 002
@@ -83,13 +83,13 @@ Write `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if bac
   - Exact import paths
   - Any gotchas or special considerations
   - Steps numbered 1, 2, 3...
-- `acceptanceCriteria`: Array of objectively verifiable strings. Each criterion should be checkable by running a command or reading code. NOT subjective ("works well") but specific ("bun run typecheck passes for @repo/auth")
+- `acceptanceCriteria`: Array of objectively verifiable strings. Each criterion should be checkable by running a command or reading code. NOT subjective ("works well") but specific ("{typeCheckCommand} passes for {module}" — use the values from `forge.config.json`, e.g., "bun run typecheck passes for @repo/auth", "mypy src/auth/ passes", "go vet ./auth/... passes")
 - `status`: "pending" for all new items
 - `completedAt`: null
 - `dependsOn`: Array of item IDs this item requires to be complete first
 - `notes`: Any additional context, warnings, or tips
 - `estimatedIterations`: Integer, almost always 1. Use 2+ only for genuinely large items that can't be broken down further.
-- `specReferences`: Array of relative paths to spec files this item implements. Spec references must be paths relative to the project root (e.g., `specs/auth/00-core-types-shared.md`), NOT relative to the backlog file location.
+- `specReferences`: Array of relative paths to spec files this item implements. Spec references must be paths relative to the project root (e.g., `specs/auth/00-core-definitions.md`), NOT relative to the backlog file location.
 
 ### Granularity Rules
 
@@ -142,4 +142,4 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 - The most common backlog mistake is items that are too large. If an item creates more than 3-4 files AND implements complex logic, it should probably be split.
 - The second most common mistake is missing dependency declarations. If item 005 imports types created by item 002, it MUST list "002" in dependsOn, even if it seems obvious.
 - Acceptance criteria like "code works correctly" are useless. Instead: "ProviderRegistry.get('openai') returns an OpenAI provider instance" or "bun test src/server/registry.test.ts passes".
-- Don't forget items for package scaffold, barrel exports, and initial configuration. These are easy to skip but block everything.
+- Don't forget items for module scaffold, entry point exports, and initial configuration. These are easy to skip but block everything.

@@ -1,54 +1,95 @@
 # Stack Discovery Checklist (Plugin Default)
 
-This file contains default stack context for the feature-forge plugin. Projects can override this by placing a `stack-decisions.md` in `.claude/references/` at the project root.
+This file contains a default stack discovery protocol for the feature-forge plugin. Projects can override this by placing a `stack-decisions.md` in `.claude/references/` at the project root.
 
 ## Note to Agent
 
-This is a TEMPLATE with common modern TypeScript stack decisions. It represents reasonable defaults but MUST be overridden by project-level configuration if present. Always check `.claude/references/stack-decisions.md` first.
+This is a DISCOVERY PROTOCOL — it helps you identify what stack the project uses. It is NOT a set of decisions. Always check `.claude/references/stack-decisions.md` first — if present, it takes precedence.
 
-If no project-level override exists, use this as general guidance but ALWAYS verify against the actual project's package.json and codebase to confirm which technologies are actually in use.
+After discovering the stack, check if `references/stacks/{stack}.md` exists in the plugin for stack-specific guidance. See `references/stack-resolution.md` for the full resolution protocol.
 
 ## Purpose
 
-This is a default discovery guide for understanding a project's technology stack. It is NOT a set of decisions — it helps you discover what's already in place. Projects should create `.claude/references/stack-decisions.md` with their actual stack decisions, which takes precedence over this checklist.
+This is a default discovery guide for understanding a project's technology stack. Projects should create `.claude/references/stack-decisions.md` with their actual stack decisions, which takes precedence over this checklist.
 
-## Common Modern TypeScript Stack
+## Stack Discovery Protocol
 
-- **Runtime**: Bun or Node.js (check package.json for which)
-- **Package Management**: Check for bun.lockb, pnpm-lock.yaml, package-lock.json, or yarn.lock
-- **Monorepo**: Check for turbo.json (Turborepo), nx.json (Nx), or lerna.json (Lerna)
-- **Framework**: Check existing packages for Hono, Express, Fastify, etc.
-- **Frontend**: Check for React, Vue, Svelte, etc.
-- **Routing**: Check for TanStack Router, React Router, Next.js, etc.
-- **Database**: Check for Drizzle, Prisma, TypeORM, etc.
-- **Validation**: Check for Zod, Yup, io-ts, etc.
-- **UI Components**: Check for shadcn/ui, Radix, MUI, etc.
-- **Styling**: Check for Tailwind (v3 or v4), CSS Modules, styled-components, etc.
+### 1. Identify the Primary Language and Runtime
+
+Check for project manifests:
+- `package.json` → Node.js / Bun (JavaScript/TypeScript)
+- `pyproject.toml`, `setup.py`, `setup.cfg` → Python
+- `go.mod` → Go
+- `Cargo.toml` → Rust
+- `pom.xml`, `build.gradle`, `build.gradle.kts` → Java / Kotlin
+- `*.csproj`, `*.sln` → .NET (C#/F#)
+- `mix.exs` → Elixir
+- `Gemfile` → Ruby
+- `Package.swift` → Swift
+
+### 2. Identify the Package Manager
+
+Check for lock files:
+- `bun.lockb` → Bun
+- `pnpm-lock.yaml` → pnpm
+- `package-lock.json` → npm
+- `yarn.lock` → Yarn
+- `uv.lock` → uv
+- `poetry.lock` → Poetry
+- `go.sum` → Go modules
+- `Cargo.lock` → Cargo
+
+### 3. Identify Project Structure
+
+Check for monorepo/workspace configurations:
+- `turbo.json` → Turborepo
+- `nx.json` → Nx
+- `lerna.json` → Lerna
+- `pnpm-workspace.yaml` → pnpm workspaces
+- `pants.toml` → Pants (Python/Go/Java)
+- `go.work` → Go workspaces
+- `Cargo.toml` with `[workspace]` → Cargo workspaces
+
+If none found, this is likely a single-project repository.
+
+### 4. Identify Frameworks and Libraries
+
+Examine the dependency manifest for:
+- **Web frameworks**: Hono, Express, Fastify, FastAPI, Django, Flask, Gin, Actix, Spring Boot, etc.
+- **Frontend**: React, Vue, Svelte, Solid, etc.
+- **Database/ORM**: Drizzle, Prisma, SQLAlchemy, GORM, Diesel, etc.
+- **Validation**: Zod, Pydantic, etc.
+- **Testing**: Vitest, pytest, go test, etc.
+
+### 5. Identify Build and Type Checking
+
+- Check for CI config (`.github/workflows/`, `Makefile`, `justfile`) to find build, test, and type check commands
+- Check `package.json` scripts, `pyproject.toml` `[tool.*]` sections, or `Makefile` targets
 
 ## How to Create a Project-Level Override
 
-Create `.claude/references/stack-decisions.md` in your project root with your specific stack:
+Create `.claude/references/stack-decisions.md` in your project root with your specific stack decisions. See `references/stacks/typescript.md` or `references/stacks/python.md` for stack-specific examples of what to include.
 
 ```markdown
 # Stack Decisions
 
 ## Runtime & Build
-- Bun 1.x for runtime and package management
-- Turborepo for monorepo orchestration
-- pnpm for package management
+- [Language and version]
+- [Package manager]
+- [Build tool / monorepo orchestration if applicable]
 
 ## Backend
-- Hono for HTTP framework
-- Drizzle ORM with PostgreSQL
-- Zod for runtime validation
+- [Web framework]
+- [Database / ORM]
+- [Validation library]
 
-## Frontend
-- React 19 with TanStack Router (SPA-first)
-- shadcn/ui component library
-- Tailwind CSS v4 with oklch color theming
+## Frontend (if applicable)
+- [UI framework]
+- [Component library]
+- [Styling approach]
 
 ## Conventions
-- Barrel exports from index.ts in every package
-- Package naming: @repo/{name} for shared, @starter/{name} for app-specific
-- Vitest for testing
+- [Testing framework and approach]
+- [Type checking / linting command]
+- [Module organization patterns]
 ```
