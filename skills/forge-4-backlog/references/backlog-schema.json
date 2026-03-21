@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ralph Backlog",
+  "description": "Structured backlog for the ralph loop automation tool",
+  "type": "object",
+  "required": ["project", "description", "items"],
+  "properties": {
+    "project": {
+      "type": "string",
+      "description": "Package or feature name (e.g., '@repo/ai' or 'auth')"
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief description of the feature this backlog implements"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "type", "priority", "title", "description",
+          "acceptanceCriteria", "status", "dependsOn", "specReferences"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9]{3}$",
+            "description": "Zero-padded 3-digit sequential ID"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["feature", "bugfix", "chore", "refactor", "test", "docs"]
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Lower number = higher priority"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Concise title describing what is created or changed"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 50,
+            "description": "Detailed, self-contained description for a fresh agent. Include exact files, types, steps."
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "description": "Objectively verifiable criteria. Each should be checkable by running a command or reading code."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in-progress", "complete", "blocked", "skipped"]
+          },
+          "completedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Array of item IDs that must be complete before this item"
+          },
+          "notes": {
+            "type": ["string", "null"],
+            "description": "Additional context, warnings, gotchas"
+          },
+          "estimatedIterations": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Expected ralph loop iterations. Almost always 1."
+          },
+          "specReferences": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Relative paths to spec files this item implements"
+          }
+        }
+      }
+    }
+  }
+}

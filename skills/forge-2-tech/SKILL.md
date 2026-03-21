@@ -1,0 +1,160 @@
+---
+name: forge-2-tech
+description: "Create a technical specification from an existing PRD."
+argument-hint: "<feature-name>"
+disable-model-invocation: true
+---
+
+# forge-2-tech — Technical Specification Driver
+
+Create a thorough technical specification by interviewing the user about technology decisions, grounded in PRD requirements.
+
+## Prerequisites
+
+Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
+
+## Step 1: Validate Prerequisites
+
+**Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode and `forge-1-prd` is not `complete`, STOP and tell the user: "The PRD for '{feature}' isn't complete yet. Run `/forge-1-prd {feature}` first."
+
+Read `{specsDir}/{feature}/PRD.md` into context. This is your foundation — every technology decision must trace back to a PRD requirement.
+
+## Step 2: Examine Existing Context
+
+Before interviewing, you need to understand the existing codebase. This involves reading many files across the monorepo, which consumes context.
+
+### Recommended: Delegate to forge-researcher Subagent
+
+Spawn the `forge-researcher` subagent via the Agent tool to scan the codebase. Pass a prompt like: "Research the codebase for planning the {feature} feature. Focus on integration points, established patterns, and relevant packages."
+
+The researcher runs in its own context window, reads the entire monorepo structure, and returns a concise integration report. This keeps your main conversation context clean for the interactive interview.
+
+If the `forge-researcher` subagent is not available, perform the research inline (steps below).
+
+### Manual Research (fallback)
+
+1. **Read the PRD thoroughly**: Understand all requirements and constraints
+2. **Check for project-level stack decisions**: Look for `.claude/references/stack-decisions.md` in the project root. If present, read it — these are established technology choices that should be respected unless there's a strong reason to deviate.
+3. **Read the plugin's default stack reference**: Read `references/stack-discovery-checklist.md` for general stack context (only if no project-level override exists)
+4. **Examine the existing codebase**: Look at `package.json` files, existing packages, directory structure, and established patterns. Understand what conventions are already in place.
+5. **Review other features' tech specs**: Check `{specsDir}/*/tech-spec.md` for consistency in approach and to identify shared infrastructure.
+6. **Identify integration points**: For each existing package that this feature touches, read its exports, types, and public API. Document these as constraints.
+
+## Step 3: Conduct the Interview
+
+Interview the user about technology decisions. Unlike the PRD interview, here you SHOULD discuss specific technologies, libraries, patterns, and architecture.
+
+### Interview Approach
+
+- Present what you learned from examining the codebase first: "I see the monorepo uses Bun + Hono + TanStack Router. The auth package would naturally fit as `packages/auth/`. Does that match your thinking?"
+- For each PRD requirement, propose a technical approach and ask for confirmation or alternatives
+- Proactively suggest approaches consistent with the established stack
+- Challenge over-engineering: "Do we need X here, or is the simpler approach sufficient for the requirements?"
+- Ask about every integration point: "How should this interact with @repo/config?"
+
+**Parking lot:** If the user raises a concern that belongs to a different pipeline stage (e.g., backlog granularity, documentation format), acknowledge it and note it in the pipeline state's `notes` field: "Good point — I've noted that for the [specs/backlog/docs stage]. Let's continue with the tech spec."
+
+### Key Decision Areas to Cover
+
+- **Package/module structure**: Where does this live in the project? What are its exports? (For non-monorepo projects, this becomes module organization — where the code lives, how it's organized, and what its exports are.)
+- **Data model**: What are the key entities, their schemas, and storage approach?
+- **API design**: What endpoints or interfaces does this expose?
+- **Dependencies**: What external and internal packages are needed?
+- **Patterns**: Which established patterns from the codebase apply here?
+- **Error handling**: How are errors surfaced, propagated, and recovered from?
+- **Testing strategy**: Unit, integration, e2e — what approach for this feature?
+- **Configuration**: What's configurable? How is it configured?
+- **Migration/deployment**: Any special rollout considerations?
+
+### Requirement Traceability
+
+Every technical decision MUST reference the PRD requirement(s) it addresses. Use the format:
+
+```
+### JWT-based Session Tokens (REQ-AUTH-01, REQ-SEC-02)
+Sessions will use signed JWT tokens with...
+```
+
+If you find yourself writing a technical section that doesn't trace to any PRD requirement, STOP and ask: "I'm about to specify X, but I can't find a PRD requirement for it. Should we add one, or is this unnecessary?"
+
+## Step 4: Integration Analysis (Required)
+
+Before finalizing the tech spec, this section is MANDATORY:
+
+1. List every existing package this feature depends on
+2. List every existing package that will need to import from this feature
+3. For each integration point, document:
+   - Which types or contracts are shared
+   - How data flows between packages
+   - Any patterns established by existing code that must be followed
+   - The EXACT function signatures and import paths verified from source code. If you cannot locate an expected export, note explicitly: "WARNING: Could not locate X export in @repo/package — verify this exists before implementing."
+4. Check for potential conflicts with in-progress features (other spec directories)
+
+## Step 5: Write the Tech Spec
+
+Write `{specsDir}/{feature}/tech-spec.md` with this structure:
+
+```markdown
+# {Feature Name} — Technical Specification
+
+## 1. Overview
+Brief technical summary and key architectural decisions.
+
+## 2. Package Structure
+Monorepo location, directory layout, exports map.
+
+## 3. Technical Decisions
+### 3.1 {Decision Area} (REQ-XXX-NN)
+Decision, rationale, alternatives considered.
+
+## 4. Data Model
+Schemas, types, storage approach.
+
+## 5. API Design
+Endpoints, interfaces, contracts.
+
+## 6. Integration Points
+How this feature connects to existing packages.
+
+## 7. Error Handling
+Error types, propagation, recovery.
+
+## 8. Testing Approach
+Strategy, tooling, coverage targets.
+
+## 9. Dependencies
+External packages, internal packages, version constraints.
+
+## 10. Open Technical Questions
+Unresolved technical decisions.
+```
+
+## Step 6: Review with User
+
+Present the complete tech spec. Ask:
+- "Does this capture all the technical decisions correctly?"
+- "Any patterns from the existing codebase I missed?"
+- "Are the integration points complete?"
+
+## Step 7: Update Pipeline State and Commit
+
+Write pipeline state conforming to `references/pipeline-state-schema.json`.
+
+1. Update `{specsDir}/{feature}/.pipeline-state.json`:
+   - Set `currentStage` to `forge-3-specs`
+   - Set `stages.forge-2-tech.status` to `complete`
+   - Record `artifacts`, `completedAt`, `version`
+   - Set `stages.forge-2-tech.basedOnVersions` to `{"forge-1-prd": <current forge-1-prd version>}`
+   - Check downstream stages (forge-3-specs, forge-4-backlog, forge-5-docs). If any have `basedOnVersions` referencing an older version of forge-2-tech, set their status to `stale`
+2. Ask about notes to persist
+3. If `gitCommitAfterStage` is true:
+  `git add {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): complete tech-spec v{n}"`
+4. Record commit hash in pipeline state
+5. Tell the user next steps: `/forge-verify {feature}` or `/forge-3-specs {feature}`
+
+## Gotchas
+
+- Don't duplicate the PRD. The tech spec answers HOW, not WHAT. If you find yourself restating requirements, reference them by ID instead.
+- When the user's stack decisions differ from what you'd recommend, document their choice AND note your concern as an "Alternatives Considered" item — don't silently override their preference.
+- Integration points are the #1 source of implementation surprises. Spend extra time here. Read the actual code of packages this feature touches, don't just guess at their APIs.
+- If the existing codebase has inconsistent patterns (it happens), call it out and ask which pattern should be followed for this feature.

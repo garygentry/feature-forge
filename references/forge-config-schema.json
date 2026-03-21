@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Feature Forge Configuration",
+  "description": "Project-level configuration for the feature-forge plugin. Place as forge.config.json in your project root.",
+  "type": "object",
+  "properties": {
+    "specsDir": {
+      "type": "string",
+      "default": "./specs",
+      "description": "Root directory for feature spec documents. Each feature gets a subdirectory."
+    },
+    "docsDir": {
+      "type": "string",
+      "default": "./docs/architecture",
+      "description": "Root directory for generated architecture documentation."
+    },
+    "backlogDir": {
+      "type": "string",
+      "description": "Optional override for backlog location. If set, backlog.json is written here instead of with the feature specs. Default behavior: backlog.json is written to {specsDir}/{feature}/backlog.json."
+    },
+    "gitCommitAfterStage": {
+      "type": "boolean",
+      "default": true,
+      "description": "Automatically commit after each pipeline stage completes."
+    },
+    "commitPrefix": {
+      "type": "string",
+      "default": "forge",
+      "description": "Prefix for conventional commit messages, e.g., forge(auth): complete PRD"
+    }
+  }
+}
