@@ -5,8 +5,5 @@
   "author": {
     "name": "Gary Gentry"
   },
-  "keywords": ["pipeline", "prd", "specs", "backlog", "documentation", "verification"],
-  "skills": "skills/",
-  "agents": "agents/",
-  "hooks": "hooks/"
+  "keywords": ["pipeline", "prd", "specs", "backlog", "documentation", "verification"]
 }
