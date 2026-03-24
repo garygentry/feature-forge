@@ -1,9 +1,10 @@
 {
-  "hooks": [
-    {
-      "event": "SessionStart",
-      "type": "command",
-      "command": ["bash", "${CLAUDE_PLUGIN_ROOT}/scripts/session-check.sh"]
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": ["bash", "${CLAUDE_PLUGIN_ROOT}/scripts/session-check.sh"]
+      }
+    ]
+  }
 }
