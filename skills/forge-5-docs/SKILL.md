@@ -2,7 +2,6 @@
 name: forge-5-docs
 description: "Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs /feature-forge:forge-5-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline."
 argument-hint: "<feature-name>"
-disable-model-invocation: true
 ---
 
 # forge-5-docs — Architecture Documentation Generator

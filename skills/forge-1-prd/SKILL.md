@@ -2,7 +2,6 @@
 name: forge-1-prd
 description: "Create a requirements PRD for a feature through structured interview. Use when user runs /feature-forge:forge-1-prd or explicitly asks to start the forge pipeline for a new feature. Do NOT trigger for general requirements discussions, project scoping outside forge, or PRD questions unrelated to the forge pipeline."
 argument-hint: "<feature-name>"
-disable-model-invocation: true
 ---
 
 # forge-1-prd — Requirements Interviewer

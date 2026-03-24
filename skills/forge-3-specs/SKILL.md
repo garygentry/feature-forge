@@ -2,7 +2,6 @@
 name: forge-3-specs
 description: "Generate numbered implementation spec documents from PRD and tech spec in the forge pipeline. Use when user runs /feature-forge:forge-3-specs or asks to create detailed implementation specs for a forge feature after tech spec completion. Do NOT trigger for general specification writing, design docs, or implementation planning outside the forge pipeline."
 argument-hint: "<feature-name>"
-disable-model-invocation: true
 ---
 
 # forge-3-specs — Implementation Spec Suite Generator

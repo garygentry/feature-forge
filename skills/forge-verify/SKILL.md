@@ -2,7 +2,6 @@
 name: forge-verify
 description: "Verify forge pipeline artifacts for completeness, consistency, and quality. Use when user runs /feature-forge:forge-verify or asks to check forge specs, backlog, or implementation for gaps. Do NOT trigger for general code review, quality checks, or verification tasks outside the forge pipeline."
 argument-hint: "<feature-name> [stage: prd|tech|specs|backlog|impl]"
-disable-model-invocation: true
 ---
 
 # forge-verify — Verification Gate

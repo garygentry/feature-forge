@@ -2,7 +2,6 @@
 name: forge-2-tech
 description: "Create a technical specification from an existing PRD in the forge pipeline. Use when user runs /feature-forge:forge-2-tech or asks to create a tech spec for a forge feature after PRD completion. Do NOT trigger for general technical design discussions, architecture reviews, or tech specs outside the forge pipeline."
 argument-hint: "<feature-name>"
-disable-model-invocation: true
 ---
 
 # forge-2-tech — Technical Specification Driver

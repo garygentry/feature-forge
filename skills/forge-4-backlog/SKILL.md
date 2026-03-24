@@ -2,7 +2,6 @@
 name: forge-4-backlog
 description: "Generate a structured ralph backlog.json from forge implementation specs. Use when user runs /feature-forge:forge-4-backlog or asks to create a backlog for a forge feature after specs are complete. This is the canonical backlog generator for the forge pipeline — create-ralph-backlog in ralph-support is deprecated in favor of this skill. Do NOT trigger for standalone backlog creation outside the forge pipeline context."
 argument-hint: "<feature-name>"
-disable-model-invocation: true
 ---
 
 # forge-4-backlog — Ralph Backlog Generator
