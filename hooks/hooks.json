@@ -2,8 +2,13 @@
   "hooks": {
     "SessionStart": [
       {
-        "type": "command",
-        "command": ["bash", "${CLAUDE_PLUGIN_ROOT}/scripts/session-check.sh"]
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/session-check.sh"
+          }
+        ]
       }
     ]
   }
