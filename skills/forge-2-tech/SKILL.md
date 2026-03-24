@@ -60,9 +60,15 @@ Interview the user about technology decisions. Unlike the PRD interview, here yo
 - Challenge over-engineering: "Do we need X here, or is the simpler approach sufficient for the requirements?"
 - Ask about every integration point: "How should this interact with [existing module]?"
 
+**Interview pacing:** Present 1-2 decision areas per message and STOP to wait for the user's response before continuing. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress: "That covers module structure and data model. Next I'd like to discuss API design and error handling." Do NOT dump all decision areas in a single message — the interview is a conversation, not a document.
+
+**First message pattern:** Start with the research summary and stack confirmation, then ask about the first decision area (typically package/module structure). Wait for the user to respond before proceeding to subsequent areas.
+
 **Parking lot:** If the user raises a concern that belongs to a different pipeline stage (e.g., backlog granularity, documentation format), acknowledge it and note it in the pipeline state's `notes` field: "Good point — I've noted that for the [specs/backlog/docs stage]. Let's continue with the tech spec."
 
 ### Key Decision Areas to Cover
+
+Work through these areas across multiple turns, grouping related areas (1-2 per message):
 
 - **Package/module structure**: Where does this live in the project? What are its exports? (For non-monorepo projects, this becomes module organization — where the code lives, how it's organized, and what its exports are.)
 - **Data model**: What are the key entities, their schemas, and storage approach?
