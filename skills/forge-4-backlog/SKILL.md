@@ -18,7 +18,7 @@ Backlog defaults to `{specsDir}/{feature}/backlog.json`. If `backlogDir` is set 
 
 **Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode, stages `forge-1-prd`, `forge-2-tech`, and `forge-3-specs` must all be `complete`. If not, STOP and tell the user which prerequisites are missing.
 
-**Strongly recommended:** Check if `forge-verify-specs` has been run. If not, warn: "Specs haven't been verified yet. It's recommended to run `/feature-forge:forge-verify {feature}` first. Continue anyway?"
+**Strongly recommended:** Check if `forge-verify-specs` has been run. If not, use `AskUserQuestion` to warn: "Specs haven't been verified yet. It's recommended to run `/feature-forge:forge-verify {feature}` first. Continue anyway?"
 
 ## Step 2: Load All Specs
 
@@ -131,7 +131,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`. Foll
    - Record `artifacts` (path to backlog.json)
    - Set `stages.forge-4-backlog.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>, "forge-3-specs": <current version>}`
    - Check downstream stage (`forge-5-docs`). If it has `basedOnVersions` referencing an older version of `forge-4-backlog`, set its status to `stale`.
-2. Ask about notes to persist
+2. Use `AskUserQuestion` to ask about notes to persist
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files, attempt commit, then set status to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 4. If verification was available but the user chose to skip it, record `stages.forge-verify-backlog.status` as `"skipped"` in pipeline state.
 5. Tell user: "Backlog complete with {N} items. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the backlog\n  - Run the ralph loop externally to implement\n  - `/feature-forge:forge {feature}` to see full pipeline status"

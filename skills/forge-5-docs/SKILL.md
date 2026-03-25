@@ -26,7 +26,7 @@ Load into context:
 
 ### Implementation Completeness Check
 
-Check `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if configured). Count items with status `complete` vs total. If implementation is less than 80% complete, warn: "Implementation is only N% complete. Documentation will be based primarily on specs and may need updates after implementation. Proceed?" If user proceeds, add a `PRE-IMPLEMENTATION` notice at the top of each generated doc.
+Check `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if configured). Count items with status `complete` vs total. If implementation is less than 80% complete, use `AskUserQuestion` to warn: "Implementation is only N% complete. Documentation will be based primarily on specs and may need updates after implementation. Proceed?" If user proceeds, add a `PRE-IMPLEMENTATION` notice at the top of each generated doc.
 
 Read `references/doc-conventions.md` for documentation standards.
 
