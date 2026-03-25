@@ -13,6 +13,29 @@ If no feature name is provided:
 4. Do NOT proceed until a feature name is explicitly given
 5. The feature name must be a single kebab-case token. If the user provides multiple words (e.g., "user auth flow"), convert to kebab-case: `user-auth-flow`.
 
+## User Input Protocol
+
+### CRITICAL GUARDRAIL: Use AskUserQuestion for All Questions
+
+You MUST use the `AskUserQuestion` tool whenever you need the user's input before proceeding. This includes yes/no confirmations, choices between options, interview questions, and feedback on artifacts. NEVER output questions as inline prose text — the user may not be prompted and the session will stall.
+
+**Required turn structure:** Output your analysis, findings, or context as regular text. Then call `AskUserQuestion` with your questions. Do NOT mix questions into your text output.
+
+**WRONG — questions as inline prose (causes stalling):**
+```
+I found that the codebase uses React and TanStack Router. Here are my questions:
+1. Where should this component live?
+2. Should we use server-side rendering?
+```
+
+**RIGHT — context as text, questions via tool:**
+```
+I found that the codebase uses React and TanStack Router.
+[then call AskUserQuestion with: "1. Where should this component live? 2. Should we use server-side rendering?"]
+```
+
+**Recommendations:** Only recommend a specific option when codebase evidence, established conventions, or strong technical rationale clearly favors it. If options are equally valid, present them neutrally — let the user decide without bias.
+
 ## Configuration Reading
 
 Read `forge.config.json` from the project root. If it doesn't exist, use defaults.

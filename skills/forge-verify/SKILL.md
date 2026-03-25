@@ -39,7 +39,7 @@ If a stage is specified as a second argument (e.g., `/feature-forge:forge-verify
 - **backlog mode**: If `forge-4-backlog` is complete but `forge-verify-backlog` is not `passed` or `findings-applied`
 - **impl mode**: If user explicitly requests or if implementation code exists for this feature
 
-If ambiguous, ask the user which stage to verify.
+If ambiguous, use `AskUserQuestion` to ask which stage to verify.
 
 ## Step 2: Load All Relevant Artifacts
 

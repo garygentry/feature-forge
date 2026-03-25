@@ -15,7 +15,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 ## Step 1: Read Configuration and Check State
 
 ### Branch Setup (if using git)
-If `gitCommitAfterStage` is true and the project uses git, offer: "Want me to create a `forge/{feature}` branch for this pipeline? (Recommended — keeps forge work isolated.)" If yes, create and checkout the branch before proceeding.
+If `gitCommitAfterStage` is true and the project uses git, use `AskUserQuestion` to offer: "Want me to create a `forge/{feature}` branch for this pipeline? (Recommended — keeps forge work isolated.)" If yes, create and checkout the branch before proceeding.
 
 Set the working directory: `{specsDir}/{feature}/`
 
@@ -60,21 +60,23 @@ A technology constraint is valid when it stems from organizational mandate, exis
 
 ### Interview Approach
 
-- Ask questions one topic area at a time, not all at once
-- After each answer, probe deeper: "What happens when X fails?", "Who else needs to see this?", "What's the minimum viable version?"
-- Challenge assumptions: "You said 'users' — which users specifically?", "When you say 'fast', what's the acceptable latency?"
-- Identify edge cases: "What if the input is empty?", "What about concurrent access?", "What happens at scale?"
-- Capture non-functional requirements explicitly: performance, security, accessibility, observability
-- Ask about what's OUT of scope — this is as important as what's in scope
+**Turn structure:** Output your analysis or context as regular text, then use `AskUserQuestion` for the actual questions. NEVER put questions in your text output — they MUST go through `AskUserQuestion`.
+
+**Pacing:** Cover one topic area at a time, asking 2-3 related questions per `AskUserQuestion` call. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch.
+
+**Question strategies** (use these as content for `AskUserQuestion`, not as inline prose):
+- Probe deeper after each answer: failure modes, stakeholders, minimum viable version
+- Challenge assumptions: which users specifically, what does "fast" mean quantitatively
+- Identify edge cases: empty input, concurrent access, scale
+- Capture non-functional requirements: performance, security, accessibility, observability
+- Ask about what's OUT of scope — as important as what's in scope
 
 **Completion criteria:** The interview is complete when:
 1. Every category in `references/prd-template.md` has been covered with at least one question
 2. The user has confirmed there's nothing else to add
 3. You can draft every PRD section without leaving TBD placeholders
 
-Before moving to Step 4, summarize: "I believe I have enough to draft the PRD. Here's what I'll cover: [list sections with key points]. Anything I'm missing?"
-
-**Interview pacing:** Ask 2-3 related questions per message. After receiving answers, probe deeper on anything incomplete before moving to the next topic area. Signal progress: "That covers the functional requirements. Moving to error handling and edge cases."
+Before moving to Step 4, summarize your coverage as text, then use `AskUserQuestion` to ask: "Anything I'm missing?"
 
 **Parking lot:** If the user raises a concern that belongs to a different pipeline stage, acknowledge it and note it in the pipeline state's `notes` field: "Good point — I've noted that for the [tech spec/implementation specs]. Let's continue with [current stage]."
 
@@ -90,6 +92,8 @@ Present the complete PRD to the user. Ask:
 - "Does this capture everything? Any requirements missing?"
 - "Are the priorities correct?"
 - "Anything in here that should be out of scope?"
+
+Use `AskUserQuestion` to collect this feedback.
 
 Iterate until the user confirms the PRD is complete.
 

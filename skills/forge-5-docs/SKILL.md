@@ -66,7 +66,7 @@ Based on feature complexity and existing doc conventions, propose a doc plan:
     └── adr-001-*.md   — Architecture decision records (if significant decisions were made)
 ```
 
-Present the plan and ask the user to confirm.
+Present the plan and use `AskUserQuestion` to get the user's confirmation.
 
 ## Step 3: Write Documentation
 
@@ -132,6 +132,8 @@ Present the docs and ask:
 - "Does this accurately reflect the implementation?"
 - "Is the level of detail appropriate for your team?"
 - "Any areas that need more explanation?"
+
+Use `AskUserQuestion` to collect this feedback.
 
 ## Step 5: Update Pipeline State and Commit
 

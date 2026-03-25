@@ -1,87 +1,158 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Ralph Backlog",
-  "description": "Structured backlog for the ralph loop automation tool",
   "type": "object",
-  "required": ["project", "description", "items"],
   "properties": {
     "project": {
       "type": "string",
-      "description": "Package or feature name (e.g., '@repo/ai' or 'auth')"
+      "description": "Project name (human-readable)"
     },
     "description": {
       "type": "string",
-      "description": "Brief description of the feature this backlog implements"
+      "description": "Brief description of the project and its goals"
     },
     "items": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "id", "type", "priority", "title", "description",
-          "acceptanceCriteria", "status", "dependsOn", "specReferences"
-        ],
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^[0-9]{3}$",
-            "description": "Zero-padded 3-digit sequential ID"
+            "minLength": 1,
+            "description": "Zero-padded sequential ID (e.g. '001', '042'). Never reused."
           },
           "type": {
             "type": "string",
-            "enum": ["feature", "bugfix", "chore", "refactor", "test", "docs"]
+            "enum": [
+              "bug",
+              "refactor",
+              "feature",
+              "chore"
+            ],
+            "description": "Work category"
           },
           "priority": {
             "type": "integer",
             "minimum": 1,
-            "description": "Lower number = higher priority"
+            "maximum": 4,
+            "description": "1 = highest priority, 4 = lowest"
           },
           "title": {
             "type": "string",
-            "maxLength": 100,
-            "description": "Concise title describing what is created or changed"
+            "minLength": 1,
+            "description": "Short imperative title"
           },
           "description": {
             "type": "string",
-            "minLength": 50,
-            "description": "Detailed, self-contained description for a fresh agent. Include exact files, types, steps."
+            "description": "Full description of the work to be done"
           },
           "acceptanceCriteria": {
             "type": "array",
-            "items": { "type": "string" },
-            "minItems": 1,
-            "description": "Objectively verifiable criteria. Each should be checkable by running a command or reading code."
+            "items": {
+              "type": "string"
+            },
+            "description": "Checklist items — each must pass before marking done"
           },
           "status": {
             "type": "string",
-            "enum": ["pending", "in-progress", "complete", "blocked", "skipped"]
+            "enum": [
+              "pending",
+              "in_progress",
+              "done",
+              "blocked"
+            ],
+            "description": "Current lifecycle state"
           },
           "completedAt": {
-            "type": ["string", "null"],
-            "format": "date-time"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO 8601 timestamp set when status becomes 'done'"
+          },
+          "blockedReason": {
+            "type": "string",
+            "description": "Explanation when status is 'blocked'"
           },
           "dependsOn": {
             "type": "array",
-            "items": { "type": "string" },
-            "description": "Array of item IDs that must be complete before this item"
+            "items": {
+              "type": "string"
+            },
+            "description": "IDs of items that must be 'done' before this can start"
           },
           "notes": {
-            "type": ["string", "null"],
-            "description": "Additional context, warnings, gotchas"
+            "type": "string",
+            "description": "Free-text context, links, or hints for the agent"
           },
           "estimatedIterations": {
             "type": "integer",
-            "minimum": 1,
-            "default": 1,
-            "description": "Expected ralph loop iterations. Almost always 1."
+            "exclusiveMinimum": 0,
+            "description": "Expected number of loop iterations to complete"
+          },
+          "model": {
+            "type": "string",
+            "description": "Per-item Claude model override (e.g. 'claude-opus-4-6')"
+          },
+          "agentDelegation": {
+            "type": "object",
+            "properties": {
+              "recommendedConcurrency": {
+                "type": "integer",
+                "minimum": 2
+              },
+              "strategy": {
+                "type": "string"
+              },
+              "subtasks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
           },
           "specReferences": {
             "type": "array",
-            "items": { "type": "string" },
-            "description": "Relative paths to spec files this item implements"
+            "items": {
+              "type": "string"
+            }
+          },
+          "provider": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "human",
+              "review"
+            ]
+          },
+          "reviewBatch": {
+            "type": "string"
           }
-        }
-      }
+        },
+        "required": [
+          "id",
+          "type",
+          "priority",
+          "title",
+          "description",
+          "acceptanceCriteria",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Ordered list of backlog items"
     }
-  }
+  },
+  "required": [
+    "project",
+    "description",
+    "items"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/garygentry/ralph/main/schemas/backlog.schema.json",
+  "title": "Ralph Backlog",
+  "description": "Task backlog for a ralph autonomous coding loop project"
 }

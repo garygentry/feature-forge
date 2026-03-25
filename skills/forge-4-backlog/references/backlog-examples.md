@@ -109,3 +109,59 @@ These examples demonstrate the quality, detail, and format expected for backlog 
 - Notes call out ordering concerns (middleware chain order)
 - Multiple spec references for cross-cutting concerns
 - Acceptance criteria verify both packages typecheck
+
+## Example 4: Parallelizable Item with Agent Delegation
+
+```json
+{
+  "id": "032",
+  "type": "feature",
+  "priority": 2,
+  "title": "Migrate auth CLI to @repo/cli (27 commands)",
+  "description": "Migrate all 27 auth commands from Commander.js to @repo/cli defineCommand/defineGroup format.\n\nCreate new files:\n- packages/auth/cli/index.ts — exports authCommands GroupDef\n- packages/auth/cli/middleware.ts — withAuthDatabase middleware\n- packages/auth/cli/commands/users.ts — 8 commands\n- packages/auth/cli/commands/roles.ts — 5 commands\n- packages/auth/cli/commands/permissions.ts — 4 commands\n- packages/auth/cli/commands/sessions.ts — 3 commands\n- packages/auth/cli/commands/mfa.ts — 2 commands\n- packages/auth/cli/commands/audit.ts — 2 commands\n- packages/auth/cli/commands/seed.ts — 2 commands\n- packages/auth/cli/commands/migrate.ts — 1 command\n\nEach command must:\n- Preserve all existing flags and arguments from the Commander.js version\n- Use danger: 'destructive' instead of --force for destructive commands\n- Use ctx.output.records/detail/message instead of manual formatting\n- Use ctx.prompt instead of direct @inquirer/prompts imports\n- Translate AuthError catches to CliError subclasses (NotFoundError, ValidationError, etc.)\n- Keep the same business logic — delegate to existing auth services\n\nThe withAuthDatabase middleware replaces the bootstrap pattern:\n- Opens DB connection (ctx.flags.db path)\n- Runs migrations\n- Creates auth instance\n- Injects into ctx.services.db and ctx.services.auth\n- Closes in finally block\n\nAdd @repo/cli as dependency in packages/auth/package.json. Add /cli export path.\n\nDo NOT delete old CLI files yet — that happens in item 039.\n\nError remapping table (REQ-MIG-04):\n- Auth GENERAL_ERROR (1) → InternalError (10)\n- Auth INVALID_USAGE (2) → ValidationError (1)\n- Auth NOT_FOUND (3) → NotFoundError (2)\n- Auth VALIDATION_ERROR (4) → ValidationError (1)\n- Auth DATABASE_ERROR (5) → DatabaseError (4)\n- Auth CANCELLED (6) → not an error (prompt cancellation)",
+  "acceptanceCriteria": [
+    "authCommands GroupDef exported from packages/auth/cli/index.ts",
+    "All 27 commands defined with correct flags, args, danger levels",
+    "withAuthDatabase middleware initializes DB and auth service",
+    "Destructive commands use danger: 'destructive' (no --force flag)",
+    "Auth group has inherited --db flag",
+    "AuthError exceptions translated to CliError subclasses",
+    "ctx.output used for all output (not console.log or manual tables)",
+    "@repo/cli added as dependency in packages/auth/package.json",
+    "bun run typecheck && bun run build && bun check passes",
+    "Auth commands using @inquirer/prompts migrated to ctx.prompt.* API",
+    "Auth error code remapping applied per REQ-MIG-04"
+  ],
+  "status": "pending",
+  "completedAt": null,
+  "dependsOn": ["031"],
+  "estimatedIterations": 3,
+  "model": "claude-opus-4-6",
+  "agentDelegation": {
+    "recommendedConcurrency": 3,
+    "strategy": "Split by command group. Each sub-agent handles one or two command group files independently. All share the same middleware and index structure.",
+    "subtasks": [
+      "Create packages/auth/cli/middleware.ts (withAuthDatabase) and packages/auth/cli/commands/users.ts (8 user commands: list, create, get, delete, deactivate, reactivate, reset-password, set-password). Reference existing packages/auth/cli/commands/users.ts for business logic. Use defineCommand from @repo/cli.",
+      "Create packages/auth/cli/commands/roles.ts (5 commands), packages/auth/cli/commands/permissions.ts (4 commands), and packages/auth/cli/commands/sessions.ts (3 commands). Reference existing files for business logic.",
+      "Create packages/auth/cli/commands/mfa.ts (2 commands), packages/auth/cli/commands/audit.ts (2 commands), packages/auth/cli/commands/seed.ts (2 commands), packages/auth/cli/commands/migrate.ts (1 command), and packages/auth/cli/index.ts that assembles the full GroupDef with all subgroups."
+    ]
+  },
+  "specReferences": [
+    "specs/cli/12-migration.md",
+    "specs/cli/tech-spec.md"
+  ]
+}
+```
+
+**Why this is good:**
+- `agentDelegation` splits 27 commands across 3 subagents — each subtask is fully self-contained with specific file paths and command counts
+- The `strategy` explains the split logic (by command group, sharing middleware and index)
+- `recommendedConcurrency` matches the number of subtasks (3)
+- Stays as one backlog item because all commands share the same verification step (`bun run typecheck && bun run build && bun check passes`) and must ship together
+- Each subtask references existing files for business logic, so subagents know where to look
+- `estimatedIterations: 3` and `model: "claude-opus-4-6"` reflect that this is a large, complex item despite the parallelization
+
+**When NOT to use agentDelegation:**
+- If subtasks have sequential dependencies (subtask B needs subtask A's output)
+- If each subtask has its own independent verification step — split into separate backlog items instead
+- If the item only touches 1-2 files — the overhead of delegation isn't worth it

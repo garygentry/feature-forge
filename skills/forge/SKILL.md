@@ -26,7 +26,7 @@ For pipeline architecture details, read `references/process-overview.md`.
 **If no feature name is provided:**
 - Scan `{specsDir}/` for all subdirectories containing `.pipeline-state.json`
 - If exactly one active (non-complete) pipeline exists, show its dashboard
-- If multiple exist, list them all with a one-line summary each and ask which one to focus on
+- If multiple exist, list them all with a one-line summary each and use `AskUserQuestion` to ask which one to focus on
 - If none exist, say: "No active feature pipelines found. Start one with `/feature-forge:forge-1-prd <feature-name>`."
 
 The feature name must be a single kebab-case token. If the user provides multiple words (e.g., "user auth flow"), convert to kebab-case: `user-auth-flow`.
@@ -90,7 +90,7 @@ Commands:
 Support these sub-commands for pipeline lifecycle management:
 - `/feature-forge:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
 - `/feature-forge:forge resume {feature}` — Set `pipelineStatus` back to `"active"`. Calculate how long the feature was paused (from `updatedAt` to now). If paused for more than 24 hours, show a hint: "This feature was paused for {duration}. Session context may have been lost — consider re-running `/feature-forge:forge-{currentStage} {feature}` to rebuild context."
-- `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Confirm with user first. Note: abandoned pipelines can be resumed with `/feature-forge:forge resume {feature}` if the user changes their mind.
+- `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Use `AskUserQuestion` to confirm with user first. Note: abandoned pipelines can be resumed with `/feature-forge:forge resume {feature}` if the user changes their mind.
 
 When listing features, show active pipelines by default. Include a count of paused/abandoned: "3 active pipelines (1 paused, 1 abandoned — use `/feature-forge:forge list all` to see them)."
 

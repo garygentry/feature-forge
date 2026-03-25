@@ -44,7 +44,7 @@ If the `forge-researcher` subagent is not available, perform the research inline
 After researching the codebase, identify the primary stack (language, build tool, package manager, framework). Read `references/stack-resolution.md` for the full resolution protocol.
 
 1. Check if `forge.config.json` already has a `stack` field — if so, use it
-2. Otherwise, detect from project files and ask the user to confirm: "I detected this as a {stack} project. Correct?"
+2. Otherwise, detect from project files and use `AskUserQuestion` to confirm: "I detected this as a {stack} project. Correct?"
 3. Update `forge.config.json` with `stack`, `typeCheckCommand`, and `testCommand`
 4. Verify that a matching stack profile exists at `references/stacks/{stack}.md`. If it does, load it for stack-specific guidance during this and all subsequent stages. If no profile exists, inform the user: "No dedicated profile for {stack}. Using generic fallback — spec conventions, verification checks, and examples will be language-neutral. Consider creating a project-level override at `.claude/references/stack-decisions.md`." Then load `references/stacks/_generic.md`.
 
@@ -54,15 +54,17 @@ Interview the user about technology decisions. Unlike the PRD interview, here yo
 
 ### Interview Approach
 
-- Present what you discovered from examining the codebase first: "I see the project uses [detected language/framework/build tool]. The [feature] module would naturally fit at [suggested location based on existing structure]. Does that match your thinking?" Always use the actual technologies and paths you found — never use a canned example.
+**Turn structure:** Output your research findings, analysis, or technical proposals as regular text. Then use `AskUserQuestion` for the actual questions. NEVER put questions in your text output — they MUST go through `AskUserQuestion`.
+
+**Pacing:** Present 1-2 decision areas per `AskUserQuestion` call and STOP to wait for the user's response before continuing. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch. Do NOT dump all decision areas in a single message — the interview is a conversation, not a document.
+
+**First message pattern:** Output the research summary as text, then use `AskUserQuestion` to confirm the stack and ask about the first decision area (typically package/module structure). Wait for the user to respond before proceeding to subsequent areas.
+
+**Question strategies** (use these as content for `AskUserQuestion`, not as inline prose):
 - For each PRD requirement, propose a technical approach and ask for confirmation or alternatives
 - Proactively suggest approaches consistent with the established stack
-- Challenge over-engineering: "Do we need X here, or is the simpler approach sufficient for the requirements?"
-- Ask about every integration point: "How should this interact with [existing module]?"
-
-**Interview pacing:** Present 1-2 decision areas per message and STOP to wait for the user's response before continuing. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress: "That covers module structure and data model. Next I'd like to discuss API design and error handling." Do NOT dump all decision areas in a single message — the interview is a conversation, not a document.
-
-**First message pattern:** Start with the research summary and stack confirmation, then ask about the first decision area (typically package/module structure). Wait for the user to respond before proceeding to subsequent areas.
+- Challenge over-engineering: does the feature need this, or is a simpler approach sufficient?
+- Ask about every integration point and how the feature interacts with existing modules
 
 **Parking lot:** If the user raises a concern that belongs to a different pipeline stage (e.g., backlog granularity, documentation format), acknowledge it and note it in the pipeline state's `notes` field: "Good point — I've noted that for the [specs/backlog/docs stage]. Let's continue with the tech spec."
 
@@ -149,6 +151,8 @@ Present the complete tech spec. Ask:
 - "Does this capture all the technical decisions correctly?"
 - "Any patterns from the existing codebase I missed?"
 - "Are the integration points complete?"
+
+Use `AskUserQuestion` to collect this feedback.
 
 ## Step 7: Update Pipeline State and Commit
 

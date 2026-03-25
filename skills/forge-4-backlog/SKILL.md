@@ -60,9 +60,9 @@ Proposed backlog for {feature} ({N} items):
   ...
 ```
 
-Ask the user: "Does this breakdown look right? Any items to split, merge, or reorder?"
+Use `AskUserQuestion` to ask: "Does this breakdown look right? Any items to split, merge, or reorder?"
 
-Wait for confirmation before generating the JSON.
+Wait for the user's response before generating the JSON.
 
 ## Step 4: Generate backlog.json
 
@@ -89,6 +89,10 @@ Write `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if bac
 - `notes`: Any additional context, warnings, or tips
 - `estimatedIterations`: Integer, almost always 1. Use 2+ only for genuinely large items that can't be broken down further.
 - `specReferences`: Array of relative paths to spec files this item implements. Spec references must be paths relative to the project root (e.g., `specs/auth/00-core-definitions.md`), NOT relative to the backlog file location.
+- `agentDelegation`: **Optional.** Use when an item has 2+ independent subtasks that can run in parallel (e.g., creating multiple independent files of the same type — command groups, route handlers, component files). Include:
+  - `recommendedConcurrency`: integer (min 2), should match the number of subtasks
+  - `strategy`: how to split the work across subagents
+  - `subtasks`: array of fully self-contained descriptions, one per subagent — each subagent gets ONLY its subtask description, so it must include all file paths, types, and instructions needed to work independently
 
 ### Granularity Rules
 
@@ -98,6 +102,7 @@ Write `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if bac
 - Foundation items (scaffold, types, errors) should be separate from feature items
 - Integration wiring (connecting the new feature to existing packages) should be its own item(s), not buried in feature items
 - Test items can be standalone or integrated into feature items via acceptance criteria — match what the user prefers
+- **When to use `agentDelegation` vs splitting:** If an item is large but its parts share a single verification step or must ship together, use `agentDelegation` to parallelize internally rather than splitting into separate backlog items. Common patterns: multiple independent files following the same template (commands, handlers, components), independent test suites, parallel data migrations. See Example 4 in `references/backlog-examples.md`.
 
 ## Step 5: Validate
 
@@ -116,7 +121,7 @@ Present a summary:
 - Dependency chain depth: N levels
 - Estimated ralph loop iterations: N
 
-Ask: "Ready to proceed, or any adjustments needed?"
+Use `AskUserQuestion` to ask: "Ready to proceed, or any adjustments needed?"
 
 ## Step 7: Update Pipeline State and Commit
 

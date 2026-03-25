@@ -48,7 +48,7 @@ Feature-specific:
 Does this look right? Should I add or remove any documents?
 ```
 
-Wait for user confirmation before proceeding.
+Use `AskUserQuestion` to get user confirmation before proceeding.
 
 ### Context Management
 
@@ -102,6 +102,8 @@ Present a summary of all documents created, with key decisions highlighted. Ask:
 - "Does the level of detail match what you need?"
 - "Any areas that need more depth?"
 - "Any missing subsystems or concerns?"
+
+Use `AskUserQuestion` to collect this feedback.
 
 ## Step 7: Update Pipeline State and Commit
 
