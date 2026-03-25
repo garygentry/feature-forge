@@ -25,7 +25,7 @@ forge-1-prd → forge-2-tech → forge-3-specs → forge-verify → forge-4-back
 
 ### Verification Gate (`/feature-forge:forge-verify <feature>`)
 **Input:** All artifacts from current and prior stages
-**Output:** `{specsDir}/{feature}/VERIFY-<stage>-<timestamp>.md` (includes both findings and a Fix Execution Plan)
+**Output:** `{specsDir}/{feature}/.verification/VERIFY-<stage>-<timestamp>.md` (includes both findings and a Fix Execution Plan)
 **Method:** Clean-context analysis producing actionable findings with an ordered fix plan.
 
 After verification, fixes can be applied via:

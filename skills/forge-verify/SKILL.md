@@ -15,7 +15,7 @@ This skill should be delegated to the `forge-verifier` subagent via the Agent to
 - **Persistent memory** — it accumulates knowledge about this project's recurring issues and patterns across sessions
 - **The forge-verify skill pre-loaded** — so it has all verification checklists and guidance at startup
 
-To delegate: use the Agent tool with `subagent_type="forge-verifier"` and pass the feature name and optional mode in the prompt. The verifier is read-only — it returns findings as its response. After the verifier completes, **you** (the parent agent) write the findings to `{specsDir}/{feature}/VERIFY-{mode}-{YYYY-MM-DD}.md`.
+To delegate: use the Agent tool with `subagent_type="forge-verifier"` and pass the feature name and optional mode in the prompt. The verifier is read-only — it returns findings as its response. After the verifier completes, **you** (the parent agent) write the findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`.
 
 If the `forge-verifier` subagent is not available (not installed, or running in an environment that doesn't support subagents), fall back to running verification inline in the current session.
 
@@ -88,7 +88,7 @@ Every finding must include:
 
 ## Step 4: Write Findings Document
 
-Write findings to `{specsDir}/{feature}/VERIFY-{mode}-{YYYY-MM-DD}.md`:
+Ensure the `.verification/` subdirectory exists, then write findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`:
 
 ```markdown
 # Verification Report: {feature} ({mode})

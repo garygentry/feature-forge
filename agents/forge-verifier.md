@@ -49,7 +49,7 @@ At the end of each verification pass, update your memory with any new patterns y
 
 ## Output Format
 
-Return your findings as your final response using exactly this markdown structure. The parent agent will write it to `VERIFY-{mode}-{date}.md`:
+Return your findings as your final response using exactly this markdown structure. The parent agent will write it to `.verification/VERIFY-{mode}-{date}.md`:
 
 ```markdown
 # Verification Report: {feature} ({mode})

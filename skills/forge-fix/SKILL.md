@@ -15,7 +15,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 ## Step 1: Locate Findings Document
 
 1. Read `forge.config.json` for `specsDir` (default: `./specs`)
-2. Find the most recent `VERIFY-*-*.md` file in `{specsDir}/{feature}/`
+2. Find the most recent `VERIFY-*-*.md` file in `{specsDir}/{feature}/.verification/`
 3. If no findings document exists, tell the user: "No verification findings found. Run `/feature-forge:forge-verify {feature}` first."
 
 ## Step 2: Parse Fix Execution Plan

@@ -44,11 +44,11 @@ forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
 | 1 | `forge-1-prd` | `PRD.md` | Capture requirements through structured interview |
 | 2 | `forge-2-tech` | `tech-spec.md` | Define technical approach grounded in PRD |
 | 3 | `forge-3-specs` | Numbered spec suite | Generate implementation specifications |
-| -- | `forge-verify` | `VERIFY-*.md` | Verify artifacts for completeness and consistency |
+| -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify artifacts for completeness and consistency |
 | 4 | `forge-4-backlog` | `backlog.json` | Generate structured work items for implementation |
-| -- | `forge-verify` | `VERIFY-*.md` | Verify backlog coverage and quality |
+| -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify backlog coverage and quality |
 | -- | *implement* | Source code | Build the feature (outside forge pipeline) |
-| -- | `forge-verify` | `VERIFY-*.md` | Verify implementation against specs |
+| -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify implementation against specs |
 | 5 | `forge-5-docs` | Documentation suite | Generate architecture documentation |
 
 ## Pipeline Stages
@@ -150,7 +150,7 @@ Each finding includes a unique identifier (e.g., `V-001`), severity level, preci
 | `inconsistency` | Contradictions between artifacts |
 | `improvement` | Quality enhancement opportunity |
 
-**Output:** `{specsDir}/{feature}/VERIFY-{mode}-{YYYY-MM-DD}.md`
+**Output:** `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`
 
 ### forge-fix
 
