@@ -5,7 +5,7 @@ This document describes the end-to-end feature development pipeline managed by t
 ## Pipeline Stages
 
 ```
-forge-1-prd → forge-2-tech → forge-3-specs → forge-verify → forge-4-backlog → forge-verify → [ralph loop] → forge-verify → forge-5-docs
+forge-1-prd → forge-2-tech → forge-3-specs → forge-verify → forge-4-backlog → forge-verify → forge-5-ralph-loop → forge-verify → forge-6-docs
 ```
 
 ### Stage 1: PRD (`/feature-forge:forge-1-prd <feature>`)
@@ -38,7 +38,12 @@ After verification, fixes can be applied via:
 **Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if backlogDir is configured)
 **Method:** Generate structured backlog items with spec references, acceptance criteria, and dependencies. Backlog is collocated with feature specs by default.
 
-### Stage 5: Documentation (`/feature-forge:forge-5-docs <feature>`)
+### Stage 5: Ralph Loop (`/feature-forge:forge-5-ralph-loop <feature>`)
+**Input:** `backlog.json` from Stage 4
+**Output:** Implemented source code (committed per-item by ralph)
+**Method:** Execute the ralph autonomous coding loop against the feature's backlog. Spawns a fresh Claude Code session per backlog item with full spec context.
+
+### Stage 6: Documentation (`/feature-forge:forge-6-docs <feature>`)
 **Input:** Specs + implementation
 **Output:** `{docsDir}/{feature}/` documentation suite
 **Method:** Generate developer-focused architecture documentation.

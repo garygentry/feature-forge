@@ -1,10 +1,10 @@
 ---
-name: forge-5-docs
-description: "Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs /feature-forge:forge-5-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline."
+name: forge-6-docs
+description: "Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs /feature-forge:forge-6-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline."
 argument-hint: "<feature-name>"
 ---
 
-# forge-5-docs — Architecture Documentation Generator
+# forge-6-docs — Architecture Documentation Generator
 
 Generate developer-focused architecture documentation for a feature, suitable for onboarding, reference, and maintenance.
 
@@ -27,6 +27,8 @@ Load into context:
 ### Implementation Completeness Check
 
 Check `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if configured). Count items with status `complete` vs total. If implementation is less than 80% complete, use `AskUserQuestion` to warn: "Implementation is only N% complete. Documentation will be based primarily on specs and may need updates after implementation. Proceed?" If user proceeds, add a `PRE-IMPLEMENTATION` notice at the top of each generated doc.
+
+Also check `.pipeline-state.json` for `stages.forge-5-ralph-loop`. If it exists and has status `in-progress` (some items incomplete), include this in the warning: "The ralph loop has not fully completed — {done}/{total} items done. Documentation may need updates after remaining items are implemented."
 
 Read `references/doc-conventions.md` for documentation standards.
 
@@ -142,8 +144,8 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 1. Update `{specsDir}/{feature}/.pipeline-state.json`:
    - Set `currentStage` to `complete`
    - Record `artifacts`
-   - Set `stages.forge-5-docs.basedOnVersions` to include versions for all completed upstream stages. Always include forge-1-prd, forge-2-tech, forge-3-specs. Include forge-4-backlog ONLY if it has status `complete`.
-2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (`git add {docsDir}/{feature}/ {specsDir}/{feature}/`), attempt commit with message `"{commitPrefix}({feature}): complete architecture docs"`, then set `stages.forge-5-docs.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
+   - Set `stages.forge-6-docs.basedOnVersions` to include versions for all completed upstream stages. Always include forge-1-prd, forge-2-tech, forge-3-specs. Include forge-4-backlog and forge-5-ralph-loop ONLY if they have status `complete`.
+2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (`git add {docsDir}/{feature}/ {specsDir}/{feature}/`), attempt commit with message `"{commitPrefix}({feature}): complete architecture docs"`, then set `stages.forge-6-docs.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 4. Tell user: "Documentation complete. Feature pipeline for '{feature}' is finished!\n  `/feature-forge:forge {feature}` to see the final pipeline status."
 
 ## Gotchas

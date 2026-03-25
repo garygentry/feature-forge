@@ -130,11 +130,12 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`. Foll
 1. Update `{specsDir}/{feature}/.pipeline-state.json`:
    - Record `artifacts` (path to backlog.json)
    - Set `stages.forge-4-backlog.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>, "forge-3-specs": <current version>}`
-   - Check downstream stage (`forge-5-docs`). If it has `basedOnVersions` referencing an older version of `forge-4-backlog`, set its status to `stale`.
+   - Set `currentStage` to `forge-5-ralph-loop`
+   - Check downstream stages (`forge-5-ralph-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-4-backlog`, set their status to `stale`.
 2. Use `AskUserQuestion` to ask about notes to persist
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files, attempt commit, then set status to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 4. If verification was available but the user chose to skip it, record `stages.forge-verify-backlog.status` as `"skipped"` in pipeline state.
-5. Tell user: "Backlog complete with {N} items. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the backlog\n  - Run the ralph loop externally to implement\n  - `/feature-forge:forge {feature}` to see full pipeline status"
+5. Tell user: "Backlog complete with {N} items. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the backlog\n  - `/feature-forge:forge-5-ralph-loop {feature}` to run the ralph loop\n  - `/feature-forge:forge {feature}` to see full pipeline status"
 
 ## Gotchas
 

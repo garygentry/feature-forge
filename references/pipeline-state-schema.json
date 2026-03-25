@@ -24,7 +24,7 @@
     },
     "currentStage": {
       "type": "string",
-      "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-docs", "complete", "forge-verify-prd", "forge-verify-tech", "forge-verify-specs", "forge-verify-backlog", "forge-verify-impl"],
+      "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-ralph-loop", "forge-6-docs", "complete", "forge-verify-prd", "forge-verify-tech", "forge-verify-specs", "forge-verify-backlog", "forge-verify-impl"],
       "description": "The stage currently in progress or next to start"
     },
     "notes": {
@@ -40,7 +40,8 @@
         "forge-verify-specs": { "$ref": "#/definitions/verifyEntry" },
         "forge-4-backlog": { "$ref": "#/definitions/stageEntry" },
         "forge-verify-backlog": { "$ref": "#/definitions/verifyEntry" },
-        "forge-5-docs": { "$ref": "#/definitions/stageEntry" },
+        "forge-5-ralph-loop": { "$ref": "#/definitions/stageEntry" },
+        "forge-6-docs": { "$ref": "#/definitions/stageEntry" },
         "forge-verify-impl": { "$ref": "#/definitions/verifyEntry" },
         "forge-verify-prd": { "$ref": "#/definitions/verifyEntry" },
         "forge-verify-tech": { "$ref": "#/definitions/verifyEntry" }

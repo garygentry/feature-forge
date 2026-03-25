@@ -18,7 +18,7 @@ Stack detection happens during **forge-2-tech** (the technical specification sta
 2. Identifies the primary language, build tool, package manager, and framework
 3. Asks the user to confirm: "I detected this as a {stack} project. Correct?"
 4. Persists the stack identity in `forge.config.json` via the `stack`, `typeCheckCommand`, and `testCommand` fields
-5. All downstream stages (forge-3-specs, forge-4-backlog, forge-verify, forge-5-docs) read the `stack` field and load the matching profile
+5. All downstream stages (forge-3-specs, forge-4-backlog, forge-verify, forge-6-docs) read the `stack` field and load the matching profile
 
 ## forge.config.json Fields
 
