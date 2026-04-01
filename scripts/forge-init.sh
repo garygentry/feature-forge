@@ -20,7 +20,8 @@ cat > "$CONFIG_FILE" << 'EOF'
   "commitPrefix": "forge",
   "stack": null,
   "typeCheckCommand": null,
-  "testCommand": null
+  "testCommand": null,
+  "ralphIterationMultiplier": 1.5
 }
 EOF
 
@@ -35,5 +36,6 @@ echo "  commitPrefix:        forge"
 echo "  stack:               null (auto-detected during forge-2-tech)"
 echo "  typeCheckCommand:    null (auto-detected during forge-2-tech)"
 echo "  testCommand:         null (auto-detected during forge-2-tech)"
+echo "  ralphIterationMultiplier: 1.5 (multiplier for ralph loop iterations)"
 echo ""
 echo "Edit $CONFIG_FILE to customize paths and stack settings for your project."

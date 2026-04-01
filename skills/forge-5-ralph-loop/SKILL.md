@@ -50,7 +50,7 @@ Read `backlog.json` and count items by status:
 - `done` — already completed items
 - `blocked` — items that failed previously
 
-Calculate the iteration count: number of `pending` + `in_progress` items.
+Calculate the iteration count: `ceil((pending + in_progress) * ralphIterationMultiplier)` where `ralphIterationMultiplier` comes from `forge.config.json` (default: 1.5). This headroom allows retries without exhausting iterations.
 
 If there are no pending or in_progress items, STOP and tell the user: "All backlog items are already done or blocked. Nothing to run."
 
@@ -70,7 +70,7 @@ The `--backlog` flag takes a **directory path** (not a file path), relative to t
 Construct the base command:
 
 ```
-ralph loop run . --backlog {relativeBacklogDir} --iterations {pendingCount}
+ralph loop run . --backlog {relativeBacklogDir} --iterations {iterationCount}
 ```
 
 ### 2d. Confirm with User
@@ -80,13 +80,14 @@ Use `AskUserQuestion` to present the command and options. The following block is
 ```
 Ready to run the ralph loop for {feature}:
 
-  ralph loop run . --backlog {dir} --iterations {N}
+  ralph loop run . --backlog {dir} --iterations {iterationCount}
 
 Backlog summary:
   - Pending: {pending}
   - In progress: {in_progress}
   - Done: {done}
   - Blocked: {blocked}
+  - Iterations: {iterationCount} ({activeItems} items x {ralphIterationMultiplier} multiplier)
 
 Optional flags you can add:
   --review          Run a review pass after all iterations (extra Claude session)
