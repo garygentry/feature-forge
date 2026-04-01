@@ -25,6 +25,8 @@ If the `forge-verifier` subagent is not available (not installed, or running in 
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+
 ## Step 1: Read Configuration and Determine Mode
 
 Read `{specsDir}/{feature}/.pipeline-state.json` to understand current pipeline state.
@@ -180,12 +182,10 @@ When building the Fix Execution Plan:
 
 **If in plan mode:** Also write the Fix Execution Plan to the active plan file so the plan mode workflow is preserved. The user reviews the plan, exits plan mode, and a fresh agent executes the fixes.
 
-**If not in plan mode:** Tell the user:
-"Findings and fix plan written to `{findings-file}`.
-Next steps:
-  - Review the findings and fix plan
-  - Run `/feature-forge:forge-fix {feature}` to apply fixes (recommended — works in any session)
-  - Or enter plan mode and re-run `/feature-forge:forge-verify {feature}` for plan-mode workflow"
+**If not in plan mode:** Output the following as text:
+"Findings and fix plan written to `{findings-file}`."
+
+Then use `AskUserQuestion` to ask: "Would you like to: (a) Review the findings first, (b) Run `/feature-forge:forge-fix {feature}` to apply fixes now, or (c) Enter plan mode and re-run `/feature-forge:forge-verify {feature}` for plan-mode workflow?" Do NOT embed this question in your text output.
 
 ## Step 6: Update Pipeline State
 

@@ -12,6 +12,8 @@ Generate developer-focused architecture documentation for a feature, suitable fo
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+
 ## Step 1: Read Context
 
 Read `{specsDir}/{feature}/.pipeline-state.json` to understand what exists.
@@ -130,12 +132,9 @@ Adapt export paths to match the project's module/package conventions.
 
 ## Step 4: Review with User
 
-Present the docs and ask:
-- "Does this accurately reflect the implementation?"
-- "Is the level of detail appropriate for your team?"
-- "Any areas that need more explanation?"
+Present the docs as text. Then use `AskUserQuestion` to collect feedback — do NOT include these questions in your text output:
 
-Use `AskUserQuestion` to collect this feedback.
+"1. Does this accurately reflect the implementation? 2. Is the level of detail appropriate for your team? 3. Any areas that need more explanation?"
 
 ## Step 5: Update Pipeline State and Commit
 

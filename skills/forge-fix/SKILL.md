@@ -12,6 +12,8 @@ Apply fixes from the most recent forge-verify findings document, with step-level
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+
 ## Step 1: Locate Findings Document
 
 1. Read `forge.config.json` for `specsDir` (default: `./specs`)

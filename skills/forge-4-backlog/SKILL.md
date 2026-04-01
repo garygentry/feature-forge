@@ -14,6 +14,8 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 Backlog defaults to `{specsDir}/{feature}/backlog.json`. If `backlogDir` is set in config, write to `{backlogDir}/backlog.json` instead.
 
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+
 ## Step 1: Validate Prerequisites
 
 **Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode, stages `forge-1-prd`, `forge-2-tech`, and `forge-3-specs` must all be `complete`. If not, STOP and tell the user which prerequisites are missing.
@@ -60,7 +62,7 @@ Proposed backlog for {feature} ({N} items):
   ...
 ```
 
-Use `AskUserQuestion` to ask: "Does this breakdown look right? Any items to split, merge, or reorder?"
+After presenting the plan as text, use `AskUserQuestion` to ask: "Does this breakdown look right? Any items to split, merge, or reorder?" Do NOT include this question in your text output.
 
 Wait for the user's response before generating the JSON.
 

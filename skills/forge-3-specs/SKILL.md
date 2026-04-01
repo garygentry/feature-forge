@@ -12,6 +12,8 @@ Generate a comprehensive suite of numbered implementation specification document
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+
 ## Step 1: Validate Prerequisites
 
 **Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode, both `forge-1-prd` and `forge-2-tech` must be `complete`. If not, STOP and tell the user which prerequisites are missing.
@@ -30,8 +32,9 @@ Read both `{specsDir}/{feature}/PRD.md` and `{specsDir}/{feature}/tech-spec.md` 
 
 Read `references/spec-archetypes.md` for the menu of document types.
 
-Based on the feature's complexity, propose a document plan to the user before writing:
+Based on the feature's complexity, propose a document plan to the user before writing. Output the document list as text, then use `AskUserQuestion` for the question — do NOT include the question in your text output.
 
+**Example text output (no question here):**
 ```
 I'll create the following spec documents for {feature}:
 
@@ -44,11 +47,9 @@ Feature-specific:
   02-{subsystem-a}.md         — {Brief description}
   03-{subsystem-b}.md         — {Brief description}
   04-integration-points.md    — Integration with existing project modules
-
-Does this look right? Should I add or remove any documents?
 ```
 
-Use `AskUserQuestion` to get user confirmation before proceeding.
+**Then call `AskUserQuestion`** with: "Does this look right? Should I add or remove any documents?"
 
 ### Context Management
 
@@ -98,12 +99,9 @@ List any gaps or inconsistencies found and resolve them.
 
 ## Step 6: Review with User
 
-Present a summary of all documents created, with key decisions highlighted. Ask:
-- "Does the level of detail match what you need?"
-- "Any areas that need more depth?"
-- "Any missing subsystems or concerns?"
+Present a summary of all documents created as text, with key decisions highlighted. Then use `AskUserQuestion` to collect feedback — do NOT include these questions in your text output:
 
-Use `AskUserQuestion` to collect this feedback.
+"1. Does the level of detail match what you need? 2. Any areas that need more depth? 3. Any missing subsystems or concerns?"
 
 ## Step 7: Update Pipeline State and Commit
 

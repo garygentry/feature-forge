@@ -12,6 +12,8 @@ Execute the ralph autonomous coding loop against a forge feature's backlog. Ralp
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+
 ## Step 1: Validate Prerequisites
 
 ### 1a. Pipeline State Check
@@ -73,7 +75,7 @@ ralph loop run . --backlog {relativeBacklogDir} --iterations {pendingCount}
 
 ### 2d. Confirm with User
 
-Present the command and options to the user via `AskUserQuestion`:
+Use `AskUserQuestion` to present the command and options. The following block is the content for `AskUserQuestion` — do NOT output it as text:
 
 ```
 Ready to run the ralph loop for {feature}:
