@@ -1,0 +1,14 @@
+{
+  "name": "feature-forge",
+  "owner": {
+    "name": "Gary Gentry"
+  },
+  "plugins": [
+    {
+      "name": "feature-forge",
+      "source": ".",
+      "description": "End-to-end feature development pipeline: PRD → tech spec → implementation specs → backlog → documentation, with verification gates, pipeline state tracking, and specialized subagents for verification and codebase research.",
+      "version": "0.8.0"
+    }
+  ]
+}

@@ -13,8 +13,18 @@ The pipeline is stack-aware, with built-in profiles for TypeScript, Python, Go, 
 ## Install
 
 ```bash
-/plugin install feature-forge@garygentry-agent-plugins --scope project
+# Register the marketplace (one-time)
+/plugin marketplace add garygentry/feature-forge
+
+# Install the plugin
+/plugin install feature-forge@feature-forge
 ```
+
+> **Moved repo:** feature-forge previously shipped from the
+> `garygentry/agent-plugins` marketplace as `feature-forge@gwg-plugins`. It now
+> lives in its own repository. The old entry remains as a deprecated stub for
+> one release cycle; please re-add the marketplace above to keep receiving
+> updates.
 
 ## Quick Start
 
