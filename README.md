@@ -46,7 +46,7 @@ forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
                     ┌──────────────────────────────────────────┘
                     │
                     ▼
-              forge-4-backlog ─► forge-verify ─► forge-5-rauf-loop ─► forge-verify ─► forge-6-docs
+              forge-4-backlog ─► forge-verify ─► forge-5-loop ─► forge-verify ─► forge-6-docs
 ```
 
 | Stage | Skill | Artifact | Purpose |
@@ -57,7 +57,7 @@ forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
 | -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify artifacts for completeness and consistency |
 | 4 | `forge-4-backlog` | `backlog.json` | Generate structured work items for implementation |
 | -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify backlog coverage and quality |
-| 5 | `forge-5-rauf-loop` | Source code | Execute rauf autonomous loop to implement backlog |
+| 5 | `forge-5-loop` | Source code | Execute rauf autonomous loop to implement backlog |
 | -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify implementation against specs |
 | 6 | `forge-6-docs` | Documentation suite | Generate architecture documentation |
 
@@ -117,23 +117,21 @@ Every spec document includes a requirement traceability table mapping back to PR
 /feature-forge:forge-4-backlog <feature-name>
 ```
 
-Generates a structured `backlog.json` from implementation specs, producing work items scoped for single implementation iterations. Each item includes a title, description, acceptance criteria, dependency ordering, spec references, and estimated iterations.
+Generates a structured `backlog.json` from implementation specs, producing work items scoped for single implementation iterations. forge-4 is a thin orchestrator: it delegates the authoring craft to the rauf plugin's `author-backlog` skill (granularity, acceptance criteria, `agentDelegation`, the schema) and owns the pipeline concerns (plan review, validation, state, commit).
 
-Items are validated for quality: descriptions must include exact file paths, type signatures, and import paths. Granularity is enforced at 5-8 files per item maximum.
-
-The output is validated against the backlog schema using the bundled `validate-backlog.py` script.
+The output is validated by the loop runner's `validate` verb (rauf: `rauf backlog validate . --backlog {dir} --specs-dir {dir} --json`, exit 0/1/2), not a bundled script — the same swappable seam as execution.
 
 **Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if configured)
 
-### Stage 5: Rauf Loop (forge-5-rauf-loop)
+### Stage 5: Loop (forge-5-loop)
 
 ```
-/feature-forge:forge-5-rauf-loop <feature-name>
+/feature-forge:forge-5-loop <feature-name>
 ```
 
-Executes the rauf autonomous coding loop against the feature's backlog. Rauf spawns a fresh Claude Code session per backlog item, implementing each task with full spec context and verification. The loop runs as a background process and commits atomically per completed item.
+Executes the autonomous coding loop against the feature's backlog. The runner spawns a fresh agent session per backlog item, implementing each task with full spec context and verification. The loop runs as a background process and commits atomically per completed item.
 
-Requires rauf to be installed in the project (`rauf install .`).
+The runner is **configured, not hardcoded** — feature-forge drives it through the `loopRunner` block in `forge.config.json`, defaulting to rauf (see [`references/ralph-loop-contract.md`](references/ralph-loop-contract.md)). forge-5 enforces a minimum runner version before running and, if the runner is missing or too old, points at the install/upgrade command. The runner must also be set up in the project (rauf: `rauf install .`).
 
 ### Stage 6: Documentation (forge-6-docs)
 
@@ -265,15 +263,23 @@ Each feature's progress is tracked in `{specsDir}/{feature}/.pipeline-state.json
 
 **Crash recovery:** If a stage is interrupted mid-execution, the pipeline inventories existing artifacts on disk, compares them against the state file, and offers to resume from the last completed artifact or restart the stage.
 
-## Validation Scripts
+## Validation
 
-### validate-backlog.py
+### Backlog validation (loop runner)
+
+Backlog validation is delegated to the loop runner's `validate` verb — not a
+bundled script — so it shares the same swappable seam as execution and always
+tracks the runner's authoritative schema. With rauf:
 
 ```bash
-python3 scripts/validate-backlog.py <path-to-backlog.json> [--specs-dir <path>] [--json]
+rauf backlog validate . --backlog <dir> --specs-dir <dir> --json
 ```
 
-Validates `backlog.json` for schema compliance and logical consistency: required fields, valid types and statuses, unique IDs, non-empty acceptance criteria, dependency reference integrity, spec file existence, description quality, and circular dependency detection.
+It checks schema compliance (valid types/statuses, required fields), unique IDs,
+dependency-reference integrity, dependency cycles, conditional spec-file
+existence, and flags empty acceptance criteria. Exit `0` = valid, `1` =
+validation findings, `2` = usage/IO error; `--json` emits `{ valid, findings[] }`.
+See [`references/ralph-loop-contract.md`](references/ralph-loop-contract.md).
 
 ### validate-traceability.py
 

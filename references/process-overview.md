@@ -5,7 +5,7 @@ This document describes the end-to-end feature development pipeline managed by t
 ## Pipeline Stages
 
 ```
-forge-1-prd → forge-2-tech → forge-3-specs → forge-verify → forge-4-backlog → forge-verify → forge-5-rauf-loop → forge-verify → forge-6-docs
+forge-1-prd → forge-2-tech → forge-3-specs → forge-verify → forge-4-backlog → forge-verify → forge-5-loop → forge-verify → forge-6-docs
 ```
 
 ### Stage 1: PRD (`/feature-forge:forge-1-prd <feature>`)
@@ -38,7 +38,7 @@ After verification, fixes can be applied via:
 **Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if backlogDir is configured)
 **Method:** Generate structured backlog items with spec references, acceptance criteria, and dependencies. Backlog is collocated with feature specs by default.
 
-### Stage 5: Rauf Loop (`/feature-forge:forge-5-rauf-loop <feature>`)
+### Stage 5: Rauf Loop (`/feature-forge:forge-5-loop <feature>`)
 **Input:** `backlog.json` from Stage 4
 **Output:** Implemented source code (committed per-item by rauf)
 **Method:** Execute the rauf autonomous coding loop against the feature's backlog. Spawns a fresh Claude Code session per backlog item with full spec context.

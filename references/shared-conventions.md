@@ -48,7 +48,8 @@ Extract these config values (use defaults if not present):
 - `backlogDir` (default: null — backlog lives at `{specsDir}/{feature}/backlog.json`)
 - `gitCommitAfterStage` (default: true)
 - `commitPrefix` (default: `forge`)
-- `raufIterationMultiplier` (default: `1.5`)
+- `loopIterationMultiplier` (default: `1.5`)
+- `loopRunner` (optional object — the loop runner to drive; **defaults to rauf** when absent, with every command templated. See `references/forge-config-schema.json` and `references/ralph-loop-contract.md`.)
 
 ## Pipeline State Protocol
 

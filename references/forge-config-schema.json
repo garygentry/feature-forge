@@ -40,11 +40,92 @@
       "type": "string",
       "description": "Command to run tests. Examples: 'bun test', 'pytest', 'go test ./...'. Used in acceptance criteria and verification."
     },
-    "raufIterationMultiplier": {
+    "loopIterationMultiplier": {
       "type": "number",
       "default": 1.5,
       "minimum": 1,
-      "description": "Multiplier applied to pending backlog item count to calculate rauf loop iterations. Higher values allow more retries. Default: 1.5 (e.g., 10 items = 15 iterations)."
+      "description": "Multiplier applied to pending backlog item count to calculate loop iterations. Higher values allow more retries. Default: 1.5 (e.g., 10 items = 15 iterations)."
+    },
+    "loopRunner": {
+      "type": "object",
+      "description": "The autonomous loop runner feature-forge drives. Defaults to rauf when absent (forge-5 states 'defaulting to rauf loop runner'). Every command is a template — {bin}, {backlogDir}, {specsDir}, {iterations} are substituted at call time — so an alternative ralph-style runner conforming to rauf's SPEC-BACKLOG-TOOL-CONTRACT.md can be swapped in without editing any skill. See references/ralph-loop-contract.md.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "default": "rauf",
+          "description": "Display name of the loop runner."
+        },
+        "bin": {
+          "type": "string",
+          "default": "rauf",
+          "description": "The runner executable. Assumed on PATH; may be an absolute path. Substituted as {bin} in every command."
+        },
+        "runCommand": {
+          "type": "string",
+          "default": "{bin} loop run . --backlog {backlogDir} --iterations {iterations}",
+          "description": "Run the loop. Launched in the background by forge-5."
+        },
+        "validateCommand": {
+          "type": "string",
+          "default": "{bin} backlog validate . --backlog {backlogDir} --specs-dir {specsDir} --json",
+          "description": "Validate a backlog. MUST exit 0=valid, 1=findings, 2=usage/IO, and emit { valid, findings[] } with --json."
+        },
+        "statusCommand": {
+          "type": "string",
+          "default": "{bin} status . --backlog {backlogDir}",
+          "description": "One-shot loop status."
+        },
+        "listCommand": {
+          "type": "string",
+          "default": "{bin} backlog list . --backlog {backlogDir} --json",
+          "description": "List backlog items as JSON."
+        },
+        "followCommand": {
+          "type": "string",
+          "default": "{bin} loop follow . --backlog {backlogDir}",
+          "description": "Stream live loop events."
+        },
+        "logCommand": {
+          "type": "string",
+          "default": "{bin} log . --backlog {backlogDir} --follow",
+          "description": "Tail the runner log."
+        },
+        "versionCommand": {
+          "type": "string",
+          "default": "{bin} version --json",
+          "description": "Report runner version as { version: <semver> }. Used to enforce minRunnerVersion before running."
+        },
+        "preconditionFile": {
+          "type": "string",
+          "default": ".rauf.json",
+          "description": "Project-root marker file that must exist (runner installed into the target project)."
+        },
+        "stateDir": {
+          "type": "string",
+          "default": ".rauf",
+          "description": "Per-backlog state directory name created under the backlog dir."
+        },
+        "setupHint": {
+          "type": "string",
+          "default": "Run `rauf install .` to install rauf's per-project artifacts (.rauf/, RAUF.md, schema), then re-run forge-5.",
+          "description": "Shown when preconditionFile is missing — how to set up the runner IN THIS PROJECT (per-project artifacts)."
+        },
+        "installHint": {
+          "type": "string",
+          "default": "Install or upgrade the rauf CLI: curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash",
+          "description": "Shown when the runner BINARY is missing or too old (version gate fails) — how to obtain/upgrade the CLI itself. Distinct from setupHint (which installs per-project artifacts)."
+        },
+        "schemaVersion": {
+          "type": "string",
+          "default": "1",
+          "description": "Backlog schemaVersion this runner config targets."
+        },
+        "minRunnerVersion": {
+          "type": "string",
+          "default": "0.2.0",
+          "description": "Minimum runner version (semver). 0.2.0 is the first rauf release shipping `backlog validate` + schemaVersion. forge-5 enforces this via versionCommand before running."
+        }
+      }
     }
   }
 }
