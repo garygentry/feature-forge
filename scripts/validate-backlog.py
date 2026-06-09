@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Validate a ralph backlog.json file for schema compliance and logical consistency.
+Validate a rauf backlog.json file for schema compliance and logical consistency.
 
 Usage: python validate-backlog.py <path-to-backlog.json> [--specs-dir <path>]
 

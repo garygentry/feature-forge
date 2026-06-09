@@ -1,12 +1,12 @@
 ---
 name: forge-4-backlog
-description: "Generate a structured ralph backlog.json from forge implementation specs. Use when user runs /feature-forge:forge-4-backlog or asks to create a backlog for a forge feature after specs are complete. This is the canonical backlog generator for the forge pipeline — create-ralph-backlog in ralph-support is deprecated in favor of this skill. Do NOT trigger for standalone backlog creation outside the forge pipeline context."
+description: "Generate a structured rauf backlog.json from forge implementation specs. Use when user runs /feature-forge:forge-4-backlog or asks to create a backlog for a forge feature after specs are complete. This is the canonical backlog generator for the forge pipeline — create-rauf-backlog in rauf-support is deprecated in favor of this skill. Do NOT trigger for standalone backlog creation outside the forge pipeline context."
 argument-hint: "<feature-name>"
 ---
 
-# forge-4-backlog — Ralph Backlog Generator
+# forge-4-backlog — Rauf Backlog Generator
 
-Generate a complete, validated backlog.json from the implementation spec suite, ready for the ralph loop.
+Generate a complete, validated backlog.json from the implementation spec suite, ready for the rauf loop.
 
 ## Prerequisites
 
@@ -42,7 +42,7 @@ Before writing any JSON, create a backlog plan:
 1. Identify all discrete work items by walking through the specs
 2. Order them by dependency (foundation first, then layers)
 3. Assign priorities (lower number = higher priority)
-4. Check that each item is scoped for a single ralph loop iteration
+4. Check that each item is scoped for a single rauf loop iteration
 
 Present the plan as a numbered list:
 ```
@@ -121,7 +121,7 @@ If validation fails, fix the issues and re-validate. Do NOT present the backlog 
 Present a summary:
 - Total items: N
 - Dependency chain depth: N levels
-- Estimated ralph loop iterations: N
+- Estimated rauf loop iterations: N
 
 Use `AskUserQuestion` to ask: "Ready to proceed, or any adjustments needed?"
 
@@ -132,16 +132,16 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`. Foll
 1. Update `{specsDir}/{feature}/.pipeline-state.json`:
    - Record `artifacts` (path to backlog.json)
    - Set `stages.forge-4-backlog.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>, "forge-3-specs": <current version>}`
-   - Set `currentStage` to `forge-5-ralph-loop`
-   - Check downstream stages (`forge-5-ralph-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-4-backlog`, set their status to `stale`.
+   - Set `currentStage` to `forge-5-rauf-loop`
+   - Check downstream stages (`forge-5-rauf-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-4-backlog`, set their status to `stale`.
 2. Use `AskUserQuestion` to ask about notes to persist
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files, attempt commit, then set status to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 4. If verification was available but the user chose to skip it, record `stages.forge-verify-backlog.status` as `"skipped"` in pipeline state.
-5. Tell user: "Backlog complete with {N} items. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the backlog\n  - `/feature-forge:forge-5-ralph-loop {feature}` to run the ralph loop\n  - `/feature-forge:forge {feature}` to see full pipeline status"
+5. Tell user: "Backlog complete with {N} items. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the backlog\n  - `/feature-forge:forge-5-rauf-loop {feature}` to run the rauf loop\n  - `/feature-forge:forge {feature}` to see full pipeline status"
 
 ## Gotchas
 
-- The ralph loop runs each item in a FRESH context. Every item description must be self-contained. Don't write "same as above" or "continue from previous item."
+- The rauf loop runs each item in a FRESH context. Every item description must be self-contained. Don't write "same as above" or "continue from previous item."
 - Spec references must be relative paths that actually exist. Validate them.
 - The most common backlog mistake is items that are too large. If an item creates more than 3-4 files AND implements complex logic, it should probably be split.
 - The second most common mistake is missing dependency declarations. If item 005 imports types created by item 002, it MUST list "002" in dependsOn, even if it seems obvious.

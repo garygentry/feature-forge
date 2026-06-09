@@ -1,12 +1,12 @@
 ---
-name: forge-5-ralph-loop
-description: "Execute the ralph autonomous coding loop against a forge feature's backlog. Use when user runs /feature-forge:forge-5-ralph-loop or asks to run ralph/implement a forge feature after backlog is created and verified. Do NOT trigger for general ralph usage, standalone loop runs, or implementation tasks outside the forge pipeline."
+name: forge-5-rauf-loop
+description: "Execute the rauf autonomous coding loop against a forge feature's backlog. Use when user runs /feature-forge:forge-5-rauf-loop or asks to run rauf/implement a forge feature after backlog is created and verified. Do NOT trigger for general rauf usage, standalone loop runs, or implementation tasks outside the forge pipeline."
 argument-hint: "<feature-name>"
 ---
 
-# forge-5-ralph-loop — Ralph Loop Executor
+# forge-5-rauf-loop — Rauf Loop Executor
 
-Execute the ralph autonomous coding loop against a forge feature's backlog. Ralph spawns a fresh Claude Code session per backlog item, implementing each task with full verification.
+Execute the rauf autonomous coding loop against a forge feature's backlog. Rauf spawns a fresh Claude Code session per backlog item, implementing each task with full verification.
 
 ## Prerequisites
 
@@ -26,11 +26,24 @@ Check if `stages.forge-verify-backlog` exists and has status `passed` or `findin
 
 "Backlog hasn't been verified yet. It's recommended to run `/feature-forge:forge-verify {feature}` first to catch issues before implementation. Continue anyway?"
 
-### 1c. Ralph Installation Check
+### 1c. Rauf Installation Check
 
-Check that `.ralph.json` exists in the project root. If not, STOP and tell the user:
+Check that `.rauf.json` exists in the project root. If not:
 
-"Ralph is not installed in this project. Run `ralph install .` to set up ralph, then re-run `/feature-forge:forge-5-ralph-loop {feature}`."
+- **If a legacy `.ralph.json` (or a `.ralph/` directory) exists**, this is an
+  un-migrated Ralph project. STOP and tell the user:
+
+  "This project is still on the legacy **Ralph** layout. Run `rauf migrate .`
+  first (the loop runner only understands `.rauf/` and `RAUF_*` signals), then
+  re-run `/feature-forge:forge-5-rauf-loop {feature}`."
+
+  Do not attempt to run the loop — an un-migrated `RALPH.md` instructs the agent
+  to emit `RALPH_*` signals that the current parser rejects.
+
+- **Otherwise** (no rauf and no legacy marker), STOP and tell the user:
+
+  "Rauf is not installed in this project. Run `rauf install .` to set up rauf,
+  then re-run `/feature-forge:forge-5-rauf-loop {feature}`."
 
 ### 1d. Backlog File Check
 
@@ -40,7 +53,7 @@ Resolve the backlog file path:
 
 Verify the file exists on disk. If not, STOP and tell the user: "No backlog.json found at {path}. Run `/feature-forge:forge-4-backlog {feature}` to generate it."
 
-## Step 2: Construct the Ralph Command
+## Step 2: Construct the Rauf Command
 
 ### 2a. Analyze Backlog
 
@@ -50,7 +63,7 @@ Read `backlog.json` and count items by status:
 - `done` — already completed items
 - `blocked` — items that failed previously
 
-Calculate the iteration count: `ceil((pending + in_progress) * ralphIterationMultiplier)` where `ralphIterationMultiplier` comes from `forge.config.json` (default: 1.5). This headroom allows retries without exhausting iterations.
+Calculate the iteration count: `ceil((pending + in_progress) * raufIterationMultiplier)` where `raufIterationMultiplier` comes from `forge.config.json` (default: 1.5). This headroom allows retries without exhausting iterations.
 
 If there are no pending or in_progress items, STOP and tell the user: "All backlog items are already done or blocked. Nothing to run."
 
@@ -70,7 +83,7 @@ The `--backlog` flag takes a **directory path** (not a file path), relative to t
 Construct the base command:
 
 ```
-ralph loop run . --backlog {relativeBacklogDir} --iterations {iterationCount}
+rauf loop run . --backlog {relativeBacklogDir} --iterations {iterationCount}
 ```
 
 ### 2d. Confirm with User
@@ -78,16 +91,16 @@ ralph loop run . --backlog {relativeBacklogDir} --iterations {iterationCount}
 Use `AskUserQuestion` to present the command and options. The following block is the content for `AskUserQuestion` — do NOT output it as text:
 
 ```
-Ready to run the ralph loop for {feature}:
+Ready to run the rauf loop for {feature}:
 
-  ralph loop run . --backlog {dir} --iterations {iterationCount}
+  rauf loop run . --backlog {dir} --iterations {iterationCount}
 
 Backlog summary:
   - Pending: {pending}
   - In progress: {in_progress}
   - Done: {done}
   - Blocked: {blocked}
-  - Iterations: {iterationCount} ({activeItems} items x {ralphIterationMultiplier} multiplier)
+  - Iterations: {iterationCount} ({activeItems} items x {raufIterationMultiplier} multiplier)
 
 Optional flags you can add:
   --review          Run a review pass after all iterations (extra Claude session)
@@ -105,35 +118,35 @@ If the user requests additional flags, incorporate them into the command.
 ### 3a. Update Pipeline State
 
 Before launching, update `{specsDir}/{feature}/.pipeline-state.json`:
-- Set `stages.forge-5-ralph-loop.status` to `in-progress`
-- Set `stages.forge-5-ralph-loop.startedAt` to current ISO timestamp
-- Set `currentStage` to `forge-5-ralph-loop`
+- Set `stages.forge-5-rauf-loop.status` to `in-progress`
+- Set `stages.forge-5-rauf-loop.startedAt` to current ISO timestamp
+- Set `currentStage` to `forge-5-rauf-loop`
 - Update `updatedAt`
 
 ### 3b. Launch Background Process
 
-Run the constructed command via the Bash tool with `run_in_background: true`. This is critical — ralph loop runs can take significant time (minutes to hours depending on backlog size) and must not block the session.
+Run the constructed command via the Bash tool with `run_in_background: true`. This is critical — rauf loop runs can take significant time (minutes to hours depending on backlog size) and must not block the session.
 
 ### 3c. Inform User
 
 Output to the user:
 
 ```
-Ralph loop started for {feature} ({N} items to process).
+Rauf loop started for {feature} ({N} items to process).
 
 The loop runs as a background process and will continue even if this session ends.
 Each item gets a fresh Claude Code session with full context from the backlog and specs.
 
 Monitor progress (run these in another terminal or via `!` prefix):
-  ralph status . --backlog {dir}              # one-shot status
-  ralph status . --backlog {dir} --watch      # continuous polling
-  ralph loop follow . --backlog {dir}         # stream live events
-  ralph log . --backlog {dir} --follow        # tail log file
-  ralph backlog list . --backlog {dir}        # check item statuses
+  rauf status . --backlog {dir}              # one-shot status
+  rauf status . --backlog {dir} --watch      # continuous polling
+  rauf loop follow . --backlog {dir}         # stream live events
+  rauf log . --backlog {dir} --follow        # tail log file
+  rauf backlog list . --backlog {dir}        # check item statuses
 
-State files are at: {specsDir}/{feature}/.ralph/
+State files are at: {specsDir}/{feature}/.rauf/
   - state.json      (loop state)
-  - ralph.log       (event log)
+  - rauf.log       (event log)
   - iteration-status.json (live activity)
 ```
 
@@ -147,7 +160,7 @@ When the background process completes:
 
 ### 4a. Get Final Backlog State
 
-Run via Bash: `ralph backlog list . --backlog {dir} --json`
+Run via Bash: `rauf backlog list . --backlog {dir} --json`
 
 Parse the JSON output to count items by status.
 
@@ -157,7 +170,7 @@ Present a summary to the user:
 
 **All items done:**
 ```
-Ralph loop completed for {feature}. All {N} items implemented successfully.
+Rauf loop completed for {feature}. All {N} items implemented successfully.
 
 Next steps:
   - /feature-forge:forge-verify {feature} impl   Verify the implementation
@@ -166,7 +179,7 @@ Next steps:
 
 **Some items blocked:**
 ```
-Ralph loop completed for {feature}.
+Rauf loop completed for {feature}.
   Completed: {done}/{total}
   Blocked:   {blocked} items
 
@@ -176,39 +189,39 @@ Blocked items:
 
 Options:
   - Re-run with --retry-blocked to retry blocked items
-  - Review blocked items manually: ralph backlog show . {id} --backlog {dir}
+  - Review blocked items manually: rauf backlog show . {id} --backlog {dir}
   - Continue to docs if blocking items are non-critical
 ```
 
 **Some items still pending (iteration limit reached):**
 ```
-Ralph loop completed for {feature}.
+Rauf loop completed for {feature}.
   Completed: {done}/{total}
   Pending:   {pending} items (iteration limit reached)
   Blocked:   {blocked} items
 
-Re-run `/feature-forge:forge-5-ralph-loop {feature}` to continue with remaining items.
+Re-run `/feature-forge:forge-5-rauf-loop {feature}` to continue with remaining items.
 ```
 
 ## Step 5: Update Pipeline State
 
 Update `{specsDir}/{feature}/.pipeline-state.json`:
 
-1. Set `stages.forge-5-ralph-loop`:
+1. Set `stages.forge-5-rauf-loop`:
    - `status`: `"complete"` if all backlog items are `done`, otherwise `"in-progress"`
    - `completedAt`: current ISO timestamp (only if complete)
    - `basedOnVersions`: `{"forge-4-backlog": <current version from pipeline state>}`
-   - `artifacts`: `["{specsDir}/{feature}/.ralph/state.json"]`
+   - `artifacts`: `["{specsDir}/{feature}/.rauf/state.json"]`
 2. If all items complete: set `currentStage` to `"forge-6-docs"`
 3. Update `updatedAt`
 
-**No git commit is needed** — ralph commits atomically per completed item during the loop. The implementation code is already committed.
+**No git commit is needed** — rauf commits atomically per completed item during the loop. The implementation code is already committed.
 
 ## Gotchas
 
 - The `--backlog` flag takes a **directory path**, not a file path. Pass `specs/auth`, not `specs/auth/backlog.json`.
-- Ralph resolves `RALPH.md` with fallback: checks `{backlogDir}/.ralph/RALPH.md` first, then the project's `.ralph/RALPH.md`. As long as ralph is installed in the project, the prompt template will be found.
-- State files (state.json, ralph.log, etc.) are created at `{specsDir}/{feature}/.ralph/` — this is within the feature's spec directory and is expected.
-- If the session disconnects during a long-running loop, the ralph process continues independently. The user can check results later with `ralph status` or `ralph backlog list`.
-- Never run `ralph loop run` in the foreground (without `run_in_background`) — it blocks and will hit the Bash tool timeout for any non-trivial backlog.
-- If a previous loop run left a stale lock, the user may need to pass `--force` to clear it. Ralph will report this error clearly.
+- Rauf resolves `RAUF.md` with fallback: checks `{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`. As long as rauf is installed in the project, the prompt template will be found.
+- State files (state.json, rauf.log, etc.) are created at `{specsDir}/{feature}/.rauf/` — this is within the feature's spec directory and is expected.
+- If the session disconnects during a long-running loop, the rauf process continues independently. The user can check results later with `rauf status` or `rauf backlog list`.
+- Never run `rauf loop run` in the foreground (without `run_in_background`) — it blocks and will hit the Bash tool timeout for any non-trivial backlog.
+- If a previous loop run left a stale lock, the user may need to pass `--force` to clear it. Rauf will report this error clearly.

@@ -49,7 +49,7 @@ Stage: {currentStage} ({status}, started {relative time})
 ⬜ forge-verify     (specs)        ← show only if forge-3-specs is complete
 ⬜ forge-4-backlog
 ⬜ forge-verify     (backlog)      ← show only if forge-4-backlog is complete
-⬜ forge-5-ralph-loop
+⬜ forge-5-rauf-loop
 ⬜ forge-6-docs
 
 Next: Continue with /feature-forge:forge-3-specs {feature}
@@ -81,8 +81,8 @@ Commands:
   /feature-forge:forge-1-prd <feature>      Create requirements document
   /feature-forge:forge-2-tech <feature>     Create technical spec
   /feature-forge:forge-3-specs <feature>    Create implementation specs
-  /feature-forge:forge-4-backlog <feature>  Generate ralph backlog
-  /feature-forge:forge-5-ralph-loop <feature>  Run ralph autonomous loop
+  /feature-forge:forge-4-backlog <feature>  Generate rauf backlog
+  /feature-forge:forge-5-rauf-loop <feature>  Run rauf autonomous loop
   /feature-forge:forge-6-docs <feature>     Generate architecture docs
   /feature-forge:forge-verify <feature>     Run verification on current stage
 ```

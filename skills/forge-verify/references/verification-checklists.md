@@ -133,7 +133,7 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 - [ ] **CHECK-B10**: specReferences paths are valid relative paths to actual files
 
 ### Task Quality
-- [ ] **CHECK-B11**: Each item is scoped to be completable in a single ralph loop iteration
+- [ ] **CHECK-B11**: Each item is scoped to be completable in a single rauf loop iteration
 - [ ] **CHECK-B12**: Descriptions are detailed enough for a fresh agent with no prior context
 - [ ] **CHECK-B13**: Acceptance criteria are objectively verifiable (not subjective like "works well")
 - [ ] **CHECK-B14**: Each item specifies what files to create or modify

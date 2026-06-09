@@ -48,7 +48,7 @@ Extract these config values (use defaults if not present):
 - `backlogDir` (default: null — backlog lives at `{specsDir}/{feature}/backlog.json`)
 - `gitCommitAfterStage` (default: true)
 - `commitPrefix` (default: `forge`)
-- `ralphIterationMultiplier` (default: `1.5`)
+- `raufIterationMultiplier` (default: `1.5`)
 
 ## Pipeline State Protocol
 

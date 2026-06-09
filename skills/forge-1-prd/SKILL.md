@@ -106,7 +106,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
    - Set `stages.forge-1-prd.version` to 1 (or increment if revising)
    - Record `artifacts`, `completedAt`
    - Set `stages.forge-1-prd.basedOnVersions` to `{}` (no upstream dependencies)
-   - Check downstream stages (`forge-2-tech`, `forge-3-specs`, `forge-4-backlog`, `forge-5-ralph-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-1-prd`, set their status to `stale`.
+   - Check downstream stages (`forge-2-tech`, `forge-3-specs`, `forge-4-backlog`, `forge-5-rauf-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-1-prd`, set their status to `stale`.
 2. Use `AskUserQuestion` to ask: "Anything you want to note before we wrap? (preserved across sessions)"
    - If yes, store in the `notes` field
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete PRD v{n}"`, then set `stages.forge-1-prd.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.

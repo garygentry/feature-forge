@@ -40,11 +40,11 @@
       "type": "string",
       "description": "Command to run tests. Examples: 'bun test', 'pytest', 'go test ./...'. Used in acceptance criteria and verification."
     },
-    "ralphIterationMultiplier": {
+    "raufIterationMultiplier": {
       "type": "number",
       "default": 1.5,
       "minimum": 1,
-      "description": "Multiplier applied to pending backlog item count to calculate ralph loop iterations. Higher values allow more retries. Default: 1.5 (e.g., 10 items = 15 iterations)."
+      "description": "Multiplier applied to pending backlog item count to calculate rauf loop iterations. Higher values allow more retries. Default: 1.5 (e.g., 10 items = 15 iterations)."
     }
   }
 }

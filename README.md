@@ -36,7 +36,7 @@ forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
                     ┌──────────────────────────────────────────┘
                     │
                     ▼
-              forge-4-backlog ─► forge-verify ─► forge-5-ralph-loop ─► forge-verify ─► forge-6-docs
+              forge-4-backlog ─► forge-verify ─► forge-5-rauf-loop ─► forge-verify ─► forge-6-docs
 ```
 
 | Stage | Skill | Artifact | Purpose |
@@ -47,7 +47,7 @@ forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
 | -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify artifacts for completeness and consistency |
 | 4 | `forge-4-backlog` | `backlog.json` | Generate structured work items for implementation |
 | -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify backlog coverage and quality |
-| 5 | `forge-5-ralph-loop` | Source code | Execute ralph autonomous loop to implement backlog |
+| 5 | `forge-5-rauf-loop` | Source code | Execute rauf autonomous loop to implement backlog |
 | -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify implementation against specs |
 | 6 | `forge-6-docs` | Documentation suite | Generate architecture documentation |
 
@@ -115,15 +115,15 @@ The output is validated against the backlog schema using the bundled `validate-b
 
 **Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if configured)
 
-### Stage 5: Ralph Loop (forge-5-ralph-loop)
+### Stage 5: Rauf Loop (forge-5-rauf-loop)
 
 ```
-/feature-forge:forge-5-ralph-loop <feature-name>
+/feature-forge:forge-5-rauf-loop <feature-name>
 ```
 
-Executes the ralph autonomous coding loop against the feature's backlog. Ralph spawns a fresh Claude Code session per backlog item, implementing each task with full spec context and verification. The loop runs as a background process and commits atomically per completed item.
+Executes the rauf autonomous coding loop against the feature's backlog. Rauf spawns a fresh Claude Code session per backlog item, implementing each task with full spec context and verification. The loop runs as a background process and commits atomically per completed item.
 
-Requires ralph to be installed in the project (`ralph install .`).
+Requires rauf to be installed in the project (`rauf install .`).
 
 ### Stage 6: Documentation (forge-6-docs)
 
