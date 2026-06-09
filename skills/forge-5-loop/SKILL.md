@@ -55,11 +55,16 @@ Check if `stages.forge-verify-backlog` exists and has status `passed` or `findin
 Enforce `loopRunner.minRunnerVersion` **before** doing anything else with the runner. This is what turns "the runner is missing or too old" into a clear, actionable stop instead of a cryptic mid-run failure.
 
 1. Run the **version command** (`loopRunner.versionCommand`, default `rauf version --json`) via Bash.
-2. **If the command is not found / errors** (the binary isn't installed): STOP and show `loopRunner.installHint`.
-3. Parse `{ "version": "<semver>" }` from stdout. Do NOT use plain `rauf version` (its human output is `rauf v0.1.0` with a `v` prefix) — always the `--json` form.
-4. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.2.0`). Compare numerically by major, then minor, then patch.
-5. **If reported < minRunnerVersion**: STOP and show `loopRunner.installHint`, e.g.:
-   "Your rauf is {reported}, but feature-forge needs ≥ {minRunnerVersion} (it relies on `backlog validate` + backlog schemaVersion). {installHint}"
+2. Parse `{ "version": "<semver>" }` from stdout. Do NOT use plain `rauf version` (its human output is `rauf v0.1.0` with a `v` prefix) — always the `--json` form.
+3. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.2.0`), numerically by major, then minor, then patch.
+
+**Any of the following is a HARD GATE FAILURE — do NOT proceed to run the loop.** STOP, show `loopRunner.installHint`, and include the raw command output for diagnosis:
+
+- The version command is not found or exits non-zero (the binary isn't installed).
+- Its stdout is not valid JSON, has no `version` field, or `version` is not a valid semver string.
+- The reported version is **< `minRunnerVersion`**.
+
+For the version-too-old case, phrase it concretely, e.g.: "Your rauf is {reported}, but feature-forge needs ≥ {minRunnerVersion} (it relies on `backlog validate` + backlog schemaVersion). {installHint}". When the gate fails because the output couldn't be parsed, say so and show what the command printed before the `installHint`.
 
 > `installHint` points at the runner **CLI** install/upgrade — distinct from
 > `setupHint` (1d), which installs the runner's per-project artifacts.

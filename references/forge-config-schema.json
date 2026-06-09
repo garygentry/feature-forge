@@ -68,7 +68,7 @@
         "validateCommand": {
           "type": "string",
           "default": "{bin} backlog validate . --backlog {backlogDir} --specs-dir {specsDir} --json",
-          "description": "Validate a backlog. MUST exit 0=valid, 1=findings, 2=usage/IO, and emit { valid, findings[] } with --json."
+          "description": "Validate a backlog. MUST exit 0=valid, 1=findings, 2=usage/IO, and emit { valid, findings[] } with --json. `specReferences` are project-root-relative (resolved against the project root); `--specs-dir` only gates the existence check, so passing the specs root ({specsDir}) is sufficient."
         },
         "statusCommand": {
           "type": "string",

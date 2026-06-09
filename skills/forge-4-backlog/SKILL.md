@@ -82,7 +82,7 @@ After presenting the plan as text, use `AskUserQuestion` to ask: "Does this brea
 > and tell the user the rauf plugin provides richer authoring guidance.
 
 **Forge-specific item requirements** layered on top of `author-backlog`'s output:
-- `specReferences` must be paths **relative to the project root** (e.g. `specs/auth/00-core-definitions.md`), NOT relative to the backlog file — so they resolve under `--specs-dir`.
+- `specReferences` must be paths **relative to the project root** (e.g. `specs/auth/00-core-definitions.md`), NOT relative to the backlog file. The validator resolves them from the project root (not from `--specs-dir`, which only gates the check).
 
 ## Step 5: Validate via the loop runner
 
@@ -91,7 +91,7 @@ Validate the generated backlog by running the runner's **validate command**
 substituted — the rauf default:
 
 ```bash
-rauf backlog validate . --backlog {backlogDir} --specs-dir {specsDir}/{feature} --json
+rauf backlog validate . --backlog {backlogDir} --specs-dir {specsDir} --json
 ```
 
 Interpret the result:
@@ -133,5 +133,5 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`. Foll
 ## Gotchas
 
 - The loop runs each item in a FRESH context. Every item description must be self-contained — `author-backlog` enforces this, but double-check Step-3 plan items aren't "same as above."
-- Spec references must be relative paths (from project root) that actually exist — the validate command's `--specs-dir` check enforces this.
+- Spec references must be project-root-relative paths that actually exist — the validate command enforces this when `--specs-dir` is passed (resolving them from the project root).
 - Don't present a backlog to the user before it validates (or before you've explicitly recorded that validation was skipped because the runner isn't installed yet).
