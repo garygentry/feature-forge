@@ -28,6 +28,22 @@ Spawn the `forge-researcher` subagent via the Agent tool to scan the codebase. P
 
 The researcher runs in its own context window, reads the project structure, and returns a concise integration report. This keeps your main conversation context clean for the interactive interview.
 
+**Single vs. parallel research.** For a small or well-understood codebase, **one**
+researcher is the right default. For a **large codebase or uncertain scope** (many
+packages, several integration surfaces, monorepo), dispatch **multiple `forge-researcher`
+subagents in parallel — a single message with multiple Agent calls** (the
+`superpowers:dispatching-parallel-agents` pattern), each scoped to a **disjoint focus**
+so they don't re-read the same ground:
+- one on **project structure & conventions** (layout, build, naming, error/test patterns),
+- one per **major integration area / subsystem** the feature touches (its exports, types,
+  public API),
+- optionally one on **existing feature specs & in-progress conflicts**.
+
+Each returns its own report; **you merge them** into a single integration picture for the
+interview. This cuts latency and deepens coverage versus one researcher sweeping
+everything serially. No agent change is needed — `forge-researcher` already returns a
+self-contained report; just give each instance a narrower focus.
+
 If the `forge-researcher` subagent is not available, perform the research inline (steps below).
 
 ### Manual Research (fallback)

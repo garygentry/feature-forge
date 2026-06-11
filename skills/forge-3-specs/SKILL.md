@@ -51,27 +51,48 @@ Feature-specific:
 
 **Then call `AskUserQuestion`** with: "Does this look right? Should I add or remove any documents?"
 
-### Context Management
-
-If the spec suite requires more than 5 documents:
-1. Write documents in batches of 3-5
-2. After each batch, present to the user for review
-3. If `gitCommitAfterStage` is true:
-     `git add {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): specs batch {n}"`
-4. For the next batch, re-read only the shared types document (00-core-definitions.md) and the specific upstream docs relevant to the next batch — do not re-load everything
-5. Continue until all documents are complete
-
-This prevents quality degradation from context pressure. The first documents you write should be the foundation (types, architecture) since later documents reference them.
-
-**Incremental artifact tracking:** After writing each spec document, immediately update the `artifacts` array in `.pipeline-state.json` with the new file path. This enables crash recovery if the session is interrupted mid-batch (see shared-conventions.md "Crash Recovery").
+**Incremental artifact tracking:** After each spec document is written (by you or a writer subagent), immediately update the `artifacts` array in `.pipeline-state.json` with the new file path. This enables crash recovery if the session is interrupted mid-suite (see shared-conventions.md "Crash Recovery").
 
 ## Step 4: Write the Spec Suite
 
-For each document:
+The suite has a hard internal dependency: every domain/integration doc references the
+shared types and layout from `00-core-definitions.md` and `01-architecture-layout.md`.
+So author in two phases — a sequential foundation, then a parallel fan-out.
+
+### 4a. Foundation pass (sequential, you author)
+
+Write `00-core-definitions.md` and `01-architecture-layout.md` yourself, in the main
+session, **before** anything else. Every later document depends on these shared types
+and the directory/exports map, so they must exist and be stable first.
+
+### 4b. Domain fan-out (parallel `forge-spec-writer` subagents)
+
+Once the foundation is written, dispatch the remaining numbered docs in parallel — **one
+`forge-spec-writer` subagent per document, in a single message with multiple Agent
+calls** (the `superpowers:dispatching-parallel-agents` pattern). Each writer is given:
+- the PRD and tech-spec,
+- the just-written `00-core-definitions.md` and `01-architecture-layout.md` (so it builds
+  on the shared types, not its own),
+- the stack profile path `references/stacks/{stack}.md` (if `stack` is set in config),
+- the quality bar in `references/spec-examples.md`,
+- the **exact single filename it must write** and the archetype slice (from
+  `references/spec-archetypes.md`) it covers.
+
+Each writer authors **only its one assigned file** and returns a short **manifest** of
+the `REQ-XXX-NN` IDs it covered (feeds Step 5 traceability). Author `NN-testing-strategy.md`
+last (it can be its own writer, or you author it once the others' shapes are known).
+
+**Fallback (no subagents available):** author the documents yourself in batches of 3–5,
+foundation first; after each batch, optionally commit
+(`git add {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): specs batch {n}"`)
+and re-read only `00-core-definitions.md` plus the upstream docs the next batch needs —
+do not reload everything. This keeps quality up under context pressure.
+
+### Quality requirements (every document, whoever writes it)
 
 1. Number sequentially: `00-`, `01-`, `02-`, etc.
 2. Every implementation detail MUST trace to either a PRD requirement (REQ-XXX-NN) or a tech-spec decision
-3. Before writing each spec document, include a `## Requirement Coverage` table at the top mapping every REQ-XXX-NN this document covers to the section that implements it
+3. Before the body, include a `## Requirement Coverage` table mapping every REQ-XXX-NN this document covers to the section that implements it
 4. Include complete type definitions, data structures, and function signatures in the project's language — not pseudocode. If a stack profile exists at `references/stacks/{stack}.md` (where `{stack}` comes from `forge.config.json`), follow its conventions for type definitions, error hierarchies, and documentation comments.
 5. Include error handling for every operation
 6. Include example usage where it aids clarity

@@ -10,14 +10,65 @@ Analyze feature artifacts for completeness, consistency, and quality. Produce st
 
 ## Subagent Delegation
 
-This skill should be delegated to the `forge-verifier` subagent via the Agent tool. The verifier subagent has:
+This skill is delegated to the `forge-verifier` subagent via the Agent tool. The verifier subagent has:
 - **Read-only tools** (Read, Glob, Grep, Bash) — it cannot accidentally modify specs
 - **Persistent memory** — it accumulates knowledge about this project's recurring issues and patterns across sessions
 - **The forge-verify skill pre-loaded** — so it has all verification checklists and guidance at startup
 
-To delegate: use the Agent tool with `subagent_type="forge-verifier"` and pass the feature name and optional mode in the prompt. The verifier is read-only — it returns findings as its response. After the verifier completes, **you** (the parent agent) write the findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`.
+### Choose single vs. parallel dispatch
 
-If the `forge-verifier` subagent is not available (not installed, or running in an environment that doesn't support subagents), fall back to running verification inline in the current session.
+Pick based on how many checks the mode carries (see the per-mode totals in Step 3):
+
+- **Small modes (prd ~15, tech ~15): single verifier.** Use the Agent tool once with
+  `subagent_type="forge-verifier"`, passing the feature name and mode. It runs all
+  checks and returns findings.
+- **Large modes (specs ~38, backlog ~25, impl ~20): parallel dimensioned fan-out.**
+  Split the mode's checklist into **dimension groups** and dispatch **one
+  `forge-verifier` per group, in parallel — a single message with multiple Agent
+  calls** (the `superpowers:dispatching-parallel-agents` pattern). Each instance owns a
+  disjoint slice of CHECK-IDs, so it verifies deeper over a narrower scope and they all
+  run concurrently. Suggested groups (map to the category clusters in
+  `references/verification-checklists.md`):
+  - **specs:** (1) types/contracts, (2) architecture/layout, (3) cross-reference &
+    traceability, (4) testing strategy, (5) integration.
+  - **backlog:** (1) item scoping & acceptance criteria, (2) dependency/ordering sanity,
+    (3) spec coverage & traceability, (4) schema/enum correctness.
+  - **impl:** (1) requirement coverage vs specs, (2) integration correctness,
+    (3) testing, (4) code-quality/conventions.
+
+  In each parallel instance's prompt, pass: the feature, the mode, the **dimension
+  label**, the **exact CHECK-IDs it owns**, and a note that **it is one of several
+  parallel instances** — it must verify ONLY its assigned checks and return findings
+  for that slice. Tell parallel instances to treat their `MEMORY.md` as **read-only**
+  (apply learned patterns, but do NOT write it — concurrent writers would race);
+  memory consolidation is left to single-verifier runs.
+
+### Synthesize (parent session)
+
+The verifier(s) are read-only — they return findings as their response; **you** (the
+parent) assemble and write the single document to
+`{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`. When you fanned out:
+1. Concatenate all instances' findings and **renumber `V-NNN` IDs uniquely** across the
+   merged set.
+2. **Dedup** overlaps — when two instances flag the same file+location+issue (e.g. a
+   cross-reference and a type-contract verifier both catch one mismatch), keep one,
+   union their `Checklist:` IDs.
+3. Build the **single Fix Execution Plan** over the merged findings (Step 5). The output
+   document format is unchanged, so `forge-fix` consumes it identically.
+
+### Adversarial confirmation (opt-in "deep verify")
+
+When the user asks for a deep/thorough verify, add a confirmation pass before writing:
+for each `error`- and `gap`-severity finding, dispatch a short skeptic `forge-verifier`
+prompted to **refute** it ("here is a claimed finding; prove it wrong; default to
+REFUTED if you cannot confirm it from the artifacts"). Drop findings the skeptic refutes
+with confidence — this cuts false positives before they reach the user. Lower-severity
+findings (`improvement`, `inconsistency`) skip this pass.
+
+### Fallback
+
+If the `forge-verifier` subagent is not available (not installed, or an environment
+without subagents), fall back to running verification inline in the current session.
 
 **Inline execution guidance:** If running inline (not as subagent), process verification checklists one category at a time to manage context pressure. Load only the artifacts needed for each category, verify, summarize findings, then move to the next category.
 

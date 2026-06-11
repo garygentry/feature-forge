@@ -157,46 +157,138 @@ Before launching, update `{specsDir}/{feature}/.pipeline-state.json`:
 
 ### 3b. Launch Background Process
 
-Run the rendered run command via the Bash tool with `run_in_background: true`. This is critical — loop runs can take significant time (minutes to hours depending on backlog size) and must not block the session.
+Launch the loop **backgrounded** so it survives session end and does not block the
+session, and prefer the machine-readable event stream so the session can supervise
+it live.
+
+- **If `loopRunner.eventStreamCommand` is configured (default for rauf):** render it
+  (it appends `--ndjson` to the run) and launch via the Bash tool with
+  `run_in_background: true`, redirecting stdout to a stable events file:
+
+  ```
+  mkdir -p {backlogDir}/{loopRunner.stateDir} && {rendered eventStreamCommand} > {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>&1
+  ```
+
+  (The `mkdir -p` guards the very first run, before the runner has created its
+  state dir.) This emits one JSON event per line **and** keeps the loop detached. The background
+  task's exit notification remains the single authoritative terminal signal (Step 4).
+- **Fallback (runner has no `eventStreamCommand`):** launch the plain `runCommand`
+  with `run_in_background: true`. The session will then supervise by tailing the
+  human log (3d fallback) instead of the NDJSON file.
+
+Loop runs can take significant time (minutes to hours depending on backlog size).
 
 ### 3c. Inform User
 
-Output to the user (commands below are the rendered `loopRunner` monitoring commands):
+Tell the user the run has started and that **this session is now actively
+supervising it** — they don't need to babysit a terminal, but the commands below
+are available if they want to watch directly. (Commands are the rendered
+`loopRunner` monitoring commands.)
 
 ```
 Loop started for {feature} ({N} items to process).
-
-The loop runs as a background process and will continue even if this session ends.
+This session is now monitoring it live — I'll report milestones and stop you in if
+the loop needs a human. The loop also runs detached and survives this session ending.
 Each item gets a fresh agent session with full context from the backlog and specs.
 
-Monitor progress (run these in another terminal or via `!` prefix):
+Watch directly if you like (another terminal or `!` prefix):
   {rendered statusCommand}              # one-shot status
-  {rendered statusCommand} --watch      # continuous polling
-  {rendered followCommand}              # stream live events
+  {rendered followCommand}              # stream live events (human)
   {rendered logCommand}                 # tail log file
   {rendered listCommand}                # check item statuses
 
 State files are at: {backlogDir}/{loopRunner.stateDir}/
-  - state.json      (loop state)
-  - rauf.log       (event log)
-  - iteration-status.json (live activity)
+  - state.json             (loop state)
+  - events.ndjson          (structured event stream this session is watching)
+  - rauf.log               (human event log)
+  - iteration-status.json  (live activity, incl. stuckWarning)
 ```
 
-### 3d. Wait for Completion
+### 3d. Arm a Monitor on the event stream
 
-Wait for the background task completion notification. Do NOT poll or sleep — the system will notify you when the process exits.
+Arm the **`Monitor` tool** on the structured event stream so events flow back into
+this session as they happen. Use **`persistent: true`** — runs can exceed `Monitor`'s
+maximum `timeout_ms` (1 hour), and a bounded timeout would silently stop watching a
+still-running loop.
+
+**Coverage-complete filter (silence is not success).** The filter MUST match every
+terminal and exception state, not just the happy path — otherwise a crash or hang
+looks identical to "still running." Monitor command (NDJSON path):
+
+```
+tail -n +1 -f {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>&1 \
+  | jq -rc --unbuffered 'select(.type | test("item_completed|item_blocked|needs_human|signal_parsed|loop_completed|loop_error|loop_cancelled|llm_stuck_warning"))'
+```
+
+- **Fallback (log tail, no NDJSON):** match the runner's **structured prose
+  prefixes**, never the `RAUF_*` tokens (those leak inside agent output and
+  false-match). For rauf:
+
+  ```
+  tail -n +1 -f {backlogDir}/{loopRunner.stateDir}/rauf.log \
+    | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:'
+  ```
+
+  (Match `needs human input` **without** a trailing colon — the runner writes
+  `needs human input (set aside):`.)
+
+If the Monitor is ever auto-stopped for event volume, re-arm with a tighter filter
+(drop `item_completed`, keep the exception/terminal events).
+
+### 3e. React to events as they land
+
+Each Monitor event arrives as a message. React per type — but keep the user signal
+high and the noise low:
+
+- **`item_completed`** → increment a running tally. These land minutes apart, so they
+  won't trip the volume auto-stop; still, surface a coalesced milestone ("12/30 done")
+  rather than echoing every line. For an exact breakdown, run the one-shot
+  `{rendered statusJsonCommand}` and report `done/total` from `backlogSummary`.
+- **`needs_human`** (or `signal_parsed` with `signal: "needs_human"`) → **surface
+  immediately** and send a **`PushNotification`** (an hours-long run means the user has
+  likely stepped away). **Important — the loop is NOT paused:** the runner has set that
+  item aside and kept working other items. So report *what* needs a human and *which*
+  item, then either (a) collect the user's answer via `AskUserQuestion` to **stage a
+  post-run retry**, or (b) offer to **cancel the run early** if the answer changes the
+  whole plan. Do not tell the user the loop is waiting on their reply — it isn't.
+- **`item_blocked`** → surface the blocked item + reason now (visibility) and
+  accumulate for the final summary. Use `{rendered statusJsonCommand}` to distinguish a
+  genuine `blocked` from a runner-`deferred` "false block" (`backlogSummary.deferred`).
+- **`loop_error`** → a real failure (this is also what a circuit-breaker halt — too many
+  consecutive infra failures — emits). Surface now and `PushNotification`. Offer
+  inspection / `--force` / re-run as appropriate.
+- **Stall detection** → rauf emits an **`llm_stuck_warning`** event when an iteration
+  stops making progress; the filter above includes it, so surface it live (a hang
+  warning, not yet a failure) and offer `--force` if it persists. If you instead want to
+  probe on quiet, run `{rendered watchCommand}` (or read
+  `{backlogDir}/{loopRunner.stateDir}/iteration-status.json`) and key off its
+  `stuckWarning` flag. Do **not** infer a stall from `state.json.updatedAt` alone — it is
+  not a liveness proof.
+
+### 3f. Reach completion
+
+Step 4 is reached when the backgrounded process exits (its completion notification is
+authoritative); the `loop_completed` / `loop_error` / `loop_cancelled` event is the live
+heads-up that it's imminent. Stop the Monitor (it ends on its own when `tail` sees the
+process-ended log, or via `TaskStop`) and proceed to Step 4. Do NOT foreground-sleep
+or poll — the harness drives both the Monitor events and the completion notification.
 
 ## Step 4: Check Results
 
-When the background process completes:
+When the background process completes (its exit notification):
 
 ### 4a. Get Final Backlog State
 
-Run the **list command** (`loopRunner.listCommand`). Parse the JSON output to count items by status.
+Run the **status-json command** (`loopRunner.statusJsonCommand`) and read
+`backlogSummary` for the authoritative counts — it separates the three non-done
+outcomes: genuine `blocked`, `needsHuman`, and runner-`deferred` ("false blocks").
+Fall back to the **list command** (`loopRunner.listCommand`) if `statusJsonCommand`
+is not configured. You will already have most of this from the live tally in 3e.
 
 ### 4b. Report Results
 
-Present a summary to the user:
+Present a summary to the user. Pick every branch that applies (a run can be both
+blocked and needs-human):
 
 **All items done:**
 ```
@@ -205,6 +297,20 @@ Loop completed for {feature}. All {N} items implemented successfully.
 Next steps:
   - /feature-forge:forge-verify {feature} impl   Verify the implementation
   - /feature-forge:forge-6-docs {feature}         Generate architecture docs
+```
+
+**Some items need a human:**
+```
+Loop completed for {feature}.
+  Completed:   {done}/{total}
+  Needs human: {needsHuman} items (set aside during the run)
+
+These items asked a question the loop couldn't answer:
+  - {id}: {title} — {reason}
+
+Resolve, then retry:
+  - Answer the question(s) above, then re-run `/feature-forge:forge-5-loop {feature}`
+    (add --retry-blocked to pick the set-aside items back up).
 ```
 
 **Some items blocked:**
@@ -219,8 +325,17 @@ Blocked items:
 
 Options:
   - Re-run with --retry-blocked to retry blocked items
-  - Review blocked items manually: rauf backlog show . {id} --backlog {backlogDir}
+  - Review blocked items manually: {bin} backlog show . {id} --backlog {backlogDir}
   - Continue to docs if blocking items are non-critical
+```
+
+**Some items deferred (runner gave up after retries — "false blocks"):**
+```
+Loop completed for {feature}.
+  Completed: {done}/{total}
+  Deferred:  {deferred} items (no signal after retries — likely just need another pass)
+
+Re-run `/feature-forge:forge-5-loop {feature}` to retry deferred items.
 ```
 
 **Some items still pending (iteration limit reached):**
@@ -253,6 +368,9 @@ Update `{specsDir}/{feature}/.pipeline-state.json`:
 - rauf resolves `RAUF.md` with fallback: checks `{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`. As long as the runner is installed in the project, the prompt template will be found.
 - State files (state.json, rauf.log, etc.) are created at `{backlogDir}/{loopRunner.stateDir}/` — this is within the feature's spec directory and is expected. State is isolated per backlog dir, so concurrent features don't collide.
 - If the session disconnects during a long-running loop, the runner process continues independently. The user can check results later with the status / list commands.
-- Never run the run command in the foreground (without `run_in_background`) — it blocks and will hit the Bash tool timeout for any non-trivial backlog.
+- Never run the run command in the foreground (without `run_in_background`) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the `Monitor` tool (3d), which is harness-driven, not a sleep loop. Never `sleep`/poll in the foreground to wait for the loop.
+- The `Monitor` on the event stream must use `persistent: true`, not a bounded `timeout_ms` — a multi-hour run would outlive the 1-hour `timeout_ms` cap and the watch would stop while the loop is still going.
+- Monitor the **structured** surface (`events.ndjson` via `eventStreamCommand`), not the human log, and never filter on raw `RAUF_*` tokens — they appear inside agent prose in the log and produce false completion/blocked matches. Key off the runner's parsed event `type`s (or, in the log fallback, the `Item …`/`Loop …` prose prefixes).
+- A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets that item aside and keeps going. Surface it live for visibility, but don't tell the user the loop is waiting on their answer; resolution is a follow-up retry pass (or an early cancel).
 - If a previous loop run left a stale lock, the user may need to pass `--force` to clear it. rauf will report this error clearly.
 - The version gate (1c) uses the `--json` form on purpose; never parse `rauf version`'s human output.

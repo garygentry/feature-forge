@@ -32,12 +32,34 @@ defined authoritatively in rauf's
   (usage/IO) that emits `{ valid, findings[] }` under `--json`. This is the
   single check feature-forge trusts — it never re-implements validation.
 - **The signal protocol** (`RAUF_DONE` / `RAUF_BLOCKED` / `RAUF_NEEDS_HUMAN` /
-  `RAUF_REVIEW`).
+  `RAUF_REVIEW`). These are emitted by the *coding agent* into its stdout and
+  parsed by the runner — they are not runner-authored log lines, so consumers key
+  off the runner's parsed events (below), never the raw `RAUF_*` tokens (which can
+  also appear inside an agent's prose and produce false matches).
+- **A machine-readable event stream** for live supervision (`loopRunner.eventStreamCommand`,
+  rauf: `loop run … --ndjson`): one JSON event per line with a stable `type`
+  vocabulary — `item_completed` / `item_blocked` / `needs_human` / `signal_parsed`
+  / `loop_completed` / `loop_error` / `loop_cancelled` / `llm_stuck_warning` (a
+  circuit-breaker halt surfaces as `loop_error`) — plus a
+  derived-status JSON (`loopRunner.statusJsonCommand`, rauf: `status … --json`) and
+  per-iteration telemetry with a `stuckWarning` flag (`loopRunner.watchCommand`,
+  rauf: `loop watch … --json`). `forge-5-loop` supervises the run through these,
+  **not** by parsing the human log. `followCommand` / `logCommand` are
+  human-formatted streams for a person watching in a terminal, not machine surfaces.
 - **The state-dir layout** (per-`--backlog` isolation under `loopRunner.stateDir`).
-- **The CLI verbs** mapped by `loopRunner`: run / validate / status / list /
-  follow / log / version.
+- **The CLI verbs** mapped by `loopRunner`: run (+ event-stream) / validate /
+  status (+ `--json`) / list / watch / follow / log / version.
 - **A `version` verb** (`{bin} version --json` → `{ version: <semver> }`) so
   feature-forge can enforce `loopRunner.minRunnerVersion` before running.
+
+> **The runner does not pause for human input.** When the coding agent signals
+> `RAUF_NEEDS_HUMAN`/`RAUF_BLOCKED`/`RAUF_REVIEW`, a conforming runner sets that
+> item aside and **keeps working other runnable items to completion** (rauf:
+> `runner.ts` needs_human handler). So a supervising session can surface those
+> events live (visibility) and cancel early, but it cannot inject an answer and
+> resume the set-aside item mid-run — resolution is a follow-up retry pass. A
+> first-class pause/resume-with-answer capability is a desirable runner
+> enhancement (see `plans/rauf-enhancement-recommendations.md`).
 
 ## rauf is the default and reference implementation
 

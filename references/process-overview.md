@@ -92,13 +92,17 @@ The project's stack is detected during forge-2-tech and persisted in `forge.conf
 
 ## Subagents
 
-The plugin includes two specialized subagents in `agents/` that enhance specific pipeline steps:
+The plugin includes three specialized subagents in `agents/` that enhance specific
+pipeline steps. They use **model aliases** (`opus`/`sonnet`) rather than pinned IDs, so
+they track the current model tier automatically.
 
 ### forge-verifier
 - **Purpose:** Read-only verification of pipeline artifacts
 - **Used by:** `forge-verify` skill (delegation via Agent tool)
 - **Tools:** Read, Glob, Grep, Bash (read-only operations only)
+- **Model:** Opus (judgement-heavy gap/inconsistency analysis)
 - **Memory:** Project-scoped persistent memory — accumulates knowledge about recurring issues and project-specific patterns across sessions
+- **Parallel:** For large modes (specs/backlog/impl), `forge-verify` dispatches several instances in parallel, one per **dimension group** (e.g. types/contracts, traceability, testing), and the parent merges their findings. An opt-in adversarial "deep verify" pass re-checks high-severity findings with a skeptic instance to cut false positives. A purely mechanical dimension (e.g. traceability validation) could run on a cheaper tier (Haiku) if cost matters.
 - **Why a subagent:** Verification reads the entire spec suite, backlog, and potentially source code. Running this in a separate context window prevents context pressure on the main conversation. The read-only tool restriction also makes it impossible to accidentally modify specs during verification.
 
 ### forge-researcher
@@ -106,6 +110,14 @@ The plugin includes two specialized subagents in `agents/` that enhance specific
 - **Used by:** `forge-2-tech` skill (spawned before the tech-spec interview)
 - **Tools:** Read, Glob, Grep, Bash (read-only)
 - **Model:** Sonnet (cost-efficient for exploration tasks)
+- **Parallel:** For a large codebase or uncertain scope, `forge-2-tech` may dispatch several researchers in parallel, each with a disjoint focus (structure/conventions, per-subsystem integration surfaces), and merge the reports.
 - **Why a subagent:** Tech-spec planning requires reading many files across the project to understand integration points. Running this in a separate context returns a concise report without consuming the main session's context, keeping the interview focused.
 
-Both subagents are optional. If the agents are not installed or the environment doesn't support subagents, the corresponding skills fall back to running inline.
+### forge-spec-writer
+- **Purpose:** Author exactly one numbered implementation spec document to the forge-3-specs quality bar
+- **Used by:** `forge-3-specs` skill (parallel fan-out after the shared foundation docs are written)
+- **Tools:** Read, Glob, Grep, Bash, **Write** (the only authoring agent — constrained to write its single assigned file)
+- **Model:** Opus (spec authoring is detail- and judgement-heavy)
+- **Why a subagent:** Authoring the whole suite in the main session serializes the work and pressures context. Writing the foundation (00/01) first, then fanning out one writer per remaining doc, parallelizes authoring while the parent keeps the cross-reference + traceability finish in view.
+
+All three subagents are optional. If the agents are not installed or the environment doesn't support subagents, the corresponding skills fall back to running inline (or, for spec authoring, batched in the main session).
