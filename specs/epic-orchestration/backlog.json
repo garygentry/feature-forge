@@ -151,8 +151,8 @@
         "validate of a clean manifest exits 0 and --json prints {\"valid\": true, \"findings\": []}",
         "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:27:27.873Z",
       "dependsOn": [
         "001",
         "003",
