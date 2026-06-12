@@ -42,13 +42,37 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 ### 1a. Pipeline State Check
 
-Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode, `stages.forge-4-backlog` must be `complete`. If not, STOP and tell the user: "Backlog hasn't been created yet. Run `/feature-forge:forge-4-backlog {feature}` first."
+**Resolve the feature directory first.** Invoke the **Feature Directory Resolution** block in `references/shared-conventions.md` to turn the bare feature name into `{resolvedFeatureDir}` (exit 0 → stdout is the absolute dir; exit ≥ 1 → STOP and surface the finding verbatim). Read state from `{resolvedFeatureDir}/` everywhere this skill previously wrote `{specsDir}/{feature}/` (the 1e backlog path and the Step 3a / Step 5 state writes). Standalone features resolve to their flat path exactly as today.
+
+Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, `stages.forge-4-backlog` must be `complete`. If not, STOP and tell the user: "Backlog hasn't been created yet. Run `/feature-forge:forge-4-backlog {feature}` first."
 
 ### 1b. Verification Check
 
 Check if `stages.forge-verify-backlog` exists and has status `passed` or `findings-applied`. If not, use `AskUserQuestion` to warn:
 
 "Backlog hasn't been verified yet. It's recommended to run `/feature-forge:forge-verify {feature}` first to catch issues before implementation. Continue anyway?"
+
+### 1b-epic. Epic Dependency Gate
+
+Read the resolved feature's `.pipeline-state.json`. **If it has no `epic` key, skip this sub-step entirely** (standalone feature — REQ-COMPAT-01; standalone runs are unchanged). Otherwise:
+
+1. Run `render-status "{epic}" --specs-dir "{specsDir}" --json` via the helper:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" \
+     render-status "{epic}" --specs-dir "{specsDir}" --json
+   ```
+
+2. Find this feature's entry; read its `unmetDeps` (the direct `dependsOn` not yet complete-for-orchestration per `00-core-definitions.md §7`).
+3. **If `unmetDeps` is empty**, proceed to 1c with no prompt.
+4. **If `unmetDeps` is non-empty**, use `AskUserQuestion` (do NOT inline the question as prose) to warn that the feature depends on the unmet dependencies, which are not yet complete, and that running the loop now means implementing against contracts that may still change:
+
+   > "{feature} depends on {unmetDeps joined}, which are not yet complete. Running the loop now means implementing against contracts that may still change. Proceed anyway, or stop and finish the dependencies first?"
+
+   Require an **explicit "Proceed anyway"** choice to continue (REQ-ORCH-04). "Stop" aborts before any runner setup. `--force` (shared-conventions Force Mode) also bypasses this gate with the standard force warning.
+5. If `render-status` exits ≥ 1 (corrupt manifest), surface its findings and **STOP** — do not silently run a loop whose dependency state is unverifiable (REQ-ROBUST-02).
+
+This gate runs **before** the runner version/setup gates (1c/1d) so a blocked feature stops early, before any runner side-effects.
 
 ### 1c. Runner Version Gate
 
@@ -83,9 +107,9 @@ Check that `loopRunner.preconditionFile` (default `.rauf.json`) exists in the pr
 
 ### 1e. Backlog File Check
 
-Resolve the backlog file path:
-- If `backlogDir` is set in `forge.config.json`: use `{backlogDir}/backlog.json`
-- Otherwise: use `{specsDir}/{feature}/backlog.json`
+Resolve the backlog file path (matching forge-4-backlog's composition rule, item 015 / §6.2):
+- If `backlogDir` is set in `forge.config.json`: use `{backlogDir}/{feature}/backlog.json` (the per-feature subpath, so each epic member's backlog stays independent — the `{feature}` segment prevents collisions across a multi-feature epic)
+- Otherwise: use `{resolvedFeatureDir}/backlog.json`
 
 Verify the file exists on disk. If not, STOP and tell the user: "No backlog.json found at {path}. Run `/feature-forge:forge-4-backlog {feature}` to generate it."
 
@@ -105,8 +129,8 @@ If there are `blocked` items, note them — the user may want `--retry-blocked`.
 
 `{backlogDir}` is a **directory path** (not a file path), relative to the project root.
 
-- If `backlogDir` is set in config: use that path.
-- Otherwise: use `{specsDir}/{feature}` (the directory containing `backlog.json`).
+- If `backlogDir` is set in config: use the per-feature subpath `{backlogDir}/{feature}` (matching the 1e composition rule and forge-4-backlog §6.2).
+- Otherwise: use `{resolvedFeatureDir}` (the directory containing `backlog.json`).
 
 **Example:** If `specsDir` is `./specs` and feature is `auth`, `{backlogDir}` is `specs/auth`.
 
@@ -149,7 +173,7 @@ If the user requests additional flags, append them to the rendered run command.
 
 ### 3a. Update Pipeline State
 
-Before launching, update `{specsDir}/{feature}/.pipeline-state.json`:
+Before launching, update `{resolvedFeatureDir}/.pipeline-state.json`:
 - Set `stages.forge-5-loop.status` to `in-progress`
 - Set `stages.forge-5-loop.startedAt` to current ISO timestamp
 - Set `currentStage` to `forge-5-loop`
@@ -350,7 +374,7 @@ Re-run `/feature-forge:forge-5-loop {feature}` to continue with remaining items.
 
 ## Step 5: Update Pipeline State
 
-Update `{specsDir}/{feature}/.pipeline-state.json`:
+Update `{resolvedFeatureDir}/.pipeline-state.json`:
 
 1. Set `stages.forge-5-loop`:
    - `status`: `"complete"` if all backlog items are `done`, otherwise `"in-progress"`
@@ -361,6 +385,28 @@ Update `{specsDir}/{feature}/.pipeline-state.json`:
 3. Update `updatedAt`
 
 **No git commit is needed** — the loop runner commits atomically per completed item during the run. The implementation code is already committed.
+
+> **Note:** Step 5's "no git commit needed" remark refers to *implementation code*, which the runner commits per-item. The epic handoff's commit in Step 6 below is of *pipeline state / manifest* — a distinct artifact — and applies only to epic members.
+
+## Step 6: Epic Handoff
+
+**Gate:** only run this step if (a) the resolved feature's `.pipeline-state.json` has an `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete` (all backlog items done). If either is false, **skip** — standalone features and partial runs end exactly as today (REQ-COMPAT-01).
+
+1. **Offer impl-verify first (recommended, skippable).** Per the completion rule (`00-core-definitions.md §7`), a feature whose `forge-verify-impl.status == findings-reported` does **not** unblock dependents. Use `AskUserQuestion` (NOT inline prose) to offer:
+
+   > "{feature}'s loop is done. Recommended: run `/feature-forge:forge-verify {feature} impl` before unblocking dependents. Run it now, or skip and continue the handoff?"
+
+   The user may skip (then completion is judged on the §7 rule with impl-verify absent).
+2. **Recompute and announce.** Run `render-status "{epic}" --specs-dir "{specsDir}" --json`. Announce the feature's completion and the epic rollup (e.g. "2/4 features complete") — derived live from disk, never re-computed in prose.
+3. **Identify the next actionable feature(s).** Read `render-status`'s `actionable` set (features whose every dependency is now complete and that are not themselves complete) and `nextCommand`.
+   - **None actionable** (everything done, or remaining features still blocked): say so.
+     - If `rollup.total > 0` **AND** `rollup.complete == rollup.total`, suggest `/feature-forge:forge-6-docs {feature}` and note the epic-level documentation offer (§10). The `rollup.total > 0` guard prevents an **empty epic** (`0 == 0`) from being reported complete.
+     - Otherwise, list what is still blocked and on which dependencies. End — do not prompt to start a feature that cannot start.
+   - **One or more actionable:** use `AskUserQuestion` presenting **each actionable feature** as an option (plus "stop here"). Execution is **serial** — the user picks exactly one (REQ-ORCH-03). Do **not** autonomously chain into the next pipeline.
+4. **Begin the chosen feature.** For the picked feature:
+   - **PRD absent** (no `PRD.md`, or `stages.forge-1-prd` not complete): offer to author it now — "Start `/feature-forge:forge-1-prd {chosen}`?" (REQ-ORCH-02). On yes, hand off to forge-1-prd (which injects epic context per §5.1).
+   - **PRD present:** point the user at the chosen feature's `nextCommand` from render-status.
+5. **Commit (REQ-OBS-01).** When `gitCommitAfterStage` is true, commit the Step 5 completion write (and any manifest `updatedAt` bump) via the shared-conventions **Git Commit Protocol**, staging the epic subtree so the member state change commits atomically: `git add {specsDir}/{epic}/` then `{commitPrefix}({feature}): complete loop`. If `gitCommitAfterStage` is false, skip the commit.
 
 ## Gotchas
 
