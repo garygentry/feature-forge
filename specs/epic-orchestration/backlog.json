@@ -403,8 +403,8 @@
         "Both blocks state that standalone-feature behavior is unchanged (REQ-COMPAT-01)",
         "bash scripts/validate.sh passes (markdown-only change)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:53:40.980Z",
       "dependsOn": [
         "005",
         "007"
