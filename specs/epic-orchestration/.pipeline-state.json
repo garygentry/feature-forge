@@ -38,8 +38,9 @@
       "commitHash": "1a101a3"
     },
     "forge-3-specs": {
-      "status": "in-progress",
+      "status": "complete",
       "version": 1,
+      "commitHash": "929c5c4",
       "artifacts": [
         "00-core-definitions.md",
         "01-architecture-layout.md",
