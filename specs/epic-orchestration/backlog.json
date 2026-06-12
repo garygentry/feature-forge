@@ -96,7 +96,7 @@
       "status": "pending",
       "completedAt": null,
       "dependsOn": ["003"],
-      "notes": "The spec gives the exact iterative-DFS code in 02 §4 — follow it; the stack holds (node, next-neighbor-index) tuples. Complexity must stay O(V+E) so the 20-feature perf test (item 010) passes comfortably.",
+      "notes": "The spec gives the exact iterative-DFS code in 02 §4 — follow it; the stack holds (node, next-neighbor-index) tuples. Complexity must stay O(V+E) so the 20-feature perf test (item 010b) passes comfortably.",
       "estimatedIterations": 1,
       "model": "opus",
       "specReferences": [
@@ -174,7 +174,7 @@
       "status": "pending",
       "completedAt": null,
       "dependsOn": ["005", "006"],
-      "notes": "render-status is the single implementation of the completion predicate reused by the forge-5 dependency gate and handoff (items 016) and the navigator/docs (017/019). parallelEligible uses the transitive closure of dependsOn over the actionable subset — trivial at <=20 nodes.",
+      "notes": "render-status is the single implementation of the completion predicate reused by the forge-5 dependency gate and handoff (item 016) and the navigator/docs (017/019). parallelEligible uses the transitive closure of dependsOn over the actionable subset — trivial at <=20 nodes.",
       "estimatedIterations": 1,
       "model": "opus",
       "specReferences": [
@@ -199,8 +199,8 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["006", "007"],
-      "notes": "There is intentionally NO contract-setting mutator and no --exposes-json/--consumes-json flag (02 §7, 03 §7.3) — add-feature seeds empty contracts; the forge-0-epic skill populates exposes/consumes by composing the manifest entry then re-running validate. Byte-identical-on-refusal is the key invariant the interrupt-safety test (item 010) leans on.",
+      "dependsOn": ["006"],
+      "notes": "Mutators re-validate the edited dict via _validate_dict (item 006) only — they do NOT call render-status. There is intentionally NO contract-setting mutator and no --exposes-json/--consumes-json flag (02 §7, 03 §7.3): add-feature seeds empty contracts; the forge-0-epic skill populates exposes/consumes by composing the manifest entry then re-running validate. Byte-identical-on-refusal is the key invariant the interrupt-safety test (item 010b) leans on.",
       "estimatedIterations": 1,
       "model": "opus",
       "specReferences": [
@@ -223,8 +223,8 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["008"],
-      "notes": "Fixtures are read-only templates; tests that mutate copy them into tmp_path via fixture_copy. The helper must be fully implemented (item 008) so the 'good' fixtures can be confirmed valid. conftest.py source is given verbatim in 05 §2.3 — transcribe it.",
+      "dependsOn": ["007", "008"],
+      "notes": "Fixtures are read-only templates; tests that mutate copy them into tmp_path via fixture_copy. The complete helper must exist — render-status (007) and the mutators (008) — so the 'good' fixtures can be confirmed valid and so the render-status/status-derivation tests in item 010b have their subject implemented. conftest.py source is given verbatim in 05 §2.3 — transcribe it.",
       "estimatedIterations": 1,
       "model": "opus",
       "specReferences": [
@@ -232,25 +232,50 @@
       ]
     },
     {
-      "id": "010",
+      "id": "010a",
       "type": "test",
       "priority": 1,
-      "title": "Author tests/test_epic_manifest.py full unit-test matrix",
-      "description": "Write tests/test_epic_manifest.py covering the full matrix in 05 §3 and the FindingCode traceability in 05 §6. Use the conftest.py fixtures (run_cli, fixture_copy, fixtures_dir, helper_module) from item 009. The spec gives concrete pytest functions for each subsection — transcribe and adapt them.\n\nCover: §3.1 valid-manifest round-trip (validate -> add-feature -> re-validate clean); §3.2 schema/cached-status (per-feature status field rejected; plus a missing-required-field schema case); §3.3 cyclic rejection via CLI + in-process find_cycle incl. self-dependency ['x','x']; §3.4 duplicate-name (check-name) + ambiguous (resolve) on dup-name; §3.5 corrupt-json no-crash (no Traceback on stderr); §3.6 path-escape/unsafe — parametrized unsafe args exit 2, in-manifest unsafe name exits 1; §3.7 status derivation all five branches (parametrized a/b/c/d/e) + the live-edit acceptance test (edit pipeline-state, re-render, see change); §3.8 atomic-write mechanism (no temp left) + interrupt-safety (monkeypatch os.replace to raise, original intact); §3.9 render-status derived sets (actionable disjoint from complete, parallelEligible subset of actionable, rollup counts, blocked lists unmetDeps); §3.10 dangling-dependsOn; §3.11 resolve flat/nested/not-found; §3.12 a generated 20-feature epic validates+renders under 1s (REQ-ROBUST-01); §3.13 exit-code contract table per (subcommand, outcome).\n\nEnsure every FindingCode in 00 §4 (corrupt-json, schema, cached-status, duplicate-name, dangling-ref, cycle, unsafe-name, path-escape, not-found, ambiguous) is produced by at least one test.",
+      "title": "Author structural & validation unit tests (test_epic_manifest.py part 1)",
+      "description": "Write the first half of tests/test_epic_manifest.py — the structural, validation, resolution, and exit-code tests from 05 §3 — using the conftest.py fixtures (run_cli, fixture_copy, fixtures_dir, helper_module) from item 009. The spec gives concrete pytest functions per subsection; transcribe and adapt. This item and item 010b together compose one file (test_epic_manifest.py) — author the functions for THIS item's subsections; item 010b adds the rest. Both depend only on 009 and touch the same test file, so coordinate function names to avoid collisions (prefix-by-concern is fine).\n\nCover: §3.1 valid-manifest round-trip (validate -> add-feature -> re-validate clean); §3.2 schema/cached-status (per-feature status field rejected; plus a missing-required-field schema case); §3.3 cyclic rejection via CLI + in-process find_cycle incl. self-dependency ['x','x']; §3.4 duplicate-name (check-name) + ambiguous (resolve) on dup-name; §3.5 corrupt-json no-crash (no Traceback on stderr); §3.6 path-escape/unsafe — parametrized unsafe args exit 2, in-manifest unsafe name exits 1; §3.10 dangling-dependsOn; §3.11 resolve flat/nested/not-found; §3.13 exit-code contract table per (subcommand, outcome).\n\nEnsure the FindingCodes in 00 §4 owned by these subsections are each produced by at least one test: corrupt-json, schema, cached-status, duplicate-name, dangling-ref, cycle, unsafe-name, path-escape, not-found, ambiguous. (Status-derivation, render-status, atomic-write, and perf tests are item 010b.)",
       "acceptanceCriteria": [
-        "python3 -m pytest tests/ -q is green (all tests pass)",
-        "Every helper subcommand (resolve, validate, check-name, render-status, add-feature, remove-feature, reorder, set-dep, set-status) is exercised by at least one test",
-        "All five §7 completion branches are exercised (parametrized a-e in the status-derivation test)",
-        "Every FindingCode in 00 §4 is produced by at least one test",
-        "The 20-feature validate+render performance test asserts elapsed < 1s (or <1.5s with the in-process <0.1s assertion per the spec note)",
-        "The interrupt-safety test monkeypatches os.replace to raise and asserts the original manifest is byte-identical afterward",
+        "python3 -m pytest tests/ -q is green with these tests present (item 010b may still be pending; the file must remain importable and its present tests pass)",
+        "Subcommands resolve, validate, check-name, add-feature are each exercised by at least one test",
+        "Every FindingCode in this slice (corrupt-json, schema, cached-status, duplicate-name, dangling-ref, cycle, unsafe-name, path-escape, not-found, ambiguous) is produced by at least one test",
+        "find_cycle is unit-tested in-process including the self-dependency ['x','x'] case",
+        "The §3.13 exit-code contract is asserted per (subcommand, outcome) for the resolve/validate/check-name rows",
         "bash scripts/validate.sh passes with pytest installed (runs the suite)"
       ],
       "status": "pending",
       "completedAt": null,
       "dependsOn": ["009"],
-      "notes": "Where 02-manifest-helper-cli.md fixes an exact message/flag that differs from an illustrative assertion in 05 §3, 02 wins — reconcile at implementation time (assert on finding CODES and message SHAPE, e.g. the '->' arrow in cycle messages, not brittle exact strings). Mutators additionally assert byte-identical-on-refusal (reuses item 008's guarantee).",
-      "estimatedIterations": 2,
+      "notes": "Where 02-manifest-helper-cli.md fixes an exact message/flag that differs from an illustrative assertion in 05 §3, 02 wins — assert on finding CODES and message SHAPE (e.g. the '->' arrow in cycle messages), not brittle exact strings. This item and 010b co-author one file; keep function names disjoint.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/05-testing-strategy.md",
+        "specs/epic-orchestration/02-manifest-helper-cli.md",
+        "specs/epic-orchestration/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "010b",
+      "type": "test",
+      "priority": 1,
+      "title": "Author status/render/atomic/perf unit tests (test_epic_manifest.py part 2)",
+      "description": "Write the second half of tests/test_epic_manifest.py — the status-derivation, render-status, atomic-write, and performance tests from 05 §3 — using the conftest.py fixtures from item 009. Add these functions to the same tests/test_epic_manifest.py file authored in item 010a (keep function names disjoint from 010a's). The spec gives concrete pytest functions per subsection; transcribe and adapt.\n\nCover: §3.7 status derivation all five branches (parametrized a/b/c/d/e over the status-derivation/lifecycle fixture) + the live-edit acceptance test (edit a member's pipeline-state, re-render, observe the change with no refresh step); §3.8 atomic-write mechanism (no temp file left behind) + interrupt-safety (monkeypatch os.replace to raise, assert the original manifest is byte-identical); §3.9 render-status derived sets (actionable disjoint from complete, parallelEligible subset of actionable, rollup counts, blocked features list their unmetDeps); §3.12 a generated 20-feature epic validates+renders under 1s (REQ-ROBUST-01; use the <1.5s + in-process <0.1s fallback from the spec note if subprocess jitter risks flakiness).\n\nEnsure subcommands render-status, remove-feature, reorder, set-dep, set-status are each exercised by at least one test here (the mutator exit-code rows from §3.13: clean->0, cycle/dangling->1 with byte-identical file, unsafe/bad-value->2).",
+      "acceptanceCriteria": [
+        "python3 -m pytest tests/ -q is green (all of 010a + 010b pass together)",
+        "All five §7 completion branches are exercised (parametrized a-e in the status-derivation test) and the live-edit/no-refresh acceptance test passes",
+        "The interrupt-safety test monkeypatches os.replace to raise and asserts the original manifest is byte-identical afterward",
+        "render-status derived sets (actionable/parallelEligible/rollup/blocked-unmetDeps) are asserted, and the 20-feature validate+render perf test asserts the spec's time bound",
+        "render-status, remove-feature, reorder, set-dep, set-status are each exercised by at least one test",
+        "bash scripts/validate.sh passes with pytest installed (runs the suite)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["009"],
+      "notes": "Co-authors tests/test_epic_manifest.py with item 010a — append functions, do not rewrite 010a's. Together 010a+010b must exercise EVERY subcommand and every FindingCode in 00 §4 (010a owns the finding-code coverage; 010b owns the mutator-exit-code rows and the status/render/atomic/perf coverage).",
+      "estimatedIterations": 1,
       "model": "opus",
       "specReferences": [
         "specs/epic-orchestration/05-testing-strategy.md",
@@ -266,15 +291,15 @@
       "description": "Append a new numbered step to scripts/validate.sh that compile-checks and tests the epic-manifest helper, per 05 §5 (exact bash is given in the spec). Read the current validate.sh first to match its style (PASS/FAIL/ERRORS/WARNINGS variables, leading blank-line + section-echo pattern). Insert the new step AFTER the existing script-permissions step and BEFORE the final summary block, so a helper/test failure does not mask the structural checks above it.\n\nThe step must: guard on [ -f \"$HELPER\" ] (HELPER=\"$REPO_ROOT/scripts/epic-manifest.py\"); run python3 -m py_compile \"$HELPER\" as a HARD check (failure increments ERRORS, prints FAIL; success prints PASS); then, only if python3 -c \"import pytest\" succeeds, run python3 -m pytest \"$REPO_ROOT/tests\" -q (failure increments ERRORS) — otherwise print a non-fatal SKIP line and increment WARNINGS. If the helper file is absent entirely, print a non-fatal SKIP and increment WARNINGS. Mirror the existing PASS:/FAIL: echo style.",
       "acceptanceCriteria": [
         "scripts/validate.sh gains a new step (after script-permissions, before the final summary) that compile-checks scripts/epic-manifest.py and conditionally runs the pytest suite",
-        "bash scripts/validate.sh passes WITH pytest installed and actually runs python3 -m pytest tests (PASS line shown)",
         "When pytest is not importable, validate.sh prints a non-fatal SKIP line, increments WARNINGS (not ERRORS), and still exits 0 if structural checks pass",
         "py_compile failure of the helper increments ERRORS (hard check)",
-        "The new step is the last among the checks; existing steps are unchanged"
+        "The new step is the last among the checks; existing steps are unchanged",
+        "bash scripts/validate.sh passes WITH pytest installed and actually runs python3 -m pytest tests (PASS line shown)"
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["010"],
-      "notes": "WARNINGS is already declared and surfaced in validate.sh's success summary, so SKIP lines report without failing. Transcribe the exact bash from 05 §5; the [ -f \"$HELPER\" ] guard keeps the file green during incremental authoring.",
+      "dependsOn": ["010a", "010b"],
+      "notes": "WARNINGS is already declared and surfaced in validate.sh's success summary, so SKIP lines report without failing. Transcribe the exact bash from 05 §5; the [ -f \"$HELPER\" ] guard keeps the file green during incremental authoring. Depends on both test items (010a, 010b) so the suite it runs is complete.",
       "estimatedIterations": 1,
       "model": "sonnet",
       "specReferences": [
@@ -283,24 +308,50 @@
       ]
     },
     {
-      "id": "012",
+      "id": "012a",
       "type": "feature",
       "priority": 1,
-      "title": "Author skills/forge-0-epic/SKILL.md creation + edit stage",
-      "description": "Author skills/forge-0-epic/SKILL.md — the prose Claude Code skill for epic creation and edit, per 03-forge-0-epic-stage.md (whole document). The skill COMPOSES manifest JSON and ISSUES scripts/epic-manifest.py commands; it never eyeballs a dependency graph for cycles and never hand-rolls a manifest write. Route ALL user questions through AskUserQuestion.\n\nInclude: (1) YAML frontmatter per 03 §1 — name: forge-0-epic, a description matching the spec, argument-hint: \"<epic-name>\". (2) A Prerequisites section pointing at references/shared-conventions.md (epic-name validation, AskUserQuestion guardrail, config reading, Git Commit Protocol). (3) Step 0 dispatch detection: probe {specsDir}/{epic}/epic-manifest.json -> NEW=creation branch, EXISTS=edit branch; STOP if {specsDir}/{epic}/ is itself a feature dir; pre-flight check-name on the epic name. (4) Creation branch C1-C8: framing interview, feature-list interview (check-name each candidate, re-prompt on duplicate/unsafe), per-feature charter + structured exposes/consumes interview (charter only, NOT a PRD — redirect PRD-level detail to forge-1-prd), dependency-edge interview (seed from consumes), compose epic-manifest.json (schemaVersion 1, status active, narrativeDoc EPIC.md, createdAt==updatedAt, NO per-feature status) then `validate --json` and loop back on findings, generate EPIC.md per the §6 structure, create one member subdir per feature with a .pipeline-state.json carrying epic back-pointer + stages.forge-0-epic complete + currentStage forge-1-prd. (5) Edit branch E1-E6: validate-or-refuse, choose operation mapping to add-feature/remove-feature/reorder/set-dep/set-status, apply via helper mutator (surface findings verbatim, atomic refusal), impact warning via render-status when an in-flight/complete feature is affected, patch the affected EPIC.md sections (full regen only on request), leave a removed feature's dir in place with a warning. (6) Observability/commit per §8: member-state writes, the lazily-created {specsDir}/{epic}/.epic-state.json note (written by skills, not the helper), Git Commit Protocol staging {specsDir}/{epic}/, and the closing next-steps message. (7) Error handling table per §9 — surface every helper finding verbatim, never auto-repair a corrupt manifest, never proceed past a gating exit >= 1.\n\nReference the exact helper invocations with ${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py and --specs-dir per 01 §2.2.",
+      "title": "Author forge-0-epic SKILL.md — creation branch (C1–C8)",
+      "description": "Create skills/forge-0-epic/SKILL.md with the frontmatter, shared setup, dispatch detection, and the full CREATION branch, per 03-forge-0-epic-stage.md §1–§6. Item 012b adds the edit branch + observability/error sections to the SAME file afterward — so author a complete, self-consistent file whose creation path is fully specified and whose edit path may be a brief placeholder section that 012b fleshes out. The skill COMPOSES manifest JSON and ISSUES scripts/epic-manifest.py commands; it never eyeballs a dependency graph for cycles and never hand-rolls a manifest write. Route ALL user questions through AskUserQuestion (no inline-prose questions).\n\nInclude: (1) YAML frontmatter per 03 §1 — name: forge-0-epic, a description matching the spec, argument-hint: \"<epic-name>\". (2) A Prerequisites section pointing at references/shared-conventions.md (epic-name validation, AskUserQuestion guardrail, config reading, Git Commit Protocol). (3) Step 0 dispatch detection: probe {specsDir}/{epic}/epic-manifest.json -> NEW=creation branch, EXISTS=edit branch; STOP if {specsDir}/{epic}/ is itself a feature dir; pre-flight check-name on the epic name (surface duplicate-name verbatim). (4) Creation branch C1–C8: C1 framing interview (goal + description), C2 feature-list interview (run check-name per candidate, re-prompt on duplicate/unsafe), C3 per-feature charter + structured exposes/consumes interview (charter only, NOT a PRD — redirect PRD-level detail to forge-1-prd), C4 dependency-edge interview (seed dependsOn from consumes), C5 compose epic-manifest.json (schemaVersion 1, status active, narrativeDoc EPIC.md, createdAt==updatedAt, NO per-feature status) then run `validate --json` and loop back into the relevant interview step on findings, C6 generate EPIC.md per the §6 structure (Overall Goal / Decomposition Rationale / per-feature Contracts rendering exposes & consumes), C7 create one member subdir per feature with a .pipeline-state.json carrying epic back-pointer + stages.forge-0-epic complete + currentStage forge-1-prd, C8 review + closing next-steps message. Reference exact helper invocations with ${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py and --specs-dir per 01 §2.2.",
       "acceptanceCriteria": [
         "skills/forge-0-epic/SKILL.md exists with valid YAML frontmatter (name, description, argument-hint) so the validate.sh plugin-structure/frontmatter check passes",
-        "The skill body specifies both the creation branch (C1-C8) and the edit branch (E1-E6) with the exact epic-manifest.py subcommands for check-name, validate, render-status, and each mutator",
+        "The creation branch C1–C8 is fully specified with the exact epic-manifest.py subcommands for check-name (per candidate) and validate (compose-then-validate loop)",
         "Member-subdirectory creation writes a .pipeline-state.json carrying \"epic\" back-pointer, stages.forge-0-epic complete, and currentStage forge-1-prd",
         "The EPIC.md generation contract (Overall Goal / Decomposition Rationale / per-feature Contracts rendering exposes & consumes) is specified per 03 §6",
-        "The skill delegates all graph/validation/mutation to the helper and routes all questions through AskUserQuestion (no inline-prose questions)",
+        "All graph/validation work is delegated to the helper and every question is routed through AskUserQuestion (no inline-prose questions)",
         "bash scripts/validate.sh passes"
       ],
       "status": "pending",
       "completedAt": null,
       "dependsOn": ["008"],
-      "notes": "Mirror the structure/voice of an existing stage skill (read skills/forge-1-prd/SKILL.md). Contracts have no mutator — at creation and after an edit-mode add-feature, the skill edits exposes/consumes directly in the composed manifest entry then re-runs validate (03 §7.3). Depends on the full helper (item 008) for the mutator surface.",
-      "estimatedIterations": 2,
+      "notes": "Mirror the structure/voice of an existing stage skill (read skills/forge-1-prd/SKILL.md). Contracts have no mutator — at creation the skill edits exposes/consumes directly in the composed manifest entry then re-runs validate (03 §7.3). Item 012b appends the edit branch to this same file; leave a clearly-marked edit-mode placeholder section it can expand.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/03-forge-0-epic-stage.md",
+        "specs/epic-orchestration/00-core-definitions.md",
+        "specs/epic-orchestration/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "012b",
+      "type": "feature",
+      "priority": 1,
+      "title": "Author forge-0-epic SKILL.md — edit branch + observability/commit + error handling",
+      "description": "Extend skills/forge-0-epic/SKILL.md (created by item 012a) with the EDIT branch and the cross-cutting observability/commit + error-handling sections, per 03-forge-0-epic-stage.md §7, §8, §9. Do NOT rewrite the creation branch authored in 012a — append/replace only the edit-mode placeholder and add the §8/§9 sections. The skill issues helper mutator commands and surfaces findings verbatim; it never hand-rolls a write. Route ALL questions through AskUserQuestion.\n\nInclude: (1) Edit branch E1–E6 (§7): E1 validate-or-refuse the existing manifest (on exit 1/2 surface every finding verbatim and refuse ALL mutation until repaired — never auto-repair), E2 choose operation via AskUserQuestion mapping to add-feature/remove-feature/reorder/set-dep/set-status, E3 apply via the helper mutator (surface findings verbatim, atomic refusal leaves the manifest unchanged), E4 impact warning via render-status when an in-flight/complete feature is affected (require confirmation), E5 patch the affected EPIC.md feature/Contracts section(s) — full regeneration only on explicit user request, E6 -> §8. For add-feature, first run check-name and elicit charter + exposes/consumes + dependsOn as in creation; populate contracts by editing the composed entry then re-running validate (no contract mutator). On remove-feature, leave the member subdir in place and WARN that relocation is manual (§7.5). (2) Observability/commit (§8): member-state writes; the lazily-created {specsDir}/{epic}/.epic-state.json note (written by skills, not the helper); Git Commit Protocol staging {specsDir}/{epic}/ with messages like 'forge({epic}): add feature X'; the closing message. (3) Error-handling table (§9): map each helper signal (check-name duplicate, unsafe-name, validate cycle/dangling/corrupt, mutator refusal, render-status-derived in-flight warning, git commit failure) to the skill's behavior — surface verbatim, never proceed past a gating exit >= 1.",
+      "acceptanceCriteria": [
+        "skills/forge-0-epic/SKILL.md now specifies the edit branch E1–E6 with the exact epic-manifest.py mutator subcommands (add-feature, remove-feature, reorder, set-dep, set-status) and render-status for the impact warning",
+        "Edit mode refuses ALL mutation and surfaces findings verbatim when the existing manifest is corrupt/invalid (E1), and never auto-repairs",
+        "remove-feature leaves the member directory in place with a manual-relocation warning (§7.5)",
+        "The §8 observability/commit section specifies member-state writes, the lazily-created .epic-state.json, and the Git Commit Protocol staging {specsDir}/{epic}/; the §9 error-handling table maps each helper signal to skill behavior",
+        "The creation branch authored in item 012a is preserved unchanged; all questions remain routed through AskUserQuestion",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["012a"],
+      "notes": "Appends to the file authored in 012a — do not duplicate the frontmatter or rewrite the creation branch. .epic-state.json schema is in 03 §8.2 (written atomically by the skill via temp+os.replace, NOT by the helper). Every mutation is committed so git history is the audit trail.",
+      "estimatedIterations": 1,
       "model": "opus",
       "specReferences": [
         "specs/epic-orchestration/03-forge-0-epic-stage.md",
@@ -431,7 +482,7 @@
       "status": "pending",
       "completedAt": null,
       "dependsOn": ["013", "007"],
-      "notes": "Markdown-only edit to one file. Reuse the existing status indicators (the navigator already defines ✅/🔄/⬜/❌/⏭️/⚠️). Depends on render-status (007) + the shared-conventions resolution block (013).",
+      "notes": "Markdown-only edit to one file. Reuse the existing status indicators (the navigator already defines the per-stage emoji set). Depends on render-status (007) + the shared-conventions resolution block (013).",
       "estimatedIterations": 1,
       "model": "opus",
       "specReferences": [

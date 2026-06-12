@@ -50,17 +50,17 @@ tests/                                   # pytest suite + fixture epic trees —
 | `references/shared-conventions.md` | Add **Feature Directory Resolution** block + **Epic Context Injection** block. | 04 §3, §4 |
 | `references/pipeline-state-schema.json` | Add optional `epic` back-pointer; add `forge-0-epic` + `forge-verify-epic` to `currentStage` enum and `stages` keys. | 04 §2 |
 | `references/forge-config-schema.json` | No change required — `stack`/`testCommand`/`typeCheckCommand` already present (verified). | 04 §2 (note) |
-| `skills/forge/SKILL.md` | Epic dashboard view; 2-tier no-arg discovery with rollup; epic lifecycle verbs; resolve nested names. | 04 §7 |
+| `skills/forge/SKILL.md` | Epic dashboard view; 2-tier no-arg discovery with rollup; epic lifecycle verbs; resolve nested names. | 04 §8 |
 | `skills/forge-1-prd/SKILL.md` | Central dir resolution; inject epic context before interview. | 04 §5 |
 | `skills/forge-2-tech/SKILL.md` | Central dir resolution; depth-2 context glob; epic context into forge-researcher dispatch. | 04 §5 |
 | `skills/forge-3-specs/SKILL.md` | Central dir resolution; depth-2 spec glob; epic context into forge-spec-writer prompts. | 04 §5 |
-| `skills/forge-4-backlog/SKILL.md` | Central dir resolution; per-feature backlog subpath when `backlogDir` configured. | 04 §5 |
-| `skills/forge-5-loop/SKILL.md` | Central dir resolution; dependency gate (Step 1b-epic); handoff (Step 6). | 04 §6 |
-| `skills/forge-6-docs/SKILL.md` | Central dir resolution; epic-level doc offer when all members complete. | 04 §8 |
-| `skills/forge-verify/SKILL.md` | New `epic` mode (CHECK-E01..E08, single verifier). | 04 §8 |
-| `skills/forge-fix/SKILL.md` | Central dir resolution. | 04 §5 |
-| `skills/forge-verify/references/verification-checklists.md` | Append `## Epic Mode Checklist` (CHECK-E01..E08). | 04 §8 |
-| `agents/forge-researcher.md` | Widen `specs/*/…` globs to find nested features. | 04 §5 |
+| `skills/forge-4-backlog/SKILL.md` | Central dir resolution; per-feature backlog subpath when `backlogDir` configured. | 04 §6 |
+| `skills/forge-5-loop/SKILL.md` | Central dir resolution; dependency gate (Step 1b-epic); handoff (Step 6). | 04 §7 |
+| `skills/forge-6-docs/SKILL.md` | Central dir resolution; epic-level doc offer when all members complete. | 04 §10 |
+| `skills/forge-verify/SKILL.md` | New `epic` mode (CHECK-E01..E08, single verifier). | 04 §9 |
+| `skills/forge-fix/SKILL.md` | Central dir resolution. | 04 §11.1 |
+| `skills/forge-verify/references/verification-checklists.md` | Append `## Epic Mode Checklist` (CHECK-E01..E08). | 04 §9.5 |
+| `agents/forge-researcher.md` | Widen `specs/*/…` globs to find nested features. | 04 §11.2 |
 | `scripts/validate.sh` | Invoke the pytest suite for the helper. | 6, 05 §5 |
 
 > **Stack config note:** the tech spec lists `forge.config.json (new, this repo)` as a
