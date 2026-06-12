@@ -211,8 +211,8 @@
         "reorder with an order that is not an exact permutation of members exits 1",
         "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:36:46.490Z",
       "dependsOn": [
         "006"
       ],
