@@ -1,7 +1,7 @@
 {
   "feature": "epic-orchestration",
   "pipelineStatus": "active",
-  "currentStage": "forge-3-specs",
+  "currentStage": "forge-4-backlog",
   "createdAt": "2026-06-12T00:00:00Z",
   "updatedAt": "2026-06-12T00:00:00Z",
   "notes": "Term 'epic' chosen over 'initiative'. Nested layout specs/<epic>/<feature> decided. v1: prompted handoff, serial execution, JIT charters, warn+confirm dep gate. Open questions in PRD section 7. TECH DECISIONS: Python manifest helper (scripts/epic-manifest.py) is deterministic core (acyclicity, validate, resolve, atomic writes, render-status). Manifest is single source of truth for charters + exposes/consumes; EPIC.md generated narrative mirrors it; no cached per-feature status (derived live). Centralized name->dir resolution via shared-conventions block. Completion = forge-5-loop done AND (impl-verify absent OR passed/applied); handoff offers impl-verify (recommended, skippable). Full edit-scope across all stages.",
@@ -34,9 +34,25 @@
       "findingsFile": ".verification/VERIFY-tech-2026-06-12.md",
       "findingsCount": 4,
       "verifiedAt": "2026-06-12T00:00:00Z",
-      "fixedAt": "2026-06-12T00:00:00Z"
+      "fixedAt": "2026-06-12T00:00:00Z",
+      "commitHash": "1a101a3"
     },
-    "forge-3-specs": { "status": "pending" },
+    "forge-3-specs": {
+      "status": "in-progress",
+      "version": 1,
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-manifest-helper-cli.md",
+        "03-forge-0-epic-stage.md",
+        "04-pipeline-integration.md",
+        "05-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "startedAt": "2026-06-12T00:00:00Z",
+      "completedAt": "2026-06-12T00:00:00Z",
+      "basedOnVersions": { "forge-1-prd": 1, "forge-2-tech": 1 }
+    },
     "forge-4-backlog": { "status": "pending" },
     "forge-5-loop": { "status": "pending" },
     "forge-6-docs": { "status": "pending" }
