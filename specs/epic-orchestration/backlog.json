@@ -430,8 +430,8 @@
         "All edits state or preserve unchanged standalone behavior (flat-only trees gain no new glob matches)",
         "bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:55:52.732Z",
       "dependsOn": [
         "013"
       ],
