@@ -326,9 +326,48 @@ def atomic_write(path: Path, data: dict) -> None:
 def find_cycle(features: list[dict]) -> list[str] | None:
     """Return a cycle in the dependsOn graph, or None if acyclic (02 §4).
 
-    Stub — implemented in backlog item 004.
+    Iterative DFS over the directed graph whose edges are ``feature -> dep``.
+    On the first back-edge into a GRAY node, reconstructs and returns the cycle
+    path including the repeated start node (e.g. ``["a", "b", "a"]``). A
+    self-dependency is a degenerate self-loop returning ``["x", "x"]``. Only
+    edges to names present in ``features`` are traversed (dangling refs are
+    reported separately by validate). O(V+E).
     """
-    raise NotImplementedError
+    adjacency: dict[str, list[str]] = {f["name"]: list(f.get("dependsOn", [])) for f in features}
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = {name: WHITE for name in adjacency}
+    parent: dict[str, str | None] = {name: None for name in adjacency}
+
+    for root in adjacency:
+        if color[root] != WHITE:
+            continue
+        # Iterative DFS; stack holds (node, index-of-next-neighbor-to-visit).
+        stack: list[tuple[str, int]] = [(root, 0)]
+        color[root] = GRAY
+        while stack:
+            node, idx = stack[-1]
+            neighbors = [n for n in adjacency[node] if n in adjacency]
+            if idx < len(neighbors):
+                stack[-1] = (node, idx + 1)
+                nxt = neighbors[idx]
+                if color[nxt] == WHITE:
+                    color[nxt] = GRAY
+                    parent[nxt] = node
+                    stack.append((nxt, 0))
+                elif color[nxt] == GRAY:
+                    # Back-edge: reconstruct nxt -> … -> node -> nxt.
+                    path = [nxt]
+                    cursor: str | None = node
+                    while cursor is not None and cursor != nxt:
+                        path.append(cursor)
+                        cursor = parent[cursor]
+                    path.append(nxt)
+                    path.reverse()
+                    return path
+            else:
+                color[node] = BLACK
+                stack.pop()
+    return None
 
 
 def unmet_deps(
@@ -336,9 +375,13 @@ def unmet_deps(
 ) -> list[str]:
     """Return a feature's direct dependencies that are not complete (02 §4).
 
-    Stub — implemented in backlog item 004.
+    Names of this feature's direct ``dependsOn`` entries whose value in
+    ``complete`` is False, preserving manifest order. Empty when the feature is
+    actionable or itself complete.
     """
-    raise NotImplementedError
+    by_name = {f["name"]: f for f in features}
+    feature = by_name.get(name, {})
+    return [dep for dep in feature.get("dependsOn", []) if not complete.get(dep, False)]
 
 
 # --------------------------------------------------------------------------- #
