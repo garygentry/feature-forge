@@ -237,8 +237,8 @@
         "valid-epic includes a flat-only feature dir and a 4-feature auth-overhaul epic with at least one dependsOn edge",
         "bash scripts/validate.sh passes (helper still compiles; pytest may run or skip)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:39:42.269Z",
       "dependsOn": [
         "007",
         "008"
