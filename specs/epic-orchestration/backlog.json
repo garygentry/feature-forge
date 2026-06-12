@@ -466,8 +466,8 @@
         "Standalone default path ({resolvedFeatureDir}/backlog.json) behavior is preserved",
         "bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:57:22.710Z",
       "dependsOn": [
         "013"
       ],
