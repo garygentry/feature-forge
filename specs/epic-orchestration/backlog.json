@@ -547,8 +547,8 @@
         ".epic-state.json is epic-scoped (never a member's .pipeline-state.json) and holds no cached per-feature status",
         "bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T23:03:07.668Z",
       "dependsOn": [
         "013",
         "006",
