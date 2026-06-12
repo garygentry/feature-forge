@@ -86,6 +86,7 @@ Read `{specsDir}/{feature}/.pipeline-state.json` to understand current pipeline 
 
 If a stage is specified as a second argument (e.g., `/feature-forge:forge-verify auth specs`), use that mode. Otherwise, auto-detect based on pipeline state:
 
+- **epic mode**: Explicit via `/feature-forge:forge-verify {epic} epic`, or auto-detected when the named argument resolves to an **epic directory** — i.e. `{specsDir}/{name}/epic-manifest.json` exists (an epic root holds `epic-manifest.json` but no `.pipeline-state.json` of its own). When the argument is an epic, prefer epic mode over feature-mode resolution.
 - **prd mode**: If `forge-1-prd` is complete but `forge-verify-prd` is not `passed` or `findings-applied`
 - **tech mode**: If `forge-2-tech` is complete but `forge-verify-tech` is not `passed` or `findings-applied`
 - **specs mode**: If `forge-3-specs` is complete but `forge-verify-specs` is not `passed` or `findings-applied`
@@ -119,11 +120,19 @@ Load into context ALL artifacts for this feature based on mode:
 - The actual source code for this feature (read package directory)
 - Source code of packages this feature integrates with
 
+**For epic mode:**
+- `{specsDir}/{epic}/epic-manifest.json`
+- `{specsDir}/{epic}/EPIC.md`
+- each member feature's `.pipeline-state.json` (for the `epic` back-pointer + derived status)
+- each **completed** member's `PRD.md` + `tech-spec.md` (for contract-drift checking, CHECK-E06)
+
 ## Step 3: Run Verification Checklists
 
 Read `references/verification-checklists.md` for the detailed checklists per mode. Execute every check. Do not skip checks because things "look fine."
 
-Each check in `verification-checklists.md` has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: ~15 checks, tech: ~15 checks, specs: ~38 checks, backlog: ~25 checks, impl: ~20 checks), you likely skipped checks — go back and complete them.
+Each check in `verification-checklists.md` has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: ~15 checks, tech: ~15 checks, specs: ~38 checks, backlog: ~25 checks, impl: ~20 checks, epic: ~8 checks), you likely skipped checks — go back and complete them.
+
+**Epic mode dispatch.** Epic mode is a small (~8-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the Agent tool, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E08 from the `## Epic Mode Checklist` in `references/verification-checklists.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07 are verifier judgment) and returns its findings.
 
 ### Important: Be Specific, Not General
 
@@ -141,7 +150,9 @@ Every finding must include:
 
 ## Step 4: Write Findings Document
 
-Ensure the `.verification/` subdirectory exists, then write findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`:
+Ensure the `.verification/` subdirectory exists, then write findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`.
+
+**For epic mode**, the target is `{specsDir}/{epic}/.verification/VERIFY-epic-{YYYY-MM-DD}.md` (the same format, with `{mode}=epic`).
 
 ```markdown
 # Verification Report: {feature} ({mode})
@@ -245,6 +256,78 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 Update `{specsDir}/{feature}/.pipeline-state.json`:
 - Set the relevant verify entry status to `findings-reported`
 - Record `findingsFile`, `findingsCount`, `verifiedAt`
+
+Do NOT mark as `findings-applied` — that happens after the fix pass.
+
+### Epic mode state (`.epic-state.json`)
+
+Epic mode is **epic-scoped**, not per-feature: record its result into the epic-level
+state file `{specsDir}/{epic}/.epic-state.json` — **never** into any member's
+`.pipeline-state.json`. This file holds only epic-scoped stage entries (currently just
+`forge-verify-epic`) and carries **no cached per-feature member status** (so it does not
+violate REQ-STATE-02; per-feature status is always derived live from each member's
+`.pipeline-state.json`).
+
+Set `stages.forge-verify-epic.status` to `findings-reported` (or `passed` if zero
+findings), recording `findingsFile`, `findingsCount`, and `verifiedAt`. The minimal
+shape:
+
+```jsonc
+{
+  "epic": "auth-overhaul",              // matches the manifest `epic`
+  "stages": {
+    "forge-verify-epic": {
+      "status": "findings-reported",     // "findings-reported" | "passed" | "findings-applied"
+      "findingsFile": ".verification/VERIFY-epic-2026-06-12.md",
+      "findingsCount": 3,
+      "verifiedAt": "2026-06-12T00:00:00Z"
+    }
+  }
+}
+```
+
+**Write mechanism.** `epic-manifest.py` exposes no subcommand that writes this file, so
+the skill writes it **directly**, using an atomic temp-file + `os.replace()` pattern
+(mirroring `02-manifest-helper-cli.md §3.3`): serialize the merged state to a sibling
+temp file in `{specsDir}/{epic}/`, flush, then `os.replace()` it into place. Create the
+file **lazily on first write** (a missing file is simply created; an existing file is
+read, its `stages.forge-verify-epic` entry merged/replaced, and rewritten). On any I/O
+failure, **report the error and leave any prior `.epic-state.json` intact** (never a
+partial write). For example:
+
+```bash
+python3 - "$SPECS_DIR/$EPIC" <<'PY'
+import json, os, sys, tempfile
+from pathlib import Path
+epic_dir = Path(sys.argv[1])
+path = epic_dir / ".epic-state.json"
+state = {}
+if path.exists():
+    state = json.loads(path.read_text())
+state.setdefault("epic", epic_dir.name)
+state.setdefault("stages", {})
+state["stages"]["forge-verify-epic"] = {
+    "status": "findings-reported",   # or "passed" when findingsCount == 0
+    "findingsFile": ".verification/VERIFY-epic-2026-06-12.md",
+    "findingsCount": 3,
+    "verifiedAt": "2026-06-12T00:00:00Z",
+}
+fd, tmp = tempfile.mkstemp(dir=str(epic_dir), prefix=".epic-state.", suffix=".tmp")
+try:
+    with os.fdopen(fd, "w") as f:
+        json.dump(state, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+except OSError as e:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    print(f"failed to write .epic-state.json: {e}", file=sys.stderr)
+    raise
+PY
+```
 
 Do NOT mark as `findings-applied` — that happens after the fix pass.
 
