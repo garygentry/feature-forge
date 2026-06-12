@@ -945,9 +945,31 @@ def _bump_and_write(
 ) -> list[Finding]:
     """Re-validate, bump updatedAt, and atomically persist a manifest (02 §7).
 
-    Stub — implemented in backlog item 008.
+    The shared tail of every mutator (REQ-ROBUST-03, REQ-OBS-01, REQ-EPIC-05).
+    Re-runs ``_validate_dict`` on the EDITED manifest; if any blocking finding is
+    present (cycle, dangling-ref, duplicate-name, schema, ...), the on-disk file
+    is left byte-identical and the findings are returned so the caller exits 1.
+    Otherwise ``updatedAt`` is set to now (UTC, ISO-8601) and the manifest is
+    written via ``atomic_write``.
+
+    Args:
+        epic_dir: The epic subtree directory.
+        specs_dir: The configured specs directory (for the uniqueness re-check).
+        manifest: The already-edited in-memory manifest dict.
+
+    Returns:
+        An empty list on success (write performed); the blocking findings on
+        refusal (no write performed).
+
+    Raises:
+        UsageError: If the atomic write itself fails (exit 2).
     """
-    raise NotImplementedError
+    findings = _validate_dict(manifest, epic_dir, specs_dir)
+    if findings:
+        return findings
+    manifest["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    atomic_write(epic_dir / MANIFEST_FILENAME, manifest)
+    return []
 
 
 def add_feature(
@@ -959,43 +981,162 @@ def add_feature(
 ) -> list[Finding]:
     """Append a new member feature to the manifest (02 §7.1).
 
-    Stub — implemented in backlog item 008.
+    Appends a ``Feature`` with the given name/charter/dependsOn and EMPTY
+    exposes/consumes. Re-validation surfaces a duplicate name (within the
+    manifest or across the tree), an unknown dependency (``dangling-ref``), or a
+    cycle, refusing the write in every such case.
+
+    Args:
+        epic_dir: The epic subtree directory.
+        specs_dir: The configured specs directory.
+        name: The new member feature name (already safe-checked by the dispatch).
+        charter: The feature charter text.
+        deps: The new feature's dependsOn list (already comma-split).
+
+    Returns:
+        Empty list on success; blocking findings (duplicate-name / dangling-ref /
+        cycle / schema) on refusal — manifest left unchanged.
+
+    Raises:
+        UsageError: Unsafe name, corrupt/missing manifest, or write failure.
     """
-    raise NotImplementedError
+    for dep in deps:
+        assert_safe_name(dep)
+    manifest = load_manifest(epic_dir)
+    features = manifest.setdefault("features", [])
+    features.append({
+        "name": name,
+        "charter": charter,
+        "dependsOn": deps,
+        "exposes": [],
+        "consumes": [],
+    })
+    return _bump_and_write(epic_dir, specs_dir, manifest)
 
 
 def remove_feature(epic_dir: Path, specs_dir: Path, name: str) -> list[Finding]:
     """Remove a member feature from the manifest (02 §7.2).
 
-    Stub — implemented in backlog item 008.
+    Drops the named feature from ``features[]``. After removal, re-validation
+    surfaces any now-dangling ``dependsOn`` / ``consumes.from`` that pointed at
+    the removed feature; the write is refused in that case so the references can
+    be fixed first. A name that is not a member yields a ``not-found`` finding.
+
+    Args:
+        epic_dir: The epic subtree directory.
+        specs_dir: The configured specs directory.
+        name: The member feature to remove.
+
+    Returns:
+        Empty list on success; ``not-found`` if the name is not a member, or the
+        now-dangling ``dangling-ref`` findings on refusal.
+
+    Raises:
+        UsageError: Unsafe name, corrupt/missing manifest, or write failure.
     """
-    raise NotImplementedError
+    manifest = load_manifest(epic_dir)
+    features = manifest.get("features", [])
+    if not any(isinstance(f, dict) and f.get("name") == name for f in features):
+        return [{"code": "not-found",
+                 "message": f"feature {name!r} is not a member of epic {epic_dir.name!r}",
+                 "feature": name}]
+    manifest["features"] = [
+        f for f in features if not (isinstance(f, dict) and f.get("name") == name)
+    ]
+    return _bump_and_write(epic_dir, specs_dir, manifest)
 
 
 def reorder(epic_dir: Path, specs_dir: Path, order: list[str]) -> list[Finding]:
     """Reorder the manifest features[] to a given permutation (02 §7.3).
 
-    Stub — implemented in backlog item 008.
+    ``order`` must be an exact permutation of the current member names (purely a
+    display sequence, not a dependency ordering — 00 §2.1). If it is not, a
+    ``schema`` finding is returned and the manifest is left unchanged.
+
+    Args:
+        epic_dir: The epic subtree directory.
+        specs_dir: The configured specs directory.
+        order: The desired member-name ordering (already comma-split).
+
+    Returns:
+        Empty list on success; a ``schema`` finding when ``order`` is not an exact
+        permutation of the current members.
+
+    Raises:
+        UsageError: Corrupt/missing manifest or write failure.
     """
-    raise NotImplementedError
+    manifest = load_manifest(epic_dir)
+    features = manifest.get("features", [])
+    by_name = {f["name"]: f for f in features if isinstance(f, dict) and isinstance(f.get("name"), str)}
+    current = sorted(by_name)
+    if sorted(order) != current:
+        return [{"code": "schema",
+                 "message": f"--order {order} is not an exact permutation of members {sorted(by_name)}",
+                 "feature": None}]
+    manifest["features"] = [by_name[n] for n in order]
+    return _bump_and_write(epic_dir, specs_dir, manifest)
 
 
 def set_dep(
     epic_dir: Path, specs_dir: Path, name: str, deps: list[str]
 ) -> list[Finding]:
-    """Replace a member feature's dependsOn list (02 §7.4).
+    """Replace a member feature's dependsOn list (02 §7.4, §7.6).
 
-    Stub — implemented in backlog item 008.
+    Re-validation enforces every new dependency exists (``dangling-ref``) and the
+    resulting graph is acyclic (``cycle``). An empty ``deps`` clears the
+    dependencies.
+
+    Args:
+        epic_dir: The epic subtree directory.
+        specs_dir: The configured specs directory.
+        name: The member feature to edit.
+        deps: The new dependsOn list (already comma-split; empty clears deps).
+
+    Returns:
+        Empty list on success; blocking findings (dangling-ref / cycle /
+        not-found) on refusal — manifest left unchanged.
+
+    Raises:
+        UsageError: Unsafe name, corrupt/missing manifest, or write failure.
     """
-    raise NotImplementedError
+    for dep in deps:
+        assert_safe_name(dep)
+    manifest = load_manifest(epic_dir)
+    by_name = {
+        f["name"]: f
+        for f in manifest.get("features", [])
+        if isinstance(f, dict) and isinstance(f.get("name"), str)
+    }
+    if name not in by_name:
+        return [{"code": "not-found",
+                 "message": f"feature {name!r} is not a member of epic {epic_dir.name!r}",
+                 "feature": name}]
+    by_name[name]["dependsOn"] = deps
+    return _bump_and_write(epic_dir, specs_dir, manifest)
 
 
 def set_status(epic_dir: Path, specs_dir: Path, status: str) -> list[Finding]:
     """Set the epic-level lifecycle status (02 §7.5).
 
-    Stub — implemented in backlog item 008.
+    Sets the epic-level ``status`` (the value is constrained to the allowed
+    lifecycle states by ``argparse`` ``choices`` before reaching here). Never
+    touches per-feature status (there is none — REQ-STATE-02).
+
+    Args:
+        epic_dir: The epic subtree directory.
+        specs_dir: The configured specs directory.
+        status: The new epic lifecycle status (already choice-validated).
+
+    Returns:
+        Empty list on success; blocking findings if the manifest somehow fails
+        re-validation.
+
+    Raises:
+        UsageError: Corrupt/missing manifest or write failure.
     """
-    raise NotImplementedError
+    manifest = load_manifest(epic_dir)
+    manifest["status"] = status
+    return _bump_and_write(epic_dir, specs_dir, manifest)
 
 
 # --------------------------------------------------------------------------- #
