@@ -1,0 +1,669 @@
+#!/usr/bin/env python3
+"""Read, validate, and atomically mutate an epic manifest.
+
+The deterministic core for Epic Orchestration: name->directory resolution,
+acyclicity and schema validation, global name-uniqueness, path containment,
+live per-feature status derivation, and atomic manifest mutation.
+
+Usage:
+    python3 epic-manifest.py resolve <name> [--specs-dir DIR]
+    python3 epic-manifest.py validate <epic> [--specs-dir DIR] [--json]
+    python3 epic-manifest.py check-name <name> [--specs-dir DIR]
+    python3 epic-manifest.py render-status <epic> [--specs-dir DIR] [--json]
+    python3 epic-manifest.py add-feature <epic> <name> --charter TEXT \
+        [--depends-on A,B] [--specs-dir DIR]
+    python3 epic-manifest.py remove-feature <epic> <name> [--specs-dir DIR]
+    python3 epic-manifest.py reorder <epic> --order A,B,C [--specs-dir DIR]
+    python3 epic-manifest.py set-dep <epic> <name> --depends-on A,B [--specs-dir DIR]
+    python3 epic-manifest.py set-status <epic> --status STATE [--specs-dir DIR]
+
+Exit codes:
+    0 = ok / valid / unique / resolved
+    1 = findings / validation failure / duplicate / ambiguous / not-found
+    2 = usage error or I/O error (missing file, unreadable, unsafe path)
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Final, Literal, TypedDict
+
+
+# --------------------------------------------------------------------------- #
+# Constants (00-core-definitions.md §6)
+# --------------------------------------------------------------------------- #
+
+#: A safe feature/epic name: one kebab-case token (00 §6).
+SAFE_NAME_RE: Final = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+#: A directory is "feature-shaped" iff it directly contains this file.
+PIPELINE_STATE_FILENAME: Final = ".pipeline-state.json"
+#: Canonical filenames sited at the epic subtree root.
+MANIFEST_FILENAME: Final = "epic-manifest.json"
+NARRATIVE_FILENAME: Final = "EPIC.md"
+
+
+# --------------------------------------------------------------------------- #
+# Type Definitions (00-core-definitions.md §4, §5; 02 §8.4)
+# --------------------------------------------------------------------------- #
+
+FindingCode = Literal[
+    "corrupt-json",     # manifest is not parseable JSON (REQ-ROBUST-02)
+    "schema",           # manifest violates epic-manifest-schema.json
+    "duplicate-name",   # a feature/epic name occurs more than once in the tree (REQ-DIR-04)
+    "dangling-ref",     # dependsOn / consumes.from references an unknown feature (REQ-ROBUST-02)
+    "cycle",            # the dependsOn graph contains a cycle (REQ-EPIC-05)
+    "unsafe-name",      # a name contains a path separator, "..", or is absolute (REQ-SEC-02)
+    "path-escape",      # a resolved path would leave {specsDir} (REQ-SEC-02)
+    "not-found",        # a name resolves to zero feature-shaped directories
+    "ambiguous",        # a name resolves to more than one feature-shaped directory (REQ-DIR-04)
+    "cached-status",    # a Feature object illegally carries a status field (REQ-STATE-02)
+]
+
+
+class Finding(TypedDict):
+    """A single, actionable validation or resolution failure.
+
+    Attributes:
+        code: Machine-readable category (see FindingCode).
+        message: Human-readable, actionable description. Includes offending
+            identifiers and, where relevant, the conflicting paths.
+        feature: The feature name the finding pertains to, or None for
+            manifest- or epic-level findings.
+    """
+
+    code: FindingCode
+    message: str
+    feature: str | None
+
+
+DerivedStatus = Literal[
+    "not-started",   # no .pipeline-state.json, or all stages pending
+    "in-progress",   # at least one stage started, loop not complete-for-orchestration
+    "complete",      # complete-for-orchestration per 00 §7
+]
+
+
+class FeatureStatus(TypedDict):
+    """Live per-feature status derived from its own pipeline state (00 §5).
+
+    Attributes:
+        name: Feature name.
+        stage: The feature's current pipeline stage (its currentStage), or
+            "forge-0-epic" if the member directory exists but no stage has run.
+        status: Coarse derived status (see DerivedStatus). Reuses existing
+            navigator status semantics for display.
+        blocked: True if any entry in unmetDeps is non-empty.
+        unmetDeps: Names of this feature's direct dependencies that are not yet
+            complete-for-orchestration (00 §7). Empty when actionable or complete.
+    """
+
+    name: str
+    stage: str
+    status: DerivedStatus
+    blocked: bool
+    unmetDeps: list[str]
+
+
+class Rollup(TypedDict):
+    """Aggregate completion counts for the epic dashboard (00 §8)."""
+
+    complete: int  #: Number of member features complete-for-orchestration (00 §7).
+    total: int     #: Total member features in the manifest (0 for an empty epic).
+
+
+class RenderStatus(TypedDict):
+    """The full live dashboard payload returned by render_status (00 §5, §8).
+
+    Attributes:
+        epic: The epic name (manifest `epic`).
+        status: The epic lifecycle status (00 §2.1).
+        features: Per-member status rows, one per manifest feature (may be empty).
+        actionable: Names of features whose dependsOn are all complete and that
+            are not themselves complete (00 §8).
+        parallelEligible: Subset of `actionable` with no mutual (transitive)
+            dependency — surfaced for future parallel execution (00 §8).
+        rollup: Aggregate {complete, total} counts.
+        nextCommand: Recommended next command for the first actionable feature, or
+            None when nothing is actionable (all complete, empty epic, or paused).
+    """
+
+    epic: str
+    status: Literal["active", "paused", "abandoned", "complete"]
+    features: list[FeatureStatus]
+    actionable: list[str]
+    parallelEligible: list[str]
+    rollup: Rollup
+    nextCommand: str | None
+
+
+# --------------------------------------------------------------------------- #
+# Internal Exceptions (02 §2)
+# --------------------------------------------------------------------------- #
+
+
+class UsageError(Exception):
+    """A usage or I/O failure that must exit 2.
+
+    Raised for missing files, unreadable paths, malformed CLI arguments, and
+    unsafe-name / path-escape conditions detected before filesystem access
+    (REQ-SEC-02). Maps to exit code 2.
+
+    Attributes:
+        message: Human-readable description printed to stderr.
+    """
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
+class FindingsError(Exception):
+    """A non-fatal validation outcome that must exit 1.
+
+    Raised when an operation produces one or more Findings (00 §4) that block a
+    gating operation: a cycle, a dangling ref, an ambiguous/not-found name, etc.
+    Maps to exit code 1. Carries the structured findings so the dispatch layer
+    can emit them as JSON or human lines.
+
+    Attributes:
+        findings: The list of Findings to surface.
+    """
+
+    def __init__(self, findings: list["Finding"]) -> None:
+        self.findings = findings
+        super().__init__(f"{len(findings)} finding(s)")
+
+
+# --------------------------------------------------------------------------- #
+# Safety & I/O Layer (02 §3)
+# --------------------------------------------------------------------------- #
+
+
+def assert_safe_name(name: str) -> None:
+    """Validate a bare feature/epic name before any filesystem access.
+
+    A name is safe iff it is a single kebab-case token with no path separator,
+    no ``..`` segment, and is not absolute (REQ-SEC-02). This runs first in
+    every subcommand so that an unsafe name never reaches a glob or open().
+
+    Args:
+        name: The bare name supplied on the command line.
+
+    Raises:
+        UsageError: If the name is empty, absolute, contains '/' or '\\',
+            equals '..', or fails SAFE_NAME_RE. The message embeds the
+            offending name (e.g. ``unsafe name '../escape'``) so the caller can
+            surface it verbatim. Corresponds to the 'unsafe-name' Finding code
+            (00 §4) but is raised as a usage error because it is detected before
+            any manifest is read.
+    """
+    if (
+        not name
+        or name == ".."
+        or "/" in name
+        or "\\" in name
+        or os.path.isabs(name)
+        or not SAFE_NAME_RE.match(name)
+    ):
+        raise UsageError(f"unsafe name {name!r}")
+
+
+def contained_path(base: Path, *parts: str) -> Path:
+    """Join parts onto base and assert the result stays within base.
+
+    Canonicalizes (symlink-resolves) both base and the joined path and verifies
+    the result is contained within the real base (REQ-SEC-02). Used before
+    reading or writing any manifest, narrative, or pipeline-state file so no
+    epic operation can read or write outside the specs subtree.
+
+    Args:
+        base: The containing directory (typically {specsDir} or an epic dir),
+            already known to exist.
+        *parts: Path segments to append (each already passed through
+            assert_safe_name when it originates from user input).
+
+    Returns:
+        The resolved, contained absolute path.
+
+    Raises:
+        UsageError: If the resolved path escapes ``base`` (message:
+            ``resolved path escapes specs dir: …``). Corresponds to the
+            'path-escape' Finding code (00 §4); raised as a usage error
+            (exit 2) per the error model in tech-spec §6.
+    """
+    base_real = base.resolve()
+    target = (base_real / Path(*parts)).resolve()
+    try:
+        target.relative_to(base_real)
+    except ValueError:
+        raise UsageError(f"resolved path escapes specs dir: {base_real / Path(*parts)}")
+    return target
+
+
+def load_manifest(epic_dir: Path) -> dict:
+    """Load and JSON-parse an epic's manifest.
+
+    Args:
+        epic_dir: The epic subtree directory (must already be contained within
+            {specsDir} via contained_path).
+
+    Returns:
+        The parsed manifest as a plain dict. Structural validation (schema,
+        cycles, dangling refs) is performed separately by ``validate`` — this
+        function only guarantees the file exists and parses.
+
+    Raises:
+        UsageError: If the manifest file is missing or unreadable (exit 2).
+        FindingsError: If the file exists but is not parseable JSON — emits a
+            single 'corrupt-json' Finding (00 §4) with the JSON error position,
+            so a hand-corrupted manifest fails with an actionable message rather
+            than a traceback (REQ-ROBUST-02). Exit 1.
+    """
+    path = epic_dir / MANIFEST_FILENAME
+    if not path.is_file():
+        raise UsageError(f"manifest not found: {path}")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise UsageError(f"cannot read manifest {path}: {exc}")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise FindingsError([
+            {
+                "code": "corrupt-json",
+                "message": f"manifest {path} is not valid JSON: {exc}",
+                "feature": None,
+            }
+        ])
+
+
+def atomic_write(path: Path, data: dict) -> None:
+    """Write a manifest dict to disk atomically.
+
+    Writes to a temporary file **in the same directory** as the target, flushes
+    and fsyncs it, then ``os.replace`` swaps it into place. ``os.replace`` is
+    atomic on POSIX within a single filesystem, so an interrupted write never
+    leaves a partial or corrupt manifest (REQ-ROBUST-03). Concurrent multi-
+    session mutation is out of scope (single-writer assumed, PRD REQ-ROBUST-03).
+
+    Args:
+        path: The destination manifest path (e.g. {epic}/epic-manifest.json).
+        data: The fully-formed, already-validated manifest dict to serialize.
+
+    Raises:
+        UsageError: If the temp file cannot be created/written or the replace
+            fails (exit 2). On failure the temp file is removed so no debris is
+            left behind.
+    """
+    parent = path.parent
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=parent
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except OSError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise UsageError(f"atomic write to {path} failed: {exc}")
+
+
+# --------------------------------------------------------------------------- #
+# Graph Algorithms (02 §4) — implemented in item 004
+# --------------------------------------------------------------------------- #
+
+
+def find_cycle(features: list[dict]) -> list[str] | None:
+    """Return a cycle in the dependsOn graph, or None if acyclic (02 §4).
+
+    Stub — implemented in backlog item 004.
+    """
+    raise NotImplementedError
+
+
+def unmet_deps(
+    name: str, features: list[dict], complete: dict[str, bool]
+) -> list[str]:
+    """Return a feature's direct dependencies that are not complete (02 §4).
+
+    Stub — implemented in backlog item 004.
+    """
+    raise NotImplementedError
+
+
+# --------------------------------------------------------------------------- #
+# Resolution & Uniqueness (02 §5) — implemented in item 005
+# --------------------------------------------------------------------------- #
+
+
+def feature_dirs(specs_dir: Path) -> dict[str, list[Path]]:
+    """Map every feature name in the specs tree to the dirs that bear it (02 §5).
+
+    Stub — implemented in backlog item 005.
+    """
+    raise NotImplementedError
+
+
+def resolve(name: str, specs_dir: Path) -> Path:
+    """Resolve a bare feature/epic name to its absolute directory (02 §5).
+
+    Stub — implemented in backlog item 005.
+    """
+    raise NotImplementedError
+
+
+def check_name(name: str, specs_dir: Path) -> list[Finding]:
+    """Return a duplicate-name finding if the name is already taken (02 §6.3).
+
+    Stub — implemented in backlog item 005.
+    """
+    raise NotImplementedError
+
+
+# --------------------------------------------------------------------------- #
+# Validation (02 §6.2, §10) — implemented in item 006
+# --------------------------------------------------------------------------- #
+
+
+def _validate_dict(
+    manifest: dict, epic_dir: Path, specs_dir: Path
+) -> list[Finding]:
+    """Validate an already-parsed manifest dict, returning findings (02 §6.2).
+
+    Stub — implemented in backlog item 006.
+    """
+    raise NotImplementedError
+
+
+def validate(epic_dir: Path, specs_dir: Path) -> list[Finding]:
+    """Validate a single epic manifest, returning all findings (02 §6.2).
+
+    Stub — implemented in backlog item 006.
+    """
+    raise NotImplementedError
+
+
+# --------------------------------------------------------------------------- #
+# Live Status Derivation (02 §8) — implemented in item 007
+# --------------------------------------------------------------------------- #
+
+
+def is_complete_for_orchestration(state: dict) -> bool:
+    """Apply the completion-for-orchestration predicate (00 §7, 02 §8.1).
+
+    Stub — implemented in backlog item 007.
+    """
+    raise NotImplementedError
+
+
+def derive_status(feature_dir: Path) -> FeatureStatus:
+    """Derive a feature's live status from its own pipeline state (02 §8).
+
+    Stub — implemented in backlog item 007.
+    """
+    raise NotImplementedError
+
+
+def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
+    """Build the full live dashboard payload for an epic (02 §8.3).
+
+    Stub — implemented in backlog item 007.
+    """
+    raise NotImplementedError
+
+
+# --------------------------------------------------------------------------- #
+# Mutators (02 §7) — implemented in item 008
+# --------------------------------------------------------------------------- #
+
+
+def _bump_and_write(
+    epic_dir: Path, specs_dir: Path, manifest: dict
+) -> list[Finding]:
+    """Re-validate, bump updatedAt, and atomically persist a manifest (02 §7).
+
+    Stub — implemented in backlog item 008.
+    """
+    raise NotImplementedError
+
+
+def add_feature(
+    epic_dir: Path,
+    specs_dir: Path,
+    name: str,
+    charter: str,
+    deps: list[str],
+) -> list[Finding]:
+    """Append a new member feature to the manifest (02 §7.1).
+
+    Stub — implemented in backlog item 008.
+    """
+    raise NotImplementedError
+
+
+def remove_feature(epic_dir: Path, specs_dir: Path, name: str) -> list[Finding]:
+    """Remove a member feature from the manifest (02 §7.2).
+
+    Stub — implemented in backlog item 008.
+    """
+    raise NotImplementedError
+
+
+def reorder(epic_dir: Path, specs_dir: Path, order: list[str]) -> list[Finding]:
+    """Reorder the manifest features[] to a given permutation (02 §7.3).
+
+    Stub — implemented in backlog item 008.
+    """
+    raise NotImplementedError
+
+
+def set_dep(
+    epic_dir: Path, specs_dir: Path, name: str, deps: list[str]
+) -> list[Finding]:
+    """Replace a member feature's dependsOn list (02 §7.4).
+
+    Stub — implemented in backlog item 008.
+    """
+    raise NotImplementedError
+
+
+def set_status(epic_dir: Path, specs_dir: Path, status: str) -> list[Finding]:
+    """Set the epic-level lifecycle status (02 §7.5).
+
+    Stub — implemented in backlog item 008.
+    """
+    raise NotImplementedError
+
+
+# --------------------------------------------------------------------------- #
+# CLI Dispatch (02 §9)
+# --------------------------------------------------------------------------- #
+
+
+def _split_list(value: str | None) -> list[str]:
+    """Split a comma-separated CLI argument into a stripped list.
+
+    An empty or absent value yields an empty list (e.g. ``--depends-on ""``
+    clears dependencies). Each token is stripped; empty tokens are dropped.
+    """
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _emit_findings(findings: list[Finding], as_json: bool) -> None:
+    """Print findings as JSON or as one actionable line per finding.
+
+    JSON ({"valid": false, "findings": [...]}) goes to stdout; human-readable
+    lines go to stderr (mirroring validate-traceability.py's two output modes).
+    """
+    if as_json:
+        print(json.dumps({"valid": not findings, "findings": findings}, indent=2))
+    else:
+        for finding in findings:
+            print(f"{finding['code']}: {finding['message']}", file=sys.stderr)
+
+
+def _dispatch(args: argparse.Namespace, specs_dir: Path) -> int:
+    """Route a parsed command to its handler and emit results.
+
+    Subcommand handlers are stubs at this stage (backlog items 004-008 fill
+    them in); this dispatch wiring is in place so each command parses cleanly.
+    """
+    cmd: str = args.cmd
+
+    if cmd == "resolve":
+        path = resolve(args.name, specs_dir)
+        print(str(path))
+        return 0
+
+    if cmd == "check-name":
+        findings = check_name(args.name, specs_dir)
+        if findings:
+            raise FindingsError(findings)
+        return 0
+
+    if cmd == "validate":
+        epic_dir = contained_path(specs_dir, args.epic)
+        findings = validate(epic_dir, specs_dir)
+        if findings:
+            raise FindingsError(findings)
+        if args.json_output:
+            print(json.dumps({"valid": True, "findings": []}, indent=2))
+        return 0
+
+    if cmd == "render-status":
+        epic_dir = contained_path(specs_dir, args.epic)
+        status = render_status(epic_dir, specs_dir)
+        if args.json_output:
+            print(json.dumps(status, indent=2))
+        return 0
+
+    # Mutators ---------------------------------------------------------------
+    if cmd in {"add-feature", "remove-feature", "reorder", "set-dep", "set-status"}:
+        epic_dir = contained_path(specs_dir, args.epic)
+        if cmd == "add-feature":
+            findings = add_feature(
+                epic_dir, specs_dir, args.name, args.charter,
+                _split_list(args.depends_on),
+            )
+        elif cmd == "remove-feature":
+            findings = remove_feature(epic_dir, specs_dir, args.name)
+        elif cmd == "reorder":
+            findings = reorder(epic_dir, specs_dir, _split_list(args.order))
+        elif cmd == "set-dep":
+            findings = set_dep(
+                epic_dir, specs_dir, args.name, _split_list(args.depends_on)
+            )
+        else:  # set-status
+            findings = set_status(epic_dir, specs_dir, args.status)
+        if findings:
+            raise FindingsError(findings)
+        return 0
+
+    raise UsageError(f"unknown command: {cmd}")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the argparse parser with one subparser per subcommand (02 §9)."""
+    parser = argparse.ArgumentParser(prog="epic-manifest.py", description=__doc__)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    def add_specs_dir(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--specs-dir", default="./specs", help="Specs directory")
+
+    # resolve --------------------------------------------------------------- #
+    p_resolve = sub.add_parser("resolve", help="Resolve a name to its directory")
+    p_resolve.add_argument("name")
+    add_specs_dir(p_resolve)
+
+    # validate -------------------------------------------------------------- #
+    p_validate = sub.add_parser("validate", help="Validate an epic manifest")
+    p_validate.add_argument("epic")
+    add_specs_dir(p_validate)
+    p_validate.add_argument(
+        "--json", action="store_true", dest="json_output", help="Output as JSON"
+    )
+
+    # check-name ------------------------------------------------------------ #
+    p_check = sub.add_parser("check-name", help="Check global name uniqueness")
+    p_check.add_argument("name")
+    add_specs_dir(p_check)
+
+    # render-status --------------------------------------------------------- #
+    p_render = sub.add_parser("render-status", help="Render the live epic dashboard")
+    p_render.add_argument("epic")
+    add_specs_dir(p_render)
+    p_render.add_argument(
+        "--json", action="store_true", dest="json_output", help="Output as JSON"
+    )
+
+    # add-feature ----------------------------------------------------------- #
+    p_add = sub.add_parser("add-feature", help="Add a member feature")
+    p_add.add_argument("epic")
+    p_add.add_argument("name")
+    p_add.add_argument("--charter", required=True, help="One-paragraph charter")
+    p_add.add_argument("--depends-on", dest="depends_on", default="", help="Comma list")
+    add_specs_dir(p_add)
+
+    # remove-feature -------------------------------------------------------- #
+    p_remove = sub.add_parser("remove-feature", help="Remove a member feature")
+    p_remove.add_argument("epic")
+    p_remove.add_argument("name")
+    add_specs_dir(p_remove)
+
+    # reorder --------------------------------------------------------------- #
+    p_reorder = sub.add_parser("reorder", help="Reorder member features")
+    p_reorder.add_argument("epic")
+    p_reorder.add_argument("--order", required=True, help="Comma-separated permutation")
+    add_specs_dir(p_reorder)
+
+    # set-dep --------------------------------------------------------------- #
+    p_setdep = sub.add_parser("set-dep", help="Replace a feature's dependsOn")
+    p_setdep.add_argument("epic")
+    p_setdep.add_argument("name")
+    p_setdep.add_argument("--depends-on", dest="depends_on", default="", help="Comma list")
+    add_specs_dir(p_setdep)
+
+    # set-status ------------------------------------------------------------ #
+    p_setstatus = sub.add_parser("set-status", help="Set the epic lifecycle status")
+    p_setstatus.add_argument("epic")
+    p_setstatus.add_argument(
+        "--status",
+        required=True,
+        choices=["active", "paused", "abandoned", "complete"],
+    )
+    add_specs_dir(p_setstatus)
+
+    return parser
+
+
+def main() -> int:
+    parser = _build_parser()
+    args = parser.parse_args()
+    specs_dir = Path(args.specs_dir)
+    try:
+        return _dispatch(args, specs_dir)
+    except UsageError as exc:
+        print(f"Error: {exc.message}", file=sys.stderr)
+        return 2
+    except FindingsError as exc:
+        _emit_findings(exc.findings, getattr(args, "json_output", False))
+        return 1
+    except OSError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
