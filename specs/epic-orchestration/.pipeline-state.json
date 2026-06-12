@@ -69,10 +69,12 @@
       }
     },
     "forge-4-backlog": {
-      "status": "in-progress",
+      "status": "complete",
+      "commitHash": "23a7e95",
       "artifacts": ["backlog.json"],
       "basedOnVersions": { "forge-1-prd": 1, "forge-2-tech": 1, "forge-3-specs": 1 },
-      "itemCount": 19
+      "itemCount": 19,
+      "completedAt": "2026-06-12T17:45:00Z"
     },
     "forge-5-loop": { "status": "pending" },
     "forge-6-docs": { "status": "pending" }
