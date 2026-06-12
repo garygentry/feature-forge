@@ -20,11 +20,11 @@ This feature introduces the **epic**: a named grouping of related forge features
 
 ### 3.1 Epic Creation and Decomposition
 
-- REQ-EPIC-01: A dedicated pipeline stage (forge-0-epic) must create an epic through a structured interview that decomposes a large change into discrete features with dependency relationships.
+- REQ-EPIC-01: A dedicated epic-creation pipeline stage must create an epic through a structured interview that decomposes a large change into discrete features with dependency relationships. (Stage naming fixed in Constraints.)
   - Priority: P0
-- REQ-EPIC-02: Epic creation must produce a machine-readable manifest recording: epic name, description, status, the ordered feature list with per-feature dependency declarations (`dependsOn`), per-feature status, and a pointer to the shared narrative document.
+- REQ-EPIC-02: Epic creation must produce a machine-readable manifest recording: epic name, description, status, the ordered feature list with per-feature dependency declarations, per-feature status, and a pointer to the shared narrative document. (Concrete field names and file format fixed in Constraints.)
   - Priority: P0
-- REQ-EPIC-03: Epic creation must produce a human-readable narrative document (EPIC.md) capturing the overall goal, the decomposition rationale, and the interface contracts between features (what each feature exposes and consumes).
+- REQ-EPIC-03: Epic creation must produce a human-readable narrative document capturing the overall goal, the decomposition rationale, and the interface contracts between features. The contract sections must use a lightweight structured per-feature `exposes` / `consumes` format (not free-form prose) so that contract-drift checking (REQ-VERIFY-01) is tractable. (Document filename fixed in Constraints.)
   - Priority: P0
 - REQ-EPIC-04: At epic creation, each feature receives only a short charter (one-paragraph scope statement plus contract obligations) — not a full PRD. Full PRDs/specs are authored just-in-time when the feature becomes actionable.
   - Priority: P0
@@ -36,7 +36,7 @@ This feature introduces the **epic**: a named grouping of related forge features
 
 ### 3.2 Directory Layout and State Model
 
-- REQ-DIR-01: An epic must be a self-contained subtree: `{specsDir}/{epic}/` containing the manifest, EPIC.md, and one subdirectory per member feature (`{specsDir}/{epic}/{feature}/`) holding that feature's standard pipeline artifacts.
+- REQ-DIR-01: An epic must be a self-contained subtree containing the manifest, the narrative document, and one subdirectory per member feature holding that feature's standard pipeline artifacts. (Concrete subtree layout fixed in Constraints.)
   - Priority: P0
 - REQ-DIR-02: Standalone (non-epic) features must continue to live flat at `{specsDir}/{feature}/` with no change in behavior or layout.
   - Priority: P0
@@ -46,7 +46,7 @@ This feature introduces the **epic**: a named grouping of related forge features
   - Priority: P0
 - REQ-STATE-01: The epic manifest is the canonical record of epic membership; each member feature's pipeline state additionally carries an epic back-pointer for fast lookup. On conflict, the manifest wins.
   - Priority: P0
-- REQ-STATE-02: Per-feature status shown at the epic level must be derived from each feature's own pipeline state at read time; any cached status in the manifest must be recomputed on read and never trusted when stale.
+- REQ-STATE-02: Per-feature status shown at the epic level must be derived from each feature's own `.pipeline-state.json` at read time. The manifest must not persist a cached per-feature status field; status is recomputed from the feature's pipeline state on every read. (Acceptance test: edit a feature's pipeline-state file directly, then render the epic view — it must reflect the new status with no separate refresh step.)
   - Priority: P0
 
 ### 3.3 Orchestration and Thread of Execution
@@ -64,7 +64,7 @@ This feature introduces the **epic**: a named grouping of related forge features
 
 ### 3.4 Context Injection
 
-- REQ-CTX-01: When stages 1–3 (PRD, tech spec, implementation specs) run for a feature belonging to an epic, they must automatically load as context: EPIC.md, the feature's charter, and the PRDs/tech-specs of completed upstream dependency features.
+- REQ-CTX-01: When stages 1–3 (PRD, tech spec, implementation specs) run for a feature belonging to an epic, they must automatically load as context: EPIC.md, the feature's charter, and the PRDs/tech-specs of its **direct** completed dependency features. Transitive (indirect) dependencies are surfaced via those direct features' contract sections in EPIC.md, not by loading their full specs — bounding context size and keeping the injected set deterministic.
   - Priority: P0
 - REQ-CTX-02: Context injection must surface the feature's contract obligations from the epic (what it must expose to dependents, what it consumes from dependencies) so requirements and specs are written against them.
   - Priority: P0
@@ -78,7 +78,7 @@ This feature introduces the **epic**: a named grouping of related forge features
 
 ### 3.6 Verification and Docs
 
-- REQ-VERIFY-01: forge-verify must support an epic mode checking: manifest/state consistency, dependency-graph acyclicity, charter coverage (every feature has a charter and contract obligations), and contract drift (completed features' specs vs. the contracts declared in EPIC.md).
+- REQ-VERIFY-01: forge-verify must support an epic mode checking: manifest/state consistency, dependency-graph acyclicity, charter coverage (every feature has a charter and contract obligations), and contract drift (completed features' specs vs. the contracts declared in EPIC.md). Contract-drift checking relies on the structured `exposes`/`consumes` contract format mandated by REQ-EPIC-03, which makes the EPIC.md contracts diffable against the features' specs.
   - Priority: P1
 - REQ-DOCS-01: forge-6-docs must be epic-aware: when all member features are complete, offer to synthesize an epic-level architecture document spanning the features, in addition to per-feature docs.
   - Priority: P2
@@ -94,10 +94,18 @@ This feature introduces the **epic**: a named grouping of related forge features
   - Priority: P0
 
 ### 4.2 Robustness
-- REQ-ROBUST-01: Epic state must survive across sessions: any session can reconstruct the epic's full status from files on disk with no in-memory state.
+- REQ-ROBUST-01: Epic state must survive across sessions: any session can reconstruct the epic's full status from files on disk with no in-memory state. Reconstruction (dependency-graph build, acyclicity validation, and dashboard rendering) must remain correct and interactive (target <1s) for epics of up to 20 member features. Other NFRs in this section have no quantitative target — the feature is interactive, single-user, and file-bound, so latency/throughput SLAs do not apply.
   - Priority: P0
 - REQ-ROBUST-02: A corrupted or hand-edited manifest must fail validation with actionable errors (e.g., unknown feature reference, cycle detected, duplicate names) rather than undefined behavior.
   - Priority: P1
+- REQ-ROBUST-03: All manifest writes must be atomic (write to a temporary file then rename into place) so that an interrupted write never leaves a partially-written or corrupt manifest. Concurrent epic-mutating commands from multiple simultaneous sessions are out of scope for v1 (single active session assumed); atomicity protects only against interrupted single-writer updates.
+  - Priority: P1
+
+### 4.4 Security and Trust Model
+- REQ-SEC-01: All epic artifacts (manifest, EPIC.md, charters) are trusted local developer-authored files; there is no untrusted or network input. The security concern is therefore safe handling of corrupt or hand-edited input, not adversarial defense.
+  - Priority: P0
+- REQ-SEC-02: When resolving feature directories and manifest back-pointers, feature/epic names and any path references must be validated to stay within `{specsDir}`: reject names containing path separators, `..` segments, or absolute paths, and reject back-pointers to unknown features (cf. REQ-DIR-04, REQ-ROBUST-02). No epic operation may read or write outside the epic subtree.
+  - Priority: P0
 
 ### 4.3 Observability
 - REQ-OBS-01: Epic-affecting actions (creation, edits, feature completion, handoff prompts) must be reflected in the manifest with timestamps, and committed per the existing git-commit-after-stage protocol.
@@ -109,6 +117,10 @@ This feature introduces the **epic**: a named grouping of related forge features
 - Must work with the existing loop runner contract (rauf by default) without modifying rauf or the backlog schema.
 - Epic and feature names follow the existing kebab-case single-token convention.
 - Configuration continues to flow through `forge.config.json`; epic support must respect `specsDir`, `gitCommitAfterStage`, `commitPrefix`, and `backlogDir` semantics.
+- The epic-creation stage (REQ-EPIC-01) is named `forge-0-epic`, consistent with the existing `forge-N-stage` naming convention.
+- The narrative document (REQ-EPIC-03) is named `EPIC.md`, sited at the epic subtree root.
+- The epic subtree layout (REQ-DIR-01) is `{specsDir}/{epic}/` containing the manifest and `EPIC.md`, with one member-feature subdirectory at `{specsDir}/{epic}/{feature}/` — mirroring the existing flat `{specsDir}/{feature}/` layout for consistency.
+- The per-feature dependency-declaration field in the manifest (REQ-EPIC-02) is named `dependsOn`.
 
 ## 6. Out of Scope
 
@@ -123,7 +135,7 @@ This feature introduces the **epic**: a named grouping of related forge features
 
 - Should the prompted handoff after feature completion also offer to run forge-verify (impl) on the just-completed feature before unblocking dependents, as a recommended default?
 - When an epic is edited and a completed feature is removed, how should its directory and artifacts be treated (leave in place vs. relocate to flat specs)?
-- Should EPIC.md contract sections have a lightweight structure (per-feature exposes/consumes lists) to make REQ-VERIFY-01 contract-drift checking tractable, or remain free-form?
+- ~~Should EPIC.md contract sections have a lightweight structure (per-feature exposes/consumes lists) to make REQ-VERIFY-01 contract-drift checking tractable, or remain free-form?~~ **Resolved:** structured per-feature `exposes`/`consumes` format is mandated (see REQ-EPIC-03, REQ-VERIFY-01).
 
 ## 8. Success Criteria
 

@@ -14,6 +14,13 @@
       "artifacts": ["PRD.md"],
       "completedAt": "2026-06-12T00:00:00Z"
     },
+    "forge-verify-prd": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-prd-2026-06-12.md",
+      "findingsCount": 7,
+      "verifiedAt": "2026-06-12T00:00:00Z",
+      "fixedAt": "2026-06-12T00:00:00Z"
+    },
     "forge-2-tech": { "status": "pending" },
     "forge-3-specs": { "status": "pending" },
     "forge-4-backlog": { "status": "pending" },
