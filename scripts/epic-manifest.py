@@ -726,25 +726,213 @@ def validate(epic_dir: Path, specs_dir: Path) -> list[Finding]:
 def is_complete_for_orchestration(state: dict) -> bool:
     """Apply the completion-for-orchestration predicate (00 §7, 02 §8.1).
 
-    Stub — implemented in backlog item 007.
+    A feature is complete-for-orchestration iff::
+
+        stages['forge-5-loop'].status == 'complete'
+        AND ('forge-verify-impl' absent
+             OR stages['forge-verify-impl'].status in {'passed', 'findings-applied'})
+
+    A feature whose forge-verify-impl is 'findings-reported' (unfixed) is NOT
+    complete and does NOT unblock dependents (REQ-ORCH-01). This is the single
+    implementation of the predicate, reused by the dependency gate and handoff
+    (04-pipeline-integration.md).
+
+    Args:
+        state: A parsed .pipeline-state.json dict (or {} if the member has none).
+
+    Returns:
+        True iff the feature is complete for orchestration purposes.
     """
-    raise NotImplementedError
+    stages = state.get("stages", {})
+    if not isinstance(stages, dict):
+        return False
+    loop = stages.get("forge-5-loop", {})
+    if not isinstance(loop, dict) or loop.get("status") != "complete":
+        return False
+    impl = stages.get("forge-verify-impl")
+    if impl is None:
+        return True
+    if not isinstance(impl, dict):
+        return False
+    return impl.get("status") in {"passed", "findings-applied"}
+
+
+def _read_state_safely(state_path: Path) -> dict:
+    """Read and parse a member's .pipeline-state.json, tolerating corruption.
+
+    A missing, unreadable, unparseable, or torn (partially-written) member state
+    downgrades to ``{}`` rather than crashing the dashboard (02 §8.2). Member
+    state writes are made by forge-1..5 skills outside the helper's atomicity
+    scope, so a torn read is expected and simply renders that one feature as
+    ``not-started``.
+    """
+    if not state_path.is_file():
+        return {}
+    try:
+        parsed = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def derive_status(feature_dir: Path) -> FeatureStatus:
-    """Derive a feature's live status from its own pipeline state (02 §8).
+    """Derive a feature's live status from its own pipeline state (00 §5, 02 §8).
 
-    Stub — implemented in backlog item 007.
+    Reads ``{feature_dir}/.pipeline-state.json`` and maps it to a FeatureStatus:
+    missing/unparseable/all-pending -> ``not-started``; complete-for-
+    orchestration -> ``complete``; otherwise ``in-progress``. The ``stage`` field
+    is the state's ``currentStage``, defaulting to ``forge-0-epic`` when the
+    member dir exists but no stage ran. ``blocked``/``unmetDeps`` are placeholders
+    (``False``/``[]``); ``render_status`` overwrites them once it knows the graph.
+
+    Args:
+        feature_dir: The member feature's directory.
+
+    Returns:
+        A FeatureStatus (00 §5) with name, stage, coarse status, and placeholder
+        blocked/unmetDeps.
     """
-    raise NotImplementedError
+    name = feature_dir.name
+    state = _read_state_safely(feature_dir / PIPELINE_STATE_FILENAME)
+    stage = state.get("currentStage") or "forge-0-epic"
+
+    if not state:
+        derived: DerivedStatus = "not-started"
+    elif is_complete_for_orchestration(state):
+        derived = "complete"
+    else:
+        stages = state.get("stages", {})
+        started = isinstance(stages, dict) and any(
+            isinstance(entry, dict) and entry.get("status") not in (None, "pending")
+            for entry in stages.values()
+        )
+        derived = "in-progress" if started else "not-started"
+
+    return {
+        "name": name,
+        "stage": stage,
+        "status": derived,
+        "blocked": False,
+        "unmetDeps": [],
+    }
+
+
+def _transitive_deps(name: str, adjacency: dict[str, list[str]]) -> set[str]:
+    """Return all features reachable from ``name`` via dependsOn edges (00 §8)."""
+    seen: set[str] = set()
+    stack = list(adjacency.get(name, []))
+    while stack:
+        cur = stack.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        stack.extend(adjacency.get(cur, []))
+    return seen
+
+
+def _next_command(feature_dir: Path, status_row: FeatureStatus) -> str:
+    """Recommend the next forge command for an actionable feature (02 §8.3).
+
+    ``/feature-forge:forge-1-prd <name>`` when the feature's PRD is absent (or it
+    has not progressed past epic creation), else the command for its next un-run
+    stage (its ``currentStage``).
+    """
+    name = status_row["name"]
+    stage = status_row["stage"]
+    prd_present = (feature_dir / "PRD.md").is_file()
+    if not prd_present or stage in ("forge-0-epic", "forge-1-prd"):
+        return f"/feature-forge:forge-1-prd {name}"
+    return f"/feature-forge:{stage} {name}"
 
 
 def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
-    """Build the full live dashboard payload for an epic (02 §8.3).
+    """Build the full live dashboard payload for an epic (00 §5, §8; 02 §8.3).
 
-    Stub — implemented in backlog item 007.
+    Validates first (refusing to render over an invalid graph), then derives each
+    member's live status from its own state file, computes blocked/unmetDeps,
+    actionable, parallelEligible, the rollup, and the recommended next command.
+
+    Args:
+        epic_dir: The epic subtree directory.
+        specs_dir: The configured specs directory.
+
+    Returns:
+        The RenderStatus dict (02 §8.4).
+
+    Raises:
+        UsageError: Missing/unreadable manifest (exit 2).
+        FindingsError: The manifest fails validation (exit 1).
     """
-    raise NotImplementedError
+    # (1) validate first — no dashboard over an invalid graph.
+    findings = validate(epic_dir, specs_dir)
+    if findings:
+        raise FindingsError(findings)
+
+    manifest = load_manifest(epic_dir)
+    features = manifest.get("features", [])
+
+    # (2) derive each feature's status and (3) build the completion map.
+    rows: list[FeatureStatus] = []
+    feature_dir_by_name: dict[str, Path] = {}
+    complete: dict[str, bool] = {}
+    for feat in features:
+        name = feat["name"]
+        member_dir = contained_path(epic_dir, name)
+        feature_dir_by_name[name] = member_dir
+        rows.append(derive_status(member_dir))
+        complete[name] = is_complete_for_orchestration(
+            _read_state_safely(member_dir / PIPELINE_STATE_FILENAME)
+        )
+
+    # (4) per-feature unmetDeps + blocked.
+    for row in rows:
+        deps = unmet_deps(row["name"], features, complete)
+        row["unmetDeps"] = deps
+        row["blocked"] = bool(deps)
+
+    # (5) actionable = unmetDeps empty AND not complete.
+    actionable = [
+        row["name"]
+        for row in rows
+        if not row["unmetDeps"] and not complete[row["name"]]
+    ]
+
+    # (6) parallelEligible = actionable features with no transitive dependsOn
+    #     relationship to any other actionable feature.
+    adjacency = {f["name"]: list(f.get("dependsOn", [])) for f in features}
+    actionable_set = set(actionable)
+    parallel_eligible: list[str] = []
+    for name in actionable:
+        related = _transitive_deps(name, adjacency)
+        others = actionable_set - {name}
+        # Eligible iff it neither depends on nor is depended on by another actionable.
+        depends_on_other = bool(related & others)
+        depended_on = any(name in _transitive_deps(o, adjacency) for o in others)
+        if not depends_on_other and not depended_on:
+            parallel_eligible.append(name)
+
+    # (7) rollup.
+    rollup: Rollup = {
+        "complete": sum(1 for v in complete.values() if v),
+        "total": len(features),
+    }
+
+    # (8) nextCommand for the first actionable feature, else None.
+    next_command: str | None = None
+    if actionable:
+        first = actionable[0]
+        first_row = next(r for r in rows if r["name"] == first)
+        next_command = _next_command(feature_dir_by_name[first], first_row)
+
+    return {
+        "epic": manifest.get("epic", epic_dir.name),
+        "status": manifest.get("status", "active"),
+        "features": rows,
+        "actionable": actionable,
+        "parallelEligible": parallel_eligible,
+        "rollup": rollup,
+        "nextCommand": next_command,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -839,6 +1027,26 @@ def _emit_findings(findings: list[Finding], as_json: bool) -> None:
             print(f"{finding['code']}: {finding['message']}", file=sys.stderr)
 
 
+def _print_status_table(status: RenderStatus) -> None:
+    """Print a readable epic dashboard plus the recommended next command (02 §8)."""
+    rollup = status["rollup"]
+    print(f"Epic: {status['epic']}  [{status['status']}]")
+    print(f"Progress: {rollup['complete']}/{rollup['total']} complete")
+    if not status["features"]:
+        print("  (no features — add features to begin)")
+    for row in status["features"]:
+        line = f"  - {row['name']}: {row['status']} (stage {row['stage']})"
+        if row["blocked"]:
+            line += f" — blocked on {', '.join(row['unmetDeps'])}"
+        print(line)
+    if status["actionable"]:
+        print(f"Actionable: {', '.join(status['actionable'])}")
+    if status["parallelEligible"]:
+        print(f"Parallel-eligible: {', '.join(status['parallelEligible'])}")
+    if status["nextCommand"]:
+        print(f"Next: {status['nextCommand']}")
+
+
 def _dispatch(args: argparse.Namespace, specs_dir: Path) -> int:
     """Route a parsed command to its handler and emit results.
 
@@ -872,6 +1080,8 @@ def _dispatch(args: argparse.Namespace, specs_dir: Path) -> int:
         status = render_status(epic_dir, specs_dir)
         if args.json_output:
             print(json.dumps(status, indent=2))
+        else:
+            _print_status_table(status)
         return 0
 
     # Mutators ---------------------------------------------------------------
