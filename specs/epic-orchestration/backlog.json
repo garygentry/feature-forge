@@ -347,8 +347,8 @@
         "All graph/validation work is delegated to the helper and every question is routed through AskUserQuestion (no inline-prose questions)",
         "bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:51:23.639Z",
       "dependsOn": [
         "008"
       ],
