@@ -123,8 +123,8 @@
         "check-name of an already-existing name (flat, nested, or epic dir) exits 1 with 'duplicate-name'; a free name exits 0",
         "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:23:11.876Z",
       "dependsOn": [
         "003"
       ],
