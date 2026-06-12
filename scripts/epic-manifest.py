@@ -392,25 +392,121 @@ def unmet_deps(
 def feature_dirs(specs_dir: Path) -> dict[str, list[Path]]:
     """Map every feature name in the specs tree to the dirs that bear it (02 §5).
 
-    Stub — implemented in backlog item 005.
+    Scans both layouts to a fixed depth, treating a directory as a feature iff
+    it directly contains a ``.pipeline-state.json`` (00 §6, REQ-DIR-03):
+      * flat:   {specsDir}/{name}/.pipeline-state.json
+      * nested: {specsDir}/{epic}/{name}/.pipeline-state.json
+
+    The returned map is keyed by bare feature name; a name with more than one
+    entry is a uniqueness violation (REQ-DIR-04) surfaced as 'ambiguous' or
+    'duplicate-name' by the caller. Epic directories themselves (which hold
+    ``epic-manifest.json`` but no ``.pipeline-state.json``) are skipped, so an
+    epic name never collides with a feature name (01 §4.3).
+
+    Args:
+        specs_dir: The configured specs directory (already verified to exist).
+
+    Returns:
+        Dict of feature name -> sorted list of absolute feature-dir paths. A
+        single-entry list means the name is unique. Descends exactly one level
+        below each top dir — never deeper.
     """
-    raise NotImplementedError
+    result: dict[str, list[Path]] = {}
+    specs_real = specs_dir.resolve()
+    for top in sorted(p for p in specs_real.iterdir() if p.is_dir()):
+        if (top / PIPELINE_STATE_FILENAME).is_file():
+            result.setdefault(top.name, []).append(top)  # flat feature
+        # Descend one level for nested features (skip epic root, which has no state file).
+        for child in sorted(p for p in top.iterdir() if p.is_dir()):
+            if (child / PIPELINE_STATE_FILENAME).is_file():
+                result.setdefault(child.name, []).append(child)
+    return result
 
 
 def resolve(name: str, specs_dir: Path) -> Path:
     """Resolve a bare feature/epic name to its absolute directory (02 §5).
 
-    Stub — implemented in backlog item 005.
+    Implements the 5-step algorithm (tech-spec §3.4):
+      1. reject unsafe names (assert_safe_name) — exit 2 before any FS access;
+      2. flat match: {specsDir}/{name}/.pipeline-state.json wins outright;
+      3. exactly one nested match resolves cleanly;
+      4. more than one match anywhere -> 'ambiguous' (REQ-DIR-04);
+      5. zero matches -> 'not-found'.
+
+    Standalone features resolve to their flat path exactly as today, with no
+    epic logic engaged (REQ-COMPAT-01/02).
+
+    Args:
+        name: Bare feature/epic name from the command line.
+        specs_dir: The configured specs directory.
+
+    Returns:
+        The resolved, path-contained absolute feature directory.
+
+    Raises:
+        UsageError: Unsafe name or missing specs dir (exit 2).
+        FindingsError: 'ambiguous' (lists every matching path) or 'not-found'
+            (exit 1). 00 §4.2 gives the canonical message shapes.
     """
-    raise NotImplementedError
+    assert_safe_name(name)
+    if not specs_dir.is_dir():
+        raise UsageError(f"specs dir not found: {specs_dir}")
+
+    flat = specs_dir / name
+    if (flat / PIPELINE_STATE_FILENAME).is_file():
+        return contained_path(specs_dir, name)  # step 2: flat match wins
+
+    matches = feature_dirs(specs_dir).get(name, [])
+    if len(matches) == 1:  # step 3
+        return contained_path(matches[0].parent, matches[0].name)
+    if len(matches) > 1:  # step 4
+        joined = " and ".join(str(p) for p in matches)
+        raise FindingsError([
+            {"code": "ambiguous",
+             "message": f"ambiguous name {name!r}: matches {joined}",
+             "feature": name}
+        ])
+    raise FindingsError([  # step 5
+        {"code": "not-found",
+         "message": f"no feature named {name!r} found under {specs_dir}",
+         "feature": name}
+    ])
 
 
 def check_name(name: str, specs_dir: Path) -> list[Finding]:
     """Return a duplicate-name finding if the name is already taken (02 §6.3).
 
-    Stub — implemented in backlog item 005.
+    Used by forge-0-epic before creating a new member feature so no NEW global
+    name collision can be introduced (REQ-DIR-04, tech-spec §3.4). Any single
+    existing occurrence is enough to reject — unlike ``resolve``, which tolerates
+    a uniquely-matching name and only errors on genuine multi-match.
+
+    Args:
+        name: The candidate new feature/epic name.
+        specs_dir: The configured specs directory.
+
+    Returns:
+        A single-element list with a 'duplicate-name' Finding when the name
+        already maps to one or more feature-shaped dirs (or to an existing epic
+        dir); an empty list when the name is free.
+
+    Raises:
+        UsageError: Unsafe name or missing specs dir (exit 2).
     """
-    raise NotImplementedError
+    assert_safe_name(name)
+    if not specs_dir.is_dir():
+        raise UsageError(f"specs dir not found: {specs_dir}")
+    existing = feature_dirs(specs_dir).get(name, [])
+    # An epic dir (manifest, no state file) with this name also collides.
+    epic_dir = specs_dir / name
+    if (epic_dir / MANIFEST_FILENAME).is_file():
+        existing = [*existing, epic_dir]
+    if existing:
+        joined = ", ".join(str(p) for p in existing)
+        return [{"code": "duplicate-name",
+                 "message": f"duplicate feature name {name!r} (also at {joined})",
+                 "feature": name}]
+    return []
 
 
 # --------------------------------------------------------------------------- #
