@@ -182,8 +182,8 @@
         "render-status exits 1 (refuses to render) when the manifest fails validation",
         "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:32:22.329Z",
       "dependsOn": [
         "005",
         "006"
