@@ -292,8 +292,8 @@
         "render-status, remove-feature, reorder, set-dep, set-status are each exercised by at least one test",
         "bash scripts/validate.sh passes with pytest installed (runs the suite)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:47:52.533Z",
       "dependsOn": [
         "009"
       ],
