@@ -16,7 +16,9 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 ## Step 1: Read Context
 
-Read `{specsDir}/{feature}/.pipeline-state.json` to understand what exists.
+Resolve the feature directory via the **Feature Directory Resolution** block in `references/shared-conventions.md` (so a standalone feature resolves to its flat `{specsDir}/{feature}/` path exactly as today, and an epic member resolves to its nested path). Use the resulting `{resolvedFeatureDir}` everywhere this skill previously wrote `{specsDir}/{feature}/`.
+
+Read `{resolvedFeatureDir}/.pipeline-state.json` to understand what exists.
 
 ### Gather Sources
 
@@ -28,9 +30,25 @@ Load into context:
 
 ### Implementation Completeness Check
 
-Check `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if configured). Count items with status `complete` vs total. If implementation is less than 80% complete, use `AskUserQuestion` to warn: "Implementation is only N% complete. Documentation will be based primarily on specs and may need updates after implementation. Proceed?" If user proceeds, add a `PRE-IMPLEMENTATION` notice at the top of each generated doc.
+Check `{resolvedFeatureDir}/backlog.json` (or `{backlogDir}/{feature}/backlog.json` if configured). Count items with status `complete` vs total. If implementation is less than 80% complete, use `AskUserQuestion` to warn: "Implementation is only N% complete. Documentation will be based primarily on specs and may need updates after implementation. Proceed?" If user proceeds, add a `PRE-IMPLEMENTATION` notice at the top of each generated doc.
 
 Also check `.pipeline-state.json` for `stages.forge-5-loop`. If it exists and has status `in-progress` (some items incomplete), include this in the warning: "The rauf loop has not fully completed — {done}/{total} items done. Documentation may need updates after remaining items are implemented."
+
+### Epic-Level Documentation (epic members only)
+
+If the resolved feature has an `epic` back-pointer in its `.pipeline-state.json`, run:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
+```
+
+**Only if `rollup.total > 0 AND rollup.complete == rollup.total`** (every member is complete-for-orchestration; the `total > 0` guard excludes an empty epic), use `AskUserQuestion` to offer:
+
+"All {total} features in the '{epic}' epic are complete. Generate an **epic-level architecture document** spanning the features, in addition to {feature}'s per-feature docs?"
+
+On yes, synthesize a doc at **`{docsDir}/{epic}/`** sourced from: the `EPIC.md` narrative, each member's per-feature docs, and the manifest contracts (each feature's `exposes`/`consumes`). When the epic-level doc is written, the Step 5 commit also stages `{docsDir}/{epic}/`.
+
+If not all members are complete (or the feature has no `epic` back-pointer), **do not offer** — the per-feature doc flow proceeds unchanged.
 
 Read `references/doc-conventions.md` for documentation standards.
 
@@ -140,11 +158,11 @@ Present the docs as text. Then use `AskUserQuestion` to collect feedback — do 
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
-1. Update `{specsDir}/{feature}/.pipeline-state.json`:
+1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
    - Set `currentStage` to `complete`
    - Record `artifacts`
    - Set `stages.forge-6-docs.basedOnVersions` to include versions for all completed upstream stages. Always include forge-1-prd, forge-2-tech, forge-3-specs. Include forge-4-backlog and forge-5-loop ONLY if they have status `complete`.
-2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (`git add {docsDir}/{feature}/ {specsDir}/{feature}/`), attempt commit with message `"{commitPrefix}({feature}): complete architecture docs"`, then set `stages.forge-6-docs.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
+2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (`git add {docsDir}/{feature}/ {resolvedFeatureDir}/` — and **also** `{docsDir}/{epic}/` when an epic-level doc was written in Step 1), attempt commit with message `"{commitPrefix}({feature}): complete architecture docs"`, then set `stages.forge-6-docs.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 4. Tell user: "Documentation complete. Feature pipeline for '{feature}' is finished!\n  `/feature-forge:forge {feature}` to see the final pipeline status."
 
 ## Gotchas
