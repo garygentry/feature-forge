@@ -22,8 +22,9 @@
       "fixedAt": "2026-06-12T00:00:00Z"
     },
     "forge-2-tech": {
-      "status": "in-progress",
+      "status": "complete",
       "version": 1,
+      "commitHash": "f46fe38",
       "artifacts": ["tech-spec.md"],
       "completedAt": "2026-06-12T00:00:00Z",
       "basedOnVersions": { "forge-1-prd": 1 }
