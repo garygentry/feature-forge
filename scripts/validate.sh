@@ -117,6 +117,33 @@ for SCRIPT in "$REPO_ROOT"/scripts/*.sh; do
   fi
 done
 
+# 7. Compile-check and test epic-manifest helper
+echo ""
+echo "Checking epic-manifest helper..."
+HELPER="$REPO_ROOT/scripts/epic-manifest.py"
+if [ -f "$HELPER" ]; then
+  if python3 -m py_compile "$HELPER" 2>/dev/null; then
+    echo "PASS: scripts/epic-manifest.py compiles (py_compile)"
+  else
+    echo "FAIL: scripts/epic-manifest.py failed py_compile"
+    ERRORS=$((ERRORS + 1))
+  fi
+  if python3 -c "import pytest" 2>/dev/null; then
+    if python3 -m pytest "$REPO_ROOT/tests" -q; then
+      echo "PASS: epic-manifest pytest suite"
+    else
+      echo "FAIL: epic-manifest pytest suite"
+      ERRORS=$((ERRORS + 1))
+    fi
+  else
+    echo "SKIP: pytest not installed; skipping epic-manifest test suite (non-fatal)"
+    WARNINGS=$((WARNINGS + 1))
+  fi
+else
+  echo "SKIP: scripts/epic-manifest.py not found; skipping helper checks (non-fatal)"
+  WARNINGS=$((WARNINGS + 1))
+fi
+
 echo ""
 echo "============================================"
 if [ "$ERRORS" -eq 0 ]; then
