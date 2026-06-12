@@ -575,8 +575,8 @@
         "Both skills preserve byte-for-byte standalone behavior (the per-feature doc flow and standalone fix flow are unchanged)",
         "bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T23:04:25.321Z",
       "dependsOn": [
         "013",
         "007"
