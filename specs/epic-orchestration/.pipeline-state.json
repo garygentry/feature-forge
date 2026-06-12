@@ -1,0 +1,23 @@
+{
+  "feature": "epic-orchestration",
+  "pipelineStatus": "active",
+  "currentStage": "forge-2-tech",
+  "createdAt": "2026-06-12T00:00:00Z",
+  "updatedAt": "2026-06-12T00:00:00Z",
+  "notes": "Term 'epic' chosen over 'initiative'. Nested layout specs/<epic>/<feature> decided. v1: prompted handoff, serial execution, JIT charters, warn+confirm dep gate. Open questions in PRD section 7.",
+  "stages": {
+    "forge-1-prd": {
+      "status": "complete",
+      "commitHash": "b68339a",
+      "version": 1,
+      "basedOnVersions": {},
+      "artifacts": ["PRD.md"],
+      "completedAt": "2026-06-12T00:00:00Z"
+    },
+    "forge-2-tech": { "status": "pending" },
+    "forge-3-specs": { "status": "pending" },
+    "forge-4-backlog": { "status": "pending" },
+    "forge-5-loop": { "status": "pending" },
+    "forge-6-docs": { "status": "pending" }
+  }
+}
