@@ -19,15 +19,22 @@ For pipeline architecture details, read `references/process-overview.md`.
 ### 2. Determine Context
 
 **If a feature name is provided** (e.g., `/feature-forge:forge auth`):
-- Look for `{specsDir}/{feature}/.pipeline-state.json`
-- If found, display the pipeline status dashboard (see format below)
-- If not found, ask: "No pipeline exists for '{feature}'. Want to start one? Run `/feature-forge:forge-1-prd {feature}` to begin."
+- **First test whether the name is an epic:** if `{specsDir}/{name}/epic-manifest.json` exists, render the **Epic Dashboard** (see format below) and stop — do not treat it as a feature.
+- Otherwise, resolve the name via the **Feature Directory Resolution** block in `references/shared-conventions.md` (so a nested epic-member name finds its dashboard too). On a resolution finding (`not-found`, `ambiguous`, `unsafe-name`, `path-escape`), surface it verbatim.
+  - On `not-found` for a never-started feature, ask: "No pipeline exists for '{feature}'. Want to start one? Run `/feature-forge:forge-1-prd {feature}` to begin."
+- If resolution succeeds, display the per-feature pipeline status dashboard (see format below) from `{resolvedFeatureDir}/`.
 
-**If no feature name is provided:**
-- Scan `{specsDir}/` for all subdirectories containing `.pipeline-state.json`
-- If exactly one active (non-complete) pipeline exists, show its dashboard
-- If multiple exist, list them all with a one-line summary each and use `AskUserQuestion` to ask which one to focus on
-- If none exist, say: "No active feature pipelines found. Start one with `/feature-forge:forge-1-prd <feature-name>`."
+**If no feature name is provided:** list in two tiers.
+
+1. **Epics first.** Identify epic directories as any `{specsDir}/*/` that directly contains an `epic-manifest.json` **and no `.pipeline-state.json` of its own** (an epic root is never itself a feature). For each epic, run:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
+   ```
+   and show one rollup line: `{epic} — {complete}/{total} complete, next: {nextCommand}`.
+2. **Standalone features below.** Scan the remaining `{specsDir}/*/` that directly contain a `.pipeline-state.json` **without** an `epic` back-pointer. A nested member's `.pipeline-state.json` is **attributed to its epic (Tier 1), never listed as a standalone feature**.
+   - Within this standalone tier the existing logic still applies: if exactly one active (non-complete) standalone pipeline exists, show its dashboard; if multiple exist, list them with a one-line summary each and use `AskUserQuestion` to ask which to focus on.
+
+If no epics and no standalone features exist, say: "No active feature pipelines found. Start one with `/feature-forge:forge-1-prd <feature-name>` or group several with `/feature-forge:forge-0-epic <epic-name>`."
 
 The feature name must be a single kebab-case token. If the user provides multiple words (e.g., "user auth flow"), convert to kebab-case: `user-auth-flow`.
 
@@ -68,6 +75,44 @@ Use these status indicators:
 - ⏭️ = verification skipped (user chose to proceed without verifying)
 - ⚠️ = stale (built against an older version of an upstream artifact)
 
+### Epic Dashboard
+
+When the named argument is an epic (`{specsDir}/{name}/epic-manifest.json` exists), render the epic dashboard instead of a per-feature one. Run:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
+```
+
+and render from its output:
+
+- **Epic header:** name + `status` (active | paused | abandoned | complete).
+- **Dependency graph:** each feature with its `dependsOn`, as an arrow list or indented tree (the helper guarantees the graph is acyclic).
+- **Per-feature rows:** reuse the **existing status indicators** below (✅/✅⚠️/🔄/⬜/❌/✅🔍/⏭️/⚠️), driven by each feature's derived `stage`/`status`. Mark `blocked` features and list their `unmetDeps`.
+- **Actionable vs blocked:** list the `actionable` set and the recommended `nextCommand`.
+- **Rollup:** `{complete}/{total} features complete`.
+
+Example:
+
+```
+Epic: auth-overhaul  [active]   —   2/4 features complete
+
+Dependency graph:
+  config-store      (no deps)
+  token-service     → config-store
+  api-gateway       → token-service
+  audit-log         (no deps)
+
+✅ config-store     complete
+🔄 token-service    forge-3-specs (in progress)
+⬜ api-gateway      blocked — waiting on token-service
+✅ audit-log        complete
+
+Actionable now: token-service
+Next: /feature-forge:forge-3-specs token-service
+```
+
+All of this is reconstructed **purely from disk** — the manifest plus each member's `.pipeline-state.json`, with no in-memory state — so a fresh session renders the same dashboard. If `render-status` exits ≥ 1 (e.g. a corrupt or invalid manifest), surface its findings verbatim and do not render a partial dashboard.
+
 ### 4. Notes Management
 
 If the user says something like "note: switching to jose for JWT" or "remember: we decided X", update the `notes` field in `.pipeline-state.json`. This helps preserve context across session clears.
@@ -93,6 +138,16 @@ Support these sub-commands for pipeline lifecycle management:
 - `/feature-forge:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
 - `/feature-forge:forge resume {feature}` — Set `pipelineStatus` back to `"active"`. Calculate how long the feature was paused (from `updatedAt` to now). If paused for more than 24 hours, show a hint: "This feature was paused for {duration}. Session context may have been lost — consider re-running `/feature-forge:forge-{currentStage} {feature}` to rebuild context."
 - `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Use `AskUserQuestion` to confirm with user first. Note: abandoned pipelines can be resumed with `/feature-forge:forge resume {feature}` if the user changes their mind.
+
+**Epic lifecycle.** When the argument names an **epic** (`{specsDir}/{name}/epic-manifest.json` exists), `pause` / `resume` / `abandon` operate on the epic manifest, not a `.pipeline-state.json`:
+
+- Set the manifest's top-level `status` (`paused` / `active` / `abandoned`) via the helper's `set-status` mutator — an atomic write that also bumps `updatedAt`:
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" set-status "{epic}" --status paused --specs-dir "{specsDir}"
+  ```
+  For `complete`, do **not** set the status directly — completion is *derived* from member states (the rollup), so the manifest `status` is a lifecycle flag, never a completion signal.
+- **Member feature states are NOT silently mutated.** Pausing/abandoning the epic changes only the manifest `status`. Before doing so, use `AskUserQuestion` to make the relationship explicit: "Pausing the epic does not pause its in-flight member features. {N} members are active. Pause the epic only, or also pause each member?" If the user opts to pause members too, update each member's own `pipelineStatus` **individually and visibly** (one explicit action per member), never as a hidden side-effect.
+- Commit the change via the Git Commit Protocol, staging `{specsDir}/{epic}/`.
 
 When listing features, show active pipelines by default. Include a count of paused/abandoned: "3 active pipelines (1 paused, 1 abandoned — use `/feature-forge:forge list all` to see them)."
 
