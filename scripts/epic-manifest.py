@@ -514,22 +514,208 @@ def check_name(name: str, specs_dir: Path) -> list[Finding]:
 # --------------------------------------------------------------------------- #
 
 
+#: Top-level required keys (00 §2.1, mirrors epic-manifest-schema.json).
+_TOP_REQUIRED: Final = (
+    "schemaVersion", "epic", "description", "status",
+    "narrativeDoc", "createdAt", "updatedAt", "features",
+)
+#: Required keys on each Feature object (00 §2.2).
+_FEATURE_REQUIRED: Final = ("name", "charter", "dependsOn", "exposes", "consumes")
+#: Required keys on each Contract (exposes[]) object (00 §2.3).
+_CONTRACT_REQUIRED: Final = ("name", "kind", "summary")
+#: Required keys on each ConsumedContract (consumes[]) object (00 §2.4).
+_CONSUMED_REQUIRED: Final = ("from", "name", "summary")
+#: Allowed epic lifecycle states (00 §2.1).
+_EPIC_STATUSES: Final = ("active", "paused", "abandoned", "complete")
+#: Allowed Contract kinds (00 §2.3).
+_CONTRACT_KINDS: Final = ("function", "type", "endpoint", "module", "event")
+
+
+def _schema(message: str, feature: str | None = None) -> Finding:
+    """Construct a 'schema' Finding (00 §4)."""
+    return {"code": "schema", "message": message, "feature": feature}
+
+
+def _schema_findings(manifest: dict) -> list[Finding]:
+    """Hand-rolled stdlib schema checker over the manifest (02 §6.2, 00 §2.6).
+
+    Asserts required keys/types/enums/consts from 00 §2 and explicitly rejects
+    any ``features[].status`` key (REQ-STATE-02 -> 'cached-status'). No
+    third-party ``jsonschema`` (01 §2.1). Returns 'schema' findings plus, for a
+    per-feature status key, a 'cached-status' finding.
+    """
+    findings: list[Finding] = []
+    if not isinstance(manifest, dict):
+        return [_schema(f"manifest must be a JSON object, got {type(manifest).__name__}")]
+
+    for key in _TOP_REQUIRED:
+        if key not in manifest:
+            findings.append(_schema(f"missing required key {key!r}"))
+
+    if "schemaVersion" in manifest and manifest["schemaVersion"] != 1:
+        findings.append(_schema(f"schemaVersion must be 1, got {manifest['schemaVersion']!r}"))
+    if "narrativeDoc" in manifest and manifest["narrativeDoc"] != NARRATIVE_FILENAME:
+        findings.append(_schema(f"narrativeDoc must be {NARRATIVE_FILENAME!r}, got {manifest['narrativeDoc']!r}"))
+    for key in ("epic", "description", "createdAt", "updatedAt"):
+        if key in manifest and not isinstance(manifest[key], str):
+            findings.append(_schema(f"{key} must be a string"))
+    if "status" in manifest and manifest["status"] not in _EPIC_STATUSES:
+        findings.append(_schema(f"status must be one of {list(_EPIC_STATUSES)}, got {manifest['status']!r}"))
+
+    features = manifest.get("features")
+    if "features" in manifest and not isinstance(features, list):
+        findings.append(_schema("features must be an array"))
+        return findings
+    if not isinstance(features, list):
+        return findings
+
+    for idx, feat in enumerate(features):
+        if not isinstance(feat, dict):
+            findings.append(_schema(f"features[{idx}] must be an object"))
+            continue
+        fname = feat.get("name") if isinstance(feat.get("name"), str) else None
+        label = fname or f"features[{idx}]"
+        if "status" in feat:
+            findings.append({
+                "code": "cached-status",
+                "message": f"feature {label!r} carries a forbidden 'status' key (REQ-STATE-02)",
+                "feature": fname,
+            })
+        for key in _FEATURE_REQUIRED:
+            if key not in feat:
+                findings.append(_schema(f"feature {label!r} missing required key {key!r}", fname))
+        for key in ("name", "charter"):
+            if key in feat and not isinstance(feat[key], str):
+                findings.append(_schema(f"feature {label!r} {key} must be a string", fname))
+        if "dependsOn" in feat:
+            if not isinstance(feat["dependsOn"], list) or not all(isinstance(d, str) for d in feat["dependsOn"]):
+                findings.append(_schema(f"feature {label!r} dependsOn must be an array of strings", fname))
+        for key, required, kind_check in (
+            ("exposes", _CONTRACT_REQUIRED, True),
+            ("consumes", _CONSUMED_REQUIRED, False),
+        ):
+            if key not in feat:
+                continue
+            entries = feat[key]
+            if not isinstance(entries, list):
+                findings.append(_schema(f"feature {label!r} {key} must be an array", fname))
+                continue
+            for j, entry in enumerate(entries):
+                if not isinstance(entry, dict):
+                    findings.append(_schema(f"feature {label!r} {key}[{j}] must be an object", fname))
+                    continue
+                for rk in required:
+                    if rk not in entry:
+                        findings.append(_schema(f"feature {label!r} {key}[{j}] missing required key {rk!r}", fname))
+                if kind_check and "kind" in entry and entry["kind"] not in _CONTRACT_KINDS:
+                    findings.append(_schema(f"feature {label!r} {key}[{j}] kind must be one of {list(_CONTRACT_KINDS)}", fname))
+    return findings
+
+
 def _validate_dict(
     manifest: dict, epic_dir: Path, specs_dir: Path
 ) -> list[Finding]:
     """Validate an already-parsed manifest dict, returning findings (02 §6.2).
 
-    Stub — implemented in backlog item 006.
+    Runs the invariant checks of 00 §2.6 in order, short-circuiting only where a
+    later check cannot run. Reused by the item-008 mutators on the EDITED dict
+    before writing. Does not parse JSON (that is ``validate``'s job) — operates
+    purely in memory.
     """
-    raise NotImplementedError
+    findings: list[Finding] = []
+
+    # (2) schema conformance (incl. cached-status guard).
+    findings.extend(_schema_findings(manifest))
+
+    features = manifest.get("features")
+    if not isinstance(features, list) or not all(
+        isinstance(f, dict) and isinstance(f.get("name"), str) for f in features
+    ):
+        # Cannot run name/graph checks without well-formed feature names.
+        return findings
+
+    names = [f["name"] for f in features]
+
+    # (3) epic + every feature name safe.
+    epic_name = manifest.get("epic")
+    candidates = ([epic_name] if isinstance(epic_name, str) else []) + names
+    for candidate in candidates:
+        if not SAFE_NAME_RE.match(candidate):
+            findings.append({
+                "code": "unsafe-name",
+                "message": f"unsafe name {candidate!r}",
+                "feature": candidate if candidate in names else None,
+            })
+
+    # (3b) names unique within the manifest.
+    seen: set[str] = set()
+    for n in names:
+        if n in seen:
+            findings.append({
+                "code": "duplicate-name",
+                "message": f"duplicate feature name {n!r} within the manifest",
+                "feature": n,
+            })
+        seen.add(n)
+
+    # (4) global name uniqueness across the specs tree.
+    if specs_dir.is_dir():
+        tree = feature_dirs(specs_dir)
+        for n in names:
+            dirs = tree.get(n, [])
+            if len(dirs) > 1:
+                joined = ", ".join(str(p) for p in dirs)
+                findings.append({
+                    "code": "duplicate-name",
+                    "message": f"duplicate feature name {n!r} (maps to {joined})",
+                    "feature": n,
+                })
+
+    # (5) every dependsOn / consumes.from references a known feature.
+    known = set(names)
+    for feat in features:
+        fname = feat["name"]
+        for dep in feat.get("dependsOn", []) or []:
+            if isinstance(dep, str) and dep not in known:
+                findings.append({
+                    "code": "dangling-ref",
+                    "message": f"feature {fname!r} dependsOn unknown feature {dep!r}",
+                    "feature": fname,
+                })
+        for entry in feat.get("consumes", []) or []:
+            if isinstance(entry, dict):
+                src = entry.get("from")
+                if isinstance(src, str) and src not in known:
+                    findings.append({
+                        "code": "dangling-ref",
+                        "message": f"feature {fname!r} consumes from unknown feature {src!r}",
+                        "feature": fname,
+                    })
+
+    # (6) dependsOn graph acyclic (self-dependency surfaces as a cycle).
+    cycle = find_cycle(features)
+    if cycle is not None:
+        findings.append({
+            "code": "cycle",
+            "message": "cycle: " + " → ".join(cycle),
+            "feature": cycle[0],
+        })
+
+    return findings
 
 
 def validate(epic_dir: Path, specs_dir: Path) -> list[Finding]:
     """Validate a single epic manifest, returning all findings (02 §6.2).
 
-    Stub — implemented in backlog item 006.
+    Parses the manifest (folding any corrupt-json finding from load_manifest
+    into the returned list) then delegates to ``_validate_dict``. Raises
+    UsageError (exit 2) for a missing/unreadable manifest.
     """
-    raise NotImplementedError
+    try:
+        manifest = load_manifest(epic_dir)
+    except FindingsError as exc:
+        return list(exc.findings)
+    return _validate_dict(manifest, epic_dir, specs_dir)
 
 
 # --------------------------------------------------------------------------- #
@@ -647,7 +833,7 @@ def _emit_findings(findings: list[Finding], as_json: bool) -> None:
     lines go to stderr (mirroring validate-traceability.py's two output modes).
     """
     if as_json:
-        print(json.dumps({"valid": not findings, "findings": findings}, indent=2))
+        print(json.dumps({"valid": not findings, "findings": findings}, indent=2, ensure_ascii=False))
     else:
         for finding in findings:
             print(f"{finding['code']}: {finding['message']}", file=sys.stderr)
