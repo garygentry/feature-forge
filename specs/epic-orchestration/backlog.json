@@ -41,8 +41,8 @@
         "\"epic\" is NOT in the top-level required array",
         "bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:12:18.763Z",
       "dependsOn": [],
       "notes": "Edits are purely additive — verify by diffing that no existing key was removed or made required. stageEntry/verifyEntry already exist in the file; reuse them by $ref, do not redefine.",
       "estimatedIterations": 1,
