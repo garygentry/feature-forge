@@ -1,0 +1,498 @@
+{
+  "schemaVersion": "1",
+  "project": "feature-forge",
+  "description": "Epic Orchestration: a purely-additive capability for the feature-forge plugin that groups related forge features into an epic with declared dependencies, charters, and structured exposes/consumes contracts. Ships a stdlib-only Python helper (scripts/epic-manifest.py) as the deterministic core, two JSON schemas, a new forge-0-epic stage skill, a pytest suite wired into validate.sh, and epic-aware grafts into the existing stage skills + navigator + verify/fix. With no epic present, every existing flow stays byte-for-byte unchanged (REQ-COMPAT-01). Foundation-first ordering: schemas -> helper core -> tests -> creation stage -> integration grafts.",
+  "items": [
+    {
+      "id": "001",
+      "type": "feature",
+      "priority": 1,
+      "title": "Author references/epic-manifest-schema.json (manifest JSON Schema)",
+      "description": "Create references/epic-manifest-schema.json — the draft-07 JSON Schema for epic-manifest.json, the single source of truth for an epic's membership, dependency edges, charters, and contracts.\n\nTop-level object: required keys schemaVersion (const integer 1), epic (string, kebab-case pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$), description (string), status (enum: active|paused|abandoned|complete), narrativeDoc (const \"EPIC.md\"), createdAt (string, ISO-8601 date-time), updatedAt (string, ISO-8601 date-time), features (array of Feature). Set additionalProperties:false at the top level.\n\nFeature object: required name (string, same kebab-case pattern), charter (string), dependsOn (array of string, may be empty), exposes (array of Contract, may be empty), consumes (array of ConsumedContract, may be empty). Set additionalProperties:false so a per-feature \"status\" key is REJECTED (REQ-STATE-02 — this is the schema-level guard against reintroducing cached status).\n\nContract object (exposes[] entry): required name (string), kind (enum: function|type|endpoint|module|event), summary (string); additionalProperties:false. ConsumedContract object (consumes[] entry): required from (string), name (string), summary (string); additionalProperties:false.\n\nDefine Contract / ConsumedContract / Feature under a definitions block and $ref them, mirroring the style of references/pipeline-state-schema.json. Use $schema http://json-schema.org/draft-07/schema# and a descriptive $id and title. Do NOT add a per-feature status anywhere.",
+      "acceptanceCriteria": [
+        "references/epic-manifest-schema.json exists and is valid JSON (parses with python3 -c \"import json,sys; json.load(open('references/epic-manifest-schema.json'))\")",
+        "The canonical example manifest in 00-core-definitions.md §2.5 conforms to the schema (all required keys present, enums correct)",
+        "A manifest where any features[] entry carries a \"status\" key violates the schema (additionalProperties:false on Feature)",
+        "schemaVersion is const 1, narrativeDoc is const \"EPIC.md\", and status enum is exactly active|paused|abandoned|complete",
+        "bash scripts/validate.sh passes (the new file is valid JSON)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": [],
+      "notes": "Stack: prose plugin + stdlib-only Python. No jsonschema library is used at runtime — item 006 hand-rolls a checker over THIS schema, so keep the structure simple and explicit (required arrays, type/enum/const, additionalProperties:false). The schema is consumed by epic-manifest.py validate and forge-verify epic mode CHECK-E01.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/00-core-definitions.md",
+        "specs/epic-orchestration/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "002",
+      "type": "feature",
+      "priority": 1,
+      "title": "Patch references/pipeline-state-schema.json with additive epic fields",
+      "description": "Make three ADDITIVE-only edits to references/pipeline-state-schema.json so epic membership is representable without breaking any existing flat .pipeline-state.json (no migration — REQ-COMPAT-02). Read the current file first to match its exact structure (it already defines #/definitions/stageEntry and #/definitions/verifyEntry).\n\n(1) Under the top-level properties object, add an optional property: \"epic\": { \"type\": \"string\", \"description\": \"Back-pointer to the owning epic's name. Absent for standalone features. The epic-manifest.json is canonical on conflict (REQ-STATE-01).\" }. Do NOT add \"epic\" to the top-level required array.\n\n(2) Extend the existing currentStage.enum to also include \"forge-0-epic\" and \"forge-verify-epic\" (append; keep all existing members).\n\n(3) Under properties.stages.properties, add two keys: \"forge-0-epic\": { \"$ref\": \"#/definitions/stageEntry\" } and \"forge-verify-epic\": { \"$ref\": \"#/definitions/verifyEntry\" }.\n\nDo NOT change any required arrays, definitions, or existing properties. The whole point is backward compatibility.",
+      "acceptanceCriteria": [
+        "references/pipeline-state-schema.json remains valid JSON after the edits",
+        "An existing flat .pipeline-state.json with no \"epic\" key still validates against the patched schema",
+        "A state file with \"epic\":\"x\" and \"currentStage\":\"forge-verify-epic\" validates against the patched schema",
+        "currentStage.enum contains both forge-0-epic and forge-verify-epic alongside all prior members; stages.properties contains forge-0-epic and forge-verify-epic",
+        "\"epic\" is NOT in the top-level required array",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": [],
+      "notes": "Edits are purely additive — verify by diffing that no existing key was removed or made required. stageEntry/verifyEntry already exist in the file; reuse them by $ref, do not redefine.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/04-pipeline-integration.md",
+        "specs/epic-orchestration/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "003",
+      "type": "feature",
+      "priority": 1,
+      "title": "Scaffold scripts/epic-manifest.py module skeleton",
+      "description": "Create scripts/epic-manifest.py — a single self-contained, stdlib-only, Python 3.10+ CLI module that is the deterministic core for Epic Orchestration. Mirror the style of the existing scripts/validate-traceability.py exactly (read it first): module docstring with usage + exit codes, module constants, small pure functions, an argparse dispatch in main(), and an `if __name__ == \"__main__\": sys.exit(main())` guard.\n\nInclude in THIS item (later items fill in the subcommand bodies):\n1. Module docstring per 02 §1.1 with the full Usage block (all 9 subcommands: resolve, validate, check-name, render-status, add-feature, remove-feature, reorder, set-dep, set-status) and the exit-code contract (0 ok / 1 findings / 2 usage|IO).\n2. Imports: argparse, json, os, re, sys, tempfile; from datetime import datetime, timezone; from pathlib import Path; from typing import Final, Literal, TypedDict.\n3. Constants (00 §6): SAFE_NAME_RE = re.compile(r\"^[a-z0-9]+(?:-[a-z0-9]+)*$\"), PIPELINE_STATE_FILENAME = \".pipeline-state.json\", MANIFEST_FILENAME = \"epic-manifest.json\", NARRATIVE_FILENAME = \"EPIC.md\".\n4. Type definitions (00 §4, §5; 02 §8.4): FindingCode Literal, Finding TypedDict, DerivedStatus Literal, FeatureStatus TypedDict, Rollup TypedDict, RenderStatus TypedDict.\n5. Exceptions (02 §2): UsageError (exit 2) and FindingsError(findings list, exit 1).\n6. Safety layer (02 §3.1): assert_safe_name(name) raising UsageError on empty/'..'/separator/absolute/SAFE_NAME_RE miss; contained_path(base, *parts) resolving symlinks and raising UsageError 'resolved path escapes specs dir: ...' if the target escapes base.\n7. Manifest I/O (02 §3.2-3.3): load_manifest(epic_dir) -> dict (UsageError if missing/unreadable; FindingsError with a single corrupt-json finding if unparseable JSON); atomic_write(path, data) writing to a temp file in the same dir, flush+os.fsync, then os.replace, with UsageError + temp cleanup on OSError.\n8. main(): argparse with required subparsers (one per subcommand), each declaring its positionals, --specs-dir (default \"./specs\"), and --json where applicable (validate, render-status; resolve and check-name have none); mutators declare --charter/--depends-on/--order/--status (--status with choices=[active,paused,abandoned,complete]). Wrap dispatch in try/except mapping UsageError->2, FindingsError->1 (emit findings), OSError->2; clean return 0. Subcommand handler functions may be stubs (e.g. raising NotImplementedError or returning []) that later items implement.\n\nKeep everything in this one file; no cross-module imports (01 §5).",
+      "acceptanceCriteria": [
+        "python3 -m py_compile scripts/epic-manifest.py exits 0",
+        "python3 scripts/epic-manifest.py --help prints usage listing all 9 subcommands",
+        "assert_safe_name raises UsageError for '../escape', 'a/b', '/abs/path', '..', and '' and returns None for 'token-service'",
+        "atomic_write writes valid JSON via a same-dir temp file + os.replace and leaves no temp file behind",
+        "load_manifest raises a FindingsError carrying a single corrupt-json finding for a non-JSON manifest, and UsageError for a missing manifest",
+        "The module can be imported via importlib (functions assert_safe_name, contained_path, load_manifest, atomic_write are module-level)",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["001"],
+      "notes": "The filename has a hyphen, so tests load it via importlib (05 §2.3). Subcommand stubs are intentional — items 004-008 fill them in incrementally; keep validate.sh green at every step (py_compile is the gate). Re-state the TypedDicts verbatim per 02 §1.1; do not import them from anywhere.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/02-manifest-helper-cli.md",
+        "specs/epic-orchestration/01-architecture-layout.md",
+        "specs/epic-orchestration/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "004",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement find_cycle and unmet_deps graph algorithms",
+      "description": "Implement two graph functions in scripts/epic-manifest.py per 02 §4 (the full algorithm is given in the spec — transcribe it faithfully).\n\nfind_cycle(features: list[dict]) -> list[str] | None: iterative depth-first search over the directed graph whose edges are feature -> dep for each dep in dependsOn. Build adjacency = {f[\"name\"]: list(f.get(\"dependsOn\", [])) for f in features}. Use WHITE/GRAY/BLACK coloring and a parent map. Only traverse edges to names that exist in adjacency (dangling refs are reported separately by validate, never masking a cycle). On the first back-edge into a GRAY node, reconstruct and return the cycle path INCLUDING the repeated start node (e.g. [\"a\",\"b\",\"a\"]). A self-dependency (feature whose dependsOn lists its own name) is a degenerate self-loop returning [\"x\",\"x\"]. Return None when acyclic. O(V+E).\n\nunmet_deps(name: str, features: list[dict], complete: dict[str, bool]) -> list[str]: return the names of this feature's direct dependsOn entries whose value in `complete` is False, preserving manifest order. Empty when the feature is actionable or itself complete.\n\nThese are pure functions imported directly by the test suite; do not wire any subcommand here.",
+      "acceptanceCriteria": [
+        "find_cycle([{name:'a',dependsOn:['b']},{name:'b',dependsOn:['a']}]) returns a non-None path",
+        "find_cycle([{name:'a',dependsOn:[]},{name:'b',dependsOn:['a']}]) returns None (DAG)",
+        "find_cycle([{name:'x',dependsOn:['x']}]) returns exactly ['x','x']",
+        "find_cycle only follows edges to names present in features (a dangling dep does not raise and does not produce a false cycle)",
+        "unmet_deps returns direct deps whose complete-map value is False, in manifest order, and [] when all complete",
+        "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["003"],
+      "notes": "The spec gives the exact iterative-DFS code in 02 §4 — follow it; the stack holds (node, next-neighbor-index) tuples. Complexity must stay O(V+E) so the 20-feature perf test (item 010) passes comfortably.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/02-manifest-helper-cli.md",
+        "specs/epic-orchestration/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "005",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement resolution + uniqueness (resolve, check-name subcommands)",
+      "description": "Implement name->directory resolution and global uniqueness in scripts/epic-manifest.py per 02 §5, §6.1, §6.3, and wire the `resolve` and `check-name` subcommands.\n\nfeature_dirs(specs_dir: Path) -> dict[str, list[Path]]: scan both layouts, treating a directory as a feature iff it DIRECTLY contains a .pipeline-state.json (00 §6). Flat: {specsDir}/{name}/.pipeline-state.json. Nested: descend one level into each top dir for {specsDir}/{epic}/{name}/.pipeline-state.json. Skip epic roots (they have epic-manifest.json but no .pipeline-state.json). Return name -> sorted list of absolute dirs (multi-entry = uniqueness violation).\n\nresolve(name, specs_dir) -> Path: 5-step algorithm — (1) assert_safe_name (UsageError exit 2 before any FS access); (2) if {specsDir}/{name}/.pipeline-state.json exists return that flat path (flat match wins, REQ-COMPAT-01/02); (3) exactly one nested match -> return it; (4) >1 match anywhere -> FindingsError 'ambiguous' listing all paths; (5) zero matches -> FindingsError 'not-found'. Use contained_path for the returned path.\n\ncheck_name(name, specs_dir) -> list[Finding]: assert_safe_name; return a single 'duplicate-name' finding if the name maps to any existing feature-shaped dir OR to an existing epic dir ({specsDir}/{name}/epic-manifest.json exists), else []. This is the hard gate that blocks introducing a NEW collision.\n\nWire subcommands: `resolve <name> [--specs-dir DIR]` prints the absolute dir to stdout on success (no --json), exit 0/1/2. `check-name <name> [--specs-dir DIR]` exit 0 unique / 1 duplicate (prints the finding), no --json.",
+      "acceptanceCriteria": [
+        "resolve of a flat standalone feature prints its flat path and exits 0",
+        "resolve of a uniquely-nested epic member prints the nested path and exits 0",
+        "resolve of a name matching two feature-shaped dirs exits 1 with an 'ambiguous' finding listing both paths",
+        "resolve of an unknown name exits 1 with a 'not-found' finding",
+        "resolve of '../escape', 'a/b', '/abs', or '..' exits 2 before any filesystem access",
+        "check-name of an already-existing name (flat, nested, or epic dir) exits 1 with 'duplicate-name'; a free name exits 0",
+        "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["003"],
+      "notes": "Resolution must not engage any epic logic for standalone names (the flat match in step 2 short-circuits). feature_dirs descends exactly one level — do not recurse deeper. Stdout carries only the resolved path so `DIR=$(... resolve x)` works; all diagnostics go to stderr.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/02-manifest-helper-cli.md",
+        "specs/epic-orchestration/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "006",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement validate subcommand + hand-rolled schema checker",
+      "description": "Implement full structural validation in scripts/epic-manifest.py per 02 §6.2 and §10, and wire the `validate` subcommand. NO third-party jsonschema — hand-roll a stdlib checker over references/epic-manifest-schema.json (or assert the invariants directly from 00 §2.6).\n\nProvide _validate_dict(manifest: dict, epic_dir: Path, specs_dir: Path) -> list[Finding] — the in-memory core that operates on an already-parsed dict (reused by mutators in item 008) — and validate(epic_dir, specs_dir) -> list[Finding] that wraps it (calling load_manifest first and folding any corrupt-json FindingsError from load_manifest into the returned list).\n\nRun the checks in order, short-circuiting only where a later check cannot run: (1) parse (corrupt-json); (2) schema conformance incl. the explicit rule that NO feature carries a 'status' key (-> 'cached-status' finding) and required keys/types/enums per 00 §2; (3) epic + every feature name safe via SAFE_NAME_RE (-> 'unsafe-name'); (4) global name uniqueness across the specs tree via feature_dirs (-> 'duplicate-name'); (5) every dependsOn and every consumes.from references a known feature in features[] (-> 'dangling-ref'); (6) dependsOn graph acyclic via find_cycle (-> 'cycle', message like 'cycle: a -> b -> a' using the arrow); self-dependency surfaces as a cycle.\n\nWire `validate <epic> [--specs-dir DIR] [--json]`: --json prints {\"valid\": bool, \"findings\": [...]} to stdout; human mode prints one actionable line per finding. Exit 0 valid (empty findings) / 1 any finding / 2 missing/unreadable manifest or schema file. The dispatch raises FindingsError when findings are non-empty so the existing main() handler emits them.",
+      "acceptanceCriteria": [
+        "validate of a manifest with a dependsOn cycle exits 1 with a 'cycle' finding whose message contains the arrow-joined cycle path",
+        "validate of a manifest where a feature carries a status field exits 1 with a 'cached-status' finding",
+        "validate of a manifest with a dependsOn typo (unknown feature) exits 1 with a 'dangling-ref' finding",
+        "validate of a non-parseable manifest exits 1 with a 'corrupt-json' finding and prints no Python traceback to stderr",
+        "validate of a manifest whose feature name duplicates another feature-shaped dir in the tree exits 1 with 'duplicate-name'",
+        "validate of a clean manifest exits 0 and --json prints {\"valid\": true, \"findings\": []}",
+        "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["001", "003", "004", "005"],
+      "notes": "_validate_dict is the shared core — item 008's mutators re-run it on the EDITED dict before writing. Keep the schema checker minimal but strict on the REQ-STATE-02 guard (no per-feature status) and required-keys/enums. Message shapes are normative-by-shape per 00 §4.2, not exact strings.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/02-manifest-helper-cli.md",
+        "specs/epic-orchestration/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "007",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement live status derivation + render-status subcommand",
+      "description": "Implement live per-feature status derivation in scripts/epic-manifest.py per 02 §8 and §6.4, and wire the `render-status` subcommand. Nothing is cached — status is derived from each member's own .pipeline-state.json on every read (REQ-STATE-02).\n\nis_complete_for_orchestration(state: dict) -> bool (00 §7): True iff stages['forge-5-loop'].status == 'complete' AND ('forge-verify-impl' absent OR stages['forge-verify-impl'].status in {'passed','findings-applied'}). A forge-verify-impl status of 'findings-reported' is NOT complete.\n\nderive_status(feature_dir: Path) -> FeatureStatus (00 §5): read {feature_dir}/.pipeline-state.json; map to DerivedStatus — missing/unparseable/all-pending -> 'not-started'; complete-for-orchestration -> 'complete'; otherwise 'in-progress'. stage field = state's currentStage, defaulting to 'forge-0-epic' when the dir exists but no stage ran. Set blocked=False, unmetDeps=[] as placeholders (render_status overwrites).\n\nrender_status(epic_dir, specs_dir) -> RenderStatus (02 §8.3-8.4): (1) validate first; if findings, raise FindingsError (no dashboard over an invalid graph). (2) derive_status each feature reading its member state via contained_path, downgrading a corrupt/missing/torn member state to 'not-started' rather than crashing. (3) complete = {name: is_complete_for_orchestration(member_state)}. (4) per feature unmetDeps = unmet_deps(...) and blocked = bool(unmetDeps). (5) actionable = features with empty unmetDeps AND not complete. (6) parallelEligible = actionable features with no transitive dependsOn relationship to other actionable features. (7) rollup = {complete: count, total: len(features)}. (8) nextCommand = recommended command for the first actionable feature (e.g. '/feature-forge:forge-1-prd <name>' when its PRD is absent, else its next un-run stage), or None. Empty epic (features==[]) -> all-empty sets, rollup {complete:0,total:0}, nextCommand None (total==0 is NOT completion).\n\nWire `render-status <epic> [--specs-dir DIR] [--json]`: --json prints the RenderStatus object; human mode prints a readable table + the next command. Exit 0 on success (blocked features are data, not failure); 1 only if the manifest is invalid; 2 missing/unreadable manifest.",
+      "acceptanceCriteria": [
+        "render-status --json over a mixed-status epic emits actionable (deps all complete & not itself complete), parallelEligible as a subset of actionable, rollup {complete,total}, and per-feature blocked/unmetDeps",
+        "is_complete_for_orchestration returns the correct value for all five branches: loop incomplete; loop complete + no impl-verify; loop complete + findings-reported; loop complete + findings-applied; loop complete + passed",
+        "Editing a member's .pipeline-state.json and re-running render-status reflects the change with no refresh/cache step",
+        "A corrupt or missing member .pipeline-state.json downgrades that one feature to not-started without crashing the whole dashboard",
+        "An empty epic (no features) yields rollup {complete:0,total:0} and nextCommand null and is NOT reported complete",
+        "render-status exits 1 (refuses to render) when the manifest fails validation",
+        "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["005", "006"],
+      "notes": "render-status is the single implementation of the completion predicate reused by the forge-5 dependency gate and handoff (items 016) and the navigator/docs (017/019). parallelEligible uses the transitive closure of dependsOn over the actionable subset — trivial at <=20 nodes.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/02-manifest-helper-cli.md",
+        "specs/epic-orchestration/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "008",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement mutator subcommands (add/remove-feature, reorder, set-dep, set-status)",
+      "description": "Implement the manifest mutators in scripts/epic-manifest.py per 02 §7 and wire their subcommands. Every mutator shares one envelope (REQ-ROBUST-03, REQ-OBS-01, REQ-EPIC-05): assert_safe_name on every name arg -> load_manifest -> apply the in-memory edit -> re-validate the EDITED dict via the item-006 _validate_dict -> if any blocking finding (cycle/dangling-ref/duplicate-name/schema) RETURN the findings and DO NOT write (file left byte-identical) -> else bump updatedAt to now (UTC ISO-8601) -> atomic_write.\n\nFactor the tail into _bump_and_write(epic_dir, specs_dir, manifest) -> list[Finding] that re-validates, and on clean result sets manifest['updatedAt'] = datetime.now(timezone.utc).isoformat() and atomic_writes, returning [] on success or the blocking findings on refusal.\n\nMutators: add-feature <epic> <name> --charter TEXT [--depends-on A,B] — append a Feature with name/charter/dependsOn and EMPTY exposes/consumes; re-validate uniqueness + deps-exist + acyclic. remove-feature <epic> <name> — drop the named feature; re-validation surfaces now-dangling refs (refuse if so); 'not-found' if not a member. reorder <epic> --order A,B,C — reorder features[] to an exact permutation of current member names (else a schema/not-found finding). set-dep <epic> <name> --depends-on A,B — replace that feature's dependsOn (--depends-on \"\" clears); re-validate deps-exist + acyclic. set-status <epic> --status STATE — set the epic-level status; STATE constrained by argparse choices=[active,paused,abandoned,complete] (bad value -> exit 2). Split comma list args on ',' and strip.\n\nExit codes: 0 written / 1 blocking findings (no write) / 2 unsafe name, corrupt|missing manifest, bad --status value, or write failure.",
+      "acceptanceCriteria": [
+        "add-feature on a clean new leaf exits 0, bumps updatedAt, and the manifest still validates",
+        "set-dep that would introduce a cycle exits 1 and leaves the manifest file byte-identical (no write)",
+        "add-feature with a name duplicating an existing member exits 1 with duplicate-name and does not write",
+        "remove-feature that would leave a dangling dependsOn/consumes.from refuses the write (exit 1) and surfaces dangling-ref",
+        "set-status with an invalid value (e.g. 'frozen') exits 2 via argparse choices; a valid value exits 0 and bumps updatedAt",
+        "reorder with an order that is not an exact permutation of members exits 1",
+        "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["006", "007"],
+      "notes": "There is intentionally NO contract-setting mutator and no --exposes-json/--consumes-json flag (02 §7, 03 §7.3) — add-feature seeds empty contracts; the forge-0-epic skill populates exposes/consumes by composing the manifest entry then re-running validate. Byte-identical-on-refusal is the key invariant the interrupt-safety test (item 010) leans on.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/02-manifest-helper-cli.md"
+      ]
+    },
+    {
+      "id": "009",
+      "type": "test",
+      "priority": 1,
+      "title": "Author pytest fixture trees + tests/conftest.py",
+      "description": "Create the pytest scaffolding for the epic-manifest helper per 05 §2. No pyproject.toml — defaults + conftest.py only.\n\nWrite tests/conftest.py exactly per 05 §2.3: REPO_ROOT/HELPER/FIXTURES constants; a frozen dataclass CliResult(returncode, stdout, stderr) with a .json() helper; fixtures fixtures_dir (path to fixtures), fixture_copy (factory copying a named fixture tree into tmp_path via shutil.copytree), run_cli (subprocess runner invoking [sys.executable, HELPER, *args] capturing output), and a session-scoped helper_module fixture that loads scripts/epic-manifest.py via importlib.util.spec_from_file_location (the filename has a hyphen).\n\nBuild fixture trees under tests/fixtures/ (each is a {specsDir} root):\n- valid-epic/: an 'auth-overhaul' epic with 4 features — config-store (no deps), token-service (dependsOn config-store), api-gateway (dependsOn token-service), and an independent audit-log — matching the 00 §2.5 shape; EPIC.md; one {feature}/.pipeline-state.json per member carrying \"epic\":\"auth-overhaul\". ALSO add a flat-only feature dir (e.g. flat-only/.pipeline-state.json at the specs root) for the resolve-flat test (05 §3.11 note).\n- cyclic-epic/: manifest with a dependsOn cycle (a->b->a or a 3-node token->gateway->token).\n- dup-name/: two feature-shaped dirs sharing the bare name 'token-service' — one flat (token-service/.pipeline-state.json) and one nested (auth-overhaul/token-service/.pipeline-state.json) — PLUS a flat-only/ feature for the resolve-flat test.\n- path-escape/: manifest with a feature name '../escape' and a consumes.from '../x'.\n- corrupt/: epic-manifest.json with truncated/garbage bytes (e.g. '{\"epic\": \"x\", \"featur').\n- status-derivation/lifecycle/: members a (loop incomplete), b (loop complete, no impl-verify), c (loop complete + impl findings-reported), d (loop complete + impl findings-applied), e (loop complete + impl passed), each a synthetic .pipeline-state.json; choose dep edges (e.g. b.dependsOn=[a]) that exercise blocked vs actionable; include a valid epic-manifest.json + EPIC.md for the lifecycle epic.",
+      "acceptanceCriteria": [
+        "tests/conftest.py imports cleanly (python3 -c \"import importlib.util\" style load) and defines fixtures_dir, fixture_copy, run_cli, helper_module, and CliResult",
+        "tests/fixtures/ contains valid-epic, cyclic-epic, dup-name, path-escape, corrupt, and status-derivation/lifecycle trees as described",
+        "valid-epic, dup-name (flat-only), and status-derivation/lifecycle manifests validate via python3 scripts/epic-manifest.py validate (exit 0) — i.e. the intentionally-good fixtures are well-formed",
+        "cyclic-epic, path-escape, and corrupt fixtures are intentionally invalid (validate exits 1 on them)",
+        "valid-epic includes a flat-only feature dir and a 4-feature auth-overhaul epic with at least one dependsOn edge",
+        "bash scripts/validate.sh passes (helper still compiles; pytest may run or skip)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["008"],
+      "notes": "Fixtures are read-only templates; tests that mutate copy them into tmp_path via fixture_copy. The helper must be fully implemented (item 008) so the 'good' fixtures can be confirmed valid. conftest.py source is given verbatim in 05 §2.3 — transcribe it.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/05-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "010",
+      "type": "test",
+      "priority": 1,
+      "title": "Author tests/test_epic_manifest.py full unit-test matrix",
+      "description": "Write tests/test_epic_manifest.py covering the full matrix in 05 §3 and the FindingCode traceability in 05 §6. Use the conftest.py fixtures (run_cli, fixture_copy, fixtures_dir, helper_module) from item 009. The spec gives concrete pytest functions for each subsection — transcribe and adapt them.\n\nCover: §3.1 valid-manifest round-trip (validate -> add-feature -> re-validate clean); §3.2 schema/cached-status (per-feature status field rejected; plus a missing-required-field schema case); §3.3 cyclic rejection via CLI + in-process find_cycle incl. self-dependency ['x','x']; §3.4 duplicate-name (check-name) + ambiguous (resolve) on dup-name; §3.5 corrupt-json no-crash (no Traceback on stderr); §3.6 path-escape/unsafe — parametrized unsafe args exit 2, in-manifest unsafe name exits 1; §3.7 status derivation all five branches (parametrized a/b/c/d/e) + the live-edit acceptance test (edit pipeline-state, re-render, see change); §3.8 atomic-write mechanism (no temp left) + interrupt-safety (monkeypatch os.replace to raise, original intact); §3.9 render-status derived sets (actionable disjoint from complete, parallelEligible subset of actionable, rollup counts, blocked lists unmetDeps); §3.10 dangling-dependsOn; §3.11 resolve flat/nested/not-found; §3.12 a generated 20-feature epic validates+renders under 1s (REQ-ROBUST-01); §3.13 exit-code contract table per (subcommand, outcome).\n\nEnsure every FindingCode in 00 §4 (corrupt-json, schema, cached-status, duplicate-name, dangling-ref, cycle, unsafe-name, path-escape, not-found, ambiguous) is produced by at least one test.",
+      "acceptanceCriteria": [
+        "python3 -m pytest tests/ -q is green (all tests pass)",
+        "Every helper subcommand (resolve, validate, check-name, render-status, add-feature, remove-feature, reorder, set-dep, set-status) is exercised by at least one test",
+        "All five §7 completion branches are exercised (parametrized a-e in the status-derivation test)",
+        "Every FindingCode in 00 §4 is produced by at least one test",
+        "The 20-feature validate+render performance test asserts elapsed < 1s (or <1.5s with the in-process <0.1s assertion per the spec note)",
+        "The interrupt-safety test monkeypatches os.replace to raise and asserts the original manifest is byte-identical afterward",
+        "bash scripts/validate.sh passes with pytest installed (runs the suite)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["009"],
+      "notes": "Where 02-manifest-helper-cli.md fixes an exact message/flag that differs from an illustrative assertion in 05 §3, 02 wins — reconcile at implementation time (assert on finding CODES and message SHAPE, e.g. the '->' arrow in cycle messages, not brittle exact strings). Mutators additionally assert byte-identical-on-refusal (reuses item 008's guarantee).",
+      "estimatedIterations": 2,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/05-testing-strategy.md",
+        "specs/epic-orchestration/02-manifest-helper-cli.md",
+        "specs/epic-orchestration/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "011",
+      "type": "chore",
+      "priority": 1,
+      "title": "Wire epic-manifest helper into scripts/validate.sh",
+      "description": "Append a new numbered step to scripts/validate.sh that compile-checks and tests the epic-manifest helper, per 05 §5 (exact bash is given in the spec). Read the current validate.sh first to match its style (PASS/FAIL/ERRORS/WARNINGS variables, leading blank-line + section-echo pattern). Insert the new step AFTER the existing script-permissions step and BEFORE the final summary block, so a helper/test failure does not mask the structural checks above it.\n\nThe step must: guard on [ -f \"$HELPER\" ] (HELPER=\"$REPO_ROOT/scripts/epic-manifest.py\"); run python3 -m py_compile \"$HELPER\" as a HARD check (failure increments ERRORS, prints FAIL; success prints PASS); then, only if python3 -c \"import pytest\" succeeds, run python3 -m pytest \"$REPO_ROOT/tests\" -q (failure increments ERRORS) — otherwise print a non-fatal SKIP line and increment WARNINGS. If the helper file is absent entirely, print a non-fatal SKIP and increment WARNINGS. Mirror the existing PASS:/FAIL: echo style.",
+      "acceptanceCriteria": [
+        "scripts/validate.sh gains a new step (after script-permissions, before the final summary) that compile-checks scripts/epic-manifest.py and conditionally runs the pytest suite",
+        "bash scripts/validate.sh passes WITH pytest installed and actually runs python3 -m pytest tests (PASS line shown)",
+        "When pytest is not importable, validate.sh prints a non-fatal SKIP line, increments WARNINGS (not ERRORS), and still exits 0 if structural checks pass",
+        "py_compile failure of the helper increments ERRORS (hard check)",
+        "The new step is the last among the checks; existing steps are unchanged"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["010"],
+      "notes": "WARNINGS is already declared and surfaced in validate.sh's success summary, so SKIP lines report without failing. Transcribe the exact bash from 05 §5; the [ -f \"$HELPER\" ] guard keeps the file green during incremental authoring.",
+      "estimatedIterations": 1,
+      "model": "sonnet",
+      "specReferences": [
+        "specs/epic-orchestration/05-testing-strategy.md",
+        "specs/epic-orchestration/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "012",
+      "type": "feature",
+      "priority": 1,
+      "title": "Author skills/forge-0-epic/SKILL.md creation + edit stage",
+      "description": "Author skills/forge-0-epic/SKILL.md — the prose Claude Code skill for epic creation and edit, per 03-forge-0-epic-stage.md (whole document). The skill COMPOSES manifest JSON and ISSUES scripts/epic-manifest.py commands; it never eyeballs a dependency graph for cycles and never hand-rolls a manifest write. Route ALL user questions through AskUserQuestion.\n\nInclude: (1) YAML frontmatter per 03 §1 — name: forge-0-epic, a description matching the spec, argument-hint: \"<epic-name>\". (2) A Prerequisites section pointing at references/shared-conventions.md (epic-name validation, AskUserQuestion guardrail, config reading, Git Commit Protocol). (3) Step 0 dispatch detection: probe {specsDir}/{epic}/epic-manifest.json -> NEW=creation branch, EXISTS=edit branch; STOP if {specsDir}/{epic}/ is itself a feature dir; pre-flight check-name on the epic name. (4) Creation branch C1-C8: framing interview, feature-list interview (check-name each candidate, re-prompt on duplicate/unsafe), per-feature charter + structured exposes/consumes interview (charter only, NOT a PRD — redirect PRD-level detail to forge-1-prd), dependency-edge interview (seed from consumes), compose epic-manifest.json (schemaVersion 1, status active, narrativeDoc EPIC.md, createdAt==updatedAt, NO per-feature status) then `validate --json` and loop back on findings, generate EPIC.md per the §6 structure, create one member subdir per feature with a .pipeline-state.json carrying epic back-pointer + stages.forge-0-epic complete + currentStage forge-1-prd. (5) Edit branch E1-E6: validate-or-refuse, choose operation mapping to add-feature/remove-feature/reorder/set-dep/set-status, apply via helper mutator (surface findings verbatim, atomic refusal), impact warning via render-status when an in-flight/complete feature is affected, patch the affected EPIC.md sections (full regen only on request), leave a removed feature's dir in place with a warning. (6) Observability/commit per §8: member-state writes, the lazily-created {specsDir}/{epic}/.epic-state.json note (written by skills, not the helper), Git Commit Protocol staging {specsDir}/{epic}/, and the closing next-steps message. (7) Error handling table per §9 — surface every helper finding verbatim, never auto-repair a corrupt manifest, never proceed past a gating exit >= 1.\n\nReference the exact helper invocations with ${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py and --specs-dir per 01 §2.2.",
+      "acceptanceCriteria": [
+        "skills/forge-0-epic/SKILL.md exists with valid YAML frontmatter (name, description, argument-hint) so the validate.sh plugin-structure/frontmatter check passes",
+        "The skill body specifies both the creation branch (C1-C8) and the edit branch (E1-E6) with the exact epic-manifest.py subcommands for check-name, validate, render-status, and each mutator",
+        "Member-subdirectory creation writes a .pipeline-state.json carrying \"epic\" back-pointer, stages.forge-0-epic complete, and currentStage forge-1-prd",
+        "The EPIC.md generation contract (Overall Goal / Decomposition Rationale / per-feature Contracts rendering exposes & consumes) is specified per 03 §6",
+        "The skill delegates all graph/validation/mutation to the helper and routes all questions through AskUserQuestion (no inline-prose questions)",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["008"],
+      "notes": "Mirror the structure/voice of an existing stage skill (read skills/forge-1-prd/SKILL.md). Contracts have no mutator — at creation and after an edit-mode add-feature, the skill edits exposes/consumes directly in the composed manifest entry then re-runs validate (03 §7.3). Depends on the full helper (item 008) for the mutator surface.",
+      "estimatedIterations": 2,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/03-forge-0-epic-stage.md",
+        "specs/epic-orchestration/00-core-definitions.md",
+        "specs/epic-orchestration/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "013",
+      "type": "feature",
+      "priority": 2,
+      "title": "Add Feature Directory Resolution + Epic Context Injection blocks to shared-conventions.md",
+      "description": "Add two new blocks to references/shared-conventions.md per 04 §3 and §4. These are the single shared home for name->dir resolution and epic context loading that the integration grafts (items 014-019) all reference. Read the current file first to place the anchors precisely.\n\n(1) ## Feature Directory Resolution — site it immediately AFTER the ## Configuration Reading section and BEFORE ## Pipeline State Protocol. Prose per 04 §3.1: resolve a bare feature name through the helper (resolvedFeatureDir=$(python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py\" resolve \"<feature>\" --specs-dir \"<specsDir>\")) rather than hardcoding {specsDir}/{feature}/; exit 0 -> stdout is the absolute dir; exit >= 1 -> STOP and surface the finding verbatim (not-found/ambiguous/unsafe-name/path-escape), do not guess a path. Include the 5-step resolution summary, the feature-shaped-dir bound (a dir is a feature only if it directly contains .pipeline-state.json; epic roots and .verification/tests/fixture subtrees are never features), and the compatibility note (standalone -> flat path, latent collisions reported for manual cleanup not by aborting an unrelated command).\n\n(2) ## Epic Context Injection — site it immediately AFTER the Feature Directory Resolution block. Prose per 04 §4.1: after resolving, check the feature's .pipeline-state.json for an epic back-pointer; if ABSENT skip the block entirely (standalone — REQ-COMPAT-01); if present load exactly EPIC.md + this feature's charter/exposes/consumes (from epic-manifest.json) + DIRECT completed dependencies' PRD.md and tech-spec.md only (each dep loaded only if complete-for-orchestration per 00 §7), and NOTHING transitive. Use render-status --json to get live completion + contracts; if render-status exits >= 1, surface findings and proceed with only EPIC.md + charter.\n\nNo behavioral change for standalone features — state that explicitly in both blocks.",
+      "acceptanceCriteria": [
+        "references/shared-conventions.md contains a ## Feature Directory Resolution block sited after ## Configuration Reading and before ## Pipeline State Protocol",
+        "references/shared-conventions.md contains a ## Epic Context Injection block immediately after the resolution block",
+        "The resolution block documents the helper invocation, exit-code handling (0 -> stdout dir; >=1 -> STOP+surface), the 5-step summary, and the feature-shaped-dir bound",
+        "The context-injection block specifies: skip entirely if no epic key; else load EPIC.md + charter/exposes/consumes + direct COMPLETED deps' PRD/tech-spec only, never transitive",
+        "Both blocks state that standalone-feature behavior is unchanged (REQ-COMPAT-01)",
+        "bash scripts/validate.sh passes (markdown-only change)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["005", "007"],
+      "notes": "This is the keystone for items 014-019 — they all 'call the §3 block'. Depends on resolve (005) and render-status (007) existing so the documented invocations are real. Markdown only; no code.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/04-pipeline-integration.md"
+      ]
+    },
+    {
+      "id": "014",
+      "type": "feature",
+      "priority": 2,
+      "title": "Graft epic-awareness into forge-1/2/3 skills + forge-researcher agent",
+      "description": "Add resolution + epic context injection + depth-2 glob widening to the three early stage skills and the researcher agent, per 04 §5 and §11.2. Every edit is gated on the epic back-pointer (or produces no new matches in flat-only trees) so standalone behavior is byte-for-byte unchanged (REQ-COMPAT-01). Read each target file first to find the cited anchors; replace {specsDir}/{feature}/ literals with {resolvedFeatureDir}/ at those anchors.\n\nThis item uses agentDelegation — the four files are independent edits sharing one verification step (bash scripts/validate.sh).\n\n- skills/forge-1-prd/SKILL.md (04 §5.1): at Step 1 replace the working-dir line with a call to the Feature Directory Resolution block, with the caveat that a brand-new standalone feature may have no dir yet (resolution fails not-found -> forge-1 creates {specsDir}/{feature}/ as today; an epic member's dir already exists). At Step 2 invoke the Epic Context Injection block before the interview, adding the note that an epic member's charter exposes/consumes are requirement inputs (every obligation must become a REQ). Replace remaining literals at the Step 4 write and Step 6 state paths.\n- skills/forge-2-tech/SKILL.md (04 §5.2): resolve at Step 1; inject after the PRD read; thread this feature's consumes + direct deps' exposes + completed-dep tech-spec paths into the forge-researcher dispatch prompt; widen the Manual Research item-5 glob to also check {specsDir}/*/*/tech-spec.md (depth-2), feature-shaped-dir bound. Replace Step 5/Step 7 literals.\n- skills/forge-3-specs/SKILL.md (04 §5.3): resolve at Step 1; inject after PRD+tech-spec; widen the Step 2 spec glob to also include {specsDir}/*/*/[0-9][0-9]-*.md (depth-2); thread the EPIC.md Contracts section + completed-dep tech-specs into the forge-spec-writer per-writer prompts. Replace Step 5/Step 7 literals.\n- agents/forge-researcher.md (04 §11.2): widen the §4 'Read specs/*/PRD.md and specs/*/tech-spec.md' to ALSO read depth-2 specs/*/*/PRD.md and specs/*/*/tech-spec.md, subject to the feature-shaped-dir bound; add a sentence that an epic root (epic-manifest.json, no .pipeline-state.json) is a grouping, not a feature.\n\nAll widened globs must apply the feature-shaped-dir bound (04 §5.4): only treat a dir as a feature if it directly contains .pipeline-state.json — so flat-only trees gain no new matches.",
+      "acceptanceCriteria": [
+        "forge-1-prd, forge-2-tech, forge-3-specs each resolve the feature dir via the shared-conventions Feature Directory Resolution block and reference {resolvedFeatureDir}/ at the cited anchors",
+        "forge-1/2/3 invoke the Epic Context Injection block at the specified point and only inject epic context when an epic back-pointer is present",
+        "forge-2-tech and forge-3-specs widen their research/spec globs to depth-2 ({specsDir}/*/*/...) with the feature-shaped-dir bound stated",
+        "agents/forge-researcher.md reads depth-2 specs/*/*/PRD.md and tech-spec.md with the feature-shaped-dir bound and the epic-root-is-not-a-feature note",
+        "All edits state or preserve unchanged standalone behavior (flat-only trees gain no new glob matches)",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["013"],
+      "notes": "Markdown-only edits to four existing files. The resolution and context-injection blocks they call are authored in item 013. Keep every change gated so REQ-COMPAT-01 holds — the standalone code path must be untouched in effect.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "agentDelegation": {
+        "recommendedConcurrency": 4,
+        "strategy": "Each sub-agent edits one independent file; all four share the single bash scripts/validate.sh verification. No file is touched by more than one sub-agent.",
+        "subtasks": [
+          "Edit skills/forge-1-prd/SKILL.md per 04 §5.1: add Feature Directory Resolution call at Step 1 (with the new-standalone not-found->create-dir caveat), invoke Epic Context Injection at Step 2 before the interview with the obligations->REQs note, and replace {specsDir}/{feature}/ literals at the Step 4 write and Step 6 state paths with {resolvedFeatureDir}/.",
+          "Edit skills/forge-2-tech/SKILL.md per 04 §5.2: resolve at Step 1, invoke Epic Context Injection after the PRD read, thread this feature's consumes + direct deps' exposes + completed-dep tech-spec paths into the forge-researcher dispatch prompt, widen the Manual Research item-5 glob to also check {specsDir}/*/*/tech-spec.md (depth-2, feature-shaped-dir bound), and replace Step 5/Step 7 literals with {resolvedFeatureDir}/.",
+          "Edit skills/forge-3-specs/SKILL.md per 04 §5.3: resolve at Step 1, invoke Epic Context Injection after PRD+tech-spec, widen the Step 2 spec glob to also include {specsDir}/*/*/[0-9][0-9]-*.md (depth-2, feature-shaped-dir bound), thread the EPIC.md Contracts section + completed-dep tech-specs into the forge-spec-writer per-writer prompts, and replace Step 5/Step 7 literals with {resolvedFeatureDir}/.",
+          "Edit agents/forge-researcher.md per 04 §11.2: widen the §4 'Read specs/*/PRD.md and specs/*/tech-spec.md' line to ALSO read depth-2 specs/*/*/PRD.md and specs/*/*/tech-spec.md subject to the feature-shaped-dir bound, and add a sentence that an epic root (epic-manifest.json, no .pipeline-state.json) is a grouping, not a feature."
+        ]
+      },
+      "specReferences": [
+        "specs/epic-orchestration/04-pipeline-integration.md"
+      ]
+    },
+    {
+      "id": "015",
+      "type": "feature",
+      "priority": 2,
+      "title": "Graft resolution + per-feature backlog subpath into forge-4-backlog",
+      "description": "Edit skills/forge-4-backlog/SKILL.md per 04 §6 so it resolves the feature dir centrally and composes a per-feature backlog subpath when backlogDir is configured. Read the current file first to find the cited anchors. All edits preserve the standalone default path exactly as today (REQ-COMPAT-03).\n\n(1) §6.1 central resolution: at Step 1 (Validate Prerequisites) resolve the feature dir via the shared-conventions Feature Directory Resolution block first; read state/specs from {resolvedFeatureDir}/; replace the Step 2 spec-load literals with {resolvedFeatureDir}/.\n\n(2) §6.2 backlogDir rule — replace the existing Prerequisites backlog-dir resolution and the Step 5/Step 7 references with: backlogDir UNSET (default) -> backlog lives at {resolvedFeatureDir}/backlog.json (both flat and nested), exactly as today; backlogDir CONFIGURED -> compose a per-feature subpath {backlogDir}/{feature}/ so each epic member's backlog stays independent (a bare shared backlogDir would collide across a multi-feature epic — the {feature} segment prevents it; standalone features likewise resolve to {backlogDir}/{feature}/, backward-compatible since each standalone name is unique). Add a cross-edit note that forge-5-loop's backlog-file check must use the same composed {backlogDir}/{feature}/backlog.json (the actual forge-5 edit lands in item 016). Add the shared-conventions default-note parenthetical: '(when backlogDir is configured, forge-4 composes {backlogDir}/{feature}/)'.\n\n(3) §6.3 invariance: note that the backlog schema is unchanged (epic membership adds NO fields to backlog items — dependency edges live in the epic manifest, never in an item) and rauf is still launched against a single per-feature backlog path — only the path composition changes (REQ-COMPAT-03).",
+      "acceptanceCriteria": [
+        "skills/forge-4-backlog/SKILL.md resolves the feature dir via the Feature Directory Resolution block at Step 1 and uses {resolvedFeatureDir}/ for spec loading",
+        "The backlogDir rule is stated once: unset -> {resolvedFeatureDir}/backlog.json; configured -> {backlogDir}/{feature}/ per-feature subpath",
+        "A cross-edit note records that forge-5-loop must read the same composed {backlogDir}/{feature}/backlog.json (implemented in item 016)",
+        "The skill notes the backlog schema and rauf invocation contract are unchanged (no item fields added; dependency edges live in the manifest) per REQ-COMPAT-03",
+        "Standalone default path ({resolvedFeatureDir}/backlog.json) behavior is preserved",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["013"],
+      "notes": "Markdown-only edit to one file. Item 016 owns the matching forge-5-loop backlog-path change, so item 016 dependsOn 015 to keep the two paths consistent. Do NOT change the backlog schema or rauf's CLI surface.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/04-pipeline-integration.md"
+      ]
+    },
+    {
+      "id": "016",
+      "type": "feature",
+      "priority": 2,
+      "title": "Graft dependency gate + handoff into forge-5-loop",
+      "description": "Edit skills/forge-5-loop/SKILL.md per 04 §7 to add an epic dependency gate and a completion handoff, plus central resolution. Both new blocks are gated on the epic back-pointer; absent -> unchanged (REQ-COMPAT-01). Read the current file first to place the anchors precisely.\n\n(1) §7.0 resolution: at Step 1 (Step 1a) resolve the feature dir via the Feature Directory Resolution block; read {resolvedFeatureDir}/.pipeline-state.json; use {resolvedFeatureDir}/ for the 1e backlog path and the Step 3a/Step 5 state writes. Apply the per-feature backlog-path composition from item 015 ({backlogDir}/{feature}/backlog.json when backlogDir is configured).\n\n(2) §7.1 NEW '### 1b-epic. Epic Dependency Gate' inserted BETWEEN the existing '### 1b. Verification Check' and '### 1c. Runner Version Gate'. Read the feature's .pipeline-state.json; if no epic key, skip entirely. Otherwise: run render-status \"{epic}\" --json; find this feature's entry; read unmetDeps; if empty proceed; if non-empty use AskUserQuestion (NOT inline prose) warning that the feature depends on {unmetDeps} which are not complete and requiring an explicit 'Proceed anyway' to continue (REQ-ORCH-04); --force bypasses with the standard force warning; if render-status exits >= 1 (corrupt manifest) surface findings and STOP. This gate runs before the runner version/setup gates.\n\n(3) §7.2 NEW '## Step 6: Epic Handoff' appended AFTER '## Step 5: Update Pipeline State'. Gate: only run if the feature has an epic key AND Step 5 set stages.forge-5-loop.status to complete. Steps: offer impl-verify first (recommended, skippable, via AskUserQuestion) since a findings-reported impl-verify does not unblock dependents; recompute via render-status and announce the rollup; identify actionable set + nextCommand; if none actionable and rollup.total>0 AND rollup.complete==rollup.total suggest forge-6-docs (note the epic-level doc offer) — the total>0 guard prevents an empty epic reporting complete — else list what is still blocked; if one or more actionable, AskUserQuestion presenting each actionable feature for SERIAL selection (do not autonomously chain); begin the chosen feature (PRD absent -> offer forge-1-prd; PRD present -> point at its nextCommand); commit via the Git Commit Protocol staging {specsDir}/{epic}/ when gitCommitAfterStage is true.",
+      "acceptanceCriteria": [
+        "skills/forge-5-loop/SKILL.md resolves the feature dir via the Feature Directory Resolution block at Step 1a and uses the composed per-feature backlog path",
+        "A new '### 1b-epic. Epic Dependency Gate' sits between 1b Verification Check and 1c Runner Version Gate, skips when no epic key, and on non-empty unmetDeps requires an explicit 'Proceed anyway' via AskUserQuestion (with --force bypass and corrupt-manifest STOP)",
+        "A new '## Step 6: Epic Handoff' appended after Step 5 is gated on epic key AND forge-5-loop.status complete; offers skippable impl-verify, announces the render-status rollup, and identifies the next actionable feature(s) for serial selection",
+        "The handoff's empty/all-complete branch uses the rollup.total>0 guard before suggesting forge-6-docs",
+        "Both new blocks are skipped for standalone features (no epic key) so standalone runs are unchanged",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["013", "007", "015"],
+      "notes": "Markdown-only edit to one file. Depends on render-status (007) for the gate/handoff data, the shared-conventions blocks (013), and item 015 for the agreed per-feature backlog path. Use the §7 completion predicate exclusively via render-status — never re-derive completion in prose.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/04-pipeline-integration.md"
+      ]
+    },
+    {
+      "id": "017",
+      "type": "feature",
+      "priority": 2,
+      "title": "Graft epic dashboard + 2-tier discovery + lifecycle verbs into forge navigator",
+      "description": "Edit skills/forge/SKILL.md (the navigator) per 04 §8. The navigator stays read-only except for notes/updatedAt/pipelineStatus. All edits preserve byte-for-byte behavior in flat-only projects (REQ-COMPAT-01). Read the current file first to place anchors.\n\n(1) §8.1 resolve nested names — in 'Determine Context', before looking for {specsDir}/{feature}/.pipeline-state.json, test whether the name is an epic: if {specsDir}/{name}/epic-manifest.json exists, render the Epic Dashboard (§8.2); otherwise resolve via the Feature Directory Resolution block (so a nested member name finds its dashboard) and show the existing per-feature dashboard from {resolvedFeatureDir}/.\n\n(2) §8.2 NEW '### Epic Dashboard' sub-section (sibling of 'Pipeline Status Dashboard'): run render-status \"{epic}\" --json and render — epic header + status (active|paused|abandoned|complete); dependency graph (each feature with its dependsOn as an arrow list / indented tree); per-feature rows reusing the EXISTING status indicators driven by derived stage/status, marking blocked features with their unmetDeps; actionable set + recommended nextCommand; rollup {complete}/{total}. State that all of it is reconstructed purely from disk (manifest + member .pipeline-state.json), so a fresh session renders the same dashboard.\n\n(3) §8.3 2-tier no-arg discovery — replace the flat scan with: Tier 1 epics first (a dir is an epic iff it directly contains epic-manifest.json and NO .pipeline-state.json of its own); for each run render-status and show one rollup line '{epic} — {complete}/{total} complete, next: {nextCommand}'. Tier 2 standalone features below (remaining {specsDir}/*/ that directly contain a .pipeline-state.json WITHOUT an epic back-pointer); nested members are attributed to their epic, never listed standalone. The existing single-vs-multiple-active logic still applies within the standalone tier.\n\n(4) §8.4 lifecycle verbs — extend pause/resume/abandon to accept an epic name: when {specsDir}/{name}/epic-manifest.json exists, set the manifest's status (paused/active/abandoned) via the helper's set-status mutator (atomic + updatedAt bump); for 'complete' do NOT set directly (completion is derived). Member feature states are NOT silently mutated — use AskUserQuestion to surface the relationship ('Pausing the epic does not pause its in-flight members. N members are active. Pause the epic only, or also pause each member?'); if the user opts in, update each member's pipelineStatus individually and visibly. Commit via the Git Commit Protocol staging {specsDir}/{epic}/.",
+      "acceptanceCriteria": [
+        "skills/forge/SKILL.md detects an epic name ({specsDir}/{name}/epic-manifest.json) and renders an Epic Dashboard from render-status --json",
+        "A new '### Epic Dashboard' sub-section renders header+status, dependency graph, per-feature rows (reusing existing status indicators), actionable/nextCommand, and the rollup, all reconstructed from disk",
+        "No-arg discovery is 2-tier: epics first (with complete/total rollup lines) then standalone features; nested members are attributed to their epic, not listed as standalone",
+        "pause/resume/abandon on an epic name set the manifest status via set-status and do NOT silently mutate member states; the relationship is surfaced via AskUserQuestion",
+        "Flat-only projects with no epics see byte-for-byte unchanged navigator behavior",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["013", "007"],
+      "notes": "Markdown-only edit to one file. Reuse the existing status indicators (the navigator already defines ✅/🔄/⬜/❌/⏭️/⚠️). Depends on render-status (007) + the shared-conventions resolution block (013).",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/04-pipeline-integration.md"
+      ]
+    },
+    {
+      "id": "018",
+      "type": "feature",
+      "priority": 2,
+      "title": "Add forge-verify epic mode + checklist + .epic-state.json handling",
+      "description": "Add an epic verification mode to forge-verify per 04 §9 and the .epic-state.json contract per 03 §8.2. Read skills/forge-verify/SKILL.md and skills/forge-verify/references/verification-checklists.md first to place anchors.\n\n(1) §9.1 mode selection — in '### Mode Selection' add an 'epic' mode: explicit via /feature-forge:forge-verify {epic} epic, and auto-detect when the named argument resolves to an epic directory (has epic-manifest.json).\n\n(2) §9.2 artifact loading — add an epic block to 'Load All Relevant Artifacts': {specsDir}/{epic}/epic-manifest.json, {specsDir}/{epic}/EPIC.md, each member's .pipeline-state.json (back-pointer + derived status), and each COMPLETED member's PRD.md + tech-spec.md (for contract-drift checking).\n\n(3) §9.3 dispatch — epic mode is a small (~8-check) checklist: dispatch a SINGLE forge-verifier with the epic name and mode=epic; add 'epic ~8' to the per-mode totals in Step 3.\n\n(4) §9.4 findings + state — Step 4 write path {specsDir}/{epic}/.verification/VERIFY-epic-{YYYY-MM-DD}.md; Step 6 record stages.forge-verify-epic into {specsDir}/{epic}/.epic-state.json (NOT any member's .pipeline-state.json — it is epic-scoped). Set status findings-reported (or passed if zero findings) with findingsFile/findingsCount/verifiedAt. The skill writes .epic-state.json directly using an atomic temp-file + os.replace pattern (the helper exposes no subcommand for it); create the file lazily on first write; on I/O failure report and leave any prior file intact.\n\n(5) §9.5 checklist append — append a new top-level '## Epic Mode Checklist' to the END of verification-checklists.md with CHECK-E01..E08: E01 schema conformance, E02 acyclic graph, E03 no dangling refs, E08 global name uniqueness — all four delegated to running epic-manifest.py validate (and check-name) once and mapping findings; E04 charter coverage, E05 meaningful exposes/consumes, E06 EPIC.md<->manifest contract drift for completed features, E07 back-pointer<->manifest membership consistency (manifest wins on conflict) — these four are verifier judgment.",
+      "acceptanceCriteria": [
+        "skills/forge-verify/SKILL.md adds an 'epic' mode that is explicitly selectable (forge-verify {epic} epic) and auto-detected when the arg is an epic directory",
+        "Epic-mode artifact loading covers the manifest, EPIC.md, member states, and completed members' PRD/tech-spec; a single forge-verifier is dispatched with mode=epic and 'epic ~8' is added to Step 3 totals",
+        "Findings write to {specsDir}/{epic}/.verification/VERIFY-epic-{date}.md and stages.forge-verify-epic is recorded into {specsDir}/{epic}/.epic-state.json (atomic temp+replace by the skill, lazily created)",
+        "verification-checklists.md gains a '## Epic Mode Checklist' section at the end with CHECK-E01..E08; E01/E02/E03/E08 are marked helper-delegated to validate/check-name and E04-E07 as verifier judgment",
+        ".epic-state.json is epic-scoped (never a member's .pipeline-state.json) and holds no cached per-feature status",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["013", "006", "002"],
+      "notes": "Markdown-only edits to two forge-verify files. Depends on validate (006) for E01/E02/E03/E08 delegation, the patched pipeline-state schema (002) for the forge-verify-epic stage key, and the shared-conventions blocks (013) for resolution. The .epic-state.json schema is given in 03 §8.2.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/epic-orchestration/04-pipeline-integration.md",
+        "specs/epic-orchestration/03-forge-0-epic-stage.md"
+      ]
+    },
+    {
+      "id": "019",
+      "type": "feature",
+      "priority": 2,
+      "title": "Graft epic-level doc offer into forge-6-docs + resolution into forge-fix",
+      "description": "Edit two skills per 04 §10 and §11.1. Both preserve standalone behavior unchanged. Read each file first to place anchors. This item uses agentDelegation — the two files are independent edits sharing one verification (bash scripts/validate.sh).\n\n- skills/forge-6-docs/SKILL.md (04 §10): at Step 1 (Read Context) resolve the feature dir via the Feature Directory Resolution block and load specs/impl/state from {resolvedFeatureDir}/. After the existing per-feature completeness check and before Step 2 planning, add a '### Epic-Level Documentation (epic members only)' block: if the resolved feature has an epic back-pointer, run render-status \"{epic}\" --json; ONLY if rollup.total>0 AND rollup.complete==rollup.total (every member complete-for-orchestration; the total>0 guard excludes an empty epic) use AskUserQuestion to offer generating an epic-level architecture doc at {docsDir}/{epic}/ sourced from EPIC.md narrative + each member's per-feature docs + the manifest contracts; on yes synthesize it. If not all members are complete, do not offer (the per-feature flow is unchanged). When the epic-level doc is written, the commit also stages {docsDir}/{epic}/.\n- skills/forge-fix/SKILL.md (04 §11.1): at Step 1 (Locate Findings Document) item 2, resolve the feature dir via the Feature Directory Resolution block, then find the most recent VERIFY-*-*.md in {resolvedFeatureDir}/.verification/. Replace the Step 5 state-write path with {resolvedFeatureDir}/.pipeline-state.json, and stage {resolvedFeatureDir}/ (or {specsDir}/{epic}/ for a member) in the commit. No other behavioral change — a standalone feature resolves to its flat path exactly as today.",
+      "acceptanceCriteria": [
+        "skills/forge-6-docs/SKILL.md resolves the feature dir via the Feature Directory Resolution block at Step 1 and adds an '### Epic-Level Documentation' block offering a doc at {docsDir}/{epic}/ ONLY when rollup.total>0 AND rollup.complete==rollup.total",
+        "The forge-6-docs epic-level doc commit stages {docsDir}/{epic}/ in addition to the existing per-feature paths when the doc is written",
+        "skills/forge-fix/SKILL.md resolves the feature dir via the Feature Directory Resolution block and finds the latest VERIFY in {resolvedFeatureDir}/.verification/, with the Step 5 state path and commit staging updated accordingly",
+        "Both skills preserve byte-for-byte standalone behavior (the per-feature doc flow and standalone fix flow are unchanged)",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["013", "007"],
+      "notes": "Markdown-only edits to two files. Depends on render-status (007) for the completeness gate and the shared-conventions resolution block (013).",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "agentDelegation": {
+        "recommendedConcurrency": 2,
+        "strategy": "Each sub-agent edits one independent skill file; both share the single bash scripts/validate.sh verification.",
+        "subtasks": [
+          "Edit skills/forge-6-docs/SKILL.md per 04 §10: resolve the feature dir via the Feature Directory Resolution block at Step 1, and after the per-feature completeness check add an '### Epic-Level Documentation (epic members only)' block that runs render-status and ONLY when rollup.total>0 AND rollup.complete==rollup.total offers (via AskUserQuestion) an epic-level doc at {docsDir}/{epic}/ sourced from EPIC.md + member docs + manifest contracts, staging {docsDir}/{epic}/ in the commit when written.",
+          "Edit skills/forge-fix/SKILL.md per 04 §11.1: resolve the feature dir via the Feature Directory Resolution block at Step 1 item 2, find the most recent VERIFY-*-*.md in {resolvedFeatureDir}/.verification/, update the Step 5 state-write path to {resolvedFeatureDir}/.pipeline-state.json, and stage {resolvedFeatureDir}/ (or {specsDir}/{epic}/ for a member) in the commit — preserving standalone flat-path behavior."
+        ]
+      },
+      "specReferences": [
+        "specs/epic-orchestration/04-pipeline-integration.md"
+      ]
+    }
+  ]
+}
