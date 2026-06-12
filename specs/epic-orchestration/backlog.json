@@ -95,8 +95,8 @@
         "unmet_deps returns direct deps whose complete-map value is False, in manifest order, and [] when all complete",
         "python3 -m py_compile scripts/epic-manifest.py exits 0 and bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:18:58.662Z",
       "dependsOn": [
         "003"
       ],
