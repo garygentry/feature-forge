@@ -375,8 +375,8 @@
         "The creation branch authored in item 012a is preserved unchanged; all questions remain routed through AskUserQuestion",
         "bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:52:57.927Z",
       "dependsOn": [
         "012a"
       ],
