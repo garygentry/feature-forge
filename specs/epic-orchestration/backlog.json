@@ -319,8 +319,8 @@
         "The new step is the last among the checks; existing steps are unchanged",
         "bash scripts/validate.sh passes WITH pytest installed and actually runs python3 -m pytest tests (PASS line shown)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:49:25.787Z",
       "dependsOn": [
         "010a",
         "010b"
