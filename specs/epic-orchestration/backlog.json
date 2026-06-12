@@ -67,8 +67,8 @@
         "The module can be imported via importlib (functions assert_safe_name, contained_path, load_manifest, atomic_write are module-level)",
         "bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:17:23.597Z",
       "dependsOn": [
         "001"
       ],
