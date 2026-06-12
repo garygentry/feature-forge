@@ -45,7 +45,7 @@ If `forge.config.json` does not exist and no `.pipeline-state.json` files exist 
 Extract these config values (use defaults if not present):
 - `specsDir` (default: `./specs`)
 - `docsDir` (default: `./docs/architecture`)
-- `backlogDir` (default: null — backlog lives at `{specsDir}/{feature}/backlog.json`)
+- `backlogDir` (default: null — backlog lives at `{specsDir}/{feature}/backlog.json`; when `backlogDir` is configured, forge-4 composes `{backlogDir}/{feature}/`)
 - `gitCommitAfterStage` (default: true)
 - `commitPrefix` (default: `forge`)
 - `loopIterationMultiplier` (default: `1.5`)
