@@ -14,9 +14,13 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 ## Step 1: Validate Prerequisites
 
-**Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode and `forge-1-prd` is not `complete`, STOP and tell the user: "The PRD for '{feature}' isn't complete yet. Run `/feature-forge:forge-1-prd {feature}` first."
+**Resolve the feature directory first** via the **Feature Directory Resolution** block in `references/shared-conventions.md`, setting `{resolvedFeatureDir}`.
 
-Read `{specsDir}/{feature}/PRD.md` into context. This is your foundation — every technology decision must trace back to a PRD requirement.
+**Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode and `forge-1-prd` is not `complete`, STOP and tell the user: "The PRD for '{feature}' isn't complete yet. Run `/feature-forge:forge-1-prd {feature}` first."
+
+Read `{resolvedFeatureDir}/PRD.md` into context. This is your foundation — every technology decision must trace back to a PRD requirement.
+
+After reading the PRD, invoke the **Epic Context Injection** block in `references/shared-conventions.md`. It self-gates on the resolved feature's `epic` back-pointer: for a standalone feature it is a no-op; for an epic member it loads EPIC.md, this feature's charter, and the completed direct dependencies' specs into context before the research and interview.
 
 ## Step 2: Examine Existing Context
 
@@ -25,6 +29,8 @@ Before interviewing, you need to understand the existing codebase. This involves
 ### Recommended: Delegate to forge-researcher Subagent
 
 Spawn the `forge-researcher` subagent via the Agent tool to scan the codebase. Pass a prompt like: "Research the codebase for planning the {feature} feature. Focus on integration points, established patterns, and relevant packages."
+
+If this feature belongs to an epic, also add to the dispatch prompt: "If this feature belongs to an epic, also account for these epic contracts: {paste this feature's `consumes` and the `exposes` of its direct deps}, and the completed dependency tech-specs at {paths}. Do not re-research transitive deps." This threads epic context into the researcher without changing the agent's behavior.
 
 The researcher runs in its own context window, reads the project structure, and returns a concise integration report. This keeps your main conversation context clean for the interactive interview.
 
@@ -52,7 +58,7 @@ If the `forge-researcher` subagent is not available, perform the research inline
 2. **Check for project-level stack decisions**: Look for `.claude/references/stack-decisions.md` in the project root. If present, read it — these are established technology choices that should be respected unless there's a strong reason to deviate.
 3. **Read the plugin's default stack reference**: Read `references/stack-discovery-checklist.md` for general stack context (only if no project-level override exists)
 4. **Examine the existing codebase**: Look at `package.json` files, existing packages, directory structure, and established patterns. Understand what conventions are already in place.
-5. **Review other features' tech specs**: Check `{specsDir}/*/tech-spec.md` for consistency in approach and to identify shared infrastructure.
+5. **Review other features' tech specs**: Check `{specsDir}/*/tech-spec.md` and `{specsDir}/*/*/tech-spec.md` (depth-2, to find nested epic members) for consistency in approach and to identify shared infrastructure. Apply the **feature-shaped-dir bound**: only treat a directory as a feature if it directly contains a `.pipeline-state.json` (filter matches whose parent directory holds one, or enumerate members via the helper). A flat-only tree has no depth-2 feature dirs, so this gains no new matches there (REQ-COMPAT-01).
 6. **Identify integration points**: For each existing package that this feature touches, read its exports, types, and public API. Document these as constraints.
 
 ### Stack Detection and Persistence
@@ -124,7 +130,7 @@ Before finalizing the tech spec, this section is MANDATORY:
 
 ## Step 5: Write the Tech Spec
 
-Write `{specsDir}/{feature}/tech-spec.md` with this structure:
+Write `{resolvedFeatureDir}/tech-spec.md` with this structure:
 
 ```markdown
 # {Feature Name} — Technical Specification
@@ -174,7 +180,7 @@ Use `AskUserQuestion` to collect this feedback.
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
-1. Update `{specsDir}/{feature}/.pipeline-state.json`:
+1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
    - Set `currentStage` to `forge-3-specs`
    - Record `artifacts`, `completedAt`, `version`
    - Set `stages.forge-2-tech.basedOnVersions` to `{"forge-1-prd": <current forge-1-prd version>}`

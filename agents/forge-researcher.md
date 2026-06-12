@@ -51,7 +51,7 @@ When asked to explore for a new feature, follow this protocol:
 - What styling/theming approach is used?
 
 ### 4. Check Existing Specs and Docs
-- Read `specs/*/PRD.md` and `specs/*/tech-spec.md` for other features
+- Read `specs/*/PRD.md` and `specs/*/tech-spec.md`, and also depth-2 `specs/*/*/PRD.md` and `specs/*/*/tech-spec.md`, for other features. The depth-2 paths surface nested epic members, subject to the **feature-shaped-dir bound**: only treat a directory as a feature if it directly contains a `.pipeline-state.json`. An epic root (`epic-manifest.json`, no `.pipeline-state.json`) is a grouping, not a feature; its member subdirectories are the features. Flat-only projects gain no new matches from the depth-2 paths.
 - Read `docs/architecture/` for existing documentation
 - Note any in-progress features that might conflict or share concerns
 

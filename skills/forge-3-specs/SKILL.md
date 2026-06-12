@@ -16,15 +16,19 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 ## Step 1: Validate Prerequisites
 
-**Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode, both `forge-1-prd` and `forge-2-tech` must be `complete`. If not, STOP and tell the user which prerequisites are missing.
+**Resolve the feature directory first** via the **Feature Directory Resolution** block in `references/shared-conventions.md`, setting `{resolvedFeatureDir}`.
 
-Read both `{specsDir}/{feature}/PRD.md` and `{specsDir}/{feature}/tech-spec.md` into context.
+**Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, both `forge-1-prd` and `forge-2-tech` must be `complete`. If not, STOP and tell the user which prerequisites are missing.
+
+Read both `{resolvedFeatureDir}/PRD.md` and `{resolvedFeatureDir}/tech-spec.md` into context.
+
+After reading the PRD and tech spec, invoke the **Epic Context Injection** block in `references/shared-conventions.md`. It self-gates on the resolved feature's `epic` back-pointer: for a standalone feature it is a no-op; for an epic member it loads EPIC.md, this feature's charter, and the completed direct dependencies' specs into context before the spec suite is planned.
 
 ## Step 2: Examine Existing Context
 
 1. **Read the PRD and tech spec thoroughly**: These are your source of truth
 2. **Examine the existing codebase**: Look at how other packages are structured, what patterns they follow, what types they export
-3. **Check other features' implementation specs**: Look at `{specsDir}/*/[0-9][0-9]-*.md` for consistency in format and depth
+3. **Check other features' implementation specs**: Look at `{specsDir}/*/[0-9][0-9]-*.md` AND `{specsDir}/*/*/[0-9][0-9]-*.md` (depth-2, for epic-nested features) for consistency in format and depth. Subject to the **feature-shaped-dir bound**: only treat a matched directory as a feature if it directly contains a `.pipeline-state.json` (per the Feature Directory Resolution block) — ignore `EPIC.md` directories and other non-feature subtrees. Flat-only trees gain no new matches from the depth-2 glob, so standalone behavior is unchanged (REQ-COMPAT-01).
 4. **Read integration target code**: For every package listed as an integration point in the tech spec, read its actual source — types, exports, patterns. For every integration point, include the EXACT function signature and import path you read from the source code. Include the file path where you found it. If you cannot locate an expected export, say so explicitly: 'WARNING: Could not locate X export in {module} — verify this exists before implementing.'
 5. **Read spec examples**: Read `references/spec-examples.md` for the expected depth and quality of spec sections. These examples are your quality bar.
 
@@ -77,6 +81,9 @@ calls** (the `superpowers:dispatching-parallel-agents` pattern). Each writer is 
 - the quality bar in `references/spec-examples.md`,
 - the **exact single filename it must write** and the archetype slice (from
   `references/spec-archetypes.md`) it covers.
+- **(epic members only — additive context):** the relevant `EPIC.md` Contracts section(s)
+  for this feature, and the `tech-spec.md` of each completed direct dependency at {paths} — so
+  the doc is written against real upstream contracts, not guesses.
 
 Each writer authors **only its one assigned file** and returns a short **manifest** of
 the `REQ-XXX-NN` IDs it covered (feeds Step 5 traceability). Author `NN-testing-strategy.md`
@@ -114,7 +121,7 @@ After writing all documents, verify:
 3. Cross-references between spec documents are consistent (no broken references)
 4. Type definitions used across documents are consistent
 5. No orphaned implementation details that don't trace to requirements
-6. Produce a traceability matrix: a markdown table mapping every REQ-XXX-NN from the PRD to the spec document and section that implements it. Write this to `{specsDir}/{feature}/TRACEABILITY.md`
+6. Produce a traceability matrix: a markdown table mapping every REQ-XXX-NN from the PRD to the spec document and section that implements it. Write this to `{resolvedFeatureDir}/TRACEABILITY.md`
 
 List any gaps or inconsistencies found and resolve them.
 
@@ -128,7 +135,7 @@ Present a summary of all documents created as text, with key decisions highlight
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
-1. Update `{specsDir}/{feature}/.pipeline-state.json`:
+1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
    - Set `currentStage` to `forge-4-backlog` (or verification if they want to verify first)
    - Record all created files in `artifacts`, including `TRACEABILITY.md`
    - Set `stages.forge-3-specs.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>}`
