@@ -51,6 +51,48 @@ Extract these config values (use defaults if not present):
 - `loopIterationMultiplier` (default: `1.5`)
 - `loopRunner` (optional object — the loop runner to drive; **defaults to rauf** when absent, with every command templated. See `references/forge-config-schema.json` and `references/ralph-loop-contract.md`.)
 
+## Feature Directory Resolution
+
+Before any file I/O against a feature's artifacts, resolve its directory through the deterministic helper rather than hardcoding `{specsDir}/{feature}/`. This makes flat (`{specsDir}/{feature}/`) and nested (`{specsDir}/{epic}/{feature}/`) layouts both resolve from a bare feature name (REQ-DIR-03), with standalone features behaving exactly as today.
+
+```bash
+resolvedFeatureDir=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" \
+  resolve "<feature>" --specs-dir "<specsDir>")
+```
+
+- **Exit 0:** stdout is the absolute feature directory. Use it everywhere this skill previously wrote `{specsDir}/{feature}/`.
+- **Exit ≥ 1:** the helper prints an actionable finding (`not-found`, `ambiguous`, `unsafe-name`, `path-escape` — see `00-core-definitions.md §4`). **STOP** and surface the message verbatim. Do not fall back to a guessed path.
+
+**Resolution algorithm (summary; full spec in `02-manifest-helper-cli.md §4`):**
+1. Reject the name if unsafe (path separator, `..`, absolute, or failing `SAFE_NAME_RE`) — before any filesystem access.
+2. If `{specsDir}/{name}/.pipeline-state.json` exists → return that flat path.
+3. Else if exactly one `{specsDir}/*/{name}/.pipeline-state.json` exists → return that nested path.
+4. More than one match anywhere → `ambiguous` error listing all matching paths (uniqueness violation, REQ-DIR-04).
+5. Zero matches → `not-found` error.
+
+A directory counts as a **feature** only if it directly contains a `.pipeline-state.json` (the *feature-shaped-dir bound*, `00-core-definitions.md §6`). Non-feature subtrees (`.verification/`, `tests/`, fixture dirs, and the epic root itself — which holds `epic-manifest.json` but no `.pipeline-state.json`) are therefore never matched as features.
+
+**Compatibility:** for a standalone feature the resolver returns its flat path with no epic logic engaged (REQ-COMPAT-01/02) — standalone-feature behavior is unchanged. A pre-existing latent name collision is reported for manual cleanup by the navigator / forge-verify epic mode (CHECK-E08), not by aborting an unrelated command whose name resolves to exactly one dir (tech-spec §3.4).
+
+## Epic Context Injection
+
+After resolving the feature directory, check the feature's `.pipeline-state.json` for an `epic` back-pointer. **If absent, skip this block entirely** (standalone feature — REQ-COMPAT-01; standalone-feature behavior is unchanged). **If present**, load exactly the following context, and nothing transitive (REQ-CTX-01):
+
+1. **`{specsDir}/{epic}/EPIC.md`** — the epic narrative, including the per-feature Contracts sections.
+2. **This feature's `charter`** — read from `{specsDir}/{epic}/epic-manifest.json` (the `features[]` entry whose `name` matches), together with its `exposes` and `consumes` arrays. These are the feature's **contract obligations** (REQ-CTX-02): what it must expose to dependents and what it consumes from dependencies.
+3. **Direct completed dependencies only** — for each `name` in this feature's `dependsOn`, resolve that sibling's directory and, **only if it is complete-for-orchestration** (`00-core-definitions.md §7`), load its `PRD.md` and `tech-spec.md`.
+
+**Do NOT load** transitive (indirect) dependencies' specs. Indirect contracts reach this feature only through the *direct* deps' Contracts sections in `EPIC.md`. This bounds context size and keeps the injected set deterministic (REQ-CTX-01).
+
+To obtain the manifest contracts and the live completion status of each dependency in one deterministic call, run `render-status` and read the per-feature `status` and the `consumes`/`exposes` arrays rather than re-deriving them:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" \
+  render-status "<epic>" --specs-dir "<specsDir>" --json
+```
+
+If `render-status` exits ≥ 1, surface its findings and proceed with **only** EPIC.md + charter (a corrupt manifest must not silently inject stale dep specs — REQ-ROBUST-02).
+
 ## Pipeline State Protocol
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`. Always update `updatedAt` when modifying pipeline state.
