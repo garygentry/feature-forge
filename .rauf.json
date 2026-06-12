@@ -1,0 +1,28 @@
+{
+  "rauf": true,
+  "version": "1",
+  "variant": "backlog-json",
+  "installedAt": "2026-06-12T22:03:15.612Z",
+  "installedBy": "rauf-manager@0.4.0",
+  "profile": {
+    "stack": "unknown",
+    "packageManager": null,
+    "monorepo": false,
+    "commands": {
+      "test": null,
+      "typecheck": null,
+      "lint": null,
+      "build": null,
+      "format": null
+    },
+    "verify": ""
+  },
+  "artifactHashes": {
+    "RAUF.md": "16ffc21b2ea9e093e17437dca73f576b7674948604092d9da8c8cb2bb1b3a769"
+  },
+  "options": {
+    "ignoreInTool": false,
+    "gitignoreScripts": false,
+    "maxIterations": 20
+  }
+}
