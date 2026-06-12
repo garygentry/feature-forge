@@ -39,7 +39,7 @@ tests/                                         # pytest suite + fixture epic tre
 | `skills/forge-1-prd/SKILL.md` | Resolve dir centrally; inject epic context before interview. | REQ-CTX-01/02, REQ-DIR-03 |
 | `skills/forge-2-tech/SKILL.md` | Same; widen context-scan glob to depth-2; pass epic context into forge-researcher dispatch. | REQ-CTX-01/02, REQ-DIR-03 |
 | `skills/forge-3-specs/SKILL.md` | Same; widen depth-1 spec glob; thread epic context into forge-spec-writer prompts. | REQ-CTX-01/02, REQ-DIR-03 |
-| `skills/forge-4-backlog/SKILL.md` | Resolve dir centrally (backlogDir derives from resolved feature dir). | REQ-DIR-03, REQ-COMPAT-03 |
+| `skills/forge-4-backlog/SKILL.md` | Resolve dir centrally; compose per-feature backlog path when `backlogDir` is configured (see §5.7). | REQ-DIR-03, REQ-COMPAT-03 |
 | `skills/forge-5-loop/SKILL.md` | Resolve dir; **dependency gate** (new Step 1b-epic); **handoff** (new Step 6). | REQ-ORCH-01/02/03/04, REQ-DIR-03 |
 | `skills/forge-6-docs/SKILL.md` | Resolve dir; epic-level doc offer when all members complete. | REQ-DOCS-01, REQ-DIR-03 |
 | `skills/forge-verify/SKILL.md` | New `epic` mode (CHECK-E0N checklist, single verifier). | REQ-VERIFY-01 |
@@ -47,7 +47,7 @@ tests/                                         # pytest suite + fixture epic tre
 | `skills/forge-verify/references/verification-checklists.md` | Append `## Epic Mode Checklist` (CHECK-E01..E08). | REQ-VERIFY-01 |
 | `agents/forge-researcher.md` | Widen `specs/*/…` globs to find nested features. | REQ-DIR-03 |
 | `scripts/validate.sh` | Invoke the pytest suite for the helper. | testing |
-| `forge.config.json` (new, this repo) | Stack persistence: `stack`, `testCommand`, `typeCheckCommand`. | stack resolution |
+| `forge.config.json` (new, this repo) | Stack persistence: `stack`, `testCommand`, `typeCheckCommand` (schema + consumers in §2.4). | stack resolution |
 
 ### 2.3 Public surface of `scripts/epic-manifest.py`
 
@@ -62,6 +62,29 @@ A single CLI, stdlib-only (Python 3), exit codes mirroring the rauf validate con
 | `add-feature / remove-feature / reorder / set-dep / set-status` | Atomic manifest mutations (temp-file + `os.replace`), each followed by full re-validation; refuse the write if it would introduce a cycle or dangling ref. | Updated manifest or exit 1 + findings |
 
 The script reads only within `{specsDir}` and rejects any `name`/path with separators, `..` segments, or absolute paths before touching the filesystem (REQ-SEC-02).
+
+### 2.4 Configuration (`forge.config.json`)
+
+This feature reads the existing forge config keys via the shared-conventions config-reading protocol (defaults apply when absent):
+
+| Key | Default | Consumed by this feature for |
+|-----|---------|------------------------------|
+| `specsDir` | `./specs` | All name→dir resolution, path containment, nested-vs-flat globbing |
+| `backlogDir` | null (→ `{resolvedFeatureDir}/backlog.json`) | Per-feature backlog path composition (§5.7) |
+| `gitCommitAfterStage` | true | Whether `forge-0-epic` creation/edits and the §5.3 handoff commit per the git-commit-after-stage protocol |
+| `commitPrefix` | `forge` | Commit message prefix for epic-stage commits |
+
+The new `stack` / `testCommand` / `typeCheckCommand` fields persist stack resolution for this repo (a prose plugin + Python helpers). Schema and consumers:
+
+```jsonc
+{
+  "stack": "prose-plugin-python",   // string; resolved stack profile, written once at forge-init/stack-resolution time
+  "testCommand": "bash scripts/validate.sh",    // string; how forge-verify / CI run the helper pytest suite (§7)
+  "typeCheckCommand": "python3 -m py_compile scripts/epic-manifest.py"  // string; lightweight static check for the helper
+}
+```
+
+- **Consumers:** `scripts/validate.sh` (and forge-verify impl mode, CHECK-I11) run `testCommand`/`typeCheckCommand`; `stack` is read by stack-resolution to skip re-prompting. These fields are optional — absence falls back to the built-in defaults shown above. They do not affect epic resolution or any runtime gating logic.
 
 ## 3. Technical Decisions
 
@@ -79,7 +102,9 @@ Decision: the manifest stores **no** per-feature `status` field. `render-status`
 
 ### 3.4 Centralized name→directory resolution (REQ-DIR-03/04, REQ-SEC-02, REQ-COMPAT-01/02)
 
-Decision: a new `shared-conventions.md` block instructs every stage skill to obtain the feature directory via `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py resolve <name>` before any file I/O, replacing hardcoded `{specsDir}/{feature}/`. Resolution algorithm: (1) reject unsafe names; (2) look for `{specsDir}/{name}/.pipeline-state.json` (flat); (3) look for exactly one `{specsDir}/*/{name}/.pipeline-state.json` (nested); (4) more than one match anywhere → error (uniqueness violation, REQ-DIR-04); (5) zero matches → not-found error. Standalone features resolve to their flat path exactly as today (REQ-COMPAT-01/02). **Alternative considered:** prose dual-path globbing per skill — rejected; duplicates uniqueness/containment logic across 10 skills.
+Decision: a new `shared-conventions.md` block instructs every stage skill to obtain the feature directory via `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py resolve <name>` before any file I/O, replacing hardcoded `{specsDir}/{feature}/`. Resolution algorithm: (1) reject unsafe names; (2) look for `{specsDir}/{name}/.pipeline-state.json` (flat); (3) look for exactly one `{specsDir}/*/{name}/.pipeline-state.json` (nested); (4) more than one match anywhere → error (uniqueness violation, REQ-DIR-04); (5) zero matches → not-found error. Standalone features resolve to their flat path exactly as today (REQ-COMPAT-01/02). All globs the helper runs for resolution and uniqueness are **bounded to feature-shaped directories** — i.e. directories that directly contain a `.pipeline-state.json` — so non-feature subtrees (`.verification/`, `tests/`, fixture dirs) are never matched as features. **Alternative considered:** prose dual-path globbing per skill — rejected; duplicates uniqueness/containment logic across 10 skills.
+
+**Pre-existing name-collision handling (REQ-COMPAT-01, REQ-DIR-04):** an existing specs tree may already contain two features that share a bare name (e.g. a legacy flat feature and an unrelated nested one) — a state that predates epic support and that standalone resolution previously never noticed. To avoid regressing previously-working standalone commands, the resolver distinguishes *introducing* a collision from *encountering* a pre-existing one: `check-name` (run by `forge-0-epic` before creating a new member) hard-rejects any name that already exists anywhere, so no **new** collision can be introduced (REQ-DIR-04). `resolve` (run by every stage skill) reports an ambiguity error listing all matching paths **only** when the requested name genuinely matches more than one feature-shaped dir; a name that matches exactly one dir always resolves cleanly. A one-time uniqueness audit is surfaced (non-fatally) by `forge-verify` epic mode (CHECK-E08) and by the navigator rather than aborting unrelated standalone commands, so a latent pre-existing duplicate is reported for manual cleanup without breaking features whose names are unique.
 
 ### 3.5 Completion rule for orchestration (REQ-ORCH-01)
 
@@ -102,6 +127,8 @@ Each feature carries `dependsOn: [featureName,…]`. Derived sets computed by `r
 
 A single skill handles both: if no manifest exists for the named epic, run the **decomposition interview** (AskUserQuestion-driven) producing the manifest + EPIC.md + one charter per feature (short scope + contract obligations only — **no full PRDs**, REQ-EPIC-04). If a manifest exists, enter **edit mode** supporting add/remove/reorder features and change deps via the helper's atomic mutators, each re-validated for acyclicity, with a warning when a change affects in-flight or completed features (REQ-EPIC-06). Member feature subdirectories are created empty (with a `.pipeline-state.json` carrying the `epic` back-pointer) so the navigator and resolver can see them.
 
+**Observability / audit (REQ-OBS-01):** every helper mutator (`add-feature` / `remove-feature` / `reorder` / `set-dep` / `set-status`) bumps the manifest's top-level `updatedAt` to the current ISO-8601 timestamp as part of the same atomic write (§4.1). v1 records **only** the latest `updatedAt` (last-write timestamp) — no per-action audit history log is kept; a full audit trail is **deferred** as out of scope for v1 because the git history of `epic-manifest.json` already provides a per-commit record of every epic-affecting action (each mutation is committed, see below), making a separate in-manifest log redundant. After `forge-0-epic` creation and after each edit-mode mutation, and after the §5.3 handoff writes a feature's completion, the owning skill invokes the existing **git-commit-after-stage protocol** (shared-conventions) — gated on `gitCommitAfterStage` — staging `{specsDir}/{epic}/` so manifest + EPIC.md + member state changes are committed atomically with the standard `{commitPrefix}({feature}): …` message.
+
 ## 4. Data Model
 
 ### 4.1 `epic-manifest.json` (`references/epic-manifest-schema.json`)
@@ -114,7 +141,7 @@ A single skill handles both: if no manifest exists for the named epic, run the *
   "status": "active",                       // active | paused | abandoned | complete  (REQ-ORCH-05)
   "narrativeDoc": "EPIC.md",
   "createdAt": "ISO-8601",
-  "updatedAt": "ISO-8601",
+  "updatedAt": "ISO-8601",                  // bumped by every mutator on each atomic write (REQ-OBS-01, §3.7)
   "features": [
     {
       "name": "token-service",              // kebab-case, globally unique (REQ-DIR-04)
@@ -178,10 +205,11 @@ Per-feature `status` reuses the existing navigator status indicators (REQ-VIS-01
 - forge-1-prd: inject before the interview (Step 2).
 - forge-2-tech: inject after reading PRD (Step 1); add epic paths to the `forge-researcher` dispatch prompt; widen cross-feature glob from `{specsDir}/*/tech-spec.md` to also match `{specsDir}/*/*/tech-spec.md`.
 - forge-3-specs: inject after reading PRD+tech-spec (Step 1); thread relevant EPIC.md sections + direct-dep tech-specs into each `forge-spec-writer` prompt; widen `{specsDir}/*/[0-9][0-9]-*.md` glob to depth-2.
+- **Glob scoping:** the widened depth-2 globs are constrained to feature-shaped directories — only directories that contain a sibling `.pipeline-state.json` are treated as features. This prevents the depth-2 patterns from matching non-feature subtrees that legitimately hold matching filenames (e.g. a `tests/fixtures/…/tech-spec.md`, a numbered file under `.verification/`). In practice this means filtering glob results to paths whose parent dir also contains `.pipeline-state.json`, or delegating the listing to `epic-manifest.py` which already applies this bound.
 
 ### 5.3 forge-5-loop (REQ-ORCH-01/02/03/04)
 - **Dependency gate** — new Step 1b-epic, between the backlog-verify soft gate (1b) and the runner version gate (1c): if the feature has an `epic` back-pointer, read the manifest, compute unmet deps via the §3.5 rule; if any are unmet, `AskUserQuestion` warn with the list and require explicit confirmation to proceed (REQ-ORCH-04). Absent back-pointer → gate skips entirely (REQ-COMPAT-01).
-- **Handoff** — new Step 6, after pipeline state is written `complete`: if epic member, run `render-status`, announce completion, offer to run `forge-verify` impl on the just-finished feature (recommended, skippable, §3.5), then present the actionable next feature(s) via `AskUserQuestion`, offering to author the chosen one's PRD if absent (REQ-ORCH-02). Serial selection when multiple are unblocked (REQ-ORCH-03). No autonomous chaining (PRD Out of Scope).
+- **Handoff** — new Step 6, after pipeline state is written `complete`: if epic member, run `render-status`, announce completion, offer to run `forge-verify` impl on the just-finished feature (recommended, skippable, §3.5), then present the actionable next feature(s) via `AskUserQuestion`, offering to author the chosen one's PRD if absent (REQ-ORCH-02). Serial selection when multiple are unblocked (REQ-ORCH-03). No autonomous chaining (PRD Out of Scope). The completion write and any manifest `updatedAt` bump are committed via the git-commit-after-stage protocol when `gitCommitAfterStage` is true (REQ-OBS-01, §3.7).
 
 ### 5.4 forge navigator (REQ-VIS-01/02, REQ-ORCH-05)
 - Named-epic argument → epic dashboard from `render-status` (graph, per-feature stage/status, blocked vs actionable, next command).
@@ -195,7 +223,13 @@ New `epic` mode: loads manifest + EPIC.md + each member `.pipeline-state.json`; 
 After the per-feature completeness check, if the feature is an epic member and **all** members are complete (§3.5), offer (AskUserQuestion) to synthesize an epic-level architecture doc at `{docsDir}/{epic}/` in addition to per-feature docs. Source material: EPIC.md narrative, per-feature docs, manifest contracts. Per-feature `currentStage: complete` behavior unchanged.
 
 ### 5.7 Loop runner (rauf) — no change (REQ-COMPAT-03)
-Backlogs remain per-feature and independent; `backlogDir` derives from the resolved feature dir (nested or flat). Dependencies are resolved only at feature granularity, before the loop launches. No rauf or backlog-schema change.
+Backlogs remain per-feature and independent; dependencies are resolved only at feature granularity, before the loop launches. No rauf or backlog-schema change.
+
+**`backlogDir` resolution rule (preserves per-feature independence, REQ-COMPAT-03):**
+- When `backlogDir` is **unset** in `forge.config.json` (the default), the backlog lives at the resolved feature directory — `{resolvedFeatureDir}/backlog.json` — exactly as today, for both flat and nested features.
+- When `backlogDir` **is configured**, it is treated by the existing forge-4 skill as a single path. To keep each epic member's backlog independent, forge-4 composes a per-feature subpath: **`{backlogDir}/{feature}/`**. A bare configured `backlogDir` (shared across all features) would otherwise collide for multi-feature epics and violate REQ-COMPAT-03; composing the `{feature}` segment prevents that. Standalone features under a configured `backlogDir` likewise resolve to `{backlogDir}/{feature}/`, which is backward-compatible because each standalone feature already had a unique name.
+
+This rule is implemented once in `skills/forge-4-backlog/SKILL.md` after central directory resolution.
 
 ## 6. Error Handling
 
