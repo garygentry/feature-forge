@@ -316,3 +316,354 @@ def test_exit_code_contract(run_cli, fixtures_dir, idx: int) -> None:
     argv, expected = _exit_cases(fixtures_dir)[idx]
     result = run_cli(*argv)
     assert result.returncode == expected
+
+
+# ===========================================================================
+# Item 010b — status-derivation / render-status / atomic-write / performance
+# ===========================================================================
+#
+# Appended to the same file as 010a. Function names are disjoint, prefixed
+# ``test_status_*`` / ``test_render_*`` / ``test_atomic_*`` / ``test_perf_*``
+# / ``test_mutator_*``. 010b owns the mutator exit-code rows (§3.13) and the
+# §3.7–3.9 / §3.12 coverage; together with 010a every subcommand and every
+# FindingCode in 00 §4 is exercised.
+
+
+# ---------------------------------------------------------------------------
+# §3.7 Status derivation — every 00 §7 completion branch (REQ-STATE-02, REQ-ORCH-01)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "member, expect_complete",
+    [
+        ("a", False),   # loop incomplete
+        ("b", True),    # loop complete, no impl-verify
+        ("c", False),   # loop complete, impl findings-reported (unfixed)
+        ("d", True),    # loop complete, impl findings-applied
+        ("e", True),    # loop complete, impl passed
+    ],
+    ids=["a-loop-incomplete", "b-no-implverify", "c-findings-reported",
+         "d-findings-applied", "e-passed"],
+)
+def test_status_derive_branches(
+    helper_module, fixtures_dir, member: str, expect_complete: bool
+) -> None:
+    """Each 00 §7 completion branch derives the correct complete-for-orchestration value."""
+    feature_dir = fixtures_dir / "status-derivation" / "lifecycle" / member
+    feature_status = helper_module.derive_status(feature_dir)
+    # The coarse `status` is "complete" exactly when complete-for-orchestration.
+    assert (feature_status["status"] == "complete") is expect_complete
+
+
+def test_status_is_complete_for_orchestration_all_branches(helper_module) -> None:
+    """The completion predicate (00 §7) is exact across all five inputs."""
+    f = helper_module.is_complete_for_orchestration
+    # loop incomplete -> not complete
+    assert f({"stages": {"forge-5-loop": {"status": "in_progress"}}}) is False
+    # loop complete, no impl-verify -> complete
+    assert f({"stages": {"forge-5-loop": {"status": "complete"}}}) is True
+    # loop complete + impl findings-reported -> NOT complete
+    assert f({"stages": {
+        "forge-5-loop": {"status": "complete"},
+        "forge-verify-impl": {"status": "findings-reported"},
+    }}) is False
+    # loop complete + impl findings-applied -> complete
+    assert f({"stages": {
+        "forge-5-loop": {"status": "complete"},
+        "forge-verify-impl": {"status": "findings-applied"},
+    }}) is True
+    # loop complete + impl passed -> complete
+    assert f({"stages": {
+        "forge-5-loop": {"status": "complete"},
+        "forge-verify-impl": {"status": "passed"},
+    }}) is True
+
+
+def test_status_reflects_edited_pipeline_state(run_cli, fixture_copy) -> None:
+    """Editing a member's pipeline-state changes render-status with no refresh step (REQ-STATE-02)."""
+    specs = fixture_copy("status-derivation")
+    epic = "lifecycle"
+    before = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+
+    state = specs / epic / "a" / ".pipeline-state.json"
+    data = json.loads(state.read_text())
+    data["stages"]["forge-5-loop"] = {"status": "complete"}
+    state.write_text(json.dumps(data))
+
+    after = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert before != after   # live re-derivation, no cache
+    a_after = next(f for f in after["features"] if f["name"] == "a")
+    assert a_after["status"] == "complete"
+
+
+def test_status_corrupt_member_state_downgrades_not_started(run_cli, fixture_copy) -> None:
+    """A corrupt member .pipeline-state.json downgrades that one feature, no crash."""
+    specs = fixture_copy("status-derivation")
+    epic = "lifecycle"
+    (specs / epic / "e" / ".pipeline-state.json").write_text('{"stages": {oops')
+
+    result = run_cli("render-status", epic, "--specs-dir", str(specs), "--json")
+    assert result.returncode == 0
+    assert "Traceback" not in result.stderr
+    e_row = next(f for f in result.json()["features"] if f["name"] == "e")
+    assert e_row["status"] == "not-started"
+
+
+# ---------------------------------------------------------------------------
+# §3.9 render-status correctness — derived sets (REQ-ORCH-03)
+# ---------------------------------------------------------------------------
+
+
+def _complete_names(out: dict) -> set[str]:
+    return {f["name"] for f in out["features"] if f["status"] == "complete"}
+
+
+def test_render_status_derived_sets(run_cli, fixture_copy) -> None:
+    """actionable/parallelEligible/rollup are computed over the graph + §7 status."""
+    specs = fixture_copy("status-derivation")
+    out = run_cli("render-status", "lifecycle", "--specs-dir", str(specs), "--json").json()
+
+    # actionable features are never themselves complete (00 §8).
+    assert set(out["actionable"]).isdisjoint(_complete_names(out))
+    # parallel-eligible is a subset of actionable (00 §8).
+    assert set(out["parallelEligible"]) <= set(out["actionable"])
+    # rollup counts.
+    assert out["rollup"]["total"] == len(out["features"])
+    assert out["rollup"]["complete"] == len(_complete_names(out))
+    # nextCommand points at a forge stage when work remains.
+    if out["actionable"]:
+        assert out["nextCommand"].startswith("/feature-forge:")
+
+
+def test_render_status_blocked_lists_unmet_deps(run_cli, fixture_copy) -> None:
+    """A feature with an incomplete dependency is blocked with its unmet deps listed."""
+    specs = fixture_copy("status-derivation")
+    out = run_cli("render-status", "lifecycle", "--specs-dir", str(specs), "--json").json()
+    blocked = [f for f in out["features"] if f["blocked"]]
+    assert blocked   # 'b' depends on the incomplete 'a'
+    assert all(f["unmetDeps"] for f in blocked)
+
+
+# ---------------------------------------------------------------------------
+# §3.8 Atomic-write behavior (REQ-ROBUST-03)
+# ---------------------------------------------------------------------------
+
+
+def test_atomic_write_replaces_cleanly(helper_module, tmp_path) -> None:
+    """atomic_write produces valid JSON and leaves no temp file behind (REQ-ROBUST-03)."""
+    target = tmp_path / "epic-manifest.json"
+    target.write_text('{"schemaVersion": 1, "old": true}')
+
+    helper_module.atomic_write(target, {"schemaVersion": 1, "new": True})
+
+    assert json.loads(target.read_text()) == {"schemaVersion": 1, "new": True}
+    leftovers = [p for p in tmp_path.iterdir() if p != target]
+    assert leftovers == []
+
+
+def test_atomic_write_interrupt_leaves_original_intact(
+    helper_module, tmp_path, monkeypatch
+) -> None:
+    """An interrupted write (os.replace raises) never corrupts the original (REQ-ROBUST-03)."""
+    import os
+
+    target = tmp_path / "epic-manifest.json"
+    original = '{"schemaVersion": 1, "old": true}'
+    target.write_text(original)
+    original_bytes = target.read_bytes()
+
+    def boom(src, dst):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "replace", boom)
+    with pytest.raises(KeyboardInterrupt):
+        helper_module.atomic_write(target, {"schemaVersion": 1, "new": True})
+
+    # The original manifest is byte-identical afterward.
+    assert target.read_bytes() == original_bytes
+
+
+# ---------------------------------------------------------------------------
+# §3.13 Mutator exit-code rows — clean->0, cycle/dangling->1 (byte-identical),
+#        unsafe/bad-value->2 (00 §9). Exercises every mutator subcommand plus
+#        render-status.
+# ---------------------------------------------------------------------------
+
+
+def _manifest_path(specs: Path) -> Path:
+    return specs / "auth-overhaul" / "epic-manifest.json"
+
+
+def test_mutator_add_feature_clean_exit_0(run_cli, fixture_copy) -> None:
+    """add-feature on a clean new leaf exits 0 and the manifest still validates."""
+    specs = fixture_copy("valid-epic")
+    added = run_cli(
+        "add-feature", "auth-overhaul", "metrics",
+        "--charter", "Metrics leaf.", "--specs-dir", str(specs),
+    )
+    assert added.returncode == 0
+    again = run_cli("validate", "auth-overhaul", "--specs-dir", str(specs), "--json")
+    assert again.returncode == 0 and again.json()["valid"] is True
+
+
+def test_mutator_set_dep_cycle_refused_byte_identical(run_cli, fixture_copy) -> None:
+    """set-dep introducing a cycle exits 1 and leaves the file byte-identical (no write)."""
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    before = manifest.read_bytes()
+
+    # config-store <- token-service <- api-gateway already; make config-store
+    # depend on api-gateway to close the loop.
+    result = run_cli(
+        "set-dep", "auth-overhaul", "config-store",
+        "--depends-on", "api-gateway", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 1
+    assert manifest.read_bytes() == before   # refusal leaves it untouched
+
+
+def test_mutator_remove_feature_dangling_refused_byte_identical(run_cli, fixture_copy) -> None:
+    """remove-feature that would orphan a dependsOn refuses (exit 1), file byte-identical."""
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    before = manifest.read_bytes()
+
+    # token-service depends on config-store; removing config-store would dangle.
+    result = run_cli(
+        "remove-feature", "auth-overhaul", "config-store", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 1
+    codes_in_stderr = "dangling-ref" in result.stderr
+    assert codes_in_stderr
+    assert manifest.read_bytes() == before
+
+
+def test_mutator_remove_feature_clean_exit_0(run_cli, fixture_copy) -> None:
+    """remove-feature of an independent leaf exits 0 and re-validates clean."""
+    specs = fixture_copy("valid-epic")
+    result = run_cli(
+        "remove-feature", "auth-overhaul", "audit-log", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 0
+    again = run_cli("validate", "auth-overhaul", "--specs-dir", str(specs), "--json")
+    assert again.returncode == 0 and again.json()["valid"] is True
+
+
+def test_mutator_reorder_bad_permutation_exit_1(run_cli, fixture_copy) -> None:
+    """reorder with an order that is not an exact permutation of members exits 1."""
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    before = manifest.read_bytes()
+    result = run_cli(
+        "reorder", "auth-overhaul",
+        "--order", "config-store,token-service", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 1
+    assert manifest.read_bytes() == before
+
+
+def test_mutator_reorder_clean_exit_0(run_cli, fixture_copy) -> None:
+    """reorder with an exact permutation exits 0 and re-validates clean."""
+    specs = fixture_copy("valid-epic")
+    result = run_cli(
+        "reorder", "auth-overhaul",
+        "--order", "audit-log,config-store,token-service,api-gateway",
+        "--specs-dir", str(specs),
+    )
+    assert result.returncode == 0
+    again = run_cli("validate", "auth-overhaul", "--specs-dir", str(specs), "--json")
+    assert again.returncode == 0 and again.json()["valid"] is True
+
+
+def test_mutator_set_status_bad_value_exit_2(run_cli, fixture_copy) -> None:
+    """set-status with an invalid value exits 2 via argparse choices."""
+    specs = fixture_copy("valid-epic")
+    result = run_cli(
+        "set-status", "auth-overhaul", "--status", "frozen", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 2
+
+
+def test_mutator_set_status_valid_exit_0(run_cli, fixture_copy) -> None:
+    """set-status with a valid value exits 0 and updates the epic status."""
+    specs = fixture_copy("valid-epic")
+    result = run_cli(
+        "set-status", "auth-overhaul", "--status", "paused", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 0
+    out = run_cli("render-status", "auth-overhaul", "--specs-dir", str(specs), "--json").json()
+    assert out["status"] == "paused"
+
+
+def test_mutator_unsafe_name_exit_2(run_cli, fixture_copy) -> None:
+    """A mutator given an unsafe epic-name arg exits 2 before any write (REQ-SEC-02)."""
+    specs = fixture_copy("valid-epic")
+    result = run_cli(
+        "set-dep", "../escape", "config-store",
+        "--depends-on", "token-service", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 2
+
+
+# ---------------------------------------------------------------------------
+# §3.12 Performance sanity — 20 features validate + render (REQ-ROBUST-01)
+# ---------------------------------------------------------------------------
+
+
+def _make_20_feature_epic(specs: Path) -> str:
+    """Build a 20-feature acyclic epic on disk; return the epic name."""
+    epic = "big-epic"
+    epic_dir = specs / epic
+    features = []
+    for i in range(20):
+        name = f"feat-{i:02d}"
+        (epic_dir / name).mkdir(parents=True, exist_ok=True)
+        (epic_dir / name / ".pipeline-state.json").write_text(
+            json.dumps({"epic": epic, "currentStage": "forge-1-prd", "stages": {}})
+        )
+        features.append({
+            "name": name,
+            "charter": "x",
+            "dependsOn": [f"feat-{i - 1:02d}"] if i else [],
+            "exposes": [],
+            "consumes": [],
+        })
+    (epic_dir / "epic-manifest.json").write_text(json.dumps({
+        "schemaVersion": 1,
+        "epic": epic,
+        "description": "x",
+        "status": "active",
+        "narrativeDoc": "EPIC.md",
+        "createdAt": "2026-06-12T00:00:00Z",
+        "updatedAt": "2026-06-12T00:00:00Z",
+        "features": features,
+    }))
+    (epic_dir / "EPIC.md").write_text("# big-epic\n")
+    return epic
+
+
+def test_perf_20_feature_validate_render(run_cli, helper_module, tmp_path) -> None:
+    """validate + render-status on a 20-feature epic is fast (REQ-ROBUST-01).
+
+    The subprocess bound uses the spec's <1.5s fallback to absorb interpreter-
+    startup jitter; the in-process render_status() call (the helper's actual
+    O(V+E) work, no subprocess) is additionally asserted under 0.1s.
+    """
+    import time
+
+    specs = tmp_path / "specs"
+    epic = _make_20_feature_epic(specs)
+
+    start = time.perf_counter()
+    v = run_cli("validate", epic, "--specs-dir", str(specs), "--json")
+    r = run_cli("render-status", epic, "--specs-dir", str(specs), "--json")
+    elapsed = time.perf_counter() - start
+
+    assert v.returncode == 0 and r.returncode == 0
+    assert elapsed < 1.5
+
+    # In-process: the helper's own work is negligible.
+    in_start = time.perf_counter()
+    helper_module.render_status(specs / epic, specs)
+    assert (time.perf_counter() - in_start) < 0.1
