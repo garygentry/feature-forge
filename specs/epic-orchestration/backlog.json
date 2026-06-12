@@ -16,8 +16,8 @@
         "schemaVersion is const 1, narrativeDoc is const \"EPIC.md\", and status enum is exactly active|paused|abandoned|complete",
         "bash scripts/validate.sh passes (the new file is valid JSON)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:11:02.817Z",
       "dependsOn": [],
       "notes": "Stack: prose plugin + stdlib-only Python. No jsonschema library is used at runtime — item 006 hand-rolls a checker over THIS schema, so keep the structure simple and explicit (required arrays, type/enum/const, additionalProperties:false). The schema is consumed by epic-manifest.py validate and forge-verify epic mode CHECK-E01.",
       "estimatedIterations": 1,
@@ -69,7 +69,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001"],
+      "dependsOn": [
+        "001"
+      ],
       "notes": "The filename has a hyphen, so tests load it via importlib (05 §2.3). Subcommand stubs are intentional — items 004-008 fill them in incrementally; keep validate.sh green at every step (py_compile is the gate). Re-state the TypedDicts verbatim per 02 §1.1; do not import them from anywhere.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -95,7 +97,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["003"],
+      "dependsOn": [
+        "003"
+      ],
       "notes": "The spec gives the exact iterative-DFS code in 02 §4 — follow it; the stack holds (node, next-neighbor-index) tuples. Complexity must stay O(V+E) so the 20-feature perf test (item 010b) passes comfortably.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -121,7 +125,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["003"],
+      "dependsOn": [
+        "003"
+      ],
       "notes": "Resolution must not engage any epic logic for standalone names (the flat match in step 2 short-circuits). feature_dirs descends exactly one level — do not recurse deeper. Stdout carries only the resolved path so `DIR=$(... resolve x)` works; all diagnostics go to stderr.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -147,7 +153,12 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001", "003", "004", "005"],
+      "dependsOn": [
+        "001",
+        "003",
+        "004",
+        "005"
+      ],
       "notes": "_validate_dict is the shared core — item 008's mutators re-run it on the EDITED dict before writing. Keep the schema checker minimal but strict on the REQ-STATE-02 guard (no per-feature status) and required-keys/enums. Message shapes are normative-by-shape per 00 §4.2, not exact strings.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -173,7 +184,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["005", "006"],
+      "dependsOn": [
+        "005",
+        "006"
+      ],
       "notes": "render-status is the single implementation of the completion predicate reused by the forge-5 dependency gate and handoff (item 016) and the navigator/docs (017/019). parallelEligible uses the transitive closure of dependsOn over the actionable subset — trivial at <=20 nodes.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -199,7 +213,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["006"],
+      "dependsOn": [
+        "006"
+      ],
       "notes": "Mutators re-validate the edited dict via _validate_dict (item 006) only — they do NOT call render-status. There is intentionally NO contract-setting mutator and no --exposes-json/--consumes-json flag (02 §7, 03 §7.3): add-feature seeds empty contracts; the forge-0-epic skill populates exposes/consumes by composing the manifest entry then re-running validate. Byte-identical-on-refusal is the key invariant the interrupt-safety test (item 010b) leans on.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -223,7 +239,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["007", "008"],
+      "dependsOn": [
+        "007",
+        "008"
+      ],
       "notes": "Fixtures are read-only templates; tests that mutate copy them into tmp_path via fixture_copy. The complete helper must exist — render-status (007) and the mutators (008) — so the 'good' fixtures can be confirmed valid and so the render-status/status-derivation tests in item 010b have their subject implemented. conftest.py source is given verbatim in 05 §2.3 — transcribe it.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -247,7 +266,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["009"],
+      "dependsOn": [
+        "009"
+      ],
       "notes": "Where 02-manifest-helper-cli.md fixes an exact message/flag that differs from an illustrative assertion in 05 §3, 02 wins — assert on finding CODES and message SHAPE (e.g. the '->' arrow in cycle messages), not brittle exact strings. This item and 010b co-author one file; keep function names disjoint.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -273,7 +294,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["009"],
+      "dependsOn": [
+        "009"
+      ],
       "notes": "Co-authors tests/test_epic_manifest.py with item 010a — append functions, do not rewrite 010a's. Together 010a+010b must exercise EVERY subcommand and every FindingCode in 00 §4 (010a owns the finding-code coverage; 010b owns the mutator-exit-code rows and the status/render/atomic/perf coverage).",
       "estimatedIterations": 1,
       "model": "opus",
@@ -298,7 +321,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["010a", "010b"],
+      "dependsOn": [
+        "010a",
+        "010b"
+      ],
       "notes": "WARNINGS is already declared and surfaced in validate.sh's success summary, so SKIP lines report without failing. Transcribe the exact bash from 05 §5; the [ -f \"$HELPER\" ] guard keeps the file green during incremental authoring. Depends on both test items (010a, 010b) so the suite it runs is complete.",
       "estimatedIterations": 1,
       "model": "sonnet",
@@ -323,7 +349,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["008"],
+      "dependsOn": [
+        "008"
+      ],
       "notes": "Mirror the structure/voice of an existing stage skill (read skills/forge-1-prd/SKILL.md). Contracts have no mutator — at creation the skill edits exposes/consumes directly in the composed manifest entry then re-runs validate (03 §7.3). Item 012b appends the edit branch to this same file; leave a clearly-marked edit-mode placeholder section it can expand.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -349,7 +377,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["012a"],
+      "dependsOn": [
+        "012a"
+      ],
       "notes": "Appends to the file authored in 012a — do not duplicate the frontmatter or rewrite the creation branch. .epic-state.json schema is in 03 §8.2 (written atomically by the skill via temp+os.replace, NOT by the helper). Every mutation is committed so git history is the audit trail.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -375,7 +405,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["005", "007"],
+      "dependsOn": [
+        "005",
+        "007"
+      ],
       "notes": "This is the keystone for items 014-019 — they all 'call the §3 block'. Depends on resolve (005) and render-status (007) existing so the documented invocations are real. Markdown only; no code.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -399,7 +432,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["013"],
+      "dependsOn": [
+        "013"
+      ],
       "notes": "Markdown-only edits to four existing files. The resolution and context-injection blocks they call are authored in item 013. Keep every change gated so REQ-COMPAT-01 holds — the standalone code path must be untouched in effect.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -433,7 +468,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["013"],
+      "dependsOn": [
+        "013"
+      ],
       "notes": "Markdown-only edit to one file. Item 016 owns the matching forge-5-loop backlog-path change, so item 016 dependsOn 015 to keep the two paths consistent. Do NOT change the backlog schema or rauf's CLI surface.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -457,7 +494,11 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["013", "007", "015"],
+      "dependsOn": [
+        "013",
+        "007",
+        "015"
+      ],
       "notes": "Markdown-only edit to one file. Depends on render-status (007) for the gate/handoff data, the shared-conventions blocks (013), and item 015 for the agreed per-feature backlog path. Use the §7 completion predicate exclusively via render-status — never re-derive completion in prose.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -481,7 +522,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["013", "007"],
+      "dependsOn": [
+        "013",
+        "007"
+      ],
       "notes": "Markdown-only edit to one file. Reuse the existing status indicators (the navigator already defines the per-stage emoji set). Depends on render-status (007) + the shared-conventions resolution block (013).",
       "estimatedIterations": 1,
       "model": "opus",
@@ -505,7 +549,11 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["013", "006", "002"],
+      "dependsOn": [
+        "013",
+        "006",
+        "002"
+      ],
       "notes": "Markdown-only edits to two forge-verify files. Depends on validate (006) for E01/E02/E03/E08 delegation, the patched pipeline-state schema (002) for the forge-verify-epic stage key, and the shared-conventions blocks (013) for resolution. The .epic-state.json schema is given in 03 §8.2.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -529,7 +577,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["013", "007"],
+      "dependsOn": [
+        "013",
+        "007"
+      ],
       "notes": "Markdown-only edits to two files. Depends on render-status (007) for the completeness gate and the shared-conventions resolution block (013).",
       "estimatedIterations": 1,
       "model": "opus",
