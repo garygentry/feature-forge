@@ -264,8 +264,8 @@
         "The §3.13 exit-code contract is asserted per (subcommand, outcome) for the resolve/validate/check-name rows",
         "bash scripts/validate.sh passes with pytest installed (runs the suite)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-12T22:45:03.019Z",
       "dependsOn": [
         "009"
       ],
