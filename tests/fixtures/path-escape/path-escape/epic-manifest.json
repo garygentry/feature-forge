@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "epic": "path-escape",
+  "description": "Manifest carrying an unsafe feature name and an escaping consumes.from.",
+  "status": "active",
+  "narrativeDoc": "EPIC.md",
+  "createdAt": "2026-06-12T00:00:00Z",
+  "updatedAt": "2026-06-12T00:00:00Z",
+  "features": [
+    {
+      "name": "../escape",
+      "charter": "Feature with an unsafe name.",
+      "dependsOn": [],
+      "exposes": [],
+      "consumes": []
+    },
+    {
+      "name": "normal",
+      "charter": "Feature that consumes from an escaping path.",
+      "dependsOn": [],
+      "exposes": [],
+      "consumes": [
+        {
+          "from": "../x",
+          "name": "y",
+          "summary": "consumed from outside the tree"
+        }
+      ]
+    }
+  ]
+}

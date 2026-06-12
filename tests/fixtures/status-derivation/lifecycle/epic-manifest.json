@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "epic": "lifecycle",
+  "description": "Synthetic epic exercising every completion-for-orchestration branch.",
+  "status": "active",
+  "narrativeDoc": "EPIC.md",
+  "createdAt": "2026-06-12T00:00:00Z",
+  "updatedAt": "2026-06-12T00:00:00Z",
+  "features": [
+    {
+      "name": "a",
+      "charter": "Loop incomplete.",
+      "dependsOn": [],
+      "exposes": [],
+      "consumes": []
+    },
+    {
+      "name": "b",
+      "charter": "Loop complete, no impl-verify; depends on a.",
+      "dependsOn": [
+        "a"
+      ],
+      "exposes": [],
+      "consumes": []
+    },
+    {
+      "name": "c",
+      "charter": "Loop complete, impl findings-reported; depends on d.",
+      "dependsOn": [
+        "d"
+      ],
+      "exposes": [],
+      "consumes": []
+    },
+    {
+      "name": "d",
+      "charter": "Loop complete, impl findings-applied.",
+      "dependsOn": [],
+      "exposes": [],
+      "consumes": []
+    },
+    {
+      "name": "e",
+      "charter": "Loop complete, impl passed.",
+      "dependsOn": [],
+      "exposes": [],
+      "consumes": []
+    }
+  ]
+}

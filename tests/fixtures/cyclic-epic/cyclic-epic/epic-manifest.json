@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "epic": "cyclic-epic",
+  "description": "An epic whose dependency graph contains a cycle (token -> gateway -> token).",
+  "status": "active",
+  "narrativeDoc": "EPIC.md",
+  "createdAt": "2026-06-12T00:00:00Z",
+  "updatedAt": "2026-06-12T00:00:00Z",
+  "features": [
+    {
+      "name": "token-service",
+      "charter": "Issues tokens.",
+      "dependsOn": [
+        "api-gateway"
+      ],
+      "exposes": [],
+      "consumes": []
+    },
+    {
+      "name": "api-gateway",
+      "charter": "Front door.",
+      "dependsOn": [
+        "token-service"
+      ],
+      "exposes": [],
+      "consumes": []
+    }
+  ]
+}
