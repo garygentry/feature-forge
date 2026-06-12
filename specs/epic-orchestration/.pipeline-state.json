@@ -56,11 +56,16 @@
     },
     "forge-verify-specs": {
       "status": "findings-applied",
-      "findingsFile": ".verification/VERIFY-specs-2026-06-12.md",
-      "findingsCount": 8,
+      "findingsFile": ".verification/VERIFY-specs-2026-06-12-r2.md",
+      "findingsCount": 5,
       "verifiedAt": "2026-06-12T00:00:00Z",
       "fixedAt": "2026-06-12T00:00:00Z",
-      "commitHash": "869159c"
+      "previousRound": {
+        "findingsFile": ".verification/VERIFY-specs-2026-06-12.md",
+        "findingsCount": 8,
+        "fixedAt": "2026-06-12T00:00:00Z",
+        "commitHash": "869159c"
+      }
     },
     "forge-4-backlog": { "status": "pending" },
     "forge-5-loop": { "status": "pending" },

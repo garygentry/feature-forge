@@ -110,7 +110,7 @@ the layout is:
 scripts/epic-manifest.py
 ├── module docstring                      # usage + exit-code contract (00 §9)
 ├── constants                             # SAFE_NAME_RE, *_FILENAME (00 §6)
-├── Finding / typed structures            # mirror 00 §4, §5
+├── Finding / typed structures            # mirror 00 §4, §5; Rollup/RenderStatus per 02 §8.4
 ├── safety layer
 │   ├── assert_safe_name(name) -> None
 │   └── contained_path(base, *parts) -> Path
@@ -124,8 +124,9 @@ scripts/epic-manifest.py
 │   ├── feature_dirs(specs_dir) -> dict[str, list[Path]]   # name -> dirs (uniqueness)
 │   └── resolve(name, specs_dir) -> Path
 ├── status derivation
-│   ├── derive_status(feature_dir) -> DerivedStatus        # §7 completion rule
-│   └── render_status(epic_dir, specs_dir) -> dict          # 00 §5, §8
+│   ├── derive_status(feature_dir) -> FeatureStatus        # 00 §5
+│   ├── is_complete_for_orchestration(state) -> bool       # 00 §7 completion rule
+│   └── render_status(epic_dir, specs_dir) -> RenderStatus  # 00 §5, §8
 ├── validation
 │   └── validate(epic_dir, specs_dir) -> list[Finding]
 ├── mutators

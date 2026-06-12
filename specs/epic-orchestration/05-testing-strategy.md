@@ -424,8 +424,11 @@ def test_derive_status_branches(
 ) -> None:
     """Each §7 completion branch derives the correct complete-for-orchestration value."""
     feature_dir = fixtures_dir / "status-derivation" / "lifecycle" / member
-    status = helper_module.derive_status(feature_dir)
-    assert (status == "complete") is expect_complete
+    # derive_status returns a FeatureStatus dict (00 §5); its coarse `status` field
+    # is the DerivedStatus literal. Across these branches the derived status is
+    # "complete" exactly when the feature is complete-for-orchestration (00 §7).
+    feature_status = helper_module.derive_status(feature_dir)
+    assert (feature_status["status"] == "complete") is expect_complete
 ```
 
 A live acceptance check for REQ-STATE-02 (edit pipeline-state, re-render, no refresh step):

@@ -386,7 +386,8 @@ construction:
   feature, so the runner has no awareness of epics at all.
 
 Because all three hold, the runner contract and backlog schema are provably unchanged
-(REQ-COMPAT-03). This is asserted in the §11 compatibility verification (item 11).
+(REQ-COMPAT-03). This is asserted in this document's Verification section, item 11
+(Compatibility, REQ-COMPAT-01/02/03).
 
 ---
 

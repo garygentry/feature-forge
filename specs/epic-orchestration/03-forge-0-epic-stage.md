@@ -496,8 +496,15 @@ bump it manually — it is the mutator's responsibility. For the initial creatio
   }
   ```
 
-  Writers use the same atomic-write helper as the manifest (02 §3.2). `forge-0-epic` does
-  **not** create this file (no epic-scoped stage runs during creation/edit); it appears
+  **Write mechanism.** `.epic-state.json` is written by the **prose stage skill** that owns
+  the entry (currently forge-verify epic mode), **not** by `epic-manifest.py` — the helper
+  exposes no subcommand that writes this file, and its `atomic_write` (02 §3.3) is an
+  internal function with no CLI entry point. The skill writes the file directly using the
+  same atomic pattern it already uses for `.pipeline-state.json`: serialize to a sibling
+  temp file, then `os.replace()` it into place (atomic on POSIX, mirroring 02 §3.3). On an
+  I/O failure the skill reports the error and leaves any prior `.epic-state.json` intact
+  (never a partial write); a missing file is simply created on first write. `forge-0-epic`
+  does **not** create this file (no epic-scoped stage runs during creation/edit); it appears
   only once forge-verify epic mode runs. The git-commit step (§8.3) stages the whole epic
   subtree, so `.epic-state.json` is captured automatically when present.
 - **Member-level (creation):** each member's `.pipeline-state.json` records
