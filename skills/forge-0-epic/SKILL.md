@@ -292,31 +292,221 @@ now self-contained: manifest + EPIC.md + one subdirectory per member.
 
 ## Edit Mode
 
-<!-- EDIT-MODE PLACEHOLDER — fleshed out by backlog item 012b (03 §7, §8, §9).
-     Entered from Step 0 when {specsDir}/{epic}/epic-manifest.json already EXISTS. -->
+Entered from Step 0 when `{specsDir}/{epic}/epic-manifest.json` already exists (the **EXISTS**
+branch). The edit branch mutates the manifest **only** through helper mutators — the skill never
+hand-rolls an in-place write. Every mutator is atomic (temp file + `os.replace`) and re-validates
+the edited graph internally, so a refused write leaves the manifest **byte-identical**. Every
+question goes through `AskUserQuestion`.
 
-Entered from Step 0 when `{specsDir}/{epic}/epic-manifest.json` already exists.
+### Step E1 — Load + Validate, Refuse if Invalid
 
-Before offering any edit, validate the existing manifest and **refuse all mutation** if it is
-invalid:
+Before offering any edit, validate the existing manifest:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}" --json
 ```
 
-- Exit `0` → proceed to offer edit operations (via `AskUserQuestion`), each mapping to a helper
-  mutator: `add-feature`, `remove-feature`, `reorder`, `set-dep`, `set-status`. For
-  `add-feature`, run `check-name` first and elicit charter + `exposes`/`consumes` + `dependsOn`
-  exactly as in C3/C4, then populate contracts by editing the composed entry and re-running
-  `validate` (no contract mutator). Surface every mutator finding verbatim; atomic refusal
-  leaves the manifest byte-identical. Patch only the affected EPIC.md sections.
-- Exit `1`/`2` → surface **every** finding verbatim and refuse all mutation until the user
-  repairs the manifest. Never auto-repair.
+- Exit `0` → the manifest is well-formed; proceed to E2.
+- Exit `1` or `2` → the manifest is corrupt or invalid (hand-edited, `corrupt-json`, `cycle`,
+  `dangling-ref`, `duplicate-name`, `cached-status`, `unsafe-name`, …). Surface **every**
+  `findings[]` entry **verbatim**, then **refuse ALL mutation** until the user repairs the
+  manifest by hand. **Never auto-repair**, never offer an edit operation, and never proceed past
+  this gate. Tell the user what is wrong and STOP.
 
-> The full edit branch (operation selection E2, mutator application E3, the `render-status`
-> impact warning E4 for in-flight/completed features, EPIC.md patching E5, the manual-relocation
-> warning on `remove-feature`, the `.epic-state.json` note, and the error-handling table) is
-> specified by item 012b and appended here.
+### Step E2 — Choose Operation
+
+Use `AskUserQuestion` to offer the edit operations, each mapping to one helper mutator:
+
+| Operation | Helper subcommand |
+|-----------|-------------------|
+| Add a feature | `add-feature` |
+| Remove a feature | `remove-feature` |
+| Reorder features | `reorder` |
+| Change a dependency edge | `set-dep` |
+| Change epic lifecycle status | `set-status` |
+
+For **add-feature**, first run `check-name "{feature}"` (exactly as C2) so no new duplicate is
+introduced — surface a `duplicate-name`/`unsafe-name` finding verbatim and re-prompt — then
+elicit the new feature's **charter** + **`exposes`/`consumes`** + **`dependsOn`** exactly as in
+C3/C4.
+
+### Step E3 — Apply via Helper Mutator (re-validated)
+
+Issue the chosen mutator. Each writes atomically and re-runs full validation internally, refusing
+the write if it would introduce a cycle, dangling ref, duplicate, or schema violation. The exact
+flag surface (owned by 02 §7):
+
+```bash
+# Add a feature — seeds EMPTY exposes/consumes; contracts are populated below.
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" add-feature "{epic}" "{feature}" \
+  --charter "…" --specs-dir "{specsDir}" [--depends-on a,b]
+
+# Remove a feature (drops its manifest entry; directory is left in place — see E3 note).
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" remove-feature "{epic}" "{feature}" \
+  --specs-dir "{specsDir}"
+
+# Reorder the features[] sequence (must be an exact permutation of current member names).
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" reorder "{epic}" \
+  --order "feat-a,feat-c,feat-b" --specs-dir "{specsDir}"
+
+# Change a dependency edge (--depends-on "" clears it).
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" set-dep "{epic}" "{feature}" \
+  --depends-on "config-store,token-service" --specs-dir "{specsDir}"
+
+# Change epic lifecycle status (active|paused|abandoned|complete).
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" set-status "{epic}" \
+  --status paused --specs-dir "{specsDir}"
+```
+
+- Exit `0` → the mutator wrote the manifest and bumped `updatedAt`. Proceed to E4/E5.
+- Exit `1` → surface the `findings[]` **verbatim** and **abort the edit**. The manifest is
+  unchanged (the write was refused atomically — byte-identical). Loop back to E2 or re-elicit.
+- Exit `2` → unsafe name / missing|corrupt manifest / bad `--status` value / write failure.
+  Surface and STOP.
+
+**Contracts have no mutator.** `add-feature` seeds empty `exposes`/`consumes`. To populate the
+new feature's contracts, edit its `exposes`/`consumes` arrays **directly in the composed manifest
+entry** (exactly as creation C5 does), then re-run `validate "{epic}" --json` to confirm — there
+is intentionally no `--exposes-json`/`--consumes-json` flag.
+
+**remove-feature leaves the member directory in place (§7.5).** The mutator drops only the
+manifest entry. The skill does **not** delete or relocate `{specsDir}/{epic}/{feature}/`. WARN the
+user verbatim:
+
+> Removed `{feature}` from the manifest. Its directory `{specsDir}/{epic}/{feature}/` is left in
+> place; move it to `{specsDir}/{feature}/` by hand if you want it as a standalone feature.
+> Relocation is manual — there is no migration tooling.
+
+The orphaned subdir still holds a `.pipeline-state.json` with an `epic` back-pointer the manifest
+no longer lists; per the conflict rule the **manifest wins**, and `forge-verify` epic mode
+CHECK-E07 reports the inconsistency non-fatally. The skill does **not** silently edit the orphaned
+state file.
+
+### Step E4 — Impact Warning (in-flight / completed features)
+
+Before applying — or immediately after eliciting — a mutation that affects a feature whose derived
+status is **not** `not-started`, warn the user. Read the **live** status (never re-derive
+completion in prose):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
+```
+
+If the operation removes, reorders-around, or re-deps a feature whose derived status is
+`in-progress` or `complete`, use `AskUserQuestion` with an explicit warning naming the affected
+in-flight/completed feature(s) and **require confirmation** before applying. Example: "`token-service`
+is already in-progress (forge-3-specs). Removing `config-store`, which it consumes `JWT_SECRET`
+from, may invalidate its in-flight specs. Proceed?" If `render-status` exits `≥ 1`, surface the
+findings and STOP (do not mutate over an invalid graph).
+
+### Step E5 — Patch EPIC.md
+
+Patch **only** the affected feature/Contracts section(s) — the section(s) for the added, removed,
+or changed feature and any feature whose `dependsOn`/`consumes` changed — applying the §C6 mirror
+rule (one bullet per `exposes`/`consumes` entry). **Full regeneration happens only on explicit
+user request**: offer it via `AskUserQuestion` but default to the targeted patch. The skill keeps
+EPIC.md in sync but does not itself diff it against the manifest — drift detection is `forge-verify`
+epic mode CHECK-E06.
+
+### Step E6 — Pipeline State & Commit
+
+Proceed to the **Observability, Pipeline State & Commit** section below. Each edit-mode mutation is
+committed individually so git history is the audit trail.
+
+---
+
+## Observability, Pipeline State & Commit
+
+### Manifest `updatedAt`
+
+Every helper mutator bumps the manifest's top-level `updatedAt` to the current ISO-8601 UTC
+timestamp as part of the same atomic write. The skill does **not** bump it manually in edit mode.
+For the initial creation write (C5) the skill sets `createdAt == updatedAt`.
+
+### Pipeline state
+
+- **Epic-level:** the epic subtree has **no `.pipeline-state.json` of its own** (that is what
+  distinguishes an epic root from a feature). The epic's lifecycle lives in the manifest `status`
+  field. The `forge-0-epic` run is recorded in **member** states, not in an epic-level state file.
+- **Member-level (creation):** each member's `.pipeline-state.json` records
+  `stages["forge-0-epic"].status = "complete"` and `currentStage = "forge-1-prd"` (see C7).
+- **Edit mode:** edits mutate the **manifest**, not member pipeline states — except the
+  newly-created subdir for `add-feature`, which follows C7 (create the member subdir + back-pointer
+  state). The skill does **not** rewrite existing members' `stages` on an edit.
+- **`.epic-state.json` (lazily created, written by skills — NOT the helper):** epic-*scoped* stage
+  entries that belong to no single member — currently only `forge-verify-epic` — are persisted in a
+  dedicated `{specsDir}/{epic}/.epic-state.json`. It holds **only** epic-scoped stage entries,
+  never derived per-feature status (so it does not violate REQ-STATE-02). `forge-0-epic` does
+  **not** create this file — no epic-scoped stage runs during creation or edit; it appears only once
+  `forge-verify` epic mode runs. When a skill does write it (e.g. forge-verify epic mode), it writes
+  **directly** using an atomic temp-file + `os.replace` pattern — the helper exposes no subcommand
+  for it. On I/O failure the skill reports and leaves any prior file intact (never a partial write).
+  Minimal schema:
+
+  ```jsonc
+  {
+    "epic": "auth-overhaul",            // matches manifest `epic`
+    "stages": {
+      "forge-verify-epic": {
+        "status": "findings-reported",   // "findings-reported" | "passed" | "findings-applied"
+        "findingsFile": ".verification/VERIFY-epic-2026-06-12.md",
+        "findingsCount": 3,
+        "verifiedAt": "2026-06-12T00:00:00Z"
+      }
+    }
+  }
+  ```
+
+  The git-commit step below stages the whole epic subtree, so `.epic-state.json` is captured
+  automatically when present.
+
+### Git Commit Protocol
+
+After creation (C8) **and after each edit-mode mutation (E6)**, if `gitCommitAfterStage` is true,
+follow the Git Commit Protocol in shared-conventions:
+
+1. Stage the whole epic subtree only: `git add {specsDir}/{epic}/` — **never** `git add -A`. This
+   captures `epic-manifest.json`, `EPIC.md`, member `.pipeline-state.json` files, and any
+   `.epic-state.json` together atomically.
+2. Commit with message `"{commitPrefix}({epic}): <action>"`, e.g.
+   `"forge({epic}): create epic with 4 features"`, `"forge({epic}): add feature api-gateway"`,
+   `"forge({epic}): remove feature legacy-session"`, `"forge({epic}): reorder features"`,
+   `"forge({epic}): set dependency on token-service"`, or `"forge({epic}): set status paused"`.
+3. On success, capture the commit hash. On failure (pre-commit hook, conflict), report and do
+   **not** mark complete; never use `--no-verify`/`--force`.
+
+Because every mutation is committed, the git history of `epic-manifest.json` is the audit trail; no
+separate in-manifest audit log is kept.
+
+### Closing message
+
+After a successful **creation**, present the next-steps message (already specified in C8). After a
+successful **edit-mode mutation**, confirm the change and re-surface the dashboard pointer:
+
+> Epic `{epic}` updated (`<action>`). Run `/feature-forge:forge {epic}` to see the refreshed
+> dashboard, or re-run `/feature-forge:forge-0-epic {epic}` to make another change.
+
+---
+
+## Error Handling
+
+The skill **never** repairs a corrupt manifest automatically and **never** proceeds past a gating
+helper exit `≥ 1`. All findings are surfaced **verbatim**.
+
+| Condition | Helper signal | Skill behavior |
+|-----------|---------------|----------------|
+| Epic name duplicates an existing name | `check-name` exit 1 (`duplicate-name`) | STOP creation; surface finding; ask for a new name via `AskUserQuestion` |
+| Member feature name duplicates | `check-name` exit 1 (`duplicate-name`) | Reject that name in C2 / add-feature; surface verbatim; re-prompt |
+| Unsafe name (`/`, `..`, absolute) | `check-name`/mutator exit 2 (`unsafe-name`) | Reject; surface; re-prompt |
+| Composed manifest has a cycle | `validate` exit 1 (`cycle`) | Surface verbatim; re-open the dependency interview (C4); never finalize |
+| Dangling `dependsOn`/`consumes.from` | `validate` exit 1 (`dangling-ref`) | Surface verbatim; re-open C4 (bad `dependsOn`) or C3 (bad `consumes.from`) |
+| Corrupt/unparseable manifest (edit) | `validate` exit 1 (`corrupt-json`) | Surface ALL findings verbatim; **refuse all mutation** until repaired; never auto-repair |
+| Existing manifest otherwise invalid (edit) | `validate` exit 1/2 | Surface ALL findings verbatim; **refuse all mutation** (E1) |
+| Mutator would introduce cycle/dangling ref/duplicate | mutator exit 1 | Abort the edit; manifest byte-identical (atomic refusal); surface finding |
+| Bad `--status` value | `set-status` exit 2 (argparse) | Surface; re-prompt via `AskUserQuestion` with the valid choices |
+| Edit affects in-flight/completed feature | `render-status` derived status (`in-progress`/`complete`) | Warn naming the affected feature(s); require confirmation before applying (E4) |
+| `render-status` over an invalid graph | `render-status` exit ≥ 1 | Surface findings; STOP (do not mutate over an invalid graph) |
+| Git commit fails | — | Report; leave state `in-progress`; never bypass hooks (`--no-verify`/`--force`) |
 
 ---
 
