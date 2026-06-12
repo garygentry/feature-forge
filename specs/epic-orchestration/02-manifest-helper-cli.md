@@ -337,6 +337,12 @@ def find_cycle(features: list[dict]) -> list[str] | None:
     are reported separately by ``validate`` so a cycle finding is never masked
     by (or confused with) a typo'd dependency.
 
+    A self-dependency (a feature whose ``dependsOn`` lists its own ``name``) is a
+    degenerate self-loop: the root is colored GRAY on push, the self-edge is seen
+    as a back-edge into a GRAY node, and the reconstructed path is ``["X", "X"]``
+    (formatted ``cycle: X -> X``). It is reported as an ordinary ``cycle`` finding
+    (00 §2.6 invariant 5), not a separate code.
+
     Args:
         features: The manifest's ``features`` array (each a dict with ``name``
             and ``dependsOn``).
@@ -548,7 +554,10 @@ def validate(epic_dir: Path, specs_dir: Path) -> list[Finding]:
          (-> 'duplicate-name', REQ-DIR-04);
       5. every dependsOn and consumes.from references a known feature
          (-> 'dangling-ref', REQ-ROBUST-02);
-      6. dependsOn graph acyclic via find_cycle (-> 'cycle', REQ-EPIC-05).
+      6. dependsOn graph acyclic via find_cycle (-> 'cycle', REQ-EPIC-05). This
+         includes self-dependencies: a feature listing its own name in dependsOn
+         is a degenerate self-loop that find_cycle returns as ["X", "X"]
+         (-> 'cycle', message `cycle: X → X`; 00 §2.6 invariant 5).
 
     Args:
         epic_dir: The epic subtree directory.
@@ -858,14 +867,20 @@ for-orchestration → `complete`; otherwise `in-progress`. The `stage` field is 
 Each member's state path is built with `contained_path(epic_dir, feature_name,
 PIPELINE_STATE_FILENAME)` (REQ-SEC-02), then parsed with a try/except that downgrades a
 corrupt or missing member state to `not-started` rather than crashing the whole dashboard
-(per-feature corruption must not blind the navigator to the rest of the epic). On the
-manifest-vs-back-pointer conflict (REQ-STATE-01) the manifest wins: members listed in the
-manifest are always rendered; a back-pointer mismatch is left for `forge-verify` CHECK-E07.
+(per-feature corruption must not blind the navigator to the rest of the epic). This same
+downgrade also tolerates a **torn read** of a member state file written concurrently by
+another stage skill: member `.pipeline-state.json` writes are made by forge-1..5 skills the
+helper does not control and are **outside** the helper's atomicity scope (REQ-ROBUST-03
+covers only the helper's own manifest writes). A partially-written member state simply
+parses as corrupt → `not-started` for that one render, with no effect on the rest of the
+dashboard and no crash. On the manifest-vs-back-pointer conflict (REQ-STATE-01) the
+manifest wins: members listed in the manifest are always rendered; a back-pointer mismatch
+is left for `forge-verify` CHECK-E07.
 
 ### 8.3 Derived sets (REQ-ORCH-03, 00 §8)
 
 ```python
-def render_status(epic_dir: Path, specs_dir: Path) -> dict:
+def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
     """Build the full live dashboard payload for an epic (00 §5, §8; §8.4 here).
 
     Steps:
@@ -883,6 +898,14 @@ def render_status(epic_dir: Path, specs_dir: Path) -> dict:
       8. nextCommand = recommended command for the first actionable feature
          (e.g. '/feature-forge:forge-1-prd <name>' when its PRD is absent, else
          the next un-run stage), or None when nothing is actionable.
+
+    Empty epic (features == []): a valid manifest may have zero members (e.g. all
+    removed via remove-feature). render_status then returns features=[],
+    actionable=[], parallelEligible=[], rollup={complete: 0, total: 0},
+    nextCommand=None. Consumers MUST treat total == 0 as the distinct "empty epic
+    — add features" state, NOT as completion: the completion/docs-offer gate is
+    `rollup.total > 0 AND rollup.complete == rollup.total` (04 §7.2, §10), so a
+    `0 == 0` rollup never spuriously reports an empty epic as complete.
 
     Args:
         epic_dir: The epic subtree directory.
@@ -905,7 +928,43 @@ the other actionable features. This is `O(V·(V+E))` worst case — trivial at �
 
 ### 8.4 `render-status` JSON output (tech-spec §4.4, 00 §5, §8)
 
-Full output contract (reproduced here so this CLI doc is self-contained, per 00 §8):
+Full output contract (reproduced here so this CLI doc is self-contained, per 00 §8). The
+object is typed — `render_status` returns a `RenderStatus`, not a bare `dict`:
+
+```python
+class Rollup(TypedDict):
+    """Aggregate completion counts for the epic dashboard (00 §8)."""
+
+    complete: int  #: Number of member features complete-for-orchestration (00 §7).
+    total: int     #: Total member features in the manifest (0 for an empty epic).
+
+
+class RenderStatus(TypedDict):
+    """The full live dashboard payload returned by `render_status` (00 §5, §8).
+
+    Attributes:
+        epic: The epic name (manifest `epic`).
+        status: The epic lifecycle status (00 §2.1).
+        features: Per-member status rows, one per manifest feature (may be empty).
+        actionable: Names of features whose dependsOn are all complete and that
+            are not themselves complete (00 §8).
+        parallelEligible: Subset of `actionable` with no mutual (transitive)
+            dependency — surfaced for future parallel execution (00 §8).
+        rollup: Aggregate {complete, total} counts.
+        nextCommand: Recommended next command for the first actionable feature, or
+            None when nothing is actionable (all complete, empty epic, or paused).
+    """
+
+    epic: str
+    status: Literal["active", "paused", "abandoned", "complete"]
+    features: list[FeatureStatus]
+    actionable: list[str]
+    parallelEligible: list[str]
+    rollup: Rollup
+    nextCommand: str | None
+```
+
+Example payload:
 
 ```json
 {

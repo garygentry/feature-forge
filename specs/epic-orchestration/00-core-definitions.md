@@ -147,7 +147,10 @@ of membership, dependency edges, charters, and contracts. It carries **no** per-
    separator / `..` / absolute path — REQ-SEC-02).
 4. Every `dependsOn[]` entry and every `consumes[].from` references a `name` present in
    `features[]` (else `dangling-ref` finding, REQ-ROBUST-02).
-5. The `dependsOn` graph is acyclic (else `cycle` finding, REQ-EPIC-05).
+5. The `dependsOn` graph is acyclic (else `cycle` finding, REQ-EPIC-05). A feature's
+   `dependsOn[]` MUST NOT contain its own `name` (self-dependency): a self-edge is a
+   degenerate cycle and is reported as a `cycle` finding with message `cycle: X → X`
+   (the same code/exit path as any other cycle — see 02 §4, §6.2).
 6. No `Feature` carries a `status` key (REQ-STATE-02).
 
 ---
@@ -327,8 +330,8 @@ stages.forge-5-loop.status == "complete"
 A feature whose `forge-verify-impl.status` is `findings-reported` (unfixed) is **not**
 complete and does **not** unblock dependents. Merge/PR status is not tracked in v1
 (PRD Out of Scope). This predicate is implemented **once** in `render-status`
-(02-manifest-helper-cli.md §5) and reused by the dependency gate and the handoff
-(04-pipeline-integration.md §6).
+(02-manifest-helper-cli.md §8.1 (predicate) / §6.4 (`render-status` subcommand)) and
+reused by the dependency gate and the handoff (04-pipeline-integration.md §6).
 
 ---
 
@@ -344,7 +347,7 @@ Computed by `render-status` over the dependency graph + each feature's §7 compl
   manifest — the graph already expresses eligibility.
 
 The full `render-status` output object that carries these sets is defined in
-02-manifest-helper-cli.md §5.4 (it is the helper's public output contract; reproduced
+02-manifest-helper-cli.md §8.4 (it is the helper's public output contract; reproduced
 there so the CLI doc is self-contained).
 
 ---

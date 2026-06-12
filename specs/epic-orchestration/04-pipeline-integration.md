@@ -365,6 +365,29 @@ forge-4 composes `{backlogDir}/{feature}/`)."
 > `{backlogDir}/backlog.json` when configured. Update both to the composed
 > `{backlogDir}/{feature}/backlog.json` so the loop reads the same file forge-4 wrote.
 
+### 6.3 rauf / backlog-schema invariance (REQ-COMPAT-03)
+
+REQ-COMPAT-03 has a second obligation beyond per-feature independence: the loop-runner
+contract (rauf) and the backlog **schema** must require **no changes**. This holds by
+construction:
+
+- **Backlog schema unchanged.** The backlog written at
+  `{resolvedFeatureDir}/backlog.json` (or `{backlogDir}/{feature}/backlog.json` when
+  configured) uses the **existing, unmodified** backlog schema. Epic membership adds
+  *no* fields to backlog items — dependency edges live in the epic manifest (00 §2.2),
+  never in any item. The JSON a runner reads is byte-for-byte the same shape as a
+  pre-epic standalone feature's backlog.
+- **rauf invocation contract unchanged.** rauf is still launched against a single
+  per-feature backlog path, exactly as today; only the *path composition* changes
+  (the `{feature}` segment in §6.2), not the contract or the CLI surface.
+- **Dependency resolution never reaches rauf.** Epic dependency resolution and the
+  warn+confirm gate happen **before** the loop launches (§7.1, **Step 1b-epic**) and
+  are entirely a forge-stage concern. rauf sees only an already-unblocked single
+  feature, so the runner has no awareness of epics at all.
+
+Because all three hold, the runner contract and backlog schema are provably unchanged
+(REQ-COMPAT-03). This is asserted in the §11 compatibility verification (item 11).
+
 ---
 
 ## 7. forge-5-loop — Dependency Gate + Handoff (REQ-ORCH-01/02/03/04, REQ-OBS-01)
@@ -434,9 +457,11 @@ already `complete` on disk when render-status reads it.
 >    set (features whose every dependency is now complete and that are not themselves
 >    complete) and `nextCommand`.
 >    - **None actionable** (everything done, or remaining features still blocked): say so.
->      If `rollup.complete == rollup.total`, suggest `/feature-forge:forge-6-docs {feature}`
->      and note the epic-level doc offer (§10). Otherwise list what is still blocked and on
->      what. End — no prompt to start a feature that cannot start.
+>      If `rollup.total > 0 AND rollup.complete == rollup.total`, suggest
+>      `/feature-forge:forge-6-docs {feature}` and note the epic-level doc offer (§10).
+>      (The `rollup.total > 0` guard prevents an **empty epic** — `0 == 0` — from being
+>      reported complete; 02 §8.3.) Otherwise list what is still blocked and on what.
+>      End — no prompt to start a feature that cannot start.
 >    - **One or more actionable:** use `AskUserQuestion` presenting **each actionable
 >      feature** as an option (plus "stop here"). Execution is **serial** — the user picks
 >      exactly one (REQ-ORCH-03). Do **not** autonomously chain into the next pipeline
@@ -565,12 +590,14 @@ Epic mode is a **small** checklist (8 checks). Per the skill's single-vs-paralle
 
 - **Step 4 write path:** `{specsDir}/{epic}/.verification/VERIFY-epic-{YYYY-MM-DD}.md`
   (the existing format, with `{mode}=epic`).
-- **Step 6 state:** record into the **epic's** tracking. Set
+- **Step 6 state:** record into the **epic-level state file**
+  `{specsDir}/{epic}/.epic-state.json` (defined in `03-forge-0-epic-stage.md §8.2`). Set
   `stages.forge-verify-epic.status` to `findings-reported` (or `passed` if zero findings),
   with `findingsFile` / `findingsCount` / `verifiedAt`. Per `00-core-definitions.md §3`,
-  `forge-verify-epic` is a valid stage key. (Where epic-level stage state is persisted —
-  in a member's state vs. an epic-level marker — is settled by `02`/`03`; this section
-  records the *stage entry*, not its home file.)
+  `forge-verify-epic` is a valid stage key. The epic-level stage entry lives in
+  `.epic-state.json` — **not** in any member's `.pipeline-state.json` — because it is
+  epic-scoped, not per-feature (REQ-STATE-02 forbids only *cached per-feature member
+  status*, which this is not).
 
 ### 9.5 Checklist append — `verification-checklists.md`
 
@@ -626,8 +653,9 @@ verifier judgment.
 > ### Epic-Level Documentation (epic members only)
 >
 > If the resolved feature has an `epic` back-pointer, run `render-status "{epic}" --json`.
-> **Only if `rollup.complete == rollup.total`** (every member is
-> complete-for-orchestration, `00-core-definitions.md §7`), use `AskUserQuestion` to offer:
+> **Only if `rollup.total > 0 AND rollup.complete == rollup.total`** (every member is
+> complete-for-orchestration, `00-core-definitions.md §7`; the `total > 0` guard excludes
+> an **empty epic**, 02 §8.3), use `AskUserQuestion` to offer:
 > "All {total} features in the '{epic}' epic are complete. Generate an **epic-level
 > architecture document** spanning the features, in addition to {feature}'s per-feature
 > docs?" On yes, synthesize a doc at **`{docsDir}/{epic}/`** sourced from: `EPIC.md`
@@ -724,8 +752,8 @@ Concrete checks that an implementation matches this spec:
    relationship is surfaced via `AskUserQuestion`.
 9. **Verify epic mode (REQ-VERIFY-01):** `forge-verify {epic} epic` runs CHECK-E01..E08,
    writes `{specsDir}/{epic}/.verification/VERIFY-epic-{date}.md`, and records
-   `stages.forge-verify-epic`; a hand-injected cycle is caught by E02, a back-pointer
-   mismatch by E07.
+   `stages.forge-verify-epic` into `{specsDir}/{epic}/.epic-state.json` (03 §8.2); a
+   hand-injected cycle is caught by E02, a back-pointer mismatch by E07.
 10. **Docs offer (REQ-DOCS-01):** forge-6-docs on a member offers the epic-level doc at
     `{docsDir}/{epic}/` **only** when every member is complete-for-orchestration.
 11. **Compatibility (REQ-COMPAT-01/02/03):** in a project with **no** epics, every stage

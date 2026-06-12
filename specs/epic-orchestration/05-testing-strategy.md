@@ -241,8 +241,11 @@ def test_valid_manifest_round_trip(run_cli, fixture_copy) -> None:
     assert first.json() == {"valid": True, "findings": []}
 
     # Mutate: add a new leaf feature with no deps (atomic write + re-validate).
+    # --charter is a required option (02 §7.1); omitting it is a usage error (exit 2).
     added = run_cli(
-        "add-feature", epic, "metrics", "--specs-dir", str(specs),
+        "add-feature", epic, "metrics",
+        "--charter", "Metrics collection leaf feature.",
+        "--specs-dir", str(specs),
     )
     assert added.returncode == 0
 
@@ -276,7 +279,9 @@ def test_per_feature_status_field_rejected(run_cli, fixture_copy) -> None:
 ### 3.3 Cyclic graph rejection (REQ-EPIC-05)
 
 `validate` of `cyclic-epic` → a `cycle` finding and exit 1; the message names the cycle
-path (00 §4.2: `cycle: a → b → a`). The in-process `find_cycle` is also unit-tested.
+path (00 §4.2: `cycle: a → b → a`). The in-process `find_cycle` is also unit-tested,
+including the degenerate **self-dependency** case (a feature whose `dependsOn` lists its
+own name → `["X", "X"]`, formatted `cycle: X → X`; 00 §2.6 invariant 5).
 
 ```python
 def test_cyclic_graph_rejected(run_cli, fixtures_dir) -> None:
@@ -303,6 +308,12 @@ def test_find_cycle_pure(helper_module) -> None:
     ]
     assert helper_module.find_cycle(cyclic) is not None
     assert helper_module.find_cycle(acyclic) is None
+
+
+def test_find_cycle_self_dependency(helper_module) -> None:
+    """A feature depending on itself is a degenerate cycle (00 §2.6 inv. 5)."""
+    self_dep = [{"name": "x", "dependsOn": ["x"]}]
+    assert helper_module.find_cycle(self_dep) == ["x", "x"]
 ```
 
 ### 3.4 Duplicate-name detection — flat vs nested (REQ-DIR-04)

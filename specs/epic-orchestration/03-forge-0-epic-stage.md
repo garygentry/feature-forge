@@ -471,9 +471,35 @@ bump it manually — it is the mutator's responsibility. For the initial creatio
 ### 8.2 Pipeline state
 
 - **Epic-level:** the epic subtree has no `.pipeline-state.json` of its own (01 §4.3 — that
-  is what distinguishes it from a feature). The epic's lifecycle lives in the manifest
-  `status` field. The `forge-0-epic` run is therefore recorded in **member** states, not in
-  an epic-level state file.
+  is what distinguishes it from a feature) and carries **no per-feature pipeline status**.
+  The epic's lifecycle lives in the manifest `status` field. The `forge-0-epic` run is
+  recorded in **member** states, not in an epic-level state file.
+- **Epic-level stage tracking (`.epic-state.json`):** epic-*scoped* stage entries that
+  belong to no single member — currently only `forge-verify-epic` (04 §9.4) — are persisted
+  in a dedicated **`{specsDir}/{epic}/.epic-state.json`**, created lazily by the first stage
+  that needs it (e.g. forge-verify epic mode). It is distinct from a member
+  `.pipeline-state.json`: it holds only epic-scoped stage entries, never derived per-feature
+  status (so it does not violate REQ-STATE-02, which forbids *cached per-feature member
+  status*). Minimal schema:
+
+  ```jsonc
+  {
+    "epic": "auth-overhaul",            // matches manifest `epic`
+    "stages": {
+      "forge-verify-epic": {
+        "status": "findings-reported",   // "findings-reported" | "passed" | "findings-applied"
+        "findingsFile": ".verification/VERIFY-epic-2026-06-12.md",
+        "findingsCount": 3,
+        "verifiedAt": "2026-06-12T00:00:00Z"
+      }
+    }
+  }
+  ```
+
+  Writers use the same atomic-write helper as the manifest (02 §3.2). `forge-0-epic` does
+  **not** create this file (no epic-scoped stage runs during creation/edit); it appears
+  only once forge-verify epic mode runs. The git-commit step (§8.3) stages the whole epic
+  subtree, so `.epic-state.json` is captured automatically when present.
 - **Member-level (creation):** each member's `.pipeline-state.json` records
   `stages["forge-0-epic"].status = "complete"` and `currentStage = "forge-1-prd"` (§5).
   The `forge-0-epic` key is a new member of the `currentStage` enum and `stages` keys
