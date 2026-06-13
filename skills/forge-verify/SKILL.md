@@ -113,7 +113,7 @@ Load into context ALL artifacts for this feature based on mode:
 
 **For backlog mode:**
 - All of the above, PLUS
-- `{specsDir}/{feature}/backlog.json (or {backlogDir}/backlog.json if configured)`
+- `{resolvedFeatureDir}/backlog.json` (or `{backlogDir}/{feature}/backlog.json` if `backlogDir` is configured) — resolve `{resolvedFeatureDir}` via the **Feature Directory Resolution** block in `references/shared-conventions.md`, using the same composed path as forge-4-backlog and forge-5-loop (04 §6.2)
 
 **For impl mode:**
 - All of the above, PLUS

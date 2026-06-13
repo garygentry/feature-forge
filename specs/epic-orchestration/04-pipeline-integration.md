@@ -154,9 +154,11 @@ becomes the single place that turns a bare feature name into a directory.
 >
 > - **Exit 0:** stdout is the absolute feature directory. Use it everywhere this skill
 >   previously wrote `{specsDir}/{feature}/`.
-> - **Exit ≥ 1:** the helper prints an actionable finding (`not-found`, `ambiguous`,
->   `unsafe-name`, `path-escape` — see `00-core-definitions.md §4`). **STOP** and surface
->   the message verbatim. Do not fall back to a guessed path.
+> - **Exit 1:** a structured finding (`not-found`, `ambiguous` — see
+>   `00-core-definitions.md §4`), as a `{findings[]}` JSON envelope on stdout under
+>   `--json`. **Exit 2:** a usage/safety error (`unsafe-name`, a path-containment escape,
+>   missing file) as a plain `Error:` line on stderr. **STOP** and surface the message
+>   verbatim in both cases. Do not fall back to a guessed path.
 >
 > **Resolution algorithm (summary; full spec in `02-manifest-helper-cli.md §4`):**
 > 1. Reject the name if unsafe (path separator, `..`, absolute, or failing

@@ -87,6 +87,25 @@ def test_validate_missing_required_field_is_schema(run_cli, fixture_copy) -> Non
     assert "schema" in codes
 
 
+def test_validate_unknown_key_is_schema(run_cli, fixture_copy) -> None:
+    """An unknown key (e.g. a typo'd field) fails with a 'schema' finding (REQ-ROBUST-02).
+
+    Guards against the silent-drop failure mode where a hand-edited manifest with a
+    mistyped key like 'dependson' would otherwise validate clean. Mirrors the schema's
+    additionalProperties:false contract.
+    """
+    specs = fixture_copy("valid-epic")
+    manifest = specs / "auth-overhaul" / "epic-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["features"][0]["dependson"] = []   # typo'd 'dependsOn' -> unknown key
+    manifest.write_text(json.dumps(data))
+
+    result = run_cli("validate", "auth-overhaul", "--specs-dir", str(specs), "--json")
+    assert result.returncode == 1
+    codes = {f["code"] for f in result.json()["findings"]}
+    assert "schema" in codes
+
+
 # ---------------------------------------------------------------------------
 # §3.3 Cyclic graph rejection (REQ-EPIC-05)
 # ---------------------------------------------------------------------------
@@ -204,16 +223,16 @@ def test_resolve_unsafe_name_exit_2(run_cli, fixture_copy, bad: str) -> None:
 
 
 def test_validate_path_escape_in_manifest_is_finding(run_cli, fixtures_dir) -> None:
-    """An unsafe name inside a manifest yields unsafe-name/path-escape findings (exit 1)."""
+    """The bad name yields unsafe-name; the escaping consumes.from yields dangling-ref."""
     result = run_cli(
         "validate", "path-escape", "--specs-dir", str(fixtures_dir / "path-escape"),
         "--json",
     )
     assert result.returncode == 1
     codes = {f["code"] for f in result.json()["findings"]}
-    # The path-escape fixture carries an unsafe feature name ('../escape');
-    # at least one of the containment finding codes must be raised.
-    assert codes & {"unsafe-name", "path-escape"}
+    # The fixture carries two distinct defects; pin each independently.
+    assert "unsafe-name" in codes      # the '../escape' feature name
+    assert "dangling-ref" in codes     # the '../x' consumes.from references no sibling
 
 
 # ---------------------------------------------------------------------------
@@ -441,8 +460,10 @@ def test_render_status_blocked_lists_unmet_deps(run_cli, fixture_copy) -> None:
     specs = fixture_copy("status-derivation")
     out = run_cli("render-status", "lifecycle", "--specs-dir", str(specs), "--json").json()
     blocked = [f for f in out["features"] if f["blocked"]]
-    assert blocked   # 'b' depends on the incomplete 'a'
     assert all(f["unmetDeps"] for f in blocked)
+    # Pin the documented graph: 'b' depends on the incomplete 'a'.
+    b_row = next(f for f in out["features"] if f["name"] == "b")
+    assert b_row["blocked"] and "a" in b_row["unmetDeps"]
 
 
 # ---------------------------------------------------------------------------

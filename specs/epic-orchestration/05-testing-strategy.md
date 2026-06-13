@@ -103,7 +103,7 @@ directly at the in-repo fixture.
 | `valid-epic/` | `{epic}/epic-manifest.json` (4 features, `config-store ← token-service ← api-gateway`, plus an independent `audit-log`), `EPIC.md`, and one `{feature}/.pipeline-state.json` per feature carrying the `epic` back-pointer. Manifest matches 00 §2.5 shape. | round-trip, render-status, resolution, performance baseline |
 | `cyclic-epic/` | manifest where `a.dependsOn=[b]`, `b.dependsOn=[a]` (or a 3-node cycle `token→gateway→token`). | `cycle` finding (REQ-EPIC-05) |
 | `dup-name/` | `{specsDir}` containing **two** feature-shaped dirs with the same bare name: one flat `specs/token-service/.pipeline-state.json` and one nested `specs/auth-overhaul/token-service/.pipeline-state.json`. | `duplicate-name` / `ambiguous` (REQ-DIR-04) |
-| `path-escape/` | manifest with a feature `name` of `../escape` and a `consumes.from` of `../x`; plus a sibling that would resolve outside `{specsDir}`. | `unsafe-name` / `path-escape` (REQ-SEC-02) |
+| `path-escape/` | manifest with a feature `name` of `../escape` and a `consumes.from` of `../x`; plus a sibling that would resolve outside `{specsDir}`. | `unsafe-name` (the bad name) + `dangling-ref` (the escaping `consumes.from`) (REQ-SEC-02). Containment escapes during *resolution* surface as exit-2 `UsageError`s, not Finding codes. |
 | `corrupt/` | `epic-manifest.json` containing truncated/garbage bytes (e.g. `{"epic": "x", "featur`). | `corrupt-json`, no crash (REQ-ROBUST-02) |
 | `status-derivation/` | one epic with members `a` (incomplete loop), `b` (loop complete, no impl-verify), `c` (loop complete + impl `findings-reported`), `d` (loop complete + impl `findings-applied`), `e` (loop complete + impl `passed`), each as a synthetic `.pipeline-state.json`. `b.dependsOn=[a]`, `c.dependsOn=[d]`, etc., chosen to exercise actionable/blocked sets. | §7 completion branches (REQ-ORCH-01), derived sets (REQ-ORCH-03) |
 
@@ -377,14 +377,15 @@ def test_resolve_unsafe_name_exit_2(run_cli, fixture_copy, bad: str) -> None:
 
 
 def test_path_escape_in_manifest_is_finding(run_cli, fixtures_dir) -> None:
-    """An unsafe name inside a manifest yields unsafe-name/path-escape findings."""
+    """The bad name yields unsafe-name; the escaping consumes.from yields dangling-ref."""
     result = run_cli(
         "validate", "path-escape", "--specs-dir", str(fixtures_dir / "path-escape"),
         "--json",
     )
     assert result.returncode == 1
     codes = {f["code"] for f in result.json()["findings"]}
-    assert codes & {"unsafe-name", "path-escape"}
+    assert "unsafe-name" in codes      # the '../escape' feature name
+    assert "dangling-ref" in codes     # the '../x' consumes.from references no sibling
 ```
 
 ### 3.7 Status derivation — every §7 branch (REQ-STATE-02, REQ-ORCH-01)
@@ -847,7 +848,6 @@ helper subcommand and is asserted by this suite.
 | `dangling-ref` | `validate` with bad `dependsOn` | §3.10 `test_dangling_depends_on` |
 | `cycle` | `validate` of `cyclic-epic/` | §3.3 `test_cyclic_graph_rejected` |
 | `unsafe-name` | `resolve` of unsafe arg; `validate` of `path-escape/` | §3.6 |
-| `path-escape` | `validate` of `path-escape/` | §3.6 `test_path_escape_in_manifest_is_finding` |
 | `not-found` | `resolve` of unknown name | §3.11 `test_resolve_not_found` |
 | `ambiguous` | `resolve` in `dup-name/` | §3.4 `test_resolve_ambiguous_name` |
 

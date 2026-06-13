@@ -42,6 +42,8 @@ If the resolved feature has an `epic` back-pointer in its `.pipeline-state.json`
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
 
+If `render-status` fails, skip the epic-level offer and proceed with the per-feature docs only; surface the error per the exit-1/exit-2 split in the **Feature Directory Resolution** block of `references/shared-conventions.md` (exit 1 → parse `{findings[]}` from stdout; exit 2 → surface the plain `Error:` stderr line verbatim).
+
 **Only if `rollup.total > 0 AND rollup.complete == rollup.total`** (every member is complete-for-orchestration; the `total > 0` guard excludes an empty epic), use `AskUserQuestion` to offer:
 
 "All {total} features in the '{epic}' epic are complete. Generate an **epic-level architecture document** spanning the features, in addition to {feature}'s per-feature docs?"

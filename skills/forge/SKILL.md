@@ -20,7 +20,7 @@ For pipeline architecture details, read `references/process-overview.md`.
 
 **If a feature name is provided** (e.g., `/feature-forge:forge auth`):
 - **First test whether the name is an epic:** if `{specsDir}/{name}/epic-manifest.json` exists, render the **Epic Dashboard** (see format below) and stop — do not treat it as a feature.
-- Otherwise, resolve the name via the **Feature Directory Resolution** block in `references/shared-conventions.md` (so a nested epic-member name finds its dashboard too). On a resolution finding (`not-found`, `ambiguous`, `unsafe-name`, `path-escape`), surface it verbatim.
+- Otherwise, resolve the name via the **Feature Directory Resolution** block in `references/shared-conventions.md` (so a nested epic-member name finds its dashboard too). On a resolution failure (`not-found` / `ambiguous` at exit 1; `unsafe-name` or a path-containment escape at exit 2), surface it verbatim.
   - On `not-found` for a never-started feature, ask: "No pipeline exists for '{feature}'. Want to start one? Run `/feature-forge:forge-1-prd {feature}` to begin."
 - If resolution succeeds, display the per-feature pipeline status dashboard (see format below) from `{resolvedFeatureDir}/`.
 
@@ -111,7 +111,7 @@ Actionable now: token-service
 Next: /feature-forge:forge-3-specs token-service
 ```
 
-All of this is reconstructed **purely from disk** — the manifest plus each member's `.pipeline-state.json`, with no in-memory state — so a fresh session renders the same dashboard. If `render-status` exits ≥ 1 (e.g. a corrupt or invalid manifest), surface its findings verbatim and do not render a partial dashboard.
+All of this is reconstructed **purely from disk** — the manifest plus each member's `.pipeline-state.json`, with no in-memory state — so a fresh session renders the same dashboard. If `render-status` fails, do not render a partial dashboard; surface per the exit-1/exit-2 split in the **Feature Directory Resolution** block of `references/shared-conventions.md` (exit 1 → parse `{findings[]}` from stdout; exit 2 → surface the plain `Error:` stderr line verbatim).
 
 ### 4. Notes Management
 

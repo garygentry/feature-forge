@@ -58,7 +58,6 @@ FindingCode = Literal[
     "dangling-ref",     # dependsOn / consumes.from references an unknown feature (REQ-ROBUST-02)
     "cycle",            # the dependsOn graph contains a cycle (REQ-EPIC-05)
     "unsafe-name",      # a name contains a path separator, "..", or is absolute (REQ-SEC-02)
-    "path-escape",      # a resolved path would leave {specsDir} (REQ-SEC-02)
     "not-found",        # a name resolves to zero feature-shaped directories
     "ambiguous",        # a name resolves to more than one feature-shaped directory (REQ-DIR-04)
     "cached-status",    # a Feature object illegally carries a status field (REQ-STATE-02)
@@ -232,9 +231,9 @@ def contained_path(base: Path, *parts: str) -> Path:
 
     Raises:
         UsageError: If the resolved path escapes ``base`` (message:
-            ``resolved path escapes specs dir: …``). Corresponds to the
-            'path-escape' Finding code (00 §4); raised as a usage error
-            (exit 2) per the error model in tech-spec §6.
+            ``resolved path escapes specs dir: …``). Containment violations
+            surface only as exit-2 usage errors per the error model in
+            tech-spec §6 (there is no dedicated Finding code for them).
     """
     base_real = base.resolve()
     target = (base_real / Path(*parts)).resolve()
@@ -356,6 +355,8 @@ def find_cycle(features: list[dict]) -> list[str] | None:
                     stack.append((nxt, 0))
                 elif color[nxt] == GRAY:
                     # Back-edge: reconstruct nxt -> … -> node -> nxt.
+                    # Degenerate self-loop (node == nxt): the while loop body never
+                    # runs, yielding ["x", "x"] — the documented self-dependency case.
                     path = [nxt]
                     cursor: str | None = node
                     while cursor is not None and cursor != nxt:
@@ -559,8 +560,18 @@ def _schema_findings(manifest: dict) -> list[Finding]:
     for key in ("epic", "description", "createdAt", "updatedAt"):
         if key in manifest and not isinstance(manifest[key], str):
             findings.append(_schema(f"{key} must be a string"))
+    for key in ("createdAt", "updatedAt"):
+        if isinstance(manifest.get(key), str):
+            try:
+                # Py3.10's fromisoformat rejects a trailing 'Z'; normalize it first.
+                datetime.fromisoformat(manifest[key].replace("Z", "+00:00"))
+            except ValueError:
+                findings.append(_schema(f"{key} must be an ISO-8601 date-time, got {manifest[key]!r}"))
     if "status" in manifest and manifest["status"] not in _EPIC_STATUSES:
         findings.append(_schema(f"status must be one of {list(_EPIC_STATUSES)}, got {manifest['status']!r}"))
+    for key in manifest:
+        if key not in _TOP_REQUIRED:
+            findings.append(_schema(f"unknown key {key!r}"))
 
     features = manifest.get("features")
     if "features" in manifest and not isinstance(features, list):
@@ -584,6 +595,10 @@ def _schema_findings(manifest: dict) -> list[Finding]:
         for key in _FEATURE_REQUIRED:
             if key not in feat:
                 findings.append(_schema(f"feature {label!r} missing required key {key!r}", fname))
+        for key in feat:
+            # 'status' is rejected separately above via the dedicated 'cached-status' code.
+            if key not in _FEATURE_REQUIRED and key != "status":
+                findings.append(_schema(f"feature {label!r} has unknown key {key!r}", fname))
         for key in ("name", "charter"):
             if key in feat and not isinstance(feat[key], str):
                 findings.append(_schema(f"feature {label!r} {key} must be a string", fname))
@@ -607,6 +622,9 @@ def _schema_findings(manifest: dict) -> list[Finding]:
                 for rk in required:
                     if rk not in entry:
                         findings.append(_schema(f"feature {label!r} {key}[{j}] missing required key {rk!r}", fname))
+                for ek in entry:
+                    if ek not in required:
+                        findings.append(_schema(f"feature {label!r} {key}[{j}] has unknown key {ek!r}", fname))
                 if kind_check and "kind" in entry and entry["kind"] not in _CONTRACT_KINDS:
                     findings.append(_schema(f"feature {label!r} {key}[{j}] kind must be one of {list(_CONTRACT_KINDS)}", fname))
     return findings
@@ -1189,10 +1207,11 @@ def _print_status_table(status: RenderStatus) -> None:
 
 
 def _dispatch(args: argparse.Namespace, specs_dir: Path) -> int:
-    """Route a parsed command to its handler and emit results.
+    """Route a parsed command to its handler, translating return/raise into exit codes.
 
-    Subcommand handlers are stubs at this stage (backlog items 004-008 fill
-    them in); this dispatch wiring is in place so each command parses cleanly.
+    Read-only commands (resolve / check-name / validate / render-status) print to
+    stdout and return 0; mutators return findings the caller raises as a
+    ``FindingsError`` (exit 1). Unknown commands raise ``UsageError`` (exit 2).
     """
     cmd: str = args.cmd
 

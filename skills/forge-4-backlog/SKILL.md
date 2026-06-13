@@ -26,6 +26,8 @@ Resolve the **backlog directory** `{backlogDir}`:
 
 This is the **single** place this rule is implemented. forge-5-loop's backlog-file check must read the same composed `{backlogDir}/{feature}/backlog.json` (that matching forge-5-loop edit lands in item 016), and forge-verify's backlog-mode load uses the same path. rauf itself is unchanged: backlogs remain per-feature and rauf is still launched against a single per-feature backlog path — only the *path composition* changes (REQ-COMPAT-03).
 
+**Let `{resolvedBacklogDir}` denote the composed target of this rule** — i.e. `{backlogDir}/{feature}` when a `backlogDir` is configured, else `{resolvedFeatureDir}`. Every downstream step below (authoring, validation) uses `{resolvedBacklogDir}`, never the bare config value, so the per-feature `{feature}` segment is never dropped.
+
 Resolve the **loop runner** from the `loopRunner` block in `forge.config.json`, filling missing fields from the defaults in `references/forge-config-schema.json` (defaults to rauf). You need its `bin`, `validateCommand`, `versionCommand`, `minRunnerVersion`, and `installHint`.
 
 **Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
@@ -70,9 +72,9 @@ After presenting the plan as text, use `AskUserQuestion` to ask: "Does this brea
 ## Step 4: Author backlog.json — delegate to `author-backlog`
 
 **Invoke the rauf plugin's `author-backlog` skill** (via the Skill tool) to write
-`{backlogDir}/backlog.json`. Pass it:
+`{resolvedBacklogDir}/backlog.json`. Pass it:
 
-- the target backlog directory `{backlogDir}`,
+- the target backlog directory `{resolvedBacklogDir}`,
 - the approved plan from Step 3,
 - the spec context loaded in Step 2,
 - the project's `typeCheckCommand` / `testCommand` (from `forge.config.json`) so acceptance criteria are concrete and runnable.
@@ -93,11 +95,11 @@ After presenting the plan as text, use `AskUserQuestion` to ask: "Does this brea
 ## Step 5: Validate via the loop runner
 
 Validate the generated backlog by running the runner's **validate command**
-(`loopRunner.validateCommand`), rendered with `{backlogDir}` and `{specsDir}`
+(`loopRunner.validateCommand`), rendered with `{resolvedBacklogDir}` and `{specsDir}`
 substituted — the rauf default:
 
 ```bash
-rauf backlog validate . --backlog {backlogDir} --specs-dir {specsDir} --json
+rauf backlog validate . --backlog {resolvedBacklogDir} --specs-dir {specsDir} --json
 ```
 
 Interpret the result:

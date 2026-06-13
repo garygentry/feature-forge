@@ -70,7 +70,7 @@ Read the resolved feature's `.pipeline-state.json`. **If it has no `epic` key, s
    > "{feature} depends on {unmetDeps joined}, which are not yet complete. Running the loop now means implementing against contracts that may still change. Proceed anyway, or stop and finish the dependencies first?"
 
    Require an **explicit "Proceed anyway"** choice to continue (REQ-ORCH-04). "Stop" aborts before any runner setup. `--force` (shared-conventions Force Mode) also bypasses this gate with the standard force warning.
-5. If `render-status` exits ≥ 1 (corrupt manifest), surface its findings and **STOP** — do not silently run a loop whose dependency state is unverifiable (REQ-ROBUST-02).
+5. If `render-status` fails, **STOP** — do not silently run a loop whose dependency state is unverifiable (REQ-ROBUST-02). Surface per the exit-1/exit-2 split in the **Feature Directory Resolution** block of `references/shared-conventions.md` (exit 1 → parse `{findings[]}` from stdout; exit 2 → surface the plain `Error:` stderr line verbatim — no findings JSON to parse).
 
 This gate runs **before** the runner version/setup gates (1c/1d) so a blocked feature stops early, before any runner side-effects.
 

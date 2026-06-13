@@ -206,7 +206,6 @@ FindingCode = Literal[
     "dangling-ref",     # dependsOn / consumes.from references an unknown feature (REQ-ROBUST-02)
     "cycle",            # the dependsOn graph contains a cycle (REQ-EPIC-05)
     "unsafe-name",      # a name contains a path separator, "..", or is absolute (REQ-SEC-02)
-    "path-escape",      # a resolved path would leave {specsDir} (REQ-SEC-02)
     "not-found",        # a name resolves to zero feature-shaped directories
     "ambiguous",        # a name resolves to more than one feature-shaped directory (REQ-DIR-04)
     "cached-status",    # a Feature object illegally carries a status field (REQ-STATE-02)
@@ -239,7 +238,6 @@ the *shape* is normative):
 | `duplicate-name` | `duplicate feature name 'token-service' (also at specs/other-epic/token-service)` |
 | `dangling-ref` | `unknown dependsOn 'config-stor' in feature 'token-service'` |
 | `unsafe-name` | `unsafe name '../escape'` |
-| `path-escape` | `resolved path escapes specs dir: specs/../../etc` |
 | `not-found` | `no feature named 'tokn-service' found under specs/` |
 | `ambiguous` | `ambiguous name 'token-service': matches specs/token-service and specs/auth-overhaul/token-service` |
 | `cached-status` | `feature 'token-service' has an illegal 'status' field; status is derived, not stored` |
@@ -306,9 +304,11 @@ NARRATIVE_FILENAME: Final = "EPIC.md"
 ```
 
 A name is **rejected** (`unsafe-name`) if it fails `SAFE_NAME_RE`, contains `/` or `\`,
-equals `..`, or is an absolute path. A resolved path is **rejected** (`path-escape`) if
-its real (symlink-resolved) form is not contained within the real form of `{specsDir}`.
-These checks run *before* any filesystem access (02-manifest-helper-cli.md §6).
+equals `..`, or is an absolute path. A resolved path is also **rejected** if its real
+(symlink-resolved) form is not contained within the real form of `{specsDir}`; this
+containment violation surfaces only as an **exit-2 `UsageError`** (`resolved path escapes
+specs dir: …`), not a Finding code. These checks run *before* any filesystem access
+(02-manifest-helper-cli.md §6).
 
 A directory is treated as a **feature** for resolution, uniqueness, and globbing **only**
 if it directly contains a `.pipeline-state.json`. Non-feature subtrees (`.verification/`,

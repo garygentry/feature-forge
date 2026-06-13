@@ -61,7 +61,10 @@ resolvedFeatureDir=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" \
 ```
 
 - **Exit 0:** stdout is the absolute feature directory. Use it everywhere this skill previously wrote `{specsDir}/{feature}/`.
-- **Exit ≥ 1:** the helper prints an actionable finding (`not-found`, `ambiguous`, `unsafe-name`, `path-escape` — see `00-core-definitions.md §4`). **STOP** and surface the message verbatim. Do not fall back to a guessed path.
+- **Exit 1:** the helper prints a structured finding (`not-found`, `ambiguous` — see `00-core-definitions.md §4`). With `--json` this is a `{valid, findings[]}` envelope on stdout; otherwise a plain message. **STOP** and surface it verbatim.
+- **Exit 2:** a usage / safety error (`unsafe-name`, a path-containment escape, missing file). The message is a plain `Error: …` line on **stderr** with empty stdout — there is no findings JSON to parse. **STOP** and surface that stderr line verbatim.
+
+In both failure cases, do not fall back to a guessed path.
 
 **Resolution algorithm (summary; full spec in `02-manifest-helper-cli.md §4`):**
 1. Reject the name if unsafe (path separator, `..`, absolute, or failing `SAFE_NAME_RE`) — before any filesystem access.
@@ -91,7 +94,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" \
   render-status "<epic>" --specs-dir "<specsDir>" --json
 ```
 
-If `render-status` exits ≥ 1, surface its findings and proceed with **only** EPIC.md + charter (a corrupt manifest must not silently inject stale dep specs — REQ-ROBUST-02).
+If `render-status` fails, proceed with **only** EPIC.md + charter (a corrupt manifest must not silently inject stale dep specs — REQ-ROBUST-02): on **exit 1**, parse the `{findings[]}` JSON from stdout and surface each; on **exit 2**, surface the plain `Error:` line from stderr verbatim. Do not attempt to parse findings JSON on an exit-2 failure (stdout is empty).
 
 ## Pipeline State Protocol
 

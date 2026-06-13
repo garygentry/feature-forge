@@ -222,9 +222,9 @@ def contained_path(base: Path, *parts: str) -> Path:
 
     Raises:
         UsageError: If the resolved path escapes ``base`` (message:
-            ``resolved path escapes specs dir: …``). Corresponds to the
-            'path-escape' Finding code (00 §4); raised as a usage error
-            (exit 2) per the error model in tech-spec §6.
+            ``resolved path escapes specs dir: …``). Containment violations
+            surface only as exit-2 usage errors per the error model in
+            tech-spec §6 (there is no dedicated Finding code for them).
     """
     base_real = base.resolve()
     target = (base_real / Path(*parts)).resolve()
@@ -524,8 +524,8 @@ the finding to stderr and exits 1/2.
 
 **Exit codes.** 0 resolved; 1 `ambiguous`/`not-found`; 2 `unsafe-name`/missing specs dir.
 
-**Findings emitted.** `ambiguous`, `not-found` (exit 1); `unsafe-name`, `path-escape`
-surfaced as exit-2 usage errors.
+**Findings emitted.** `ambiguous`, `not-found` (exit 1); `unsafe-name` and
+path-containment escapes surfaced as exit-2 usage errors (no dedicated Finding code).
 
 ### 6.2 `validate` (REQ-EPIC-05, REQ-ROBUST-02, REQ-STATE-02, REQ-SEC-02, REQ-DIR-04)
 
@@ -579,7 +579,10 @@ finding into the returned list, so `validate` always yields a complete `findings
 the JSON contract. Schema validation is performed with a small hand-rolled checker over
 `references/epic-manifest-schema.json` (stdlib only — no `jsonschema` dependency,
 matching the no-third-party rule of 01-architecture-layout.md §2.1): it asserts required
-keys/types/enums from 00 §2 and explicitly rejects any `features[].status` key.
+keys/types/enums from 00 §2, rejects **unknown** keys at every object level (mirroring the
+schema's `additionalProperties:false`, so a typo'd key like `dependson` fails rather than
+silently dropping a dependency — REQ-ROBUST-02), validates that `createdAt`/`updatedAt`
+parse as ISO-8601 date-times, and explicitly rejects any `features[].status` key.
 
 **Exit codes.** 0 valid (empty findings); 1 any finding; 2 missing/unreadable manifest or
 schema file.
@@ -1084,9 +1087,9 @@ An engineer confirms an implementation matches this spec by checking:
 - [ ] `resolve` returns the **flat** path for a standalone feature unchanged
       (REQ-COMPAT-01/02), the nested path for a uniquely-nested feature (REQ-DIR-03), exit
       1 `ambiguous` for a genuine multi-match, and exit 1 `not-found` for an unknown name.
-- [ ] `resolve ../escape` and a manifest naming `../x` both exit 2 / produce
-      `unsafe-name` (REQ-SEC-02); a contrived symlink escaping `{specsDir}` yields
-      `path-escape`.
+- [ ] `resolve ../escape` exits 2 with `unsafe-name` (REQ-SEC-02); a contrived symlink
+      escaping `{specsDir}` exits 2 with `resolved path escapes specs dir: …` (a usage
+      error, not a Finding code).
 - [ ] `validate` on the `cyclic-epic` fixture emits a `cycle` finding whose message lists
       the cycle path and exits 1 (REQ-EPIC-05); on `dup-name` a `duplicate-name`
       (REQ-DIR-04); on `corrupt` a `corrupt-json` (REQ-ROBUST-02); on a manifest carrying
