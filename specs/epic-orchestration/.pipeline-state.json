@@ -1,9 +1,9 @@
 {
   "feature": "epic-orchestration",
   "pipelineStatus": "active",
-  "currentStage": "forge-6-docs",
+  "currentStage": "complete",
   "createdAt": "2026-06-12T00:00:00Z",
-  "updatedAt": "2026-06-12T23:30:00Z",
+  "updatedAt": "2026-06-12T23:45:00Z",
   "notes": "Term 'epic' chosen over 'initiative'. Nested layout specs/<epic>/<feature> decided. v1: prompted handoff, serial execution, JIT charters, warn+confirm dep gate. Open questions in PRD section 7. TECH DECISIONS: Python manifest helper (scripts/epic-manifest.py) is deterministic core (acyclicity, validate, resolve, atomic writes, render-status). Manifest is single source of truth for charters + exposes/consumes; EPIC.md generated narrative mirrors it; no cached per-feature status (derived live). Centralized name->dir resolution via shared-conventions block. Completion = forge-5-loop done AND (impl-verify absent OR passed/applied); handoff offers impl-verify (recommended, skippable). Full edit-scope across all stages.",
   "stages": {
     "forge-1-prd": {
@@ -97,6 +97,21 @@
       "verifiedAt": "2026-06-12T23:15:00Z",
       "fixedAt": "2026-06-12T23:30:00Z"
     },
-    "forge-6-docs": { "status": "pending" }
+    "forge-6-docs": {
+      "status": "in-progress",
+      "artifacts": [
+        "docs/architecture/epic-orchestration/README.md",
+        "docs/architecture/epic-orchestration/architecture.md",
+        "docs/architecture/epic-orchestration/cli-reference.md",
+        "docs/architecture/epic-orchestration/guides/integration.md"
+      ],
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1,
+        "forge-3-specs": 1,
+        "forge-4-backlog": 1
+      },
+      "completedAt": "2026-06-12T23:45:00Z"
+    }
   }
 }
