@@ -195,10 +195,11 @@ feature-forge delegates specific workloads to specialized subagents that operate
 
 | Agent | Model | Purpose |
 |-------|-------|---------|
-| **forge-researcher** | Sonnet | Explores codebase structure, integration surfaces, existing patterns, and conventions. Dispatched during Stage 2 to inform technical decisions. Read-only access. |
-| **forge-verifier** | Opus | Verifies pipeline artifacts against structured checklists. Produces findings with actionable fix suggestions and execution plans. Read-only access with persistent project-scoped memory. |
+| **forge-researcher** | Sonnet | Explores codebase structure, integration surfaces, existing patterns, and conventions. Dispatched during Stage 2 (one or several in parallel) to inform technical decisions. Read-only access. |
+| **forge-verifier** | Opus | Verifies pipeline artifacts against structured checklists. For large stages, several run in parallel — one per verification dimension — and the parent merges findings. Produces findings with actionable fix suggestions and execution plans. Read-only access with persistent project-scoped memory. |
+| **forge-spec-writer** | Opus | Authors a single numbered implementation spec document. Dispatched by Stage 3 as a parallel fan-out (one writer per doc) after the shared foundation specs are written. Has Write access, constrained to its one assigned file. |
 
-Both agents are restricted to read-only operations — they cannot modify files, run package managers, or execute git commands.
+The two research/verification agents are read-only — they cannot modify files, run package managers, or execute git commands. `forge-spec-writer` additionally has Write access, restricted to authoring its single assigned spec document. Agents use model aliases (`opus`/`sonnet`), so they track the current model tier.
 
 ## Stack Profiles
 

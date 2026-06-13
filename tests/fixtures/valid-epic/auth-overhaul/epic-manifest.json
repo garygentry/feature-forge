@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "epic": "auth-overhaul",
+  "description": "Replace the legacy session system with a JWT-based auth stack.",
+  "status": "active",
+  "narrativeDoc": "EPIC.md",
+  "createdAt": "2026-06-12T00:00:00Z",
+  "updatedAt": "2026-06-12T00:00:00Z",
+  "features": [
+    {
+      "name": "config-store",
+      "charter": "Central typed config store exposing secrets and feature flags to the rest of the epic. Must expose JWT_SECRET before token-service can build.",
+      "dependsOn": [],
+      "exposes": [
+        {
+          "name": "JWT_SECRET",
+          "kind": "type",
+          "summary": "Signing secret accessor"
+        }
+      ],
+      "consumes": []
+    },
+    {
+      "name": "token-service",
+      "charter": "Issue and verify JWTs. Consumes JWT_SECRET from config-store; exposes verifyJwt to downstream API features.",
+      "dependsOn": [
+        "config-store"
+      ],
+      "exposes": [
+        {
+          "name": "verifyJwt",
+          "kind": "function",
+          "summary": "Validate a JWT, return claims or raise"
+        }
+      ],
+      "consumes": [
+        {
+          "from": "config-store",
+          "name": "JWT_SECRET",
+          "summary": "Signing secret for verification"
+        }
+      ]
+    },
+    {
+      "name": "api-gateway",
+      "charter": "Front-door HTTP gateway enforcing JWT verification on every protected route. Consumes verifyJwt from token-service.",
+      "dependsOn": [
+        "token-service"
+      ],
+      "exposes": [
+        {
+          "name": "/api",
+          "kind": "endpoint",
+          "summary": "Authenticated API surface"
+        }
+      ],
+      "consumes": [
+        {
+          "from": "token-service",
+          "name": "verifyJwt",
+          "summary": "JWT validation entrypoint"
+        }
+      ]
+    },
+    {
+      "name": "audit-log",
+      "charter": "Independent append-only audit log of auth events. Has no build dependency on the other features.",
+      "dependsOn": [],
+      "exposes": [
+        {
+          "name": "AuthEvent",
+          "kind": "event",
+          "summary": "Emitted auth audit event"
+        }
+      ],
+      "consumes": []
+    }
+  ]
+}

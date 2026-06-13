@@ -63,7 +63,12 @@
         "runCommand": {
           "type": "string",
           "default": "{bin} loop run . --backlog {backlogDir} --iterations {iterations}",
-          "description": "Run the loop. Launched in the background by forge-5."
+          "description": "Run the loop. Launched in the background by forge-5. Human-formatted output; used as the fallback launch command when eventStreamCommand is absent."
+        },
+        "eventStreamCommand": {
+          "type": "string",
+          "default": "{bin} loop run . --backlog {backlogDir} --iterations {iterations} --ndjson",
+          "description": "PREFERRED launch command for forge-5. Same as runCommand but emits one machine-readable JSON event per stdout line (NDJSON): item_completed / item_blocked / needs_human / signal_parsed / loop_completed / loop_error / loop_cancelled / llm_stuck_warning, each with {type, timestamp, projectPath} plus payload (a circuit-breaker halt surfaces as loop_error). forge-5 redirects this stdout to {backlogDir}/{stateDir}/events.ndjson and arms a Monitor on it for live, structured supervision. If a runner cannot emit NDJSON, omit this field — forge-5 falls back to runCommand + tailing the human log."
         },
         "validateCommand": {
           "type": "string",
@@ -73,7 +78,12 @@
         "statusCommand": {
           "type": "string",
           "default": "{bin} status . --backlog {backlogDir}",
-          "description": "One-shot loop status."
+          "description": "One-shot loop status, human-formatted. Shown to the user as a monitoring hint."
+        },
+        "statusJsonCommand": {
+          "type": "string",
+          "default": "{bin} status . --backlog {backlogDir} --json",
+          "description": "Machine-readable derived status used by forge-5 for milestone tallies and the final summary. Emits { loopState, iteration, maxIterations, currentItem, lastSignal, backlogSummary{pending,inProgress,blocked,needsHuman,deferred,done,total}, lock{...} }. Distinguishes the three non-done outcomes (genuine blocked vs needsHuman vs runner-deferred 'false blocks')."
         },
         "listCommand": {
           "type": "string",
@@ -83,12 +93,17 @@
         "followCommand": {
           "type": "string",
           "default": "{bin} loop follow . --backlog {backlogDir}",
-          "description": "Stream live loop events."
+          "description": "Stream live loop events, HUMAN-formatted (pretty-printed / log tail) — for a person watching in another terminal, NOT a machine-readable surface. forge-5 supervises via eventStreamCommand (NDJSON) instead."
         },
         "logCommand": {
           "type": "string",
           "default": "{bin} log . --backlog {backlogDir} --follow",
-          "description": "Tail the runner log."
+          "description": "Tail the runner log, human-formatted. Monitoring hint for the user."
+        },
+        "watchCommand": {
+          "type": "string",
+          "default": "{bin} loop watch . --backlog {backlogDir} --json",
+          "description": "Machine-readable per-iteration telemetry used by forge-5 for stall detection. Emits the live iteration status { itemId, currentTool, lastActivityAt, stuckWarning, ... } or { status: 'no_iteration' }. forge-5 consults stuckWarning rather than guessing liveness from state.json timestamps."
         },
         "versionCommand": {
           "type": "string",

@@ -184,3 +184,40 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 - [ ] **CHECK-I18**: Package has a README or the docs directory has been populated
 - [ ] **CHECK-I19**: Exported functions/classes have documentation comments (JSDoc, docstrings, godoc, etc.)
 - [ ] **CHECK-I20**: Configuration options are documented
+
+## Epic Mode Checklist
+
+Run `epic-manifest.py validate "{epic}" --specs-dir "{specsDir}" --json` once; map its
+findings to E01/E02/E03/E08. Then perform the judgment checks E04–E07 by reading the
+manifest, EPIC.md, and completed members' specs.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}" --json
+```
+
+### Manifest Integrity (helper-delegated)
+- [ ] **CHECK-E01**: `epic-manifest.json` conforms to `epic-manifest-schema.json`
+  (delegated: `validate` reports `schema` / `corrupt-json` findings).
+- [ ] **CHECK-E02**: the `dependsOn` graph is **acyclic** (delegated: `validate` reports
+  `cycle`).
+- [ ] **CHECK-E03**: no dangling `dependsOn` / `consumes.from` — every reference names a
+  feature in `features[]` (delegated: `validate` reports `dangling-ref`).
+- [ ] **CHECK-E08**: **global name uniqueness** across the specs tree — no feature name
+  resolves to more than one feature-shaped dir (delegated: `validate` / `check-name`
+  report `duplicate-name` / `ambiguous`). Surfaced non-fatally for manual cleanup.
+
+### Charter & Contract Coverage (verifier judgment)
+- [ ] **CHECK-E04**: **charter coverage** — every feature has a non-empty `charter`
+  stating scope **and** contract obligations (REQ-EPIC-04).
+- [ ] **CHECK-E05**: each feature has a meaningful `exposes`/`consumes` declaration — flag
+  a feature with empty contracts that the narrative implies should have them
+  (REQ-EPIC-03). (Empty is *schema-legal* but suspicious for a feature other features
+  depend on.)
+- [ ] **CHECK-E06**: **EPIC.md ⇆ manifest contract drift, for completed features only** —
+  the contracts in `EPIC.md` match the manifest `exposes`/`consumes`, and a completed
+  feature's specs actually deliver what it `exposes`. Drift between EPIC.md prose and the
+  manifest, or between the manifest and the built spec, is a finding (REQ-VERIFY-01).
+- [ ] **CHECK-E07**: **back-pointer ⇆ manifest consistency** — every member's
+  `.pipeline-state.json` `epic` value names this epic, and every `features[]` entry has a
+  matching member directory. On conflict the **manifest wins** (REQ-STATE-01); report, do
+  not auto-repair.

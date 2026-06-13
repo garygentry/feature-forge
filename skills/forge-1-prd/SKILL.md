@@ -17,13 +17,13 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 ### Branch Setup (if using git)
 If `gitCommitAfterStage` is true and the project uses git, use `AskUserQuestion` to offer: "Want me to create a `forge/{feature}` branch for this pipeline? (Recommended — keeps forge work isolated.)" If yes, create and checkout the branch before proceeding.
 
-Set the working directory: `{specsDir}/{feature}/`
+Set the working directory by invoking the **Feature Directory Resolution** block in `references/shared-conventions.md`, which yields `{resolvedFeatureDir}`. Note one PRD-specific caveat: at PRD time a brand-new standalone feature may have NO directory yet, so resolution is expected to fail `not-found` for a never-started standalone feature — in that case forge-1 creates `{specsDir}/{feature}/` as today. For an epic member the directory already exists (created empty by forge-0-epic with an `epic` back-pointer), so resolution succeeds and yields the nested path.
 
 If `.pipeline-state.json` exists for this feature and `forge-1-prd` is already marked complete, use `AskUserQuestion` to warn: "A PRD already exists for '{feature}'. Continuing will create a new version. Proceed?"
 
 ## Step 2: Examine Existing Context
 
-Before starting the interview:
+Before starting the interview, invoke the **Epic Context Injection** block in `references/shared-conventions.md`. This block self-gates: it skips entirely if the feature has no `epic` back-pointer, so standalone behavior is unchanged. If this feature is an epic member, the injected charter's `exposes`/`consumes` are requirement inputs — every contract obligation must appear as a REQ in the PRD.
 
 1. **Check the project structure**: Read the project's build configuration and dependency manifests to understand what modules/packages exist. Look for `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `pom.xml`, workspace configs, or equivalent.
 2. **Check existing specs**: Look at `{specsDir}/` for other features' PRDs to understand conventions and the overall system
@@ -82,7 +82,7 @@ Before moving to Step 4, summarize your coverage as text, then use `AskUserQuest
 
 ## Step 4: Write the PRD
 
-Once the interview is thorough, write `{specsDir}/{feature}/PRD.md` following the structure in `references/prd-template.md`.
+Once the interview is thorough, write `{resolvedFeatureDir}/PRD.md` following the structure in `references/prd-template.md`.
 
 Every requirement MUST have a unique ID (e.g., REQ-AUTH-01, REQ-PERF-01). These IDs are referenced by all downstream documents.
 
@@ -101,7 +101,7 @@ Iterate until the user confirms the PRD is complete.
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
-1. Create or update `{specsDir}/{feature}/.pipeline-state.json`:
+1. Create or update `{resolvedFeatureDir}/.pipeline-state.json`:
    - Set `currentStage` to `forge-2-tech`
    - Set `stages.forge-1-prd.version` to 1 (or increment if revising)
    - Record `artifacts`, `completedAt`

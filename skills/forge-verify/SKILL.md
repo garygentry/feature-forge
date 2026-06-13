@@ -10,14 +10,65 @@ Analyze feature artifacts for completeness, consistency, and quality. Produce st
 
 ## Subagent Delegation
 
-This skill should be delegated to the `forge-verifier` subagent via the Agent tool. The verifier subagent has:
+This skill is delegated to the `forge-verifier` subagent via the Agent tool. The verifier subagent has:
 - **Read-only tools** (Read, Glob, Grep, Bash) — it cannot accidentally modify specs
 - **Persistent memory** — it accumulates knowledge about this project's recurring issues and patterns across sessions
 - **The forge-verify skill pre-loaded** — so it has all verification checklists and guidance at startup
 
-To delegate: use the Agent tool with `subagent_type="forge-verifier"` and pass the feature name and optional mode in the prompt. The verifier is read-only — it returns findings as its response. After the verifier completes, **you** (the parent agent) write the findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`.
+### Choose single vs. parallel dispatch
 
-If the `forge-verifier` subagent is not available (not installed, or running in an environment that doesn't support subagents), fall back to running verification inline in the current session.
+Pick based on how many checks the mode carries (see the per-mode totals in Step 3):
+
+- **Small modes (prd ~15, tech ~15): single verifier.** Use the Agent tool once with
+  `subagent_type="forge-verifier"`, passing the feature name and mode. It runs all
+  checks and returns findings.
+- **Large modes (specs ~38, backlog ~25, impl ~20): parallel dimensioned fan-out.**
+  Split the mode's checklist into **dimension groups** and dispatch **one
+  `forge-verifier` per group, in parallel — a single message with multiple Agent
+  calls** (the `superpowers:dispatching-parallel-agents` pattern). Each instance owns a
+  disjoint slice of CHECK-IDs, so it verifies deeper over a narrower scope and they all
+  run concurrently. Suggested groups (map to the category clusters in
+  `references/verification-checklists.md`):
+  - **specs:** (1) types/contracts, (2) architecture/layout, (3) cross-reference &
+    traceability, (4) testing strategy, (5) integration.
+  - **backlog:** (1) item scoping & acceptance criteria, (2) dependency/ordering sanity,
+    (3) spec coverage & traceability, (4) schema/enum correctness.
+  - **impl:** (1) requirement coverage vs specs, (2) integration correctness,
+    (3) testing, (4) code-quality/conventions.
+
+  In each parallel instance's prompt, pass: the feature, the mode, the **dimension
+  label**, the **exact CHECK-IDs it owns**, and a note that **it is one of several
+  parallel instances** — it must verify ONLY its assigned checks and return findings
+  for that slice. Tell parallel instances to treat their `MEMORY.md` as **read-only**
+  (apply learned patterns, but do NOT write it — concurrent writers would race);
+  memory consolidation is left to single-verifier runs.
+
+### Synthesize (parent session)
+
+The verifier(s) are read-only — they return findings as their response; **you** (the
+parent) assemble and write the single document to
+`{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`. When you fanned out:
+1. Concatenate all instances' findings and **renumber `V-NNN` IDs uniquely** across the
+   merged set.
+2. **Dedup** overlaps — when two instances flag the same file+location+issue (e.g. a
+   cross-reference and a type-contract verifier both catch one mismatch), keep one,
+   union their `Checklist:` IDs.
+3. Build the **single Fix Execution Plan** over the merged findings (Step 5). The output
+   document format is unchanged, so `forge-fix` consumes it identically.
+
+### Adversarial confirmation (opt-in "deep verify")
+
+When the user asks for a deep/thorough verify, add a confirmation pass before writing:
+for each `error`- and `gap`-severity finding, dispatch a short skeptic `forge-verifier`
+prompted to **refute** it ("here is a claimed finding; prove it wrong; default to
+REFUTED if you cannot confirm it from the artifacts"). Drop findings the skeptic refutes
+with confidence — this cuts false positives before they reach the user. Lower-severity
+findings (`improvement`, `inconsistency`) skip this pass.
+
+### Fallback
+
+If the `forge-verifier` subagent is not available (not installed, or an environment
+without subagents), fall back to running verification inline in the current session.
 
 **Inline execution guidance:** If running inline (not as subagent), process verification checklists one category at a time to manage context pressure. Load only the artifacts needed for each category, verify, summarize findings, then move to the next category.
 
@@ -35,6 +86,7 @@ Read `{specsDir}/{feature}/.pipeline-state.json` to understand current pipeline 
 
 If a stage is specified as a second argument (e.g., `/feature-forge:forge-verify auth specs`), use that mode. Otherwise, auto-detect based on pipeline state:
 
+- **epic mode**: Explicit via `/feature-forge:forge-verify {epic} epic`, or auto-detected when the named argument resolves to an **epic directory** — i.e. `{specsDir}/{name}/epic-manifest.json` exists (an epic root holds `epic-manifest.json` but no `.pipeline-state.json` of its own). When the argument is an epic, prefer epic mode over feature-mode resolution.
 - **prd mode**: If `forge-1-prd` is complete but `forge-verify-prd` is not `passed` or `findings-applied`
 - **tech mode**: If `forge-2-tech` is complete but `forge-verify-tech` is not `passed` or `findings-applied`
 - **specs mode**: If `forge-3-specs` is complete but `forge-verify-specs` is not `passed` or `findings-applied`
@@ -61,18 +113,26 @@ Load into context ALL artifacts for this feature based on mode:
 
 **For backlog mode:**
 - All of the above, PLUS
-- `{specsDir}/{feature}/backlog.json (or {backlogDir}/backlog.json if configured)`
+- `{resolvedFeatureDir}/backlog.json` (or `{backlogDir}/{feature}/backlog.json` if `backlogDir` is configured) — resolve `{resolvedFeatureDir}` via the **Feature Directory Resolution** block in `references/shared-conventions.md`, using the same composed path as forge-4-backlog and forge-5-loop (04 §6.2)
 
 **For impl mode:**
 - All of the above, PLUS
 - The actual source code for this feature (read package directory)
 - Source code of packages this feature integrates with
 
+**For epic mode:**
+- `{specsDir}/{epic}/epic-manifest.json`
+- `{specsDir}/{epic}/EPIC.md`
+- each member feature's `.pipeline-state.json` (for the `epic` back-pointer + derived status)
+- each **completed** member's `PRD.md` + `tech-spec.md` (for contract-drift checking, CHECK-E06)
+
 ## Step 3: Run Verification Checklists
 
 Read `references/verification-checklists.md` for the detailed checklists per mode. Execute every check. Do not skip checks because things "look fine."
 
-Each check in `verification-checklists.md` has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: ~15 checks, tech: ~15 checks, specs: ~38 checks, backlog: ~25 checks, impl: ~20 checks), you likely skipped checks — go back and complete them.
+Each check in `verification-checklists.md` has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: ~15 checks, tech: ~15 checks, specs: ~38 checks, backlog: ~25 checks, impl: ~20 checks, epic: ~8 checks), you likely skipped checks — go back and complete them.
+
+**Epic mode dispatch.** Epic mode is a small (~8-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the Agent tool, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E08 from the `## Epic Mode Checklist` in `references/verification-checklists.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07 are verifier judgment) and returns its findings.
 
 ### Important: Be Specific, Not General
 
@@ -90,7 +150,9 @@ Every finding must include:
 
 ## Step 4: Write Findings Document
 
-Ensure the `.verification/` subdirectory exists, then write findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`:
+Ensure the `.verification/` subdirectory exists, then write findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`.
+
+**For epic mode**, the target is `{specsDir}/{epic}/.verification/VERIFY-epic-{YYYY-MM-DD}.md` (the same format, with `{mode}=epic`).
 
 ```markdown
 # Verification Report: {feature} ({mode})
@@ -194,6 +256,78 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 Update `{specsDir}/{feature}/.pipeline-state.json`:
 - Set the relevant verify entry status to `findings-reported`
 - Record `findingsFile`, `findingsCount`, `verifiedAt`
+
+Do NOT mark as `findings-applied` — that happens after the fix pass.
+
+### Epic mode state (`.epic-state.json`)
+
+Epic mode is **epic-scoped**, not per-feature: record its result into the epic-level
+state file `{specsDir}/{epic}/.epic-state.json` — **never** into any member's
+`.pipeline-state.json`. This file holds only epic-scoped stage entries (currently just
+`forge-verify-epic`) and carries **no cached per-feature member status** (so it does not
+violate REQ-STATE-02; per-feature status is always derived live from each member's
+`.pipeline-state.json`).
+
+Set `stages.forge-verify-epic.status` to `findings-reported` (or `passed` if zero
+findings), recording `findingsFile`, `findingsCount`, and `verifiedAt`. The minimal
+shape:
+
+```jsonc
+{
+  "epic": "auth-overhaul",              // matches the manifest `epic`
+  "stages": {
+    "forge-verify-epic": {
+      "status": "findings-reported",     // "findings-reported" | "passed" | "findings-applied"
+      "findingsFile": ".verification/VERIFY-epic-2026-06-12.md",
+      "findingsCount": 3,
+      "verifiedAt": "2026-06-12T00:00:00Z"
+    }
+  }
+}
+```
+
+**Write mechanism.** `epic-manifest.py` exposes no subcommand that writes this file, so
+the skill writes it **directly**, using an atomic temp-file + `os.replace()` pattern
+(mirroring `02-manifest-helper-cli.md §3.3`): serialize the merged state to a sibling
+temp file in `{specsDir}/{epic}/`, flush, then `os.replace()` it into place. Create the
+file **lazily on first write** (a missing file is simply created; an existing file is
+read, its `stages.forge-verify-epic` entry merged/replaced, and rewritten). On any I/O
+failure, **report the error and leave any prior `.epic-state.json` intact** (never a
+partial write). For example:
+
+```bash
+python3 - "$SPECS_DIR/$EPIC" <<'PY'
+import json, os, sys, tempfile
+from pathlib import Path
+epic_dir = Path(sys.argv[1])
+path = epic_dir / ".epic-state.json"
+state = {}
+if path.exists():
+    state = json.loads(path.read_text())
+state.setdefault("epic", epic_dir.name)
+state.setdefault("stages", {})
+state["stages"]["forge-verify-epic"] = {
+    "status": "findings-reported",   # or "passed" when findingsCount == 0
+    "findingsFile": ".verification/VERIFY-epic-2026-06-12.md",
+    "findingsCount": 3,
+    "verifiedAt": "2026-06-12T00:00:00Z",
+}
+fd, tmp = tempfile.mkstemp(dir=str(epic_dir), prefix=".epic-state.", suffix=".tmp")
+try:
+    with os.fdopen(fd, "w") as f:
+        json.dump(state, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+except OSError as e:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    print(f"failed to write .epic-state.json: {e}", file=sys.stderr)
+    raise
+PY
+```
 
 Do NOT mark as `findings-applied` — that happens after the fix pass.
 

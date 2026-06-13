@@ -17,7 +17,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 ## Step 1: Locate Findings Document
 
 1. Read `forge.config.json` for `specsDir` (default: `./specs`)
-2. Find the most recent `VERIFY-*-*.md` file in `{specsDir}/{feature}/.verification/`
+2. Resolve the feature directory via the **Feature Directory Resolution** block in `references/shared-conventions.md` (a standalone feature resolves to its flat `{specsDir}/{feature}/` path exactly as today; an epic member resolves to its nested path). Then find the most recent `VERIFY-*-*.md` file in `{resolvedFeatureDir}/.verification/`.
 3. If no findings document exists, tell the user: "No verification findings found. Run `/feature-forge:forge-verify {feature}` first."
 
 ## Step 2: Parse Fix Execution Plan
@@ -51,10 +51,10 @@ For each step in the "Execution Steps" section, in order:
 
 Follow the Git Commit Protocol in `references/shared-conventions.md`.
 
-1. Update `{specsDir}/{feature}/.pipeline-state.json`:
+1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
    - Set the relevant `forge-verify-*` entry status to `findings-applied`
    - Record `fixedAt` timestamp
-2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files, attempt commit with message `"{commitPrefix}({feature}): apply {mode} verification fixes"`, then record commit hash only on success.
+2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files (`git add {resolvedFeatureDir}/` — or `{specsDir}/{epic}/` for an epic member so the member-state change commits atomically with the epic subtree), attempt commit with message `"{commitPrefix}({feature}): apply {mode} verification fixes"`, then record commit hash only on success.
 
 ## Step 6: Next Steps
 

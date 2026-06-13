@@ -18,11 +18,15 @@ home for backlog-authoring knowledge, shared with the repo-wide ad-hoc flow.
 
 ## Prerequisites
 
-Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
+Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding. Resolve the feature directory `{resolvedFeatureDir}` via the **Feature Directory Resolution** block in `references/shared-conventions.md` — do not hardcode `{specsDir}/{feature}/` (see Step 1).
 
 Resolve the **backlog directory** `{backlogDir}`:
-- If `backlogDir` is set in `forge.config.json`: `{backlogDir}`.
-- Otherwise: `{specsDir}/{feature}` (backlog.json lands at `{specsDir}/{feature}/backlog.json`).
+- **`backlogDir` unset (default):** the backlog lives at the resolved feature directory — `{resolvedFeatureDir}/backlog.json` — for both flat and nested features, exactly as today.
+- **`backlogDir` configured:** compose a **per-feature subpath** — `{backlogDir}/{feature}/` — so each epic member's backlog stays independent (the authored file lands at `{backlogDir}/{feature}/backlog.json`). A bare shared `backlogDir` would collide across a multi-feature epic and violate REQ-COMPAT-03; the `{feature}` segment prevents that. Standalone features under a configured `backlogDir` likewise resolve to `{backlogDir}/{feature}/`, which is backward-compatible because each standalone feature name is already unique.
+
+This is the **single** place this rule is implemented. forge-5-loop's backlog-file check must read the same composed `{backlogDir}/{feature}/backlog.json` (that matching forge-5-loop edit lands in item 016), and forge-verify's backlog-mode load uses the same path. rauf itself is unchanged: backlogs remain per-feature and rauf is still launched against a single per-feature backlog path — only the *path composition* changes (REQ-COMPAT-03).
+
+**Let `{resolvedBacklogDir}` denote the composed target of this rule** — i.e. `{backlogDir}/{feature}` when a `backlogDir` is configured, else `{resolvedFeatureDir}`. Every downstream step below (authoring, validation) uses `{resolvedBacklogDir}`, never the bare config value, so the per-feature `{feature}` segment is never dropped.
 
 Resolve the **loop runner** from the `loopRunner` block in `forge.config.json`, filling missing fields from the defaults in `references/forge-config-schema.json` (defaults to rauf). You need its `bin`, `validateCommand`, `versionCommand`, `minRunnerVersion`, and `installHint`.
 
@@ -30,16 +34,18 @@ Resolve the **loop runner** from the `loopRunner` block in `forge.config.json`, 
 
 ## Step 1: Validate Prerequisites
 
-**Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode, stages `forge-1-prd`, `forge-2-tech`, and `forge-3-specs` must all be `complete`. If not, STOP and tell the user which prerequisites are missing.
+**Resolve the feature directory first.** Invoke the **Feature Directory Resolution** block in `references/shared-conventions.md` to turn the bare feature name into `{resolvedFeatureDir}` (exit 0 → stdout is the absolute dir; exit ≥ 1 → STOP and surface the finding verbatim). Read state and specs from `{resolvedFeatureDir}/` everywhere this skill previously wrote `{specsDir}/{feature}/`. Standalone features resolve to their flat path exactly as today.
+
+**Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, stages `forge-1-prd`, `forge-2-tech`, and `forge-3-specs` must all be `complete`. If not, STOP and tell the user which prerequisites are missing.
 
 **Strongly recommended:** Check if specs have been verified. If not, use `AskUserQuestion` to warn: "Specs haven't been verified yet. It's recommended to run `/feature-forge:forge-verify {feature}` first. Continue anyway?"
 
 ## Step 2: Load All Specs
 
 Read all spec documents into context:
-- `{specsDir}/{feature}/PRD.md`
-- `{specsDir}/{feature}/tech-spec.md`
-- `{specsDir}/{feature}/##-*.md` (all implementation specs)
+- `{resolvedFeatureDir}/PRD.md`
+- `{resolvedFeatureDir}/tech-spec.md`
+- `{resolvedFeatureDir}/##-*.md` (all implementation specs)
 
 If the spec suite is large (8+ documents), focus on loading the architecture layout (01-*), shared types (00-*), and testing strategy documents first. Load individual subsystem specs as needed when writing the corresponding backlog items, rather than loading all specs simultaneously.
 
@@ -66,9 +72,9 @@ After presenting the plan as text, use `AskUserQuestion` to ask: "Does this brea
 ## Step 4: Author backlog.json — delegate to `author-backlog`
 
 **Invoke the rauf plugin's `author-backlog` skill** (via the Skill tool) to write
-`{backlogDir}/backlog.json`. Pass it:
+`{resolvedBacklogDir}/backlog.json`. Pass it:
 
-- the target backlog directory `{backlogDir}`,
+- the target backlog directory `{resolvedBacklogDir}`,
 - the approved plan from Step 3,
 - the spec context loaded in Step 2,
 - the project's `typeCheckCommand` / `testCommand` (from `forge.config.json`) so acceptance criteria are concrete and runnable.
@@ -84,14 +90,16 @@ After presenting the plan as text, use `AskUserQuestion` to ask: "Does this brea
 **Forge-specific item requirements** layered on top of `author-backlog`'s output:
 - `specReferences` must be paths **relative to the project root** (e.g. `specs/auth/00-core-definitions.md`), NOT relative to the backlog file. The validator resolves them from the project root (not from `--specs-dir`, which only gates the check).
 
+> **Backlog schema & rauf contract are unchanged (REQ-COMPAT-03).** Epic membership adds **no** fields to backlog items — dependency edges live in the epic manifest, never in any backlog item. The JSON written here is byte-for-byte the same shape as a pre-epic standalone feature's backlog, and rauf is still launched against a single per-feature backlog path. Only the *path composition* changes (the `{feature}` segment in the backlog-directory rule above), not the schema or rauf's CLI surface.
+
 ## Step 5: Validate via the loop runner
 
 Validate the generated backlog by running the runner's **validate command**
-(`loopRunner.validateCommand`), rendered with `{backlogDir}` and `{specsDir}`
+(`loopRunner.validateCommand`), rendered with `{resolvedBacklogDir}` and `{specsDir}`
 substituted — the rauf default:
 
 ```bash
-rauf backlog validate . --backlog {backlogDir} --specs-dir {specsDir} --json
+rauf backlog validate . --backlog {resolvedBacklogDir} --specs-dir {specsDir} --json
 ```
 
 Interpret the result:
@@ -120,7 +128,7 @@ Use `AskUserQuestion` to ask: "Ready to proceed, or any adjustments needed?"
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`. Follow the Git Commit Protocol in `references/shared-conventions.md`.
 
-1. Update `{specsDir}/{feature}/.pipeline-state.json`:
+1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
    - Record `artifacts` (path to backlog.json)
    - Set `stages.forge-4-backlog.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>, "forge-3-specs": <current version>}`
    - Set `currentStage` to `forge-5-loop`

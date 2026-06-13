@@ -16,15 +16,19 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 ## Step 1: Validate Prerequisites
 
-**Prerequisite check:** Read `{specsDir}/{feature}/.pipeline-state.json`. If not in force mode, both `forge-1-prd` and `forge-2-tech` must be `complete`. If not, STOP and tell the user which prerequisites are missing.
+**Resolve the feature directory first** via the **Feature Directory Resolution** block in `references/shared-conventions.md`, setting `{resolvedFeatureDir}`.
 
-Read both `{specsDir}/{feature}/PRD.md` and `{specsDir}/{feature}/tech-spec.md` into context.
+**Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, both `forge-1-prd` and `forge-2-tech` must be `complete`. If not, STOP and tell the user which prerequisites are missing.
+
+Read both `{resolvedFeatureDir}/PRD.md` and `{resolvedFeatureDir}/tech-spec.md` into context.
+
+After reading the PRD and tech spec, invoke the **Epic Context Injection** block in `references/shared-conventions.md`. It self-gates on the resolved feature's `epic` back-pointer: for a standalone feature it is a no-op; for an epic member it loads EPIC.md, this feature's charter, and the completed direct dependencies' specs into context before the spec suite is planned.
 
 ## Step 2: Examine Existing Context
 
 1. **Read the PRD and tech spec thoroughly**: These are your source of truth
 2. **Examine the existing codebase**: Look at how other packages are structured, what patterns they follow, what types they export
-3. **Check other features' implementation specs**: Look at `{specsDir}/*/[0-9][0-9]-*.md` for consistency in format and depth
+3. **Check other features' implementation specs**: Look at `{specsDir}/*/[0-9][0-9]-*.md` AND `{specsDir}/*/*/[0-9][0-9]-*.md` (depth-2, for epic-nested features) for consistency in format and depth. Subject to the **feature-shaped-dir bound**: only treat a matched directory as a feature if it directly contains a `.pipeline-state.json` (per the Feature Directory Resolution block) — ignore `EPIC.md` directories and other non-feature subtrees. Flat-only trees gain no new matches from the depth-2 glob, so standalone behavior is unchanged (REQ-COMPAT-01).
 4. **Read integration target code**: For every package listed as an integration point in the tech spec, read its actual source — types, exports, patterns. For every integration point, include the EXACT function signature and import path you read from the source code. Include the file path where you found it. If you cannot locate an expected export, say so explicitly: 'WARNING: Could not locate X export in {module} — verify this exists before implementing.'
 5. **Read spec examples**: Read `references/spec-examples.md` for the expected depth and quality of spec sections. These examples are your quality bar.
 
@@ -51,27 +55,51 @@ Feature-specific:
 
 **Then call `AskUserQuestion`** with: "Does this look right? Should I add or remove any documents?"
 
-### Context Management
-
-If the spec suite requires more than 5 documents:
-1. Write documents in batches of 3-5
-2. After each batch, present to the user for review
-3. If `gitCommitAfterStage` is true:
-     `git add {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): specs batch {n}"`
-4. For the next batch, re-read only the shared types document (00-core-definitions.md) and the specific upstream docs relevant to the next batch — do not re-load everything
-5. Continue until all documents are complete
-
-This prevents quality degradation from context pressure. The first documents you write should be the foundation (types, architecture) since later documents reference them.
-
-**Incremental artifact tracking:** After writing each spec document, immediately update the `artifacts` array in `.pipeline-state.json` with the new file path. This enables crash recovery if the session is interrupted mid-batch (see shared-conventions.md "Crash Recovery").
+**Incremental artifact tracking:** After each spec document is written (by you or a writer subagent), immediately update the `artifacts` array in `.pipeline-state.json` with the new file path. This enables crash recovery if the session is interrupted mid-suite (see shared-conventions.md "Crash Recovery").
 
 ## Step 4: Write the Spec Suite
 
-For each document:
+The suite has a hard internal dependency: every domain/integration doc references the
+shared types and layout from `00-core-definitions.md` and `01-architecture-layout.md`.
+So author in two phases — a sequential foundation, then a parallel fan-out.
+
+### 4a. Foundation pass (sequential, you author)
+
+Write `00-core-definitions.md` and `01-architecture-layout.md` yourself, in the main
+session, **before** anything else. Every later document depends on these shared types
+and the directory/exports map, so they must exist and be stable first.
+
+### 4b. Domain fan-out (parallel `forge-spec-writer` subagents)
+
+Once the foundation is written, dispatch the remaining numbered docs in parallel — **one
+`forge-spec-writer` subagent per document, in a single message with multiple Agent
+calls** (the `superpowers:dispatching-parallel-agents` pattern). Each writer is given:
+- the PRD and tech-spec,
+- the just-written `00-core-definitions.md` and `01-architecture-layout.md` (so it builds
+  on the shared types, not its own),
+- the stack profile path `references/stacks/{stack}.md` (if `stack` is set in config),
+- the quality bar in `references/spec-examples.md`,
+- the **exact single filename it must write** and the archetype slice (from
+  `references/spec-archetypes.md`) it covers.
+- **(epic members only — additive context):** the relevant `EPIC.md` Contracts section(s)
+  for this feature, and the `tech-spec.md` of each completed direct dependency at {paths} — so
+  the doc is written against real upstream contracts, not guesses.
+
+Each writer authors **only its one assigned file** and returns a short **manifest** of
+the `REQ-XXX-NN` IDs it covered (feeds Step 5 traceability). Author `NN-testing-strategy.md`
+last (it can be its own writer, or you author it once the others' shapes are known).
+
+**Fallback (no subagents available):** author the documents yourself in batches of 3–5,
+foundation first; after each batch, optionally commit
+(`git add {specsDir}/{feature}/ && git commit -m "{commitPrefix}({feature}): specs batch {n}"`)
+and re-read only `00-core-definitions.md` plus the upstream docs the next batch needs —
+do not reload everything. This keeps quality up under context pressure.
+
+### Quality requirements (every document, whoever writes it)
 
 1. Number sequentially: `00-`, `01-`, `02-`, etc.
 2. Every implementation detail MUST trace to either a PRD requirement (REQ-XXX-NN) or a tech-spec decision
-3. Before writing each spec document, include a `## Requirement Coverage` table at the top mapping every REQ-XXX-NN this document covers to the section that implements it
+3. Before the body, include a `## Requirement Coverage` table mapping every REQ-XXX-NN this document covers to the section that implements it
 4. Include complete type definitions, data structures, and function signatures in the project's language — not pseudocode. If a stack profile exists at `references/stacks/{stack}.md` (where `{stack}` comes from `forge.config.json`), follow its conventions for type definitions, error hierarchies, and documentation comments.
 5. Include error handling for every operation
 6. Include example usage where it aids clarity
@@ -93,7 +121,7 @@ After writing all documents, verify:
 3. Cross-references between spec documents are consistent (no broken references)
 4. Type definitions used across documents are consistent
 5. No orphaned implementation details that don't trace to requirements
-6. Produce a traceability matrix: a markdown table mapping every REQ-XXX-NN from the PRD to the spec document and section that implements it. Write this to `{specsDir}/{feature}/TRACEABILITY.md`
+6. Produce a traceability matrix: a markdown table mapping every REQ-XXX-NN from the PRD to the spec document and section that implements it. Write this to `{resolvedFeatureDir}/TRACEABILITY.md`
 
 List any gaps or inconsistencies found and resolve them.
 
@@ -107,7 +135,7 @@ Present a summary of all documents created as text, with key decisions highlight
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
-1. Update `{specsDir}/{feature}/.pipeline-state.json`:
+1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
    - Set `currentStage` to `forge-4-backlog` (or verification if they want to verify first)
    - Record all created files in `artifacts`, including `TRACEABILITY.md`
    - Set `stages.forge-3-specs.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>}`

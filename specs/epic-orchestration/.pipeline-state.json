@@ -1,0 +1,131 @@
+{
+  "feature": "epic-orchestration",
+  "pipelineStatus": "active",
+  "currentStage": "complete",
+  "createdAt": "2026-06-12T00:00:00Z",
+  "updatedAt": "2026-06-13T02:45:00Z",
+  "notes": "Term 'epic' chosen over 'initiative'. Nested layout specs/<epic>/<feature> decided. v1: prompted handoff, serial execution, JIT charters, warn+confirm dep gate. Open questions in PRD section 7. TECH DECISIONS: Python manifest helper (scripts/epic-manifest.py) is deterministic core (acyclicity, validate, resolve, atomic writes, render-status). Manifest is single source of truth for charters + exposes/consumes; EPIC.md generated narrative mirrors it; no cached per-feature status (derived live). Centralized name->dir resolution via shared-conventions block. Completion = forge-5-loop done AND (impl-verify absent OR passed/applied); handoff offers impl-verify (recommended, skippable). Full edit-scope across all stages.",
+  "stages": {
+    "forge-1-prd": {
+      "status": "complete",
+      "commitHash": "e69b7fe",
+      "version": 1,
+      "basedOnVersions": {},
+      "artifacts": ["PRD.md"],
+      "completedAt": "2026-06-12T00:00:00Z"
+    },
+    "forge-verify-prd": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-prd-2026-06-12.md",
+      "findingsCount": 7,
+      "verifiedAt": "2026-06-12T00:00:00Z",
+      "fixedAt": "2026-06-12T00:00:00Z"
+    },
+    "forge-2-tech": {
+      "status": "complete",
+      "version": 1,
+      "commitHash": "f46fe38",
+      "artifacts": ["tech-spec.md"],
+      "completedAt": "2026-06-12T00:00:00Z",
+      "basedOnVersions": { "forge-1-prd": 1 }
+    },
+    "forge-verify-tech": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-tech-2026-06-12.md",
+      "findingsCount": 4,
+      "verifiedAt": "2026-06-12T00:00:00Z",
+      "fixedAt": "2026-06-12T00:00:00Z",
+      "commitHash": "1a101a3"
+    },
+    "forge-3-specs": {
+      "status": "complete",
+      "version": 1,
+      "commitHash": "929c5c4",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-manifest-helper-cli.md",
+        "03-forge-0-epic-stage.md",
+        "04-pipeline-integration.md",
+        "05-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "startedAt": "2026-06-12T00:00:00Z",
+      "completedAt": "2026-06-12T00:00:00Z",
+      "basedOnVersions": { "forge-1-prd": 1, "forge-2-tech": 1 }
+    },
+    "forge-verify-specs": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-specs-2026-06-12-r2.md",
+      "findingsCount": 5,
+      "verifiedAt": "2026-06-12T00:00:00Z",
+      "fixedAt": "2026-06-12T00:00:00Z",
+      "commitHash": "4cbc422",
+      "previousRound": {
+        "findingsFile": ".verification/VERIFY-specs-2026-06-12.md",
+        "findingsCount": 8,
+        "fixedAt": "2026-06-12T00:00:00Z",
+        "commitHash": "869159c"
+      }
+    },
+    "forge-4-backlog": {
+      "status": "complete",
+      "commitHash": "23a7e95",
+      "artifacts": ["backlog.json"],
+      "basedOnVersions": { "forge-1-prd": 1, "forge-2-tech": 1, "forge-3-specs": 1 },
+      "itemCount": 21,
+      "completedAt": "2026-06-12T17:45:00Z"
+    },
+    "forge-verify-backlog": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-backlog-2026-06-12.md",
+      "findingsCount": 5,
+      "verifiedAt": "2026-06-12T21:50:00Z",
+      "fixedAt": "2026-06-12T21:55:00Z"
+    },
+    "forge-5-loop": {
+      "status": "complete",
+      "startedAt": "2026-06-12T22:10:00Z",
+      "completedAt": "2026-06-12T23:05:00Z",
+      "basedOnVersions": { "forge-4-backlog": 1 },
+      "artifacts": ["specs/epic-orchestration/.rauf/state.json"]
+    },
+    "forge-verify-impl": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-impl-2026-06-13-confirm.md",
+      "findingsCount": 0,
+      "verifiedAt": "2026-06-13T02:45:00Z",
+      "previousRound": {
+        "status": "findings-applied",
+        "findingsFile": ".verification/VERIFY-impl-2026-06-13.md",
+        "findingsCount": 8,
+        "verifiedAt": "2026-06-13T01:45:00Z",
+        "fixedAt": "2026-06-13T02:00:00Z",
+        "previousRound": {
+          "status": "findings-applied",
+          "findingsFile": ".verification/VERIFY-impl-2026-06-12.md",
+          "findingsCount": 10,
+          "verifiedAt": "2026-06-12T23:15:00Z",
+          "fixedAt": "2026-06-12T23:30:00Z"
+        }
+      }
+    },
+    "forge-6-docs": {
+      "status": "complete",
+      "commitHash": "ed3452b",
+      "artifacts": [
+        "docs/architecture/epic-orchestration/README.md",
+        "docs/architecture/epic-orchestration/architecture.md",
+        "docs/architecture/epic-orchestration/cli-reference.md",
+        "docs/architecture/epic-orchestration/guides/integration.md"
+      ],
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1,
+        "forge-3-specs": 1,
+        "forge-4-backlog": 1
+      },
+      "completedAt": "2026-06-12T23:45:00Z"
+    }
+  }
+}
