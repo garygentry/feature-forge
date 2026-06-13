@@ -3,7 +3,7 @@
   "pipelineStatus": "active",
   "currentStage": "complete",
   "createdAt": "2026-06-12T00:00:00Z",
-  "updatedAt": "2026-06-13T02:00:00Z",
+  "updatedAt": "2026-06-13T02:45:00Z",
   "notes": "Term 'epic' chosen over 'initiative'. Nested layout specs/<epic>/<feature> decided. v1: prompted handoff, serial execution, JIT charters, warn+confirm dep gate. Open questions in PRD section 7. TECH DECISIONS: Python manifest helper (scripts/epic-manifest.py) is deterministic core (acyclicity, validate, resolve, atomic writes, render-status). Manifest is single source of truth for charters + exposes/consumes; EPIC.md generated narrative mirrors it; no cached per-feature status (derived live). Centralized name->dir resolution via shared-conventions block. Completion = forge-5-loop done AND (impl-verify absent OR passed/applied); handoff offers impl-verify (recommended, skippable). Full edit-scope across all stages.",
   "stages": {
     "forge-1-prd": {
@@ -91,17 +91,23 @@
       "artifacts": ["specs/epic-orchestration/.rauf/state.json"]
     },
     "forge-verify-impl": {
-      "status": "findings-applied",
-      "findingsFile": ".verification/VERIFY-impl-2026-06-13.md",
-      "findingsCount": 8,
-      "verifiedAt": "2026-06-13T01:45:00Z",
-      "fixedAt": "2026-06-13T02:00:00Z",
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-impl-2026-06-13-confirm.md",
+      "findingsCount": 0,
+      "verifiedAt": "2026-06-13T02:45:00Z",
       "previousRound": {
         "status": "findings-applied",
-        "findingsFile": ".verification/VERIFY-impl-2026-06-12.md",
-        "findingsCount": 10,
-        "verifiedAt": "2026-06-12T23:15:00Z",
-        "fixedAt": "2026-06-12T23:30:00Z"
+        "findingsFile": ".verification/VERIFY-impl-2026-06-13.md",
+        "findingsCount": 8,
+        "verifiedAt": "2026-06-13T01:45:00Z",
+        "fixedAt": "2026-06-13T02:00:00Z",
+        "previousRound": {
+          "status": "findings-applied",
+          "findingsFile": ".verification/VERIFY-impl-2026-06-12.md",
+          "findingsCount": 10,
+          "verifiedAt": "2026-06-12T23:15:00Z",
+          "fixedAt": "2026-06-12T23:30:00Z"
+        }
       }
     },
     "forge-6-docs": {
