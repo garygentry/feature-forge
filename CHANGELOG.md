@@ -5,6 +5,28 @@ All notable changes to feature-forge are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-06-13
+
+### Changed
+
+- **Requires rauf ≥ 0.5.0.** Bumped `loopRunner.minRunnerVersion` default
+  `0.2.0` → `0.5.0` to match rauf's **v0.5.0 grammar + contract flip**: unified
+  exit codes across `status` / `loop run`, `loop run --detached` replacing
+  `loop start`, an explicit `review` signal, and versioned `events.ndjson`.
+  feature-forge reads the unified exit-code / status surface, so `forge-5-loop`
+  now gates on 0.5.0 (`rauf version --json`, semver-compared) before running.
+- **Updated `loopRunner` command defaults to the v0.5.0 rauf surface:**
+  `followCommand` `{bin} loop follow …` → `{bin} follow …` (`loop follow` was
+  promoted to the top-level `follow` verb in rauf's Phase-1 monitor clean-break),
+  and `watchCommand` `{bin} loop watch … --json` → `{bin} status … --json` (the
+  `loop watch` verb was removed; stall telemetry — `stuckWarning` — is now read
+  from `status --json` / `iteration-status.json`). A project that pins these
+  commands in its own `forge.config.json` should update them likewise.
+
+### Requires
+
+- **rauf ≥ 0.5.0.** See `COMPATIBILITY.md`.
+
 ## [0.9.0] — 2026-06-09
 
 ### Changed

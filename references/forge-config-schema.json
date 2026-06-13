@@ -92,7 +92,7 @@
         },
         "followCommand": {
           "type": "string",
-          "default": "{bin} loop follow . --backlog {backlogDir}",
+          "default": "{bin} follow . --backlog {backlogDir}",
           "description": "Stream live loop events, HUMAN-formatted (pretty-printed / log tail) — for a person watching in another terminal, NOT a machine-readable surface. forge-5 supervises via eventStreamCommand (NDJSON) instead."
         },
         "logCommand": {
@@ -102,8 +102,8 @@
         },
         "watchCommand": {
           "type": "string",
-          "default": "{bin} loop watch . --backlog {backlogDir} --json",
-          "description": "Machine-readable per-iteration telemetry used by forge-5 for stall detection. Emits the live iteration status { itemId, currentTool, lastActivityAt, stuckWarning, ... } or { status: 'no_iteration' }. forge-5 consults stuckWarning rather than guessing liveness from state.json timestamps."
+          "default": "{bin} status . --backlog {backlogDir} --json",
+          "description": "Machine-readable status used by forge-5 for stall detection. rauf's `loop watch` verb was removed in v0.5.0, so this now points at `status --json`; forge-5 keys off the iteration-status `stuckWarning` flag (read from `status --json` / `iteration-status.json`) rather than guessing liveness from state.json timestamps."
         },
         "versionCommand": {
           "type": "string",
@@ -137,8 +137,8 @@
         },
         "minRunnerVersion": {
           "type": "string",
-          "default": "0.2.0",
-          "description": "Minimum runner version (semver). 0.2.0 is the first rauf release shipping `backlog validate` + schemaVersion. forge-5 enforces this via versionCommand before running."
+          "default": "0.5.0",
+          "description": "Minimum runner version (semver). 0.5.0 is rauf's grammar + contract flip (unified exit codes across status/loop run, `loop run --detached` replacing `loop start`, explicit `review` signal, versioned events.ndjson) that feature-forge's exit-code/status reads depend on. forge-5 enforces this via versionCommand before running."
         }
       }
     }

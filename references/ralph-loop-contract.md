@@ -43,12 +43,12 @@ defined authoritatively in rauf's
   circuit-breaker halt surfaces as `loop_error`) — plus a
   derived-status JSON (`loopRunner.statusJsonCommand`, rauf: `status … --json`) and
   per-iteration telemetry with a `stuckWarning` flag (`loopRunner.watchCommand`,
-  rauf: `loop watch … --json`). `forge-5-loop` supervises the run through these,
+  rauf: `status … --json` — the `loop watch` verb was removed in v0.5.0). `forge-5-loop` supervises the run through these,
   **not** by parsing the human log. `followCommand` / `logCommand` are
   human-formatted streams for a person watching in a terminal, not machine surfaces.
 - **The state-dir layout** (per-`--backlog` isolation under `loopRunner.stateDir`).
 - **The CLI verbs** mapped by `loopRunner`: run (+ event-stream) / validate /
-  status (+ `--json`) / list / watch / follow / log / version.
+  status (+ `--json`) / list / follow / log / version.
 - **A `version` verb** (`{bin} version --json` → `{ version: <semver> }`) so
   feature-forge can enforce `loopRunner.minRunnerVersion` before running.
 
@@ -73,8 +73,9 @@ command) without touching any pipeline skill.
 
 ## Version gating
 
-feature-forge requires a runner new enough to expose `backlog validate` +
-backlog `schemaVersion`. For rauf that is **0.2.0** (`loopRunner.minRunnerVersion`).
+feature-forge requires a runner exposing `backlog validate` + backlog
+`schemaVersion`, and (from v0.5.0) the unified exit-code/status contract it reads.
+For rauf that is **0.5.0** (`loopRunner.minRunnerVersion`).
 `forge-5-loop` runs `{bin} version --json`, semver-compares the reported version
 against `minRunnerVersion`, and on a missing-or-too-old runner stops with
 `loopRunner.installHint` (the CLI install/upgrade command) — **before** invoking

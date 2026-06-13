@@ -80,7 +80,7 @@ Enforce `loopRunner.minRunnerVersion` **before** doing anything else with the ru
 
 1. Run the **version command** (`loopRunner.versionCommand`, default `rauf version --json`) via Bash.
 2. Parse `{ "version": "<semver>" }` from stdout. Do NOT use plain `rauf version` (its human output is `rauf v0.1.0` with a `v` prefix) — always the `--json` form.
-3. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.2.0`), numerically by major, then minor, then patch.
+3. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.5.0`), numerically by major, then minor, then patch.
 
 **Any of the following is a HARD GATE FAILURE — do NOT proceed to run the loop.** STOP, show `loopRunner.installHint`, and include the raw command output for diagnosis:
 
