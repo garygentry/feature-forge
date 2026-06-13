@@ -98,7 +98,8 @@
       "fixedAt": "2026-06-12T23:30:00Z"
     },
     "forge-6-docs": {
-      "status": "in-progress",
+      "status": "complete",
+      "commitHash": "ed3452b",
       "artifacts": [
         "docs/architecture/epic-orchestration/README.md",
         "docs/architecture/epic-orchestration/architecture.md",
