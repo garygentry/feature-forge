@@ -852,6 +852,7 @@ helper subcommand and is asserted by this suite.
 | `ambiguous` | `resolve` in `dup-name/` | §3.4 `test_resolve_ambiguous_name` |
 
 > `schema` and `cached-status` share §3.2 because a per-feature `status` field is the
-> canonical schema violation guarding REQ-STATE-02; an additional `schema`-only case
-> (missing required top-level field) is listed in §3.2 prose and should be added as a
-> sibling test during implementation.
+> canonical schema violation guarding REQ-STATE-02. The additional `schema`-only cases are
+> implemented: `test_validate_missing_required_field_is_schema` (missing required top-level
+> field) and `test_validate_unknown_key_is_schema` (the `additionalProperties: false`
+> contract).

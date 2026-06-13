@@ -11,11 +11,11 @@ Usage:
     python3 epic-manifest.py check-name <name> [--specs-dir DIR]
     python3 epic-manifest.py render-status <epic> [--specs-dir DIR] [--json]
     python3 epic-manifest.py add-feature <epic> <name> --charter TEXT \
-        [--depends-on A,B] [--specs-dir DIR]
-    python3 epic-manifest.py remove-feature <epic> <name> [--specs-dir DIR]
-    python3 epic-manifest.py reorder <epic> --order A,B,C [--specs-dir DIR]
-    python3 epic-manifest.py set-dep <epic> <name> --depends-on A,B [--specs-dir DIR]
-    python3 epic-manifest.py set-status <epic> --status STATE [--specs-dir DIR]
+        [--depends-on A,B] [--specs-dir DIR] [--json]
+    python3 epic-manifest.py remove-feature <epic> <name> [--specs-dir DIR] [--json]
+    python3 epic-manifest.py reorder <epic> --order A,B,C [--specs-dir DIR] [--json]
+    python3 epic-manifest.py set-dep <epic> <name> --depends-on A,B [--specs-dir DIR] [--json]
+    python3 epic-manifest.py set-status <epic> --status STATE [--specs-dir DIR] [--json]
 
 Exit codes:
     0 = ok / valid / unique / resolved
@@ -715,7 +715,7 @@ def _validate_dict(
     if cycle is not None:
         findings.append({
             "code": "cycle",
-            "message": "cycle: " + " → ".join(cycle),
+            "message": " → ".join(cycle),
             "feature": cycle[0],
         })
 
@@ -902,8 +902,13 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
             _read_state_safely(member_dir / PIPELINE_STATE_FILENAME)
         )
 
-    # (4) per-feature unmetDeps + blocked.
+    # (4) per-feature unmetDeps + blocked. A feature that is itself complete is
+    #     never "blocked" — unmet deps only matter for work not yet finished.
     for row in rows:
+        if complete[row["name"]]:
+            row["unmetDeps"] = []
+            row["blocked"] = False
+            continue
         deps = unmet_deps(row["name"], features, complete)
         row["unmetDeps"] = deps
         row["blocked"] = bool(deps)
@@ -1277,6 +1282,11 @@ def _build_parser() -> argparse.ArgumentParser:
     def add_specs_dir(p: argparse.ArgumentParser) -> None:
         p.add_argument("--specs-dir", default="./specs", help="Specs directory")
 
+    def add_json(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--json", action="store_true", dest="json_output", help="Output as JSON"
+        )
+
     # resolve --------------------------------------------------------------- #
     p_resolve = sub.add_parser("resolve", help="Resolve a name to its directory")
     p_resolve.add_argument("name")
@@ -1310,18 +1320,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--charter", required=True, help="One-paragraph charter")
     p_add.add_argument("--depends-on", dest="depends_on", default="", help="Comma list")
     add_specs_dir(p_add)
+    add_json(p_add)
 
     # remove-feature -------------------------------------------------------- #
     p_remove = sub.add_parser("remove-feature", help="Remove a member feature")
     p_remove.add_argument("epic")
     p_remove.add_argument("name")
     add_specs_dir(p_remove)
+    add_json(p_remove)
 
     # reorder --------------------------------------------------------------- #
     p_reorder = sub.add_parser("reorder", help="Reorder member features")
     p_reorder.add_argument("epic")
     p_reorder.add_argument("--order", required=True, help="Comma-separated permutation")
     add_specs_dir(p_reorder)
+    add_json(p_reorder)
 
     # set-dep --------------------------------------------------------------- #
     p_setdep = sub.add_parser("set-dep", help="Replace a feature's dependsOn")
@@ -1329,6 +1342,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_setdep.add_argument("name")
     p_setdep.add_argument("--depends-on", dest="depends_on", default="", help="Comma list")
     add_specs_dir(p_setdep)
+    add_json(p_setdep)
 
     # set-status ------------------------------------------------------------ #
     p_setstatus = sub.add_parser("set-status", help="Set the epic lifecycle status")
@@ -1339,6 +1353,7 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["active", "paused", "abandoned", "complete"],
     )
     add_specs_dir(p_setstatus)
+    add_json(p_setstatus)
 
     return parser
 

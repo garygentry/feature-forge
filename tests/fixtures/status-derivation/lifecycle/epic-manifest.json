@@ -45,6 +45,15 @@
       "dependsOn": [],
       "exposes": [],
       "consumes": []
+    },
+    {
+      "name": "f",
+      "charter": "Loop incomplete; depends on incomplete a (genuinely blocked).",
+      "dependsOn": [
+        "a"
+      ],
+      "exposes": [],
+      "consumes": []
     }
   ]
 }

@@ -47,7 +47,7 @@ tests/                                         # pytest suite + fixture epic tre
 | `skills/forge-verify/references/verification-checklists.md` | Append `## Epic Mode Checklist` (CHECK-E01..E08). | REQ-VERIFY-01 |
 | `agents/forge-researcher.md` | Widen `specs/*/…` globs to find nested features. | REQ-DIR-03 |
 | `scripts/validate.sh` | Invoke the pytest suite for the helper. | testing |
-| `forge.config.json` (new, this repo) | Stack persistence: `stack`, `testCommand`, `typeCheckCommand` (schema + consumers in §2.4). | stack resolution |
+| `forge.config.json` (new, this repo) | Stack persistence: `stack`, `testCommand`, `typeCheckCommand` (schema + consumers in §2.4). **Deferred in v1** — not created; `scripts/validate.sh` hardcodes the helper commands as the built-in defaults (see §2.4). | stack resolution |
 
 ### 2.3 Public surface of `scripts/epic-manifest.py`
 
@@ -85,6 +85,8 @@ The new `stack` / `testCommand` / `typeCheckCommand` fields persist stack resolu
 ```
 
 - **Consumers:** `scripts/validate.sh` (and forge-verify impl mode, CHECK-I11) run `testCommand`/`typeCheckCommand`; `stack` is read by stack-resolution to skip re-prompting. These fields are optional — absence falls back to the built-in defaults shown above. They do not affect epic resolution or any runtime gating logic.
+
+  **v1 status:** `forge.config.json` is **not shipped** in this repo. `scripts/validate.sh` hardcodes the helper commands (`python3 -m py_compile scripts/epic-manifest.py` and the pytest suite) directly — i.e. it runs the built-in defaults rather than reading them from config. The file is intentionally deferred because the defaults are the intended operating mode and no observed stack re-prompting problem justifies the added config surface. If the file is later introduced, `validate.sh` should source `testCommand`/`typeCheckCommand` from it with fallback to the current hardcoded defaults.
 
 ## 3. Technical Decisions
 

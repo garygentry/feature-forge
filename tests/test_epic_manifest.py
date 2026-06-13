@@ -445,8 +445,14 @@ def test_render_status_derived_sets(run_cli, fixture_copy) -> None:
 
     # actionable features are never themselves complete (00 §8).
     assert set(out["actionable"]).isdisjoint(_complete_names(out))
-    # parallel-eligible is a subset of actionable (00 §8).
+    # Pin exact derived membership for the documented graph: a (in-progress, no
+    # deps) and c (in-progress, dep d complete) are actionable; b/d/e are
+    # complete and f is blocked on incomplete a.
+    assert set(out["actionable"]) == {"a", "c"}
+    # parallel-eligible is a subset of actionable (00 §8) and, for this graph
+    # where the two actionable features are independent, equals it.
     assert set(out["parallelEligible"]) <= set(out["actionable"])
+    assert set(out["parallelEligible"]) == {"a", "c"}
     # rollup counts.
     assert out["rollup"]["total"] == len(out["features"])
     assert out["rollup"]["complete"] == len(_complete_names(out))
@@ -456,14 +462,19 @@ def test_render_status_derived_sets(run_cli, fixture_copy) -> None:
 
 
 def test_render_status_blocked_lists_unmet_deps(run_cli, fixture_copy) -> None:
-    """A feature with an incomplete dependency is blocked with its unmet deps listed."""
+    """An incomplete feature with an incomplete dependency is blocked with its unmet deps listed."""
     specs = fixture_copy("status-derivation")
     out = run_cli("render-status", "lifecycle", "--specs-dir", str(specs), "--json").json()
     blocked = [f for f in out["features"] if f["blocked"]]
     assert all(f["unmetDeps"] for f in blocked)
-    # Pin the documented graph: 'b' depends on the incomplete 'a'.
+    # Pin the documented graph: incomplete 'f' depends on the incomplete 'a'.
+    f_row = next(f for f in out["features"] if f["name"] == "f")
+    assert f_row["blocked"] and "a" in f_row["unmetDeps"]
+    # A *complete* feature is never blocked, even when a dependency is still
+    # incomplete: 'b' is complete and depends on the incomplete 'a'.
     b_row = next(f for f in out["features"] if f["name"] == "b")
-    assert b_row["blocked"] and "a" in b_row["unmetDeps"]
+    assert b_row["status"] == "complete"
+    assert not b_row["blocked"] and b_row["unmetDeps"] == []
 
 
 # ---------------------------------------------------------------------------

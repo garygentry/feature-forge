@@ -61,7 +61,7 @@ resolvedFeatureDir=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" \
 ```
 
 - **Exit 0:** stdout is the absolute feature directory. Use it everywhere this skill previously wrote `{specsDir}/{feature}/`.
-- **Exit 1:** the helper prints a structured finding (`not-found`, `ambiguous` — see `00-core-definitions.md §4`). With `--json` this is a `{valid, findings[]}` envelope on stdout; otherwise a plain message. **STOP** and surface it verbatim.
+- **Exit 1:** the helper reports a structured finding (`not-found`, `ambiguous` — see `00-core-definitions.md §4`). Because this `resolve` call passes **no `--json`** (the subcommand has no such flag), the finding is a plain `not-found:`/`ambiguous:` line on **stderr** with empty stdout — there is no findings JSON to parse. **STOP** and surface that stderr line verbatim. (The `{valid, findings[]}`-on-stdout envelope is the `--json` shape used by `render-status`/`validate`, not by `resolve`.)
 - **Exit 2:** a usage / safety error (`unsafe-name`, a path-containment escape, missing file). The message is a plain `Error: …` line on **stderr** with empty stdout — there is no findings JSON to parse. **STOP** and surface that stderr line verbatim.
 
 In both failure cases, do not fall back to a guessed path.
