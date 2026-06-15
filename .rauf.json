@@ -3,22 +3,22 @@
   "version": "1",
   "variant": "backlog-json",
   "installedAt": "2026-06-12T22:03:15.612Z",
-  "installedBy": "rauf-manager@0.4.0",
+  "installedBy": "rauf-manager@0.6.0",
   "profile": {
-    "stack": "unknown",
+    "stack": "claude-plugin+python",
     "packageManager": null,
     "monorepo": false,
     "commands": {
-      "test": null,
+      "test": "bash scripts/validate.sh",
       "typecheck": null,
       "lint": null,
       "build": null,
       "format": null
     },
-    "verify": ""
+    "verify": "bash scripts/validate.sh"
   },
   "artifactHashes": {
-    "RAUF.md": "16ffc21b2ea9e093e17437dca73f576b7674948604092d9da8c8cb2bb1b3a769"
+    "RAUF.md": "ec6ab31626c47af9ff46e246e8336ad666ea2754edb8acc556a000c4dda16d2b"
   },
   "options": {
     "ignoreInTool": false,

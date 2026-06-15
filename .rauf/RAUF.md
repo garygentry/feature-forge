@@ -7,11 +7,11 @@
 Before marking any task as complete, run the full verification pipeline:
 
 ```
-
+bash scripts/validate.sh
 ```
 
 Individual commands:
-- Test: ``
+- Test: `bash scripts/validate.sh`
 - Typecheck: ``
 - Lint: ``
 - Build: ``
