@@ -11,7 +11,8 @@ Every command feature-forge runs against the runner is a template in
 `loopRunner`, with `{bin}`, `{backlogDir}`, `{specsDir}`, and `{iterations}`
 substituted at call time. `forge-5-loop` (execution), `forge-4-backlog`
 (validation), and `forge-verify` (backlog validation) all render their commands
-from this block — there are no hardcoded `rauf …` strings in the skills.
+from this block — there are no hardcoded `rauf …` commands in the skills, and
+even the human log filename is tokenized via `{loopRunner.logFile}`.
 
 When `forge.config.json` has no `loopRunner` block, feature-forge uses the
 built-in defaults (see `references/forge-config-schema.json`) and announces
