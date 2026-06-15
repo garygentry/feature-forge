@@ -1,5 +1,12 @@
 # rauf Enhancement Recommendations (handoff from feature-forge)
 
+> **Historical note (superseded by rauf v0.5.0 grammar).** This planning document predates
+> rauf's v0.5.0 CLI grammar change and references removed verbs. In current rauf: `loop follow`
+> is now the top-level **`follow`**, and `loop watch` was **removed** (its tool/token detail is
+> available via `follow` or `status --json`). Mentions of `loop follow` / `loop watch` /
+> `loop start` below are kept as-written for historical accuracy — map them to the current
+> grammar when acting on this doc.
+
 This is a **handoff document for the rauf maintainer/dev agent**, not a feature-forge
 work item. It captures rauf-side changes that would make feature-forge's live loop
 supervision (the `forge-5-loop` monitoring redesign) cleaner and unlock a capability the

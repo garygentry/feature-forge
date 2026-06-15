@@ -1,5 +1,12 @@
 # feature-forge Modernization Plan
 
+> **Historical note (superseded by rauf v0.5.0 grammar).** This planning document predates
+> rauf's v0.5.0 CLI grammar change and references removed verbs. In current rauf: `loop follow`
+> is now the top-level **`follow`**, and `loop watch` was **removed** (its tool/token detail is
+> available via `follow` or `status --json`). Mentions of `loop follow` / `loop watch` /
+> `loop start` below are kept as-written for historical accuracy — map them to the current
+> grammar when acting on this doc.
+
 ## Context
 
 `feature-forge` is a PRD→Build pipeline plugin (v0.9.0): `forge-init → forge-1-prd
