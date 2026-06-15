@@ -14,7 +14,8 @@ The loop **runner** is configured, not hardcoded. feature-forge talks to it
 through the `loopRunner` block in `forge.config.json`; rauf is the default and
 reference implementation (see `references/ralph-loop-contract.md`). Every command
 below is rendered from `loopRunner` with token substitution — there are no
-hardcoded `rauf …` strings in this skill.
+hardcoded `rauf …` commands in this skill, and even the human log filename is
+tokenized as `{loopRunner.logFile}`.
 
 ## Resolve the loop runner
 
@@ -224,7 +225,7 @@ Watch directly if you like (another terminal or `!` prefix):
 State files are at: {backlogDir}/{loopRunner.stateDir}/
   - state.json             (loop state)
   - events.ndjson          (structured event stream this session is watching)
-  - rauf.log               (human event log)
+  - {loopRunner.logFile}   (human event log)
   - iteration-status.json  (live activity, incl. stuckWarning)
 ```
 
@@ -249,7 +250,7 @@ tail -n +1 -f {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>&1 \
   false-match). For rauf:
 
   ```
-  tail -n +1 -f {backlogDir}/{loopRunner.stateDir}/rauf.log \
+  tail -n +1 -f {backlogDir}/{loopRunner.stateDir}/{loopRunner.logFile} \
     | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:'
   ```
 
@@ -412,7 +413,7 @@ Update `{resolvedFeatureDir}/.pipeline-state.json`:
 
 - `{backlogDir}` is a **directory path**, not a file path. Pass `specs/auth`, not `specs/auth/backlog.json`.
 - rauf resolves `RAUF.md` with fallback: checks `{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`. As long as the runner is installed in the project, the prompt template will be found.
-- State files (state.json, rauf.log, etc.) are created at `{backlogDir}/{loopRunner.stateDir}/` — this is within the feature's spec directory and is expected. State is isolated per backlog dir, so concurrent features don't collide.
+- State files (state.json, {loopRunner.logFile}, etc.) are created at `{backlogDir}/{loopRunner.stateDir}/` — this is within the feature's spec directory and is expected. State is isolated per backlog dir, so concurrent features don't collide.
 - If the session disconnects during a long-running loop, the runner process continues independently. The user can check results later with the status / list commands.
 - Never run the run command in the foreground (without `run_in_background`) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the `Monitor` tool (3d), which is harness-driven, not a sleep loop. Never `sleep`/poll in the foreground to wait for the loop.
 - The `Monitor` on the event stream must use `persistent: true`, not a bounded `timeout_ms` — a multi-hour run would outlive the 1-hour `timeout_ms` cap and the watch would stop while the loop is still going.
