@@ -8,7 +8,9 @@ description: "Initialize feature-forge configuration in the current project. Use
 Run the initialization script to create `forge.config.json` with default settings:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/forge-init.sh
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+bash "$R/scripts/forge-init.sh"
 ```
 
 After initialization, the config file will contain defaults for:

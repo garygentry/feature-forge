@@ -340,4 +340,10 @@ Do NOT mark as `findings-applied` — that happens after the fix pass.
 - If you find zero issues, say so honestly. Don't manufacture findings to seem thorough. But zero findings on a complex feature is suspicious — double-check.
 - The findings document must be self-contained. A fresh agent reading it should be able to apply every fix without needing conversational context from this session.
 - For backlog verification, also run the loop runner's validate command (resolve `loopRunner` from `forge.config.json`, default rauf: `rauf backlog validate . --backlog {backlogDir} --specs-dir {specsDir}/{feature} --json`). Include any findings it reports (exit 1) as verification findings; if the runner isn't installed yet (command missing), note that backlog validation was skipped rather than failing.
-- For specs verification, also run `${CLAUDE_PLUGIN_ROOT}/scripts/validate-traceability.py {specsDir}/{feature}/PRD.md {specsDir}/{feature}/ --json` to supplement agent-driven traceability checks with deterministic validation. Include any uncovered requirements or orphaned references as findings.
+- For specs verification, also run the deterministic traceability validator to supplement agent-driven traceability checks. Include any uncovered requirements or orphaned references as findings:
+
+```bash
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/validate-traceability.py" {specsDir}/{feature}/PRD.md {specsDir}/{feature}/ --json
+```

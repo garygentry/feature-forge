@@ -56,7 +56,9 @@ Extract these config values (use defaults if not present):
 Before any file I/O against a feature's artifacts, resolve its directory through the deterministic helper rather than hardcoding `{specsDir}/{feature}/`. This makes flat (`{specsDir}/{feature}/`) and nested (`{specsDir}/{epic}/{feature}/`) layouts both resolve from a bare feature name (REQ-DIR-03), with standalone features behaving exactly as today.
 
 ```bash
-resolvedFeatureDir=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" \
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+resolvedFeatureDir=$(python3 "$R/scripts/epic-manifest.py" \
   resolve "<feature>" --specs-dir "<specsDir>")
 ```
 
@@ -90,7 +92,9 @@ After resolving the feature directory, check the feature's `.pipeline-state.json
 To obtain the manifest contracts and the live completion status of each dependency in one deterministic call, run `render-status` and read the per-feature `status` and the `consumes`/`exposes` arrays rather than re-deriving them:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" \
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" \
   render-status "<epic>" --specs-dir "<specsDir>" --json
 ```
 

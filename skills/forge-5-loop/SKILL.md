@@ -61,8 +61,10 @@ Read the resolved feature's `.pipeline-state.json`. **If it has no `epic` key, s
 1. Run `render-status "{epic}" --specs-dir "{specsDir}" --json` via the helper:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" \
-     render-status "{epic}" --specs-dir "{specsDir}" --json
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" \
+  render-status "{epic}" --specs-dir "{specsDir}" --json
    ```
 
 2. Find this feature's entry; read its `unmetDeps` (the direct `dependsOn` not yet complete-for-orchestration per `00-core-definitions.md §7`).

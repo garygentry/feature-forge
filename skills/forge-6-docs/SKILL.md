@@ -40,7 +40,9 @@ Also check `.pipeline-state.json` for `stages.forge-5-loop`. If it exists and ha
 If the resolved feature has an `epic` back-pointer in its `.pipeline-state.json`, run:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
 
 If `render-status` fails, skip the epic-level offer and proceed with the per-feature docs only; surface the error per the exit-1/exit-2 split in the **Feature Directory Resolution** block of `references/shared-conventions.md` (exit 1 → parse `{findings[]}` from stdout; exit 2 → surface the plain `Error:` stderr line verbatim).

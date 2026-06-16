@@ -32,7 +32,7 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
 ## Invariants (do NOT "fix" these)
 
 1. **Probes paths, not the env var.** The prelude's `for d in …` enumerates directory paths to
-   locate an executable `forge-root.sh`; it contains no `${CLAUDE_PLUGIN_ROOT}`. That is what lets
+   locate an executable `forge-root.sh`; it contains no plugin-root environment variable. That is what lets
    a prelude occurrence satisfy the "zero residual var in canonical surfaces" rule while staying
    portable.
 2. **First-discoverable-resolver-wins.** The `exec` inside the `$(…)` command substitution means
@@ -50,7 +50,7 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
 The prelude delegates to [`scripts/forge-root.sh`](../scripts/forge-root.sh) — the portable
 skill/plugin-root resolver. It takes no arguments, prints the absolute plugin root to stdout and
 exits `0`, or writes an actionable message to stderr and exits `1`. It resolves the root by
-self-location → candidate-root probe → `${CLAUDE_PLUGIN_ROOT}` env fallback → actionable failure,
+self-location → candidate-root probe → plugin-root environment-variable fallback → actionable failure,
 and never sources or executes a discovered path — it only ever prints a directory string. The
 spec-purity checker (rule 5) enforces that every prelude occurrence across the canon is
 byte-identical to the fenced block in this file.

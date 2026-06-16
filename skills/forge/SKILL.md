@@ -29,7 +29,9 @@ For pipeline architecture details, read `references/process-overview.md`.
 
 1. **Epics first.** Identify epic directories as any `{specsDir}/*/` that directly contains an `epic-manifest.json` **and no `.pipeline-state.json` of its own** (an epic root is never itself a feature). For each epic, run:
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
    ```
    and show one rollup line: `{epic} — {complete}/{total} complete, next: {nextCommand}`.
 2. **Standalone features below.** Scan the remaining `{specsDir}/*/` that directly contain a `.pipeline-state.json` **without** an `epic` back-pointer. A nested member's `.pipeline-state.json` is **attributed to its epic (Tier 1), never listed as a standalone feature**.
@@ -81,7 +83,9 @@ Use these status indicators:
 When the named argument is an epic (`{specsDir}/{name}/epic-manifest.json` exists), render the epic dashboard instead of a per-feature one. Run:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
 
 and render from its output:
@@ -144,7 +148,9 @@ Support these sub-commands for pipeline lifecycle management:
 
 - Set the manifest's top-level `status` (`paused` / `active` / `abandoned`) via the helper's `set-status` mutator — an atomic write that also bumps `updatedAt`:
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" set-status "{epic}" --status paused --specs-dir "{specsDir}"
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" set-status "{epic}" --status paused --specs-dir "{specsDir}"
   ```
   For `complete`, do **not** set the status directly — completion is *derived* from member states (the rollup), so the manifest `status` is a lifecycle flag, never a completion signal.
 - **Member feature states are NOT silently mutated.** Pausing/abandoning the epic changes only the manifest `status`. Before doing so, use `AskUserQuestion` to make the relationship explicit: "Pausing the epic does not pause its in-flight member features. {N} members are active. Pause the epic only, or also pause each member?" If the user opts to pause members too, update each member's own `pipelineStatus` **individually and visibly** (one explicit action per member), never as a hidden side-effect.

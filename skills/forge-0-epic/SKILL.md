@@ -39,10 +39,13 @@ checks but still load any on-disk artifacts.
 plugin path and the configured specs dir:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" <subcommand> ... --specs-dir "{specsDir}"
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" <subcommand> ... --specs-dir "{specsDir}"
 ```
 
-`${CLAUDE_PLUGIN_ROOT}` resolves to the installed plugin root. Pass `--specs-dir "{specsDir}"`
+`$R` resolves to the installed plugin root via the portable resolver (`scripts/forge-root.sh`,
+bootstrapped by the prelude above; see `references/portable-root.md`). Pass `--specs-dir "{specsDir}"`
 on every invocation.
 
 ---
@@ -70,7 +73,9 @@ Resolve the epic subtree path `{specsDir}/{epic}/` and decide which branch to ru
    epic, confirm the epic name itself does not collide with any existing feature or epic:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" check-name "{epic}" --specs-dir "{specsDir}"
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" check-name "{epic}" --specs-dir "{specsDir}"
    ```
 
    - Exit `0` → the name is free; proceed to C1.
@@ -112,7 +117,9 @@ For **each** proposed feature name, before accepting it into the set, enforce gl
 and name safety via the helper:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" check-name "{feature}" --specs-dir "{specsDir}"
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" check-name "{feature}" --specs-dir "{specsDir}"
 ```
 
 - Exit `0` → accept the name.
@@ -172,7 +179,9 @@ For the *initial* creation write the skill writes the file directly — atomic g
 required for in-place mutation, which is the helper mutators' job. Then validate:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}" --json
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}" --json
 ```
 
 - Exit `0` → proceed to C6.
@@ -304,7 +313,9 @@ question goes through `AskUserQuestion`.
 Before offering any edit, validate the existing manifest:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}" --json
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}" --json
 ```
 
 - Exit `0` → the manifest is well-formed; proceed to E2.
@@ -338,24 +349,26 @@ the write if it would introduce a cycle, dangling ref, duplicate, or schema viol
 flag surface (owned by 02 §7):
 
 ```bash
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 # Add a feature — seeds EMPTY exposes/consumes; contracts are populated below.
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" add-feature "{epic}" "{feature}" \
+python3 "$R/scripts/epic-manifest.py" add-feature "{epic}" "{feature}" \
   --charter "…" --specs-dir "{specsDir}" [--depends-on a,b]
 
 # Remove a feature (drops its manifest entry; directory is left in place — see E3 note).
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" remove-feature "{epic}" "{feature}" \
+python3 "$R/scripts/epic-manifest.py" remove-feature "{epic}" "{feature}" \
   --specs-dir "{specsDir}"
 
 # Reorder the features[] sequence (must be an exact permutation of current member names).
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" reorder "{epic}" \
+python3 "$R/scripts/epic-manifest.py" reorder "{epic}" \
   --order "feat-a,feat-c,feat-b" --specs-dir "{specsDir}"
 
 # Change a dependency edge (--depends-on "" clears it).
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" set-dep "{epic}" "{feature}" \
+python3 "$R/scripts/epic-manifest.py" set-dep "{epic}" "{feature}" \
   --depends-on "config-store,token-service" --specs-dir "{specsDir}"
 
 # Change epic lifecycle status (active|paused|abandoned|complete).
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" set-status "{epic}" \
+python3 "$R/scripts/epic-manifest.py" set-status "{epic}" \
   --status paused --specs-dir "{specsDir}"
 ```
 
@@ -390,7 +403,9 @@ status is **not** `not-started`, warn the user. Read the **live** status (never 
 completion in prose):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
 
 If the operation removes, reorders-around, or re-deps a feature whose derived status is
