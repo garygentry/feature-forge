@@ -1,0 +1,18 @@
+{
+  "_generated": {
+    "source": "skills/",
+    "regenerate": "python3 scripts/build-adapters.py"
+  },
+  "name": "feature-forge",
+  "version": "0.0.0",
+  "skills": [
+    {
+      "name": "noarg",
+      "description": "A skill with no argument hint and no own references."
+    },
+    {
+      "name": "with-refs",
+      "description": "Build the thing: do it precisely."
+    }
+  ]
+}
