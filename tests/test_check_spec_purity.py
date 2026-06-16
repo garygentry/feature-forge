@@ -146,6 +146,33 @@ def test_output_is_deterministic_and_sorted(fixture_copy):
     assert len(violation_lines) == 2  # one per skill dir (alpha before zeta)
 
 
+# ── 3.11 adapters/ exemption (REQ-PUR-01, REQ-PUR-02) ──────────────────────
+# The SAME impure SKILL.md (top-level argument-hint + ${CLAUDE_PLUGIN_ROOT}
+# residual) is exempt under adapters/ (REQ-PUR-01) but still caught under
+# skills/ (REQ-PUR-02), proving the exemption did not weaken enforcement over
+# canonical surfaces. Detail: 05-purity-exemption-and-drift-guard.md §1.
+
+
+def test_adapters_impurity_is_exempt(fixture_copy):
+    """Impure content under adapters/ does NOT trip check-spec-purity.py (REQ-PUR-01).
+
+    A SKILL.md placed under adapters/<agent>/skills/ carrying intentional vendor
+    frontmatter (e.g. a top-level argument-hint) and a ${CLAUDE_PLUGIN_ROOT}
+    residual must be ignored by the checker — adapters/** is exempt.
+    """
+    root = fixture_copy("adapters-impure-exempt")
+    result = run_checker(root)
+    assert result.returncode == 0, result.stdout
+
+
+def test_same_impurity_under_skills_still_fails(fixture_copy):
+    """The SAME impurity under skills/ is still caught — exemption did not weaken enforcement (REQ-PUR-02)."""
+    root = fixture_copy("adapters-impure-under-skills")
+    result = run_checker(root)
+    assert result.returncode != 0
+    assert "argument-hint" in result.stdout  # canonical surface still enforced
+
+
 # ── 2.3 Reader-robustness fixtures (REQ-FM-04) ─────────────────────────────
 
 

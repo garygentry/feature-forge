@@ -68,6 +68,17 @@ RESIDUAL_VAR_EXEMPT: tuple[str, ...] = (
     "plans/**",
     "docs/**",
     "references/vendor-construct-inventory.md",
+    # adapters/** is the GENERATED per-agent tree (forge-agent-adapters-build).
+    # It is outside CANONICAL_SURFACES by construction (it is not under skills/,
+    # the repo-root references/, or agents/*.md), so generated vendor frontmatter
+    # never reaches the scan. This NAMED entry is belt-and-suspenders +
+    # regression-proofing: each bundle carries a VERBATIM scripts/forge-root.sh
+    # copy (the sanctioned ${CLAUDE_PLUGIN_ROOT} fallback, REQ-GEN-05) and verbatim
+    # references/ copies (the canonical bootstrap prelude, D5); this entry keeps
+    # rule 3 (and the prelude scan that shares iter_canonical_files) from ever
+    # re-flagging them if CANONICAL_SURFACES is later widened. Additive only — it
+    # does NOT relax enforcement over skills/, references/, or agents/ (REQ-PUR-02).
+    "adapters/**",
 )
 
 # §3 — the canonical bootstrap prelude (REQ-RES-05). Byte-identical to the
