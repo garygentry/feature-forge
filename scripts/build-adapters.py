@@ -23,10 +23,14 @@ Source of truth: ``specs/agent-agnostic/forge-agent-adapters-build/00-core-defin
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import io
 import json
+import os
 import shutil
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -951,13 +955,33 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
             shutil.copyfile(entry, target)  # verbatim bytes; no stamp, no reflow
 
 
-def _assert_within(path: Path, root: Path) -> None:
-    """Assert ``path`` resolves within ``root`` (REQ-SEC-01 path-sandbox)."""
+def _assert_within(path: Path, allowed_root: Path) -> Path:
+    """Return the resolved ``path``, asserting it is inside ``allowed_root``.
+
+    The single path-traversal guard (REQ-SEC-01). Used both by the
+    self-containment pass and by ``safe_write`` (02 §4.2): a record-derived
+    path segment (a malicious ``name`` with ``../``, or an absolute relpath) that
+    resolves outside the staging/``adapters/`` root is refused with an
+    AssertionError before any byte is written — a generator bug, never silently
+    allowed.
+
+    Args:
+        path: Candidate output path (may be relative or contain ``..``).
+        allowed_root: The staging dir (``adapters.tmp-<pid>/``) or a bundle dir
+            under it, or post-swap ``adapters/`` under the resolved repo root.
+
+    Returns:
+        The resolved absolute path.
+
+    Raises:
+        AssertionError: If the resolved path escapes ``allowed_root``.
+    """
     resolved = path.resolve()
-    root_resolved = root.resolve()
+    root_resolved = allowed_root.resolve()
     assert (
         resolved == root_resolved or root_resolved in resolved.parents
-    ), f"path escapes bundle sandbox: {resolved} not under {root_resolved}"
+    ), f"refusing to write outside sandbox: {resolved} not under {root_resolved}"
+    return resolved
 
 
 def _assert_byte_identical(src: Path, dst: Path) -> None:
@@ -1105,3 +1129,283 @@ def _render_verbatim_copies_section() -> list[str]:
         "Regenerate all adapter output with `" + REGENERATE_CMD + "`.",
         "",
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Emitter registry (02 §2, REQ-GEN-03, REQ-DET-01)
+# --------------------------------------------------------------------------- #
+
+# Registry literal: agent id -> emitter factory. Keys MUST equal AGENT_TARGETS
+# exactly (asserted in build_emitters). One entry per target (REQ-GEN-03); adding
+# a sixth agent is one new entry + one AGENT_TARGETS element, never a structural
+# change (00 §1).
+AGENT_TARGETS_REGISTRY: dict[str, type] = {
+    "claude": ClaudeEmitter,
+    "codex": CodexEmitter,
+    "copilot": CopilotEmitter,
+    "cursor": CursorEmitter,
+    "gemini": GeminiEmitter,
+}
+
+
+def build_emitters() -> dict[str, Emitter]:
+    """Instantiate one emitter per target, validating registry coverage.
+
+    Returns:
+        Mapping agent id -> Emitter, iterated in AGENT_TARGETS order (00 §1).
+
+    Raises:
+        AssertionError: If the registry keys do not exactly equal AGENT_TARGETS
+            (a generator bug, not a CanonError — fail loud).
+    """
+    assert set(AGENT_TARGETS_REGISTRY) == set(AGENT_TARGETS), (
+        "AGENT_TARGETS_REGISTRY must cover exactly AGENT_TARGETS (00 §1)"
+    )
+    return {agent_id: AGENT_TARGETS_REGISTRY[agent_id]() for agent_id in AGENT_TARGETS}
+
+
+# --------------------------------------------------------------------------- #
+# Path-safety sandbox — safe_write (02 §4.2, REQ-SEC-01, REQ-DET-01)
+# --------------------------------------------------------------------------- #
+
+
+def safe_write(
+    allowed_root: Path, relpath: str, content: str, mode: int = 0o644
+) -> None:
+    """Write ``content`` to ``allowed_root/relpath``, sandbox-checked (REQ-SEC-01).
+
+    Newlines are already normalized to ``\\n`` by the emitters; this writes bytes
+    verbatim (``newline=""`` → no platform CRLF translation) for cross-OS
+    byte-identity (REQ-DET-01).
+
+    Args:
+        allowed_root: The staging/bundle dir for the current build.
+        relpath: POSIX-relative path under ``allowed_root`` (EmittedFile.relpath).
+        content: Full file text (provenance header already applied, 04 §1).
+        mode: POSIX mode; 0o644 default, 0o755 for copied scripts (00 §5).
+
+    Raises:
+        AssertionError: If the target escapes the sandbox (``_assert_within``).
+    """
+    target = _assert_within(allowed_root / relpath, allowed_root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # newline="" → write content's `\n` verbatim, never translate to CRLF.
+    with open(target, "w", encoding="utf-8", newline="") as fh:
+        fh.write(content)
+    os.chmod(target, mode)
+
+
+# --------------------------------------------------------------------------- #
+# Atomic publish & pipeline (02 §4.1/§4.3, REQ-DET-02/03, REQ-ROB-01)
+# --------------------------------------------------------------------------- #
+
+ADAPTERS_DIRNAME: str = "adapters"
+
+
+def _new_staging_dir(root: Path) -> Path:
+    """Return a fresh sibling staging dir ``adapters.tmp-<pid>/``.
+
+    Matches the ``.gitignore`` glob (01 §2.1). Removed/replaced by the caller.
+    """
+    staging = root / f"{ADAPTERS_DIRNAME}.tmp-{os.getpid()}"
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    return staging
+
+
+def _publish_emit_result(
+    root: Path, dest: Path, agent_id: str, result: EmitResult
+) -> None:
+    """Write one EmitResult's native files into the agent bundle (REQ-SEC-01).
+
+    Each EmittedFile is written under ``dest/<agent_id>/`` via ``safe_write``, so
+    every byte goes through the path-traversal guard (02 §4.2). References, the
+    forge-root.sh copy, and manifests are NOT written here (04 §2 / §1.3).
+    """
+    bundle_root = dest / agent_id
+    for emitted in result.files:
+        safe_write(bundle_root, emitted.relpath, emitted.content, emitted.mode)
+
+
+def build_tree(root: Path, dest: Path) -> tuple[EmitResult, ...]:
+    """Build the COMPLETE adapters tree into ``dest`` (a fresh empty dir).
+
+    Stages 1–3: discover (§1) → parse (§3) → per-agent emit (§2). After each
+    agent's emit loop the merged whole-bundle manifest is written (04 §1.3) and
+    the references-closure + verbatim forge-root.sh are added (04 §2). The
+    GENERATION-REPORT.md is assembled from all DropRecords (04 §3) after every
+    agent is built.
+
+    Args:
+        root: Resolved repo root (canon source).
+        dest: A fresh staging dir to populate (§4.2). MUST be empty/new;
+            ``build_tree`` never writes outside it (REQ-SEC-01).
+
+    Returns:
+        The tuple of EmitResults (for the report assembly).
+
+    Raises:
+        CanonError: Any unprocessable canon (00 §8) — aborts before publish so no
+            partial ``adapters/`` is ever produced (REQ-ROB-01).
+    """
+    emitters = build_emitters()  # §2
+
+    skills = [parse_skill(p, root) for p in discover_skill_paths(root)]  # §1, §3
+    agents = [parse_agent(p, root) for p in discover_agent_paths(root)]  # §1, §3
+
+    results: list[EmitResult] = []
+    all_drops: list[DropRecord] = []
+    # AGENT_TARGETS order (00 §1) — deterministic emit/write order (REQ-DET-01).
+    for agent_id, emitter in emitters.items():
+        manifest_entries: list[ManifestEntry] = []
+        for skill in skills:
+            result = emitter.emit_skill(skill)
+            _publish_emit_result(root, dest, agent_id, result)
+            manifest_entries.extend(result.manifest_entries)
+            all_drops.extend(result.drops)
+            results.append(result)
+        for agent in agents:
+            result = emitter.emit_agent(agent)
+            _publish_emit_result(root, dest, agent_id, result)
+            manifest_entries.extend(result.manifest_entries)
+            all_drops.extend(result.drops)
+            results.append(result)
+        # Merged whole-bundle manifest, if this target emits one (codex/gemini).
+        if manifest_entries:
+            _publish_manifest(root, dest, agent_id, tuple(manifest_entries))  # 04 §1.3
+        # References closure + verbatim forge-root.sh copy for this bundle (04 §2).
+        run_self_containment_pass(dest / agent_id, root, tuple(skills))
+
+    # GENERATION-REPORT.md from all DropRecords (04 §3).
+    report = render_generation_report(tuple(all_drops))
+    safe_write(dest, "GENERATION-REPORT.md", report)
+
+    return tuple(results)
+
+
+def generate(root: Path) -> int:
+    """Full regenerate: build to temp, atomic-swap over ``adapters/`` (REQ-DET-02).
+
+    On a CanonError, the staging dir is removed and ``adapters/`` is left intact —
+    no partial tree (REQ-ROB-01). Returns the process exit code (00 §9).
+    """
+    staging = _new_staging_dir(root)
+    try:
+        build_tree(root, staging)  # §4.1 — raises CanonError on bad canon
+    except CanonError as exc:
+        shutil.rmtree(staging, ignore_errors=True)
+        print(str(exc), file=sys.stderr)  # "<source_path>: <reason>" (REQ-OBS-02)
+        return 1
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise  # a generator bug — propagate as a stack trace (00 §8)
+
+    # Atomic swap: replace adapters/ wholesale (REQ-DET-02 — no orphan survives).
+    final = root / ADAPTERS_DIRNAME
+    backup = root / f"{ADAPTERS_DIRNAME}.tmp-{os.getpid()}.prev"
+    if final.exists():
+        os.replace(final, backup)  # move old out of the way (same filesystem)
+    os.replace(staging, final)  # publish the new tree atomically
+    if backup.exists():
+        shutil.rmtree(backup, ignore_errors=True)
+    return 0
+
+
+def check(root: Path) -> int:
+    """Drift guard: build to temp, ``diff -r`` vs committed ``adapters/``, never
+    mutate ``adapters/`` (REQ-CI-01, REQ-DET-03). Returns the exit code (00 §9).
+    """
+    staging = _new_staging_dir(root)
+    try:
+        build_tree(root, staging)
+    except CanonError as exc:
+        shutil.rmtree(staging, ignore_errors=True)
+        print(str(exc), file=sys.stderr)
+        return 1
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    committed = root / ADAPTERS_DIRNAME
+    try:
+        # `diff -r` exit 0 == identical; 1 == differs; >1 == diff TOOL error.
+        proc = subprocess.run(
+            ["diff", "-r", str(committed), str(staging)],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        # `diff` is not installed — an environment fault, NOT a drift verdict.
+        shutil.rmtree(staging, ignore_errors=True)
+        print(
+            "adapters: `diff` executable not found — cannot run the drift guard; "
+            "this is an environment fault, not a drift verdict.",
+            file=sys.stderr,
+        )
+        return 2
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)  # never leave a tmp tree
+
+    if proc.returncode == 0:
+        return 0  # identical — no drift
+    if proc.returncode == 1:
+        # Real drift: show the diff + remediation (REQ-CI-03). exit 1 is a verdict.
+        sys.stdout.write(proc.stdout)
+        sys.stderr.write(proc.stderr)
+        print(REMEDIATION_MESSAGE, file=sys.stderr)  # 00 §9, single-sourced
+        return 1
+    # returncode > 1: `diff` itself failed. A TOOL error, never drift — do NOT
+    # print REMEDIATION_MESSAGE (it would be misleading).
+    sys.stderr.write(proc.stderr)
+    print(
+        f"adapters: `diff -r` failed to compare trees (exit {proc.returncode}) — "
+        "this is a diff-tool error, not a drift verdict.",
+        file=sys.stderr,
+    )
+    return 2
+
+
+# --------------------------------------------------------------------------- #
+# main() & argparse control flow (02 §5, REQ-GEN-02)
+# --------------------------------------------------------------------------- #
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Parse args and run the generator (REQ-GEN-02). Returns an exit code (00 §9).
+
+    Args:
+        argv: CLI args (excluding program name); None → sys.argv[1:].
+
+    Returns:
+        0 ok; 1 canon error (default) or drift (`--check`); argparse exits 2 on a
+        usage error before this returns (a caller mistake, never a verdict, 00 §9).
+    """
+    parser = argparse.ArgumentParser(
+        prog="build-adapters.py",
+        description=(
+            "Generate per-agent adapters/ from the feature-forge canon "
+            "(skills/, agents/, references/). Deterministic, full-regenerate."
+        ),
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Drift guard: regenerate to a temp dir and diff vs committed "
+        "adapters/; exit non-zero on drift. Does not modify adapters/.",
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=Path(__file__).resolve().parent.parent,
+        help="Repo root (default: parent of this script's dir), mirroring "
+        "check-spec-purity.py.",
+    )
+    args = parser.parse_args(argv)
+    root: Path = args.root.resolve()
+
+    return check(root) if args.check else generate(root)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

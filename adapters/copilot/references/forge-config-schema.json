@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Feature Forge Configuration",
+  "description": "Project-level configuration for the feature-forge plugin. Place as forge.config.json in your project root.",
+  "type": "object",
+  "properties": {
+    "specsDir": {
+      "type": "string",
+      "default": "./specs",
+      "description": "Root directory for feature spec documents. Each feature gets a subdirectory."
+    },
+    "docsDir": {
+      "type": "string",
+      "default": "./docs/architecture",
+      "description": "Root directory for generated architecture documentation."
+    },
+    "backlogDir": {
+      "type": "string",
+      "description": "Optional override for backlog location. If set, backlog.json is written here instead of with the feature specs. Default behavior: backlog.json is written to {specsDir}/{feature}/backlog.json."
+    },
+    "gitCommitAfterStage": {
+      "type": "boolean",
+      "default": true,
+      "description": "Automatically commit after each pipeline stage completes."
+    },
+    "commitPrefix": {
+      "type": "string",
+      "default": "forge",
+      "description": "Prefix for conventional commit messages, e.g., forge(auth): complete PRD"
+    },
+    "stack": {
+      "type": "string",
+      "description": "Detected or configured project stack identifier. Selects guidance from references/stacks/{stack}.md. Set during forge-2-tech or manually. Examples: 'typescript', 'python', 'go', 'rust'."
+    },
+    "typeCheckCommand": {
+      "type": "string",
+      "description": "Command to verify type correctness or lint. Examples: 'bun run typecheck', 'mypy .', 'go vet ./...'. Used in acceptance criteria and verification."
+    },
+    "testCommand": {
+      "type": "string",
+      "description": "Command to run tests. Examples: 'bun test', 'pytest', 'go test ./...'. Used in acceptance criteria and verification."
+    },
+    "loopIterationMultiplier": {
+      "type": "number",
+      "default": 1.5,
+      "minimum": 1,
+      "description": "Multiplier applied to pending backlog item count to calculate loop iterations. Higher values allow more retries. Default: 1.5 (e.g., 10 items = 15 iterations)."
+    },
+    "loopRunner": {
+      "type": "object",
+      "description": "The autonomous loop runner feature-forge drives. Defaults to rauf when absent (forge-5 states 'defaulting to rauf loop runner'). Every command is a template — {bin}, {backlogDir}, {specsDir}, {iterations} are substituted at call time — so an alternative ralph-style runner conforming to rauf's SPEC-BACKLOG-TOOL-CONTRACT.md can be swapped in without editing any skill. See references/ralph-loop-contract.md.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "default": "rauf",
+          "description": "Display name of the loop runner."
+        },
+        "bin": {
+          "type": "string",
+          "default": "rauf",
+          "description": "The runner executable. Assumed on PATH; may be an absolute path. Substituted as {bin} in every command."
+        },
+        "runCommand": {
+          "type": "string",
+          "default": "{bin} loop run . --backlog {backlogDir} --iterations {iterations}",
+          "description": "Run the loop. Launched in the background by forge-5. Human-formatted output; used as the fallback launch command when eventStreamCommand is absent."
+        },
+        "eventStreamCommand": {
+          "type": "string",
+          "default": "{bin} loop run . --backlog {backlogDir} --iterations {iterations} --ndjson",
+          "description": "PREFERRED launch command for forge-5. Same as runCommand but emits one machine-readable JSON event per stdout line (NDJSON): item_completed / item_blocked / needs_human / signal_parsed / loop_completed / loop_error / loop_cancelled / llm_stuck_warning, each with {type, timestamp, projectPath} plus payload (a circuit-breaker halt surfaces as loop_error). forge-5 redirects this stdout to {backlogDir}/{stateDir}/events.ndjson and arms a Monitor on it for live, structured supervision. If a runner cannot emit NDJSON, omit this field — forge-5 falls back to runCommand + tailing the human log."
+        },
+        "validateCommand": {
+          "type": "string",
+          "default": "{bin} backlog validate . --backlog {backlogDir} --specs-dir {specsDir} --json",
+          "description": "Validate a backlog. MUST exit 0=valid, 1=findings, 2=usage/IO, and emit { valid, findings[] } with --json. `specReferences` are project-root-relative (resolved against the project root); `--specs-dir` only gates the existence check, so passing the specs root ({specsDir}) is sufficient."
+        },
+        "statusCommand": {
+          "type": "string",
+          "default": "{bin} status . --backlog {backlogDir}",
+          "description": "One-shot loop status, human-formatted. Shown to the user as a monitoring hint."
+        },
+        "statusJsonCommand": {
+          "type": "string",
+          "default": "{bin} status . --backlog {backlogDir} --json",
+          "description": "Machine-readable derived status used by forge-5 for milestone tallies and the final summary. Emits { loopState, iteration, maxIterations, currentItem, lastSignal, backlogSummary{pending,inProgress,blocked,needsHuman,deferred,done,total}, lock{...} }. Distinguishes the three non-done outcomes (genuine blocked vs needsHuman vs runner-deferred 'false blocks')."
+        },
+        "listCommand": {
+          "type": "string",
+          "default": "{bin} backlog list . --backlog {backlogDir} --json",
+          "description": "List backlog items as JSON."
+        },
+        "followCommand": {
+          "type": "string",
+          "default": "{bin} follow . --backlog {backlogDir}",
+          "description": "Stream live loop events, HUMAN-formatted (pretty-printed / log tail) — for a person watching in another terminal, NOT a machine-readable surface. forge-5 supervises via eventStreamCommand (NDJSON) instead."
+        },
+        "logCommand": {
+          "type": "string",
+          "default": "{bin} log . --backlog {backlogDir} --follow",
+          "description": "Tail the runner log, human-formatted. Monitoring hint for the user."
+        },
+        "watchCommand": {
+          "type": "string",
+          "default": "{bin} status . --backlog {backlogDir} --json",
+          "description": "Machine-readable status used by forge-5 for stall detection. rauf's `loop watch` verb was removed in v0.5.0, so this now points at `status --json`; forge-5 keys off the iteration-status `stuckWarning` flag (read from `status --json` / `iteration-status.json`) rather than guessing liveness from state.json timestamps."
+        },
+        "versionCommand": {
+          "type": "string",
+          "default": "{bin} version --json",
+          "description": "Report runner version as { version: <semver> }. Used to enforce minRunnerVersion before running."
+        },
+        "preconditionFile": {
+          "type": "string",
+          "default": ".rauf.json",
+          "description": "Project-root marker file that must exist (runner installed into the target project)."
+        },
+        "stateDir": {
+          "type": "string",
+          "default": ".rauf",
+          "description": "Per-backlog state directory name created under the backlog dir."
+        },
+        "logFile": {
+          "type": "string",
+          "default": "rauf.log",
+          "description": "Human-readable event log filename written under {stateDir}. Substituted as {loopRunner.logFile} in the log-tail fallback Monitor command when eventStreamCommand (events.ndjson) is unavailable. The structured NDJSON path uses the contract-standard name events.ndjson and is not configurable here."
+        },
+        "setupHint": {
+          "type": "string",
+          "default": "Run `rauf install .` to install rauf's per-project artifacts (.rauf/, RAUF.md, schema), then re-run forge-5.",
+          "description": "Shown when preconditionFile is missing — how to set up the runner IN THIS PROJECT (per-project artifacts)."
+        },
+        "installHint": {
+          "type": "string",
+          "default": "Install or upgrade the rauf CLI: curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash",
+          "description": "Shown when the runner BINARY is missing or too old (version gate fails) — how to obtain/upgrade the CLI itself. Distinct from setupHint (which installs per-project artifacts)."
+        },
+        "schemaVersion": {
+          "type": "string",
+          "default": "1",
+          "description": "Backlog schemaVersion this runner config targets."
+        },
+        "minRunnerVersion": {
+          "type": "string",
+          "default": "0.5.0",
+          "description": "Minimum runner version (semver). 0.5.0 is rauf's grammar + contract flip (unified exit codes across status/loop run, `loop run --detached` replacing `loop start`, explicit `review` signal, versioned events.ndjson) that feature-forge's exit-code/status reads depend on. forge-5 enforces this via versionCommand before running."
+        }
+      }
+    }
+  }
+}
