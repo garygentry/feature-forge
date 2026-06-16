@@ -139,7 +139,10 @@ def test_output_is_deterministic_and_sorted(fixture_copy):
         for line in first.stdout.splitlines()
         if line.strip().startswith("skills/")
     ]
-    assert violation_lines == sorted(violation_lines)  # (path, rule, reason) order
+    # bad-multi's two violations share rule + reason and differ only by path, so
+    # ordering the rendered `path: reason` lines coincides with the production sort
+    # key (path, rule.value, reason); the assertion pins the path dimension.
+    assert violation_lines == sorted(violation_lines)
     assert len(violation_lines) == 2  # one per skill dir (alpha before zeta)
 
 
