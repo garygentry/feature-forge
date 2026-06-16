@@ -297,11 +297,13 @@ def test_description_byte_fidelity(fixture_copy):
     assert canon_desc is not None
 
     # Frontmatter-bearing targets. Native skill filename differs per emitter
-    # (03 §3.1/§4.1/§5.1): claude → SKILL.md; codex/copilot → <name>.md.
+    # (03 §3.1/§4.1/§5.1): claude → SKILL.md; codex/copilot → <name>.md;
+    # cursor → <name>.mdc (06 §3.7 implementer note: same _frontmatter_value scan).
     for agent, fname in [
         ("claude", "SKILL.md"),
         ("codex", "with-refs.md"),
         ("copilot", "with-refs.md"),
+        ("cursor", "with-refs.mdc"),
     ]:
         md = root / "adapters" / agent / "skills" / "with-refs" / fname
         assert _decode_scalar(_frontmatter_value(md, "description")) == canon_desc, agent

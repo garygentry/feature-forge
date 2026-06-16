@@ -281,6 +281,8 @@ PROVENANCE_BODY_TOP: str = (
 )
 
 
+# Form C — strict JSON (gemini-extension.json), no comments possible (OQ-2): a
+# documented top-level `_generated` object, serialized with the manifest.
 def provenance_json(source: str) -> dict[str, str]:
     """Return the `_generated` provenance object for strict-JSON manifests."""
     return {"source": source, "regenerate": REGENERATE_CMD}
