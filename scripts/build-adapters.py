@@ -23,6 +23,7 @@ Source of truth: ``specs/agent-agnostic/forge-agent-adapters-build/00-core-defin
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -339,3 +340,209 @@ class UnreadableFileError(CanonError):
 REMEDIATION_MESSAGE: str = (
     "adapters/ is out of date — run `" + REGENERATE_CMD + "` and commit the result."
 )
+
+
+# --------------------------------------------------------------------------- #
+# Stage 1 — Discovery (02 §1, REQ-GEN-01, REQ-SCALE-01, REQ-DET-01)
+# --------------------------------------------------------------------------- #
+
+# Discovery globs, relative to the resolved repo root (REQ-GEN-01). Mirrors
+# check-spec-purity.py's surfaces so generator input == purity-gated canon.
+SKILLS_GLOB: str = "skills/*/SKILL.md"
+AGENTS_GLOB: str = "agents/*.md"
+REFERENCES_ROOT: str = "references"  # whole-tree copy (D5); not parsed, see stage 2.
+
+
+def discover_skill_paths(root: Path) -> list[Path]:
+    """Return every canonical SKILL.md, sorted by repo-relative POSIX path.
+
+    Args:
+        root: The resolved repo root.
+
+    Returns:
+        Absolute paths to ``skills/<name>/SKILL.md``, sorted (LC_ALL=C / byte
+        order) for deterministic emit ordering (REQ-DET-01). Currently 11.
+    """
+    return sorted(
+        root.glob(SKILLS_GLOB),
+        key=lambda p: p.relative_to(root).as_posix(),
+    )
+
+
+def discover_agent_paths(root: Path) -> list[Path]:
+    """Return every canonical sub-agent definition, sorted by relpath.
+
+    Args:
+        root: The resolved repo root.
+
+    Returns:
+        Absolute paths to ``agents/<name>.md``, sorted (byte order). Currently 3
+        (``forge-researcher``, ``forge-spec-writer``, ``forge-verifier``).
+    """
+    return sorted(
+        root.glob(AGENTS_GLOB),
+        key=lambda p: p.relative_to(root).as_posix(),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Stage 2 — Parse (02 §3, contract in 00 §3, REQ-GEN-01, REQ-ROB-01, REQ-OBS-02)
+# --------------------------------------------------------------------------- #
+
+# Frontmatter delimiter: a line that is exactly "---" (column 0). Per REQ-GEN-01
+# (parse) + REQ-ROB-01 (fail-fast): a file without a well-formed open/close pair
+# is a MalformedFrontmatterError (reported source_path: reason), not a crash.
+_FM_DELIM: str = "---"
+
+
+def split_frontmatter(text: str, source_path: str) -> tuple[dict[str, object], str]:
+    """Split a canonical markdown file into (frontmatter_map, body).
+
+    The frontmatter block is delimited by the first column-0 ``---`` and the next
+    column-0 ``---``. The block is ``safe_load``-ed and MUST be a mapping.
+
+    Args:
+        text: Full file contents (already newline-normalized to ``\\n``).
+        source_path: Repo-relative POSIX path, for error messages (REQ-OBS-02).
+
+    Returns:
+        (frontmatter_map, body) where body is everything after the closing ``---``.
+
+    Raises:
+        MalformedFrontmatterError: No balanced ``---/---`` pair, or the block is
+            not a YAML mapping, or YAML fails to load (REQ-ROB-01).
+    """
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != _FM_DELIM:
+        raise MalformedFrontmatterError(source_path, "missing opening frontmatter '---'")
+    close_idx: int | None = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == _FM_DELIM:
+            close_idx = i
+            break
+    if close_idx is None:
+        raise MalformedFrontmatterError(source_path, "missing closing frontmatter '---'")
+
+    block = "\n".join(lines[1:close_idx])
+    body = "\n".join(lines[close_idx + 1 :])
+    try:
+        loaded = yaml.safe_load(io.StringIO(block))
+    except yaml.YAMLError as exc:  # pinned-dep parse failure
+        raise MalformedFrontmatterError(source_path, f"invalid YAML frontmatter: {exc}")
+    if not isinstance(loaded, dict):
+        raise MalformedFrontmatterError(
+            source_path, "frontmatter is not a YAML mapping"
+        )
+    return loaded, body
+
+
+def read_canon_text(path: Path, source_path: str) -> str:
+    """Read a canonical file as UTF-8 text with normalized ``\\n`` newlines.
+
+    Args:
+        path: Absolute path to the canonical file.
+        source_path: Repo-relative POSIX path, for error messages.
+
+    Returns:
+        File contents with CRLF/CR normalized to ``\\n`` (REQ-DET-01).
+
+    Raises:
+        UnreadableFileError: The file cannot be read (permissions, encoding, I/O).
+    """
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise UnreadableFileError(source_path, f"cannot read file: {exc}")
+    return raw.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def parse_skill(path: Path, root: Path) -> SkillRecord:
+    """Parse one ``skills/<name>/SKILL.md`` into a SkillRecord (00 §2).
+
+    Args:
+        path: Absolute path to the SKILL.md.
+        root: Resolved repo root (to compute source_path + own_refs).
+
+    Returns:
+        A frozen SkillRecord; ``description`` preserved byte-for-byte (REQ-FMT-04).
+
+    Raises:
+        UnreadableFileError, MalformedFrontmatterError, MissingNameError: per
+            the parse contract (00 §3, §8) — fail-fast (REQ-ROB-01).
+    """
+    source_path = path.relative_to(root).as_posix()
+    fm, body = split_frontmatter(read_canon_text(path, source_path), source_path)
+
+    name = fm.get("name")
+    if not isinstance(name, str) or not name:
+        raise MissingNameError(source_path, "missing or non-string 'name'")
+    dir_name = path.parent.name
+    if name != dir_name:
+        raise MissingNameError(
+            source_path, f"name '{name}' != directory '{dir_name}'"
+        )
+
+    description = fm.get("description", "")
+    if not isinstance(description, str):
+        raise MalformedFrontmatterError(source_path, "'description' is not a string")
+
+    metadata = fm.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        raise MalformedFrontmatterError(source_path, "'metadata' is not a mapping")
+
+    own_refs_dir = path.parent / "references"
+    own_refs = own_refs_dir if own_refs_dir.is_dir() else None
+
+    return SkillRecord(
+        name=name,
+        description=description,
+        metadata=metadata,
+        body=body,
+        own_refs=own_refs,
+        source_path=source_path,
+    )
+
+
+def parse_agent(path: Path, root: Path) -> AgentRecord:
+    """Parse one ``agents/<name>.md`` into an AgentRecord (00 §2).
+
+    ``claude_keys`` = the parsed frontmatter MINUS ``name``/``description``, in
+    source order (Python dict insertion order == YAML document order). NOT a fixed
+    schema — whatever Claude-only keys the file carries are captured per-file, so a
+    future sub-agent's new key is auto-covered (REQ-SCALE-01, REQ-GEN-06).
+
+    Args:
+        path: Absolute path to the agent file.
+        root: Resolved repo root.
+
+    Returns:
+        A frozen AgentRecord.
+
+    Raises:
+        UnreadableFileError, MalformedFrontmatterError, MissingNameError: per the
+            parse contract (00 §3, §8).
+    """
+    source_path = path.relative_to(root).as_posix()
+    fm, body = split_frontmatter(read_canon_text(path, source_path), source_path)
+
+    name = fm.get("name")
+    if not isinstance(name, str) or not name:
+        raise MissingNameError(source_path, "missing or non-string 'name'")
+    if name != path.stem:
+        raise MissingNameError(source_path, f"name '{name}' != file stem '{path.stem}'")
+
+    description = fm.get("description", "")
+    if not isinstance(description, str):
+        raise MalformedFrontmatterError(source_path, "'description' is not a string")
+
+    claude_keys: dict[str, object] = {
+        k: v for k, v in fm.items() if k not in ("name", "description")
+    }
+
+    return AgentRecord(
+        name=name,
+        description=description,
+        body=body,
+        claude_keys=claude_keys,
+        source_path=source_path,
+    )
