@@ -711,3 +711,172 @@ class CursorEmitter:
         content = render_frontmatter_block(native, agent.source_path) + agent.body
         drops = drop_all_claude_keys(agent, "cursor", "no Cursor sub-agent equivalent")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+
+# --------------------------------------------------------------------------- #
+# codex emitter (03 §4, REQ-GEN-06, REQ-FMT-01..03) — TQ-1 (safe defaults)
+# --------------------------------------------------------------------------- #
+#
+# TQ-1 resolution (03 §8). Official docs WERE reachable at implementation
+# (context7 `/openai/codex`). The authoritative Codex skill format
+# (`skills/src/assets/samples/skill-creator/SKILL.md`) states that `name` and
+# `description` are "the only fields Codex reads to determine when the skill gets
+# used" — so the documented safe default (emit {name, description}, drop-record
+# the invocation hint) is CONFIRMED, not merely assumed. Codex's native agents
+# config is a config.toml `[agents.<role>]` table (config_toml.rs `AgentsToml`),
+# whose representable keys do not include the canonical sub-agent structural keys
+# (tools/model/maxTurns/effort/memory/skills); `_CODEX_AGENT_KEYS` therefore stays
+# empty and every claude_keys entry is drop-recorded. Net: the safe-default tree is
+# the committed baseline (item 009) regardless of doc reachability (REQ-DET-01).
+
+
+class CodexEmitter:
+    """Emitter for ``codex``: skill mirror (.md) + an aggregate ``agents/openai.yaml``.
+
+    The native agent schema's representable key set is TQ-1 (03 §8); the safe
+    default emits ``name`` + ``description`` and drop-records the rest so no key is
+    silently lost (REQ-GEN-06 / REQ-OBS-01). The aggregate ``agents/openai.yaml`` is
+    written by the ENGINE from the collected ``manifest_entries`` (02 §4.1), never by
+    this emitter.
+    """
+
+    agent_id = "codex"
+    # Keys confirmed representable in agents/openai.yaml. EMPTY until TQ-1 confirms
+    # the schema; expand (e.g. {"model", "tools"}) once verified against OpenAI docs.
+    _CODEX_AGENT_KEYS: frozenset[str] = frozenset()
+
+    def emit_skill(self, skill: SkillRecord) -> EmitResult:
+        """Emit ``skills/<name>/<name>.md`` with {name, description} + body."""
+        native = order_fields({"name": skill.name, "description": skill.description})
+        content = render_frontmatter_block(native, skill.source_path) + skill.body
+        rel = f"skills/{skill.name}/{skill.name}.md"
+        drops: tuple[DropRecord, ...] = ()
+        if hint_value(skill) is not None:  # REQ-FMT-02 branch 2 (TQ-1)
+            drops = (DropRecord("codex", skill.source_path, "argument-hint",
+                                "no confirmed Codex invocation-hint field (TQ-1)"),)
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+    def emit_agent(self, agent: AgentRecord) -> EmitResult:
+        """Emit a body artifact ``agents/<name>.md`` + one ManifestEntry per sub-agent.
+
+        Body+description preserved (REQ-FMT-04); structural keys not in
+        ``_CODEX_AGENT_KEYS`` are drop-recorded (REQ-GEN-06). The aggregate
+        ``agents/openai.yaml`` is NOT written here — the engine merges the returned
+        ManifestEntry(-ies) into the single manifest after the per-record loop
+        (00 §5, 02 §4.1).
+        """
+        dropped = tuple(
+            DropRecord("codex", agent.source_path, f"sub-agent key '{k}'",
+                       "not representable in agents/openai.yaml (TQ-1)")
+            for k in agent.claude_keys if k not in self._CODEX_AGENT_KEYS
+        )
+        rel = f"agents/{agent.name}.md"  # body artifact retains behavior text
+        content = render_frontmatter_block(
+            order_fields({"name": agent.name, "description": agent.description}),
+            agent.source_path,
+        ) + agent.body
+        # Representable structural keys (none until TQ-1 expands _CODEX_AGENT_KEYS)
+        # carried in `extra`; serialization/key-order owned by 04 §1.3.
+        extra = {k: agent.claude_keys[k] for k in agent.claude_keys
+                 if k in self._CODEX_AGENT_KEYS}
+        entry = ManifestEntry(name=agent.name, description=agent.description, extra=extra)
+        return EmitResult(
+            files=(EmittedFile(rel, content),),
+            drops=dropped,
+            manifest_entries=(entry,),
+        )
+
+
+# --------------------------------------------------------------------------- #
+# copilot emitter (03 §5, REQ-FMT-01..03, REQ-GEN-06) — TQ-1 (safe defaults)
+# --------------------------------------------------------------------------- #
+#
+# TQ-1 resolution (03 §8): GitHub Copilot exposes no confirmed skill invocation-hint
+# field and no native sub-agent construct, so the documented safe default holds —
+# {name, description} skill frontmatter, hint drop-recorded, every sub-agent
+# claude_keys entry drop-recorded (body-only instruction file).
+
+
+class CopilotEmitter:
+    """Emitter for ``copilot``: skill copy with Copilot frontmatter.
+
+    Hint + sub-agent structural keys are TQ-1-unconfirmed → drop-recorded
+    (REQ-FMT-03 / REQ-GEN-06).
+    """
+
+    agent_id = "copilot"
+
+    def emit_skill(self, skill: SkillRecord) -> EmitResult:
+        """Emit ``skills/<name>/<name>.md`` with {name, description} + body."""
+        native = order_fields({"name": skill.name, "description": skill.description})
+        content = render_frontmatter_block(native, skill.source_path) + skill.body
+        rel = f"skills/{skill.name}/{skill.name}.md"
+        drops: tuple[DropRecord, ...] = ()
+        if hint_value(skill) is not None:
+            drops = (DropRecord("copilot", skill.source_path, "argument-hint",
+                                "no known Copilot invocation-hint field (TQ-1)"),)
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+    def emit_agent(self, agent: AgentRecord) -> EmitResult:
+        """Emit a body-only ``agents/<name>.md`` and drop-record every claude_keys."""
+        rel = f"agents/{agent.name}.md"
+        content = render_frontmatter_block(
+            order_fields({"name": agent.name, "description": agent.description}),
+            agent.source_path,
+        ) + agent.body
+        drops = drop_all_claude_keys(agent, "copilot", "no Copilot sub-agent construct (TQ-1)")
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+
+# --------------------------------------------------------------------------- #
+# gemini emitter (03 §7, REQ-FMT-01..03, REQ-GEN-06) — TQ-1 (safe defaults)
+# --------------------------------------------------------------------------- #
+#
+# TQ-1 resolution (03 §8). Official docs WERE reachable (context7
+# `/google-gemini/gemini-cli`). The Gemini SKILL.md frontmatter is confirmed to be
+# {name, description} (skills/builtin/skill-creator/SKILL.md), and the
+# gemini-extension.json manifest schema (docs/extensions/reference.md) carries
+# name/version/description/mcpServers/contextFileName — it does not define a native
+# command invocation-hint field, so the hint stays drop-recorded. The per-skill
+# manifest registration shape and `_generated`/`version` serialization are owned by
+# the engine (02 §4.1 / 04 §1.3); this emitter only contributes a ManifestEntry per
+# skill. Net: documented safe defaults hold; the safe-default tree is the baseline.
+
+
+class GeminiEmitter:
+    """Emitter for ``gemini``: body files + a ``gemini-extension.json`` manifest.
+
+    The manifest (strict JSON → ``_generated`` provenance, 00 §7 Form C) is assembled
+    by the engine from each skill's ManifestEntry (02 §4.1, 04 §1.3); any command hint
+    field is TQ-1 → drop-recorded.
+    """
+
+    agent_id = "gemini"
+
+    def emit_skill(self, skill: SkillRecord) -> EmitResult:
+        """Emit ``skills/<name>/<name>.md`` body + one ManifestEntry per skill."""
+        rel = f"skills/{skill.name}/{skill.name}.md"
+        content = render_frontmatter_block(
+            order_fields({"name": skill.name, "description": skill.description}),
+            skill.source_path,
+        ) + skill.body
+        drops: tuple[DropRecord, ...] = ()
+        if hint_value(skill) is not None:
+            drops = (DropRecord("gemini", skill.source_path, "argument-hint",
+                                "Gemini manifest hint field unconfirmed (TQ-1)"),)
+        entry = ManifestEntry(name=skill.name, description=skill.description)
+        return EmitResult(
+            files=(EmittedFile(rel, content),),
+            drops=drops,
+            manifest_entries=(entry,),
+        )
+
+    def emit_agent(self, agent: AgentRecord) -> EmitResult:
+        """Emit a body-only ``agents/<name>.md`` and drop-record every claude_keys."""
+        rel = f"agents/{agent.name}.md"
+        content = render_frontmatter_block(
+            order_fields({"name": agent.name, "description": agent.description}),
+            agent.source_path,
+        ) + agent.body
+        drops = drop_all_claude_keys(agent, "gemini", "no Gemini sub-agent construct (TQ-1)")
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
