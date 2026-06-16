@@ -92,6 +92,57 @@ def test_oversized_both_emits_two_violations(fixture_copy):
 # direction in the parametrized impure test. Guards against a no-op comparison.
 
 
+# ── Regression: rules 3 & 5 must scan references/ trees, not just SKILL.md ──
+# Guards the CANONICAL_SURFACES glob fix (a bare `/**` matches directories only,
+# so the recursive patterns must end `/**/*`). Before the fix these fixtures
+# passed — the reference files were silently skipped.
+
+
+def test_residual_var_in_references_is_caught(fixture_copy):
+    root = fixture_copy("bad-residual-var-references")
+    result = run_checker(root)
+    assert result.returncode != 0
+    assert "residual ${CLAUDE_PLUGIN_ROOT}" in result.stdout
+    assert "references/leaky.md" in result.stdout
+
+
+def test_prelude_drift_in_skill_references_is_caught(fixture_copy):
+    root = fixture_copy("bad-prelude-drift-references")
+    result = run_checker(root)
+    assert result.returncode != 0
+    assert "byte-identical" in result.stdout
+    assert "skills/alpha/references/drift.md" in result.stdout
+
+
+# ── Regression: the REQ-VND-03 audit inventory is exempt from rule 3 ────────
+# vendor-construct-inventory.md documents ${CLAUDE_PLUGIN_ROOT} as prose inside a
+# canonical surface; RESIDUAL_VAR_EXEMPT must keep it from tripping rule 3.
+
+
+def test_inventory_residual_var_is_exempt(fixture_copy):
+    root = fixture_copy("exempt-inventory-residual-var")
+    result = run_checker(root)
+    assert result.returncode == 0, result.stdout
+
+
+# ── Determinism: sorted, byte-identical repeated runs (spec 05 §3.4, §7) ────
+
+
+def test_output_is_deterministic_and_sorted(fixture_copy):
+    root = fixture_copy("bad-multi")
+    first = run_checker(root)
+    second = run_checker(root)
+    assert first.returncode == 1
+    assert first.stdout == second.stdout  # byte-identical across runs
+    violation_lines = [
+        line.strip()
+        for line in first.stdout.splitlines()
+        if line.strip().startswith("skills/")
+    ]
+    assert violation_lines == sorted(violation_lines)  # (path, rule, reason) order
+    assert len(violation_lines) == 2  # one per skill dir (alpha before zeta)
+
+
 # ── 2.3 Reader-robustness fixtures (REQ-FM-04) ─────────────────────────────
 
 
