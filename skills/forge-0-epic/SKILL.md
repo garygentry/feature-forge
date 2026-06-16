@@ -1,7 +1,8 @@
 ---
 name: forge-0-epic
 description: "Create or edit a forge epic: decompose a large change into discrete member features with dependencies, charters, and structured contracts, producing epic-manifest.json + EPIC.md. Re-run on an existing epic to enter edit mode (add/remove/reorder features, change dependencies). Use when the user runs /feature-forge:forge-0-epic or explicitly asks to start/modify an epic. Do NOT trigger for single-feature PRD work (that is forge-1-prd) or for general project planning outside forge."
-argument-hint: "<epic-name>"
+metadata:
+  argument-hint: "<epic-name>"
 ---
 
 # forge-0-epic — Epic Decomposition & Orchestration

@@ -1,7 +1,8 @@
 ---
 name: forge-fix
 description: "Apply fixes from the most recent forge-verify findings document. Use when user runs /feature-forge:forge-fix or asks to apply verification fixes for a forge feature. Do NOT trigger for general code fixes, bug fixes, or repairs outside the forge verification workflow."
-argument-hint: "<feature-name>"
+metadata:
+  argument-hint: "<feature-name>"
 ---
 
 # forge-fix — Apply Verification Fixes
