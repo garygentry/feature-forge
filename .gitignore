@@ -10,3 +10,7 @@
 
 # Local Claude Code session artifacts
 .claude/
+
+# Adapter build artefacts (forge-agent-adapters-build)
+.venv-adapters/
+adapters.tmp-*/
