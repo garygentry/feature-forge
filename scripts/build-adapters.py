@@ -26,7 +26,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import yaml
 
@@ -546,3 +546,168 @@ def parse_agent(path: Path, root: Path) -> AgentRecord:
         claude_keys=claude_keys,
         source_path=source_path,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Cross-cutting emitter helpers (03 §2.1-§2.3, REQ-FMT-02/04, REQ-GEN-06)
+# --------------------------------------------------------------------------- #
+
+
+def render_frontmatter_block(fields: dict[str, Any], source_path: str) -> str:
+    """Serialize a frontmatter mapping into a provenance-stamped ``---`` block.
+
+    The keys of ``fields`` MUST already be a subset of FRONTMATTER_KEY_ORDER
+    (00 §4) in that fixed order; this helper does NOT reorder (``sort_keys=False``),
+    so the caller is responsible for projecting onto the canonical order via
+    ``order_fields``. The provenance comment (00 §7, Form A) is emitted as the
+    first line INSIDE the block so ``---`` stays byte 0 for strict parsers
+    (04-provenance-selfcontainment-report.md §1).
+
+    Args:
+        fields: Native frontmatter keys → values, already in FRONTMATTER_KEY_ORDER.
+            ``description``'s value is the decoded canonical scalar; the dumper
+            preserves it byte-for-byte (REQ-FMT-04).
+        source_path: Repo-relative POSIX path of the canonical source, for the
+            provenance comment (REQ-OUT-01).
+
+    Returns:
+        A complete frontmatter block: ``---\\n# GENERATED…\\n<yaml>---\\n``.
+    """
+    body = yaml.safe_dump(
+        fields,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+        width=4096,
+    )
+    comment = PROVENANCE_FM_COMMENT.format(source=source_path)
+    return f"---\n{comment}\n{body}---\n"
+
+
+def order_fields(native: dict[str, Any]) -> dict[str, Any]:
+    """Project a native field map onto FRONTMATTER_KEY_ORDER (00 §4).
+
+    Drops keys the canonical order does not name and skips keys absent from
+    ``native``. A key present in ``native`` but absent from FRONTMATTER_KEY_ORDER
+    is a generator bug (emitters MUST only use ordered keys); it is asserted, not
+    silently passed.
+    """
+    out: dict[str, Any] = {}
+    for key in FRONTMATTER_KEY_ORDER:
+        if key in native:
+            out[key] = native[key]
+    assert set(native) <= set(FRONTMATTER_KEY_ORDER), (
+        f"emitter produced un-ordered keys: {set(native) - set(FRONTMATTER_KEY_ORDER)}"
+    )
+    return out
+
+
+def hint_value(skill: SkillRecord) -> str | None:
+    """Return the canonical argument-hint scalar, or None if the skill has none.
+
+    None for ``forge-init`` (no metadata) — emitters emit no hint AND record no
+    drop for it (there is no construct to drop). For the other 10 skills this is
+    the verbatim relocated value (REQ-VND-01 / REQ-FMT-02).
+    """
+    if skill.metadata is None:
+        return None
+    hint = skill.metadata.get("argument-hint")
+    return hint if isinstance(hint, str) else None
+
+
+def drop_all_claude_keys(
+    agent: AgentRecord, agent_id: str, reason: str
+) -> tuple[DropRecord, ...]:
+    """Record EVERY claude_keys entry of one sub-agent as dropped.
+
+    For a target that has no native sub-agent construct (REQ-GEN-06 / REQ-FMT-03 /
+    REQ-OBS-01). Enumerates ``agent.claude_keys`` (per-file, not hard-coded), so a
+    future Claude-only key is auto-covered (REQ-SCALE-01). ``description`` and
+    ``name`` are NOT dropped — they are preserved into the body artifact the target
+    still receives.
+    """
+    return tuple(
+        DropRecord(
+            agent=agent_id,
+            source=agent.source_path,
+            construct=f"sub-agent key '{key}'",
+            reason=reason,
+        )
+        for key in agent.claude_keys  # source order (00 §3) → deterministic
+    )
+
+
+# --------------------------------------------------------------------------- #
+# claude emitter (03 §3, REQ-VND-01, REQ-VND-02, REQ-GEN-06) — CONFIRMED
+# --------------------------------------------------------------------------- #
+
+
+class ClaudeEmitter:
+    """Emitter for the ``claude`` target (REQ-GEN-03).
+
+    Restores Claude-native skills (top-level argument-hint, REQ-VND-01) and full
+    sub-agent frontmatter; retains Claude-only artifacts (REQ-VND-02). D1:
+    adapters/claude/ is a parallel packaging copy — plugin.json keeps loading
+    skills/ canon (00 §1 / tech-spec D1).
+    """
+
+    agent_id = "claude"
+
+    def emit_skill(self, skill: SkillRecord) -> EmitResult:
+        """Emit ``skills/<name>/SKILL.md`` with {name, description, argument-hint?}."""
+        native: dict[str, Any] = {"name": skill.name, "description": skill.description}
+        hint = hint_value(skill)
+        if hint is not None:  # REQ-VND-01: reconstruct top-level argument-hint
+            native["argument-hint"] = hint
+        fields = order_fields(native)
+        content = render_frontmatter_block(fields, skill.source_path) + skill.body
+        rel = f"skills/{skill.name}/SKILL.md"
+        return EmitResult(files=(EmittedFile(relpath=rel, content=content),), drops=())
+
+    def emit_agent(self, agent: AgentRecord) -> EmitResult:
+        """Emit ``agents/<name>.md`` with full {name, description, **claude_keys}."""
+        native: dict[str, Any] = {"name": agent.name, "description": agent.description}
+        native.update(agent.claude_keys)  # all representable for Claude → no drops
+        fields = order_fields(native)
+        content = render_frontmatter_block(fields, agent.source_path) + agent.body
+        rel = f"agents/{agent.name}.md"
+        return EmitResult(files=(EmittedFile(relpath=rel, content=content),), drops=())
+
+
+# --------------------------------------------------------------------------- #
+# cursor emitter (03 §6, REQ-FMT-01..03, REQ-GEN-06) — CONFIRMED .mdc schema
+# --------------------------------------------------------------------------- #
+
+
+class CursorEmitter:
+    """Emitter for ``cursor``: ``.mdc`` rule files (description, globs, alwaysApply).
+
+    No name field (carried by filename), no hint field (drop-recorded), no
+    sub-agent construct (every claude_keys entry drop-recorded). Confirmed format.
+    """
+
+    agent_id = "cursor"
+
+    def emit_skill(self, skill: SkillRecord) -> EmitResult:
+        """Emit ``skills/<name>/<name>.mdc`` with description/globs/alwaysApply only."""
+        native = order_fields({
+            "description": skill.description,  # verbatim, REQ-FMT-04
+            "globs": [],                       # deterministic default (REQ-DET-01)
+            "alwaysApply": False,
+        })
+        content = render_frontmatter_block(native, skill.source_path) + skill.body
+        rel = f"skills/{skill.name}/{skill.name}.mdc"
+        drops: tuple[DropRecord, ...] = ()
+        if hint_value(skill) is not None:
+            drops = (DropRecord("cursor", skill.source_path, "argument-hint",
+                                "no Cursor .mdc invocation-hint field"),)
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+    def emit_agent(self, agent: AgentRecord) -> EmitResult:
+        """Emit a body-only ``agents/<name>.mdc`` and drop-record every claude_keys."""
+        native = order_fields({"description": agent.description, "globs": [],
+                               "alwaysApply": False})
+        rel = f"agents/{agent.name}.mdc"
+        content = render_frontmatter_block(native, agent.source_path) + agent.body
+        drops = drop_all_claude_keys(agent, "cursor", "no Cursor sub-agent equivalent")
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
