@@ -117,6 +117,20 @@ for SCRIPT in "$REPO_ROOT"/scripts/*.sh; do
   fi
 done
 
+# 6a. Spec-purity gate (REQ-VER-01..03) — a TOP-LEVEL step, OUTSIDE the
+#     `if [ -f "$HELPER" ]` epic-manifest guard, so it runs UNCONDITIONALLY.
+#     python3 stdlib only (no pyyaml), so it is always available; under
+#     `set -euo pipefail` a non-zero exit fails validate.sh immediately.
+#     This is a HARD gate — it is NEVER soft-skipped (unlike the pytest step).
+echo ""
+echo "Checking spec purity..."
+if python3 "$REPO_ROOT/scripts/check-spec-purity.py"; then
+  echo "PASS: spec-purity checker (all canonical surfaces clean)"
+else
+  echo "FAIL: spec-purity checker reported violations (see above)"
+  ERRORS=$((ERRORS + 1))
+fi
+
 # 7. Compile-check and test epic-manifest helper
 echo ""
 echo "Checking epic-manifest helper..."
