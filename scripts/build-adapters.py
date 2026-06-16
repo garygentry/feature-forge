@@ -23,7 +23,10 @@ Source of truth: ``specs/agent-agnostic/forge-agent-adapters-build/00-core-defin
 
 from __future__ import annotations
 
+import hashlib
 import io
+import json
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -880,3 +883,225 @@ class GeminiEmitter:
         ) + agent.body
         drops = drop_all_claude_keys(agent, "gemini", "no Gemini sub-agent construct (TQ-1)")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+
+# --------------------------------------------------------------------------- #
+# Self-containment pass (04 §2, REQ-GEN-04, REQ-GEN-05, REQ-SEC-01, REQ-DET-01)
+# --------------------------------------------------------------------------- #
+
+
+def run_self_containment_pass(
+    bundle_root: Path,
+    repo_root: Path,
+    skills: tuple[SkillRecord, ...],
+) -> None:
+    """Add the reference closure + verbatim forge-root.sh to one agent bundle.
+
+    Runs once per ``adapters/<agent>/`` bundle, AFTER its emitters have written
+    native artifacts and BEFORE atomic publish (``02-generator-engine.md §4``).
+    Applies to every agent uniformly — NOT per-emitter (``00-core-definitions.md §5``).
+    Satisfies REQ-GEN-04 (self-containment) + REQ-GEN-05 (byte-identical resolver).
+
+    Args:
+        bundle_root: The agent's bundle dir (e.g. ``<repo>/adapters.tmp-<pid>/claude``).
+        repo_root: The resolved feature-forge repo root (canon lives here; read-only, C-3).
+        skills: Parsed skills, used to copy each skill's own ``references/`` (§2.2).
+
+    Raises:
+        AssertionError: If ``forge-root.sh`` byte-identity fails (REQ-GEN-05) or an
+            output path escapes ``bundle_root`` (REQ-SEC-01). Surfaced as a generator
+            defect, not a ``CanonError`` (canon is pre-gated pure upstream).
+    """
+    # (1) Whole-tree shared references/ copy, verbatim (D5, §2.1).
+    src_refs = repo_root / "references"
+    dst_refs = bundle_root / "references"
+    _copytree_verbatim(src_refs, dst_refs, bundle_root)
+
+    # (2) Each skill's own references/ subdir, where present (§2.2, REQ-SCALE-01).
+    for skill in skills:
+        if skill.own_refs is None:
+            continue
+        dst_own = bundle_root / "skills" / skill.name / "references"
+        _copytree_verbatim(skill.own_refs, dst_own, bundle_root)
+
+    # (3) Byte-identical forge-root.sh copy, mode 0755, NO header (§2.3, REQ-GEN-05).
+    src_resolver = repo_root / "scripts" / "forge-root.sh"
+    dst_resolver = bundle_root / "scripts" / "forge-root.sh"
+    dst_resolver.parent.mkdir(parents=True, exist_ok=True)
+    _assert_within(dst_resolver, bundle_root)
+    shutil.copyfile(src_resolver, dst_resolver)   # bytes only — never copystat/edit
+    dst_resolver.chmod(0o755)
+    _assert_byte_identical(src_resolver, dst_resolver)  # REQ-GEN-05 hard assertion
+
+
+def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
+    """Recursively copy ``src`` → ``dst`` byte-for-byte (no header injection, §1.6).
+
+    Walks ``src`` in sorted POSIX order (REQ-DET-01) so any incidental ordering is
+    stable. Every destination is asserted within ``bundle_root`` (REQ-SEC-01).
+    """
+    for entry in sorted(src.rglob("*"), key=lambda p: p.relative_to(src).as_posix()):
+        rel = entry.relative_to(src)
+        target = dst / rel
+        _assert_within(target, bundle_root)
+        if entry.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(entry, target)  # verbatim bytes; no stamp, no reflow
+
+
+def _assert_within(path: Path, root: Path) -> None:
+    """Assert ``path`` resolves within ``root`` (REQ-SEC-01 path-sandbox)."""
+    resolved = path.resolve()
+    root_resolved = root.resolve()
+    assert (
+        resolved == root_resolved or root_resolved in resolved.parents
+    ), f"path escapes bundle sandbox: {resolved} not under {root_resolved}"
+
+
+def _assert_byte_identical(src: Path, dst: Path) -> None:
+    """Assert ``dst`` is byte-for-byte identical to ``src`` (REQ-GEN-05)."""
+    src_hash = hashlib.sha256(src.read_bytes()).hexdigest()
+    dst_hash = hashlib.sha256(dst.read_bytes()).hexdigest()
+    assert src_hash == dst_hash, (
+        f"forge-root.sh copy is not byte-identical to canon "
+        f"(src {src_hash[:12]} != dst {dst_hash[:12]}) — REQ-GEN-05 violated"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Manifest serialization (04 §1.3, OQ-2, REQ-OUT-01, REQ-DET-01) — Form C
+# --------------------------------------------------------------------------- #
+
+
+def _publish_manifest(
+    root: Path, dest: Path, agent_id: str, entries: tuple[ManifestEntry, ...]
+) -> None:
+    """Serialize the whole-bundle manifest from collected ManifestEntry-s (V-001).
+
+    Only ``gemini`` (gemini-extension.json) and ``codex`` (agents/openai.yaml) reach
+    here; other targets pass no entries (02 §4.1). The serialized object is FIXED-
+    ORDER for determinism (REQ-DET-01): ``_generated`` first, then the manifest's own
+    keys, then the per-record array built from ``entries`` in their (deterministic)
+    accumulation order. ``version`` is the fixed ``GEMINI_EXTENSION_VERSION`` constant
+    (00 §7) — never a timestamp.
+
+    Args:
+        root: Resolved repo root (unused for serialization; kept for engine symmetry
+            with the other publish passes / future schema needs).
+        dest: Staging root under which ``<agent_id>/`` bundles live.
+        agent_id: The bundle id; only ``gemini``/``codex`` serialize a manifest.
+        entries: The per-record ManifestEntry-s collected across the emit loop.
+    """
+    if agent_id == "gemini":
+        manifest: dict[str, object] = {
+            PROVENANCE_JSON_KEY: provenance_json("skills/"),
+            "name": "feature-forge",
+            "version": GEMINI_EXTENSION_VERSION,  # fixed constant, 00 §7 (V-002)
+            "skills": [
+                {"name": e.name, "description": e.description, **e.extra}
+                for e in entries
+            ],
+        }
+        rel = "gemini-extension.json"
+        content = json.dumps(manifest, indent=2, sort_keys=False, ensure_ascii=False) + "\n"
+        safe_write(dest / agent_id, rel, content)  # 02 §4.2 sandbox guard
+    elif agent_id == "codex":
+        # agents/openai.yaml: same `_generated`-first rule (00 §7 / §1.3). The codex
+        # agent manifest is YAML; `_generated` provenance is the first serialized key,
+        # then the per-sub-agent array. Native key set is TQ-1 (03 §4) → entries carry
+        # {name, description} (+ any confirmed `extra`) only.
+        manifest = {
+            PROVENANCE_JSON_KEY: provenance_json("agents/"),
+            "agents": [
+                {"name": e.name, "description": e.description, **e.extra}
+                for e in entries
+            ],
+        }
+        rel = "agents/openai.yaml"
+        content = yaml.safe_dump(
+            manifest,
+            sort_keys=False,
+            default_flow_style=False,
+            allow_unicode=True,
+            width=4096,
+        )
+        safe_write(dest / agent_id, rel, content)  # 02 §4.2 sandbox guard
+
+
+# --------------------------------------------------------------------------- #
+# Generation report (04 §3, REQ-OBS-01, REQ-FMT-03, REQ-DET-01, OQ-3) — Form B
+# --------------------------------------------------------------------------- #
+
+
+def render_generation_report(drops: tuple[DropRecord, ...]) -> str:
+    """Render the committed ``adapters/GENERATION-REPORT.md`` body (REQ-OBS-01).
+
+    Carries the Form B body-top provenance line (§1.2) as line 1. Drop rows are
+    grouped by agent (AGENT_TARGETS order, ``00-core-definitions.md §1``) and within
+    each agent sorted by (source, construct) — the same total order as the global
+    (agent, source, construct) sort in ``00-core-definitions.md §6``, so output is
+    deterministic (REQ-DET-01).
+
+    Args:
+        drops: Every DropRecord produced by every emitter this run.
+
+    Returns:
+        The full report text, newline-normalized to ``\\n``, ending in a single ``\\n``.
+    """
+    lines: list[str] = [PROVENANCE_BODY_TOP, "", "# Adapter Generation Report", ""]
+    lines.append(
+        "Generated by `" + REGENERATE_CMD + "`. Each row is a canonical construct "
+        "that the target agent's format cannot represent and that was therefore "
+        "omitted (REQ-FMT-03) and recorded here (REQ-OBS-01)."
+    )
+    lines.append("")
+
+    # Stable total order over all drops (REQ-DET-01).
+    ordered = sorted(drops, key=lambda d: (d.agent, d.source, d.construct))
+
+    for agent in AGENT_TARGETS:                      # fixed iteration order
+        agent_drops = [d for d in ordered if d.agent == agent]
+        lines.append(f"## {agent}")
+        lines.append("")
+        if not agent_drops:
+            lines.append("_No dropped constructs — every canonical construct is "
+                         "representable in this agent's format._")
+            lines.append("")
+            continue
+        lines.append("| Source | Construct | Reason |")
+        lines.append("|--------|-----------|--------|")
+        for d in agent_drops:
+            lines.append(f"| `{d.source}` | `{d.construct}` | {d.reason} |")
+        lines.append("")
+
+    lines.extend(_render_verbatim_copies_section())  # §3.3
+    return "\n".join(lines) + "\n"
+
+
+def _render_verbatim_copies_section() -> list[str]:
+    """Render the fixed 'copied verbatim' provenance section (§1.4 / §1.6).
+
+    These files carry NO per-file header to preserve byte-identity (REQ-GEN-05) /
+    verbatim transport; their provenance is documented here instead, satisfying
+    REQ-OUT-01's intent that every generated artifact's provenance is discoverable.
+    Fixed text → deterministic (REQ-DET-01).
+    """
+    return [
+        "## Copied verbatim (no provenance header)",
+        "",
+        "These files are transported byte-for-byte from canon into every "
+        "`adapters/<agent>/` bundle and intentionally carry **no** provenance "
+        "header (a header would break byte-identity / corrupt parsed files):",
+        "",
+        "- `scripts/forge-root.sh` → `adapters/<agent>/scripts/forge-root.sh` "
+        "(mode 0755, byte-identical — REQ-GEN-05).",
+        "- the whole repo-root `references/` tree (14 files: 9 root + `stacks/`×5) "
+        "→ `adapters/<agent>/references/` (verbatim — REQ-GEN-04 / D5).",
+        "- each skill's own `references/` subdir → "
+        "`adapters/<agent>/skills/<name>/references/` (verbatim, where present).",
+        "",
+        "Regenerate all adapter output with `" + REGENERATE_CMD + "`.",
+        "",
+    ]
