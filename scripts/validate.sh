@@ -131,6 +131,39 @@ else
   ERRORS=$((ERRORS + 1))
 fi
 
+# 6b. Adapters regen-and-diff drift guard (REQ-CI-01..04, tech-spec §3.8, D4) —
+#     a TOP-LEVEL step, OUTSIDE the `if [ -f "$HELPER" ]` epic-manifest guard, so
+#     it runs UNCONDITIONALLY. It provisions an isolated, gitignored venv with the
+#     pinned YAML dep (C-4; never mutates system Python, avoids PEP-668), then runs
+#     `build-adapters.py --check`: regenerate to a temp dir, diff -r vs the
+#     committed adapters/. Under `set -euo pipefail` a non-zero --check exit fails
+#     validate.sh immediately. This is a HARD gate — NEVER soft-skipped (unlike the
+#     pytest step), because generated artifacts must never silently drift from canon.
+echo ""
+echo "Checking adapters/ is in sync with canon..."
+ADAPTERS_VENV="$REPO_ROOT/.venv-adapters"
+ADAPTERS_REQS="$REPO_ROOT/scripts/requirements-adapters.txt"
+ADAPTERS_PY="$ADAPTERS_VENV/bin/python3"
+# Provision (create-or-reuse) the isolated venv and install the pinned dep. -q
+# keeps output quiet; the install is cached after the first run. A provisioning
+# failure is a real error (the verify command must run with no manual setup, C-4).
+if [ ! -x "$ADAPTERS_PY" ]; then
+  python3 -m venv "$ADAPTERS_VENV"
+fi
+if "$ADAPTERS_PY" -m pip install -q -r "$ADAPTERS_REQS"; then
+  if "$ADAPTERS_PY" "$REPO_ROOT/scripts/build-adapters.py" --check; then
+    echo "PASS: adapters/ matches a fresh generation (no drift)"
+  else
+    echo "FAIL: adapters/ is out of date — run 'python3 scripts/build-adapters.py' and commit the result"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "FAIL: could not provision .venv-adapters from scripts/requirements-adapters.txt"
+  echo "      (environment/setup fault, NOT a canon error or drift — check network access,"
+  echo "       PEP-668/externally-managed Python, or a corrupt requirements-adapters.txt)"
+  ERRORS=$((ERRORS + 1))
+fi
+
 # 7. Compile-check and test epic-manifest helper
 echo ""
 echo "Checking epic-manifest helper..."
