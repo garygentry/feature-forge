@@ -20,12 +20,66 @@ run, which overrides the project's configured default, which overrides the
 runner/provider default. Pass `--model <model>` (optional flag below) to override
 the project default for the whole run.
 
+## Agent selection (Step 2d)
+
+This section is **parallel** to `## Model selection precedence` above: it governs
+which **coding agent** rauf drives for the run. The entire surface is
+**presence-gated** on `loopRunner.agentArgument` — when that field is absent or
+empty, there is no selector, no probe, and no `{agent}` substitution, and Step 2d /
+Step 3c are byte-identical to today (capability gate;
+`02-config-schema-and-gating.md`, REQ-PLUG-02). The rest assumes the gate is on.
+
+**Precedence (highest wins):**
+
+```
+item.provider  >  --agent (run selection)  >  loopRunner.defaultAgent (project)  >  runner default (claude-cli)
+```
+
+**Run-layer mapping — why forge never re-implements rauf's resolver.** forge owns
+**only** its run and project layers and collapses them into **one** value
+(`resolve()`: `run_selection or defaultAgent or none`), which it emits as a single
+`--agent {agent}` occupying rauf's **run layer only**. rauf alone resolves
+item-vs-run via its own 5-layer resolver, sitting the per-item `BacklogItem.provider`
+**above** forge's run layer — so a run selection can never clobber a deliberate
+per-item agent. forge **never reads, writes, or overrides** `BacklogItem.provider`
+(REQ-AGENT-05). When forge sends nothing (the default path), rauf applies its own
+default `claude-cli`, byte-identical to today. Empty/whitespace selections are
+treated as unset, and an explicit pick of the runner default id collapses to the
+default path (append nothing, run no probe). See
+`03-selection-resolution-observability.md §3–§4`.
+
+**Availability pre-check + disambiguation.** For a **non-default** resolved id only,
+forge runs `loopRunner.agentsProbeCommand` **once** (no retries) and classifies the
+id by **membership** in the advertised set (`{ row.id for row in agents }`), then the
+matching row's `available` flag — **never** by exit code, because `rauf agents
+--json` always exits 0 (an unknown id is simply absent; a known-unavailable one is
+present with `available: false`):
+
+- **UNKNOWN** (`∉` advertised set): hard-reject **before any loop side-effect**,
+  listing the sorted valid ids; **no proceed-anyway**; the value never interpolates
+  into `{agent}` (the advertised set IS the allow-list — REQ-SEC-01).
+- **UNAVAILABLE** (member, `available == False`): warn with the row's `detail`, then
+  offer **proceed-anyway OR choose-another** — never silent.
+- **AVAILABLE** (member, `available == True`): proceed; the validated id fills
+  `{agent}`.
+- **Probe failure** (non-zero exit / unparseable / wrong shape / empty `agents[]` /
+  row missing `id`): surface it and offer **choose-another OR abort**; never launch
+  the non-default agent unvalidated, never silently fall back to the default.
+
+The default / `claude-cli` path runs **no** probe (zero extra cost). See
+`04-availability-precheck.md` for the full pre-check, classification, and allow-list,
+and `02-config-schema-and-gating.md` for the capability gate.
+
 ## Optional flags catalog (Step 2d, rauf)
 
 These are the optional flags the user may add to the rendered run command. If the
 user requests additional flags, append them to the rendered run command.
 
 ```
+  --agent <id>      Coding agent rauf drives this run (see Agent selection below).
+                    Only the runner's advertised ids are valid; an unknown id is
+                    rejected before launch. Shown only when the runner advertises
+                    an agent surface (loopRunner.agentArgument present).
   --review          Run a review pass after all iterations (extra agent session)
   --model <model>   Override the model (see precedence above)
   --timeout <min>   Per-session timeout in minutes (default: 60)
@@ -121,8 +175,27 @@ high and the noise low:
 This is the verbatim "Loop started…" output the session shows the user after
 launch. Commands are the rendered `loopRunner` monitoring commands.
 
+When the agent surface is gated on (`loopRunner.agentArgument` present), add the
+`Coding agent:` line shown below immediately after the opening `Loop started …`
+line, using the same `sourceLabel` mapping as the Step 2d confirmation
+(`RUN` → `"per-run selection"`, `PROJECT` →
+`"project default (loopRunner.defaultAgent)"`, `DEFAULT` →
+`"runner default — claude-cli"`). When the gate is off, the line is **absent** and
+the template is byte-identical to today (REQ-PLUG-02). When the launch proceeded via
+the UNAVAILABLE *proceed-anyway* path, use the audit variant instead:
+
+```
+Coding agent: {resolved.agent or claude-cli} (source: {sourceLabel}).
+Coding agent: {resolved.agent} (source: {sourceLabel}; proceeded despite unavailability warning).
+```
+
+(The two lines above are alternatives — the first is the normal line; the second
+replaces it only on the proceed-anyway path. This is session-side prose only; it
+introduces no new event type, so the Step 3d Monitor filter is unchanged.)
+
 ```
 Loop started for {feature} ({N} items to process).
+Coding agent: {resolved.agent or claude-cli} (source: {sourceLabel}).   # only when the agent surface is gated on
 This session is now monitoring it live — I'll report milestones and stop you in if
 the loop needs a human. The loop also runs detached and survives this session ending.
 Each item gets a fresh agent session with full context from the backlog and specs.

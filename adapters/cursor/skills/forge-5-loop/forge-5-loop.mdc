@@ -84,7 +84,7 @@ Enforce `loopRunner.minRunnerVersion` **before** doing anything else with the ru
 
 1. Run the **version command** (`loopRunner.versionCommand`, default `rauf version --json`) via Bash.
 2. Parse `{ "version": "<semver>" }` from stdout. Do NOT use plain `rauf version` (its human output is `rauf v0.1.0` with a `v` prefix) — always the `--json` form.
-3. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.5.0`), numerically by major, then minor, then patch.
+3. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.6.0`), numerically by major, then minor, then patch.
 
 **Any of the following is a HARD GATE FAILURE — do NOT proceed to run the loop.** STOP, show `loopRunner.installHint`, and include the raw command output for diagnosis:
 
@@ -92,7 +92,7 @@ Enforce `loopRunner.minRunnerVersion` **before** doing anything else with the ru
 - Its stdout is not valid JSON, has no `version` field, or `version` is not a valid semver string.
 - The reported version is **< `minRunnerVersion`**.
 
-For the version-too-old case, phrase it concretely, e.g.: "Your rauf is {reported}, but feature-forge needs ≥ {minRunnerVersion} (it relies on `backlog validate` + backlog schemaVersion). {installHint}". When the gate fails because the output couldn't be parsed, say so and show what the command printed before the `installHint`.
+For the version-too-old case, phrase it concretely, e.g.: "Your rauf is {reported}, but feature-forge needs ≥ {minRunnerVersion} — 0.6.0 is the floor that ships the agent-selection surface (`--agent` / `rauf agents`) the loop relies on. {installHint}". When the gate fails because the output couldn't be parsed, say so and show what the command printed before the `installHint`.
 
 > `installHint` points at the runner **CLI** install/upgrade — distinct from
 > `setupHint` (1d), which installs the runner's per-project artifacts.
@@ -170,10 +170,18 @@ read references/runner-contract.md.
 Proceed with this command, or would you like to adjust?
 ```
 
-For the full loop-runner contract — event-stream vs. log-fallback launch, the
-live-supervision/monitor rules, and the model-selection precedence — read
-`references/runner-contract.md`. If the user requests additional flags, append
-them to the rendered run command.
+For the full loop-runner contract — event-stream vs. log-fallback launch, the live-supervision/monitor rules, and the model-selection precedence — read `references/runner-contract.md`. If the user requests additional flags, append them to the rendered run command.
+
+#### Agent selection (gated on `loopRunner.agentArgument`)
+
+**Capability gate.** Everything below applies **only when** the effective `loopRunner.agentArgument` is present and non-empty. **When it is absent or empty, Step 2d is exactly the confirmation above — no probe, no agent question, no availability listing, no `Agent:` line — byte-identical to today** (REQ-PLUG-02, REQ-COMPAT-01). The full algorithm, precedence, and verbatim message shapes are in `## Agent selection` of `references/runner-contract.md`; read it. When the gate is on, augment Step 2d in order:
+
+- **(a) Probe once.** Before confirming, run `loopRunner.agentsProbeCommand` (default `{bin} agents --json`) **exactly once** (no retries, no second probe); it exits 0 with `{ agents: [...] }`. Parse `agents[]`; build the advertised set `{ row.id }` — this one parsed array drives (b)–(d).
+- **(b) Agent question.** Add an **"agent"** question to the same `AskUserQuestion` surface: **one option per advertised row** labelled `"{displayName} ({id}) — available/not found"`, **plus an explicit `"default (claude-cli)"` choice mapping to `run_selection = None`**. Resolve the pick (run > project, empty/whitespace unset, an explicit runner-default pick collapses to the default path) into `{resolved.agent, resolved.source}`. Precedence: `item.provider > --agent > project defaultAgent > runner default` (forge never reads a backlog item's provider).
+- **(c) Availability listing.** From the **same** parsed `agents[]` (no second probe), list `id` / `displayName` / available (`yes`/`no`, `detail` on unavailable rows).
+- **(d) Verdict** — only for a **non-default** resolved agent (default path `None`/`claude-cli` → no probe, byte-identical to today). Classify by **membership** then `available` (never by exit code): **UNKNOWN** (`∉` set) → **hard-reject BEFORE any loop side-effect**, error lists the **sorted** valid ids, **NO proceed-anyway**; **UNAVAILABLE** (member, `available False`) → warn with `detail`, `AskUserQuestion` offering **proceed-anyway OR choose-another** (re-presents the same `agents[]`), never silent; **AVAILABLE** → proceed, the validated id fills `{agent}`; **probe failure** (non-zero exit / unparseable / missing or empty `agents[]` / row lacking `id`) → surface it, offer **choose-another OR abort**, **never launch the non-default agent unvalidated** and never silently fall back to the default.
+- **(e) Optional-flags line.** Replace the confirmation's optional-flags line with one that lists `--agent <id>` first plus the agent precedence pointer (`item.provider > --agent > project defaultAgent > runner default`) alongside the model precedence.
+- **(f) Resolved-agent line.** Add to the confirmation block: `Agent: {resolved.agent or claude-cli} (source: {sourceLabel})` — `sourceLabel`: `RUN` → `"per-run selection"`, `PROJECT` → `"project default (loopRunner.defaultAgent)"`, `DEFAULT` → `"runner default — claude-cli"`.
 
 ## Step 3: Execute the Loop
 
@@ -187,14 +195,7 @@ Before launching, update `{resolvedFeatureDir}/.pipeline-state.json`:
 
 ### 3b. Launch Background Process
 
-Launch the loop **backgrounded** (`run_in_background: true`) so it survives session
-end and does not block the session, and prefer the machine-readable event stream
-(`loopRunner.eventStreamCommand`, default for rauf) redirected to a stable
-`events.ndjson` so the session can supervise it live; fall back to the plain
-`runCommand` (tailing the human log) when no `eventStreamCommand` is configured.
-The background task's exit notification is the single authoritative terminal signal
-(Step 4). For the exact launch commands (incl. the `mkdir -p` state-dir guard) and
-the event-stream vs. log-fallback detail, read `references/runner-contract.md`.
+Launch the loop **backgrounded** (`run_in_background: true`) so it survives session end and does not block the session, and prefer the machine-readable event stream (`loopRunner.eventStreamCommand`, default for rauf) redirected to a stable `events.ndjson` so the session can supervise it live; fall back to the plain `runCommand` (tailing the human log) when no `eventStreamCommand` is configured. The background task's exit notification is the single authoritative terminal signal (Step 4). For the exact launch commands (incl. the `mkdir -p` state-dir guard) and the event-stream vs. log-fallback detail, read `references/runner-contract.md`.
 
 Loop runs can take significant time (minutes to hours depending on backlog size).
 
