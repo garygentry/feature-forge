@@ -8,13 +8,26 @@ cases, and the six frontmatter-reader-robustness corners from 00-core-definition
 
 from __future__ import annotations
 
+import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-CHECKER = Path(__file__).resolve().parent.parent / "scripts" / "check-spec-purity.py"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CHECKER = REPO_ROOT / "scripts" / "check-spec-purity.py"
+
+
+def _load_checker_module():
+    """Import check-spec-purity.py as a module (hyphenated filename -> importlib)."""
+    spec = importlib.util.spec_from_file_location("check_spec_purity", CHECKER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # so dataclass annotation resolution works
+    spec.loader.exec_module(module)
+    return module
 
 
 def run_checker(root: Path) -> subprocess.CompletedProcess[str]:
@@ -195,3 +208,24 @@ def test_reader_robustness(fixture_copy, fixture, expect_clean):
     else:
         assert result.returncode != 0
         assert "malformed frontmatter block" in result.stdout
+
+
+def test_loaded_keysets_match_schema():
+    """check-spec-purity's loaded ALLOWED/REQUIRED == the schema's properties/required.
+
+    Guards against the checker's key sets drifting from the single declarative
+    source of truth (references/skill-frontmatter.schema.json). 00 §3 fixes the
+    6 allowed / 2 required keys; this asserts the loader reproduces them exactly.
+    """
+    schema = json.loads(
+        (REPO_ROOT / "references" / "skill-frontmatter.schema.json").read_text("utf-8")
+    )
+    check_spec_purity = _load_checker_module()
+    required, allowed = check_spec_purity._load_frontmatter_key_sets(REPO_ROOT)
+    assert allowed == frozenset(schema["properties"].keys())
+    assert required == frozenset(schema["required"])
+    # Belt-and-suspenders: the exact 00 §3 sets.
+    assert allowed == frozenset(
+        {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
+    )
+    assert required == frozenset({"name", "description"})

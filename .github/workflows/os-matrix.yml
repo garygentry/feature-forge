@@ -1,0 +1,77 @@
+# feature-forge/.github/workflows/os-matrix.yml
+#
+# OS-matrix installer gate (REQ-CI-07, REQ-CI-08). Exercises the cross-agent installer's
+# `install --dry-run` (plan only, no writes) and `uninstall` path on Ubuntu, macOS, and Windows,
+# failing the PR if the installer errors on ANY OS. Kept in its own workflow (REQ-PERF-01) so it
+# stays off the fast per-PR path in ci.yml and its required-check status is tunable independently.
+#
+# --skip-rauf is mandatory on every leg: rauf is unpublished (IR-2), so the rauf registry preflight
+# would otherwise fail the gate for an out-of-scope reason (tech-spec decision 1). See 00 §7.
+name: OS Matrix (installer)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    name: installer dry-run + uninstall (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # REQ-CI-07: every OS must report; one OS's failure must not cancel the others
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5 # pinned to a major tag (REQ-SEC-01), mirrors rauf/ci.yml
+
+      - name: Set up Node
+        uses: actions/setup-node@v4 # pinned (REQ-SEC-01)
+        with:
+          node-version: "20" # >=18 required by installer/package.json "engines"; 20 is LTS
+
+      # Build the installer on this OS's toolchain. `cd installer` for npm; the run commands below
+      # invoke the built entry from the REPO ROOT (the working dir GitHub Actions restores per step).
+      - name: Build installer
+        working-directory: installer
+        run: npm ci && npm run build
+
+      # ---- LEG 1: install --dry-run --skip-rauf --json -------------------------------------------
+      # Plan only (no writes), --skip-rauf (no rauf preflight), --json for a machine-checkable report.
+      # The step asserts exit 0 (the `run:` fails the job on non-zero) AND that stdout is valid JSON
+      # (the node -e pipe below). On any installer error the installer's own message is on stderr and
+      # surfaced in the log (REQ-OBS-01). shell: bash makes the pipe portable across all three OSes.
+      - name: install --dry-run (assert exit 0 + valid JSON)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node installer/dist/cli.js install --dry-run --skip-rauf --json | tee dry-run.json
+          # Cross-platform JSON validation: node is guaranteed present (setup-node above), so we
+          # parse with node -e rather than python/jq (which are not uniformly available on the
+          # Windows runner). A parse failure exits non-zero and fails the leg.
+          node -e "JSON.parse(require('node:fs').readFileSync('dry-run.json','utf8'))"
+
+      # ---- LEG 2: uninstall -y --skip-rauf -------------------------------------------------------
+      # Exercises the uninstall path. -y is non-interactive (never blocks on input); with nothing
+      # installed this is an "ok, no-op" per agent (cli.ts runOneAgent uninstall branch) and exits 0.
+      - name: uninstall -y --skip-rauf (assert exit 0)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node installer/dist/cli.js uninstall -y --skip-rauf
+
+      # ---- LEG 3 (Linux/macOS ONLY): --symlink --dry-run ----------------------------------------
+      # REQ-CI-08: the Windows leg MUST NOT pass --symlink (copy-by-default). POSIX legs MAY exercise
+      # the symlink plan path. Guarded off Windows so the matrix never asserts symlink there.
+      - name: install --symlink --dry-run (POSIX only)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node installer/dist/cli.js install --symlink --dry-run --skip-rauf --json | tee symlink-dry-run.json
+          node -e "JSON.parse(require('node:fs').readFileSync('symlink-dry-run.json','utf8'))"

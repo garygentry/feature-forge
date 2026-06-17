@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import enum
 import fnmatch
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,13 +33,57 @@ from pathlib import Path
 # ─────────────────────────────────────────────────────────────────────────────
 
 # §1 — frontmatter schema (REQ-FM-01, REQ-VND-01).
+#
+# The allowed/required key sets are LOADED from the single declarative source of
+# truth, references/skill-frontmatter.schema.json (00 §3 / tech-spec §3.3), so the
+# schema and this checker can never drift. The schema fixes WHICH keys are allowed;
+# the two checks JSON Schema cannot express (name == directory, residual
+# ${CLAUDE_PLUGIN_ROOT} / prelude / body-size) stay in Python below. The module
+# globals below are placeholders re-bound in main() from the resolved root
+# (REQ-CI-02): a SKILL.md gate with no schema is meaningless, so the loader fails
+# loudly if the schema is missing/unparseable.
+#: Path to the canonical SKILL.md frontmatter schema, relative to the repo root.
+SCHEMA_REL_PATH: str = "references/skill-frontmatter.schema.json"
+
 REQUIRED_FRONTMATTER_KEYS: frozenset[str] = frozenset({"name", "description"})
-OPTIONAL_FRONTMATTER_KEYS: frozenset[str] = frozenset(
-    {"license", "compatibility", "metadata", "allowed-tools"}
+ALLOWED_FRONTMATTER_KEYS: frozenset[str] = frozenset(
+    {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
 )
-ALLOWED_FRONTMATTER_KEYS: frozenset[str] = (
-    REQUIRED_FRONTMATTER_KEYS | OPTIONAL_FRONTMATTER_KEYS
-)
+
+
+def _load_frontmatter_key_sets(root: Path) -> tuple[frozenset[str], frozenset[str]]:
+    """Load (REQUIRED, ALLOWED) frontmatter key sets from the JSON Schema (00 §3).
+
+    REQUIRED = the schema's ``required`` array; ALLOWED = the schema's
+    ``properties`` keys. additionalProperties:false in the schema means ALLOWED is
+    the exact closed set (REQ-CONST-03). Stdlib json only — no jsonschema dep.
+
+    Args:
+        root: The repo root (the schema sits at SCHEMA_REL_PATH beneath it).
+
+    Returns:
+        (REQUIRED_FRONTMATTER_KEYS, ALLOWED_FRONTMATTER_KEYS) as frozensets.
+
+    Raises:
+        SystemExit: if the schema is missing or unparseable — a hard config error
+            (a SKILL.md gate with no schema is meaningless; fail loudly, REQ-OBS-01).
+    """
+    schema_path = root / SCHEMA_REL_PATH
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise SystemExit(
+            f"check-spec-purity: FATAL — schema not found at {schema_path} "
+            f"(REQ-CI-02 requires references/skill-frontmatter.schema.json; see 00 §3)."
+        )
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(
+            f"check-spec-purity: FATAL — schema at {schema_path} is unreadable/"
+            f"invalid JSON: {exc}"
+        )
+    required = frozenset(schema.get("required", []))
+    allowed = frozenset(schema.get("properties", {}).keys())
+    return required, allowed
 
 # §2 — size budget (REQ-SIZE-03, decision D1).
 MAX_BODY_LINES: int = 300
@@ -563,6 +608,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     root: Path = args.root.resolve()
+
+    # Load the schema-driven key sets (REQ-CI-02 / tech-spec §3.3). The schema is
+    # a property of the canon (it ships beside this script), so it is resolved from
+    # the script's own repo root — NOT the scanned --root, which may be an external
+    # skill tree (e.g. a test fixture) that carries no schema.
+    global REQUIRED_FRONTMATTER_KEYS, ALLOWED_FRONTMATTER_KEYS
+    schema_root = Path(__file__).resolve().parent.parent
+    REQUIRED_FRONTMATTER_KEYS, ALLOWED_FRONTMATTER_KEYS = _load_frontmatter_key_sets(schema_root)
 
     violations = collect_violations(root)
     return report(violations)

@@ -7,14 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.0] — 2026-06-13
 
+### Added
+
+- **CI gates (GitHub Actions, net-new).** `ci.yml` (per-PR blocking deterministic
+  gate via the `quality-gate` composite action), `os-matrix.yml` (installer
+  `--dry-run` + `uninstall` on Ubuntu/macOS/Windows), and `eval.yml` (advisory
+  trigger-accuracy, `workflow_dispatch` + weekly schedule, non-blocking).
+- **SKILL.md frontmatter JSON Schema** (`references/skill-frontmatter.schema.json`)
+  as the single source of truth for the spec-pure key set; `check-spec-purity.py`
+  now loads its allowed/required keys from it.
+- **Shell + Python lint gates** — `shellcheck` over `scripts/*.sh` (`.shellcheckrc`)
+  and `ruff` over `scripts/*.py` + `eval/*.py` (`ruff.toml`).
+- **Trigger-accuracy eval harness** (`eval/run-eval.py` + `eval/fixtures/<skill>.json`).
+- **Per-agent setup docs** (`docs/agents/{claude,codex,copilot,cursor,gemini}.md`).
+- **MIT `LICENSE`** (previously none).
+- **`.gitattributes`** — LF normalization (`* text=auto eol=lf`) + `export-ignore`
+  for dev-only trees.
+
 ### Changed
 
-- **Requires rauf ≥ 0.5.0.** Bumped `loopRunner.minRunnerVersion` default
-  `0.2.0` → `0.5.0` to match rauf's **v0.5.0 grammar + contract flip**: unified
-  exit codes across `status` / `loop run`, `loop run --detached` replacing
-  `loop start`, an explicit `review` signal, and versioned `events.ndjson`.
-  feature-forge reads the unified exit-code / status surface, so `forge-5-loop`
-  now gates on 0.5.0 (`rauf version --json`, semver-compared) before running.
+- **README rewritten install-first** — Claude marketplace install, universal
+  `npx feature-forge install` one-liner, and a per-surface agent table.
+- **Version fields reconciled to `0.10.0`** — `marketplace.json` `0.9.0` → `0.10.0`
+  (hand-edit) and `adapters/gemini/gemini-extension.json` `0.0.0` → `0.10.0`
+  (via the `GEMINI_EXTENSION_VERSION` generator constant). `plugin.json` was
+  already `0.10.0`. `installer/package.json` keeps its independent line.
+- **Requires rauf ≥ 0.6.0.** Bumped `loopRunner.minRunnerVersion` default
+  `0.2.0` → `0.6.0`. 0.6.0 is the floor that ships the **agent-selection
+  surface** (`--agent` / `rauf agents`) this release's `loopRunner`
+  (`agentArgument` / `agentsProbeCommand`) consumes. It builds on rauf's
+  **v0.5.0 grammar + contract flip** — unified exit codes across `status` /
+  `loop run`, `loop run --detached` replacing `loop start`, an explicit `review`
+  signal, and versioned `events.ndjson` — which 0.6.0 includes. feature-forge
+  reads both the unified exit-code / status surface and the agent-selection
+  surface, so `forge-5-loop` now gates on 0.6.0 (`rauf version --json`,
+  semver-compared) before running.
 - **Updated `loopRunner` command defaults to the v0.5.0 rauf surface:**
   `followCommand` `{bin} loop follow …` → `{bin} follow …` (`loop follow` was
   promoted to the top-level `follow` verb in rauf's Phase-1 monitor clean-break),
@@ -25,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Requires
 
-- **rauf ≥ 0.5.0.** See `COMPATIBILITY.md`.
+- **rauf ≥ 0.6.0.** See `COMPATIBILITY.md`.
 
 ## [0.9.0] — 2026-06-09
 

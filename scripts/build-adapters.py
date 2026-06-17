@@ -295,7 +295,7 @@ PROVENANCE_JSON_KEY: str = "_generated"
 # the manifest's required `version` key to a determinic value (REQ-DET-01) so two
 # builds are byte-identical. Bump deliberately if the gemini extension schema (TQ-1)
 # requires it; never derive it at runtime. Source of record: this constant.
-GEMINI_EXTENSION_VERSION: str = "0.0.0"
+GEMINI_EXTENSION_VERSION: str = "0.10.0"
 
 # Exempt — `forge-root.sh`: copied BYTE-IDENTICAL (REQ-GEN-05), so NO header is
 # injected. Its provenance is documented in GENERATION-REPORT.md instead.

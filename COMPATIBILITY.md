@@ -13,15 +13,15 @@ See `references/ralph-loop-contract.md` for the contract, and rauf's
 
 | feature-forge | Loop runner            | Min rauf version | Backlog `schemaVersion` | Notes                                                                                                                              |
 | ------------- | ---------------------- | ---------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 0.10.0        | config-driven (`loopRunner`, default rauf) | **0.5.0**        | 1                       | Requires rauf ≥ 0.5.0 — the v0.5.0 grammar + contract flip (unified exit codes across `status`/`loop run`, `loop run --detached` replacing `loop start`, explicit `review` signal, versioned `events.ndjson`). Updated `followCommand` → `follow` and `watchCommand` → `status --json` for the new surface. |
+| 0.10.0        | config-driven (`loopRunner`, default rauf) | **0.6.0**        | 1                       | Requires rauf ≥ 0.6.0 — the floor that ships the agent-selection surface (`--agent` / `rauf agents`) consumed by `loopRunner.agentArgument` / `agentsProbeCommand`. Builds on rauf's v0.5.0 grammar + contract flip (unified exit codes across `status`/`loop run`, `loop run --detached` replacing `loop start`, explicit `review` signal, versioned `events.ndjson`), which 0.6.0 includes. Updated `followCommand` → `follow` and `watchCommand` → `status --json` for the new surface. |
 | 0.9.0         | config-driven (`loopRunner`, default rauf) | **0.2.0**        | 1                       | Delegates authoring to rauf `author-backlog` and validation to `rauf backlog validate`. Enforces `minRunnerVersion` via `rauf version --json` before running. Requires rauf ≥ 0.2.0 (first release shipping `backlog validate` + `schemaVersion`). |
 | 0.8.0         | `rauf` (hardcoded CLI) | —                | _(unversioned)_         | Structural extraction only. Invoked `rauf` exactly as 0.7.0 did. No `loopRunner` block; no `rauf backlog validate` dependency.    |
 
 ## Version gate
 
-feature-forge **0.10.0+** requires rauf ≥ **0.5.0** (the v0.5.0 grammar/contract
-flip), set as `loopRunner.minRunnerVersion`; 0.9.0 required ≥ 0.2.0 (`backlog
-validate` + `schemaVersion`).
+feature-forge **0.10.0+** requires rauf ≥ **0.6.0** (the agent-selection surface,
+built on the v0.5.0 grammar/contract flip), set as `loopRunner.minRunnerVersion`;
+0.9.0 required ≥ 0.2.0 (`backlog validate` + `schemaVersion`).
 `forge-5-loop` enforces it (`rauf version --json`, semver-compared) and stops
 with `loopRunner.installHint` if the runner is missing or older — before
 invoking the loop. `forge-4-backlog` degrades gracefully (authors, then skips

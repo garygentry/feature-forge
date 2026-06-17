@@ -556,7 +556,7 @@ def _schema_findings(manifest: dict) -> list[Finding]:
     if "schemaVersion" in manifest and manifest["schemaVersion"] != 1:
         findings.append(_schema(f"schemaVersion must be 1, got {manifest['schemaVersion']!r}"))
     if "narrativeDoc" in manifest and manifest["narrativeDoc"] != NARRATIVE_FILENAME:
-        findings.append(_schema(f"narrativeDoc must be {NARRATIVE_FILENAME!r}, got {manifest['narrativeDoc']!r}"))
+        findings.append(_schema(f"narrativeDoc must be {NARRATIVE_FILENAME!r}, got {manifest['narrativeDoc']!r}"))  # noqa: E501
     for key in ("epic", "description", "createdAt", "updatedAt"):
         if key in manifest and not isinstance(manifest[key], str):
             findings.append(_schema(f"{key} must be a string"))
@@ -566,9 +566,9 @@ def _schema_findings(manifest: dict) -> list[Finding]:
                 # Py3.10's fromisoformat rejects a trailing 'Z'; normalize it first.
                 datetime.fromisoformat(manifest[key].replace("Z", "+00:00"))
             except ValueError:
-                findings.append(_schema(f"{key} must be an ISO-8601 date-time, got {manifest[key]!r}"))
+                findings.append(_schema(f"{key} must be an ISO-8601 date-time, got {manifest[key]!r}"))  # noqa: E501
     if "status" in manifest and manifest["status"] not in _EPIC_STATUSES:
-        findings.append(_schema(f"status must be one of {list(_EPIC_STATUSES)}, got {manifest['status']!r}"))
+        findings.append(_schema(f"status must be one of {list(_EPIC_STATUSES)}, got {manifest['status']!r}"))  # noqa: E501
     for key in manifest:
         if key not in _TOP_REQUIRED:
             findings.append(_schema(f"unknown key {key!r}"))
@@ -603,8 +603,8 @@ def _schema_findings(manifest: dict) -> list[Finding]:
             if key in feat and not isinstance(feat[key], str):
                 findings.append(_schema(f"feature {label!r} {key} must be a string", fname))
         if "dependsOn" in feat:
-            if not isinstance(feat["dependsOn"], list) or not all(isinstance(d, str) for d in feat["dependsOn"]):
-                findings.append(_schema(f"feature {label!r} dependsOn must be an array of strings", fname))
+            if not isinstance(feat["dependsOn"], list) or not all(isinstance(d, str) for d in feat["dependsOn"]):  # noqa: E501
+                findings.append(_schema(f"feature {label!r} dependsOn must be an array of strings", fname))  # noqa: E501
         for key, required, kind_check in (
             ("exposes", _CONTRACT_REQUIRED, True),
             ("consumes", _CONSUMED_REQUIRED, False),
@@ -617,16 +617,16 @@ def _schema_findings(manifest: dict) -> list[Finding]:
                 continue
             for j, entry in enumerate(entries):
                 if not isinstance(entry, dict):
-                    findings.append(_schema(f"feature {label!r} {key}[{j}] must be an object", fname))
+                    findings.append(_schema(f"feature {label!r} {key}[{j}] must be an object", fname))  # noqa: E501
                     continue
                 for rk in required:
                     if rk not in entry:
-                        findings.append(_schema(f"feature {label!r} {key}[{j}] missing required key {rk!r}", fname))
+                        findings.append(_schema(f"feature {label!r} {key}[{j}] missing required key {rk!r}", fname))  # noqa: E501
                 for ek in entry:
                     if ek not in required:
-                        findings.append(_schema(f"feature {label!r} {key}[{j}] has unknown key {ek!r}", fname))
+                        findings.append(_schema(f"feature {label!r} {key}[{j}] has unknown key {ek!r}", fname))  # noqa: E501
                 if kind_check and "kind" in entry and entry["kind"] not in _CONTRACT_KINDS:
-                    findings.append(_schema(f"feature {label!r} {key}[{j}] kind must be one of {list(_CONTRACT_KINDS)}", fname))
+                    findings.append(_schema(f"feature {label!r} {key}[{j}] kind must be one of {list(_CONTRACT_KINDS)}", fname))  # noqa: E501
     return findings
 
 
@@ -1090,11 +1090,11 @@ def reorder(epic_dir: Path, specs_dir: Path, order: list[str]) -> list[Finding]:
     """
     manifest = load_manifest(epic_dir)
     features = manifest.get("features", [])
-    by_name = {f["name"]: f for f in features if isinstance(f, dict) and isinstance(f.get("name"), str)}
+    by_name = {f["name"]: f for f in features if isinstance(f, dict) and isinstance(f.get("name"), str)}  # noqa: E501
     current = sorted(by_name)
     if sorted(order) != current:
         return [{"code": "schema",
-                 "message": f"--order {order} is not an exact permutation of members {sorted(by_name)}",
+                 "message": f"--order {order} is not an exact permutation of members {sorted(by_name)}",  # noqa: E501
                  "feature": None}]
     manifest["features"] = [by_name[n] for n in order]
     return _bump_and_write(epic_dir, specs_dir, manifest)
@@ -1185,7 +1185,7 @@ def _emit_findings(findings: list[Finding], as_json: bool) -> None:
     lines go to stderr (mirroring validate-traceability.py's two output modes).
     """
     if as_json:
-        print(json.dumps({"valid": not findings, "findings": findings}, indent=2, ensure_ascii=False))
+        print(json.dumps({"valid": not findings, "findings": findings}, indent=2, ensure_ascii=False))  # noqa: E501
     else:
         for finding in findings:
             print(f"{finding['code']}: {finding['message']}", file=sys.stderr)

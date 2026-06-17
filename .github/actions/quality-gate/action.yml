@@ -1,0 +1,84 @@
+name: Quality Gate
+description: >-
+  The canonical feature-forge gate — `bash scripts/validate.sh` (claude-plugin
+  validate, SKILL.md schema purity, adapters regen-diff, traceability, installer
+  build+test) + shellcheck + ruff + version-sync. Single source of truth shared
+  by ci.yml and local dev so they can never drift (mirrors rauf's pnpm-gate
+  composite-action pattern).
+runs:
+  using: composite
+  steps:
+    # 1a. Provision Node >=18 for the installer build+test that validate.sh runs.
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    # 1b. Provision Python >=3.10 for the stdlib gates (check-spec-purity,
+    #     check-version-sync, traceability) and pip-install ruff (NOT added to
+    #     requirements-adapters.txt — that venv is PyYAML-only, tech-spec §3.4).
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install lint + test + (optional) claude CLI tooling
+      shell: bash
+      run: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install ruff
+        # pytest is REQUIRED, not optional: validate.sh step 7 (the
+        # schema↔checker anti-drift test) SOFT-SKIPS non-fatally when pytest is
+        # absent, so CI MUST install it or the drift guard silently no-ops on the
+        # runner (07-testing-strategy.md §2.2). Without this line the gate is
+        # non-effective for REQ-CI-02 / REQ-CONST-03.
+        python3 -m pip install pytest
+        # claude CLI is best-effort (REQ-CI-01 §4.1): install if a published
+        # path exists on the runner; validate.sh falls back to the documented
+        # equivalent when it is absent (never a no-op, never a silent skip).
+        npm install -g @anthropic-ai/claude-code || \
+          echo "::notice::claude CLI unavailable on runner; validate.sh uses the documented-equivalent JSON+schema validation (REQ-CI-01 fallback)"
+
+    # 1c. Pre-create the isolated adapter venv the way validate.sh step 6b
+    #     expects (PyYAML pin). validate.sh creates-or-reuses .venv-adapters; we
+    #     warm it here so a provisioning fault surfaces as its own clear step.
+    - name: Provision adapter venv (.venv-adapters)
+      shell: bash
+      run: |
+        python3 -m venv .venv-adapters
+        .venv-adapters/bin/python3 -m pip install -q -r scripts/requirements-adapters.txt
+
+    # 1d. shellcheck for REQ-CI-03 (the runner image ships it; install if absent).
+    - name: Ensure shellcheck
+      shell: bash
+      run: command -v shellcheck >/dev/null 2>&1 || sudo apt-get update && sudo apt-get install -y shellcheck
+
+    # 2. The aggregate gate: claude-plugin-validate, SKILL.md schema purity (6a),
+    #    adapters regen-diff (6b), agent frontmatter, script perms, traceability,
+    #    epic-manifest, installer build+test (REQ-CI-01,-02,-04,-06).
+    - name: validate.sh (aggregate gate)
+      shell: bash
+      run: bash scripts/validate.sh
+
+    # 3. shellcheck over the 4 bundled shell scripts (REQ-CI-03). Config:
+    #    .shellcheckrc (error+warning floor). feature-forge scope only.
+    - name: shellcheck
+      shell: bash
+      run: shellcheck scripts/*.sh
+
+    # 4. ruff over the bundled Python (REQ-CI-03). Config: ruff.toml (E/F/W floor,
+    #    line-length 100). eval/ may not exist yet — the absent-dir carve-out
+    #    keeps the glob clean (tech-spec §3.4).
+    - name: ruff
+      shell: bash
+      run: |
+        if [ -d eval ]; then
+          ruff check scripts/ eval/
+        else
+          ruff check scripts/
+        fi
+
+    # 5. Version-sync over the three feature-forge fields (REQ-CI-05). Prints the
+    #    conflicting files+values on mismatch (REQ-OBS-01). Currently FAILS on the
+    #    live desync until 06 reconciles it.
+    - name: version-sync
+      shell: bash
+      run: python3 scripts/check-version-sync.py

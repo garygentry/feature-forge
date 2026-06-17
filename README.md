@@ -1,16 +1,10 @@
 # feature-forge
 
-End-to-end feature development pipeline for Claude Code. Transforms a feature idea into a complete, implementation-ready specification suite through structured interviews, automated verification, and persistent state tracking.
-
-## Overview
-
-Building features well requires disciplined planning. **feature-forge** encodes that discipline into a repeatable pipeline: starting from a structured requirements interview, progressing through technical design and implementation specifications, and finishing with a validated backlog and architecture documentation.
-
-Each stage produces versioned artifacts that trace back to the original requirements. Verification gates between stages catch gaps, inconsistencies, and quality issues before they compound downstream. Specialized subagents handle codebase research and artifact verification in isolated contexts, keeping the main session focused and efficient.
-
-The pipeline is stack-aware, with built-in profiles for TypeScript, Python, Go, and Rust that tailor spec conventions, verification checks, and acceptance criteria to your project's toolchain.
+End-to-end feature development pipeline that runs on any coding agent — Claude, Codex, Copilot, Cursor, or Gemini. Transforms a feature idea into a complete, implementation-ready specification suite through structured interviews, automated verification, and persistent state tracking.
 
 ## Install
+
+### (a) Claude Code (preferred) — marketplace
 
 ```bash
 # Register the marketplace (one-time)
@@ -25,6 +19,44 @@ The pipeline is stack-aware, with built-in profiles for TypeScript, Python, Go, 
 > lives in its own repository. The old entry remains as a deprecated stub for
 > one release cycle; please re-add the marketplace above to keep receiving
 > updates.
+
+### (b) Any agent — one-liner
+
+Installs the canonical skills into every coding agent detected on your machine:
+
+```bash
+npx feature-forge install
+```
+
+Scope to one agent with `-a`, or preview without writing using `--dry-run --json`:
+
+```bash
+npx feature-forge install -a codex        # one agent
+npx feature-forge install --dry-run --json # preview the plan, change nothing
+```
+
+### (c) Per-surface setup
+
+| Agent   | Install                                                                                    | Setup doc                                      |
+| ------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| Claude  | `/plugin install feature-forge@feature-forge` _(or `npx feature-forge install -a claude`)_ | [docs/agents/claude.md](docs/agents/claude.md) |
+| Codex   | `npx feature-forge install -a codex`                                                       | [docs/agents/codex.md](docs/agents/codex.md)   |
+| Copilot | `npx feature-forge install -a copilot`                                                     | [docs/agents/copilot.md](docs/agents/copilot.md) |
+| Cursor  | `npx feature-forge install -a cursor`                                                      | [docs/agents/cursor.md](docs/agents/cursor.md) |
+| Gemini  | `npx feature-forge install -a gemini`                                                      | [docs/agents/gemini.md](docs/agents/gemini.md) |
+
+> The default loop runner ([forge-5-loop](#stage-5-loop-forge-5-loop)) is **rauf**; provisioning it
+> via `npx rauf@0.6.0` is **available once rauf 0.6.0 is published**. See
+> [docs/agents/claude.md#the-default-loop-runner](docs/agents/claude.md#the-default-loop-runner) for
+> the full default loop path and agent-selection precedence.
+
+## Overview
+
+Building features well requires disciplined planning. **feature-forge** encodes that discipline into a repeatable pipeline: starting from a structured requirements interview, progressing through technical design and implementation specifications, and finishing with a validated backlog and architecture documentation.
+
+Each stage produces versioned artifacts that trace back to the original requirements. Verification gates between stages catch gaps, inconsistencies, and quality issues before they compound downstream. Specialized subagents handle codebase research and artifact verification in isolated contexts, keeping the main session focused and efficient.
+
+The pipeline is stack-aware, with built-in profiles for TypeScript, Python, Go, and Rust that tailor spec conventions, verification checks, and acceptance criteria to your project's toolchain.
 
 ## Quick Start
 
@@ -248,6 +280,7 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
 | `stack` | string | `null` | Stack identifier (e.g., `"typescript"`, `"python"`, `"go"`, `"rust"`). Auto-detected in Stage 2 |
 | `typeCheckCommand` | string | `null` | Type-check command used in acceptance criteria and verification. Set during Stage 2 |
 | `testCommand` | string | `null` | Test command used in acceptance criteria and verification. Set during Stage 2 |
+| `loopRunner` | object | rauf defaults | Loop-runner binding for `forge-5-loop` (`bin`, command templates, `defaultAgent`, `minRunnerVersion` — floor **rauf ≥ 0.6.0**). See [docs/agents/claude.md](docs/agents/claude.md) "The default loop runner" |
 
 ## Pipeline State
 
