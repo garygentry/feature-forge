@@ -110,6 +110,21 @@
           "default": "{bin} version --json",
           "description": "Report runner version as { version: <semver> }. Used to enforce minRunnerVersion before running."
         },
+        "agentArgument": {
+          "type": "string",
+          "default": "--agent {agent}",
+          "description": "Tokenized argument appended to the launch command (eventStreamCommand/runCommand) when forge resolves a non-default coding agent for the run. {agent} is substituted ONLY with a validated, advertised agent id (a member of the set agentsProbeCommand reports). PRESENCE of this field advertises the runner's agent surface: when present and non-empty, forge-5 offers the per-run agent selector, honors defaultAgent, and may run agentsProbeCommand; OMIT it for a runner with no agent dimension and forge skips agent selection entirely — no selector, no probe, no {agent} substitution, no agent argument sent (byte-identical to today). Distinct from the version gate (minRunnerVersion)."
+        },
+        "agentsProbeCommand": {
+          "type": "string",
+          "default": "{bin} agents --json",
+          "description": "Coding-agent availability probe. MUST emit { agents: [{ id, displayName, available, ... }] } and exit 0 (it always exits 0: an unknown id simply never appears; a known-unavailable one appears with available:false). forge-5 runs it ONCE (no retries) before launching a non-default agent to (a) validate the resolved id against the advertised id set and (b) report availability in the pre-launch confirmation. Ignored on the default path and when agentArgument is absent."
+        },
+        "defaultAgent": {
+          "type": "string",
+          "default": "",
+          "description": "Project-default coding agent id, so a project can fix its agent once without specifying it every run. Empty string ⇒ no project default (the runner's own default — claude-cli for rauf — applies, behaving exactly as today). Overridden by the per-run agent selector (run > project precedence, resolved inside forge before the single --agent is emitted). Ignored when agentArgument is absent."
+        },
         "preconditionFile": {
           "type": "string",
           "default": ".rauf.json",
@@ -132,8 +147,8 @@
         },
         "installHint": {
           "type": "string",
-          "default": "Install or upgrade the rauf CLI: curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash",
-          "description": "Shown when the runner BINARY is missing or too old (version gate fails) — how to obtain/upgrade the CLI itself. Distinct from setupHint (which installs per-project artifacts)."
+          "default": "Provision rauf for a multi-agent setup with the cross-agent installer: `npx feature-forge install` (records the pinned rauf@0.6.0 default). Or install/upgrade just the rauf CLI: `curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`.",
+          "description": "Shown when the runner BINARY is missing or too old (version gate fails, minRunnerVersion floor) — how to obtain/upgrade the CLI itself. Names two distinct binary-provisioning paths: (1) the cross-agent installer (`npx feature-forge install`, the multi-agent provisioning path that pins rauf@0.6.0), and (2) the direct rauf-CLI install/upgrade one-liner. Distinct from setupHint (which installs per-project artifacts); a version-gate failure is ALWAYS this hint, never setupHint."
         },
         "schemaVersion": {
           "type": "string",
@@ -142,8 +157,8 @@
         },
         "minRunnerVersion": {
           "type": "string",
-          "default": "0.5.0",
-          "description": "Minimum runner version (semver). 0.5.0 is rauf's grammar + contract flip (unified exit codes across status/loop run, `loop run --detached` replacing `loop start`, explicit `review` signal, versioned events.ndjson) that feature-forge's exit-code/status reads depend on. forge-5 enforces this via versionCommand before running."
+          "default": "0.6.0",
+          "description": "Minimum runner version (semver). 0.6.0 is the AGENT-SURFACE FLOOR: the rauf version that ships the coding-agent selection surface (the --agent flag, the `agents` availability probe, and the preset agent registry) that this config's agentArgument/agentsProbeCommand consume. Flooring here guarantees a successful gate implies those surfaces exist. (0.5.0 was the prior grammar/contract-flip floor — unified exit codes, `loop run --detached`, explicit `review` signal, versioned events.ndjson — which predates the agent surface and so could not guarantee it.) forge-5 enforces this via versionCommand before any loop side-effects."
         }
       }
     }
