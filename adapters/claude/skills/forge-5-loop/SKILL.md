@@ -83,7 +83,7 @@ This gate runs **before** the runner version/setup gates (1c/1d) so a blocked fe
 Enforce `loopRunner.minRunnerVersion` **before** doing anything else with the runner. This is what turns "the runner is missing or too old" into a clear, actionable stop instead of a cryptic mid-run failure.
 
 1. Run the **version command** (`loopRunner.versionCommand`, default `rauf version --json`) via Bash.
-2. Parse `{ "version": "<semver>" }` from stdout. Do NOT use plain `rauf version` (its human output is `rauf v0.1.0` with a `v` prefix) — always the `--json` form.
+2. Parse `{ "version": "<semver>" }` from stdout. Do NOT use plain `rauf version` (its human output is `rauf v0.6.0` with a `v` prefix) — always the `--json` form.
 3. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.6.0`), numerically by major, then minor, then patch.
 
 **Any of the following is a HARD GATE FAILURE — do NOT proceed to run the loop.** STOP, show `loopRunner.installHint`, and include the raw command output for diagnosis:

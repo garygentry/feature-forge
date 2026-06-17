@@ -393,6 +393,21 @@ def test_schema_loop_runner_agent_defaults():
         assert props[field]["type"] == "string"
 
 
+def test_fixture_version_reports_floor():
+    """The mock-rauf `version --json` branch reports the 0.6.0 floor (spec 07 §4).
+
+    The fixture MUST implement this for the version-gate path; assert it here so the
+    branch can't silently break (the schema test above only checks the JSON default).
+    """
+    proc = subprocess.run(
+        [sys.executable, str(MOCK_RAUF), "version", "--json"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0
+    assert json.loads(proc.stdout) == {"version": "0.6.0"}
+
+
 # ── 3.6 Probe-failure edges (REQ-AVAIL-01, spec 04 §5) ──────────────────────
 
 
