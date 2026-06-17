@@ -948,6 +948,12 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
     """
     for entry in sorted(src.rglob("*"), key=lambda p: p.relative_to(src).as_posix()):
         rel = entry.relative_to(src)
+        # Executable-spec Python modules (e.g. references/loop-agent-selection.py) are
+        # canonical-but-NOT-generated: test-only + doc artifacts imported by pytest, never
+        # wired into a runtime an adapter calls (OQ-T1 RESOLVED, 07-testing-strategy.md §2).
+        # They are excluded from the adapter bundle so the drift guard does not touch them.
+        if entry.suffix == ".py":
+            continue
         target = dst / rel
         _assert_within(target, bundle_root)
         if entry.is_dir():
