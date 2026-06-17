@@ -192,6 +192,20 @@ else
 fi
 
 echo ""
+echo "Building + testing the cross-agent installer..."
+if command -v npm >/dev/null 2>&1; then
+  if ( cd "$REPO_ROOT/installer" && npm ci --silent && npm run build --silent && npm test ); then
+    echo "PASS: installer build + node:test suite"
+  else
+    echo "FAIL: installer build/test (see above)"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "FAIL: node/npm not found — required to build + test the installer (install Node >= 18)"
+  ERRORS=$((ERRORS + 1))
+fi
+
+echo ""
 echo "============================================"
 if [ "$ERRORS" -eq 0 ]; then
   echo "All checks passed!"
