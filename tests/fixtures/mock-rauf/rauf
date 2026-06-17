@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Mock rauf runner — a fake loop runner standing in for the real rauf binary.
+
+Test fixture for ``tests/test_loop_agent_selection.py`` (spec 07 §4). It is NOT
+part of the shipped plugin; it lets the suite prove the agent-selection plumbing
+(version gate + ``agents`` availability probe) WITHOUT a live agent (SC-07). No
+third-party deps — standard library only — so it runs anywhere python3 does.
+
+Subcommands (the only two forge invokes on the agent surface):
+
+  * ``version --json`` → prints ``{"version": "0.6.0"}`` and exits 0 — the
+    agent-surface version floor the Step 1c gate checks (spec 05).
+  * ``agents --json``  → prints a canned ``{"agents": [...]}`` and exits 0
+    (ALWAYS exit 0 — an unknown id is simply absent; a known-unavailable one is
+    present with ``available: false``). The canned mix (spec 07 §3.2/§4):
+    ``claude-cli`` available, ``codex`` available, ``gemini`` available:false
+    with a ``detail``, and NO row for ``bogus``.
+
+Every invocation appends its full argv (as a JSON array) to the file named by
+the ``MOCK_RAUF_ARGV_LOG`` environment variable, so tests can assert the probe
+runs exactly once per non-default launch attempt and never on the default /
+gated-off paths (REQ-PERF-02; spec 07 §3.2/§3.4).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+#: The canned availability mix from spec 07 §3.2/§4. claude-cli is the runner
+#: default (available); codex is an available non-default; gemini is advertised
+#: but unavailable (with a detail); `bogus` is intentionally absent so it
+#: classifies as UNKNOWN.
+AGENTS = {
+    "agents": [
+        {
+            "id": "claude-cli",
+            "displayName": "Claude Code (CLI)",
+            "available": True,
+            "binaryName": "claude",
+            "detail": "/usr/local/bin/claude",
+        },
+        {
+            "id": "codex",
+            "displayName": "Codex CLI",
+            "available": True,
+            "binaryName": "codex",
+            "detail": "/usr/local/bin/codex",
+        },
+        {
+            "id": "gemini",
+            "displayName": "Gemini CLI",
+            "available": False,
+            "binaryName": "gemini",
+            "detail": "gemini CLI not found on PATH",
+        },
+    ]
+}
+
+VERSION = {"version": "0.6.0"}
+
+
+def _record_argv(argv: list[str]) -> None:
+    """Append the full argv (JSON array) to ``$MOCK_RAUF_ARGV_LOG`` if set."""
+    log_path = os.environ.get("MOCK_RAUF_ARGV_LOG")
+    if not log_path:
+        return
+    with open(log_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(argv) + "\n")
+
+
+def main(argv: list[str]) -> int:
+    _record_argv(argv)
+    args = argv[1:]
+    if args[:2] == ["version", "--json"]:
+        print(json.dumps(VERSION))
+        return 0
+    if args[:2] == ["agents", "--json"]:
+        print(json.dumps(AGENTS))
+        return 0  # ALWAYS exit 0 on the probe (spec 07 §3.2/§4)
+    sys.stderr.write(f"mock-rauf: unsupported invocation: {args!r}\n")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
