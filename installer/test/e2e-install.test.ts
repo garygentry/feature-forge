@@ -10,11 +10,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdir, readFile, stat, lstat } from "node:fs/promises";
 import { join } from "node:path";
-import { EXIT } from "../dist/types.js";
+import { EXIT, AGENT_TARGETS } from "../dist/types.js";
 import { withSandbox, seedConfigDir, type Sandbox } from "./helpers/sandbox.ts";
 import { makeFixtureBundle } from "./helpers/fixtures.ts";
 import { runCli2 } from "./helpers/run.ts";
-import { resolvableRegistry } from "./helpers/registry.ts";
+import { resolvableRegistry, neverCalledRegistry } from "./helpers/registry.ts";
 
 /** Recursively list relpath→bytes for a tree, for byte-identical snapshot comparison. */
 async function snapshot(root: string): Promise<Record<string, string>> {
@@ -190,6 +190,58 @@ test("install: SEC-01 positive containment — every write stays under .claude/s
     // The namespace dir is a real directory (copy mode), confirming containment of bundle contents.
     const dstat = await lstat(dest);
     assert.ok(dstat.isDirectory(), "copy-mode namespace dir should be a real directory");
+  });
+});
+
+test("install: DET-04 zero detected ⇒ exit SUCCESS, no namespace dir created (§5.1)", async () => {
+  await withSandbox(async (sb) => {
+    // Nothing seeded: no agent config dir under HOME or cwd ⇒ every agent undetected.
+    // neverCalledRegistry throws if consulted — with no detected agents the rauf preflight still
+    // runs, but no namespace dir may be created and the run must exit SUCCESS ("nothing to do").
+    const report = await runCli2(["install", "-y", "--source", sb.source], sb, {
+      registry: neverCalledRegistry,
+    });
+
+    assert.equal(report.exitCode, EXIT.SUCCESS, "zero detected is not a failure (DET-04)");
+    for (const a of report.agents) {
+      assert.equal(a.detected, false, `${a.agent} must be undetected`);
+    }
+
+    // No feature-forge namespace dir was created anywhere under HOME or cwd.
+    for (const root of [sb.home, sb.cwd]) {
+      for (const rel of await walkFiles(root)) {
+        assert.ok(
+          !rel.includes("feature-forge"),
+          `no namespace dir may be created on the zero-detected path — found ${rel} under ${root}`,
+        );
+      }
+    }
+  });
+});
+
+test("install: DET-03 default scope acts on every detected agent, all succeed (§5.1)", async () => {
+  await withSandbox(async (sb) => {
+    // Seed claude + gemini with VALID bundles; run install with NO -a (default = all detected).
+    await seedConfigDir(sb, "claude");
+    await seedConfigDir(sb, "gemini");
+    await makeFixtureBundle(sb, "claude");
+    await makeFixtureBundle(sb, "gemini");
+
+    const report = await runCli2(["install", "-y", "--source", sb.source], sb, {
+      registry: resolvableRegistry,
+    });
+
+    assert.equal(report.exitCode, EXIT.SUCCESS, "all detected agents succeed ⇒ exit SUCCESS");
+
+    for (const id of ["claude", "gemini"] as const) {
+      const a = report.agents.find((r) => r.agent === id);
+      assert.ok(a, `${id} present in report.agents`);
+      assert.equal(a!.ok, true, `${id} install ok`);
+      assert.equal(a!.detected, true, `${id} detected`);
+      // The namespace dir is on disk for each agent.
+      const dest = join(sb.cwd, AGENT_TARGETS[id].configDirName, AGENT_TARGETS[id].installSubdir, "feature-forge");
+      assert.ok((await stat(dest)).isDirectory(), `${id} namespace dir exists on disk`);
+    }
   });
 });
 

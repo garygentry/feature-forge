@@ -224,6 +224,43 @@ test("list — out of date: mutating the source flips up-to-date to false", asyn
   });
 });
 
+test("list — drift present: hand-editing a destination file flags drift (REQ-SAFE-03, §5.13)", async () => {
+  await withSandbox(async (sb) => {
+    await seedConfigDir(sb, "claude");
+    await makeFixtureBundle(sb, "claude");
+    await runCli2(["install", "-a", "claude", "-y", "--source", sb.source], sb);
+
+    // Hand-edit a DESTINATION file so its bytes differ from BOTH the recorded sha256 AND the
+    // source bundle (the source is left untouched here — this is the destination-drift half of
+    // REQ-SAFE-03, distinct from the source-mutation "out of date" test above).
+    await writeFile(
+      join(claudeDest(sb.cwd), "skills", "forge-1-prd", "SKILL.md"),
+      "# forge-1-prd\nLOCAL DESTINATION EDIT (drift)\n",
+    );
+
+    const report = await runCli2(["list", "--json", "--source", sb.source], sb);
+    assert.equal(report.exitCode, EXIT.SUCCESS);
+    const claude = report.agents.find((a) => a.agent === "claude");
+    assert.ok(claude);
+    // Source is unchanged ⇒ still up-to-date by source hash; but the destination drifted.
+    assert.equal(listStatus(claude!.actions, "up-to-date"), "true", "source unchanged ⇒ up-to-date true");
+    assert.equal(listStatus(claude!.actions, "drift"), "true", "edited destination file ⇒ drift flagged");
+  });
+});
+
+test("list — installed + clean: no destination drift (drift false)", async () => {
+  await withSandbox(async (sb) => {
+    await seedConfigDir(sb, "claude");
+    await makeFixtureBundle(sb, "claude");
+    await runCli2(["install", "-a", "claude", "-y", "--source", sb.source], sb);
+
+    const report = await runCli2(["list", "--json", "--source", sb.source], sb);
+    const claude = report.agents.find((a) => a.agent === "claude");
+    assert.ok(claude);
+    assert.equal(listStatus(claude!.actions, "drift"), "false", "an untouched install reports no drift");
+  });
+});
+
 test("list — no network: list with neverCalledRegistry does not throw (registry never invoked)", async () => {
   await withSandbox(async (sb) => {
     await seedConfigDir(sb, "claude");

@@ -8,7 +8,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { probeConfigDir, cliOnPath } from "../dist/detect.js";
+import { basename } from "node:path";
+import { probeConfigDir, cliOnPath, realPathResolver } from "../dist/detect.js";
 import { withSandbox, seedConfigDir } from "./helpers/sandbox.ts";
 
 test("probeConfigDir returns true for an existing directory", async () => {
@@ -51,4 +52,40 @@ test("cliOnPath is advisory and never throws; cursor is always false (no CLI)", 
   for (const id of ["claude", "codex", "copilot", "gemini"] as const) {
     assert.equal(typeof cliOnPath(id), "boolean");
   }
+});
+
+test("realPathResolver resolves a known-present binary and not an absent one (V-001)", () => {
+  // process.execPath is the running `node` binary; its basename is reliably on PATH in CI.
+  const nodeBin = basename(process.execPath); // "node" (or "node.exe" on Windows)
+  assert.equal(realPathResolver(nodeBin), true, "the running node binary must resolve on PATH");
+  // A binary that cannot plausibly exist on PATH resolves false (never throws).
+  assert.equal(
+    realPathResolver("this-binary-does-not-exist-ffi-xyz"),
+    false,
+    "an absent binary resolves false",
+  );
+});
+
+test("cliOnPath honors the injected resolver seam for present/absent (V-001)", () => {
+  // Present: a resolver that always returns true makes a CLI-bearing agent report true.
+  assert.equal(cliOnPath("claude", () => true), true);
+  // Absent: a resolver that always returns false makes the same agent report false.
+  assert.equal(cliOnPath("claude", () => false), false);
+  // cursor has no CLI basename, so the resolver is never consulted (stays false).
+  let consulted = false;
+  assert.equal(
+    cliOnPath("cursor", () => {
+      consulted = true;
+      return true;
+    }),
+    false,
+  );
+  assert.equal(consulted, false, "cursor never consults the resolver (no CLI basename)");
+  // A throwing resolver is swallowed (advisory, never throws).
+  assert.equal(
+    cliOnPath("claude", () => {
+      throw new Error("boom");
+    }),
+    false,
+  );
 });

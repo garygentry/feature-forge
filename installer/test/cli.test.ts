@@ -19,6 +19,10 @@ import {
   FLAGS,
 } from "../dist/cli.js";
 import { EXIT } from "../dist/types.js";
+import type { RegistryQuery } from "../dist/rauf.js";
+import { withSandbox, seedConfigDir } from "./helpers/sandbox.ts";
+import { makeFixtureBundle } from "./helpers/fixtures.ts";
+import { resolvableRegistry } from "./helpers/registry.ts";
 
 /** Capture process.stdout/stderr writes for the duration of `fn`. */
 async function captureIO(fn: () => Promise<number>): Promise<{ code: number; out: string; err: string }> {
@@ -166,4 +170,84 @@ test("main(['frobnicate']) prints the error + help to stderr and returns 2", asy
   assert.equal(code, EXIT.USAGE);
   assert.equal(out, "");
   assert.ok(err.includes("unknown subcommand"));
+});
+
+// --- UNEXPECTED boundary: a thrown seam ⇒ exit 1 + one-line stderr, no stack (V-003) ---
+
+test("main: an UNEXPECTED throw at the boundary ⇒ EXIT.FAILURE + one-line stderr, never a bare stack", async () => {
+  await withSandbox(async (sb) => {
+    // Seed a detected agent + bundle so the run reaches the rauf preflight (install, non-dry-run).
+    await seedConfigDir(sb, "claude");
+    await makeFixtureBundle(sb, "claude");
+
+    // A registry that THROWS (not an err Result): preflightRauf calls it without catching, so the
+    // exception propagates up through runCli to main's boundary catch — the UNEXPECTED path.
+    const throwingRegistry: RegistryQuery = () => {
+      throw new Error("seam exploded");
+    };
+
+    const { code, out, err } = await captureIO(() =>
+      main(["install", "-a", "claude", "-y", "--source", sb.source], {
+        home: sb.home,
+        cwd: sb.cwd,
+        registry: throwingRegistry,
+      }),
+    );
+
+    assert.equal(code, EXIT.FAILURE, "unexpected throw maps to exit 1");
+    assert.equal(out, "", "no report is rendered to stdout on the unexpected path");
+    assert.ok(err.includes("seam exploded"), "the one-line message names the failure");
+    // The hallmark of a Node stack frame is a line beginning with "    at ". The boundary message
+    // must be a single actionable line, NEVER a bare stack (tech-spec §7).
+    assert.ok(!err.includes("\n    at "), "stderr must not contain a stack frame");
+    assert.equal(err.trim().split("\n").length, 1, "stderr is a single line");
+  });
+});
+
+// --- exit-code triad through main: success→0, partial-failure→1, unknown-subcommand→2 (V-007) ---
+
+test("main exit-code triad: success→0, partial-failure→1, unknown subcommand→2", async () => {
+  await withSandbox(async (sb) => {
+    // Leg 0 — success: install claude clean ⇒ EXIT.SUCCESS.
+    await seedConfigDir(sb, "claude");
+    await makeFixtureBundle(sb, "claude");
+    {
+      const { code } = await captureIO(() =>
+        main(["install", "-a", "claude", "-y", "--source", sb.source], {
+          home: sb.home,
+          cwd: sb.cwd,
+          registry: resolvableRegistry,
+        }),
+      );
+      assert.equal(code, EXIT.SUCCESS, "clean install ⇒ exit 0");
+    }
+
+    // Leg 1 — partial failure: also seed gemini but leave its bundle absent ⇒ gemini fails,
+    // claude succeeds, run exit is FAILURE (mirrors the e2e partial-failure setup).
+    await seedConfigDir(sb, "gemini"); // gemini bundle deliberately NOT created
+    {
+      const { code } = await captureIO(() =>
+        main(["install", "-y", "--source", sb.source], {
+          home: sb.home,
+          cwd: sb.cwd,
+          registry: resolvableRegistry,
+        }),
+      );
+      assert.equal(code, EXIT.FAILURE, "one agent failing ⇒ exit 1");
+    }
+
+    // Leg 2 — usage: an unknown subcommand ⇒ EXIT.USAGE.
+    {
+      const { code } = await captureIO(() => main(["frobnicate"]));
+      assert.equal(code, EXIT.USAGE, "unknown subcommand ⇒ exit 2");
+    }
+  });
+});
+
+// --- non-interactivity proof: the built CLI reads no stdin (REQ-DIST-02, V-006) ---
+
+test("the built CLI source contains no stdin/readline reference (non-interactive, REQ-DIST-02)", () => {
+  const cliSrc = readFileSync(new URL("../dist/cli.js", import.meta.url), "utf8");
+  assert.ok(!cliSrc.includes("process.stdin"), "built cli.js must not reference process.stdin");
+  assert.ok(!/\breadline\b/.test(cliSrc), "built cli.js must not reference readline");
 });

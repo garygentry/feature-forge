@@ -41,22 +41,42 @@ const CLI_NAMES: Partial<Record<AgentId, string>> = {
 };
 
 /**
- * Secondary, **advisory** info (REQ-DET-02): is the agent's CLI resolvable on PATH? This is
- * reported as `DetectionResult.cliOnPath` but **never** gates `detected`. Uses the platform's
- * resolver (`where` on Windows, `command -v` elsewhere) once per agent. Any failure — no
- * resolver, not found, spawn error — yields `false`; it never throws and never blocks detection.
- *
- * Agents without a canonical CLI (cursor) always report `false` here without spawning.
+ * The PATH-resolver seam: given a binary basename, return true iff it resolves on PATH.
+ * Default uses the platform's real resolver executable (`where` on Windows, `which` on POSIX) —
+ * NOT the shell builtin `command`, which is not an executable on PATH and so always throws
+ * ENOENT under `execFileSync` (no shell). Injectable so tests can drive present/absent without
+ * depending on the host PATH.
  */
-export function cliOnPath(id: AgentId): boolean {
-  const bin = CLI_NAMES[id];
-  if (!bin) return false;
+export type PathResolver = (bin: string) => boolean;
+
+/** The real resolver: `which <bin>` (POSIX) / `where <bin>` (Windows). Any failure ⇒ false. */
+export const realPathResolver: PathResolver = (bin: string): boolean => {
   const isWin = process.platform === "win32";
   try {
-    execFileSync(isWin ? "where" : "command", isWin ? [bin] : ["-v", bin], {
-      stdio: "ignore",
-    });
+    execFileSync(isWin ? "where" : "which", [bin], { stdio: "ignore" });
     return true;
+  } catch {
+    return false; // not found / no resolver / spawn error — advisory, never an error
+  }
+};
+
+/**
+ * Secondary, **advisory** info (REQ-DET-02): is the agent's CLI resolvable on PATH? This is
+ * reported as `DetectionResult.cliOnPath` but **never** gates `detected`. Uses the platform's
+ * resolver executable (`where` on Windows, `which` elsewhere — a real binary on PATH, not the
+ * shell builtin `command`) once per agent. Any failure — no resolver, not found, spawn error —
+ * yields `false`; it never throws and never blocks detection.
+ *
+ * Agents without a canonical CLI (cursor) always report `false` here without spawning.
+ *
+ * @param id       - the agent whose CLI basename to probe.
+ * @param resolve  - the PATH resolver seam (default: {@link realPathResolver}); injectable for tests.
+ */
+export function cliOnPath(id: AgentId, resolve: PathResolver = realPathResolver): boolean {
+  const bin = CLI_NAMES[id];
+  if (!bin) return false;
+  try {
+    return resolve(bin);
   } catch {
     return false; // advisory; absence is normal, never an error
   }

@@ -229,6 +229,10 @@ export interface RunReport {
    * Run-level rauf preflight failure (spec 07 §3.2): set when the install/update rauf
    * resolvability check failed. Skills still install (each `AgentReport.ok` stays true) but the
    * run `exitCode` is FAILURE and the renderer surfaces this message. Absent on success.
+   *
+   * This is the sanctioned run-level field spec 07 §3.2 permits in lieu of the `attachRaufError`
+   * hook (see cli.ts run-report assembly). It is part of the `--json` machine surface
+   * (REQ-DET-05): consumers reading `renderReport(report, { json: true })` see it verbatim.
    */
   readonly raufError?: InstallerError;
 }
@@ -278,6 +282,11 @@ export type ErrorCode =
   | "USAGE"            // unknown subcommand/flag/agent (REQ-DIST-03) → exit 2
   | "SOURCE_MISSING"   // detected agent but adapters/<agent>/ absent (REQ-OPS-06)
   | "SOURCE_INVALID"   // bundle fails the minimal integrity check (REQ-OPS-06)
+  // LOCALLY_MODIFIED is report-vocabulary / remedy-text ONLY: it names the "destination drifted;
+  // re-run with --force" remedy and is INTENTIONALLY never emitted as an InstallerError. The
+  // drift-without-`--force` path is a per-file `skip-modified` FileAction that keeps the agent
+  // `ok:true` and the run at exit SUCCESS (spec 04 §738) — never a failure. See report.ts
+  // DEFAULT_REMEDY[LOCALLY_MODIFIED], surfaced via formatError, not via an emitted error.
   | "LOCALLY_MODIFIED" // destination drifted; needs --force (REQ-IDEM-02, REQ-FLAG-04)
   | "WRITE_DENIED"     // no write permission to a destination path (REQ-OBS-02)
   | "PATH_ESCAPE"      // a resolved destination escaped the agent root (REQ-SEC-02)

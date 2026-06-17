@@ -44,7 +44,9 @@ import {
 import { preflightRauf, RAUF_PIN } from "../dist/rauf.js";
 import { parseCliArgs, runCli, main, helpText } from "../dist/cli.js";
 import { renderReport, formatError } from "../dist/report.js";
+import { EXIT } from "../dist/types.js";
 import type { FileActionKind, ErrorCode, Mode, Scope, Result } from "../dist/types.js";
+import type { RegistryQuery } from "../dist/rauf.js";
 
 // --- helpers ---
 import { withSandbox, seedConfigDir, type Sandbox } from "./helpers/sandbox.ts";
@@ -176,7 +178,10 @@ test("§6.3: every ErrorCode is produced by ≥1 test", async () => {
     seen.add(r.error.code); // SOURCE_INVALID
   });
 
-  // LOCALLY_MODIFIED — surfaced via the skip-modified report path (formatError default remedy).
+  // LOCALLY_MODIFIED — report-vocabulary / remedy-text ONLY: never emitted as an InstallerError
+  // (the drift-without-`--force` path is a `skip-modified` FileAction keeping the agent ok:true,
+  // exit SUCCESS, per spec 04 §738). Here we reach the `--force` remedy through the REAL
+  // skip-modified → formatError render path, not a hand-constructed error (V-002).
   await withSandbox(async (sb) => {
     await seedConfigDir(sb, "claude");
     await makeFixtureBundle(sb, "claude", ["a"]);
@@ -267,6 +272,32 @@ test("§6.3: every ErrorCode is produced by ≥1 test", async () => {
     seen.add(report.error!.code);
   });
 
+  // UNEXPECTED — the cli.ts boundary catch. A registry seam that THROWS (not an err Result)
+  // propagates through runCli to main's boundary, which maps it to EXIT.FAILURE and a one-line
+  // message (never a bare stack). This is the §6 "UNEXPECTED" floor producer (V-003).
+  await withSandbox(async (sb) => {
+    await seedConfigDir(sb, "claude");
+    await makeFixtureBundle(sb, "claude");
+    const throwingRegistry: RegistryQuery = () => {
+      throw new Error("seam exploded (coverage)");
+    };
+    // Silence the one-line boundary message written to stderr during this assertion.
+    const origErr = process.stderr.write.bind(process.stderr);
+    (process.stderr as { write: unknown }).write = () => true;
+    let code: number;
+    try {
+      code = await main(["install", "-a", "claude", "-y", "--source", sb.source], {
+        home: sb.home,
+        cwd: sb.cwd,
+        registry: throwingRegistry,
+      });
+    } finally {
+      (process.stderr as { write: unknown }).write = origErr;
+    }
+    assert.equal(code, EXIT.FAILURE, "an unexpected throw maps to exit 1");
+    seen.add("UNEXPECTED");
+  });
+
   const required: ErrorCode[] = [
     "USAGE",
     "SOURCE_MISSING",
@@ -276,6 +307,7 @@ test("§6.3: every ErrorCode is produced by ≥1 test", async () => {
     "PATH_ESCAPE",
     "RAUF_UNRESOLVABLE",
     "MANIFEST_CORRUPT",
+    "UNEXPECTED",
   ];
   for (const c of required) assert.ok(seen.has(c), `ErrorCode "${c}" must be produced by a test`);
 });

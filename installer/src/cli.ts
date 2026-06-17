@@ -22,6 +22,7 @@ import {
   type DetectionResult,
   type ExitCode,
   type FileAction,
+  type InstallManifest,
   type InstallerError,
   type Mode,
   type PlannedAction,
@@ -41,6 +42,7 @@ import { plan, resolveMode, type PlanContext } from "./plan.js"; // 04
 import { apply, type ApplyContext } from "./apply.js"; // 04
 import { manifestPath, readManifest, planUninstall } from "./manifest.js"; // 05
 import { preflightRauf, RAUF_PIN, type RegistryQuery } from "./rauf.js"; // 06
+import { sha256File } from "./hash.js"; // 03 (list destination-drift hashing)
 import { renderReport } from "./report.js"; // 09
 
 // ---------------------------------------------------------------------------
@@ -110,15 +112,9 @@ export interface ParsedCli {
  * subcommand/flag/agent (and a parseArgs throw) as a `USAGE` error. Pure: no I/O, no exit.
  */
 export function parseCliArgs(argv: string[]): Result<ParsedCli> {
-  // Build parseArgs `options` from the single FLAGS spec (§1.5) so parsing == documented surface.
-  const options: Record<string, { type: "boolean" | "string"; short?: string }> = {};
-  for (const f of FLAGS) {
-    options[f.name] = f.short ? { type: f.type, short: f.short } : { type: f.type };
-  }
-
   let parsed: ReturnType<typeof parseArgs>;
   try {
-    parsed = parseArgs({ args: argv, options, allowPositionals: true });
+    parsed = parseArgs({ args: argv, options: buildParseOptions(), allowPositionals: true });
   } catch (e) {
     return usage(`invalid arguments: ${(e as Error).message}`);
   }
@@ -169,6 +165,19 @@ export function parseCliArgs(argv: string[]): Result<ParsedCli> {
   // help/version with no subcommand is still "ok": main() acts on flags before requiring a
   // subcommand. "list" is a harmless placeholder main() never reaches in that case.
   return ok({ subcommand: subcommand ?? "list", flags });
+}
+
+/**
+ * Build the `node:util.parseArgs` `options` object from the single FLAGS spec (§1.5) so parsing
+ * always equals the documented surface (REQ-DIST-03). The SOLE source of the parse config —
+ * shared by `parseCliArgs` and `rawParse` so the two can never drift.
+ */
+function buildParseOptions(): Record<string, { type: "boolean" | "string"; short?: string }> {
+  const options: Record<string, { type: "boolean" | "string"; short?: string }> = {};
+  for (const f of FLAGS) {
+    options[f.name] = f.short ? { type: f.type, short: f.short } : { type: f.type };
+  }
+  return options;
 }
 
 /** Resolve an alias/canonical token to a `Subcommand`, or undefined if unknown. */
@@ -243,8 +252,13 @@ export async function runCli(argv: string[], env: CliEnv = {}): Promise<RunRepor
  * Parse → help/version precedence → run pipeline (catching per-agent errors via runCli) →
  * render → exit code. The only place that writes to stdout/stderr and decides the exit code.
  * Never reads stdin (REQ-DIST-02).
+ *
+ * @param argv - the post-`node` argument list (`process.argv.slice(2)` in production).
+ * @param env  - the injectable CLI env (the hermetic-test seam, §3.1a); default `{}` = real
+ *               defaults. Tests inject a throwing seam (e.g. a registry that throws) here to
+ *               exercise the UNEXPECTED boundary catch deterministically without a network call.
  */
-export async function main(argv: string[]): Promise<ExitCode> {
+export async function main(argv: string[], env: CliEnv = {}): Promise<ExitCode> {
   let report: RunReport;
   let json = false;
   try {
@@ -273,7 +287,7 @@ export async function main(argv: string[]): Promise<ExitCode> {
       return EXIT.USAGE;
     }
 
-    report = await runCli(argv, {});
+    report = await runCli(argv, env);
   } catch (e) {
     // Boundary catch: an UNEXPECTED exception must never surface as a bare stack alone
     // (tech-spec §7). Print a one-line actionable message and exit 1.
@@ -286,12 +300,10 @@ export async function main(argv: string[]): Promise<ExitCode> {
   return report.exitCode;
 }
 
-/** Raw parseArgs over the single FLAGS spec; null if argv is malformed. */
+/** Raw parseArgs over the single FLAGS spec (shared `buildParseOptions`); null if argv is malformed. */
 function rawParse(argv: string[]): ReturnType<typeof parseArgs> | null {
-  const options: Record<string, { type: "boolean" | "string"; short?: string }> = {};
-  for (const f of FLAGS) options[f.name] = f.short ? { type: f.type, short: f.short } : { type: f.type };
   try {
-    return parseArgs({ args: argv, options, allowPositionals: true });
+    return parseArgs({ args: argv, options: buildParseOptions(), allowPositionals: true });
   } catch {
     return null;
   }
@@ -331,8 +343,14 @@ async function runMutation(
   let raufPin: string | null = flags.skipRauf ? null : RAUF_PIN;
   let raufError: InstallerError | undefined;
 
-  // Rauf preflight: install/update only, once, network only when not dry-run/skip (REQ-PERF-01).
-  if ((subcommand === "install" || subcommand === "update") && !flags.skipRauf && !flags.dryRun) {
+  // Rauf preflight: install/update only, once, network only when not dry-run/skip AND there is at
+  // least one target (zero detected ⇒ nothing to do, so no network query — DET-04, REQ-PERF-01).
+  if (
+    targets.length > 0 &&
+    (subcommand === "install" || subcommand === "update") &&
+    !flags.skipRauf &&
+    !flags.dryRun
+  ) {
     const pf = preflightRauf({ skip: flags.skipRauf, query: env.registry });
     if (!pf.ok) {
       raufError = pf.error; // RAUF_UNRESOLVABLE — recorded, does NOT abort skill installs
@@ -350,6 +368,9 @@ async function runMutation(
   const anyAgentFailed = agentReports.some((r) => !r.ok);
   const exitCode = anyAgentFailed || raufError !== undefined ? EXIT.FAILURE : EXIT.SUCCESS;
 
+  // NOTE (spec 07 §3.2): the `attachRaufError(reports, raufError)` hook is intentionally elided in
+  // favor of the sanctioned run-level `RunReport.raufError` field (a §3.2 MAY). renderReport surfaces
+  // it and it rides the `--json` machine surface (REQ-DET-05); there is no separate attach step.
   return {
     subcommand,
     scope,
@@ -519,6 +540,13 @@ function listOneAgent(
     } else {
       statusActions.push({ relpath: "up-to-date:unknown(source-missing)", action: "unchanged" });
     }
+
+    // Destination drift (REQ-SAFE-03, §5.13 list half): a copy-mode install is "drifted" when any
+    // manifest-recorded file's bytes on disk no longer match its recorded sha256 — a local user
+    // edit, independent of whether the SOURCE changed. Reads ONLY the manifest (per-file sha256)
+    // against a fresh local hash (no network, no source needed). Symlink mode has no per-file
+    // sha256 to compare, so drift is reported as not-applicable.
+    statusActions.push({ relpath: `drift:${detectDestinationDrift(m.value)}`, action: "unchanged" });
   }
 
   return {
@@ -528,6 +556,27 @@ function listOneAgent(
     actions: statusActions,
     raufPin: m.value?.raufPin ?? null,
   };
+}
+
+/**
+ * Return `"true"` if any manifest-recorded file's on-disk bytes differ from its recorded sha256
+ * (a locally-modified destination, REQ-SAFE-03), `"false"` if every recorded file matches, or
+ * `"n/a(symlink)"` for a symlink-mode install (no per-file sha256 to compare). A missing recorded
+ * file also counts as drift. Pure read of the manifest's per-file sha256 against a fresh local
+ * hash — no network, no source bundle needed (REQ-PERF-01). Hash errors are swallowed as drift
+ * (an unreadable recorded file is itself a deviation from the clean install).
+ */
+function detectDestinationDrift(manifest: InstallManifest): "true" | "false" | "n/a(symlink)" {
+  if (manifest.mode === "symlink") return "n/a(symlink)";
+  for (const f of manifest.files) {
+    if (f.sha256 === undefined) continue; // no recorded hash to compare against
+    try {
+      if (sha256File(path.join(manifest.destination, f.path)) !== f.sha256) return "true";
+    } catch {
+      return "true"; // unreadable/absent recorded file ⇒ drift
+    }
+  }
+  return "false";
 }
 
 // ---------------------------------------------------------------------------
