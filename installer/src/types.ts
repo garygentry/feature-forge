@@ -225,6 +225,12 @@ export interface RunReport {
   readonly agents: AgentReport[];
   /** EXIT.SUCCESS unless any agent failed (FAILURE) or args were invalid (USAGE). */
   readonly exitCode: ExitCode;
+  /**
+   * Run-level rauf preflight failure (spec 07 §3.2): set when the install/update rauf
+   * resolvability check failed. Skills still install (each `AgentReport.ok` stays true) but the
+   * run `exitCode` is FAILURE and the renderer surfaces this message. Absent on success.
+   */
+  readonly raufError?: InstallerError;
 }
 
 // ---------------------------------------------------------------------------

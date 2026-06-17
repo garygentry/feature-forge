@@ -48,6 +48,12 @@ function renderHuman(report: RunReport): string {
     out.push(...renderAgent(report.subcommand, a));
   }
 
+  // Run-level rauf preflight failure (spec 07 §3.2): skills still installed, but surface it.
+  if (report.raufError) {
+    out.push(`rauf: FAILED — ${report.raufError.code}`);
+    out.push(`  ${formatError(report.raufError)}`);
+  }
+
   const okCount = report.agents.filter((a) => a.ok).length;
   const failCount = report.agents.length - okCount;
   out.push(`Summary: ${okCount} ok, ${failCount} failed (exit ${report.exitCode})`);
