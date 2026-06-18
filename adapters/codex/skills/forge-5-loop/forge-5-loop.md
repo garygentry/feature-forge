@@ -245,7 +245,7 @@ Run the **status-json command** (`loopRunner.statusJsonCommand`) and read
 `backlogSummary` for the authoritative counts — it separates the three non-done
 outcomes: genuine `blocked`, `needsHuman`, and runner-`deferred` ("false blocks").
 Fall back to the **list command** (`loopRunner.listCommand`) if `statusJsonCommand`
-is not configured. You will already have most of this from the live tally in 3e.
+is not configured. You will already have most of this from the live tally in 3e. If the run used a review flag (e.g. rauf's `--review`), also read any `review_completed` event (event stream, or `{loopRunner.stateDir}/events.ndjson`) for its `itemsCreated`/`summary` to surface in 4b — see `references/result-reporting.md`.
 
 ### 4b. Report Results
 
@@ -266,13 +266,15 @@ Update `{resolvedFeatureDir}/.pipeline-state.json`:
 2. If all items complete: set `currentStage` to `"forge-6-docs"`
 3. Update `updatedAt`
 
-**No git commit is needed** — the loop runner commits atomically per completed item during the run. The implementation code is already committed.
+**No git commit is needed** — the loop runner commits implementation code atomically per completed item during the run. (Step 6's commit, epic members only, is of pipeline state / manifest — a distinct artifact.)
 
-> **Note:** Step 5's "no git commit needed" remark refers to *implementation code*, which the runner commits per-item. The epic handoff's commit in Step 6 below is of *pipeline state / manifest* — a distinct artifact — and applies only to epic members.
+## Step 5b: Offer Impl-Verify (standalone path)
+
+**Gate:** run only if (a) the feature's `.pipeline-state.json` has **no** `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete`. Otherwise **skip** — partial runs end as today, and epic members get the equivalent offer in Step 6.1 (do **not** prompt twice). This standalone counterpart to Step 6.1 nudges verification interactively rather than via the easily-missed "Next steps" text. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is complete. Recommended: run `/feature-forge:forge-verify {feature} impl` to audit the implementation before generating docs. Run it now, or skip to forge-6-docs?"* On **run**, hand off to `/feature-forge:forge-verify {feature} impl`. On **skip**, record `stages.forge-verify-impl.status` as `"skipped"` (mirrors `forge-4-backlog`'s skip handling) and point the user at `/feature-forge:forge-6-docs {feature}` — the forge-6-docs backstop re-surfaces the skip.
 
 ## Step 6: Epic Handoff
 
-**Gate:** only run this step if (a) the resolved feature's `.pipeline-state.json` has an `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete` (all backlog items done). If either is false, **skip** — standalone features and partial runs end exactly as today (REQ-COMPAT-01).
+**Gate:** only run this step if (a) the resolved feature's `.pipeline-state.json` has an `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete` (all backlog items done). If either is false, **skip** — standalone completed features are handled by Step 5b, and partial runs end as today (REQ-COMPAT-01).
 
 1. **Offer impl-verify first (recommended, skippable).** Per the completion rule (`00-core-definitions.md §7`), a feature whose `forge-verify-impl.status == findings-reported` does **not** unblock dependents. Use `AskUserQuestion` (NOT inline prose) to offer:
 

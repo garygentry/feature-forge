@@ -246,17 +246,7 @@ Run the **status-json command** (`loopRunner.statusJsonCommand`) and read
 `backlogSummary` for the authoritative counts — it separates the three non-done
 outcomes: genuine `blocked`, `needsHuman`, and runner-`deferred` ("false blocks").
 Fall back to the **list command** (`loopRunner.listCommand`) if `statusJsonCommand`
-is not configured. You will already have most of this from the live tally in 3e.
-
-**Capture any runner review-pass outcome.** If the run was launched with a review
-flag (e.g. rauf's `--review`), the runner performs a post-loop review pass that
-**auto-creates and implements fix items** rather than handing findings to the user.
-Look for a `review_completed` event in the event stream (the `eventStreamCommand`
-NDJSON this session is watching, or `{loopRunner.stateDir}/events.ndjson`) and note
-its `itemsCreated` count and `summary`. Surface this in the all-done report (4b) so
-the review pass's effect is visible and not mistaken for "nothing happened." This is
-distinct from `forge-verify impl` — the runner review is auto-remediation; any items
-it created are already reflected in the backlog counts above.
+is not configured. You will already have most of this from the live tally in 3e. If the run used a review flag (e.g. rauf's `--review`), also read any `review_completed` event (event stream, or `{loopRunner.stateDir}/events.ndjson`) for its `itemsCreated`/`summary` to surface in 4b — see `references/result-reporting.md`.
 
 ### 4b. Report Results
 
@@ -277,20 +267,11 @@ Update `{resolvedFeatureDir}/.pipeline-state.json`:
 2. If all items complete: set `currentStage` to `"forge-6-docs"`
 3. Update `updatedAt`
 
-**No git commit is needed** — the loop runner commits atomically per completed item during the run. The implementation code is already committed.
-
-> **Note:** Step 5's "no git commit needed" remark refers to *implementation code*, which the runner commits per-item. The epic handoff's commit in Step 6 below is of *pipeline state / manifest* — a distinct artifact — and applies only to epic members.
+**No git commit is needed** — the loop runner commits implementation code atomically per completed item during the run. (Step 6's commit, epic members only, is of pipeline state / manifest — a distinct artifact.)
 
 ## Step 5b: Offer Impl-Verify (standalone path)
 
-**Gate:** only run this step if (a) the resolved feature's `.pipeline-state.json` has **no** `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete` (all backlog items done). If either is false, **skip** — partial runs end as today, and epic members get the equivalent offer in Step 6.1 instead (do **not** prompt twice).
-
-This is the standalone counterpart to Step 6.1: verification is recommended after the loop just as it is after every other stage, but the loop's only nudge would otherwise be the plain-text "Next steps" block, which is easy to miss. Use `AskUserQuestion` (NOT inline prose) to offer:
-
-> "{feature}'s loop is complete. Recommended: run `/feature-forge:forge-verify {feature} impl` to audit the implementation before generating docs. Run it now, or skip to forge-6-docs?"
-
-- **Run it now:** hand off to `/feature-forge:forge-verify {feature} impl`.
-- **Skip:** record `stages.forge-verify-impl.status` as `"skipped"` in pipeline state (mirrors `forge-4-backlog`'s skip handling), then point the user at `/feature-forge:forge-6-docs {feature}`. The forge-6-docs backstop will re-surface the skip.
+**Gate:** run only if (a) the feature's `.pipeline-state.json` has **no** `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete`. Otherwise **skip** — partial runs end as today, and epic members get the equivalent offer in Step 6.1 (do **not** prompt twice). This standalone counterpart to Step 6.1 nudges verification interactively rather than via the easily-missed "Next steps" text. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is complete. Recommended: run `/feature-forge:forge-verify {feature} impl` to audit the implementation before generating docs. Run it now, or skip to forge-6-docs?"* On **run**, hand off to `/feature-forge:forge-verify {feature} impl`. On **skip**, record `stages.forge-verify-impl.status` as `"skipped"` (mirrors `forge-4-backlog`'s skip handling) and point the user at `/feature-forge:forge-6-docs {feature}` — the forge-6-docs backstop re-surfaces the skip.
 
 ## Step 6: Epic Handoff
 
