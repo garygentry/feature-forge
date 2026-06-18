@@ -5,8 +5,9 @@
 # failing the PR if the installer errors on ANY OS. Kept in its own workflow (REQ-PERF-01) so it
 # stays off the fast per-PR path in ci.yml and its required-check status is tunable independently.
 #
-# --skip-rauf is mandatory on every leg: rauf is unpublished (IR-2), so the rauf registry preflight
-# would otherwise fail the gate for an out-of-scope reason (tech-spec decision 1). See 00 §7.
+# --skip-rauf is used on every leg as a deliberate CI choice: it keeps the matrix network-free and
+# scoped to the installer itself (no rauf registry preflight). rauf is published now (@garygentry/rauf),
+# so this is an isolation choice, not a workaround for an unpublished dependency. See 00 §7.
 name: OS Matrix (installer)
 
 on:
@@ -31,9 +32,9 @@ jobs:
         uses: actions/checkout@v5 # pinned to a major tag (REQ-SEC-01), mirrors rauf/ci.yml
 
       - name: Set up Node
-        uses: actions/setup-node@v4 # pinned (REQ-SEC-01)
+        uses: actions/setup-node@v6 # pinned (REQ-SEC-01); v6 runs on node24 (clears the node20 deprecation)
         with:
-          node-version: "20" # >=18 required by installer/package.json "engines"; 20 is LTS
+          node-version: "22" # >=18 required by installer/package.json "engines"; 22 is the current LTS
 
       # Build the installer on this OS's toolchain. `cd installer` for npm; the run commands below
       # invoke the built entry from the REPO ROOT (the working dir GitHub Actions restores per step).
@@ -75,3 +76,41 @@ jobs:
           set -euo pipefail
           node installer/dist/cli.js install --symlink --dry-run --skip-rauf --json | tee symlink-dry-run.json
           node -e "JSON.parse(require('node:fs').readFileSync('symlink-dry-run.json','utf8'))"
+
+      # ---- LEG 4 (all OSes): global-install the package and run the REAL installed bin ------------
+      # The legs above invoke `node installer/dist/cli.js` directly, which never exercises the
+      # actual published entry point: the symlinked (POSIX) / `.cmd`-shimmed (Windows) bin that
+      # `npm i -g` / `npx` create. That gap let a non-functional bin ship through 0.1.1–0.1.3 —
+      # a missing shebang and a symlink-unaware entry guard each made the installed bin a silent
+      # no-op (exit 0, EMPTY output) while the direct-node path kept working. This leg closes it:
+      # it packs the installer (prepack = build + bundle adapters), global-installs the tarball into
+      # an isolated prefix, puts that prefix's bin on PATH, and runs `feature-forge --version` by
+      # NAME. The assertion is on the OUTPUT (non-empty semver), not just exit 0 — the regression
+      # was exit 0 with no output, so an exit-code-only check would have missed it.
+      - name: real-bin smoke (global-install + run installed bin, assert semver output)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pack the installer; prepack builds dist/ + bundles adapters into the tarball.
+          ( cd installer && npm pack )
+          # Leading ./ forces npm to treat this as a LOCAL tarball path, not a github org/repo
+          # shorthand ("installer/foo.tgz" would otherwise be parsed as a git spec and fail).
+          TARBALL="./$(ls installer/*.tgz | head -n1)"
+          echo "packed: $TARBALL"
+          # Global-install the packed tarball into an isolated prefix (no admin, no global pollution).
+          # A packed tarball does NOT re-run prepack, so the installed bin is the real built artifact.
+          PREFIX="$PWD/.gprefix"
+          NPM_PREFIX="$PREFIX"
+          # On the Windows runner, npm needs a native path; cygpath exists only in git-bash there.
+          if command -v cygpath >/dev/null 2>&1; then NPM_PREFIX="$(cygpath -w "$PREFIX")"; fi
+          npm install -g --prefix "$NPM_PREFIX" "$TARBALL"
+          # POSIX puts the bin in $PREFIX/bin (a symlink); Windows puts the .cmd shim in $PREFIX
+          # itself. Add both so the bare-name lookup below resolves on every runner.
+          export PATH="$PREFIX/bin:$PREFIX:$PATH"
+          # Invoke by NAME (not by path) so we hit the symlink / .cmd shim, the real install path.
+          OUT="$(feature-forge --version)"
+          echo "feature-forge --version => '${OUT}'"
+          # Assert NON-EMPTY semver. The no-op regression was exit 0 with empty stdout, so this
+          # check — not the exit code — is what actually exercises the installed bin.
+          echo "${OUT}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+' \
+            || { echo "::error::feature-forge --version produced no semver output — installed bin is a no-op"; exit 1; }
