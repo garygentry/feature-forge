@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Install docs** (README + `docs/agents/*.md`) restored to the scoped
   `npx @garygentry/feature-forge` one-liner (they had been pointed at a
   from-source path while the package was unpublished).
+- **rauf pin reconciled (installer `0.1.2`).** rauf is now published to npm
+  (rauf#28), so `RAUF_PIN` advances from the unpublished `rauf@0.6.0` to the
+  scoped, published `@garygentry/rauf@0.7.0` (the bare `rauf` name is blocked by
+  npm's similarity filter). The install-time resolvability preflight now passes
+  by default — the `--skip-rauf` flag remains as an opt-out (e.g. offline
+  installs) rather than a workaround for an unpublished pin. The
+  `installHint` schema default + regenerated adapters and install docs were
+  updated to the scoped coordinate. (`minRunnerVersion` stays `0.6.0` — that is
+  the rauf *binary* agent-surface floor, distinct from the npm pin.)
 
 ## [0.10.0] — 2026-06-13
 

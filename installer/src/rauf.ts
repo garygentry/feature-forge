@@ -20,14 +20,15 @@ import { err, ok, type InstallerError, type Result } from "./types.js";
  * downstream `forge-rauf-loop-default` read the same value, and recorded into each manifest
  * as `InstallManifest.raufPin` (05-manifest-and-uninstall.md).
  *
- * Shape: `<name>@<version>` — UNSCOPED `rauf`. Advanced on each feature-forge release to a new
- * known-compatible rauf (REQ-RAUF-03). The current rauf version is 0.6.0.
+ * Shape: `<name>@<version>` — the SCOPED package `@garygentry/rauf` (the unscoped `rauf` name is
+ * blocked by npm's similarity filter). Advanced on each feature-forge release to a new
+ * known-compatible rauf (REQ-RAUF-03). The current rauf version is 0.7.0.
  *
- * Correctable config (OQ-C): the FINAL published coordinate is confirmed by `packaging-docs-ci`
- * when rauf's publish path is stood up. Until then this resolves to a package that does not yet
- * exist on npm (IR-2), so the preflight WILL fail — the known, designed failure mode, not a bug.
+ * rauf is now PUBLISHED (rauf#28): `@garygentry/rauf@0.7.0` resolves from the npm registry, so the
+ * preflight below passes by default. (Historically this pin pointed at an unpublished package and
+ * the preflight was a designed-to-fail check — see the `--skip-rauf` escape hatch.)
  */
-export const RAUF_PIN = "rauf@0.6.0";
+export const RAUF_PIN = "@garygentry/rauf@0.7.0";
 
 /**
  * An injectable, READ-ONLY registry query (D1). Given a coordinate `name@version`, returns the
@@ -35,12 +36,12 @@ export const RAUF_PIN = "rauf@0.6.0";
  *
  * Injectable so tests mock the registry with NO real network: the default implementation
  * (`defaultRegistryQuery`) shells `npm view <coordinate> version`; a test passes a stub
- * returning `ok("0.6.0")` or `err({ code: "RAUF_UNRESOLVABLE", ... })`.
+ * returning `ok("0.7.0")` or `err({ code: "RAUF_UNRESOLVABLE", ... })`.
  *
  * Contract: the query MUST be read-only — it MUST NOT install, MUST NOT mutate global npm
  * state, and MUST NOT execute rauf. `npm view` satisfies this (it only reads registry metadata).
  *
- * @param coordinate - the `name@version` to resolve, e.g. "rauf@0.6.0"
+ * @param coordinate - the `name@version` to resolve, e.g. "@garygentry/rauf@0.7.0"
  * @returns Result<string> — the resolved version on success; RAUF_UNRESOLVABLE on failure.
  */
 export type RegistryQuery = (coordinate: string) => Result<string>;
@@ -49,12 +50,12 @@ export type RegistryQuery = (coordinate: string) => Result<string>;
 export interface PreflightRaufOpts {
   /**
    * When true (the `--skip-rauf` flag), skip the preflight entirely: perform NO network call
-   * and return `{ raufPin: null }`. For environments that knowingly defer rauf (e.g. CI
-   * dry-runs while rauf is unpublished — IR-2).
+   * and return `{ raufPin: null }`. For environments that knowingly defer rauf (e.g. offline
+   * installs or CI dry-runs that won't use the default loop).
    */
   readonly skip?: boolean;
   /**
-   * The registry query to use. Default: `defaultRegistryQuery` (`npm view rauf@<pin> version`
+   * The registry query to use. Default: `defaultRegistryQuery` (`npm view <RAUF_PIN> version`
    * via node:child_process). Tests inject a stub so no real network call is made.
    */
   readonly query?: RegistryQuery;
@@ -67,7 +68,7 @@ export interface PreflightRaufOpts {
  *  - `opts.skip` (the `--skip-rauf` flag) ⇒ return `ok({ raufPin: null })` immediately, with NO
  *    network call.
  *  - otherwise ⇒ run a READ-ONLY registry resolvability check on `RAUF_PIN` (default query:
- *    `npm view rauf@<pin> version`). No install, no global-npm mutation, no execution of rauf.
+ *    `npm view <RAUF_PIN> version`). No install, no global-npm mutation, no execution of rauf.
  *      · resolvable  ⇒ return `ok({ raufPin: RAUF_PIN })` — the value the manifest records.
  *      · unresolvable ⇒ return `err(<RAUF_UNRESOLVABLE>)` carrying the FIXED message (§6).
  *
@@ -150,12 +151,14 @@ function raufUnresolvableError(): InstallerError {
       "pinned default loop runner `" +
       RAUF_PIN +
       "` is not resolvable from the npm registry. Network is required at " +
-      "install; if rauf is not yet published this is the known cross-repo " +
-      "prerequisite (see packaging-docs-ci). Skills were still installed; " +
-      "the default loop will be unavailable until rauf publishes.",
+      "install; this usually means no network access or a registry that cannot " +
+      "see the pin. Skills were still installed; the default loop will be " +
+      "unavailable until the pin resolves.",
     remedy:
       "Ensure network access and that `" +
       RAUF_PIN +
-      "` is published, or re-run with `--skip-rauf` to defer the default loop.",
+      "` is resolvable (`npm view " +
+      RAUF_PIN +
+      " version`), or re-run with `--skip-rauf` to defer the default loop.",
   };
 }
