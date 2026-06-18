@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`npx @garygentry/feature-forge` was broken on Linux/macOS (installer `0.1.3`).**
+  The published bin (`dist/cli.js`) shipped without a `#!/usr/bin/env node`
+  shebang, so `npx` / `npm i -g` execution failed with ENOEXEC (the kernel fell
+  back to `/bin/sh`, which choked on the JS). Added the shebang to `cli.ts`
+  (tsc preserves it into the emit) and a regression test asserting the built
+  bin starts with it. (Masked until now: CI invokes `node dist/cli.js` directly,
+  and npm's Windows `.cmd` shims call `node` explicitly.)
+
 ### Added
 
 - **Cross-agent installer published to npm** as `@garygentry/feature-forge`

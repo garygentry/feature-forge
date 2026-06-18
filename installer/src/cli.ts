@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * CLI entry & dispatch (spec 07). The installer's process entry point and orchestration
  * layer: it parses `process.argv` via `node:util.parseArgs`, resolves the target agent set,
