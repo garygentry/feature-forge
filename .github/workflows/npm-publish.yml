@@ -1,9 +1,10 @@
 name: npm Publish (manual)
 
-# Publishes the cross-agent installer (installer/, @garygentry/feature-forge) to npm.
-# Manual-only, outside the PR gate. Requires an NPM_TOKEN repo secret (automation
-# token, so it bypasses interactive OTP). The installer's `prepack` builds dist/ and
-# bundles the repo-root adapters/ into the package before publish.
+# Publishes the cross-agent installer (installer/, @garygentry/feature-forge) to npm
+# via npm Trusted Publishing (OIDC) — no token, no secret. Manual-only, outside the
+# PR gate. Requires a Trusted Publisher configured on the npm package pointing at this
+# repo + this workflow filename. The installer's `prepack` builds dist/ and bundles
+# the repo-root adapters/ into the package before publish.
 
 on:
   workflow_dispatch:
@@ -14,7 +15,8 @@ on:
         default: "latest"
 
 permissions:
-  contents: read # least-privilege; NPM_TOKEN injected as a secret at publish time
+  contents: read
+  id-token: write # required for OIDC trusted publishing + npm provenance
 
 jobs:
   publish:
@@ -28,9 +30,11 @@ jobs:
         with:
           node-version: 20
           registry-url: "https://registry.npmjs.org"
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x.
+      - run: npm install -g npm@latest
       - run: npm ci
+      # OIDC: no token env — npm detects the trusted-publisher OIDC context in Actions.
       # `npm publish` runs the `prepack` hook (build + bundle adapters) automatically.
       - run: npm publish --access public --provenance --tag "$DIST_TAG"
         env:
           DIST_TAG: ${{ inputs.dist-tag }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
