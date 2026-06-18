@@ -11,6 +11,9 @@
 # Local Claude Code session artifacts
 .claude/
 
+# Internal dev planning notes — not part of the public/published surface
+plans/
+
 # Adapter build artefacts (forge-agent-adapters-build)
 .venv-adapters/
 adapters.tmp-*/

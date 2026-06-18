@@ -390,8 +390,8 @@ Symlink each plugin repo root into `~/.claude/skills/`. Claude Code loads it as
 dance:
 
 ```bash
-ln -s /home/gary/workspace/feature-forge ~/.claude/skills/feature-forge
-ln -s /home/gary/workspace/rauf          ~/.claude/skills/rauf
+ln -s ~/workspace/feature-forge ~/.claude/skills/feature-forge
+ln -s ~/workspace/rauf          ~/.claude/skills/rauf
 ```
 
 Both repos carry a `.claude-plugin/plugin.json` and a `skills/` dir, so the
@@ -409,8 +409,8 @@ symlinks and install from a local marketplace instead — same end state (live
 source, no `gwg-plugins`):
 
 ```bash
-claude plugin marketplace add /home/gary/workspace/feature-forge
-claude plugin marketplace add /home/gary/workspace/rauf
+claude plugin marketplace add ~/workspace/feature-forge
+claude plugin marketplace add ~/workspace/rauf
 claude plugin install feature-forge@<that-marketplace>
 claude plugin install rauf@<that-marketplace>
 ```
