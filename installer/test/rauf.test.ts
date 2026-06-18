@@ -12,8 +12,8 @@ import {
   neverCalledRegistry,
 } from "./helpers/registry.ts";
 
-test("RAUF_PIN is the pinned coordinate rauf@0.6.0", () => {
-  assert.equal(RAUF_PIN, "rauf@0.6.0");
+test("RAUF_PIN is the pinned coordinate @garygentry/rauf@0.7.0", () => {
+  assert.equal(RAUF_PIN, "@garygentry/rauf@0.7.0");
 });
 
 test("--skip-rauf returns ok({raufPin:null}) and makes no network call", () => {
@@ -39,7 +39,9 @@ test("unresolvable query returns err RAUF_UNRESOLVABLE with the fixed production
   // The production message is supplied by preflightRauf, not the stub.
   assert.notEqual(res.error.message, "stub message");
   assert.notEqual(res.error.remedy, "stub remedy");
-  assert.match(res.error.message, /pinned default loop runner `rauf@0\.6\.0`/);
+  // The pin is substituted into the message (verified verbatim in the next test);
+  // here we assert the fixed wording shape around it.
+  assert.match(res.error.message, /pinned default loop runner `/);
   assert.match(res.error.message, /not resolvable from the npm registry/);
   assert.match(res.error.message, /Skills were still installed/);
   assert.match(res.error.remedy ?? "", /--skip-rauf/);
