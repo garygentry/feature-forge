@@ -5,6 +5,24 @@ All notable changes to feature-forge are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Cross-agent installer published to npm** as `@garygentry/feature-forge`
+  (`0.1.0`, independent version line). The one-liner is now
+  `npx @garygentry/feature-forge install` — the bare `feature-forge` name on npm
+  belongs to an unrelated package. The package now bundles the generated
+  `adapters/` at pack time (`prepack`), so it resolves agent bundles when
+  installed from npm; Python build artifacts are filtered out. A manual
+  `npm-publish.yml` (`workflow_dispatch`) workflow was added.
+
+### Changed
+
+- **Install docs** (README + `docs/agents/*.md`) restored to the scoped
+  `npx @garygentry/feature-forge` one-liner (they had been pointed at a
+  from-source path while the package was unpublished).
+
 ## [0.10.0] — 2026-06-13
 
 ### Added

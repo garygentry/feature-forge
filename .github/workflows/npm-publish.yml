@@ -1,0 +1,36 @@
+name: npm Publish (manual)
+
+# Publishes the cross-agent installer (installer/, @garygentry/feature-forge) to npm.
+# Manual-only, outside the PR gate. Requires an NPM_TOKEN repo secret (automation
+# token, so it bypasses interactive OTP). The installer's `prepack` builds dist/ and
+# bundles the repo-root adapters/ into the package before publish.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dist-tag:
+        description: "npm dist-tag to publish under"
+        required: false
+        default: "latest"
+
+permissions:
+  contents: read # least-privilege; NPM_TOKEN injected as a secret at publish time
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: installer
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      # `npm publish` runs the `prepack` hook (build + bundle adapters) automatically.
+      - run: npm publish --access public --provenance --tag "$DIST_TAG"
+        env:
+          DIST_TAG: ${{ inputs.dist-tag }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
