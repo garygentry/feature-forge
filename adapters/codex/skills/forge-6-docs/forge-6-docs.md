@@ -34,6 +34,10 @@ Check `{resolvedFeatureDir}/backlog.json` (or `{backlogDir}/{feature}/backlog.js
 
 Also check `.pipeline-state.json` for `stages.forge-5-loop`. If it exists and has status `in-progress` (some items incomplete), include this in the warning: "The rauf loop has not fully completed — {done}/{total} items done. Documentation may need updates after remaining items are implemented."
 
+### Impl-Verify Backstop
+
+Check `.pipeline-state.json` for `stages.forge-verify-impl`. If it is **absent** or has status `"skipped"`, use `AskUserQuestion` to warn: "Implementation hasn't been verified yet. It's recommended to run `/feature-forge:forge-verify {feature} impl` first to audit the loop's output. Generate docs anyway?" This mirrors `forge-4-backlog`'s pre-stage verification check and backstops a skipped impl-verify regardless of how the loop ended. If `stages.forge-verify-impl` shows it already ran (`findings-applied`, `findings-reported`, or `passed`), proceed with no warning.
+
 ### Epic-Level Documentation (epic members only)
 
 If the resolved feature has an `epic` back-pointer in its `.pipeline-state.json`, run:

@@ -13,6 +13,19 @@ Next steps:
   - /feature-forge:forge-6-docs {feature}         Generate architecture docs
 ```
 
+**Runner review pass.** A review flag (e.g. rauf's `--review`) makes the runner run
+a post-loop review that **auto-creates and implements fix items** rather than handing
+findings to the user — distinct from `forge-verify impl` (a clean-context audit that
+writes a findings doc). When Step 4a captured a `review_completed` event, add a line
+**above** "Next steps" so the pass's effect is visible and not mistaken for "nothing
+happened":
+```
+Runner review pass: {itemsCreated} fix item(s) created and implemented.
+  {summary}
+```
+Omit this line when no `review_completed` event was emitted (no review flag passed).
+The created items are already counted in the totals above.
+
 **Some items need a human:**
 ```
 Loop completed for {feature}.
