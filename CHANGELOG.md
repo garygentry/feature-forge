@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Cross-agent installer published to npm** as `@garygentry/feature-forge`
-  (`0.1.0`, independent version line). The one-liner is now
+  (independent version line; `0.1.1` adds a package README and validates the
+  OIDC trusted-publishing CI path). The one-liner is now
   `npx @garygentry/feature-forge install` — the bare `feature-forge` name on npm
   belongs to an unrelated package. The package now bundles the generated
   `adapters/` at pack time (`prepack`), so it resolves agent bundles when
