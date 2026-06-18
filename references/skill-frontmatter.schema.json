@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/garygentry/feature-forge/references/skill-frontmatter.schema.json",
+  "title": "feature-forge canonical SKILL.md frontmatter",
+  "description": "Spec-pure frontmatter for canonical skills/*/SKILL.md. Source of truth for the allowed/required key sets loaded by scripts/check-spec-purity.py. NO version key (REQ-VER-03): versions live in manifests only.",
+  "type": "object",
+  "required": ["name", "description"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "license": { "type": "string" },
+    "compatibility": {},
+    "metadata": { "type": "object" },
+    "allowed-tools": {}
+  }
+}

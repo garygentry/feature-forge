@@ -1,0 +1,48 @@
+/**
+ * The fixture-bundle factory (spec 08 §3.2). Writes a minimal valid `<source>/<agent>/` bundle
+ * that passes the integrity check (skills/ non-empty + scripts/forge-root.sh [+ gemini-extension.json
+ * for gemini]) without copying the real (large) adapters tree.
+ *
+ * Reused by items 003, 005, 007, 008, 011. NOT a `.test.ts` file, so the test glob ignores it.
+ */
+
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { AgentId } from "../../dist/types.js";
+import type { Sandbox } from "./sandbox.ts";
+
+/** What was materialized, so tests can mutate/inspect individual files deterministically. */
+export interface FixtureBundle {
+  /** Absolute path of the bundle root: `<sb.source>/<agent>`. */
+  readonly dir: string;
+  /** The skill ids written (default: one skill "forge-1-prd"). */
+  readonly skills: string[];
+}
+
+/**
+ * Materialize a minimal valid `<source>/<agent>/` bundle that passes the integrity check
+ * (skills/ non-empty + scripts/forge-root.sh [+ gemini-extension.json for gemini]). Mirrors the
+ * verified ground-truth shape of the real adapters bundles (00 §6) at minimal size.
+ *
+ * @param sb     the sandbox whose `source` root receives the bundle
+ * @param agent  which agent bundle to write
+ * @param skills skill ids to include (default ["forge-1-prd"]); each becomes skills/<id>/SKILL.md
+ */
+export async function makeFixtureBundle(
+  sb: Sandbox,
+  agent: AgentId,
+  skills: string[] = ["forge-1-prd"],
+): Promise<FixtureBundle> {
+  const dir = join(sb.source, agent);
+  await mkdir(join(dir, "scripts"), { recursive: true });
+  await writeFile(join(dir, "scripts", "forge-root.sh"), "#!/usr/bin/env bash\n# fixture\n");
+  for (const id of skills) {
+    await mkdir(join(dir, "skills", id), { recursive: true });
+    await writeFile(join(dir, "skills", id, "SKILL.md"), `# ${id}\nfixture skill body\n`);
+  }
+  if (agent === "gemini") {
+    const ext = { name: "feature-forge", version: "0.0.0", skills: skills.map((name) => ({ name })) };
+    await writeFile(join(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + "\n");
+  }
+  return { dir, skills };
+}

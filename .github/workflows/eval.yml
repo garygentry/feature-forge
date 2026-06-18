@@ -1,0 +1,33 @@
+name: trigger-accuracy-eval
+
+# Advisory ONLY (REQ-EVAL-02 / OQ-03): on demand + weekly. NEVER on pull_request.
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC — weekly cadence bounds API cost (OQ-D)
+
+# Least privilege: the job only reads the tree and calls the API (REQ-SEC-02).
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the Anthropic SDK
+        run: pip install --quiet anthropic
+
+      - name: Run trigger-accuracy eval (advisory, non-blocking)
+        env:
+          # Secret injected from repo/org settings — never echoed, never in the repo
+          # (REQ-SEC-02). The harness skips + exits 0 when this is empty (e.g. on forks).
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python3 eval/run-eval.py

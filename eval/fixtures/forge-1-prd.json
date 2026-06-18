@@ -1,0 +1,13 @@
+{
+  "skill": "forge-1-prd",
+  "shouldTrigger": [
+    "start a PRD for a new feature with feature-forge",
+    "run forge-1-prd for the auth feature",
+    "kick off the forge pipeline and interview me for requirements on the billing feature"
+  ],
+  "shouldNotTrigger": [
+    "let's have a general discussion about our product requirements",
+    "scope out the next quarter's roadmap",
+    "what's the weather today"
+  ]
+}

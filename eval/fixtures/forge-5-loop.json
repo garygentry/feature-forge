@@ -1,0 +1,13 @@
+{
+  "skill": "forge-5-loop",
+  "shouldTrigger": [
+    "run the forge loop against the backlog for the auth feature",
+    "run forge-5-loop now that the backlog is verified",
+    "implement the forge feature autonomously with rauf"
+  ],
+  "shouldNotTrigger": [
+    "run rauf on this random project",
+    "start a standalone autonomous loop unrelated to forge",
+    "generate the backlog for this feature"
+  ]
+}

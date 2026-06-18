@@ -10,3 +10,12 @@
 
 # Local Claude Code session artifacts
 .claude/
+
+# Adapter build artefacts (forge-agent-adapters-build)
+.venv-adapters/
+adapters.tmp-*/
+
+# Cross-agent installer (Node package)
+installer/node_modules/
+installer/dist/
+installer/adapters/

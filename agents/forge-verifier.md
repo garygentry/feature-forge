@@ -101,7 +101,7 @@ Checks Executed: {N} of {M} ({X} pass, {Y} fail, {Z} not-applicable)
 You have Bash access for read-only operations ONLY. The following is an exhaustive allowlist.
 
 ### Allowed Commands
-- `python`, `python3` — for running validation scripts via `${CLAUDE_PLUGIN_ROOT}/scripts/`
+- `python`, `python3` — for running validation scripts under the plugin root resolved by the portable resolver (`scripts/forge-root.sh`; see `references/portable-root.md`)
 - `wc` — counting lines, words, characters
 - `find` — locating files (read-only)
 - `ls`, `tree` — listing directory contents

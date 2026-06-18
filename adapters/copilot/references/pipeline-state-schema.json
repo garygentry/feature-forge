@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Feature Forge Pipeline State",
+  "description": "Tracks pipeline progress for a single feature across sessions. Lives at {specsDir}/{feature}/.pipeline-state.json",
+  "type": "object",
+  "required": ["feature", "createdAt", "updatedAt", "currentStage", "stages", "pipelineStatus"],
+  "properties": {
+    "pipelineStatus": {
+      "type": "string",
+      "enum": ["active", "paused", "abandoned"],
+      "default": "active"
+    },
+    "feature": {
+      "type": "string",
+      "description": "Feature name (matches directory name under specsDir)"
+    },
+    "epic": {
+      "type": "string",
+      "description": "Back-pointer to the owning epic's name. Absent for standalone features. The epic-manifest.json is canonical on conflict (REQ-STATE-01)."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "currentStage": {
+      "type": "string",
+      "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop", "forge-6-docs", "complete", "forge-verify-prd", "forge-verify-tech", "forge-verify-specs", "forge-verify-backlog", "forge-verify-impl", "forge-0-epic", "forge-verify-epic"],
+      "description": "The stage currently in progress or next to start"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form notes persisted between sessions (user can add context before stepping away)"
+    },
+    "stages": {
+      "type": "object",
+      "properties": {
+        "forge-0-epic": { "$ref": "#/definitions/stageEntry" },
+        "forge-verify-epic": { "$ref": "#/definitions/verifyEntry" },
+        "forge-1-prd": { "$ref": "#/definitions/stageEntry" },
+        "forge-2-tech": { "$ref": "#/definitions/stageEntry" },
+        "forge-3-specs": { "$ref": "#/definitions/stageEntry" },
+        "forge-verify-specs": { "$ref": "#/definitions/verifyEntry" },
+        "forge-4-backlog": { "$ref": "#/definitions/stageEntry" },
+        "forge-verify-backlog": { "$ref": "#/definitions/verifyEntry" },
+        "forge-5-loop": { "$ref": "#/definitions/stageEntry" },
+        "forge-6-docs": { "$ref": "#/definitions/stageEntry" },
+        "forge-verify-impl": { "$ref": "#/definitions/verifyEntry" },
+        "forge-verify-prd": { "$ref": "#/definitions/verifyEntry" },
+        "forge-verify-tech": { "$ref": "#/definitions/verifyEntry" }
+      }
+    }
+  },
+  "definitions": {
+    "stageEntry": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "in-progress", "complete", "stale"]
+        },
+        "version": {
+          "type": "integer",
+          "description": "Incremented each time this stage's artifacts are revised"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Relative paths to artifacts produced by this stage"
+        },
+        "startedAt": { "type": ["string", "null"], "format": "date-time" },
+        "completedAt": { "type": ["string", "null"], "format": "date-time" },
+        "commitHash": {
+          "type": ["string", "null"],
+          "description": "Git commit SHA after this stage completed"
+        },
+        "basedOnVersions": {
+          "type": "object",
+          "description": "Upstream stage versions this artifact was built against",
+          "additionalProperties": { "type": "integer" }
+        }
+      }
+    },
+    "verifyEntry": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "passed", "findings-reported", "findings-applied", "skipped"]
+        },
+        "findingsFile": {
+          "type": ["string", "null"],
+          "description": "Path to the verification findings document"
+        },
+        "findingsCount": {
+          "type": ["integer", "null"],
+          "description": "Number of findings reported"
+        },
+        "verifiedAt": { "type": ["string", "null"], "format": "date-time" },
+        "fixedAt": { "type": ["string", "null"], "format": "date-time" },
+        "commitHash": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

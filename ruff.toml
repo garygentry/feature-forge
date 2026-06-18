@@ -1,0 +1,14 @@
+# feature-forge ruff config (REQ-CI-03, OQ-04).
+# Floor: E (pycodestyle errors), F (pyflakes), W (pycodestyle warnings).
+# line-length 100. Per-line `# noqa: <rule>` is permitted for justified
+# exceptions; do NOT weaken the floor below E/F/W (tech-spec §3.4).
+line-length = 100
+target-version = "py310"   # repo Python baseline (tech-spec §9)
+
+[lint]
+select = ["E", "F", "W"]
+
+# scripts/*.py and eval/*.py are the lint targets; tests/ and the generated
+# adapters/ tree are excluded (adapters/ is DO-NOT-EDIT generated output).
+[lint.per-file-ignores]
+# (none by default — add scoped, justified entries here only if needed)

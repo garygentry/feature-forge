@@ -1,0 +1,13 @@
+# feature-forge shellcheck config (REQ-CI-03, OQ-04).
+# Severity floor: error AND warning fail the gate. Per-line `# shellcheck
+# disable=SCxxxx` is permitted for justified, documented exceptions; do NOT
+# globally disable a rule here to dodge a real finding.
+severity=warning
+
+# Bundled scripts target bash explicitly (#!/usr/bin/env bash).
+shell=bash
+
+# Allow `source`/`.` of files shellcheck cannot follow at lint time (the
+# portable resolver is sourced at runtime, not lint time). This does NOT lower
+# the severity floor — it only stops a false "can't follow non-constant source".
+external-sources=true

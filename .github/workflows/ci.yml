@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least-privilege (REQ-SEC-01/-02): the deterministic gate only reads the repo
+# tree and needs no secrets. Mirrors rauf's ci.yml permissions block.
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      # Third-party actions pinned to a major tag (REQ-SEC-01), matching rauf's
+      # pinning convention (actions/checkout@v5, etc.).
+      - uses: actions/checkout@v5
+
+      # Single source of truth for the per-PR gate. All gate steps live in the
+      # composite so a green local run (`bash scripts/validate.sh` + lint +
+      # version-sync) reproduces CI and the two can never drift (tech-spec §3.1).
+      - uses: ./.github/actions/quality-gate

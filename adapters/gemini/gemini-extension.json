@@ -1,0 +1,54 @@
+{
+  "_generated": {
+    "source": "skills/",
+    "regenerate": "python3 scripts/build-adapters.py"
+  },
+  "name": "feature-forge",
+  "version": "0.10.0",
+  "skills": [
+    {
+      "name": "forge-0-epic",
+      "description": "Create or edit a forge epic: decompose a large change into discrete member features with dependencies, charters, and structured contracts, producing epic-manifest.json + EPIC.md. Re-run on an existing epic to enter edit mode (add/remove/reorder features, change dependencies). Use when the user runs /feature-forge:forge-0-epic or explicitly asks to start/modify an epic. Do NOT trigger for single-feature PRD work (that is forge-1-prd) or for general project planning outside forge."
+    },
+    {
+      "name": "forge-1-prd",
+      "description": "Create a requirements PRD for a feature through structured interview. Use when user runs /feature-forge:forge-1-prd or explicitly asks to start the forge pipeline for a new feature. Do NOT trigger for general requirements discussions, project scoping outside forge, or PRD questions unrelated to the forge pipeline."
+    },
+    {
+      "name": "forge-2-tech",
+      "description": "Create a technical specification from an existing PRD in the forge pipeline. Use when user runs /feature-forge:forge-2-tech or asks to create a tech spec for a forge feature after PRD completion. Do NOT trigger for general technical design discussions, architecture reviews, or tech specs outside the forge pipeline."
+    },
+    {
+      "name": "forge-3-specs",
+      "description": "Generate numbered implementation spec documents from PRD and tech spec in the forge pipeline. Use when user runs /feature-forge:forge-3-specs or asks to create detailed implementation specs for a forge feature after tech spec completion. Do NOT trigger for general specification writing, design docs, or implementation planning outside the forge pipeline."
+    },
+    {
+      "name": "forge-4-backlog",
+      "description": "Generate a structured backlog.json from forge implementation specs, then validate it via the loop runner. Use when user runs /feature-forge:forge-4-backlog or asks to create a backlog for a forge feature after specs are complete. This is the canonical backlog generator for the forge pipeline. Do NOT trigger for standalone backlog creation outside the forge pipeline context."
+    },
+    {
+      "name": "forge-5-loop",
+      "description": "Execute the autonomous coding loop (rauf by default) against a forge feature's backlog. Use when user runs /feature-forge:forge-5-loop or /feature-forge:forge-5-rauf-loop, or asks to run rauf / run the loop / implement a forge feature after the backlog is created and verified. Do NOT trigger for general rauf usage, standalone loop runs, or implementation tasks outside the forge pipeline."
+    },
+    {
+      "name": "forge-6-docs",
+      "description": "Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs /feature-forge:forge-6-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline."
+    },
+    {
+      "name": "forge-fix",
+      "description": "Apply fixes from the most recent forge-verify findings document. Use when user runs /feature-forge:forge-fix or asks to apply verification fixes for a forge feature. Do NOT trigger for general code fixes, bug fixes, or repairs outside the forge verification workflow."
+    },
+    {
+      "name": "forge-init",
+      "description": "Initialize feature-forge configuration in the current project. Use when user runs /feature-forge:forge-init or asks to set up forge for the first time. Creates forge.config.json with defaults. Do NOT trigger for general project initialization or setup tasks outside the forge pipeline."
+    },
+    {
+      "name": "forge-verify",
+      "description": "Verify forge pipeline artifacts for completeness, consistency, and quality. Use when user runs /feature-forge:forge-verify or asks to check forge specs, backlog, or implementation for gaps. Do NOT trigger for general code review, quality checks, or verification tasks outside the forge pipeline."
+    },
+    {
+      "name": "forge",
+      "description": "Feature-forge pipeline navigator and status dashboard. Use when the user references the forge pipeline, asks about forge status or progress, types /feature-forge:forge, or wants to check what stage a feature is at in the forge pipeline. Do NOT use for general feature requests, project status, or tasks unrelated to the forge development pipeline."
+    }
+  ]
+}

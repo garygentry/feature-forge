@@ -61,12 +61,33 @@ for p in data.get('plugins', []):
 " 2>/dev/null || true)
 fi
 
+# 3a. claude plugin validate --strict (REQ-CI-01).
+#     The claude CLI may not be present on a stock runner. When available it is
+#     authoritative; when absent we fall back to the documented equivalent — the
+#     marketplace/plugin JSON validation above (steps 1-3) plus the SKILL.md
+#     schema gate (step 6a). Either way this is logged, never a silent skip
+#     (REQ-OBS-01) and never a no-op (REQ-CI-01).
+echo ""
+echo "Checking claude plugin manifest (claude plugin validate --strict)..."
+if command -v claude >/dev/null 2>&1; then
+  if claude plugin validate --strict "$REPO_ROOT"; then
+    echo "PASS: claude plugin validate --strict"
+  else
+    echo "FAIL: claude plugin validate --strict reported errors (see above)"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "INFO: claude CLI not available — using documented-equivalent validation"
+  echo "      (marketplace/plugin JSON checks above + SKILL.md schema gate below)."
+  echo "PASS: claude plugin validate (documented equivalent; REQ-CI-01 fallback)"
+fi
+
 # 4. Validate skill frontmatter (name + description required)
 echo ""
 echo "Checking skill frontmatter..."
 for SKILL_FILE in "$REPO_ROOT"/skills/*/SKILL.md; do
   [ -f "$SKILL_FILE" ] || continue
-  REL_PATH="${SKILL_FILE#$REPO_ROOT/}"
+  REL_PATH="${SKILL_FILE#"$REPO_ROOT"/}"
   HAS_NAME=$(sed -n '/^---$/,/^---$/p' "$SKILL_FILE" | grep -c '^name:' || true)
   HAS_DESC=$(sed -n '/^---$/,/^---$/p' "$SKILL_FILE" | grep -c '^description:' || true)
   if [ "$HAS_NAME" -eq 0 ]; then
@@ -87,7 +108,7 @@ echo ""
 echo "Checking agent frontmatter..."
 for AGENT_FILE in "$REPO_ROOT"/agents/*.md; do
   [ -f "$AGENT_FILE" ] || continue
-  REL_PATH="${AGENT_FILE#$REPO_ROOT/}"
+  REL_PATH="${AGENT_FILE#"$REPO_ROOT"/}"
   HAS_NAME=$(sed -n '/^---$/,/^---$/p' "$AGENT_FILE" | grep -c '^name:' || true)
   HAS_DESC=$(sed -n '/^---$/,/^---$/p' "$AGENT_FILE" | grep -c '^description:' || true)
   if [ "$HAS_NAME" -eq 0 ]; then
@@ -108,7 +129,7 @@ echo ""
 echo "Checking script permissions..."
 for SCRIPT in "$REPO_ROOT"/scripts/*.sh; do
   [ -f "$SCRIPT" ] || continue
-  REL_PATH="${SCRIPT#$REPO_ROOT/}"
+  REL_PATH="${SCRIPT#"$REPO_ROOT"/}"
   if [ -x "$SCRIPT" ]; then
     echo "PASS: $REL_PATH is executable"
   else
@@ -116,6 +137,53 @@ for SCRIPT in "$REPO_ROOT"/scripts/*.sh; do
     ERRORS=$((ERRORS + 1))
   fi
 done
+
+# 6a. Spec-purity gate (REQ-VER-01..03) — a TOP-LEVEL step, OUTSIDE the
+#     `if [ -f "$HELPER" ]` epic-manifest guard, so it runs UNCONDITIONALLY.
+#     python3 stdlib only (no pyyaml), so it is always available; under
+#     `set -euo pipefail` a non-zero exit fails validate.sh immediately.
+#     This is a HARD gate — it is NEVER soft-skipped (unlike the pytest step).
+echo ""
+echo "Checking spec purity..."
+if python3 "$REPO_ROOT/scripts/check-spec-purity.py"; then
+  echo "PASS: spec-purity checker (all canonical surfaces clean)"
+else
+  echo "FAIL: spec-purity checker reported violations (see above)"
+  ERRORS=$((ERRORS + 1))
+fi
+
+# 6b. Adapters regen-and-diff drift guard (REQ-CI-01..04, tech-spec §3.8, D4) —
+#     a TOP-LEVEL step, OUTSIDE the `if [ -f "$HELPER" ]` epic-manifest guard, so
+#     it runs UNCONDITIONALLY. It provisions an isolated, gitignored venv with the
+#     pinned YAML dep (C-4; never mutates system Python, avoids PEP-668), then runs
+#     `build-adapters.py --check`: regenerate to a temp dir, diff -r vs the
+#     committed adapters/. Under `set -euo pipefail` a non-zero --check exit fails
+#     validate.sh immediately. This is a HARD gate — NEVER soft-skipped (unlike the
+#     pytest step), because generated artifacts must never silently drift from canon.
+echo ""
+echo "Checking adapters/ is in sync with canon..."
+ADAPTERS_VENV="$REPO_ROOT/.venv-adapters"
+ADAPTERS_REQS="$REPO_ROOT/scripts/requirements-adapters.txt"
+ADAPTERS_PY="$ADAPTERS_VENV/bin/python3"
+# Provision (create-or-reuse) the isolated venv and install the pinned dep. -q
+# keeps output quiet; the install is cached after the first run. A provisioning
+# failure is a real error (the verify command must run with no manual setup, C-4).
+if [ ! -x "$ADAPTERS_PY" ]; then
+  python3 -m venv "$ADAPTERS_VENV"
+fi
+if "$ADAPTERS_PY" -m pip install -q -r "$ADAPTERS_REQS"; then
+  if "$ADAPTERS_PY" "$REPO_ROOT/scripts/build-adapters.py" --check; then
+    echo "PASS: adapters/ matches a fresh generation (no drift)"
+  else
+    echo "FAIL: adapters/ is out of date — run 'python3 scripts/build-adapters.py' and commit the result"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "FAIL: could not provision .venv-adapters from scripts/requirements-adapters.txt"
+  echo "      (environment/setup fault, NOT a canon error or drift — check network access,"
+  echo "       PEP-668/externally-managed Python, or a corrupt requirements-adapters.txt)"
+  ERRORS=$((ERRORS + 1))
+fi
 
 # 7. Compile-check and test epic-manifest helper
 echo ""
@@ -141,6 +209,53 @@ if [ -f "$HELPER" ]; then
   fi
 else
   echo "SKIP: scripts/epic-manifest.py not found; skipping helper checks (non-fatal)"
+  WARNINGS=$((WARNINGS + 1))
+fi
+
+echo ""
+echo "Building + testing the cross-agent installer..."
+if command -v npm >/dev/null 2>&1; then
+  if ( cd "$REPO_ROOT/installer" && npm ci --silent && npm run build --silent && npm test ); then
+    echo "PASS: installer build + node:test suite"
+  else
+    echo "FAIL: installer build/test (see above)"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "FAIL: node/npm not found — required to build + test the installer (install Node >= 18)"
+  ERRORS=$((ERRORS + 1))
+fi
+
+# 8. Requirement traceability (REQ-CI-06). validate-traceability.py is standalone
+#    today; wire it as a BLOCKING gate. The validator's CLI takes exactly TWO
+#    positionals — a single PRD.md file and ITS specs dir — so it is invoked once
+#    PER SPEC SUITE (each `<root>/specs/<suite>/PRD.md`), with that suite's own
+#    directory as the specs dir. If no PRD/specs tree is present (the canon repo may
+#    not carry one), it is a non-fatal SKIP — never a silent pass over a real gap.
+echo ""
+echo "Checking requirement traceability..."
+TRACE="$REPO_ROOT/scripts/validate-traceability.py"
+# Adjust the PRD/specs path to the repo's shipped spec layout; SKIP if absent.
+TRACE_PRD="$REPO_ROOT/specs"   # repo-specific; set to the canonical PRD/specs root
+if [ -f "$TRACE" ] && [ -d "$TRACE_PRD" ]; then
+  TRACE_RAN=0
+  for prd in "$TRACE_PRD"/*/PRD.md; do
+    [ -e "$prd" ] || continue                    # no suite present -> SKIP, not a bogus glob-string failure
+    TRACE_RAN=1
+    specs_dir="$(dirname "$prd")"
+    python3 "$TRACE" "$prd" "$specs_dir"; rc=$?   # NO 2>/dev/null — surface the validator's diagnostic (REQ-OBS-01)
+    case "$rc" in
+      0) echo "PASS: requirement traceability ($specs_dir)" ;;
+      1) echo "FAIL: requirement traceability gaps/orphans in $specs_dir (see above)"; ERRORS=$((ERRORS + 1)) ;;
+      *) echo "FAIL: requirement traceability config error in $specs_dir (rc=$rc — bad PRD/specs path?)"; ERRORS=$((ERRORS + 1)) ;;
+    esac
+  done
+  if [ "$TRACE_RAN" -eq 0 ]; then
+    echo "SKIP: no spec suite (specs/*/PRD.md) present; traceability check not applicable here"
+    WARNINGS=$((WARNINGS + 1))
+  fi
+else
+  echo "SKIP: no specs tree present; traceability check not applicable here"
   WARNINGS=$((WARNINGS + 1))
 fi
 

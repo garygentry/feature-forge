@@ -1,0 +1,4 @@
+# Pinned YAML runtime for scripts/build-adapters.py (forge-agent-adapters-build).
+# Single, exact-pinned dependency — part of the determinism contract (00 §3, C-4).
+# Auto-provisioned into the gitignored .venv-adapters by scripts/validate.sh step 6b.
+PyYAML==6.0.2
