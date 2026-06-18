@@ -1,5 +1,8 @@
 # Epic Orchestration
 
+> New to the pipeline? Start with the [main README's pipeline overview](../../../README.md#the-pipeline-at-a-glance);
+> epics are an optional Stage 0 layered on top of it.
+
 Epic Orchestration lets you group several related forge features into a single
 named **epic** with declared dependencies, a shared contract document, and a
 prompted thread-of-execution that carries you from one feature to the next.
