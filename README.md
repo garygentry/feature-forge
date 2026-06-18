@@ -20,34 +20,49 @@ End-to-end feature development pipeline that runs on any coding agent — Claude
 > one release cycle; please re-add the marketplace above to keep receiving
 > updates.
 
-### (b) Any agent — one-liner
+### (b) Any agent — from source
 
-Installs the canonical skills into every coding agent detected on your machine:
+> **Not yet on npm.** The `npx feature-forge install` one-liner is not available
+> yet — the `feature-forge` name on npm currently belongs to an unrelated
+> package, so **do not run `npx feature-forge`**. Publishing under a scoped name
+> is tracked in [#9](https://github.com/garygentry/feature-forge/issues/9). Until
+> then, install from a clone — this installs the canonical skills into every
+> coding agent detected on your machine:
 
 ```bash
-npx feature-forge install
+git clone https://github.com/garygentry/feature-forge.git
+cd feature-forge
+(cd installer && npm install && npm run build)   # one-time build of the installer
+
+node installer/dist/cli.js install
 ```
 
 Scope to one agent with `-a`, or preview without writing using `--dry-run --json`:
 
 ```bash
-npx feature-forge install -a codex        # one agent
-npx feature-forge install --dry-run --json # preview the plan, change nothing
+node installer/dist/cli.js install -a codex         # one agent
+node installer/dist/cli.js install --dry-run --json # preview the plan, change nothing
 ```
 
 ### (c) Per-surface setup
 
-| Agent   | Install                                                                                    | Setup doc                                      |
-| ------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------- |
-| Claude  | `/plugin install feature-forge@feature-forge` _(or `npx feature-forge install -a claude`)_ | [docs/agents/claude.md](docs/agents/claude.md) |
-| Codex   | `npx feature-forge install -a codex`                                                       | [docs/agents/codex.md](docs/agents/codex.md)   |
-| Copilot | `npx feature-forge install -a copilot`                                                     | [docs/agents/copilot.md](docs/agents/copilot.md) |
-| Cursor  | `npx feature-forge install -a cursor`                                                      | [docs/agents/cursor.md](docs/agents/cursor.md) |
-| Gemini  | `npx feature-forge install -a gemini`                                                      | [docs/agents/gemini.md](docs/agents/gemini.md) |
+| Agent   | Install                                                          | Setup doc                                        |
+| ------- | --------------------------------------------------------------- | ------------------------------------------------ |
+| Claude  | `/plugin install feature-forge@feature-forge` (marketplace)     | [docs/agents/claude.md](docs/agents/claude.md)   |
+| Codex   | from source — `node installer/dist/cli.js install -a codex`     | [docs/agents/codex.md](docs/agents/codex.md)     |
+| Copilot | from source — `node installer/dist/cli.js install -a copilot`   | [docs/agents/copilot.md](docs/agents/copilot.md) |
+| Cursor  | from source — `node installer/dist/cli.js install -a cursor`    | [docs/agents/cursor.md](docs/agents/cursor.md)   |
+| Gemini  | from source — `node installer/dist/cli.js install -a gemini`    | [docs/agents/gemini.md](docs/agents/gemini.md)   |
 
-> The default loop runner ([forge-5-loop](#stage-5-loop-forge-5-loop)) is **rauf**; provisioning it
-> via `npx rauf@0.6.0` is **available once rauf 0.6.0 is published**. See
-> [docs/agents/claude.md#the-default-loop-runner](docs/agents/claude.md#the-default-loop-runner) for
+> **Claude** installs via the marketplace today (section (a)). The other four
+> agents install **from source** (section (b)) until the installer is published
+> to npm ([#9](https://github.com/garygentry/feature-forge/issues/9)).
+
+> The default loop runner ([forge-5-loop](#stage-5-loop-forge-5-loop)) is **rauf**. Provisioning it
+> via `npx rauf@…` will be available once rauf is published to npm
+> ([garygentry/rauf#28](https://github.com/garygentry/rauf/issues/28)); today, install rauf via its
+> binary script (`curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`).
+> See [docs/agents/claude.md#the-default-loop-runner](docs/agents/claude.md#the-default-loop-runner) for
 > the full default loop path and agent-selection precedence.
 
 ## Overview
