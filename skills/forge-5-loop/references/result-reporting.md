@@ -13,6 +13,15 @@ Next steps:
   - /feature-forge:forge-6-docs {feature}         Generate architecture docs
 ```
 
+If a runner review pass ran (a `review_completed` event was captured in Step 4a),
+add a line **above** "Next steps" so its effect is visible:
+```
+Runner review pass: {itemsCreated} fix item(s) created and implemented.
+  {summary}
+```
+Omit this line entirely when no `review_completed` event was emitted (no review flag
+was passed). The created items are already counted in the totals above.
+
 **Some items need a human:**
 ```
 Loop completed for {feature}.
