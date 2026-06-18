@@ -61,6 +61,27 @@ cross-agent installer (a separate tool, `cross-agent-installer`) copies the rele
 `adapters/<agent>/` bundle into the agent's config directory. Refer to that installer's
 documentation for mechanics; this file does not duplicate them.
 
+## Publishing to npm
+
+The installer is published to npm as `@garygentry/feature-forge` — this is what backs
+`npx @garygentry/feature-forge` and `npm i -g @garygentry/feature-forge`. Publishing is
+**manual and deliberate; a merge to `main` never publishes**:
+
+- A merge runs CI (`ci.yml`, `os-matrix.yml`) but **no publish step**. The only workflow that
+  runs `npm publish` is `.github/workflows/npm-publish.yml`, whose **sole trigger is
+  `workflow_dispatch`** (Actions → "npm Publish (manual)" → Run workflow).
+- **Bump the version first.** Re-publishing the current `installer/package.json` `version` is
+  rejected by npm (409). So a publish is always: bump `installer/package.json` `version` →
+  merge → dispatch the publish workflow. The workflow's `prepack` builds `dist/` and bundles
+  `adapters/` automatically.
+- It uses npm Trusted Publishing (OIDC) — no token — and must be dispatched by the repository
+  owner.
+
+**Agent guidance — offer, don't act.** When a merged change is user-facing and worth getting to
+`npx` users (an installer fix, a new adapter, a CLI behavior change), proactively **suggest** a
+publish and spell out the steps (version bump + manual dispatch). Never run `npm publish`
+yourself, and don't treat a merge as implying a release — the human decides when to cut one.
+
 ## Dependency Upgrades
 
 Upgrading the pinned YAML library version in `scripts/requirements-adapters.txt` is a
