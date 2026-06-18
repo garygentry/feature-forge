@@ -6,17 +6,21 @@
 
 ## Install
 
-Install with the universal one-liner — this copies the generated `adapters/copilot/` bundle into
-Copilot's config directory:
+> **Not yet on npm** — the `npx feature-forge` one-liner isn't available yet (the npm name is
+> taken by an unrelated package; tracked in [#9](https://github.com/garygentry/feature-forge/issues/9)).
+> Install from a built clone — see the repo [README §(b)](../../README.md#b-any-agent--from-source)
+> for the one-time `installer` build.
+
+This copies the generated `adapters/copilot/` bundle into Copilot's config directory:
 
 ```bash
-npx feature-forge install -a copilot
+node installer/dist/cli.js install -a copilot
 ```
 
 To see the exact destination on your machine without writing anything, run:
 
 ```bash
-npx feature-forge install -a copilot --dry-run --json
+node installer/dist/cli.js install -a copilot --dry-run --json
 ```
 
 The `--dry-run --json` plan reports the resolved install destination — use that as the
@@ -37,7 +41,7 @@ see the note below.)
 
 1. List what got installed:
    ```bash
-   npx feature-forge list -a copilot          # per-agent installed / up-to-date status
+   node installer/dist/cli.js list -a copilot          # per-agent installed / up-to-date status
    ```
 2. Invoke a forge skill on Copilot and confirm it fires. Copilot-specific invocation: ask
    Copilot Chat to "use feature-forge to run forge-init for a new feature" — Copilot should
