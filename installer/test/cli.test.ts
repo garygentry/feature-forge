@@ -9,7 +9,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   parseCliArgs,
   mapErrorToExit,
@@ -55,6 +59,25 @@ test("dist/cli.js bin entry begins with a node shebang (npx / global-install exe
   // a leading shebang from cli.ts into the emit; this asserts it survives.
   const cli = readFileSync(new URL("../dist/cli.js", import.meta.url), "utf8");
   assert.equal(cli.split("\n", 1)[0], "#!/usr/bin/env node");
+});
+
+test("bin entry runs main() when invoked through a symlink (npx / `npm i -g` path)", () => {
+  // Regression guard for the entry shim: npm/npx install the bin as a SYMLINK, so
+  // process.argv[1] is the symlink while import.meta.url is the resolved real path. If the
+  // shim compares them without resolving symlinks, main() silently no-ops (exit 0, no
+  // output) under every real install path. Spawn the built bin through a symlink and assert
+  // it actually executes (prints a version, exit 0) rather than no-op'ing.
+  const cliPath = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
+  const dir = mkdtempSync(join(tmpdir(), "ff-bin-symlink-"));
+  try {
+    const link = join(dir, "feature-forge");
+    symlinkSync(cliPath, link);
+    const res = spawnSync(process.execPath, [link, "--version"], { encoding: "utf8" });
+    assert.equal(res.status, 0);
+    assert.match(res.stdout.trim(), /^\d+\.\d+\.\d+/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // --- alias resolution -------------------------------------------------------
