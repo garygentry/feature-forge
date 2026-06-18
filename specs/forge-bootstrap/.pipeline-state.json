@@ -1,0 +1,22 @@
+{
+  "feature": "forge-bootstrap",
+  "pipelineStatus": "active",
+  "createdAt": "2026-06-18T23:23:16Z",
+  "updatedAt": "2026-06-18T23:23:16Z",
+  "currentStage": "forge-2-tech",
+  "notes": "OQ-01 is the biggest design risk: how forge.config.json represents a mixed-language monorepo (REQ-MONO-05) so the pipeline can target a member with the correct stack profile + verification command. forge-2-tech should resolve this early. Other open questions OQ-02..OQ-05 are in PRD §7.",
+  "stages": {
+    "forge-1-prd": {
+      "status": "complete",
+      "version": 1,
+      "artifacts": [
+        "PRD.md",
+        ".reference/CHARTER.md"
+      ],
+      "startedAt": "2026-06-18T23:23:16Z",
+      "completedAt": "2026-06-18T23:23:16Z",
+      "commitHash": null,
+      "basedOnVersions": {}
+    }
+  }
+}
