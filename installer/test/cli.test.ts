@@ -47,6 +47,16 @@ async function captureIO(fn: () => Promise<number>): Promise<{ code: number; out
   }
 }
 
+// --- bin executability ------------------------------------------------------
+
+test("dist/cli.js bin entry begins with a node shebang (npx / global-install executability)", () => {
+  // Regression guard: without `#!/usr/bin/env node` the published bin is ENOEXEC on
+  // Linux/macOS (the kernel falls back to /bin/sh, which chokes on the JS). tsc preserves
+  // a leading shebang from cli.ts into the emit; this asserts it survives.
+  const cli = readFileSync(new URL("../dist/cli.js", import.meta.url), "utf8");
+  assert.equal(cli.split("\n", 1)[0], "#!/usr/bin/env node");
+});
+
 // --- alias resolution -------------------------------------------------------
 
 test("parseCliArgs resolves aliases add→install, remove→uninstall, ls→list", () => {
