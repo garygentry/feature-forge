@@ -1,6 +1,53 @@
 # feature-forge
 
-End-to-end feature development pipeline that runs on any coding agent — Claude, Codex, Copilot, Cursor, or Gemini. Transforms a feature idea into a complete, implementation-ready specification suite through structured interviews, automated verification, and persistent state tracking.
+End-to-end feature development pipeline that runs on any coding agent — Claude, Codex, Copilot, Cursor, or Gemini. It compiles a fuzzy feature idea into a machine-executable `backlog.json` that an autonomous loop then implements.
+
+## How it works
+
+feature-forge works like a compiler. You start with a vague idea, and each stage narrows it down and adds structure, until the output is a backlog of self-contained work items an agent can implement without any further context. The stages are kept separate on purpose, so each one does a single job:
+
+- **Requirements before design.** Stage 1 captures *what* the feature must do, never *how*, and assigns stable `REQ-XXX-NN` identifiers. Those IDs become a traceability spine: every downstream artifact references the requirement it satisfies, and a coverage pass proves nothing was dropped.
+- **Verification gates between stages.** A verification pass runs between stages to catch gaps and contradictions before they reach downstream stages, where they cost far more to fix.
+- **Context hygiene through isolated subagents.** Codebase research, spec authoring, and artifact verification run in separate, mostly read-only subagent contexts, so the main session stays focused and fast.
+- **State that persists across sessions.** Each feature's progress, versions, and commit hashes live in a state file, so you can stop, clear context, and pick up where you left off. If you revise an upstream artifact, staleness detection flags the downstream stages that depend on it.
+- **Stack-aware output.** Built-in profiles for TypeScript, Python, Go, and Rust (with a generic fallback) tailor spec conventions, checks, and acceptance criteria to your project's toolchain.
+- **An executable backlog, not just documents.** The final artifact is a validated `backlog.json` of granular work items. A swappable autonomous loop runner implements them, spawning a fresh agent session per item and committing atomically.
+
+It is tuned for Claude but stays agent-agnostic, and runs on any of the supported coding agents.
+
+### The pipeline at a glance
+
+```
+                                    Verification Gates
+                                    ─────────────────
+[forge-0-epic] ─► forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
+   (optional)                                                                    │
+                    ┌────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+              forge-4-backlog ─► forge-verify ─► forge-5-loop ─► forge-verify ─► forge-6-docs
+```
+
+| Stage | Skill | Why it exists |
+|-------|-------|---------------|
+| 0 _(optional)_ | `forge-0-epic` | Decompose a large change into related member features with declared dependencies and contracts (see [Epics](#epics-optional)) |
+| 1 | `forge-1-prd` | Pin down *what* the feature must do, with stable requirement IDs, before any design decision is made |
+| 2 | `forge-2-tech` | Decide *how* to build it, grounding every choice in a specific requirement and in real codebase patterns |
+| 3 | `forge-3-specs` | Turn decisions into implementation-ready specs (types, signatures, contracts) the loop can build against |
+| -- | `forge-verify` | Catch gaps and contradictions before they reach later stages |
+| 4 | `forge-4-backlog` | Compile the specs into a validated backlog of self-contained, criteria-driven work items |
+| 5 | `forge-5-loop` | Implement the backlog autonomously, a fresh agent session per item, committed atomically |
+| 6 | `forge-6-docs` | Document the architecture from the *actual* implementation, for onboarding and maintenance |
+
+Run `/feature-forge:forge <feature>` at any point to see what's complete, what's next, and what needs attention.
+
+### Epics (optional)
+
+Some changes are too large to be a single feature. An **epic** (`forge-0-epic`) splits such a change into discrete **member features** under one named subtree, recording the dependency edges and the `exposes`/`consumes` contracts between them on disk instead of in your head. Each member then runs the normal Stage 1 through 6 pipeline, with the epic's narrative and its direct dependencies' contracts injected automatically as context. Epic support is purely additive: when no epic is involved, every single-feature flow is byte-for-byte unchanged. See [docs/architecture/epic-orchestration/README.md](docs/architecture/epic-orchestration/README.md).
+
+### The loop runner (rauf)
+
+Stage 5 hands the backlog to an **autonomous loop runner** that spawns a fresh agent session per item, which keeps context from bleeding between tasks, and commits atomically as each item passes its acceptance criteria. The bundled default is [rauf](https://github.com/garygentry/rauf), but it is swappable. feature-forge binds to a runner only through the `loopRunner` block in `forge.config.json` (a backlog schema, a `validate` verb, and a signal protocol), so you can drop in a different runner without touching any pipeline skill. See [`references/ralph-loop-contract.md`](references/ralph-loop-contract.md) for the contract.
 
 ## Install
 
@@ -52,14 +99,6 @@ npx @garygentry/feature-forge install --dry-run --json # preview the plan, chang
 > See [docs/agents/claude.md#the-default-loop-runner](docs/agents/claude.md#the-default-loop-runner) for
 > the full default loop path and agent-selection precedence.
 
-## Overview
-
-Building features well requires disciplined planning. **feature-forge** encodes that discipline into a repeatable pipeline: starting from a structured requirements interview, progressing through technical design and implementation specifications, and finishing with a validated backlog and architecture documentation.
-
-Each stage produces versioned artifacts that trace back to the original requirements. Verification gates between stages catch gaps, inconsistencies, and quality issues before they compound downstream. Specialized subagents handle codebase research and artifact verification in isolated contexts, keeping the main session focused and efficient.
-
-The pipeline is stack-aware, with built-in profiles for TypeScript, Python, Go, and Rust that tailor spec conventions, verification checks, and acceptance criteria to your project's toolchain.
-
 ## Quick Start
 
 ```
@@ -72,19 +111,11 @@ The pipeline guides you through each subsequent stage. Run `/feature-forge:forge
 
 ## Pipeline
 
-```
-                                    Verification Gates
-                                    ─────────────────
-forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
-                                                               │
-                    ┌──────────────────────────────────────────┘
-                    │
-                    ▼
-              forge-4-backlog ─► forge-verify ─► forge-5-loop ─► forge-verify ─► forge-6-docs
-```
+Artifacts produced at each stage (see [the pipeline at a glance](#the-pipeline-at-a-glance) for the flow and the *why* of each stage):
 
 | Stage | Skill | Artifact | Purpose |
 |-------|-------|----------|---------|
+| 0 _(optional)_ | `forge-0-epic` | `epic-manifest.json`, `EPIC.md` | Decompose a large change into related member features (see [Epics](#epics-optional)) |
 | 1 | `forge-1-prd` | `PRD.md` | Capture requirements through structured interview |
 | 2 | `forge-2-tech` | `tech-spec.md` | Define technical approach grounded in PRD |
 | 3 | `forge-3-specs` | Numbered spec suite | Generate implementation specifications |
@@ -96,6 +127,18 @@ forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
 | 6 | `forge-6-docs` | Documentation suite | Generate architecture documentation |
 
 ## Pipeline Stages
+
+### Stage 0: Epic (forge-0-epic), optional
+
+```
+/feature-forge:forge-0-epic <epic-name>
+```
+
+Optional. For changes too large to be a single feature, conducts a decomposition interview that splits the work into discrete **member features** under one named subtree, with declared dependencies (`dependsOn`) and structured `exposes`/`consumes` contracts between them. Produces a machine-readable `epic-manifest.json` (the source of truth) and a human-readable `EPIC.md`. Each member feature then runs the normal Stage 1 through 6 pipeline, with the epic narrative and its direct dependencies' contracts injected automatically.
+
+Re-run on an existing epic to edit it (add, remove, or reorder features). Epic support is purely additive: single-feature flows are unchanged. See [docs/architecture/epic-orchestration/README.md](docs/architecture/epic-orchestration/README.md).
+
+**Output:** `{specsDir}/{epic}/epic-manifest.json` and `{specsDir}/{epic}/EPIC.md`
 
 ### Stage 1: Requirements (forge-1-prd)
 

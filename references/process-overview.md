@@ -2,11 +2,19 @@
 
 This document describes the end-to-end feature development pipeline managed by the feature-forge plugin. All forge skills reference this document to understand the overall flow and their position within it.
 
+The pipeline compiles a fuzzy feature idea into a machine-executable `backlog.json`. Each stage narrows the idea down and adds structure, verification gates catch gaps before they reach later stages, and a swappable autonomous loop runner (rauf by default) implements the backlog in fresh per-item sessions.
+
 ## Pipeline Stages
 
 ```
-forge-1-prd → forge-2-tech → forge-3-specs → forge-verify → forge-4-backlog → forge-verify → forge-5-loop → forge-verify → forge-6-docs
+[forge-0-epic] → forge-1-prd → forge-2-tech → forge-3-specs → forge-verify → forge-4-backlog → forge-verify → forge-5-loop → forge-verify → forge-6-docs
+   (optional)
 ```
+
+### Stage 0: Epic (`/feature-forge:forge-0-epic <epic>`), optional
+**Input:** A change too large for one feature
+**Output:** `{specsDir}/{epic}/epic-manifest.json` + `EPIC.md` + one member-feature dir per feature
+**Method:** Decomposition interview splitting the change into member features with declared dependencies and `exposes`/`consumes` contracts. Purely additive: single-feature flows are unchanged. See [docs/architecture/epic-orchestration/README.md](../docs/architecture/epic-orchestration/README.md).
 
 ### Stage 1: PRD (`/feature-forge:forge-1-prd <feature>`)
 **Input:** User's feature idea and domain knowledge
@@ -41,7 +49,7 @@ After verification, fixes can be applied via:
 ### Stage 5: Rauf Loop (`/feature-forge:forge-5-loop <feature>`)
 **Input:** `backlog.json` from Stage 4
 **Output:** Implemented source code (committed per-item by rauf)
-**Method:** Execute the rauf autonomous coding loop against the feature's backlog. Spawns a fresh Claude Code session per backlog item with full spec context.
+**Method:** Execute the autonomous coding loop against the feature's backlog. Spawns a fresh session per backlog item with full spec context. rauf is the default runner but is swappable via the `loopRunner` block in `forge.config.json`; see [`references/ralph-loop-contract.md`](./ralph-loop-contract.md).
 
 ### Stage 6: Documentation (`/feature-forge:forge-6-docs <feature>`)
 **Input:** Specs + implementation
