@@ -107,13 +107,19 @@ pipeline stage, and it is purely additive: existing flows are unchanged.
   selection, and the host agent-instruction file(s) (`AGENTS.md` / `CLAUDE.md` as
   applicable to the host).
   - Priority: P1
+- **REQ-SCAF-09**: When an allowed-meta file (§3.1) already exists — e.g. a README
+  or `LICENSE` from a freshly created remote repo — bootstrap MUST NOT overwrite it
+  (per REQ-GATE-05). It skips generating that file, seeds the relevant interview
+  default from the existing one where sensible (e.g. detecting the existing license),
+  and notes the kept file in the completion summary (REQ-OUT-01).
+  - Priority: P1
 - **REQ-SCAF-07**: Optionally produce a CI workflow that runs lint + test. CI is
   skippable; the specific provider is decided in the tech spec (provider-agnostic
   requirement — see Constraints).
   - Priority: P1
-- **REQ-SCAF-08**: On completion, leave the working tree clean — every produced file
-  is either committed or intentionally staged per the run-time commit choice
-  (REQ-LIFE-05).
+- **REQ-SCAF-08**: On completion, bootstrap MUST leave no untracked or dangling
+  scaffold files — every produced file is either committed or staged per the
+  run-time commit choice (REQ-LIFE-05); nothing is left untracked.
   - Priority: P0
 
 ### 3.4 Stack Profiles
@@ -212,9 +218,11 @@ pipeline stage, and it is purely additive: existing flows are unchanged.
 ## 4. Non-Functional Requirements
 
 ### 4.1 Performance
-- **REQ-PERF-01**: Scaffolding a typical single-package project SHOULD complete
-  promptly, with no long-running steps beyond toolchain detection and the single
-  lint/test verification pass.
+- **REQ-PERF-01**: No numeric performance target applies. Bootstrap's own work
+  (interview, file generation, config write) is negligible; runtime is dominated by
+  the external stack toolchain's single lint/test verification pass, whose duration
+  is the toolchain's responsibility, not bootstrap's. This non-quantification is
+  deliberate for a one-shot interactive setup tool.
   - Priority: P2
 
 ### 4.2 Security / Safety
