@@ -13,19 +13,17 @@ Claude Code is the first-class, preferred surface. Install via the plugin market
 /plugin install feature-forge@feature-forge
 ```
 
-Alternatively, install from a built clone (the `npx feature-forge` one-liner is
-[not yet on npm](https://github.com/garygentry/feature-forge/issues/9) — see the repo
-[README §(b)](../../README.md#b-any-agent--from-source) for the one-time `installer` build).
-This copies the generated `adapters/claude/` bundle into Claude's config directory:
+Alternatively, install with the universal one-liner — this copies the generated
+`adapters/claude/` bundle into Claude's config directory:
 
 ```bash
-node installer/dist/cli.js install -a claude
+npx @garygentry/feature-forge install -a claude
 ```
 
 To see the exact destination on your machine without writing anything, run:
 
 ```bash
-node installer/dist/cli.js install -a claude --dry-run --json
+npx @garygentry/feature-forge install -a claude --dry-run --json
 ```
 
 The `--dry-run --json` plan reports the resolved install destination. Claude installs under
@@ -46,7 +44,7 @@ The `--dry-run --json` plan reports the resolved install destination. Claude ins
 
 1. List what got installed:
    ```bash
-   node installer/dist/cli.js list -a claude          # per-agent installed / up-to-date status
+   npx @garygentry/feature-forge list -a claude          # per-agent installed / up-to-date status
    ```
 2. Invoke a forge skill on Claude and confirm it fires. Claude-specific invocation: type
    `/feature-forge:forge-init` (or `/feature-forge:forge` for a pipeline status check) at the

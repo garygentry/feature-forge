@@ -6,21 +6,17 @@
 
 ## Install
 
-> **Not yet on npm** — the `npx feature-forge` one-liner isn't available yet (the npm name is
-> taken by an unrelated package; tracked in [#9](https://github.com/garygentry/feature-forge/issues/9)).
-> Install from a built clone — see the repo [README §(b)](../../README.md#b-any-agent--from-source)
-> for the one-time `installer` build.
-
-This copies the generated `adapters/codex/` bundle into Codex's config directory:
+Install with the universal one-liner — this copies the generated `adapters/codex/` bundle into
+Codex's config directory:
 
 ```bash
-node installer/dist/cli.js install -a codex
+npx @garygentry/feature-forge install -a codex
 ```
 
 To see the exact destination on your machine without writing anything, run:
 
 ```bash
-node installer/dist/cli.js install -a codex --dry-run --json
+npx @garygentry/feature-forge install -a codex --dry-run --json
 ```
 
 The `--dry-run --json` plan reports the resolved install destination — use that as the
@@ -41,7 +37,7 @@ see the note below.)
 
 1. List what got installed:
    ```bash
-   node installer/dist/cli.js list -a codex          # per-agent installed / up-to-date status
+   npx @garygentry/feature-forge list -a codex          # per-agent installed / up-to-date status
    ```
 2. Invoke a forge skill on Codex and confirm it fires. Codex-specific invocation: prompt the
    agent with "use feature-forge to run forge-init for a new feature" — Codex should select the
