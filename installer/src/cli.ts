@@ -13,7 +13,7 @@
 
 import { parseArgs } from "node:util";
 import process from "node:process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import * as path from "node:path";
 import {
@@ -639,8 +639,20 @@ function readInstallerVersion(): string {
 // ---------------------------------------------------------------------------
 
 // Only run when invoked as the bin (not when imported by tests / index.ts).
+// npm/npx install the bin as a SYMLINK (…/bin/feature-forge → …/dist/cli.js), so
+// process.argv[1] is the symlink while import.meta.url is the resolved real path —
+// resolve the symlink before comparing, or the entry point silently no-ops under
+// npx / `npm i -g` (the real invocation paths). Fall back to the raw path if argv[1]
+// is not a stat-able file.
 const entry = process.argv[1];
-if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+function entryHref(p: string): string {
+  try {
+    return pathToFileURL(realpathSync(p)).href;
+  } catch {
+    return pathToFileURL(p).href;
+  }
+}
+if (entry !== undefined && import.meta.url === entryHref(entry)) {
   main(process.argv.slice(2))
     .then((code) => {
       process.exitCode = code;

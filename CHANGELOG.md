@@ -9,13 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`npx @garygentry/feature-forge` was broken on Linux/macOS (installer `0.1.3`).**
-  The published bin (`dist/cli.js`) shipped without a `#!/usr/bin/env node`
-  shebang, so `npx` / `npm i -g` execution failed with ENOEXEC (the kernel fell
-  back to `/bin/sh`, which choked on the JS). Added the shebang to `cli.ts`
-  (tsc preserves it into the emit) and a regression test asserting the built
-  bin starts with it. (Masked until now: CI invokes `node dist/cli.js` directly,
-  and npm's Windows `.cmd` shims call `node` explicitly.)
+- **`npx @garygentry/feature-forge` / `npm i -g` silently did nothing on
+  Linux/macOS (installer `0.1.4`).** Two compounding bugs in the published bin:
+  (1) `dist/cli.js` shipped without a `#!/usr/bin/env node` shebang (ENOEXEC →
+  `/bin/sh` fallback → JS syntax error); and (2) the process-entry shim compared
+  `import.meta.url` to `process.argv[1]` **without resolving symlinks** — but
+  npm/npx install the bin as a symlink, so the comparison never matched and
+  `main()` never ran (silent exit 0, no output). Added the shebang and made the
+  entry shim resolve the symlink (`realpathSync`) before comparing. Both are
+  guarded by new tests (shebang presence + spawn-through-a-symlink). Masked
+  until now because CI and the test suite invoke `node dist/cli.js` / `main()`
+  directly — never the real symlinked bin — and npm's Windows `.cmd` shims call
+  `node` explicitly. (`0.1.3` shipped only the shebang half of this fix.)
 
 ### Added
 
