@@ -92,8 +92,8 @@
         "typescript dev-deps pin only typescript + vitest; lint command is `npx tsc --noEmit` and a test/smoke.test.ts asserts the exported function",
         "No code in scripts/ changes; python3 -m py_compile scripts/forge-bootstrap.py still passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:41:29.083Z",
       "dependsOn": [],
       "notes": "These are consumed by compose_member in item 006; verification that they actually lint/test green happens in items 008/011. Token list and per-stack commands: 03 §2/§3/§7 and 00 §6.",
       "estimatedIterations": 1,
