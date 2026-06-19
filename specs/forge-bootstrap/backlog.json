@@ -232,8 +232,8 @@
         "--stage-only returns committed:false with the scaffold staged; default returns committed:true with a real commitHash",
         "python3 -m pytest tests/test_forge_bootstrap.py -q passes (commit + no-add-A guard tests) and py_compile passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:49:57.438Z",
       "dependsOn": [
         "006"
       ],

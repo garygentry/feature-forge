@@ -728,11 +728,69 @@ def verify(target: Path, answers: Answers) -> VerifyResult:
 
 
 def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:
-    """Stage the exact artifact list and commit or stop at staged (02 §6).
+    """Stage the exact artifact list and commit or stop at staged (02 §6, 00 §4).
 
-    Stub — implemented in backlog item 009.
+    Ordering is load-bearing (OQ-T3): the sentinel file is deleted BEFORE any
+    ``git add`` so it can never be staged or enter history (REQ-SCAF-08). Staging
+    uses the exact artifactsWritten[] list with ``git add -- <paths>`` — never
+    ``git add -A`` (REQ-SEC-02) — and follows the shared Git Commit Protocol (never
+    --force / --no-verify). When stage_only (or commitStyle == "stage-only") the
+    scaffold is left staged with no commit (REQ-LIFE-05); otherwise a single
+    baseline commit captures the whole scaffold plus forge.config.json (REQ-LIFE-06).
+    The commit prefix is read from the just-written forge.config.json's
+    ``commitPrefix`` field (default "forge"), NOT from answers (00 §5/§7).
+
+    Args:
+        target: The project root being committed.
+        answers: The resolved interview payload (for commitStyle; the commit
+            prefix is read from forge.config.json, not from answers).
+        stage_only: True to stop at staged with no commit (the --stage-only flag).
+
+    Returns:
+        A CommitResult (00 §4): committed / commitHash / staged / sentinelRemoved.
+
+    Raises:
+        UsageError: No sentinel to commit, or a git/IO failure (exit 2). On a git
+            failure the sentinel is already removed; the run is re-stageable.
     """
-    raise NotImplementedError("commit is implemented in backlog item 009")
+    sentinel = read_sentinel(target)
+    if sentinel is None:
+        raise UsageError(
+            "no .forge-bootstrap.json sentinel to commit; run scaffold first"
+        )
+    staged = list(sentinel["artifactsWritten"])
+
+    # OQ-T3: remove the sentinel BEFORE staging so it never enters history.
+    (target / SENTINEL_FILENAME).unlink(missing_ok=True)
+
+    run(["git", "add", "--", *staged], cwd=target)
+
+    if stage_only or answers["commitStyle"] == "stage-only":
+        return {
+            "committed": False,
+            "commitHash": None,
+            "staged": staged,
+            "sentinelRemoved": True,
+        }
+
+    # commitPrefix is a forge.config.json field (00 §7), not an interview answer.
+    # Read it back from the config bootstrap just wrote; default "forge" if absent.
+    try:
+        cfg = json.loads(
+            (target / "forge.config.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError) as exc:
+        raise UsageError(f"cannot read forge.config.json: {exc}")
+    prefix = cfg.get("commitPrefix") or "forge"
+    message = f"{prefix}: bootstrap baseline"
+    run(["git", "commit", "-m", message], cwd=target)
+    rev = run(["git", "rev-parse", "HEAD"], cwd=target)
+    return {
+        "committed": True,
+        "commitHash": rev.stdout.strip(),
+        "staged": staged,
+        "sentinelRemoved": True,
+    }
 
 
 def status(target: Path) -> "Sentinel | None":

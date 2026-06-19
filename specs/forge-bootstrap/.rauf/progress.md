@@ -56,3 +56,16 @@
   Green/member verify tests `chmod 0755` the scripts first to test verify's logic;
   the missing exec-bit on scaffolded generic scripts is a template/scaffold gap for
   item 011's green-baseline integration, not verify.
+
+## Item 009 — `commit` subcommand
+- Implemented `commit` verbatim from 02 §6: read sentinel (absent → UsageError
+  exit 2), `staged = list(artifactsWritten)`, unlink the sentinel BEFORE staging
+  (OQ-T3), `git add -- <exact list>` (never -A), then --stage-only short-circuit
+  (committed:false) else read `commitPrefix` from the just-written
+  forge.config.json (default "forge") → `git commit -m "<prefix>: bootstrap
+  baseline"`, capture HEAD via rev-parse. Config read wrapped in try/except → UsageError.
+- GOTCHA: commit tests need a git identity (`git config user.email/name`) in the
+  scaffolded repo before commit; scaffold runs `git init` but sets no identity.
+  Added `_set_git_identity` + `_commit` helpers. no-add-A guard asserts a stray
+  untracked STRAY.txt is absent from payload['staged'] AND `git diff --cached`.
+  Dropped commit from the stub test (only status remains a stub). 38 passed.

@@ -279,17 +279,12 @@ def test_parser_parses_all_subcommands_and_flags(bootstrap_module: ModuleType) -
 def test_subcommand_bodies_are_stubs(bootstrap_module: ModuleType, tmp_path: Path) -> None:
     """The remaining subcommand functions are NotImplementedError stubs for now.
 
-    ``check`` (003), ``scaffold`` (006) and ``verify`` (008) are implemented;
-    commit/status remain stubs until their items fill them.
+    ``check`` (003), ``scaffold`` (006), ``verify`` (008) and ``commit`` (009)
+    are implemented; status remains a stub until item 010 fills it.
     """
     m = bootstrap_module
-    answers = _answers()
-    for call in (
-        lambda: m.commit(tmp_path, answers, False),
-        lambda: m.status(tmp_path),
-    ):
-        with pytest.raises(NotImplementedError):
-            call()
+    with pytest.raises(NotImplementedError):
+        m.status(tmp_path)
 
 
 def test_malformed_answers_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
@@ -625,3 +620,115 @@ def test_verify_member_is_path_not_name(run_bootstrap, tmp_path: Path) -> None:
     assert result.returncode == 0
     payload = result.json()
     assert {o["member"] for o in payload["lint"] + payload["test"]} == {"packages/worker"}
+
+
+# --------------------------------------------------------------------------- #
+# `commit` subcommand tests (item 009) — exact-list baseline commit (02 §6)
+# --------------------------------------------------------------------------- #
+
+
+def _set_git_identity(repo: Path) -> None:
+    """Configure a local git identity so ``git commit`` succeeds in the test repo."""
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+
+
+def _commit(
+    run_bootstrap, repo: Path, answers: dict[str, Any], stage_only: bool = False
+) -> CliResult:
+    """Run ``commit`` against ``repo`` with the given answers, returning the result."""
+    args = ["commit", ".", "--answers", json.dumps(answers), "--json"]
+    if stage_only:
+        args.append("--stage-only")
+    return run_bootstrap(*args, cwd=repo)
+
+
+def test_commit_single_baseline_captures_head(run_bootstrap, tmp_path: Path) -> None:
+    """A default commit stages the exact scaffold and captures HEAD (REQ-LIFE-06)."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    scaffolded = _scaffold(run_bootstrap, tmp_path, answers)
+    written = set(scaffolded.json()["artifactsWritten"])
+    _set_git_identity(tmp_path)
+    result = _commit(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    payload = result.json()
+    assert payload["committed"] is True
+    assert payload["sentinelRemoved"] is True
+    assert set(payload["staged"]) == written
+    # commitHash is a real HEAD revision.
+    head = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    assert payload["commitHash"] == head
+    assert len(head) == 40
+
+
+def test_commit_message_uses_config_prefix(run_bootstrap, tmp_path: Path) -> None:
+    """The commit message prefix is read from forge.config.json commitPrefix (00 §7)."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    _scaffold(run_bootstrap, tmp_path, answers)
+    _set_git_identity(tmp_path)
+    _commit(run_bootstrap, tmp_path, answers)
+    subject = _git(tmp_path, "log", "-1", "--pretty=%s").stdout.strip()
+    assert subject == "forge: bootstrap baseline"
+
+
+def test_commit_sentinel_removed_before_staging(run_bootstrap, tmp_path: Path) -> None:
+    """The sentinel is removed and never enters the commit (REQ-SCAF-08, OQ-T3)."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    _scaffold(run_bootstrap, tmp_path, answers)
+    assert (tmp_path / ".forge-bootstrap.json").is_file()
+    _set_git_identity(tmp_path)
+    result = _commit(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    assert result.json()["sentinelRemoved"] is True
+    # gone from disk and absent from the commit + the index.
+    assert not (tmp_path / ".forge-bootstrap.json").exists()
+    tracked = _git(tmp_path, "ls-files").stdout.splitlines()
+    assert ".forge-bootstrap.json" not in tracked
+
+
+def test_commit_stage_only_leaves_staged_no_commit(run_bootstrap, tmp_path: Path) -> None:
+    """--stage-only stages the scaffold with no commit (REQ-LIFE-05)."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    scaffolded = _scaffold(run_bootstrap, tmp_path, answers)
+    written = set(scaffolded.json()["artifactsWritten"])
+    _set_git_identity(tmp_path)
+    result = _commit(run_bootstrap, tmp_path, answers, stage_only=True)
+    assert result.returncode == 0
+    payload = result.json()
+    assert payload["committed"] is False
+    assert payload["commitHash"] is None
+    assert set(payload["staged"]) == written
+    assert payload["sentinelRemoved"] is True
+    # nothing committed yet: HEAD does not resolve.
+    assert _git(tmp_path, "rev-parse", "HEAD").returncode != 0
+    # but the exact list is staged in the index.
+    cached = set(_git(tmp_path, "diff", "--cached", "--name-only").stdout.splitlines())
+    assert cached == written
+
+
+def test_commit_no_add_dash_a_guard(run_bootstrap, tmp_path: Path) -> None:
+    """A stray untracked file is NOT staged — the flagship REQ-SEC-02 guard.
+
+    commit must stage exactly sentinel.artifactsWritten via ``git add -- <list>``,
+    never ``git add -A``: a STRAY.txt that bootstrap did not write stays untracked.
+    """
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    _scaffold(run_bootstrap, tmp_path, answers)
+    (tmp_path / "STRAY.txt").write_text("not bootstrap's\n", encoding="utf-8")
+    _set_git_identity(tmp_path)
+    result = _commit(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    payload = result.json()
+    assert "STRAY.txt" not in payload["staged"]
+    cached = _git(tmp_path, "diff", "--cached", "--name-only").stdout.splitlines()
+    assert "STRAY.txt" not in cached
+    # and it remains untracked in the working tree.
+    assert "STRAY.txt" in _git(tmp_path, "ls-files", "--others").stdout
+
+
+def test_commit_without_sentinel_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
+    """commit with no sentinel is a usage error → exit 2 (run scaffold first)."""
+    answers = _answers()
+    result = _commit(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 2
+    assert "Error" in result.stderr
