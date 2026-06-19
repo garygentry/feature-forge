@@ -116,8 +116,8 @@
         "Each stack uses the 03 §7 tokens and each .gitignore lists .forge-bootstrap.json",
         "python3 -m py_compile scripts/forge-bootstrap.py still passes (no scripts/ change)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:42:34.355Z",
       "dependsOn": [],
       "notes": "rust src/lib.rs is load-bearing (03 §5.2): without it the integration test cannot link the public function. Consumed by compose_member (006); green verification in 008/011.",
       "estimatedIterations": 1,
