@@ -282,6 +282,11 @@ class Answers(TypedDict):
         modeBTarget: "feature" or "epic" when modeB is True, else None (REQ-INPUT-07).
         ci: True iff a CI workflow should be emitted (REQ-SCAF-07, REQ-MONO-04).
         commitStyle: "commit" (single baseline commit) or "stage-only" (REQ-LIFE-05).
+        author: Copyright holder for the generated LICENSE ({{AUTHOR}} token, §6.2);
+            seeded from git user.name when available, else the project name (REQ-SCAF-06).
+        host: The running agent host ("claude", "codex", or "other"/None). Drives the
+            host-conditional agent-instruction file: AGENTS.md is always emitted; CLAUDE.md
+            is additionally emitted when host == "claude" (REQ-SCAF-06, §9 hygiene write).
     """
     projectName: str
     purpose: str
@@ -292,6 +297,8 @@ class Answers(TypedDict):
     modeBTarget: Literal["feature", "epic"] | None
     ci: bool
     commitStyle: Literal["commit", "stage-only"]
+    author: str
+    host: Literal["claude", "codex", "other"] | None
 ```
 
 > A single-package project is modeled as `layout="single"` with exactly one `Member` whose
@@ -337,6 +344,14 @@ engine (tech-spec §3.5):
 | `{{PKG}}` | the member's package identifier (sanitized `Member.name`) |
 | `{{PM}}` | the member's `packageManager` (where applicable) |
 | `{{PURPOSE}}` | `Answers.purpose` (README seed) |
+| `{{AUTHOR}}` | `Answers.author` (LICENSE copyright holder; hygiene templates, 03 §10) |
+| `{{YEAR}}` | the current 4-digit UTC year (LICENSE copyright year; hygiene templates, 03 §10) |
+| `{{LICENSE}}` | `Answers.license` (the SPDX-ish id, surfaced in README; hygiene templates, 03 §10) |
+
+> `{{AUTHOR}}`, `{{YEAR}}`, and `{{LICENSE}}` appear only in the **repo-hygiene + license
+> templates** (03 §10) consumed by the hygiene write step (02 §4.5), not in the per-stack
+> templates. `{{YEAR}}` is the sole token whose value is not an `Answers` field — the helper
+> computes it from the current UTC year at scaffold time.
 
 ---
 

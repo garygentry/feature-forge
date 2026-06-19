@@ -179,9 +179,17 @@ never as inline prose questions, which stall the session.
 
 After the interview, the body assembles a single `Answers` JSON object
 (`00-core-definitions.md` §5) — `projectName`, `purpose`, `layout`, `license`, `members[]`,
-`modeB`, `modeBTarget`, `ci`, `commitStyle` — and passes it verbatim to `scaffold --answers
-'<json>'`. The body does **not** invent fields beyond that schema; the helper mirrors the
-payload into the sentinel (`00-core-definitions.md` §8) for resume.
+`modeB`, `modeBTarget`, `ci`, `commitStyle`, `author`, `host` — and passes it verbatim to
+`scaffold --answers '<json>'`. The body does **not** invent fields beyond that schema; the
+helper mirrors the payload into the sentinel (`00-core-definitions.md` §8) for resume.
+
+Two fields are **not** interview questions — the body fills them from its runtime
+(REQ-SCAF-06): `author` is seeded from `git config user.name` when available, else the
+project name (it becomes the LICENSE copyright holder, 03 §10.2); `host` is the running
+agent host (`"claude"` when the body runs under a Claude host — e.g. `AskUserQuestion` is
+available — else `"codex"`/`"other"`/null). `host` drives the host-conditional agent file:
+the helper always emits `AGENTS.md` and adds `CLAUDE.md` only when `host == "claude"`
+(02 §4.5, 03 §10.1).
 
 Example payload (single Python package, commit, no Mode B):
 
@@ -192,7 +200,8 @@ Example payload (single Python package, commit, no Mode B):
   "members": [
     { "name": "acme-svc", "path": ".", "stack": "python", "packageManager": "uv" }
   ],
-  "modeB": false, "modeBTarget": null, "ci": false, "commitStyle": "commit"
+  "modeB": false, "modeBTarget": null, "ci": false, "commitStyle": "commit",
+  "author": "Ada Lovelace", "host": "claude"
 }
 ```
 
@@ -424,7 +433,8 @@ Example success summary (Mode A, green, committed):
 Bootstrap complete — pipeline-ready baseline.
   Stack:        python (uv)
   Created:      pyproject.toml, src/acme_svc/__init__.py, src/acme_svc/main.py,
-                tests/test_smoke.py, .gitignore, README.md, LICENSE, forge.config.json
+                tests/test_smoke.py, .gitignore, README.md, LICENSE, AGENTS.md,
+                CLAUDE.md, forge.config.json
   Kept:         (none — README/LICENSE generated fresh)
   Verification: green  (mypy . ✓   pytest ✓)
   Commit:       baseline committed (a1b2c3d)

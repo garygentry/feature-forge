@@ -21,7 +21,7 @@ Document key: `00` core-definitions · `01` architecture-layout · `02` helper-c
 | REQ-INPUT-02 | One-line purpose | 04 §4 | 00 §5 |
 | REQ-INPUT-03 | Language/stack (5 profiles) | 04 §4 | 00 §2 |
 | REQ-INPUT-04 | Package manager (only when meaningful) | 04 §4 | 00 §2, 02 |
-| REQ-INPUT-05 | License (incl. "none") | 04 §4 | 00 §5 |
+| REQ-INPUT-05 | License (incl. "none") | 04 §4 | 00 §5, 03 §10.2 |
 | REQ-INPUT-06 | Single package vs monorepo | 04 §4 | 00 §5 |
 | REQ-INPUT-07 | Feature vs epic (Mode B only) | 04 §4/§8 | 00 §5 |
 | REQ-INPUT-08 | Host-adapted input + conversational fallback | 04 §5/§6 | — |
@@ -30,10 +30,10 @@ Document key: `00` core-definitions · `01` architecture-layout · `02` helper-c
 | REQ-SCAF-03 | Runnable entrypoint | 03 §2–6 | 02 §4.2, 05 §3.2 |
 | REQ-SCAF-04 | ≥1 passing test | 03 §2–6 | 02 §4.2 |
 | REQ-SCAF-05 | Green baseline (lint + test pass) | 02 §5 | 00 §6, 03, 05 §3.3 |
-| REQ-SCAF-06 | Repo-hygiene files (.gitignore/README/LICENSE/agent files) | 03 §2–6 | 02 §4.2/§4.3 |
+| REQ-SCAF-06 | Repo-hygiene files (.gitignore/README/LICENSE/agent files) | 02 §4.5, 03 §10 | 03 §2–6 (.gitignore), 00 §5/§6.2 |
 | REQ-SCAF-07 | Optional CI workflow | 02 §4.4 | 03 §9, 04 §4 |
 | REQ-SCAF-08 | No untracked/dangling scaffold files | 02 §6 | 00 §4/§8, 05 §3.6 |
-| REQ-SCAF-09 | No-overwrite of pre-existing allowed-meta files | 02 §4.1 | 04 |
+| REQ-SCAF-09 | No-overwrite of pre-existing allowed-meta files | 02 §4.1 | 02 §4.5, 04 §9 |
 | REQ-STACK-01 | TS/Python/Go/Rust/generic parity | 03 §1–6 | 00 §2, 01 §5, 05 §3.2 |
 | REQ-STACK-02 | Verification commands match stack profile | 00 §6 | 02 §5, 03, 05 §3.2/§3.5 |
 | REQ-STACK-03 | Generic fallback real + green | 00 §6.1 / 03 §6 | 02 §5, 05 §3.3 |

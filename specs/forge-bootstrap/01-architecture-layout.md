@@ -45,6 +45,10 @@ skills/forge-bootstrap/
       generic/                            # run.sh, test.sh, .gitignore
       ci/
         github-actions.yml                # composed per-member when ci:true — see 03 §9, 04
+      hygiene/                            # README.md, AGENTS.md, CLAUDE.md — repo-level
+                                          #   hygiene stubs (REQ-SCAF-06) — see 03 §10
+      licenses/                           # MIT/LICENSE, Apache-2.0/LICENSE — bundled,
+                                          #   tokenized license texts (REQ-INPUT-05) — see 03 §10
 scripts/
   forge-bootstrap.py                      # deterministic helper CLI (stdlib only) — see 02
 tests/
@@ -174,6 +178,7 @@ assets. The complete public surface:
 | `forge-bootstrap.py` subcommands: `check`, `scaffold`, `verify`, `commit`, `status` | the `forge-bootstrap` skill body (02). |
 | `skills/forge-bootstrap/references/templates/<stack>/` | `scaffold` (composes them; 03). |
 | `skills/forge-bootstrap/references/templates/ci/github-actions.yml` | `scaffold` when `ci:true` (03 §9). |
+| `skills/forge-bootstrap/references/templates/hygiene/` + `licenses/` | `scaffold` `write_hygiene` (README/LICENSE/agent files; 02 §4.5, 03 §10). |
 | `.forge-bootstrap.json` sentinel (on disk, transient) | `check` / `scaffold` / `commit` / `status` (00 §8). |
 | `forge.config.json` (on disk, produced) | the whole pipeline downstream (00 §7). |
 | `references/forge-config-schema.json` `workspaces[]` | `write_config`; any future member-resolution consumer (OQ-T1). |

@@ -259,9 +259,10 @@ def check(target: Path, specs_dir: Path) -> CheckResult:
 1. **Write the sentinel FIRST**, before any scaffold file (REQ-LIFE-01, 00 §8). On a fresh run, create `.forge-bootstrap.json` with `status:"in-progress"`, `startedAt` = now (ISO-8601 UTC), `answers` = the parsed payload mirrored verbatim, and `artifactsWritten: []`. On a **resume** (a sentinel already exists), load it and keep its `startedAt` and existing `artifactsWritten` — the running list is the idempotency key.
 2. **`git init` if absent** (REQ-GATE-03): if `not (target / ".git").is_dir()`, run `git init` in `target` via the `run` wrapper. (No `git init` is attempted when `.git/` already exists — the fresh-remote case.)
 3. **Per-member compose** (REQ-MONO-01/02): for each `member` in `answers["members"]` (exactly one with `path == "."` for a single package — 00 §5), call `compose_member(member, answers, target, sentinel)`. Each member's stack maps 1:1 to `templates/<stack>/` (00 §2; 03 §1). Mixed-language members coexist because each is composed against its own `member["stack"]` (REQ-MONO-02). Composition copies the template files with token substitution (00 §6.2) and records each written path.
-4. **Write `forge.config.json`** (REQ-CFG-01/02/03) via `write_config(answers, target, sentinel)` (§4.3), recording it in `artifactsWritten[]`.
-5. **Optionally emit CI** (REQ-SCAF-07, REQ-MONO-04) via `maybe_write_ci(answers, target, sentinel)` (§4.4) when `answers["ci"]` is true.
-6. Persist the sentinel after each artifact (so an interrupt mid-run leaves a consistent `artifactsWritten[]` to resume from) and return the full list.
+4. **Emit repo-hygiene files** (REQ-SCAF-06/09) via `write_hygiene(answers, target, sentinel)` (§4.5): the seeded README, the selected LICENSE, and the host agent-instruction file(s). Each goes through `_write_artifact`, so a pre-existing allowed-meta README/LICENSE is **kept, never overwritten** (REQ-SCAF-09).
+5. **Write `forge.config.json`** (REQ-CFG-01/02/03) via `write_config(answers, target, sentinel)` (§4.3), recording it in `artifactsWritten[]`.
+6. **Optionally emit CI** (REQ-SCAF-07, REQ-MONO-04) via `maybe_write_ci(answers, target, sentinel)` (§4.4) when `answers["ci"]` is true.
+7. Persist the sentinel after each artifact (so an interrupt mid-run leaves a consistent `artifactsWritten[]` to resume from) and return the full list.
 
 **Exit codes.** `0` scaffold complete (or fully resumed with nothing left to write); `2` IO error (template dir missing, unwritable target, malformed `--answers`, `git init` failure).
 
@@ -274,9 +275,10 @@ def scaffold(target: Path, answers: Answers) -> list[str]:
     Ordering is load-bearing: the sentinel is written FIRST (REQ-LIFE-01) so a
     crash at any later point leaves a recoverable partial scaffold (REQ-LIFE-02);
     ``git init`` runs only when no ``.git/`` exists (REQ-GATE-03); then each member
-    is composed from its template dir (REQ-MONO-01/02), ``forge.config.json`` is
-    written (REQ-CFG-01/02/03), and a CI workflow is emitted when requested
-    (REQ-SCAF-07, REQ-MONO-04). Every written path is appended to the sentinel's
+    is composed from its template dir (REQ-MONO-01/02), the repo-hygiene files
+    (README/LICENSE/agent files) are emitted (REQ-SCAF-06/09, §4.5),
+    ``forge.config.json`` is written (REQ-CFG-01/02/03), and a CI workflow is emitted
+    when requested (REQ-SCAF-07, REQ-MONO-04). Every written path is appended to the sentinel's
     artifactsWritten[]; a file already recorded there is skipped, making the whole
     operation idempotent over a resume. A pre-existing allowed-meta file
     (README/LICENSE/.gitignore) is never overwritten (REQ-SCAF-09, REQ-GATE-05).
@@ -307,6 +309,7 @@ def scaffold(target: Path, answers: Answers) -> list[str]:
         run(["git", "init"], cwd=target)
     for member in answers["members"]:
         compose_member(member, answers, target, sentinel)
+    write_hygiene(answers, target, sentinel)
     write_config(answers, target, sentinel)
     maybe_write_ci(answers, target, sentinel)
     return sentinel["artifactsWritten"]
@@ -535,6 +538,55 @@ def maybe_write_ci(answers: Answers, target: Path, sentinel: Sentinel) -> None:
 ```
 
 > The exact workflow template and per-member step expansion live in **03-stack-templates.md §9**; this helper does not duplicate them — it gates on `answers["ci"]` and delegates composition.
+
+### 4.5 `write_hygiene` — README, LICENSE, and agent files (REQ-SCAF-06, REQ-SCAF-09)
+
+Emits the repo-hygiene files REQ-SCAF-06 mandates beyond the per-stack `.gitignore` (which each stack template already ships): a **README** seeded with name + purpose, a **LICENSE** per the user's selection, and the **host agent-instruction file(s)**. The hygiene + license template assets are defined in **03 §10**; this helper composes them with token substitution (00 §6.2) and writes each through `_write_artifact`, so any pre-existing allowed-meta README/LICENSE is **kept, never overwritten** (REQ-SCAF-09, REQ-GATE-05) — `_write_artifact` already skips an existing non-recorded destination and surfaces it as a *kept* file in the summary (04 §9).
+
+```python
+def write_hygiene(answers: Answers, target: Path, sentinel: Sentinel) -> None:
+    """Emit README, LICENSE, and the host agent-instruction file(s) (REQ-SCAF-06).
+
+    Composition uses the hygiene/license template assets (03 §10) with token
+    substitution (00 §6.2). Every write goes through _write_artifact, so a
+    pre-existing README/LICENSE (an allowed-meta file the gate let through) is kept
+    untouched and recorded as a kept file, never overwritten (REQ-SCAF-09).
+
+    Files:
+      - README.md            — seeded from {{PROJECT_NAME}} / {{PURPOSE}} / {{LICENSE}}.
+      - LICENSE              — composed from templates/licenses/<answers.license>/LICENSE
+                               with {{AUTHOR}} / {{YEAR}} / {{PROJECT_NAME}}; SKIPPED
+                               entirely when answers.license == "none".
+      - AGENTS.md            — ALWAYS emitted (the portable agent-instruction file).
+      - CLAUDE.md            — emitted ONLY when answers.host == "claude" (the body sets
+                               host from its runtime; AGENTS.md covers all other hosts).
+
+    {{YEAR}} is the current UTC year; {{AUTHOR}} is answers.author (the body seeds it
+    from git user.name, else the project name). An unknown answers.license that is not
+    "none" and has no templates/licenses/<id>/ dir is a UsageError (exit 2) — the body
+    only offers licenses that exist as assets.
+
+    Args:
+        answers: The resolved interview payload.
+        target: The project root.
+        sentinel: The live sentinel (for artifact recording + no-overwrite).
+
+    Raises:
+        UsageError: A hygiene/license template is missing or unwritable (exit 2).
+    """
+    _write_artifact(target, "README.md", _compose_readme(answers), sentinel)
+    if answers["license"] != "none":
+        _write_artifact(target, "LICENSE", _compose_license(answers), sentinel)
+    _write_artifact(target, "AGENTS.md", _compose_agent_file(answers, "AGENTS.md"), sentinel)
+    if answers["host"] == "claude":
+        _write_artifact(target, "CLAUDE.md", _compose_agent_file(answers, "CLAUDE.md"), sentinel)
+```
+
+> **Why the no-overwrite path matters here.** On a fresh-remote repo the gate allow-lists a
+> pre-existing `README`/`LICENSE` (00 §3); `write_hygiene` must not clobber them. Because every
+> write routes through `_write_artifact` (§4.1), an existing destination is left intact and
+> reported as *kept* (REQ-SCAF-09) — `write_hygiene` adds no special-casing of its own. The
+> `LICENSE` is skipped wholesale when the user chose `none` (REQ-INPUT-05).
 
 ---
 

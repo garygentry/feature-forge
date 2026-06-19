@@ -81,7 +81,7 @@
       "artifacts": [
         "backlog.json"
       ],
-      "itemCount": 14,
+      "itemCount": 15,
       "startedAt": "2026-06-18T00:00:00Z",
       "completedAt": "2026-06-18T00:00:00Z",
       "basedOnVersions": {
@@ -89,6 +89,13 @@
         "forge-2-tech": 1,
         "forge-3-specs": 1
       }
+    },
+    "forge-verify-backlog": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-backlog-2026-06-18.md",
+      "findingsCount": 5,
+      "verifiedAt": "2026-06-18T00:00:00Z",
+      "fixedAt": "2026-06-18T00:00:00Z"
     }
   }
 }

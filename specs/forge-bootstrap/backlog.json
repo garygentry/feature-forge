@@ -1,4 +1,5 @@
 {
+  "schemaVersion": "1",
   "project": "forge-bootstrap",
   "description": "Add the unnumbered `forge-bootstrap` skill to the feature-forge plugin: a greenfield scaffolder that takes an empty repo to a pipeline-ready, green (lint+test) baseline with a valid forge.config.json, then optionally chains into the pipeline. Deliverables: an additive workspaces[] schema field, a stdlib-only Python helper CLI (scripts/forge-bootstrap.py with check/scaffold/verify/commit/status), editable per-stack templates, the SKILL.md orchestration body, a pytest suite, and build wiring (validate.sh py_compile + adapter regeneration). Implementation specs live under specs/forge-bootstrap/ (00-core-definitions, 01-architecture-layout, 02-helper-cli, 03-stack-templates, 04-skill-orchestration, 05-testing-strategy). Verify commands: `python3 -m py_compile scripts/forge-bootstrap.py`, `python3 -m pytest tests/test_forge_bootstrap.py -q`, full gate `bash scripts/validate.sh`.",
   "items": [
@@ -138,23 +139,25 @@
       "type": "feature",
       "priority": 1,
       "title": "Implement the `scaffold` subcommand",
-      "description": "Implement `scaffold --answers '<json>'` in scripts/forge-bootstrap.py per 02 §4. Three parts: (1) compose_member(member, target) — resolve the template root as Path(__file__).resolve().parent.parent / 'skills' / 'forge-bootstrap' / 'references' / 'templates' / member['stack'] (the two-level-up join is correct because the helper lives at scripts/forge-bootstrap.py, 01 §1.1), copy each template file to the member's path with {{TOKEN}} substitution ({{PROJECT_NAME}}, {{PKG}} = sanitized name, {{PM}}, {{PURPOSE}}); (2) write_config(answers, target) — write forge.config.json reproducing forge-init's exact field set + defaults (00 §7: specsDir, docsDir, backlogDir, gitCommitAfterStage, commitPrefix, stack, typeCheckCommand, testCommand, loopIterationMultiplier) PLUS an explicit minimal loopRunner block {name:'rauf', bin:'rauf'}; for a monorepo set the three top-level scalars to null and populate workspaces[] from members; equivalence is semantic (key/value set), not byte-order; (3) scaffold(target, answers) — git init if absent, compose every member (single package = one implicit member at path '.'), write config, generate repo-hygiene files (README/LICENSE/.gitignore/AGENTS.md|CLAUDE.md) WITHOUT overwriting any existing allowed-meta file (REQ-SCAF-09), record every written file into the sentinel's artifactsWritten[], and be idempotent on re-run (skip files already recorded). Add scaffold tests: single-package emits the stack file set; monorepo emits workspaces[] and per-member trees; resume is idempotent; config equals forge-init field set + loopRunner.",
+      "description": "Implement `scaffold --answers '<json>'` in scripts/forge-bootstrap.py per 02 §4. Parts: (1) compose_member(member, target) — resolve the template root as Path(__file__).resolve().parent.parent / 'skills' / 'forge-bootstrap' / 'references' / 'templates' / member['stack'] (two-level-up join is correct because the helper lives at scripts/forge-bootstrap.py, 01 §1.1), copy each template file to the member's path with {{TOKEN}} substitution ({{PROJECT_NAME}}, {{PKG}} = sanitized name, {{PM}}, {{PURPOSE}}); (2) write_hygiene(answers, target, sentinel) per 02 §4.5 — compose README.md (seeded name/purpose/license), LICENSE from templates/licenses/<license>/LICENSE with {{AUTHOR}}/{{YEAR}} (skip when license=='none'), AGENTS.md always, and CLAUDE.md only when answers.host=='claude'; (3) write_config(answers, target) — forge.config.json reproducing forge-init's field set + defaults (00 §7) PLUS an explicit minimal loopRunner block {name:'rauf', bin:'rauf'}; for a monorepo set the three top-level scalars to null and populate workspaces[] from members; equivalence is semantic, not byte-order; (4) scaffold(target, answers) — git init if absent, compose every member (single package = one implicit member at path '.'), then write_hygiene, then write_config; ALL writes go through _write_artifact so a pre-existing allowed-meta README/LICENSE is kept, never overwritten (REQ-SCAF-09); record every written file into the sentinel's artifactsWritten[] and be idempotent on re-run. Add scaffold tests: single-package emits the stack file set + hygiene files; monorepo emits workspaces[] and per-member trees; LICENSE skipped on 'none'; CLAUDE.md only when host=='claude'; pre-existing README kept; resume is idempotent; config equals forge-init field set + loopRunner.",
       "acceptanceCriteria": [
         "scaffold composes each member's template with token substitution and writes forge.config.json with forge-init's field set + an explicit loopRunner block",
         "A monorepo run sets top-level stack/typeCheckCommand/testCommand to null and populates workspaces[] (name/path/stack/typeCheckCommand/testCommand) from members",
-        "scaffold runs git init when absent, never overwrites a pre-existing allowed-meta file (README/LICENSE), and records all written files into the sentinel artifactsWritten[]",
+        "write_hygiene emits README.md, LICENSE (skipped when license=='none'), and AGENTS.md always; CLAUDE.md is emitted only when answers.host=='claude' (02 §4.5)",
+        "All scaffold writes route through _write_artifact: a pre-existing allowed-meta README/LICENSE is kept untouched (REQ-SCAF-09) and every written file is recorded in the sentinel artifactsWritten[]; git init runs only when .git absent",
         "Re-running scaffold over its own partial output is idempotent (files already recorded are skipped)",
-        "python3 -m pytest tests/test_forge_bootstrap.py -q passes (scaffold single+monorepo+idempotent+config tests) and py_compile passes"
+        "python3 -m pytest tests/test_forge_bootstrap.py -q passes (scaffold single+monorepo+hygiene+license-none+host-conditional+kept+idempotent+config tests) and py_compile passes"
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001", "002", "004", "005"],
-      "notes": "compose_member template-root invariant: 02 §4.2 + 01 §1.1. Config equivalence is semantic per 00 §7 note. Single package = one Member with path '.' (00 §5). Do not inline CI here — that is item 007.",
+      "dependsOn": ["001", "002", "004", "005", "015"],
+      "notes": "compose_member template-root invariant: 02 §4.2 + 01 §1.1. write_hygiene + license/agent-file rules: 02 §4.5, 03 §10. Config equivalence is semantic per 00 §7 note. Single package = one Member with path '.' (00 §5). Do not inline CI here — that is item 007.",
       "estimatedIterations": 2,
       "model": "opus",
       "specReferences": [
         "specs/forge-bootstrap/02-helper-cli.md",
-        "specs/forge-bootstrap/00-core-definitions.md"
+        "specs/forge-bootstrap/00-core-definitions.md",
+        "specs/forge-bootstrap/03-stack-templates.md"
       ]
     },
     {
@@ -257,15 +260,15 @@
       "title": "End-to-end integration tests (green baseline, monorepo, four outcomes)",
       "description": "Add end-to-end integration tests to tests/test_forge_bootstrap.py per 05 §3/§4 that exercise full check→scaffold→verify→commit flows: (1) green-baseline-per-stack — for each stack, scaffold then verify; where the stack's toolchain is present assert green:true and exit 0, skip-guarded only on the genuine toolchain absence (per 05's portability scheme); (2) monorepo aggregate-green — a mixed-member workspace scaffolds, workspaces[] is populated, and verify is green across all members where toolchains are present (REQ-MONO-03); (3) the four terminal outcomes (REQ-OBS-01): success (commit exit 0 + green), greenfield refusal (check eligible:false names disqualifying[]), missing toolchain (verify exit 2 via PATH='' — reuse the env hook), and partial-state resume (an own sentinel → check resumeMarker set, re-scaffold idempotent). These tests span multiple subcommands and assert the cross-subcommand contracts, not individual units.",
       "acceptanceCriteria": [
-        "Integration tests scaffold+verify a green baseline for each stack (toolchain-present cases assert green:true/exit 0; absence is skip-guarded)",
+        "Each green-baseline test asserts green:true/exit 0 when the stack toolchain is detected and is explicitly pytest.skip-guarded (with a skip reason) when absent — verifiable by reading that every green-baseline test has a shutil.which/skip guard, not by host outcome",
         "A monorepo scaffold populates workspaces[] and verify aggregates per-member lint+test green where toolchains exist",
         "All four terminal outcomes are asserted: success, greenfield refusal (disqualifying named), missing toolchain (exit 2 via PATH=''), partial-state resume (resumeMarker + idempotent re-scaffold)",
         "python3 -m pytest tests/test_forge_bootstrap.py -q passes and py_compile scripts/forge-bootstrap.py passes"
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["006", "008", "009"],
-      "notes": "These are integration-level tests across subcommands; unit tests for each subcommand live in their own items. Follow the 05 §3/§4 test layout and the portability/skip scheme. Missing-toolchain uses the deterministic PATH='' env hook, not host state.",
+      "dependsOn": ["003", "006", "008", "009"],
+      "notes": "These are integration-level tests across subcommands; unit tests for each subcommand live in their own items. The refusal and partial-state-resume outcomes exercise the `check` subcommand (item 003), so it is a required dependency. Follow the 05 §3/§4 test layout and the portability/skip scheme. Missing-toolchain uses the deterministic PATH='' env hook, not host state.",
       "estimatedIterations": 1,
       "model": "opus",
       "specReferences": [
@@ -330,12 +333,35 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["003", "006", "007", "008", "009", "010", "011", "012", "013"],
+      "dependsOn": ["003", "006", "007", "008", "009", "010", "011", "012", "013", "015"],
       "notes": "Regen target is the repo-root adapters/ (01 §6.3), gated by validate.sh build-adapters.py --check — not installer/adapters/. This is the last item: the whole feature must be green here.",
       "estimatedIterations": 1,
       "model": "opus",
       "specReferences": [
         "specs/forge-bootstrap/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "015",
+      "type": "feature",
+      "priority": 1,
+      "title": "Author repo-hygiene & license templates",
+      "description": "Create the repo-level hygiene and license template assets under skills/forge-bootstrap/references/templates/ per spec 03 §10 (consumed by write_hygiene, 02 §4.5). These are static, tokenized assets — not generated code. (1) templates/hygiene/README.md — a minimal stub: H1 of {{PROJECT_NAME}}, a one-line {{PURPOSE}}, a short License line naming {{LICENSE}}, and a 'scaffolded by forge-bootstrap' note. (2) templates/hygiene/AGENTS.md — a short portable agent-instruction stub ({{PROJECT_NAME}}/{{PURPOSE}}) pointing at the forge pipeline as the next step; no stack-specific content. (3) templates/hygiene/CLAUDE.md — the Claude-specific counterpart of AGENTS.md. (4) templates/licenses/MIT/LICENSE — the full canonical MIT license text with {{YEAR}} and {{AUTHOR}} tokens. (5) templates/licenses/Apache-2.0/LICENSE — the full canonical Apache License 2.0 text with {{YEAR}}/{{AUTHOR}} in the appendix copyright line. Use only the token set in 03 §7 / 00 §6.2. This is the asset foundation REQ-SCAF-06 (README/LICENSE/agent files) and REQ-INPUT-05 (license selection) depend on; the scaffold wiring that emits them is item 006. This item has independent files (3 hygiene stubs + 2 license texts) with no cross-dependencies.",
+      "acceptanceCriteria": [
+        "skills/forge-bootstrap/references/templates/hygiene/ contains README.md, AGENTS.md, and CLAUDE.md using only the 03 §7/§10 tokens ({{PROJECT_NAME}}, {{PURPOSE}}, {{LICENSE}})",
+        "skills/forge-bootstrap/references/templates/licenses/MIT/LICENSE and licenses/Apache-2.0/LICENSE contain the full canonical license texts with {{YEAR}} and {{AUTHOR}} tokens",
+        "No file uses a token outside the 00 §6.2 set; no scripts/ code changes",
+        "python3 -m py_compile scripts/forge-bootstrap.py still passes (no helper change in this item)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": [],
+      "notes": "Foundation/asset item (tier 0, no deps) added after the initial plan to ground REQ-SCAF-06 hygiene generation (backlog verification V-002/V-003). README/agent stubs + bundled MIT/Apache-2.0 license texts. Consumed by item 006's write_hygiene. Adding a license later is purely additive (new licenses/<id>/LICENSE + a Q5 option).",
+      "estimatedIterations": 1,
+      "model": "sonnet",
+      "specReferences": [
+        "specs/forge-bootstrap/03-stack-templates.md",
+        "specs/forge-bootstrap/00-core-definitions.md"
       ]
     }
   ]

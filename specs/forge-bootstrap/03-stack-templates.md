@@ -37,9 +37,11 @@ skills/forge-bootstrap/references/templates/
   rust/         Cargo.toml, src/lib.rs, src/main.rs, tests/smoke.rs, .gitignore              (§5)
   generic/      run.sh, test.sh, .gitignore                                                  (§6)
   ci/           github-actions.yml                                                            (§9)
+  hygiene/      README.md, AGENTS.md, CLAUDE.md                                                (§10)
+  licenses/     MIT/LICENSE, Apache-2.0/LICENSE                                                (§10)
 ```
 
-The files are **editable assets** (`01-architecture-layout.md` §5), not generated. The helper copies them per member and applies the four-token substitution of §7. Tokens are shown **in place** below exactly as they appear on disk. Every file content below is real, valid, runnable source in its language — not pseudocode — and is what an implementer commits verbatim.
+The five `Stack` directories are composed **per member**; `ci/`, `hygiene/`, and `licenses/` are **repo-level** assets composed once for the whole project (not per member). The files are **editable assets** (`01-architecture-layout.md` §5), not generated. The helper copies them and applies the token substitution of §7. Tokens are shown **in place** below exactly as they appear on disk. Every file content below is real, valid, runnable source in its language — not pseudocode — and is what an implementer commits verbatim.
 
 > **Path tokenization.** Only the **python** template has a token in a *path* segment (`src/{{PKG}}/...`). All other templates carry tokens in file *contents* only. The directory `src/{{PKG}}/` is renamed at compose time by `02-helper-cli.md`'s `compose_member` (this doc does not respecify that rename — it only declares the token).
 
@@ -517,6 +519,9 @@ Substitution is **simple string replacement — not a templating engine** (tech-
 | `{{PKG}}` | the member's sanitized package identifier | `00` §5 / §6.2 |
 | `{{PM}}` | the member's `packageManager` (where applicable) | `00` §5 |
 | `{{PURPOSE}}` | `Answers.purpose` | `00` §5 |
+| `{{AUTHOR}}` | `Answers.author` (hygiene/license assets only, §10) | `00` §5 / §6.2 |
+| `{{YEAR}}` | current UTC year, helper-computed (hygiene/license assets only, §10) | `00` §6.2 |
+| `{{LICENSE}}` | `Answers.license` (hygiene README only, §10) | `00` §5 / §6.2 |
 
 Rules (this doc specifies the *contract* the assets rely on; `02-helper-cli.md` §4 owns the implementing code):
 
@@ -606,6 +611,35 @@ For `layout == "single"` (one implicit member at `.`), the helper emits the top-
 ```
 
 > **Toolchain setup is out of scope for the baseline.** The generated workflow runs the resolved lint/test commands directly; it does **not** emit language-toolchain setup steps (`actions/setup-node`, etc.). The baseline guarantees the *commands* are correct and green on a machine with the toolchain present (REQ-STACK-02); adding setup actions is a project-evolution concern, consistent with bootstrap never installing toolchains (tech-spec §9). An implementer MAY include a minimal `setup-*` step per stack if desired, but it is not required for REQ-MONO-04, which is about *which commands run per member*.
+
+---
+
+## 10. Repo-Hygiene & License Templates (REQ-SCAF-06, REQ-INPUT-05)
+
+REQ-SCAF-06 requires four hygiene artifacts: the per-stack `.gitignore` (shipped in every stack dir, §§2–6), a **README stub** seeded with name + purpose, a **LICENSE** per the user's selection, and the **host agent-instruction file(s)**. The latter three are **repo-level** assets composed once by `write_hygiene` (`02-helper-cli.md` §4.5), not per member. Each is written through `_write_artifact`, so a pre-existing allowed-meta README/LICENSE is **kept, never overwritten** (REQ-SCAF-09).
+
+### 10.1 `hygiene/` directory
+
+| Path (template) | Purpose | Tokens | Emission rule |
+|-----------------|---------|--------|---------------|
+| `hygiene/README.md` | Project README seeded with name, purpose, and the chosen license | `{{PROJECT_NAME}}`, `{{PURPOSE}}`, `{{LICENSE}}` | always (kept if one exists) |
+| `hygiene/AGENTS.md` | Portable agent-instruction file (read by Codex and other hosts; the canonical agent file) | `{{PROJECT_NAME}}`, `{{PURPOSE}}` | **always** |
+| `hygiene/CLAUDE.md` | Claude-specific agent-instruction file | `{{PROJECT_NAME}}`, `{{PURPOSE}}` | **only when `Answers.host == "claude"`** (`02` §4.5) |
+
+`README.md` is a minimal stub: an H1 of `{{PROJECT_NAME}}`, a one-line `{{PURPOSE}}`, a short "License" line naming `{{LICENSE}}` (omitted/"unlicensed" when license is `none`), and a one-line "scaffolded by forge-bootstrap" note. `AGENTS.md`/`CLAUDE.md` are short stubs pointing the agent at the project's purpose and the forge pipeline as the next step — they intentionally carry no stack-specific content (the stack is already discoverable from `forge.config.json`).
+
+### 10.2 `licenses/` directory (REQ-INPUT-05)
+
+Bundled, tokenized license texts — offline and stdlib-only (no network fetch). The interview (`04` §4 Q5) offers **only** licenses that exist here, plus `none`:
+
+| Path (template) | License | Tokens |
+|-----------------|---------|--------|
+| `licenses/MIT/LICENSE` | MIT (full canonical text) | `{{YEAR}}`, `{{AUTHOR}}` |
+| `licenses/Apache-2.0/LICENSE` | Apache License 2.0 (full canonical text) | `{{YEAR}}`, `{{AUTHOR}}` (in the appendix copyright line) |
+
+`write_hygiene` composes `licenses/<Answers.license>/LICENSE` → `LICENSE` at the repo root, substituting `{{YEAR}}` (current UTC year) and `{{AUTHOR}}` (`Answers.author`, seeded from git `user.name` or the project name). When `Answers.license == "none"` no LICENSE is written. An `Answers.license` value with no matching `licenses/<id>/` directory is a `UsageError` (exit 2) — the body must only offer licenses present here, so adding a license to the interview means adding its `licenses/<id>/LICENSE` asset.
+
+> **Why bundle, not fetch.** The helper is stdlib-only and offline-friendly (tech-spec §9); bundling the canonical MIT/Apache-2.0 texts as editable assets mirrors how `cargo new` / `npm init` ship license text, and keeps scaffolding deterministic with no network dependency. Adding more licenses is purely additive (drop a new `licenses/<id>/LICENSE` and list it in Q5).
 
 ---
 
