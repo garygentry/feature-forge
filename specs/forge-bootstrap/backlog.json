@@ -68,7 +68,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["002"],
+      "dependsOn": [
+        "002"
+      ],
       "notes": "Allowed-meta matching rules (filename globs, case, README/LICENSE variants) are in 00 §3 (OQ-02 resolved). resumeMarker shape = the Sentinel from 00 §8.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -150,7 +152,13 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001", "002", "004", "005", "015"],
+      "dependsOn": [
+        "001",
+        "002",
+        "004",
+        "005",
+        "015"
+      ],
       "notes": "compose_member template-root invariant: 02 §4.2 + 01 §1.1. write_hygiene + license/agent-file rules: 02 §4.5, 03 §10. Config equivalence is semantic per 00 §7 note. Single package = one Member with path '.' (00 §5). Do not inline CI here — that is item 007.",
       "estimatedIterations": 2,
       "model": "opus",
@@ -174,7 +182,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["006"],
+      "dependsOn": [
+        "006"
+      ],
       "notes": "Provider is GitHub Actions by choice (not mandated). The workflow template + per-member step expansion live in 03 §9; the helper only gates on answers.ci and delegates composition.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -198,7 +208,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["006"],
+      "dependsOn": [
+        "006"
+      ],
       "notes": "member must be member['path'] (not name) per the verified spec (00 §4 docstring). The exit-2 toolchain-missing path is safety-critical (REQ-MODEB-04) — it must be deterministically tested via env PATH control.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -222,7 +234,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["006"],
+      "dependsOn": [
+        "006"
+      ],
       "notes": "commitPrefix source is forge.config.json (00 §7), read back from the file scaffold wrote — Answers (00 §5) has no commitPrefix field. The no-add-A guard test is the flagship REQ-SEC-02 test.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -244,7 +258,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["002"],
+      "dependsOn": [
+        "002"
+      ],
       "notes": "Sentinel shape is 00 §8. Small, self-contained; depends only on the foundation's read_sentinel + types.",
       "estimatedIterations": 1,
       "model": "sonnet",
@@ -267,7 +283,12 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["003", "006", "008", "009"],
+      "dependsOn": [
+        "003",
+        "006",
+        "008",
+        "009"
+      ],
       "notes": "These are integration-level tests across subcommands; unit tests for each subcommand live in their own items. The refusal and partial-state-resume outcomes exercise the `check` subcommand (item 003), so it is a required dependency. Follow the 05 §3/§4 test layout and the portability/skip scheme. Missing-toolchain uses the deterministic PATH='' env hook, not host state.",
       "estimatedIterations": 1,
       "model": "opus",
@@ -290,7 +311,12 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["003", "006", "008", "009"],
+      "dependsOn": [
+        "003",
+        "006",
+        "008",
+        "009"
+      ],
       "notes": "Spec-purity is a HARD gate — keep the body lean by referencing 00/02/03 rather than duplicating. The four outcomes map to helper results per 04 §10. Verify the budget with scripts/check-spec-purity.py before finishing.",
       "estimatedIterations": 2,
       "model": "opus",
@@ -312,7 +338,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["002"],
+      "dependsOn": [
+        "002"
+      ],
       "notes": "Mirror the existing epic-manifest.py compile-check block exactly (01 §6.2). Mechanical, low-ambiguity.",
       "estimatedIterations": 1,
       "model": "sonnet",
@@ -333,7 +361,18 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["003", "006", "007", "008", "009", "010", "011", "012", "013", "015"],
+      "dependsOn": [
+        "003",
+        "006",
+        "007",
+        "008",
+        "009",
+        "010",
+        "011",
+        "012",
+        "013",
+        "015"
+      ],
       "notes": "Regen target is the repo-root adapters/ (01 §6.3), gated by validate.sh build-adapters.py --check — not installer/adapters/. This is the last item: the whole feature must be green here.",
       "estimatedIterations": 1,
       "model": "opus",

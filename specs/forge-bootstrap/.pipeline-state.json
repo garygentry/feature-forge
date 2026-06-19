@@ -100,9 +100,10 @@
     "forge-5-loop": {
       "status": "in-progress",
       "startedAt": "2026-06-19T00:00:00Z",
-      "agent": "codex",
+      "agent": "claude-cli",
       "iterations": 23,
-      "reviewEnabled": true
+      "reviewEnabled": true,
+      "notes": "First attempt with --agent codex halted via circuit breaker: Claude-only item.model aliases (opus/sonnet) rejected by codex (gh feature-forge#22). Re-running on the default Claude runner where those aliases are valid."
     }
   }
 }

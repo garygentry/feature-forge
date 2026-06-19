@@ -23,3 +23,4 @@ installer/node_modules/
 installer/dist/
 installer/adapters/
 installer/LICENSE
+**/.rauf/archive/
