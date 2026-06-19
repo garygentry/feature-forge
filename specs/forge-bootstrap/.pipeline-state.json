@@ -3,7 +3,7 @@
   "pipelineStatus": "active",
   "createdAt": "2026-06-18T23:23:16Z",
   "updatedAt": "2026-06-19T00:00:00Z",
-  "currentStage": "forge-5-loop",
+  "currentStage": "forge-6-docs",
   "notes": "PRD OQ-01..OQ-05 all resolved in tech-spec. Carry-forward open technical questions for forge-3-specs: OQ-T1 — forge-bootstrap WRITES the monorepo workspaces[] representation, but downstream consumption (forge-2-tech/forge-4-backlog resolving a member's stack) is a deferred follow-up beyond this feature's scope; OQ-T2 — confirm TS test runner (node --test vs lightweight) + minimal dev-deps that keep the TS baseline green across npm/pnpm/yarn; OQ-T3 — confirm .gitignore entry + removal ordering so the .forge-bootstrap.json sentinel can never be committed even on a crash. Architecture: hybrid Python helper (scripts/forge-bootstrap.py, subcommands check/scaffold/verify/commit/status) + SKILL.md orchestration; templates under skills/forge-bootstrap/references/templates/<stack>/; additive workspaces[] schema extension; transient root sentinel for resume; remember to regenerate installer/adapters via build-adapters.py.",
   "stages": {
     "forge-1-prd": {
@@ -98,12 +98,20 @@
       "fixedAt": "2026-06-18T00:00:00Z"
     },
     "forge-5-loop": {
-      "status": "in-progress",
+      "status": "complete",
       "startedAt": "2026-06-19T00:00:00Z",
+      "completedAt": "2026-06-19T13:04:49Z",
       "agent": "claude-cli",
       "iterations": 23,
       "reviewEnabled": true,
-      "notes": "First attempt with --agent codex halted via circuit breaker: Claude-only item.model aliases (opus/sonnet) rejected by codex (gh feature-forge#22). Re-running on the default Claude runner where those aliases are valid."
+      "itemsDone": 16,
+      "basedOnVersions": {
+        "forge-4-backlog": 1
+      },
+      "artifacts": [
+        "specs/forge-bootstrap/.rauf/state.json"
+      ],
+      "notes": "First attempt with --agent codex halted via circuit breaker: Claude-only item.model aliases (opus/sonnet) rejected by codex (gh feature-forge#22). Completed on the default Claude runner. --review created item 016 (generic stack exec-bit false-green fix). Final bash scripts/validate.sh green."
     }
   }
 }
