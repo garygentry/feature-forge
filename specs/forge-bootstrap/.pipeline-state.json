@@ -1,0 +1,145 @@
+{
+  "feature": "forge-bootstrap",
+  "pipelineStatus": "active",
+  "createdAt": "2026-06-18T23:23:16Z",
+  "updatedAt": "2026-06-19T00:00:00Z",
+  "currentStage": "complete",
+  "notes": "PRD OQ-01..OQ-05 all resolved in tech-spec. Carry-forward open technical questions for forge-3-specs: OQ-T1 — forge-bootstrap WRITES the monorepo workspaces[] representation, but downstream consumption (forge-2-tech/forge-4-backlog resolving a member's stack) is a deferred follow-up beyond this feature's scope; OQ-T2 — confirm TS test runner (node --test vs lightweight) + minimal dev-deps that keep the TS baseline green across npm/pnpm/yarn; OQ-T3 — confirm .gitignore entry + removal ordering so the .forge-bootstrap.json sentinel can never be committed even on a crash. Architecture: hybrid Python helper (scripts/forge-bootstrap.py, subcommands check/scaffold/verify/commit/status) + SKILL.md orchestration; templates under skills/forge-bootstrap/references/templates/<stack>/; additive workspaces[] schema extension; transient root sentinel for resume; remember to regenerate installer/adapters via build-adapters.py.",
+  "stages": {
+    "forge-1-prd": {
+      "status": "complete",
+      "version": 1,
+      "artifacts": [
+        "PRD.md",
+        ".reference/CHARTER.md"
+      ],
+      "startedAt": "2026-06-18T23:23:16Z",
+      "completedAt": "2026-06-18T23:23:16Z",
+      "commitHash": "b1ff897ed6a1c9a1cae12a2dce3a2e70f33e595f",
+      "basedOnVersions": {}
+    },
+    "forge-verify-prd": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-prd-2026-06-18.md",
+      "findingsCount": 3,
+      "verifiedAt": "2026-06-18T23:30:00Z",
+      "fixedAt": "2026-06-18T23:33:00Z"
+    },
+    "forge-2-tech": {
+      "status": "complete",
+      "version": 1,
+      "artifacts": [
+        "tech-spec.md"
+      ],
+      "startedAt": "2026-06-18T23:45:00Z",
+      "completedAt": "2026-06-18T23:45:00Z",
+      "commitHash": "310e44745ee6b16d2cda8fb5ee5d70a6e46ee5c8",
+      "basedOnVersions": {
+        "forge-1-prd": 1
+      }
+    },
+    "forge-verify-tech": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-tech-2026-06-18.md",
+      "findingsCount": 6,
+      "verifiedAt": "2026-06-18T23:50:00Z",
+      "fixedAt": "2026-06-18T23:55:00Z",
+      "reverifiedAt": "2026-06-19T00:05:00Z",
+      "commitHash": "80e327f"
+    },
+    "forge-3-specs": {
+      "status": "complete",
+      "version": 1,
+      "commitHash": "56bd544",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-helper-cli.md",
+        "03-stack-templates.md",
+        "04-skill-orchestration.md",
+        "05-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "startedAt": "2026-06-19T00:15:00Z",
+      "completedAt": "2026-06-19T00:30:00Z",
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1
+      }
+    },
+    "forge-verify-specs": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-specs-2026-06-18.md",
+      "findingsCount": 13,
+      "verifiedAt": "2026-06-18T00:00:00Z",
+      "fixedAt": "2026-06-18T00:00:00Z",
+      "commitHash": "15aeb6f"
+    },
+    "forge-4-backlog": {
+      "status": "complete",
+      "version": 1,
+      "artifacts": [
+        "backlog.json"
+      ],
+      "itemCount": 15,
+      "startedAt": "2026-06-18T00:00:00Z",
+      "completedAt": "2026-06-18T00:00:00Z",
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1,
+        "forge-3-specs": 1
+      }
+    },
+    "forge-verify-backlog": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-backlog-2026-06-18.md",
+      "findingsCount": 5,
+      "verifiedAt": "2026-06-18T00:00:00Z",
+      "fixedAt": "2026-06-18T00:00:00Z"
+    },
+    "forge-5-loop": {
+      "status": "complete",
+      "startedAt": "2026-06-19T00:00:00Z",
+      "completedAt": "2026-06-19T13:04:49Z",
+      "agent": "claude-cli",
+      "iterations": 23,
+      "reviewEnabled": true,
+      "itemsDone": 16,
+      "basedOnVersions": {
+        "forge-4-backlog": 1
+      },
+      "artifacts": [
+        "specs/forge-bootstrap/.rauf/state.json"
+      ],
+      "notes": "First attempt with --agent codex halted via circuit breaker: Claude-only item.model aliases (opus/sonnet) rejected by codex (gh feature-forge#22). Completed on the default Claude runner. --review created item 016 (generic stack exec-bit false-green fix). Final bash scripts/validate.sh green."
+    },
+    "forge-verify-impl": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-impl-2026-06-19.md",
+      "findingsCount": 9,
+      "verifiedAt": "2026-06-19T00:00:00Z",
+      "fixedAt": "2026-06-19T00:00:00Z",
+      "reverifiedAt": "2026-06-19T00:00:00Z",
+      "reverifyFindingsFile": ".verification/VERIFY-impl-2026-06-19-reverify.md",
+      "reverifyFindingsCount": 0
+    },
+    "forge-6-docs": {
+      "status": "complete",
+      "startedAt": "2026-06-19T00:00:00Z",
+      "completedAt": "2026-06-19T00:00:00Z",
+      "artifacts": [
+        "docs/architecture/forge-bootstrap/README.md",
+        "docs/architecture/forge-bootstrap/architecture.md",
+        "docs/architecture/forge-bootstrap/cli-reference.md",
+        "docs/architecture/forge-bootstrap/guides/integration.md"
+      ],
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1,
+        "forge-3-specs": 1,
+        "forge-4-backlog": 1,
+        "forge-5-loop": 1
+      }
+    }
+  }
+}

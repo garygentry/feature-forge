@@ -15,8 +15,8 @@
       "description": "Root directory for generated architecture documentation."
     },
     "backlogDir": {
-      "type": "string",
-      "description": "Optional override for backlog location. If set, backlog.json is written here instead of with the feature specs. Default behavior: backlog.json is written to {specsDir}/{feature}/backlog.json."
+      "type": ["string", "null"],
+      "description": "Optional override for backlog location. If set, backlog.json is written here instead of with the feature specs. Default behavior (null): backlog.json is written to {specsDir}/{feature}/backlog.json."
     },
     "gitCommitAfterStage": {
       "type": "boolean",
@@ -29,22 +29,38 @@
       "description": "Prefix for conventional commit messages, e.g., forge(auth): complete PRD"
     },
     "stack": {
-      "type": "string",
-      "description": "Detected or configured project stack identifier. Selects guidance from references/stacks/{stack}.md. Set during forge-2-tech or manually. Examples: 'typescript', 'python', 'go', 'rust'."
+      "type": ["string", "null"],
+      "description": "Detected or configured project stack identifier. Selects guidance from references/stacks/{stack}.md. Set during forge-2-tech or manually (null until then). Examples: 'typescript', 'python', 'go', 'rust'."
     },
     "typeCheckCommand": {
-      "type": "string",
-      "description": "Command to verify type correctness or lint. Examples: 'bun run typecheck', 'mypy .', 'go vet ./...'. Used in acceptance criteria and verification."
+      "type": ["string", "null"],
+      "description": "Command to verify type correctness or lint. Null until set. Examples: 'bun run typecheck', 'mypy .', 'go vet ./...'. Used in acceptance criteria and verification."
     },
     "testCommand": {
-      "type": "string",
-      "description": "Command to run tests. Examples: 'bun test', 'pytest', 'go test ./...'. Used in acceptance criteria and verification."
+      "type": ["string", "null"],
+      "description": "Command to run tests. Null until set. Examples: 'bun test', 'pytest', 'go test ./...'. Used in acceptance criteria and verification."
     },
     "loopIterationMultiplier": {
       "type": "number",
       "default": 1.5,
       "minimum": 1,
       "description": "Multiplier applied to pending backlog item count to calculate loop iterations. Higher values allow more retries. Default: 1.5 (e.g., 10 items = 15 iterations)."
+    },
+    "workspaces": {
+      "type": "array",
+      "description": "Monorepo members. Absent for single-package projects.",
+      "items": {
+        "type": "object",
+        "required": ["name", "path", "stack"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "path": {"type": "string", "description": "Repo-relative member dir"},
+          "stack": {"type": "string"},
+          "typeCheckCommand": {"type": ["string", "null"]},
+          "testCommand": {"type": ["string", "null"]}
+        }
+      }
     },
     "loopRunner": {
       "type": "object",

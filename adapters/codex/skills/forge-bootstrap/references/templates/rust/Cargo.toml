@@ -1,0 +1,15 @@
+[package]
+name = "{{PKG}}"
+version = "0.0.0"
+edition = "2021"
+description = "{{PURPOSE}}"
+
+[lib]
+name = "{{PKG}}"
+path = "src/lib.rs"
+
+[[bin]]
+name = "{{PKG}}"
+path = "src/main.rs"
+
+[dependencies]

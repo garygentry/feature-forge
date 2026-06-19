@@ -35,6 +35,10 @@
       "description": "Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs /feature-forge:forge-6-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline."
     },
     {
+      "name": "forge-bootstrap",
+      "description": "Scaffold a brand-new empty repository to a pipeline-ready, green baseline (structure, toolchain, passing lint+test, forge.config.json), then optionally chain into the pipeline. Use when the user runs /feature-forge:forge-bootstrap or asks to bootstrap/scaffold a new empty project for forge. Do NOT trigger on a non-empty repo (that is forge-init), or for general project setup outside the forge pipeline."
+    },
+    {
       "name": "forge-fix",
       "description": "Apply fixes from the most recent forge-verify findings document. Use when user runs /feature-forge:forge-fix or asks to apply verification fixes for a forge feature. Do NOT trigger for general code fixes, bug fixes, or repairs outside the forge verification workflow."
     },
