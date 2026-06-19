@@ -39,11 +39,12 @@
       }
     },
     "forge-verify-tech": {
-      "status": "findings-applied",
+      "status": "passed",
       "findingsFile": ".verification/VERIFY-tech-2026-06-18.md",
       "findingsCount": 6,
       "verifiedAt": "2026-06-18T23:50:00Z",
       "fixedAt": "2026-06-18T23:55:00Z",
+      "reverifiedAt": "2026-06-19T00:05:00Z",
       "commitHash": "80e327f"
     }
   }
