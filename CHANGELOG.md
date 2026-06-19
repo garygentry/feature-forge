@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **rauf pin advanced to `@garygentry/rauf@0.8.0` (installer `0.1.5`).** rauf
+  released 0.8.0 (provider-neutral backlogs + `rauf loop run --no-model`), so
+  `RAUF_PIN` advances `0.7.0 → 0.8.0` — the version a fresh install provisions as
+  the default loop runner. Canonical `installHint`, regenerated adapters, and
+  `COMPATIBILITY.md` updated to the new coordinate. `minRunnerVersion` stays
+  `0.6.0` (the agent-surface floor — 0.8.0's `--no-model` doesn't raise it). rauf
+  and feature-forge remain independently versioned; the pin is the only coupling.
 - **Install docs** (README + `docs/agents/*.md`) restored to the scoped
   `npx @garygentry/feature-forge` one-liner (they had been pointed at a
   from-source path while the package was unpublished).
