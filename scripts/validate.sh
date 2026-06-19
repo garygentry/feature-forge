@@ -196,6 +196,15 @@ if [ -f "$HELPER" ]; then
     echo "FAIL: scripts/epic-manifest.py failed py_compile"
     ERRORS=$((ERRORS + 1))
   fi
+  BOOTSTRAP_HELPER="$REPO_ROOT/scripts/forge-bootstrap.py"
+  if [ -f "$BOOTSTRAP_HELPER" ]; then
+    if python3 -m py_compile "$BOOTSTRAP_HELPER" 2>/dev/null; then
+      echo "PASS: scripts/forge-bootstrap.py compiles (py_compile)"
+    else
+      echo "FAIL: scripts/forge-bootstrap.py failed py_compile"
+      ERRORS=$((ERRORS + 1))
+    fi
+  fi
   if python3 -c "import pytest" 2>/dev/null; then
     if python3 -m pytest "$REPO_ROOT/tests" -q; then
       echo "PASS: epic-manifest pytest suite"

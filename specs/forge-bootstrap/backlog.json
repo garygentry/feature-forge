@@ -336,8 +336,8 @@
         "No other validate.sh behavior changes",
         "bash scripts/validate.sh runs the new compile check (it appears in output) and exits 0 once scripts/forge-bootstrap.py compiles"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T13:00:22.623Z",
       "dependsOn": [
         "002"
       ],
