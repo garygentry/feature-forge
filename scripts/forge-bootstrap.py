@@ -648,12 +648,83 @@ def scaffold(target: Path, answers: Answers) -> list[str]:
     return sentinel["artifactsWritten"]
 
 
-def verify(target: Path, answers: Answers) -> VerifyResult:
-    """Detect the toolchain and run resolved lint/test per member (02 §5).
+def toolchain_present(required: list[str]) -> bool:
+    """Return True iff every required tool is on PATH (REQ-LIFE-03).
 
-    Stub — implemented in backlog item 008.
+    Probes each binary with ``command -v`` via the run wrapper (a shell builtin,
+    invoked through ``sh -c``). A single missing tool yields False, driving the
+    distinct missing-toolchain outcome (exit 2, 00 §9): the skill then offers
+    scaffold-anyway-unverified vs abort and marks the baseline unverified
+    (REQ-LIFE-04). Bootstrap NEVER installs a toolchain (tech-spec §9).
+
+    Args:
+        required: Distinct probe binaries for the resolved stack(s) (00 §6),
+            already {pm}-substituted.
+
+    Returns:
+        True iff ``command -v`` succeeds for every entry.
     """
-    raise NotImplementedError("verify is implemented in backlog item 008")
+    for tool in required:
+        try:
+            proc = run(["sh", "-c", f"command -v {tool}"], cwd=Path.cwd(), check=False)
+        except UsageError:
+            # The probe itself could not be launched (e.g. an empty PATH leaves no
+            # `sh`): treat that as the tool being absent, the missing-toolchain
+            # outcome, never an internal error (REQ-LIFE-03/04).
+            return False
+        if proc.returncode != 0:
+            return False
+    return True
+
+
+def verify(target: Path, answers: Answers) -> VerifyResult:
+    """Detect the toolchain and run resolved lint/test per member (02 §5, 00 §6).
+
+    First probes every required tool (toolchain_present). If any is missing,
+    returns immediately with toolchainPresent=False, empty lint/test, green=False —
+    the caller maps this to exit 2 (the distinct missing-toolchain outcome, 00 §9,
+    REQ-LIFE-03/04). When the toolchain is present, runs each member's resolved
+    typeCheckCommand then testCommand (00 §6) in that member's directory, collecting
+    one CommandOutcome per command (per member for a monorepo — REQ-MONO-03). The
+    ``green`` predicate — toolchainPresent AND every outcome ok — is the single gate
+    Mode B checks before launching the next stage (REQ-MODEB-04). Commands resolve
+    from STACK_COMMANDS so they match references/stacks/*.md exactly (REQ-STACK-02).
+
+    Args:
+        target: The project root being verified.
+        answers: The resolved interview payload (members + commands).
+
+    Returns:
+        A VerifyResult (00 §4): toolchainPresent / lint[] / test[] / green.
+
+    Raises:
+        UsageError: If a member directory is missing or a command cannot be
+            launched (exit 2).
+    """
+    required: list[str] = []
+    for member in answers["members"]:
+        _, _, probes = STACK_COMMANDS[member["stack"]]
+        pm = member["packageManager"] or ""
+        for probe in probes:
+            tool = probe.replace("{pm}", pm)
+            if tool and tool not in required:
+                required.append(tool)
+    present = toolchain_present(required)
+    if not present:
+        return {"toolchainPresent": False, "lint": [], "test": [], "green": False}
+
+    lint: list[CommandOutcome] = []
+    test: list[CommandOutcome] = []
+    for member in answers["members"]:
+        lint_cmd, test_cmd = _resolve_commands(member)
+        cwd = target / member["path"]
+        for bucket, cmd in ((lint, lint_cmd), (test, test_cmd)):
+            proc = run(["sh", "-c", cmd], cwd=cwd, check=False)
+            bucket.append(
+                {"command": cmd, "ok": proc.returncode == 0, "member": member["path"]}
+            )
+    green = all(o["ok"] for o in (*lint, *test))
+    return {"toolchainPresent": True, "lint": lint, "test": test, "green": green}
 
 
 def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:

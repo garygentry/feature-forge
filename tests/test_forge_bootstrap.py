@@ -279,13 +279,12 @@ def test_parser_parses_all_subcommands_and_flags(bootstrap_module: ModuleType) -
 def test_subcommand_bodies_are_stubs(bootstrap_module: ModuleType, tmp_path: Path) -> None:
     """The remaining subcommand functions are NotImplementedError stubs for now.
 
-    ``check`` (item 003) and ``scaffold`` (item 006) are implemented;
-    verify/commit/status remain stubs until their items fill them.
+    ``check`` (003), ``scaffold`` (006) and ``verify`` (008) are implemented;
+    commit/status remain stubs until their items fill them.
     """
     m = bootstrap_module
     answers = _answers()
     for call in (
-        lambda: m.verify(tmp_path, answers),
         lambda: m.commit(tmp_path, answers, False),
         lambda: m.status(tmp_path),
     ):
@@ -544,3 +543,85 @@ def test_scaffold_git_init_only_when_absent(run_bootstrap, tmp_path: Path) -> No
     """git init runs when .git absent; an existing .git is left alone (REQ-GATE-03)."""
     _scaffold(run_bootstrap, tmp_path, _answers())
     assert (tmp_path / ".git").is_dir()
+
+
+# --------------------------------------------------------------------------- #
+# `verify` subcommand tests (item 008) — toolchain detection + lint/test (02 §5)
+# --------------------------------------------------------------------------- #
+
+
+def _verify(run_bootstrap, repo: Path, answers: dict[str, Any], env=None) -> CliResult:
+    """Run ``verify`` against ``repo`` with the given answers, returning the result."""
+    return run_bootstrap(
+        "verify", ".", "--answers", json.dumps(answers), "--json", cwd=repo, env=env
+    )
+
+
+def test_verify_toolchain_missing_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
+    """Forcing PATH='' makes every probe miss → exit 2, toolchainPresent:false.
+
+    Runs unconditionally (no skip) — the env hook makes the toolchain-missing
+    outcome deterministic regardless of the host (REQ-MODEB-04, REQ-LIFE-03/04).
+    """
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    _scaffold(run_bootstrap, tmp_path, answers)
+    result = _verify(run_bootstrap, tmp_path, answers, env={"PATH": ""})
+    assert result.returncode == 2
+    payload = result.json()
+    assert payload["toolchainPresent"] is False
+    assert payload["green"] is False
+    assert payload["lint"] == []
+    assert payload["test"] == []
+
+
+def _chmod_x(*paths: Path) -> None:
+    """Mark shell scripts executable (the generic stack runs ``./test.sh``)."""
+    for p in paths:
+        p.chmod(0o755)
+
+
+@requires_toolchain("generic")
+def test_verify_green_single_generic(run_bootstrap, tmp_path: Path) -> None:
+    """A scaffolded generic baseline verifies green, exit 0 (REQ-SCAF-05)."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    _scaffold(run_bootstrap, tmp_path, answers)
+    _chmod_x(tmp_path / "run.sh", tmp_path / "test.sh")
+    result = _verify(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    payload = result.json()
+    assert payload["toolchainPresent"] is True
+    assert payload["green"] is True
+    # one lint + one test outcome, each for the single package (member ".").
+    assert [o["member"] for o in payload["lint"]] == ["."]
+    assert [o["member"] for o in payload["test"]] == ["."]
+    assert all(o["ok"] for o in payload["lint"] + payload["test"])
+
+
+@requires_toolchain("generic")
+def test_verify_not_green_is_exit_1(run_bootstrap, tmp_path: Path) -> None:
+    """A failing test command (toolchain present) is not-green → exit 1."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    _scaffold(run_bootstrap, tmp_path, answers)
+    # Break the test step so it exits non-zero while the toolchain is present.
+    (tmp_path / "test.sh").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    _chmod_x(tmp_path / "run.sh", tmp_path / "test.sh")
+    result = _verify(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 1
+    payload = result.json()
+    assert payload["toolchainPresent"] is True
+    assert payload["green"] is False
+    assert any(not o["ok"] for o in payload["test"])
+
+
+@requires_toolchain("generic")
+def test_verify_member_is_path_not_name(run_bootstrap, tmp_path: Path) -> None:
+    """CommandOutcome.member is the member PATH, not its name (00 §4 docstring)."""
+    members = [_member("worker", "packages/worker", "generic", None)]
+    answers = _answers(layout="monorepo", members=members)
+    _scaffold(run_bootstrap, tmp_path, answers)
+    worker = tmp_path / "packages" / "worker"
+    _chmod_x(worker / "run.sh", worker / "test.sh")
+    result = _verify(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    payload = result.json()
+    assert {o["member"] for o in payload["lint"] + payload["test"]} == {"packages/worker"}

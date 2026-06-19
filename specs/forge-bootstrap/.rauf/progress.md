@@ -40,3 +40,19 @@
 - Updated `test_subcommand_bodies_are_stubs` to drop scaffold (now implemented).
 - Added 9 scaffold tests. 28 passed. NOTE: adapter-drift FAIL in full validate.sh
   remains pre-existing (item 014's job).
+
+## Item 008 — `verify` subcommand
+- Implemented `toolchain_present` + `verify` verbatim from 02 §5: probe each
+  distinct `{pm}`-substituted binary via `sh -c "command -v <tool>"`; if any miss,
+  return `{toolchainPresent:false, lint:[], test:[], green:false}` → dispatch prints
+  the JSON then raises UsageError → exit 2. Else run resolved lint then test per
+  member with `cwd = target/member["path"]`, `member` field = the PATH ("." single).
+- GOTCHA: the deterministic PATH='' test makes even `sh` unlaunchable, so
+  `run()` raises OSError→UsageError inside the probe. `toolchain_present` must
+  CATCH UsageError and return False (treat unlaunchable probe as missing), else the
+  helper exits 2 with empty stdout and the JSON guard payload is never printed.
+- GOTCHA: the generic stack's `run.sh`/`test.sh` are NOT executable as scaffolded
+  (compose_member writes text, no +x; templates are 0644), so `./test.sh` fails.
+  Green/member verify tests `chmod 0755` the scripts first to test verify's logic;
+  the missing exec-bit on scaffolded generic scripts is a template/scaffold gap for
+  item 011's green-baseline integration, not verify.

@@ -206,8 +206,8 @@
         "green is true only when toolchainPresent and all CommandOutcome.ok are true",
         "python3 -m pytest tests/test_forge_bootstrap.py -q passes (verify tests green) and py_compile passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:48:23.059Z",
       "dependsOn": [
         "006"
       ],
