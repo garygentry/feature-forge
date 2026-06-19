@@ -114,11 +114,14 @@
       "notes": "First attempt with --agent codex halted via circuit breaker: Claude-only item.model aliases (opus/sonnet) rejected by codex (gh feature-forge#22). Completed on the default Claude runner. --review created item 016 (generic stack exec-bit false-green fix). Final bash scripts/validate.sh green."
     },
     "forge-verify-impl": {
-      "status": "findings-applied",
+      "status": "passed",
       "findingsFile": ".verification/VERIFY-impl-2026-06-19.md",
       "findingsCount": 9,
       "verifiedAt": "2026-06-19T00:00:00Z",
-      "fixedAt": "2026-06-19T00:00:00Z"
+      "fixedAt": "2026-06-19T00:00:00Z",
+      "reverifiedAt": "2026-06-19T00:00:00Z",
+      "reverifyFindingsFile": ".verification/VERIFY-impl-2026-06-19-reverify.md",
+      "reverifyFindingsCount": 0
     }
   }
 }
