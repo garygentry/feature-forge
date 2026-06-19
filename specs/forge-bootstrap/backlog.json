@@ -150,8 +150,8 @@
         "Re-running scaffold over its own partial output is idempotent (files already recorded are skipped)",
         "python3 -m pytest tests/test_forge_bootstrap.py -q passes (scaffold single+monorepo+hygiene+license-none+host-conditional+kept+idempotent+config tests) and py_compile passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:45:41.680Z",
       "dependsOn": [
         "001",
         "002",

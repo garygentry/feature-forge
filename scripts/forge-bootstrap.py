@@ -440,12 +440,212 @@ def check(target: Path, specs_dir: Path) -> CheckResult:
     }
 
 
+#: Repo-relative location of the bundled scaffold templates (00 §1.1). The helper
+#: lives at scripts/forge-bootstrap.py, so the repo root is two levels up.
+TEMPLATE_ROOT: Final = (
+    Path(__file__).resolve().parent.parent
+    / "skills" / "forge-bootstrap" / "references" / "templates"
+)
+
+
+def _sanitize_pkg(name: str) -> str:
+    """Map a member name to a language-safe package identifier ({{PKG}} token).
+
+    Lowercases, replaces any run of non-alphanumeric characters with a single
+    underscore, and strips leading/trailing underscores. Kept identical across
+    stacks for determinism (03 §1).
+    """
+    pkg = re.sub(r"[^0-9a-zA-Z]+", "_", name).strip("_").lower()
+    return pkg or "pkg"
+
+
+def _write_artifact(
+    target: Path, rel_path: str, content: str, sentinel: Sentinel
+) -> None:
+    """Write one scaffold artifact, idempotently and never overwriting (02 §4.1).
+
+    Skips the write when ``rel_path`` is already recorded in artifactsWritten[]
+    (resume idempotency, REQ-LIFE-02) OR when the destination already exists and was
+    not written by this run — a pre-existing allowed-meta file kept verbatim
+    (REQ-SCAF-09, REQ-GATE-05, REQ-SEC-01). A kept file is NOT recorded. Otherwise
+    it creates parent dirs, writes atomically, appends the path, and persists the
+    sentinel so an interrupt leaves a consistent resume list.
+    """
+    if rel_path in sentinel["artifactsWritten"]:
+        return
+    dest = target / rel_path
+    if dest.exists():
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_text(dest, content)
+    sentinel["artifactsWritten"].append(rel_path)
+    write_sentinel(target, sentinel)
+
+
+def compose_member(
+    member: Member, answers: Answers, target: Path, sentinel: Sentinel
+) -> None:
+    """Compose one member's scaffold from its stack template dir (02 §4.2, 00 §6.2)."""
+    template_root = TEMPLATE_ROOT / member["stack"]
+    if not template_root.is_dir():
+        raise UsageError(
+            f"template dir not found for stack {member['stack']!r}: {template_root}"
+        )
+    pkg = _sanitize_pkg(member["name"])
+    tokens = {
+        "{{PROJECT_NAME}}": answers["projectName"],
+        "{{PKG}}": pkg,
+        "{{PM}}": member["packageManager"] or "",
+        "{{PURPOSE}}": answers["purpose"],
+    }
+    member_base = "" if member["path"] == "." else member["path"]
+    for src in sorted(p for p in template_root.rglob("*") if p.is_file()):
+        rel = src.relative_to(template_root).as_posix()
+        for tok, val in tokens.items():
+            rel = rel.replace(tok, val)
+        rel_path = rel if not member_base else f"{member_base}/{rel}"
+        text = src.read_text(encoding="utf-8")
+        for tok, val in tokens.items():
+            text = text.replace(tok, val)
+        _write_artifact(target, rel_path, text, sentinel)
+
+
+def _resolve_commands(member: Member) -> tuple[str, str]:
+    """Resolve a member's (typeCheckCommand, testCommand) from STACK_COMMANDS (00 §6)."""
+    lint_t, test_t, _ = STACK_COMMANDS[member["stack"]]
+    pm = member["packageManager"] or ""
+    return lint_t.replace("{pm}", pm), test_t.replace("{pm}", pm)
+
+
+def write_config(answers: Answers, target: Path, sentinel: Sentinel) -> None:
+    """Write forge.config.json equivalent to forge-init's output (02 §4.3, 00 §7)."""
+    config: dict = {
+        "specsDir": "./specs",
+        "docsDir": "./docs/architecture",
+        "backlogDir": None,
+        "gitCommitAfterStage": True,
+        "commitPrefix": "forge",
+        "stack": None,
+        "typeCheckCommand": None,
+        "testCommand": None,
+        "loopIterationMultiplier": 1.5,
+        "loopRunner": {"name": "rauf", "bin": "rauf"},
+    }
+    if answers["layout"] == "single":
+        member = answers["members"][0]
+        lint, test = _resolve_commands(member)
+        config["stack"] = member["stack"]
+        config["typeCheckCommand"] = lint
+        config["testCommand"] = test
+    else:
+        workspaces: list[dict] = []
+        for member in answers["members"]:
+            lint, test = _resolve_commands(member)
+            workspaces.append({
+                "name": member["name"],
+                "path": member["path"],
+                "stack": member["stack"],
+                "typeCheckCommand": lint,
+                "testCommand": test,
+            })
+        config["workspaces"] = workspaces
+    _write_artifact(target, "forge.config.json", _json_text(config), sentinel)
+
+
+def _compose_readme(answers: Answers) -> str:
+    """Compose README.md from the hygiene template with token substitution (02 §4.5)."""
+    text = (TEMPLATE_ROOT / "hygiene" / "README.md").read_text(encoding="utf-8")
+    license_label = answers["license"] if answers["license"] != "none" else "no license"
+    for tok, val in (
+        ("{{PROJECT_NAME}}", answers["projectName"]),
+        ("{{PURPOSE}}", answers["purpose"]),
+        ("{{LICENSE}}", license_label),
+    ):
+        text = text.replace(tok, val)
+    return text
+
+
+def _compose_license(answers: Answers) -> str:
+    """Compose the LICENSE text from templates/licenses/<id>/LICENSE (02 §4.5)."""
+    src = TEMPLATE_ROOT / "licenses" / answers["license"] / "LICENSE"
+    if not src.is_file():
+        raise UsageError(f"no license template for {answers['license']!r}: {src}")
+    text = src.read_text(encoding="utf-8")
+    year = str(datetime.now(timezone.utc).year)
+    for tok, val in (
+        ("{{YEAR}}", year),
+        ("{{AUTHOR}}", answers["author"]),
+        ("{{PROJECT_NAME}}", answers["projectName"]),
+    ):
+        text = text.replace(tok, val)
+    return text
+
+
+def _compose_agent_file(answers: Answers, filename: str) -> str:
+    """Compose AGENTS.md / CLAUDE.md from the hygiene template (02 §4.5)."""
+    text = (TEMPLATE_ROOT / "hygiene" / filename).read_text(encoding="utf-8")
+    for tok, val in (
+        ("{{PROJECT_NAME}}", answers["projectName"]),
+        ("{{PURPOSE}}", answers["purpose"]),
+    ):
+        text = text.replace(tok, val)
+    return text
+
+
+def write_hygiene(answers: Answers, target: Path, sentinel: Sentinel) -> None:
+    """Emit README, LICENSE, and the host agent-instruction file(s) (02 §4.5)."""
+    _write_artifact(target, "README.md", _compose_readme(answers), sentinel)
+    if answers["license"] != "none":
+        _write_artifact(target, "LICENSE", _compose_license(answers), sentinel)
+    _write_artifact(
+        target, "AGENTS.md", _compose_agent_file(answers, "AGENTS.md"), sentinel
+    )
+    if answers["host"] == "claude":
+        _write_artifact(
+            target, "CLAUDE.md", _compose_agent_file(answers, "CLAUDE.md"), sentinel
+        )
+
+
+def maybe_write_ci(answers: Answers, target: Path, sentinel: Sentinel) -> None:
+    """Emit a CI workflow when answers.ci is true (02 §4.4).
+
+    No-op when answers.ci is false (REQ-SCAF-07). The CI composition itself is
+    implemented in backlog item 007.
+    """
+    if not answers["ci"]:
+        return
+    raise NotImplementedError("maybe_write_ci composition is implemented in item 007")
+
+
 def scaffold(target: Path, answers: Answers) -> list[str]:
     """Emit the pipeline-ready baseline for every member, idempotently (02 §4).
 
-    Stub — implemented in backlog item 006.
+    Ordering is load-bearing: the sentinel is written FIRST (REQ-LIFE-01) so a crash
+    leaves a recoverable partial scaffold; ``git init`` runs only when no ``.git/``
+    exists (REQ-GATE-03); then each member is composed (REQ-MONO-01/02), the
+    repo-hygiene files are emitted (REQ-SCAF-06/09), ``forge.config.json`` is written
+    (REQ-CFG-01/02/03), and a CI workflow is emitted when requested. Every written
+    path is recorded in the sentinel's artifactsWritten[]; a recorded path or a
+    pre-existing allowed-meta file is skipped, making the run idempotent.
     """
-    raise NotImplementedError("scaffold is implemented in backlog item 006")
+    sentinel = read_sentinel(target)
+    if sentinel is None:
+        sentinel = {
+            "version": 1,
+            "status": "in-progress",
+            "startedAt": datetime.now(timezone.utc).isoformat(),
+            "answers": answers,
+            "artifactsWritten": [],
+        }
+        write_sentinel(target, sentinel)
+    if not (target / ".git").is_dir():
+        run(["git", "init"], cwd=target)
+    for member in answers["members"]:
+        compose_member(member, answers, target, sentinel)
+    write_hygiene(answers, target, sentinel)
+    write_config(answers, target, sentinel)
+    maybe_write_ci(answers, target, sentinel)
+    return sentinel["artifactsWritten"]
 
 
 def verify(target: Path, answers: Answers) -> VerifyResult:

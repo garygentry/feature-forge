@@ -279,13 +279,12 @@ def test_parser_parses_all_subcommands_and_flags(bootstrap_module: ModuleType) -
 def test_subcommand_bodies_are_stubs(bootstrap_module: ModuleType, tmp_path: Path) -> None:
     """The remaining subcommand functions are NotImplementedError stubs for now.
 
-    ``check`` is implemented (item 003); scaffold/verify/commit/status remain stubs
-    until their items fill them.
+    ``check`` (item 003) and ``scaffold`` (item 006) are implemented;
+    verify/commit/status remain stubs until their items fill them.
     """
     m = bootstrap_module
     answers = _answers()
     for call in (
-        lambda: m.scaffold(tmp_path, answers),
         lambda: m.verify(tmp_path, answers),
         lambda: m.commit(tmp_path, answers, False),
         lambda: m.status(tmp_path),
@@ -417,3 +416,131 @@ def test_answers_builder_shape() -> None:
     assert answers["members"][0] == {
         "name": "demo", "path": ".", "stack": "generic", "packageManager": None
     }
+
+
+# --------------------------------------------------------------------------- #
+# `scaffold` subcommand tests (item 006) — emission + config + idempotency (02 §4)
+# --------------------------------------------------------------------------- #
+
+
+def _config(repo: Path) -> dict[str, Any]:
+    """Read the scaffolded forge.config.json."""
+    return json.loads((repo / "forge.config.json").read_text(encoding="utf-8"))
+
+
+def test_scaffold_single_emits_stack_and_hygiene(run_bootstrap, tmp_path: Path) -> None:
+    """A single-package generic scaffold emits the stack file set + hygiene files."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    written = set(result.json()["artifactsWritten"])
+    # generic stack file set (03 §6) at the repo root.
+    assert {"run.sh", "test.sh", ".gitignore"} <= written
+    # hygiene files (02 §4.5): README, LICENSE (MIT), AGENTS always.
+    assert {"README.md", "LICENSE", "AGENTS.md", "forge.config.json"} <= written
+    for rel in written:
+        assert (tmp_path / rel).is_file()
+    # host is None → no CLAUDE.md.
+    assert not (tmp_path / "CLAUDE.md").exists()
+
+
+def test_scaffold_single_config_field_set(run_bootstrap, tmp_path: Path) -> None:
+    """forge.config.json reproduces forge-init's field set + loopRunner (02 §4.3)."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    _scaffold(run_bootstrap, tmp_path, answers)
+    cfg = _config(tmp_path)
+    assert cfg["specsDir"] == "./specs"
+    assert cfg["docsDir"] == "./docs/architecture"
+    assert cfg["backlogDir"] is None
+    assert cfg["gitCommitAfterStage"] is True
+    assert cfg["commitPrefix"] == "forge"
+    assert cfg["loopIterationMultiplier"] == 1.5
+    assert cfg["loopRunner"] == {"name": "rauf", "bin": "rauf"}
+    # single package → resolved top-level stack + commands, no workspaces.
+    assert cfg["stack"] == "generic"
+    assert cfg["typeCheckCommand"] == "sh -n run.sh test.sh"
+    assert cfg["testCommand"] == "./test.sh"
+    assert "workspaces" not in cfg
+
+
+def test_scaffold_monorepo_populates_workspaces(run_bootstrap, tmp_path: Path) -> None:
+    """A monorepo nulls the top-level scalars and populates workspaces[] (02 §4.3)."""
+    members = [
+        _member("api", "packages/api", "python", "pip"),
+        _member("cli", "packages/cli", "go", None),
+    ]
+    answers = _answers(layout="monorepo", members=members)
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    cfg = _config(tmp_path)
+    assert cfg["stack"] is None
+    assert cfg["typeCheckCommand"] is None
+    assert cfg["testCommand"] is None
+    assert cfg["workspaces"] == [
+        {
+            "name": "api", "path": "packages/api", "stack": "python",
+            "typeCheckCommand": "mypy .", "testCommand": "pytest",
+        },
+        {
+            "name": "cli", "path": "packages/cli", "stack": "go",
+            "typeCheckCommand": "go vet ./...", "testCommand": "go test ./...",
+        },
+    ]
+    # per-member trees written under their paths.
+    assert (tmp_path / "packages" / "api" / "pyproject.toml").is_file()
+    assert (tmp_path / "packages" / "cli" / "go.mod").is_file()
+
+
+def test_scaffold_license_none_skips_license(run_bootstrap, tmp_path: Path) -> None:
+    """license == 'none' emits no LICENSE file (02 §4.5)."""
+    answers = _answers(license="none")
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    assert "LICENSE" not in result.json()["artifactsWritten"]
+    assert not (tmp_path / "LICENSE").exists()
+
+
+def test_scaffold_claude_host_emits_claude_md(run_bootstrap, tmp_path: Path) -> None:
+    """CLAUDE.md is emitted only when host == 'claude' (02 §4.5)."""
+    answers = _answers(host="claude")
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    assert "CLAUDE.md" in result.json()["artifactsWritten"]
+    assert (tmp_path / "CLAUDE.md").is_file()
+    assert "AGENTS.md" in result.json()["artifactsWritten"]
+
+
+def test_scaffold_keeps_preexisting_readme(run_bootstrap, tmp_path: Path) -> None:
+    """A pre-existing allowed-meta README is kept, never overwritten (REQ-SCAF-09)."""
+    (tmp_path / "README.md").write_text("# keep me\n", encoding="utf-8")
+    result = _scaffold(run_bootstrap, tmp_path, _answers())
+    assert result.returncode == 0
+    # kept verbatim and not recorded for staging.
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "# keep me\n"
+    assert "README.md" not in result.json()["artifactsWritten"]
+
+
+def test_scaffold_resume_is_idempotent(run_bootstrap, tmp_path: Path) -> None:
+    """Re-running scaffold over its own output writes nothing new (REQ-LIFE-02)."""
+    answers = _answers()
+    first = _scaffold(run_bootstrap, tmp_path, answers)
+    assert first.returncode == 0
+    first_written = first.json()["artifactsWritten"]
+    second = _scaffold(run_bootstrap, tmp_path, answers)
+    assert second.returncode == 0
+    # idempotent: the recorded set is identical (already-recorded paths skipped).
+    assert second.json()["artifactsWritten"] == first_written
+
+
+def test_scaffold_records_token_substitution(run_bootstrap, tmp_path: Path) -> None:
+    """Templates are emitted with {{TOKEN}} substitution applied (02 §4.2)."""
+    answers = _answers(project_name="acme", purpose="Widgets.")
+    _scaffold(run_bootstrap, tmp_path, answers)
+    readme = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert "acme" in readme and "Widgets." in readme
+    assert "{{" not in readme
+
+
+def test_scaffold_git_init_only_when_absent(run_bootstrap, tmp_path: Path) -> None:
+    """git init runs when .git absent; an existing .git is left alone (REQ-GATE-03)."""
+    _scaffold(run_bootstrap, tmp_path, _answers())
+    assert (tmp_path / ".git").is_dir()
