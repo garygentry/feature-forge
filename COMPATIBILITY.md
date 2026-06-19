@@ -31,3 +31,15 @@ before forge-5's setup gate.
 > An alternative ralph-style runner conforming to the contract can be supplied
 > via `loopRunner` (its own `bin`, schema, and `validate` command) without
 > editing any pipeline skill.
+
+## Provisioned default pin (installer)
+
+The cross-agent installer (`@garygentry/feature-forge`) records a single pinned
+rauf coordinate as the provisioned default loop runner — currently
+**`@garygentry/rauf@0.8.0`** (`installer/src/rauf.ts` `RAUF_PIN`). This **pin** is
+distinct from the `minRunnerVersion` **floor** above: the floor is the minimum
+rauf an existing install must satisfy (0.6.0), while the pin is the specific
+known-good rauf a fresh install provisions. The pin is advanced on each
+feature-forge release to a newly published, compatible rauf; rauf and
+feature-forge are versioned **independently** (no lockstep — this pin and this
+matrix are the only coupling).

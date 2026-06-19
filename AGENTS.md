@@ -17,6 +17,23 @@ contribute to this repository.
 `bash scripts/validate.sh` auto-provisions the pinned YAML dependency into `.venv-adapters`
 the first time it runs — no manual setup is needed.
 
+## Branching & merging
+
+Every change reaches `main` **via a pull request** with green CI (`ci.yml` /
+`os-matrix.yml`, which run `bash scripts/validate.sh`) — never a direct push to `main`:
+
+1. Branch from an up-to-date `main`.
+2. Make the change; run `bash scripts/validate.sh` locally until green (regenerate adapters if
+   you touched canon — the drift guard blocks an out-of-date `adapters/` tree).
+3. Push the branch, open a PR, let CI go green, then merge.
+
+This mirrors the sibling **rauf** repo's process. The shared release principles across both
+repos: (1) a merge to `main` **never publishes**; (2) publishing is **manual, owner-gated**
+`workflow_dispatch`; (3) **bump the version before publishing** (npm rejects republishing a
+version); (4) **offer, don't act** — suggest a release, never cut one yourself. rauf and
+feature-forge are versioned **independently** (no lockstep); the only coupling is the
+`RAUF_PIN` provisioned-default coordinate plus `COMPATIBILITY.md`.
+
 ## Repository Conventions
 
 ### Spec-pure canon
@@ -81,6 +98,25 @@ The installer is published to npm as `@garygentry/feature-forge` — this is wha
 `npx` users (an installer fix, a new adapter, a CLI behavior change), proactively **suggest** a
 publish and spell out the steps (version bump + manual dispatch). Never run `npm publish`
 yourself, and don't treat a merge as implying a release — the human decides when to cut one.
+
+### On a new rauf release — advance the pin
+
+`installer/src/rauf.ts` `RAUF_PIN` pins the rauf coordinate a fresh install provisions as the
+default loop runner. When rauf publishes a new compatible release, advance it (PR like any
+change):
+
+1. Set `RAUF_PIN` to the new `@garygentry/rauf@X.Y.Z` (update the prose pin in
+   `references/forge-config-schema.json`'s `installHint` and the installer doc-comments/README
+   too — `grep -rn "@garygentry/rauf@" references installer/src installer/README.md`).
+2. Update the installer's tests that assert the pin (`installer/test/*.ts`).
+3. Regenerate adapters (`python3 scripts/build-adapters.py`) so the schema `installHint`
+   propagates; the drift guard fails otherwise.
+4. Bump `installer/package.json` `version` (independent line) and add a `CHANGELOG.md` note.
+5. Update `COMPATIBILITY.md` (the pin coordinate; `minRunnerVersion` only changes if rauf
+   raised the agent-surface floor).
+
+The pin is a **dependency** advance, not version coupling — rauf and feature-forge version
+independently.
 
 ## Dependency Upgrades
 
