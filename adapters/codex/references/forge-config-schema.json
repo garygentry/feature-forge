@@ -46,6 +46,22 @@
       "minimum": 1,
       "description": "Multiplier applied to pending backlog item count to calculate loop iterations. Higher values allow more retries. Default: 1.5 (e.g., 10 items = 15 iterations)."
     },
+    "workspaces": {
+      "type": "array",
+      "description": "Monorepo members. Absent for single-package projects.",
+      "items": {
+        "type": "object",
+        "required": ["name", "path", "stack"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "path": {"type": "string", "description": "Repo-relative member dir"},
+          "stack": {"type": "string"},
+          "typeCheckCommand": {"type": ["string", "null"]},
+          "testCommand": {"type": ["string", "null"]}
+        }
+      }
+    },
     "loopRunner": {
       "type": "object",
       "description": "The autonomous loop runner feature-forge drives. Defaults to rauf when absent (forge-5 states 'defaulting to rauf loop runner'). Every command is a template — {bin}, {backlogDir}, {specsDir}, {iterations} are substituted at call time — so an alternative ralph-style runner conforming to rauf's SPEC-BACKLOG-TOOL-CONTRACT.md can be swapped in without editing any skill. See references/ralph-loop-contract.md.",

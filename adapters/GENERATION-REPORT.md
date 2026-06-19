@@ -31,6 +31,7 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-4-backlog/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 | `skills/forge-5-loop/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 | `skills/forge-6-docs/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
+| `skills/forge-bootstrap/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 | `skills/forge-fix/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 | `skills/forge-verify/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 | `skills/forge/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
@@ -58,6 +59,7 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-4-backlog/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 | `skills/forge-5-loop/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 | `skills/forge-6-docs/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
+| `skills/forge-bootstrap/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 | `skills/forge-fix/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 | `skills/forge-verify/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 | `skills/forge/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
@@ -85,6 +87,7 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-4-backlog/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 | `skills/forge-5-loop/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 | `skills/forge-6-docs/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
+| `skills/forge-bootstrap/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 | `skills/forge-fix/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 | `skills/forge-verify/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 | `skills/forge/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
@@ -112,6 +115,7 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-4-backlog/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 | `skills/forge-5-loop/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 | `skills/forge-6-docs/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
+| `skills/forge-bootstrap/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 | `skills/forge-fix/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 | `skills/forge-verify/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 | `skills/forge/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |

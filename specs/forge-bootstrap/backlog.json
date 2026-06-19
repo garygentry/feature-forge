@@ -359,8 +359,8 @@
         "python3 scripts/build-adapters.py --check exits 0 (no adapter drift)",
         "bash scripts/validate.sh exits 0 with spec-purity, adapter-drift, py_compile, and pytest all passing"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T13:01:28.987Z",
       "dependsOn": [
         "003",
         "006",
