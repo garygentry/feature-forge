@@ -185,7 +185,8 @@ class CommandOutcome(TypedDict):
     Attributes:
         command: The exact command string that was run (from the §6 table).
         ok: True iff the command exited 0.
-        member: The member name the command ran for ("." for a single package).
+        member: The member's repo-relative path the command ran for ("." for a
+            single package; e.g. "packages/api" for a monorepo member).
     """
     command: str
     ok: bool
@@ -346,6 +347,11 @@ set and default values so the result is equivalent to what `forge-init` would wr
 (REQ-CFG-02), differing only where bootstrap has resolved a real value (tech-spec §3.3).
 After bootstrap, running `forge-init` is unnecessary (REQ-CFG-03).
 
+> **REQ-CFG-02 equivalence is semantic, not byte-order.** Equivalence means the same
+> key/value *set* as `forge-init` (plus the explicit `loopRunner` block, appended last);
+> it does **not** pin JSON key ordering. The table below and `write_config` (02 §4.3) may
+> list fields in different orders without breaking equivalence.
+
 | Field | forge-init default | bootstrap value |
 |-------|--------------------|-----------------|
 | `specsDir` | `./specs` | same |
@@ -392,6 +398,13 @@ top-level `stack` MAY instead name a nominated primary; bootstrap writes `null`)
   }
 }
 ```
+
+> **Closed shape, by design.** The `workspaces[]` item schema uses
+> `additionalProperties: false` (stricter than the open top-level config object) and
+> intentionally **omits** `packageManager` — even though `Member` (§5) carries it —
+> because each entry's `typeCheckCommand` / `testCommand` are already fully resolved (§6),
+> so no downstream consumer needs the raw package manager. Do not re-add `packageManager`
+> to an entry: it would trip the closed schema.
 
 Each `workspaces[]` entry's `path`/`stack`/`typeCheckCommand`/`testCommand` come from the
 corresponding `Member` (§5) and the §6 command table. **Boundary (tech-spec §3.2, §10

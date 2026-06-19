@@ -34,7 +34,7 @@ skills/forge-bootstrap/references/templates/
   python/       pyproject.toml, src/{{PKG}}/__init__.py, src/{{PKG}}/main.py,
                 tests/test_smoke.py, .gitignore                                              (§3)
   go/           go.mod, main.go, main_test.go, .gitignore                                    (§4)
-  rust/         Cargo.toml, src/main.rs, tests/smoke.rs, .gitignore                          (§5)
+  rust/         Cargo.toml, src/lib.rs, src/main.rs, tests/smoke.rs, .gitignore              (§5)
   generic/      run.sh, test.sh, .gitignore                                                  (§6)
   ci/           github-actions.yml                                                            (§9)
 ```
@@ -350,13 +350,14 @@ Per `00-core-definitions.md` §6:
 | Path (template) | Purpose | Tokens |
 |-----------------|---------|--------|
 | `Cargo.toml` | package manifest (edition 2021) | `{{PROJECT_NAME}}`, `{{PKG}}`, `{{PURPOSE}}` |
-| `src/main.rs` | binary crate root with a reusable `pub fn` | `{{PROJECT_NAME}}` |
-| `tests/smoke.rs` | integration test exercising the binary's public fn | `{{PKG}}` |
+| `src/lib.rs` | reusable public function, linkable from the integration test (§5.2) | — |
+| `src/main.rs` | binary crate root that calls the library's `pub fn` | `{{PROJECT_NAME}}` |
+| `tests/smoke.rs` | integration test exercising the public fn | `{{PKG}}` |
 | `.gitignore` | Rust-appropriate ignores + sentinel | — |
 
 Rust has **no package-manager question**, so `{{PM}}` never appears.
 
-> **Why an integration test can call `greet`.** A binary crate's items are not visible to an external `tests/` crate by default. The template makes the binary *also* expose a library target named `{{PKG}}` (via `[[bin]]` + `[lib]` with the same `src/main.rs` reused through a small `lib.rs`-free arrangement below), so `tests/smoke.rs` imports `{{PKG}}::greet`. This is the smallest valid setup that keeps both `cargo clippy` and `cargo test` (which builds the integration test) green.
+> **Why an integration test can call `greet`.** A binary crate's items are not visible to an external `tests/` crate by default. The template makes the binary *also* expose a library target named `{{PKG}}` (via `[[bin]]` + `[lib]` backed by a small `src/lib.rs` below, which `src/main.rs` also calls), so `tests/smoke.rs` imports `{{PKG}}::greet`. This is the smallest valid setup that keeps both `cargo clippy` and `cargo test` (which builds the integration test) green.
 
 ### 5.2 Manifest + crate (REQ-SCAF-02, REQ-SCAF-04)
 

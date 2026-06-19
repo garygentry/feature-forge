@@ -138,6 +138,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -208,16 +209,23 @@ def run_bootstrap() -> Callable[..., CliResult]:
     that the skill body depends on.
 
     Returns:
-        A function ``run_bootstrap(*args, cwd=None) -> CliResult``. ``cwd`` is the
-        target repo being bootstrapped; ``args`` are the subcommand + flags.
+        A function ``run_bootstrap(*args, cwd=None, env=None) -> CliResult``. ``cwd``
+        is the target repo being bootstrapped; ``args`` are the subcommand + flags;
+        ``env``, when given, is merged over ``os.environ`` for the child process
+        (lets a test control ``PATH`` to force a deterministic toolchain miss — see
+        ``test_verify_toolchain_missing_is_exit_2``).
     """
 
-    def _run(*args: str, cwd: Path | None = None) -> CliResult:
+    def _run(
+        *args: str, cwd: Path | None = None, env: dict[str, str] | None = None
+    ) -> CliResult:
+        child_env = {**os.environ, **env} if env is not None else None
         proc = subprocess.run(
             [sys.executable, str(HELPER), *args],
             capture_output=True,
             text=True,
             cwd=str(cwd) if cwd else None,
+            env=child_env,
         )
         return CliResult(proc.returncode, proc.stdout, proc.stderr)
 
@@ -705,8 +713,7 @@ def test_commit_stages_exact_list_not_add_all(run_bootstrap, tmp_path: Path) -> 
     staged = _git(tmp_path, "diff", "--cached", "--name-only").stdout.split()
     assert "STRAY.txt" not in staged                       # the -A guard
     assert "forge.config.json" in staged                   # the scaffold IS staged
-    assert "STRAY.txt" in payload["staged"] or True        # documented: staged[] == tracked set
-    assert "STRAY.txt" not in payload["staged"]
+    assert "STRAY.txt" not in payload["staged"]            # staged[] is the exact recorded set
 
 
 def test_no_untracked_scaffold_after_commit(run_bootstrap, tmp_path: Path) -> None:
@@ -776,18 +783,22 @@ def test_check_exit_codes(run_bootstrap, tmp_path: Path) -> None:
     assert run_bootstrap("check", ".", "--json", cwd=tmp_path).returncode == 1
 
 
-def test_verify_toolchain_missing_is_exit_2(run_bootstrap, tmp_path, monkeypatch) -> None:
-    """A missing toolchain yields toolchainPresent:false + exit 2 (00 §9)."""
-    # Choose a stack and force its probe to miss by emptying PATH for the verify run.
+def test_verify_toolchain_missing_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
+    """A missing toolchain yields toolchainPresent:false + exit 2 (00 §9).
+
+    This is the false-green guard (the predicate Mode B gates on), so it MUST run
+    unconditionally. We force the probe to miss deterministically by emptying PATH
+    for the verify child via the runner's ``env`` hook — no dependence on whether
+    the host happens to have the toolchain installed.
+    """
     answers = _answers(members=[_member("demo", ".", "rust", None)])
     _scaffold(run_bootstrap, tmp_path, answers)
-    if shutil.which("cargo") is None:
-        result = run_bootstrap("verify", ".", "--answers", json.dumps(answers),
-                               "--json", cwd=tmp_path)
-        assert result.returncode == 2
-        assert result.json()["toolchainPresent"] is False
-    else:
-        pytest.skip("cargo present; toolchain-missing path covered where cargo is absent")
+    result = run_bootstrap(
+        "verify", ".", "--answers", json.dumps(answers), "--json",
+        cwd=tmp_path, env={"PATH": ""},
+    )
+    assert result.returncode == 2
+    assert result.json()["toolchainPresent"] is False
 
 
 def test_usage_error_is_exit_2(run_bootstrap, tmp_path: Path) -> None:

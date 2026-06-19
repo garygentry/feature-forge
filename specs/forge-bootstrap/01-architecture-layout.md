@@ -35,7 +35,7 @@ skills/forge-bootstrap/
   references/
     templates/
       typescript/                         # package.json, tsconfig.json, src/index.ts,
-                                          #   test/smoke.test.ts, .gitignore, eslint config
+                                          #   test/smoke.test.ts, .gitignore
       python/                             # pyproject.toml, src/{{PKG}}/__init__.py,
                                           #   src/{{PKG}}/main.py, tests/test_smoke.py, .gitignore
       go/                                 # go.mod, main.go, main_test.go, .gitignore
@@ -44,7 +44,7 @@ skills/forge-bootstrap/
                                           #   greet() so the smoke integration crate links it — 03 §5.2)
       generic/                            # run.sh, test.sh, .gitignore
       ci/
-        github-actions.yml                # composed per-member when ci:true — see 03 §5, 04
+        github-actions.yml                # composed per-member when ci:true — see 03 §9, 04
 scripts/
   forge-bootstrap.py                      # deterministic helper CLI (stdlib only) — see 02
 tests/
@@ -61,7 +61,7 @@ tests/
 |------|--------|----------|
 | `references/forge-config-schema.json` | **Additive** optional `workspaces[]` array (00 §7.1). No existing field changes. | 00 §7.1 |
 | `scripts/validate.sh` | Add a `py_compile` check for `scripts/forge-bootstrap.py` alongside the existing helper compile-check. The `tests/` pytest sweep already picks up `test_forge_bootstrap.py` with no change. | 6, 05 §5 |
-| `installer/adapters/**` | **Regenerated** via `python3 scripts/build-adapters.py` (the new skill + its `references/` propagate automatically). Hard CI gate. | 6 |
+| `adapters/**` | **Regenerated** via `python3 scripts/build-adapters.py` (the new skill + its `references/` propagate automatically). Hard CI gate (`validate.sh` runs `build-adapters.py --check` over `adapters/`). | 6 |
 
 No edits are needed to `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
 `hooks/hooks.json`, or `scripts/build-adapters.py` — skills are glob-discovered under
@@ -128,7 +128,9 @@ scripts/forge-bootstrap.py
 ├── gate
 │   └── check(target, specs_dir) -> CheckResult        # greenfield + recovery (02 §3)
 ├── scaffold
-│   ├── compose_member(member, target)      # template copy + token substitution (02 §4)
+│   ├── compose_member(member, target)      # template copy + token substitution (02 §4);
+│   │                                        #   template root = <repo-root>/skills/forge-bootstrap/
+│   │                                        #   references/templates/<stack> (helper at scripts/, §1.1)
 │   ├── write_config(answers, target)       # forge.config.json + workspaces[] (02 §4.3)
 │   └── scaffold(target, answers) -> list[str]  # git init; per-member compose; idempotent
 ├── verify
@@ -171,7 +173,7 @@ assets. The complete public surface:
 |---------|-----------|
 | `forge-bootstrap.py` subcommands: `check`, `scaffold`, `verify`, `commit`, `status` | the `forge-bootstrap` skill body (02). |
 | `skills/forge-bootstrap/references/templates/<stack>/` | `scaffold` (composes them; 03). |
-| `skills/forge-bootstrap/references/templates/ci/github-actions.yml` | `scaffold` when `ci:true` (03 §5). |
+| `skills/forge-bootstrap/references/templates/ci/github-actions.yml` | `scaffold` when `ci:true` (03 §9). |
 | `.forge-bootstrap.json` sentinel (on disk, transient) | `check` / `scaffold` / `commit` / `status` (00 §8). |
 | `forge.config.json` (on disk, produced) | the whole pipeline downstream (00 §7). |
 | `references/forge-config-schema.json` `workspaces[]` | `write_config`; any future member-resolution consumer (OQ-T1). |

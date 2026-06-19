@@ -50,7 +50,7 @@
     "forge-3-specs": {
       "status": "complete",
       "version": 1,
-      "commitHash": "00e0571",
+      "commitHash": "56bd544",
       "artifacts": [
         "00-core-definitions.md",
         "01-architecture-layout.md",
@@ -66,6 +66,13 @@
         "forge-1-prd": 1,
         "forge-2-tech": 1
       }
+    },
+    "forge-verify-specs": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-specs-2026-06-18.md",
+      "findingsCount": 13,
+      "verifiedAt": "2026-06-18T00:00:00Z",
+      "fixedAt": "2026-06-18T00:00:00Z"
     }
   }
 }

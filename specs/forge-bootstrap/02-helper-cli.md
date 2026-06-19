@@ -387,6 +387,11 @@ def compose_member(
         UsageError: If the member's template dir is missing or a file is
             unreadable (exit 2).
     """
+    # Template root = <repo-root>/skills/forge-bootstrap/references/templates/<stack>,
+    # where <repo-root> is Path(__file__).resolve().parent.parent because the helper
+    # lives at scripts/forge-bootstrap.py (01 §1.1). This two-level-up + 4-segment
+    # join is the one load-bearing layout invariant; if either the helper or the
+    # template tree moves, update both here and 01 §1.1.
     template_root = (
         Path(__file__).resolve().parent.parent
         / "skills" / "forge-bootstrap" / "references" / "templates" / member["stack"]
@@ -505,14 +510,14 @@ def _resolve_commands(member: Member) -> tuple[str, str]:
 
 ```python
 def maybe_write_ci(answers: Answers, target: Path, sentinel: Sentinel) -> None:
-    """Emit a CI workflow that runs lint + test, when answers.ci is true (00 §6, 03 §5).
+    """Emit a CI workflow that runs lint + test, when answers.ci is true (00 §6, 03 §9).
 
     No-op when answers.ci is false (REQ-SCAF-07: CI is skippable). When enabled,
     composes ``.github/workflows/ci.yml`` from
     templates/ci/github-actions.yml: for a single package, one lint+test job using
     the resolved top-level commands; for a monorepo, one lint+test step per member
     iterating workspaces[] so CI exercises EVERY member (REQ-MONO-04). The per-member
-    step generation and the workflow template are defined in 03 §5; this helper only
+    step generation and the workflow template are defined in 03 §9; this helper only
     gates on answers.ci and records the file for staging via _write_artifact.
 
     Args:
@@ -525,11 +530,11 @@ def maybe_write_ci(answers: Answers, target: Path, sentinel: Sentinel) -> None:
     """
     if not answers["ci"]:
         return
-    content = _compose_ci_workflow(answers)  # per-member steps; 03 §5
+    content = _compose_ci_workflow(answers)  # per-member steps; 03 §9
     _write_artifact(target, ".github/workflows/ci.yml", content, sentinel)
 ```
 
-> The exact workflow template and per-member step expansion live in **03-stack-templates.md §5**; this helper does not duplicate them — it gates on `answers["ci"]` and delegates composition.
+> The exact workflow template and per-member step expansion live in **03-stack-templates.md §9**; this helper does not duplicate them — it gates on `answers["ci"]` and delegates composition.
 
 ---
 
@@ -543,7 +548,7 @@ def maybe_write_ci(answers: Answers, target: Path, sentinel: Sentinel) -> None:
 
 1. Gather the distinct `(stack, packageManager)` pairs across `answers["members"]`, and the required toolchain probe binaries from `STACK_COMMANDS[stack][2]` (substituting `{pm}`).
 2. `toolchain_present(...)`: for each required binary run `command -v <bin>` (REQ-LIFE-03); `toolchainPresent` is true iff **all** are found. If any is missing → return early with `toolchainPresent:false`, empty `lint`/`test`, `green:false`, and the caller raises the **exit-2** missing-toolchain outcome (00 §9; the skill offers scaffold-anyway-unverified vs abort, marking the baseline unverified — REQ-LIFE-04).
-3. With the toolchain present, for each member run its resolved `typeCheckCommand` (lint) then `testCommand` (00 §6) with `cwd = target / member["path"]`, recording one `CommandOutcome{command, ok, member}` each (member name is `"."` for a single package). The aggregate over all members makes the workspace lint+test green (REQ-MONO-03).
+3. With the toolchain present, for each member run its resolved `typeCheckCommand` (lint) then `testCommand` (00 §6) with `cwd = target / member["path"]`, recording one `CommandOutcome{command, ok, member}` each (`member` is the member's `path` — `"."` for a single package). The aggregate over all members makes the workspace lint+test green (REQ-MONO-03).
 4. `green = toolchainPresent and all(o["ok"] for o in lint + test)`.
 5. Return the `VerifyResult`.
 
@@ -618,7 +623,7 @@ def verify(target: Path, answers: Answers) -> VerifyResult:
         cwd = target / member["path"]
         for bucket, cmd in ((lint, lint_cmd), (test, test_cmd)):
             proc = run(["sh", "-c", cmd], cwd=cwd, check=False)
-            bucket.append({"command": cmd, "ok": proc.returncode == 0, "member": member["name"]})
+            bucket.append({"command": cmd, "ok": proc.returncode == 0, "member": member["path"]})
     green = all(o["ok"] for o in (*lint, *test))
     return {"toolchainPresent": True, "lint": lint, "test": test, "green": green}
 ```
@@ -657,7 +662,8 @@ def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:
 
     Args:
         target: The project root being committed.
-        answers: The resolved interview payload (for commitStyle + commitPrefix).
+        answers: The resolved interview payload (for commitStyle; the commit
+            prefix is read from forge.config.json, not from answers).
         stage_only: True to stop at staged with no commit (the --stage-only flag).
 
     Returns:
@@ -680,7 +686,11 @@ def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:
     if stage_only or answers["commitStyle"] == "stage-only":
         return {"committed": False, "commitHash": None, "staged": staged, "sentinelRemoved": True}
 
-    message = f"{answers.get('commitPrefix', 'forge')}: bootstrap baseline"
+    # commitPrefix is a forge.config.json field (00 §7), not an interview answer.
+    # Read it back from the config bootstrap just wrote; default "forge" if absent.
+    cfg = json.loads((target / "forge.config.json").read_text(encoding="utf-8"))
+    prefix = cfg.get("commitPrefix") or "forge"
+    message = f"{prefix}: bootstrap baseline"
     run(["git", "commit", "-m", message], cwd=target)
     rev = run(["git", "rev-parse", "HEAD"], cwd=target)
     return {
@@ -691,7 +701,7 @@ def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:
     }
 ```
 
-> `answers.get("commitPrefix", "forge")` is illustrative; the prefix is the config's `commitPrefix` (default `forge`, 00 §7). The single baseline commit subsumes the whole scaffold plus `forge.config.json` because both were recorded into `artifactsWritten[]` and thus into `staged` (REQ-LIFE-06, REQ-SCAF-08: nothing is left untracked).
+> The commit prefix comes from the config's `commitPrefix` field (default `forge`, 00 §7), read back from the `forge.config.json` bootstrap just wrote — **not** from `Answers`, which has no `commitPrefix` field (00 §5). The single baseline commit subsumes the whole scaffold plus `forge.config.json` because both were recorded into `artifactsWritten[]` and thus into `staged` (REQ-LIFE-06, REQ-SCAF-08: nothing is left untracked).
 
 ---
 

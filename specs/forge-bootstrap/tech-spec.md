@@ -36,10 +36,10 @@ skills/forge-bootstrap/
   SKILL.md                              # NEW — interview + orchestration (≤300 lines)
   references/
     templates/
-      typescript/  {package.json, tsconfig.json, src/index.ts, test/smoke.test.ts, .gitignore, eslint config}
+      typescript/  {package.json, tsconfig.json, src/index.ts, test/smoke.test.ts, .gitignore}
       python/      {pyproject.toml, src/<pkg>/__init__.py, src/<pkg>/main.py, tests/test_smoke.py, .gitignore}
       go/          {go.mod, main.go, main_test.go, .gitignore}
-      rust/        {Cargo.toml, src/main.rs, tests/smoke.rs, .gitignore}
+      rust/        {Cargo.toml, src/lib.rs, src/main.rs, tests/smoke.rs, .gitignore}
       generic/     {run.sh, test.sh, .gitignore}
       ci/          {github-actions.yml}   # composed per-member when ci:true (§3.11)
 scripts/
@@ -48,7 +48,7 @@ tests/
   test_forge_bootstrap.py               # NEW — pytest, run by validate.sh
 references/
   forge-config-schema.json              # MODIFIED — add optional workspaces[]
-installer/adapters/**                   # REGENERATED — python3 scripts/build-adapters.py
+adapters/**                             # REGENERATED — python3 scripts/build-adapters.py
 ```
 
 No edits needed to `plugin.json`, `marketplace.json`, `hooks/hooks.json`, or
@@ -272,7 +272,7 @@ JSON over stdout under `--json`; exit codes drive control flow.
 | `scripts/forge-root.sh` + `references/portable-root.md` | skill consumes | Byte-identical prelude to locate `$R`, then `python3 "$R/scripts/forge-bootstrap.py"`. |
 | `scripts/forge-init.sh` | bootstrap mirrors, does not call | Reuse field set + defaults for REQ-CFG-02 equivalence. |
 | `references/stacks/*.md` | source of truth | Canonical verification commands (§3.5). |
-| `scripts/build-adapters.py` + `installer/adapters/**` | regenerate | `python3 scripts/build-adapters.py`; commit regenerated bundles. **Hard CI gate** (`validate.sh` step 6b). No generator code change. |
+| `scripts/build-adapters.py` + `adapters/**` | regenerate | `python3 scripts/build-adapters.py`; commit regenerated bundles. **Hard CI gate** (`validate.sh` runs `build-adapters.py --check` over `adapters/`). No generator code change. |
 | `scripts/validate.sh` | gates the new code | spec-purity (SKILL.md), adapter drift, and `pytest tests/` run automatically. |
 | `hooks/hooks.json` | unaffected | Operates pre-config; the session-start hook exits 0 when no config/specs. No change. |
 | `forge-1-prd` / `forge-0-epic` | Mode B hand-off | Skill invokes the next stage (§3.8). |

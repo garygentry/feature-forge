@@ -31,7 +31,7 @@ Document key: `00` core-definitions · `01` architecture-layout · `02` helper-c
 | REQ-SCAF-04 | ≥1 passing test | 03 §2–6 | 02 §4.2 |
 | REQ-SCAF-05 | Green baseline (lint + test pass) | 02 §5 | 00 §6, 03, 05 §3.3 |
 | REQ-SCAF-06 | Repo-hygiene files (.gitignore/README/LICENSE/agent files) | 03 §2–6 | 02 §4.2/§4.3 |
-| REQ-SCAF-07 | Optional CI workflow | 02 §4.4 | 00 §7, 04 |
+| REQ-SCAF-07 | Optional CI workflow | 02 §4.4 | 03 §9, 04 §4 |
 | REQ-SCAF-08 | No untracked/dangling scaffold files | 02 §6 | 00 §4/§8, 05 §3.6 |
 | REQ-SCAF-09 | No-overwrite of pre-existing allowed-meta files | 02 §4.1 | 04 |
 | REQ-STACK-01 | TS/Python/Go/Rust/generic parity | 03 §1–6 | 00 §2, 01 §5, 05 §3.2 |
