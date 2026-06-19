@@ -277,11 +277,14 @@ def test_parser_parses_all_subcommands_and_flags(bootstrap_module: ModuleType) -
 
 
 def test_subcommand_bodies_are_stubs(bootstrap_module: ModuleType, tmp_path: Path) -> None:
-    """The five subcommand functions are NotImplementedError stubs for now (item 002)."""
+    """The remaining subcommand functions are NotImplementedError stubs for now.
+
+    ``check`` is implemented (item 003); scaffold/verify/commit/status remain stubs
+    until their items fill them.
+    """
     m = bootstrap_module
     answers = _answers()
     for call in (
-        lambda: m.check(tmp_path, Path("./specs")),
         lambda: m.scaffold(tmp_path, answers),
         lambda: m.verify(tmp_path, answers),
         lambda: m.commit(tmp_path, answers, False),
@@ -305,6 +308,103 @@ def test_missing_subcommand_is_usage_error(run_bootstrap, tmp_path: Path) -> Non
     """Invoking with no subcommand is an argparse usage error (non-zero exit)."""
     result = run_bootstrap(cwd=tmp_path)
     assert result.returncode != 0
+
+
+# --------------------------------------------------------------------------- #
+# `check` subcommand tests (item 003) — greenfield gate + recovery (02 §3)
+# --------------------------------------------------------------------------- #
+
+
+def _sentinel(**overrides: Any) -> dict[str, Any]:
+    """Build a minimal own-tool Sentinel (00 §8) for recovery tests."""
+    base = {
+        "version": 1,
+        "status": "in-progress",
+        "startedAt": "2026-06-19T00:00:00+00:00",
+        "answers": _answers(),
+        "artifactsWritten": ["run.sh"],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_check_empty_dir_eligible(run_bootstrap, tmp_path: Path) -> None:
+    """An empty target is trivially eligible, exit 0 (00 §3)."""
+    result = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert result.returncode == 0
+    payload = result.json()
+    assert payload["eligible"] is True
+    assert payload["disqualifying"] == []
+    assert payload["resumeMarker"] is None
+
+
+def test_check_fresh_remote_layout_eligible(run_bootstrap, tmp_path: Path) -> None:
+    """README + LICENSE + .gitignore + ./specs is eligible (REQ-GATE-04)."""
+    (tmp_path / "README.md").write_text("# demo\n", encoding="utf-8")
+    (tmp_path / "LICENSE").write_text("MIT\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("node_modules\n", encoding="utf-8")
+    (tmp_path / "specs").mkdir()
+    result = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert result.returncode == 0
+    payload = result.json()
+    assert payload["eligible"] is True
+    assert payload["disqualifying"] == []
+
+
+def test_check_source_file_refused(run_bootstrap, tmp_path: Path) -> None:
+    """A source file disqualifies and is named in disqualifying[] (REQ-GATE-01/02)."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "index.ts").write_text("export const x = 1;\n", encoding="utf-8")
+    result = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert result.returncode == 1
+    payload = result.json()
+    assert payload["eligible"] is False
+    assert "src" in payload["disqualifying"]
+
+
+def test_check_manifest_file_refused(run_bootstrap, tmp_path: Path) -> None:
+    """A package manifest disqualifies and is named (REQ-GATE-01/02)."""
+    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
+    result = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert result.returncode == 1
+    payload = result.json()
+    assert payload["eligible"] is False
+    assert "package.json" in payload["disqualifying"]
+
+
+def test_check_own_sentinel_sets_resume_marker(run_bootstrap, tmp_path: Path) -> None:
+    """An own sentinel yields resumeMarker != null and eligible, exit 0 (REQ-LIFE-02)."""
+    # Disqualifying file present, but the live sentinel routes to recovery.
+    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
+    sentinel = _sentinel()
+    (tmp_path / ".forge-bootstrap.json").write_text(
+        json.dumps(sentinel), encoding="utf-8"
+    )
+    result = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert result.returncode == 0
+    payload = result.json()
+    assert payload["eligible"] is True
+    assert payload["resumeMarker"] is not None
+    assert payload["resumeMarker"]["artifactsWritten"] == ["run.sh"]
+
+
+def test_check_is_read_only(run_bootstrap, tmp_path: Path) -> None:
+    """check writes/deletes no files (read-only gate, REQ-SEC-01)."""
+    (tmp_path / "README.md").write_text("# demo\n", encoding="utf-8")
+    before = sorted(p.name for p in tmp_path.iterdir())
+    run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    after = sorted(p.name for p in tmp_path.iterdir())
+    assert before == after
+
+
+def test_check_reports_has_git(run_bootstrap, tmp_path: Path) -> None:
+    """hasGit reflects a pre-existing .git/ directory (REQ-GATE-03 signal)."""
+    result = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert result.json()["hasGit"] is False
+    (tmp_path / ".git").mkdir()
+    result = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert result.json()["hasGit"] is True
 
 
 def test_answers_builder_shape() -> None:

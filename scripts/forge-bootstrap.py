@@ -387,11 +387,57 @@ def run(
 
 
 def check(target: Path, specs_dir: Path) -> CheckResult:
-    """Run the greenfield gate + recovery detection over a target repo (02 §3).
+    """Run the greenfield gate + recovery detection over a target repo (00 §3, §4).
 
-    Stub — implemented in backlog item 003.
+    Reads only — lists the target's immediate entries and parses any sentinel; it
+    never creates, modifies, or deletes a file (REQ-SEC-01). An entry is permitted
+    iff it is ``.git``, the configured specs dir, the SENTINEL_FILENAME, or a
+    regular file matching ALLOWED_META_FILE_RE (00 §3). Any other entry — a source
+    file, a package manifest, a build/tooling config — is disqualifying
+    (REQ-GATE-01) and its repo-relative path is recorded (REQ-GATE-02). A fresh
+    remote's auto-generated README + LICENSE pass (REQ-GATE-04). When the sentinel
+    is present the target is treated as eligible regardless of disqualifying
+    entries, so a re-run over bootstrap's own partial scaffold routes to recovery
+    rather than refusal (REQ-LIFE-02).
+
+    Args:
+        target: The project root being bootstrapped (the cwd, not the plugin root).
+        specs_dir: The configured specs directory; its basename is the one extra
+            entry permitted at the target root.
+
+    Returns:
+        A CheckResult (00 §4) with eligible / disqualifying / hasGit / resumeMarker.
+
+    Raises:
+        UsageError: If ``target`` exists but is not a directory, or its entries
+            cannot be listed (exit 2).
     """
-    raise NotImplementedError("check is implemented in backlog item 003")
+    if target.exists() and not target.is_dir():
+        raise UsageError(f"target is not a directory: {target}")
+    marker = read_sentinel(target)
+    has_git = (target / ".git").is_dir()
+    allowed_dir_names = {*ALLOWED_META_DIRS, specs_dir.name}
+    disqualifying: list[str] = []
+    try:
+        entries = sorted(target.iterdir()) if target.is_dir() else []
+    except OSError as exc:
+        raise UsageError(f"cannot list target {target}: {exc}")
+    for entry in entries:
+        name = entry.name
+        if name in allowed_dir_names and entry.is_dir():
+            continue
+        if name == SENTINEL_FILENAME:
+            continue
+        if entry.is_file() and ALLOWED_META_FILE_RE.match(name):
+            continue
+        disqualifying.append(name)
+    eligible = (not disqualifying) or marker is not None
+    return {
+        "eligible": eligible,
+        "disqualifying": disqualifying,
+        "hasGit": has_git,
+        "resumeMarker": marker,
+    }
 
 
 def scaffold(target: Path, answers: Answers) -> list[str]:

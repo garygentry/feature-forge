@@ -66,8 +66,8 @@
         "check writes/deletes no files (read-only gate)",
         "python3 -m pytest tests/test_forge_bootstrap.py -q passes (check tests green) and python3 -m py_compile scripts/forge-bootstrap.py passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:40:32.836Z",
       "dependsOn": [
         "002"
       ],
