@@ -33,10 +33,18 @@
       ],
       "startedAt": "2026-06-18T23:45:00Z",
       "completedAt": "2026-06-18T23:45:00Z",
-      "commitHash": null,
+      "commitHash": "310e44745ee6b16d2cda8fb5ee5d70a6e46ee5c8",
       "basedOnVersions": {
         "forge-1-prd": 1
       }
+    },
+    "forge-verify-tech": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-tech-2026-06-18.md",
+      "findingsCount": 6,
+      "verifiedAt": "2026-06-18T23:50:00Z",
+      "fixedAt": "2026-06-18T23:55:00Z",
+      "commitHash": "80e327f"
     }
   }
 }

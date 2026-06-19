@@ -41,6 +41,7 @@ skills/forge-bootstrap/
       go/          {go.mod, main.go, main_test.go, .gitignore}
       rust/        {Cargo.toml, src/main.rs, tests/smoke.rs, .gitignore}
       generic/     {run.sh, test.sh, .gitignore}
+      ci/          {github-actions.yml}   # composed per-member when ci:true (§3.11)
 scripts/
   forge-bootstrap.py                    # NEW — helper CLI (subcommands below)
 tests/
@@ -64,7 +65,7 @@ findings on stdout under `--json`, plain errors on stderr — matching the
 | Subcommand | Purpose | REQ |
 |---|---|---|
 | `check` | Greenfield gate + recovery detection. Returns `{eligible, disqualifying[], hasGit, resumeMarker}`. If the sentinel is present → signals recovery instead of refusal. | REQ-GATE-01/02, REQ-LIFE-02 |
-| `scaffold` | git init if absent; compose templates per `--answers`; write files + `forge.config.json`; track each written path into the sentinel. Resumable (skips files already recorded). | REQ-GATE-03, REQ-SCAF-01..09, REQ-MONO-01..04, REQ-CFG-01..03 |
+| `scaffold` | git init if absent; compose templates per `--answers`; write files + `forge.config.json`; track each written path into the sentinel. Resumable (skips files already recorded). | REQ-GATE-03, REQ-SCAF-01..09, REQ-MONO-01/02/03/04/05, REQ-CFG-01..03 |
 | `verify` | Detect toolchain (`command -v`); run resolved lint+test (per member for monorepo). Returns `{toolchainPresent, lint, test}`. exit 0 green / 1 not-green / 2 toolchain-missing. | REQ-SCAF-05, REQ-STACK-02, REQ-LIFE-03 |
 | `commit` | Stage the EXACT tracked file list (never `git add -A`); single baseline commit, or `--stage-only` to stop at staged; then finalize/remove the sentinel. | REQ-LIFE-05/06, REQ-SEC-02, REQ-SCAF-08 |
 | `status` | Inspect the sentinel for the resume/recovery flow (answers, artifacts, status). | REQ-LIFE-01/02 |
@@ -113,12 +114,27 @@ representation (REQ-MONO-05); making downstream stages (forge-2-tech/4-backlog)
 ### 3.3 Config written directly, mirroring forge-init (REQ-CFG-01/02/03)
 The helper writes `forge.config.json` itself rather than calling
 `scripts/forge-init.sh` (which writes `stack`/commands = null and no `loopRunner`).
-It reuses forge-init's exact field set + defaults for equivalence (REQ-CFG-02),
-fills the resolved `stack`/`typeCheckCommand`/`testCommand`, and writes a **minimal
-explicit** `loopRunner` block `{ "name": "rauf", "bin": "rauf" }` — satisfying
-REQ-CFG-01's explicit-block letter while all other loopRunner fields resolve from
-schema defaults (equivalent in spirit to forge-init's implicit default). After
-bootstrap, `forge-init` is unnecessary (REQ-CFG-03).
+It reuses forge-init's **exact field set + default values** for equivalence
+(REQ-CFG-02). Concretely, the helper reproduces every field forge-init emits, matching
+its defaults byte-for-byte except where bootstrap has resolved a real value:
+
+| Field | forge-init default | bootstrap value |
+|---|---|---|
+| `specsDir` | `./specs` | same |
+| `docsDir` | `./docs/architecture` | same |
+| `backlogDir` | `null` | same |
+| `gitCommitAfterStage` | `true` | same |
+| `commitPrefix` | `forge` | same |
+| `loopIterationMultiplier` | `1.5` | same |
+| `stack` | `null` | resolved from interview (or `null` + `workspaces[]` for monorepo) |
+| `typeCheckCommand` | `null` | resolved per stack (§3.5) |
+| `testCommand` | `null` | resolved per stack (§3.5) |
+
+In addition it writes a **minimal explicit** `loopRunner` block
+`{ "name": "rauf", "bin": "rauf" }` — satisfying REQ-CFG-01's explicit-block letter
+while all other loopRunner fields resolve from schema defaults (equivalent in spirit
+to forge-init's implicit default). After bootstrap, `forge-init` is unnecessary
+(REQ-CFG-03).
 
 ### 3.4 Greenfield gate + transient resume sentinel (REQ-GATE-*, REQ-LIFE-01/02, OQ-03)
 `check` allows only repo-meta files: `.git/`, a README (`README`/`README.md`),
@@ -133,15 +149,20 @@ removed before staging, so it never enters history; it is also listed in the
 scaffolded `.gitignore` as belt-and-suspenders.
 
 ### 3.5 Per-stack verification commands (REQ-STACK-01/02, sourced from references/stacks/*.md)
-The scaffold's commands MUST match what the pipeline's stack profile expects. Canonical choices written into config + satisfied by the templates:
+The `references/stacks/*.md` profiles are the **source of truth**; the scaffold's
+commands MUST match what the pipeline's stack profile expects. Canonical choices
+written into config + satisfied by the templates:
 
 | Stack | typeCheckCommand | testCommand | Notes |
 |---|---|---|---|
-| typescript | `npx tsc --noEmit` | `<pm> test` → `node --test` | `<pm>` from REQ-INPUT-04 (npm/pnpm/yarn); built-in test runner keeps deps minimal (dev-dep: typescript) |
+| typescript | `npx tsc --noEmit` | `<pm> test` → `vitest run` | `<pm>` from REQ-INPUT-04 (npm/pnpm/yarn); test runner is **Vitest**, matching the `typescript.md` profile (dev-deps: typescript, vitest) |
 | python | `mypy .` | `pytest` | install via REQ-INPUT-04 pm (uv/poetry/pip); trivial typed module passes mypy |
 | go | `go vet ./...` | `go test ./...` | go modules; no pm question |
 | rust | `cargo clippy` | `cargo test` | cargo; no pm question |
 | generic | `sh -n run.sh test.sh` | `./test.sh` | zero-dependency, see §3.6 |
+
+The generic row's commands are **bootstrap-defined** because `_generic.md` specifies
+no concrete verification command (there is no language toolchain to defer to); see §3.6.
 
 Templates carry light token substitution (`{{PROJECT_NAME}}`, `{{PKG}}`, `{{PM}}`)
 — simple string replacement, not a templating engine.
@@ -164,6 +185,52 @@ Mode B is opt-in. After a verified-green baseline and a successful commit, the s
 asks feature-vs-epic and invokes `forge-1-prd <feature>` or `forge-0-epic <epic>`
 (skill-to-skill, not the helper). It MUST NOT launch if the baseline is unverified
 (REQ-MODEB-04). Subsequent stages remain normal user-driven steps (REQ-MODEB-03).
+
+### 3.9 Interview question set (REQ-INPUT-01..08)
+The question set is **owned by the skill body** (not the helper); the helper only
+receives the resolved `--answers` JSON. Each question maps to a requirement and a
+default/seed rule:
+
+| # | Question | REQ | Default / seed rule |
+|---|---|---|---|
+| 1 | Project name | REQ-INPUT-01 | default inferred from the target directory name |
+| 2 | One-line purpose | REQ-INPUT-02 | no default; seeds the README and config |
+| 3 | Language/stack | REQ-INPUT-03 | from the built-in profiles (typescript/python/go/rust/generic) |
+| 4 | Package manager | REQ-INPUT-04 | asked **only when** the chosen stack has alternatives (TS: npm/pnpm/yarn; Python: uv/poetry/pip); skipped for go/rust/generic |
+| 5 | License | REQ-INPUT-05 | includes a "none" option; seeded from a pre-existing LICENSE when present (§7 no-overwrite) |
+| 6 | Single package vs monorepo | REQ-INPUT-06 | default `single` |
+| 7 | Feature vs epic (Mode B only) | REQ-INPUT-07 | asked only when Mode B is opted in (§3.8) |
+
+All questions use host-adapted structured input, falling back to the numbered-text
+prompt of §3.7 when `AskUserQuestion` is unavailable (REQ-INPUT-08).
+
+### 3.10 Completion summary & terminal outcomes (REQ-OUT-01/02, REQ-OBS-01)
+The **skill body** renders the human-facing output from the helper's JSON; the helper
+itself only emits structured JSON + exit codes (§5, §7). On the **success path**
+(REQ-OUT-01, P0) the skill prints: the created artifacts, the resolved stack(s), the
+verification verdict (**green** or **unverified**), and the exact next command
+(`forge-1-prd <feature>` or `forge-0-epic <epic>`). In **Mode B** (REQ-OUT-02) it
+launches that next stage instead of printing the command.
+
+All four terminal outcomes (REQ-OBS-01) MUST be explicit and actionable, each sourced
+from a helper result:
+
+| Outcome | Source | Skill action |
+|---|---|---|
+| Success | `commit` exit 0 + `verify` verdict | REQ-OUT-01 summary (or Mode B launch) |
+| Greenfield refusal | `check` `eligible:false` + `disqualifying[]` (§7) | name the paths; point to `forge-init` + `forge-1-prd` |
+| Missing toolchain | `verify` `toolchainPresent:false`, exit 2 (§7) | offer scaffold-anyway-unverified vs abort; mark baseline **unverified** |
+| Partial-state detected | `check` finds the sentinel (§3.4) | route to resume/restart/cancel |
+
+### 3.11 Monorepo CI generation (REQ-MONO-04)
+When CI is enabled (`ci:true`) for a **monorepo**, the scaffold emits a CI workflow
+artifact (a GitHub Actions workflow under `.github/workflows/ci.yml`) that iterates
+the `workspaces[]` members and runs **each member's** resolved lint + test command
+(per §3.5), so CI exercises every member (REQ-MONO-04). For a single-package project
+with CI enabled, the workflow runs the top-level `typeCheckCommand` + `testCommand`.
+The workflow is composed from a template (`references/templates/ci/github-actions.yml`)
+with per-member steps generated from the resolved answers. CI generation is gated on
+the `ci` interview answer; when CI is disabled no workflow is written.
 
 ## 4. Data Model
 
@@ -207,7 +274,7 @@ JSON over stdout under `--json`; exit codes drive control flow.
 | `references/stacks/*.md` | source of truth | Canonical verification commands (§3.5). |
 | `scripts/build-adapters.py` + `installer/adapters/**` | regenerate | `python3 scripts/build-adapters.py`; commit regenerated bundles. **Hard CI gate** (`validate.sh` step 6b). No generator code change. |
 | `scripts/validate.sh` | gates the new code | spec-purity (SKILL.md), adapter drift, and `pytest tests/` run automatically. |
-| `hooks/session-check.sh` | unaffected | Operates pre-config; hook exits 0 when no config/specs. No change. |
+| `hooks/hooks.json` | unaffected | Operates pre-config; the session-start hook exits 0 when no config/specs. No change. |
 | `forge-1-prd` / `forge-0-epic` | Mode B hand-off | Skill invokes the next stage (§3.8). |
 
 **Verified signatures/paths:** portable prelude and `forge-root.sh` sentinel
@@ -247,9 +314,16 @@ is genuinely new). No WARNINGs outstanding.
   present (skip/xfail when `command -v` misses, so CI stays portable); generic is
   green with no language toolchain (REQ-STACK-03).
 - **Monorepo:** multiple members compose; config has a well-formed `workspaces[]`
-  validating against the extended schema; mixed-language members coexist.
-- **Config equivalence (REQ-CFG-02):** field set matches forge-init's; loopRunner
-  minimal block present; config validates against `forge-config-schema.json`.
+  validating against the extended schema; mixed-language members coexist; each member
+  has its own runnable entrypoint + at least one test (REQ-MONO-03). When `ci:true`,
+  the generated `.github/workflows/ci.yml` contains a lint+test step for **every**
+  member (REQ-MONO-04).
+- **Config equivalence (REQ-CFG-02):** the emitted config carries forge-init's exact
+  field set — `specsDir`, `docsDir`, `backlogDir`, `gitCommitAfterStage`,
+  `commitPrefix`, `loopIterationMultiplier`, `stack`, `typeCheckCommand`,
+  `testCommand` — with defaults matching forge-init except the resolved stack/commands;
+  the minimal `loopRunner` block is present; config validates against
+  `forge-config-schema.json`.
 - **Resume:** interrupt after partial `scaffold`, re-run → resumes without
   re-writing; restart → clean.
 - **Commit:** stages exactly the tracked files (assert no `-A`), single baseline
@@ -265,7 +339,7 @@ schema extension exercised by at least one monorepo case.
   existing helpers. Git CLI (already assumed by the pipeline).
 - **Scaffolded-project toolchains** are the *user's* machine concern, detected at
   `verify` time (REQ-LIFE-03), never installed by bootstrap. Templates favor minimal
-  dev-deps (e.g. TS uses the built-in `node --test`).
+  dev-deps (e.g. TS pins only `typescript` + `vitest`, matching the stack profile).
 - **No new internal package**; this is additive within the existing plugin.
 
 ## 10. Open Technical Questions
@@ -274,9 +348,10 @@ schema extension exercised by at least one monorepo case.
   monorepo representation, but forge-2-tech/forge-4-backlog do not yet *read* it to
   target a member's stack. Full pipeline monorepo-awareness is a follow-up beyond
   this feature's scope (REQ-MONO-05 is satisfied at the representation level here).
-- **OQ-T2 (TS test runner / minimal dev-deps):** confirm `node --test` vs a
-  lightweight runner and pin the smallest dev-dep set that keeps the TS baseline
-  green across npm/pnpm/yarn — finalize during implementation.
+- **OQ-T2 (TS minimal dev-deps):** the runner is **Vitest** (matching the
+  `typescript.md` profile, resolving the earlier node --test-vs-runner question). Pin
+  the smallest `typescript` + `vitest` dev-dep set that keeps the TS baseline green
+  across npm/pnpm/yarn — finalize exact versions during implementation.
 - **OQ-T3 (sentinel safety):** confirm the `.gitignore` entry + removal ordering fully
   prevents the sentinel from ever being committed even on a crash between stage and
   delete.
