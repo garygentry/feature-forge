@@ -2,8 +2,8 @@
   "feature": "forge-bootstrap",
   "pipelineStatus": "active",
   "createdAt": "2026-06-18T23:23:16Z",
-  "updatedAt": "2026-06-18T23:45:00Z",
-  "currentStage": "forge-3-specs",
+  "updatedAt": "2026-06-19T00:30:00Z",
+  "currentStage": "forge-4-backlog",
   "notes": "PRD OQ-01..OQ-05 all resolved in tech-spec. Carry-forward open technical questions for forge-3-specs: OQ-T1 — forge-bootstrap WRITES the monorepo workspaces[] representation, but downstream consumption (forge-2-tech/forge-4-backlog resolving a member's stack) is a deferred follow-up beyond this feature's scope; OQ-T2 — confirm TS test runner (node --test vs lightweight) + minimal dev-deps that keep the TS baseline green across npm/pnpm/yarn; OQ-T3 — confirm .gitignore entry + removal ordering so the .forge-bootstrap.json sentinel can never be committed even on a crash. Architecture: hybrid Python helper (scripts/forge-bootstrap.py, subcommands check/scaffold/verify/commit/status) + SKILL.md orchestration; templates under skills/forge-bootstrap/references/templates/<stack>/; additive workspaces[] schema extension; transient root sentinel for resume; remember to regenerate installer/adapters via build-adapters.py.",
   "stages": {
     "forge-1-prd": {
@@ -46,6 +46,26 @@
       "fixedAt": "2026-06-18T23:55:00Z",
       "reverifiedAt": "2026-06-19T00:05:00Z",
       "commitHash": "80e327f"
+    },
+    "forge-3-specs": {
+      "status": "complete",
+      "version": 1,
+      "commitHash": "00e0571",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-helper-cli.md",
+        "03-stack-templates.md",
+        "04-skill-orchestration.md",
+        "05-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "startedAt": "2026-06-19T00:15:00Z",
+      "completedAt": "2026-06-19T00:30:00Z",
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1
+      }
     }
   }
 }
