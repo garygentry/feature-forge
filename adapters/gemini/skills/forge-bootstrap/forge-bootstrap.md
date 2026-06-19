@@ -87,7 +87,7 @@ Read `CheckResult{eligible, disqualifying[], resumeMarker}`.
   run's `startedAt` and `artifactsWritten[]`, then ask **resume / restart / cancel**:
   - **Resume** — reuse the sentinel's mirrored `answers` (no re-interview), re-run `scaffold`
     (idempotent — the helper skips already-recorded files), continue from step 5.
-  - **Restart** — discard the partial; the helper cleans, the interview runs fresh.
+  - **Restart** — discard the partial: delete the recorded `artifactsWritten[]` tree + the `.forge-bootstrap.json` sentinel (a skill-orchestration step — the helper has no clean subcommand), then run the interview and `scaffold` fresh.
   - **Cancel** — stop without changes.
 
   You perform no cleanup yourself; you only render the choice and dispatch the subcommand.
@@ -103,7 +103,7 @@ Ask exactly these, in order. Resolved answers become the `Answers` payload hande
 | Q2 | One-line purpose? | no default; seeds README + config | free-text |
 | Q3 | Language / stack? | required | `typescript` / `python` / `go` / `rust` / `generic` |
 | Q4 | Package manager? | **only when the stack has a choice** — TS: `npm`/`pnpm`/`yarn`, Python: `uv`/`poetry`/`pip`; **skipped** for go/rust/generic | the stack's options |
-| Q5 | License? | seeded from a pre-existing `LICENSE` if present (the helper keeps it) | `MIT` / `Apache-2.0` / `none` |
+| Q5 | License? | **detect & pre-select** from a pre-existing `LICENSE` (see gating); else default `MIT`. The helper keeps an existing `LICENSE` (REQ-SCAF-09) | `MIT` / `Apache-2.0` / `none` |
 | Q6 | Single package or monorepo? | default `single` | `single` / `monorepo` |
 | Q6a | (monorepo only) member count, then per-member name + stack | no default; one member each (mixed-language allowed) | loop |
 | Q7 | Chain into the pipeline now (Mode B)? | default `no` | `no, scaffold only` / `yes, chain in` |
@@ -115,6 +115,15 @@ Q6 = `monorepo` (each member gets a `path` like `packages/<name>`; a single pack
 member with `path = "."`); Q7 may be asked up-front, but Q8 / Mode B launch are gated on a
 verified-green, committed baseline (see below). You may also offer an optional
 "generate a CI workflow (lint+test)?" question, setting `Answers.ci`.
+
+License detect-and-seed (Q5, REQ-SCAF-09): when a `LICENSE` already exists in the target
+(an allowed-meta file the gate let through), **read its first lines** and pre-select the
+matching Q5 default — "MIT License" → `MIT`, "Apache License" → `Apache-2.0`, otherwise
+keep the default and note the unrecognized license. The helper never overwrites the existing
+`LICENSE`; this only seeds the interview default. Also set `Answers.author` from
+`git config user.name` (fallback: the project name) and `Answers.host` to `claude` when
+running on a Claude host (so the helper emits `CLAUDE.md` alongside `AGENTS.md`), else leave
+it null.
 
 **Assemble the payload.** Build one `Answers` JSON object — `projectName`, `purpose`,
 `layout`, `license`, `members[]`, `modeB`, `modeBTarget`, `ci`, `commitStyle`, `author`,
@@ -162,7 +171,7 @@ leave the sentinel in-progress (resumable) — do **not** declare success.
 ```bash
 R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-bootstrap.py" commit "<target-dir>" --json
+python3 "$R/scripts/forge-bootstrap.py" commit "<target-dir>" --json --answers '<Answers JSON>' [--stage-only]
 ```
 
 ## Completion summary

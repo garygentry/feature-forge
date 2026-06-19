@@ -276,11 +276,6 @@ def test_parser_parses_all_subcommands_and_flags(bootstrap_module: ModuleType) -
     assert args.cmd == "status"
 
 
-def test_subcommand_bodies_are_stubs(bootstrap_module: ModuleType, tmp_path: Path) -> None:
-    """All subcommands are now implemented — this test is a no-op placeholder."""
-    pass
-
-
 def test_malformed_answers_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
     """A malformed --answers payload is a usage error → exit 2 before any stub (00 §9)."""
     result = run_bootstrap(
@@ -449,6 +444,84 @@ def test_scaffold_single_config_field_set(run_bootstrap, tmp_path: Path) -> None
     assert cfg["typeCheckCommand"] == "sh -n run.sh test.sh"
     assert cfg["testCommand"] == "./test.sh"
     assert "workspaces" not in cfg
+
+
+# Per-stack emission, asserted with NO toolchain guard so every stack's file set +
+# resolved config commands are verified even where the toolchain is absent (05 §3.2,
+# REQ-STACK-01/02). Expected file sets per 03 §§2-6; commands per 00 §6 / STACK_COMMANDS.
+_STACK_EMISSION = {
+    "typescript": (
+        "npm",
+        {"package.json", "tsconfig.json", "src/index.ts", "test/smoke.test.ts", ".gitignore"},
+        "npx tsc --noEmit",
+        "npm test",
+    ),
+    "python": (
+        "uv",
+        {"pyproject.toml", "src/demo/__init__.py", "src/demo/main.py",
+         "tests/test_smoke.py", ".gitignore"},
+        "mypy .",
+        "pytest",
+    ),
+    "go": (
+        None,
+        {"go.mod", "main.go", "main_test.go", ".gitignore"},
+        "go vet ./...",
+        "go test ./...",
+    ),
+    "rust": (
+        None,
+        {"Cargo.toml", "src/lib.rs", "src/main.rs", "tests/smoke.rs", ".gitignore"},
+        "cargo clippy",
+        "cargo test",
+    ),
+    "generic": (
+        None,
+        {"run.sh", "test.sh", ".gitignore"},
+        "sh -n run.sh test.sh",
+        "./test.sh",
+    ),
+}
+
+
+@pytest.mark.parametrize("stack", sorted(_STACK_EMISSION))
+def test_scaffold_emits_stack_file_set_and_commands(
+    run_bootstrap, tmp_path: Path, stack: str
+) -> None:
+    """Each stack scaffolds its file set + resolved config commands (no toolchain needed)."""
+    pm, expected_files, lint, test = _STACK_EMISSION[stack]
+    answers = _answers(project_name="demo", members=[_member("demo", ".", stack, pm)])
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0, result.stderr
+    written = set(result.json()["artifactsWritten"])
+    assert expected_files <= written, f"{stack}: missing {expected_files - written}"
+    for rel in expected_files:
+        assert (tmp_path / rel).is_file()
+    cfg = _config(tmp_path)
+    assert cfg["stack"] == stack
+    assert cfg["typeCheckCommand"] == lint
+    assert cfg["testCommand"] == test
+
+
+def test_emitted_config_validates_against_schema(run_bootstrap, tmp_path: Path) -> None:
+    """Single-package and monorepo forge.config.json both validate against the schema."""
+    jsonschema = pytest.importorskip("jsonschema")
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    validator = jsonschema.Draft7Validator(schema)
+
+    single = tmp_path / "single"
+    single.mkdir()
+    _scaffold(run_bootstrap, single, _answers(members=[_member("demo", ".", "python", "uv")]))
+    assert list(validator.iter_errors(_config(single))) == []
+
+    mono = tmp_path / "mono"
+    mono.mkdir()
+    _scaffold(run_bootstrap, mono, _answers(
+        layout="monorepo",
+        members=[_member("api", "packages/api", "python", "pip"),
+                 _member("cli", "packages/cli", "go", None)],
+    ))
+    assert list(validator.iter_errors(_config(mono))) == []
 
 
 def test_scaffold_monorepo_populates_workspaces(run_bootstrap, tmp_path: Path) -> None:

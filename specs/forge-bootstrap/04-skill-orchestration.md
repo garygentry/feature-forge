@@ -319,11 +319,16 @@ treat it as a greenfield refusal (REQ-LIFE-02). It surfaces the prior run's `sta
 - **Resume** — re-use the sentinel's mirrored `answers` (no re-interview), re-run `scaffold`
   (idempotent over `artifactsWritten[]` — helper skips files already recorded,
   `02-helper-cli.md`), continue from step 5.
-- **Restart** — discard the prior partial; the helper cleans and the interview runs fresh.
+- **Restart** — discard the prior partial: the **body** deletes the recorded
+  `artifactsWritten[]` tree + the sentinel (a skill-orchestration step — the helper exposes
+  no clean/restart subcommand, `02-helper-cli.md` §8.2; cf. `05-testing-strategy.md` §3.7),
+  then the interview runs fresh and `scaffold` re-emits from scratch.
 - **Cancel** — stop without changes.
 
-The body itself performs no file cleanup; resume/restart mechanics are the helper's
-(`02-helper-cli.md`). The body only renders the choice and dispatches the matching subcommand.
+Resume is helper-backed (idempotent `scaffold` over `artifactsWritten[]`,
+`02-helper-cli.md`). Restart cleanup is the **body's** responsibility (delete the recorded
+tree + sentinel), since the helper exposes no clean/restart subcommand
+(`05-testing-strategy.md` §3.7); the body then dispatches a fresh `scaffold`.
 
 ### 7.3 Scaffold
 
