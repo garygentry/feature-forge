@@ -309,8 +309,8 @@
         "Mode B launches forge-1-prd/forge-0-epic skill-to-skill only when green and committed (REQ-MODEB-04)",
         "bash scripts/validate.sh spec-purity check passes for SKILL.md: body ≤300 lines and ≤5000 words (check-spec-purity.py)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:56:22.995Z",
       "dependsOn": [
         "003",
         "006",

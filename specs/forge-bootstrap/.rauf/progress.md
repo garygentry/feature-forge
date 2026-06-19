@@ -90,3 +90,15 @@
   comes from `resumeMarker`, not an empty list. The 05 spec's illustrative
   `disqualifying==[]` does not match the 003 implementation — assert `eligible:true`
   + `resumeMarker!=null` instead. 46 passed, 2 skipped.
+
+## Item 012 — SKILL.md orchestration body
+- Authored `skills/forge-bootstrap/SKILL.md` per spec 04: front-matter (name +
+  trigger/negative-trigger description + argument-hint metadata), host-adaptation
+  fallback note (§6, wait-for-text-reply), Mode A flow (§7) off check/scaffold/
+  verify/commit exit codes, interview Q1–Q9 table with conditional gating, Mode B
+  hand-off (§8, launch only when green && committed), §9 summary, §10 four outcomes.
+- Body = 225 lines / 1753 words (budget 300/5000) — comfortable margin.
+- The portable-root prelude appears verbatim before all four bash blocks; rule 5
+  (prelude-identity) requires the BOOTSTRAP_PRELUDE two lines byte-identical — copy
+  from forge-init/SKILL.md, do not retype. `check-spec-purity.py` PASS.
+- NOTE: full validate.sh still FAILs on pre-existing adapter-drift (item 014's job).
