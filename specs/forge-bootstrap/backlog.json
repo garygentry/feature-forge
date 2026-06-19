@@ -392,8 +392,8 @@
         "No file uses a token outside the 00 §6.2 set; no scripts/ code changes",
         "python3 -m py_compile scripts/forge-bootstrap.py still passes (no helper change in this item)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:43:27.179Z",
       "dependsOn": [],
       "notes": "Foundation/asset item (tier 0, no deps) added after the initial plan to ground REQ-SCAF-06 hygiene generation (backlog verification V-002/V-003). README/agent stubs + bundled MIT/Apache-2.0 license texts. Consumed by item 006's write_hygiene. Adding a license later is purely additive (new licenses/<id>/LICENSE + a Q5 option).",
       "estimatedIterations": 1,
