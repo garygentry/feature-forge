@@ -40,8 +40,8 @@
         "python3 -m py_compile scripts/forge-bootstrap.py passes",
         "python3 -m pytest tests/test_forge_bootstrap.py -q runs (collection succeeds; foundation/fixture tests pass)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:38:16.101Z",
       "dependsOn": [],
       "notes": "Mirror epic-manifest.py's style (flat functions + IO layer, no class hierarchy) per 01 §3. Constants/types are referenced verbatim from 00 — do not invent fields. The fixture env hook is required by the deterministic toolchain-missing test in item 008/011.",
       "estimatedIterations": 2,
