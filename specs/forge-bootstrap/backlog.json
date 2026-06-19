@@ -16,8 +16,8 @@
         "A pre-existing forge.config.json that has no `workspaces` key still validates against the edited schema",
         "python3 -c \"import json; json.load(open('references/forge-config-schema.json'))\" exits 0 (valid JSON)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:35:24.153Z",
       "dependsOn": [],
       "notes": "See 00-core-definitions.md §7.1 for the exact jsonc snippet and the closed-shape/packageManager-omission rationale. Additive-only is a hard back-compat requirement (REQ-COMPAT).",
       "estimatedIterations": 1,
