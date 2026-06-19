@@ -17,3 +17,9 @@ This project was scaffolded by forge-bootstrap. To continue development:
 - Use `/feature-forge:forge` to enter the forge pipeline for new features.
 - The `forge.config.json` at the project root defines the stack, commands, and pipeline settings.
 - Follow the patterns established in the existing codebase.
+
+## Specs are pre-implementation
+
+- Documents under `specs/` (PRDs, tech specs, numbered implementation specs) establish the backlog. They are **not** kept in sync with the code as it evolves.
+- Don't flag or "fix" divergence between a finalized spec and the implementation — code is the source of truth for behavior.
+- It's fine for `specs/` artifacts and `backlog.json` to reference specs for provenance, but implementation artifacts (source code, generated skills/agents, configs, docs) must not reference spec files, which may be archived or deleted after a feature ships.

@@ -175,7 +175,7 @@ Compose the full `epic-manifest.json` per the 00 §2 schema, setting:
 
 Write the composed JSON to `{specsDir}/{epic}/epic-manifest.json` (creating the epic dir first).
 For the *initial* creation write the skill writes the file directly — atomic guarantees are only
-required for in-place mutation, which is the helper mutators' job. Then validate:
+required for in-place mutation, which is the helper mutators' job. Creating the epic dir first creates `{specsDir}/`, so after writing the manifest invoke the **Specs Directory Hygiene** block in `references/shared-conventions.md` (idempotent; stage anything it writes with this stage's commit). Then validate:
 
 ```bash
 R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"

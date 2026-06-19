@@ -86,6 +86,8 @@ Once the interview is thorough, write `{resolvedFeatureDir}/PRD.md` following th
 
 Every requirement MUST have a unique ID (e.g., REQ-AUTH-01, REQ-PERF-01). These IDs are referenced by all downstream documents.
 
+After writing the PRD (this is the point where `{specsDir}/{feature}/` is first created for a standalone feature), invoke the **Specs Directory Hygiene** block in `references/shared-conventions.md` to ensure `{specsDir}/AGENTS.md` (and `{specsDir}/CLAUDE.md` on the Claude host) exists. It is idempotent — it never overwrites an existing file.
+
 ## Step 5: Review with User
 
 Present the complete PRD to the user. Ask:
@@ -109,7 +111,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
    - Check downstream stages (`forge-2-tech`, `forge-3-specs`, `forge-4-backlog`, `forge-5-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-1-prd`, set their status to `stale`.
 2. Use `AskUserQuestion` to ask: "Anything you want to note before we wrap? (preserved across sessions)"
    - If yes, store in the `notes` field
-3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete PRD v{n}"`, then set `stages.forge-1-prd.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
+3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (including `{specsDir}/AGENTS.md` / `{specsDir}/CLAUDE.md` if the Specs Directory Hygiene step just wrote them), attempt commit with message `"{commitPrefix}({feature}): complete PRD v{n}"`, then set `stages.forge-1-prd.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 5. Tell the user: "PRD complete. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the PRD\n  - `/feature-forge:forge-2-tech {feature}` to start the tech spec\n  - `/feature-forge:forge {feature}` to see full pipeline status"
 
 ## Gotchas
