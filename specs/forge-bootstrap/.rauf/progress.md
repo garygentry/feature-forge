@@ -102,3 +102,17 @@
   (prelude-identity) requires the BOOTSTRAP_PRELUDE two lines byte-identical — copy
   from forge-init/SKILL.md, do not retype. `check-spec-purity.py` PASS.
 - NOTE: full validate.sh still FAILs on pre-existing adapter-drift (item 014's job).
+
+## Item 007 — CI workflow template + maybe_write_ci
+- Added `skills/forge-bootstrap/references/templates/ci/github-actions.yml` (03 §9
+  skeleton with the single `# <<MEMBER_STEPS>>` injection marker).
+- Implemented `_compose_ci_workflow(answers)`: reads the template, derives indent
+  from the marker's leading whitespace, replaces the marker line with generated
+  steps. Single package (layout=="single") → `name: lint`/`name: test` with NO
+  working-directory; monorepo → per member `name: <member> — lint/test` +
+  `working-directory: <path>` (REQ-MONO-04). Commands via `_resolve_commands`.
+- `maybe_write_ci` no-ops on ci:false, else `_write_artifact(".github/workflows/ci.yml")`
+  so it's recorded in the sentinel and routed through the kept/idempotent path.
+  Already wired into scaffold() (line ~647) from item 006.
+- Added 3 CI tests (ci:false no file; ci:true single one job; ci:true monorepo
+  step-per-member). 49 passed, 2 skipped. py_compile passes.

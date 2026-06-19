@@ -606,15 +606,50 @@ def write_hygiene(answers: Answers, target: Path, sentinel: Sentinel) -> None:
         )
 
 
+def _compose_ci_workflow(answers: Answers) -> str:
+    """Compose the CI workflow, injecting per-member lint+test steps (03 §9).
+
+    Reads templates/ci/github-actions.yml and replaces the ``# <<MEMBER_STEPS>>``
+    marker with one lint step + one test step per member. For a single package
+    (one implicit member at '.') the steps carry no ``working-directory``; for a
+    monorepo every member is pinned to its ``path`` so CI exercises EVERY member
+    (REQ-MONO-04).
+    """
+    src = TEMPLATE_ROOT / "ci" / "github-actions.yml"
+    if not src.is_file():
+        raise UsageError(f"CI workflow template not found: {src}")
+    template = src.read_text(encoding="utf-8")
+    marker = "# <<MEMBER_STEPS>>"
+    if marker not in template:
+        raise UsageError(f"CI template missing {marker!r} marker: {src}")
+    indent = template[: template.index(marker)].rsplit("\n", 1)[-1]
+    single = answers["layout"] == "single"
+    lines: list[str] = []
+    for member in answers["members"]:
+        lint, test = _resolve_commands(member)
+        wd = None if single else member["path"]
+        label = member["name"]
+        for kind, cmd in (("lint", lint), ("test", test)):
+            name = kind if single else f"{label} — {kind}"
+            lines.append(f"{indent}- name: {name}")
+            if wd is not None:
+                lines.append(f"{indent}  working-directory: {wd}")
+            lines.append(f"{indent}  run: {cmd}")
+    block = "\n".join(lines)
+    return template.replace(f"{indent}{marker}", block)
+
+
 def maybe_write_ci(answers: Answers, target: Path, sentinel: Sentinel) -> None:
     """Emit a CI workflow when answers.ci is true (02 §4.4).
 
-    No-op when answers.ci is false (REQ-SCAF-07). The CI composition itself is
-    implemented in backlog item 007.
+    No-op when answers.ci is false (REQ-SCAF-07). When enabled, composes
+    .github/workflows/ci.yml from templates/ci/github-actions.yml with one
+    lint+test step per member (03 §9, REQ-MONO-04) and records it for staging.
     """
     if not answers["ci"]:
         return
-    raise NotImplementedError("maybe_write_ci composition is implemented in item 007")
+    content = _compose_ci_workflow(answers)
+    _write_artifact(target, ".github/workflows/ci.yml", content, sentinel)
 
 
 def scaffold(target: Path, answers: Answers) -> list[str]:

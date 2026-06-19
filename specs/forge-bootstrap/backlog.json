@@ -180,8 +180,8 @@
         "For a monorepo, the generated workflow runs lint+test for every member in workspaces[] (REQ-MONO-04)",
         "python3 -m pytest tests/test_forge_bootstrap.py -q passes (CI tests green) and py_compile passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:57:53.010Z",
       "dependsOn": [
         "006"
       ],

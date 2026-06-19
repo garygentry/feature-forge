@@ -541,6 +541,55 @@ def test_scaffold_git_init_only_when_absent(run_bootstrap, tmp_path: Path) -> No
 
 
 # --------------------------------------------------------------------------- #
+# CI workflow composition tests (item 007) — maybe_write_ci (02 §4.4, 03 §9)
+# --------------------------------------------------------------------------- #
+
+
+def test_ci_false_writes_no_workflow(run_bootstrap, tmp_path: Path) -> None:
+    """ci == false is a no-op — no .github/workflows/ci.yml (REQ-SCAF-07)."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)], ci=False)
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    assert ".github/workflows/ci.yml" not in result.json()["artifactsWritten"]
+    assert not (tmp_path / ".github" / "workflows" / "ci.yml").exists()
+
+
+def test_ci_true_single_package_writes_one_job(run_bootstrap, tmp_path: Path) -> None:
+    """ci == true for a single package writes one lint+test job, recorded (03 §9.2)."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)], ci=True)
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    assert ".github/workflows/ci.yml" in result.json()["artifactsWritten"]
+    text = (tmp_path / ".github" / "workflows" / "ci.yml").read_text()
+    assert "name: lint" in text
+    assert "name: test" in text
+    # single package → no per-member working-directory pinning.
+    assert "working-directory" not in text
+    assert text.count("run: ") == 2
+
+
+def test_ci_true_monorepo_writes_step_per_member(run_bootstrap, tmp_path: Path) -> None:
+    """ci == true for a monorepo writes lint+test per member (REQ-MONO-04)."""
+    members = [
+        _member("api", "packages/api", "python", "pip"),
+        _member("cli", "packages/cli", "go", None),
+    ]
+    answers = _answers(layout="monorepo", members=members, ci=True)
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    text = (tmp_path / ".github" / "workflows" / "ci.yml").read_text()
+    # every member appears with both a lint and a test step, pinned to its path.
+    assert "name: api — lint" in text
+    assert "name: api — test" in text
+    assert "name: cli — lint" in text
+    assert "name: cli — test" in text
+    assert "working-directory: packages/api" in text
+    assert "working-directory: packages/cli" in text
+    # two members × (lint+test) = four steps.
+    assert text.count("run: ") == 4
+
+
+# --------------------------------------------------------------------------- #
 # `verify` subcommand tests (item 008) — toolchain detection + lint/test (02 §5)
 # --------------------------------------------------------------------------- #
 
