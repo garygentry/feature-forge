@@ -79,6 +79,27 @@ A directory counts as a **feature** only if it directly contains a `.pipeline-st
 
 **Compatibility:** for a standalone feature the resolver returns its flat path with no epic logic engaged (REQ-COMPAT-01/02) — standalone-feature behavior is unchanged. A pre-existing latent name collision is reported for manual cleanup by the navigator / forge-verify epic mode (CHECK-E08), not by aborting an unrelated command whose name resolves to exactly one dir (tech-spec §3.4).
 
+## Specs Directory Hygiene
+
+Whenever a stage creates the specs tree for the first time (the first PRD or epic written under `{specsDir}/`), ensure a spec-directory agent-instruction file exists at the **specsDir root**. This tells coding agents in the project that the specs here are pre-implementation artifacts — not live contracts to enforce against the code. It is **idempotent: never overwrite an existing file** (the project may have edited it).
+
+Run this after creating the feature/epic directory, before the stage's git commit:
+
+```bash
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+mkdir -p "<specsDir>"
+[ -f "<specsDir>/AGENTS.md" ] || cp "$R/references/templates/specs-hygiene/AGENTS.md" "<specsDir>/AGENTS.md"
+```
+
+If the host is Claude (the `AskUserQuestion` tool is available), also ensure the Claude-framed variant:
+
+```bash
+[ -f "<specsDir>/CLAUDE.md" ] || cp "$R/references/templates/specs-hygiene/CLAUDE.md" "<specsDir>/CLAUDE.md"
+```
+
+Stage any file this writes (`{specsDir}/AGENTS.md`, and `{specsDir}/CLAUDE.md` when written) as part of the stage's existing git commit.
+
 ## Epic Context Injection
 
 After resolving the feature directory, check the feature's `.pipeline-state.json` for an `epic` back-pointer. **If absent, skip this block entirely** (standalone feature — REQ-COMPAT-01; standalone-feature behavior is unchanged). **If present**, load exactly the following context, and nothing transitive (REQ-CTX-01):

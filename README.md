@@ -188,6 +188,8 @@ Every spec document includes a requirement traceability table mapping back to PR
 
 **Output:** `{specsDir}/{feature}/` (multiple documents)
 
+> **Specs are pre-implementation, not living contracts.** The spec suite exists to establish the backlog; it is intentionally *not* kept in sync with the code as the implementation evolves. To stop coding agents in your repo from flagging spec↔code drift, feature-forge drops a `specs/AGENTS.md` (and `specs/CLAUDE.md` on the Claude host) the first time the specs tree is created. For the same reason, implementation artifacts the pipeline writes into your repo (code, generated skills, docs) are kept self-contained and do not reference spec files — though the specs and `backlog.json` themselves freely cite each other for provenance.
+
 ### Stage 4: Backlog (forge-4-backlog)
 
 ```

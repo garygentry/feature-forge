@@ -125,7 +125,7 @@ _No dropped constructs — every canonical construct is representable in this ag
 These files are transported byte-for-byte from canon into every `adapters/<agent>/` bundle and intentionally carry **no** provenance header (a header would break byte-identity / corrupt parsed files):
 
 - `scripts/forge-root.sh` → `adapters/<agent>/scripts/forge-root.sh` (mode 0755, byte-identical — REQ-GEN-05).
-- the whole repo-root `references/` tree (14 files: 9 root + `stacks/`×5) → `adapters/<agent>/references/` (verbatim — REQ-GEN-04 / D5).
+- the whole repo-root `references/` tree (16 files: 9 root + `stacks/`×5 + `templates/specs-hygiene/`×2) → `adapters/<agent>/references/` (verbatim — REQ-GEN-04 / D5).
 - each skill's own `references/` subdir → `adapters/<agent>/skills/<name>/references/` (verbatim, where present).
 
 Regenerate all adapter output with `python3 scripts/build-adapters.py`.

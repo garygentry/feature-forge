@@ -16,3 +16,9 @@ This project was scaffolded by forge-bootstrap. To continue development:
 
 - Follow the patterns established in the existing codebase.
 - Keep `forge.config.json` up to date with any changes to stack or commands.
+
+## Specs are pre-implementation
+
+- Documents under `specs/` (PRDs, tech specs, numbered implementation specs) establish the backlog. They are **not** kept in sync with the code as it evolves.
+- Do not flag or "fix" divergence between a finalized spec and the implementation — code is the source of truth for behavior.
+- It's fine for `specs/` artifacts and `backlog.json` to reference specs for provenance, but implementation artifacts (source code, generated skills/agents, configs, docs) must not reference spec files, which may be archived or deleted after a feature ships.

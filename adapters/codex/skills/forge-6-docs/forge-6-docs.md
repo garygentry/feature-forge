@@ -113,6 +113,11 @@ Present the plan and use `AskUserQuestion` to get the user's confirmation.
 - Specs are the source of truth for design intent; code is the source of truth for behavior
 - Read the actual source code to verify your documentation is correct
 
+**Don't cite or link spec files in the generated docs.**
+- Read the specs freely for context, but the docs you write are shipped implementation artifacts — they must be self-contained
+- Never link or reference `PRD.md`, `tech-spec.md`, or the numbered implementation specs (`specs/{feature}/NN-*.md`); these are pre-implementation artifacts that may be archived or deleted
+- Reference only the code, runtime contracts/configuration, and other generated docs. If you need to convey design intent, write it directly into the doc rather than pointing at a spec
+
 **Match existing conventions.**
 - If other features' docs use a specific heading structure, follow it
 - If they include diagrams, include diagrams
@@ -176,6 +181,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 ## Gotchas
 
 - Don't just rephrase the specs. Documentation should explain the implemented system, not the planned system. Read the actual code.
+- Don't cite spec files (PRD.md, tech-spec.md, numbered specs) as sources or "further reading" in the generated docs — specs are pre-implementation artifacts that may not survive. Keep the docs self-contained; link only to code, configuration, and other docs.
 - If the implementation doesn't exist yet (backlog hasn't been run), document based on specs but note prominently that docs are pre-implementation and may need updating.
 - API reference should include actual function signatures from the code, not from the spec (they may differ).
 - Don't generate docs that will immediately be stale. Focus on concepts, architecture, and patterns rather than line-by-line code walkthroughs.
