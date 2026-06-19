@@ -952,7 +952,12 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
         # canonical-but-NOT-generated: test-only + doc artifacts imported by pytest, never
         # wired into a runtime an adapter calls (OQ-T1 RESOLVED, 07-testing-strategy.md §2).
         # They are excluded from the adapter bundle so the drift guard does not touch them.
-        if entry.suffix == ".py":
+        # Scaffolding under references/templates/ is project-content the bootstrap skill
+        # copies verbatim into a NEW user project — NOT an executable-spec module — so a
+        # template's own `.py` files (e.g. python/src/{{PKG}}/main.py) MUST ship. Skipping
+        # them also left untrackable empty dirs (git cannot track them), so a clean checkout
+        # always drifted from a fresh build.
+        if entry.suffix == ".py" and "templates" not in rel.parts:
             continue
         target = dst / rel
         _assert_within(target, bundle_root)
