@@ -69,3 +69,24 @@
   Added `_set_git_identity` + `_commit` helpers. no-add-A guard asserts a stray
   untracked STRAY.txt is absent from payload['staged'] AND `git diff --cached`.
   Dropped commit from the stub test (only status remains a stub). 38 passed.
+
+## Item 011 — end-to-end integration tests
+- Added §3/§4 integration section to `tests/test_forge_bootstrap.py`: per-stack
+  green-baseline (parametrized, skip-guarded via `shutil.which` on a SUPERSET of
+  the probe — the actual lint+test binaries), monorepo aggregate-green (go+generic,
+  both green offline), and the four terminal outcomes (success/refusal/missing-
+  toolchain via PATH=''/partial-resume).
+- GOTCHA: green-baseline guards must check the REAL executables, not STACK_PROBES.
+  `python` probe is only `python3` but green needs `mypy`+`pytest`; `rust` probe is
+  only `cargo` but green needs `cargo-clippy`. Guarding on the probe alone makes the
+  test run and FAIL on hosts missing mypy/clippy. INTEGRATION_GREEN_TOOLS lists the
+  full set so those hosts skip (here: python+rust skip, ts/go/generic run green).
+- GOTCHA: typescript needs `npm install` before verify (npx tsc/vitest need
+  node_modules); the prep helper runs it and soft-skips on failure (offline).
+- GOTCHA: generic `run.sh`/`test.sh` scaffold as 0644 → must `chmod 0755` before
+  verify (same gap noted in item 008).
+- GOTCHA: `check` over an own sentinel returns disqualifying[] STILL populated with
+  the scaffold's non-meta artifacts (run.sh, forge.config.json, …); eligibility
+  comes from `resumeMarker`, not an empty list. The 05 spec's illustrative
+  `disqualifying==[]` does not match the 003 implementation — assert `eligible:true`
+  + `resumeMarker!=null` instead. 46 passed, 2 skipped.

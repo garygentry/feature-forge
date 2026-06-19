@@ -732,3 +732,206 @@ def test_commit_without_sentinel_is_exit_2(run_bootstrap, tmp_path: Path) -> Non
     result = _commit(run_bootstrap, tmp_path, answers)
     assert result.returncode == 2
     assert "Error" in result.stderr
+
+
+# --------------------------------------------------------------------------- #
+# End-to-end integration tests (item 011) — full check→scaffold→verify→commit
+# flows across subcommands (05 §3/§4). These assert the *cross-subcommand*
+# contracts (green baseline, monorepo aggregate, the four terminal outcomes),
+# not individual units.
+# --------------------------------------------------------------------------- #
+
+
+#: Binaries that must resolve for a stack's scaffolded baseline to verify GREEN.
+#: This is a SUPERSET of the 00 §6 toolchain *probe* (STACK_PROBES): a green
+#: baseline needs the actual lint+test executables on PATH, not just the probe.
+#: Every green-baseline assertion below is skip-guarded on these via shutil.which
+#: (05 §1.1 portability scheme) so a host missing a toolchain skips — never fails.
+INTEGRATION_GREEN_TOOLS: dict[str, list[str]] = {
+    "typescript": ["node", "npm"],
+    "python": ["python3", "mypy", "pytest"],
+    "go": ["go"],
+    "rust": ["cargo", "cargo-clippy"],
+    "generic": ["sh"],  # universally present → generic always runs (REQ-STACK-03)
+}
+
+
+def _require_green_toolchain(stack: str) -> None:
+    """Skip the calling green-baseline test unless ``stack``'s toolchain resolves.
+
+    The skip predicate is ``shutil.which`` over INTEGRATION_GREEN_TOOLS[stack]
+    (05 §1.1). Keeps the suite portable: a green assertion is skipped, with a
+    reason, on a host missing the stack's lint/test executables — not failed.
+    """
+    missing = [t for t in INTEGRATION_GREEN_TOOLS[stack] if shutil.which(t) is None]
+    if missing:
+        pytest.skip(
+            f"{stack} green-baseline skipped: toolchain absent "
+            f"(shutil.which missing {missing}); emission/config tests still run"
+        )
+
+
+def _green_pm(stack: str) -> str | None:
+    """The package manager used for a stack's green-baseline (None where N/A)."""
+    return {"typescript": "npm", "python": "uv"}.get(stack)
+
+
+def _prepare_member_for_green(member_dir: Path, stack: str) -> None:
+    """Apply the stack-specific setup a freshly-scaffolded member needs to be green.
+
+    ``generic`` ships ``run.sh``/``test.sh`` as 0644 text (compose writes no exec
+    bit), so they must be made executable. ``typescript`` needs its dev-deps
+    installed before ``npx tsc``/``vitest`` can run; an offline ``npm install``
+    failure soft-skips so the suite stays portable. Other stacks need no prep
+    (go/rust build from source; python uses host mypy/pytest).
+    """
+    if stack == "generic":
+        _chmod_x(member_dir / "run.sh", member_dir / "test.sh")
+    elif stack == "typescript":
+        proc = subprocess.run(
+            ["npm", "install"], cwd=str(member_dir), capture_output=True, text=True
+        )
+        if proc.returncode != 0:
+            pytest.skip("typescript green-baseline skipped: npm install failed (offline?)")
+
+
+@pytest.mark.parametrize("stack", ["typescript", "python", "go", "rust", "generic"])
+def test_integration_green_baseline_per_stack(
+    run_bootstrap, tmp_path: Path, stack: str
+) -> None:
+    """scaffold→verify yields green:true / exit 0 for each stack (REQ-SCAF-05).
+
+    Skip-guarded on the stack toolchain via ``shutil.which`` (05 §1.1): the green
+    assertion runs only where the toolchain is detected; generic (sh only) always
+    runs and is the portable backbone (REQ-STACK-03).
+    """
+    _require_green_toolchain(stack)
+    answers = _answers(members=[_member("demo", ".", stack, _green_pm(stack))])
+    scaffolded = _scaffold(run_bootstrap, tmp_path, answers)
+    assert scaffolded.returncode == 0
+    _prepare_member_for_green(tmp_path, stack)
+
+    result = _verify(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    payload = result.json()
+    assert payload["toolchainPresent"] is True
+    assert payload["green"] is True
+    # A real lint + a real test ran for the single package and both passed.
+    assert payload["lint"] and payload["test"]
+    assert all(o["ok"] for o in payload["lint"] + payload["test"])
+
+
+def test_integration_monorepo_aggregate_green(run_bootstrap, tmp_path: Path) -> None:
+    """A mixed-member monorepo scaffolds, populates workspaces[], and verifies
+    green across every member where toolchains are present (REQ-MONO-03).
+
+    Uses go + generic members — both green offline — and is skip-guarded on
+    ``go``/``sh`` via shutil.which so it stays portable.
+    """
+    for tool in ("go", "sh"):
+        if shutil.which(tool) is None:
+            pytest.skip(f"monorepo aggregate-green skipped: {tool} absent")
+
+    members = [
+        _member("svc", "packages/svc", "go", None),
+        _member("tool", "packages/tool", "generic", None),
+    ]
+    answers = _answers(project_name="acme", layout="monorepo", members=members)
+    scaffolded = _scaffold(run_bootstrap, tmp_path, answers)
+    assert scaffolded.returncode == 0
+
+    # workspaces[] is populated from the members (REQ-MONO-05).
+    cfg = _config(tmp_path)
+    assert cfg["stack"] is None
+    assert {ws["name"] for ws in cfg["workspaces"]} == {"svc", "tool"}
+    assert {ws["path"] for ws in cfg["workspaces"]} == {"packages/svc", "packages/tool"}
+
+    _prepare_member_for_green(tmp_path / "packages" / "tool", "generic")
+
+    result = _verify(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    payload = result.json()
+    assert payload["toolchainPresent"] is True
+    assert payload["green"] is True
+    # verify aggregates a per-member lint+test outcome for EVERY member (by path).
+    assert {o["member"] for o in payload["lint"]} == {"packages/svc", "packages/tool"}
+    assert {o["member"] for o in payload["test"]} == {"packages/svc", "packages/tool"}
+    assert all(o["ok"] for o in payload["lint"] + payload["test"])
+
+
+# --- The four terminal outcomes (REQ-OBS-01) ------------------------------- #
+
+
+def test_integration_outcome_success(run_bootstrap, tmp_path: Path) -> None:
+    """Outcome 1 — SUCCESS: check→scaffold→verify(green)→commit(exit 0 + committed).
+
+    Generic is used so the flow is green with only ``sh`` (deterministic, no
+    language toolchain), exercising the whole happy path end-to-end.
+    """
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+
+    chk = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert chk.returncode == 0 and chk.json()["eligible"] is True
+
+    scaffolded = _scaffold(run_bootstrap, tmp_path, answers)
+    assert scaffolded.returncode == 0
+    _prepare_member_for_green(tmp_path, "generic")
+
+    verified = _verify(run_bootstrap, tmp_path, answers)
+    assert verified.returncode == 0
+    assert verified.json()["green"] is True
+
+    _set_git_identity(tmp_path)
+    committed = _commit(run_bootstrap, tmp_path, answers)
+    assert committed.returncode == 0
+    payload = committed.json()
+    assert payload["committed"] is True
+    assert payload["sentinelRemoved"] is True
+    assert len(payload["commitHash"]) == 40
+
+
+def test_integration_outcome_greenfield_refusal(run_bootstrap, tmp_path: Path) -> None:
+    """Outcome 2 — REFUSAL: a non-greenfield repo yields eligible:false, exit 1,
+    with the disqualifying path named (REQ-GATE-01/02)."""
+    (tmp_path / "app.py").write_text("print('hi')\n", encoding="utf-8")
+    result = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert result.returncode == 1
+    payload = result.json()
+    assert payload["eligible"] is False
+    assert "app.py" in payload["disqualifying"]
+
+
+def test_integration_outcome_missing_toolchain(run_bootstrap, tmp_path: Path) -> None:
+    """Outcome 3 — MISSING TOOLCHAIN: verify exits 2 with toolchainPresent:false
+    when the probe misses. Forced deterministically via PATH='' (REQ-MODEB-04)."""
+    answers = _answers(members=[_member("demo", ".", "rust", None)])
+    scaffolded = _scaffold(run_bootstrap, tmp_path, answers)
+    assert scaffolded.returncode == 0
+    result = _verify(run_bootstrap, tmp_path, answers, env={"PATH": ""})
+    assert result.returncode == 2
+    payload = result.json()
+    assert payload["toolchainPresent"] is False
+    assert payload["green"] is False
+
+
+def test_integration_outcome_partial_state_resume(run_bootstrap, tmp_path: Path) -> None:
+    """Outcome 4 — PARTIAL-STATE RESUME: an own sentinel routes check to recovery
+    (resumeMarker set, no refusal) and a re-scaffold is idempotent (REQ-LIFE-02)."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    first = _scaffold(run_bootstrap, tmp_path, answers)
+    assert first.returncode == 0
+    assert (tmp_path / ".forge-bootstrap.json").is_file()  # partial-state sentinel
+
+    # check over the own sentinel → resumeMarker set, never refused as foreign.
+    chk = run_bootstrap("check", ".", "--json", cwd=tmp_path)
+    assert chk.returncode == 0  # routed to recovery, NOT refused (exit 1)
+    chk_payload = chk.json()
+    assert chk_payload["resumeMarker"] is not None
+    # The own partial scaffold is never refused as foreign: eligible despite the
+    # non-meta artifacts it wrote (eligibility comes from the marker, 02 §3).
+    assert chk_payload["eligible"] is True
+
+    # re-scaffold resumes idempotently — already-recorded artifacts are not re-written.
+    second = _scaffold(run_bootstrap, tmp_path, answers)
+    assert second.returncode == 0
+    assert second.json()["artifactsWritten"] == first.json()["artifactsWritten"]

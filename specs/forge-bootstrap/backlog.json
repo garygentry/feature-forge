@@ -281,8 +281,8 @@
         "All four terminal outcomes are asserted: success, greenfield refusal (disqualifying named), missing toolchain (exit 2 via PATH=''), partial-state resume (resumeMarker + idempotent re-scaffold)",
         "python3 -m pytest tests/test_forge_bootstrap.py -q passes and py_compile scripts/forge-bootstrap.py passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:54:34.639Z",
       "dependsOn": [
         "003",
         "006",
