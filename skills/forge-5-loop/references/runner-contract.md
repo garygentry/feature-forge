@@ -70,6 +70,38 @@ The default / `claude-cli` path runs **no** probe (zero extra cost). See
 `04-availability-precheck.md` for the full pre-check, classification, and allow-list,
 and `02-config-schema-and-gating.md` for the capability gate.
 
+> **Probe false-negative for Claude Code installs (advisory).** `rauf agents` may
+> report `claude-cli` **unavailable** (e.g. *"credentials file not found:
+> ~/.config/claude-code/credentials.json"*) even when a working `claude` CLI
+> authenticates elsewhere — the probe's credential heuristic doesn't cover every
+> install. This is a rauf probe concern, not something forge-5-loop fixes. The
+> **default-agent path skips the probe entirely**, so an ordinary default run is
+> unaffected; only an **explicit** `--agent claude-cli` would be flagged UNAVAILABLE,
+> and the existing **proceed-anyway** path (above) covers it. Do not attempt to
+> patch rauf's probe from here.
+
+### Claude-only model-alias guard (Step 2d, sub-step d-model)
+
+When the resolved agent is **non-default** (not the default / `claude-cli` path),
+forge must guard against a backlog whose items pin **Claude-specific** model aliases.
+forge-4-backlog (via the rauf author-backlog skill) writes Claude tier aliases
+(`opus` / `sonnet`) into each item's `model`. Because rauf's precedence puts
+`item.model` **above** `--agent`, the alias is forwarded verbatim to the selected
+agent; a non-Claude agent (e.g. codex) then 400s — *"The 'sonnet' model is not
+supported when using Codex with a ChatGPT account."* — so **every** spawn exits 1 and
+rauf reports *"Circuit breaker: 3 consecutive infra failures — halting"* with no hint
+of the real cause. forge-5-loop therefore detects Claude-specific `model` aliases in
+the backlog (tier aliases `opus`/`sonnet`/`haiku` or `claude-*` ids) and, before
+launch, **warns** and offers (via `AskUserQuestion`) to **strip `model` for this run**
+(remove the key from each affected item so each spawn uses the agent's own default) or
+**proceed as-is**. forge only ever touches the `model` field — never `provider`. The
+default / `claude-cli` path skips this guard (the aliases are valid there).
+
+> **Follow-up (out of scope here — rauf repo).** The durable fix would be for the
+> rauf `author-backlog` skill to keep `model` **provider-neutral** by default (or to
+> document that writing a tier alias binds the backlog to Claude agents). That lives
+> in the separate rauf plugin/repo, not feature-forge; tracked as a follow-up.
+
 ## Optional flags catalog (Step 2d, rauf)
 
 These are the optional flags the user may add to the rendered run command. If the
@@ -91,6 +123,14 @@ user requests additional flags, append them to the rendered run command.
 Launch the loop **backgrounded** so it survives session end and does not block the
 session, and prefer the machine-readable event stream so the session can supervise
 it live.
+
+> **Clean-tree precondition.** rauf refuses to run with uncommitted changes
+> (*"Refusing to run the loop with uncommitted changes… pass --force"*). Step 3a's
+> in-progress `.pipeline-state.json` write is itself an uncommitted change, so it
+> **must be committed before launch** (Step 3a) — otherwise the first launch on an
+> otherwise-clean repo always fails. If the tree still has unrelated uncommitted
+> changes after that commit, surface it and let the user commit/stash or pass
+> `--force`; never auto-pass `--force`.
 
 - **If `loopRunner.eventStreamCommand` is configured (default for rauf):** render it
   (it appends `--ndjson` to the run) and launch via the Bash tool with
