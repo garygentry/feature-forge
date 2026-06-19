@@ -829,11 +829,8 @@ def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:
 
 
 def status(target: Path) -> "Sentinel | None":
-    """Return the parsed resume sentinel, or None when absent (02 §7).
-
-    Stub — implemented in backlog item 010.
-    """
-    raise NotImplementedError("status is implemented in backlog item 010")
+    """Return the parsed resume sentinel, or None when absent (02 §7)."""
+    return read_sentinel(target)
 
 
 # --------------------------------------------------------------------------- #

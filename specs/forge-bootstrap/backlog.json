@@ -256,8 +256,8 @@
         "status is read-only (writes/deletes nothing)",
         "python3 -m pytest tests/test_forge_bootstrap.py -q passes (status tests green) and py_compile passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-06-19T12:59:17.415Z",
       "dependsOn": [
         "002"
       ],

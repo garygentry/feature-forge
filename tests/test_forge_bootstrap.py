@@ -277,14 +277,8 @@ def test_parser_parses_all_subcommands_and_flags(bootstrap_module: ModuleType) -
 
 
 def test_subcommand_bodies_are_stubs(bootstrap_module: ModuleType, tmp_path: Path) -> None:
-    """The remaining subcommand functions are NotImplementedError stubs for now.
-
-    ``check`` (003), ``scaffold`` (006), ``verify`` (008) and ``commit`` (009)
-    are implemented; status remains a stub until item 010 fills it.
-    """
-    m = bootstrap_module
-    with pytest.raises(NotImplementedError):
-        m.status(tmp_path)
+    """All subcommands are now implemented — this test is a no-op placeholder."""
+    pass
 
 
 def test_malformed_answers_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
@@ -781,6 +775,42 @@ def test_commit_without_sentinel_is_exit_2(run_bootstrap, tmp_path: Path) -> Non
     result = _commit(run_bootstrap, tmp_path, answers)
     assert result.returncode == 2
     assert "Error" in result.stderr
+
+
+# --------------------------------------------------------------------------- #
+# status tests (item 010) — 02 §7
+# --------------------------------------------------------------------------- #
+
+
+def test_status_returns_null_on_clean_dir(run_bootstrap, tmp_path: Path) -> None:
+    """status emits null (JSON) with exit 0 when no sentinel exists (02 §7)."""
+    result = run_bootstrap("status", ".", "--json", cwd=tmp_path)
+    assert result.returncode == 0
+    assert result.json() is None
+
+
+def test_status_returns_sentinel_after_scaffold(run_bootstrap, tmp_path: Path) -> None:
+    """status emits the full Sentinel JSON with exit 0 after a scaffold run (02 §7)."""
+    answers = _answers()
+    run_bootstrap("scaffold", ".", "--answers", json.dumps(answers), "--json", cwd=tmp_path)
+    result = run_bootstrap("status", ".", "--json", cwd=tmp_path)
+    assert result.returncode == 0
+    payload = result.json()
+    assert payload is not None
+    assert payload["version"] == 1
+    assert payload["status"] == "in-progress"
+    assert "startedAt" in payload
+    assert "answers" in payload
+    assert "artifactsWritten" in payload
+    assert isinstance(payload["artifactsWritten"], list)
+
+
+def test_status_is_read_only(run_bootstrap, tmp_path: Path) -> None:
+    """status writes/deletes nothing — the directory is unchanged after the call."""
+    before = set(tmp_path.rglob("*"))
+    run_bootstrap("status", ".", "--json", cwd=tmp_path)
+    after = set(tmp_path.rglob("*"))
+    assert before == after
 
 
 # --------------------------------------------------------------------------- #
