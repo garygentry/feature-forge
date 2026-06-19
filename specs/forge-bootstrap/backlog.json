@@ -402,6 +402,23 @@
         "specs/forge-bootstrap/03-stack-templates.md",
         "specs/forge-bootstrap/00-core-definitions.md"
       ]
+    },
+    {
+      "id": "016",
+      "type": "bug",
+      "priority": 2,
+      "title": "Fix: scaffolded generic stack is not green — run.sh/test.sh lack exec bit",
+      "description": "compose_member writes template files with default permissions (observed 0600/0644), but the generic stack's resolved testCommand is `./test.sh`, which requires the executable bit. A real end-to-end run of `scaffold` then `verify` on a generic single-package project returns green:false / exit 1 because `./test.sh` fails with permission denied (reproduced in /tmp). The item 011 green-baseline + monorepo integration tests hide this by chmod 0755-ing the scripts before verify (see progress.md item 008/011 gotchas), so the suite is green while the actual scaffolded baseline is red. This breaks REQ-STACK-03 (the generic baseline must be genuinely green) and item 005's acceptance criterion that generic provide a real passing lint+test out of the box. Fix: have scaffold/compose_member set the executable bit on shell-script templates (e.g. chmod 0755 on *.sh, or generally preserve/apply +x for files whose template carries a shebang) so a freshly scaffolded generic project passes verify with no manual chmod. Then update the integration tests to drop the masking chmod so they actually exercise the scaffolded permissions.",
+      "acceptanceCriteria": [
+        "A freshly scaffolded generic single-package project passes `verify` (green:true, exit 0) with NO manual chmod",
+        "scaffold sets the executable bit on generic run.sh and test.sh (mode includes 0755 / owner+group+other execute as appropriate)",
+        "The item 011 green-baseline and monorepo integration tests no longer chmod the generic scripts before verify, and still pass",
+        "python3 -m pytest tests/test_forge_bootstrap.py -q passes and bash scripts/validate.sh exits 0"
+      ],
+      "status": "done",
+      "completedAt": "2026-06-19T13:04:49.036Z",
+      "source": "review",
+      "reviewBatch": "2026-06-19T13:02:52.009Z"
     }
   ]
 }

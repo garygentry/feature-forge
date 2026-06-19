@@ -460,7 +460,11 @@ def _sanitize_pkg(name: str) -> str:
 
 
 def _write_artifact(
-    target: Path, rel_path: str, content: str, sentinel: Sentinel
+    target: Path,
+    rel_path: str,
+    content: str,
+    sentinel: Sentinel,
+    executable: bool = False,
 ) -> None:
     """Write one scaffold artifact, idempotently and never overwriting (02 §4.1).
 
@@ -478,6 +482,11 @@ def _write_artifact(
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_text(dest, content)
+    if executable:
+        # Shell-script templates carry a shebang and are resolved as ./run.sh /
+        # ./test.sh — they must be executable for verify to pass with no manual
+        # chmod (REQ-STACK-03). Apply 0755 (owner+group+other execute).
+        dest.chmod(0o755)
     sentinel["artifactsWritten"].append(rel_path)
     write_sentinel(target, sentinel)
 
@@ -507,7 +516,10 @@ def compose_member(
         text = src.read_text(encoding="utf-8")
         for tok, val in tokens.items():
             text = text.replace(tok, val)
-        _write_artifact(target, rel_path, text, sentinel)
+        # Preserve/apply +x for shell-script templates (those carrying a shebang
+        # or named *.sh) so the scaffolded baseline passes verify (REQ-STACK-03).
+        executable = rel.endswith(".sh") or text.startswith("#!")
+        _write_artifact(target, rel_path, text, sentinel, executable=executable)
 
 
 def _resolve_commands(member: Member) -> tuple[str, str]:

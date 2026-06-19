@@ -623,7 +623,7 @@ def test_verify_green_single_generic(run_bootstrap, tmp_path: Path) -> None:
     """A scaffolded generic baseline verifies green, exit 0 (REQ-SCAF-05)."""
     answers = _answers(members=[_member("demo", ".", "generic", None)])
     _scaffold(run_bootstrap, tmp_path, answers)
-    _chmod_x(tmp_path / "run.sh", tmp_path / "test.sh")
+    # No manual chmod: scaffold sets the exec bit on run.sh/test.sh (REQ-STACK-03).
     result = _verify(run_bootstrap, tmp_path, answers)
     assert result.returncode == 0
     payload = result.json()
@@ -658,7 +658,7 @@ def test_verify_member_is_path_not_name(run_bootstrap, tmp_path: Path) -> None:
     answers = _answers(layout="monorepo", members=members)
     _scaffold(run_bootstrap, tmp_path, answers)
     worker = tmp_path / "packages" / "worker"
-    _chmod_x(worker / "run.sh", worker / "test.sh")
+    # No manual chmod: scaffold sets the exec bit on run.sh/test.sh (REQ-STACK-03).
     result = _verify(run_bootstrap, tmp_path, answers)
     assert result.returncode == 0
     payload = result.json()
@@ -858,15 +858,14 @@ def _green_pm(stack: str) -> str | None:
 def _prepare_member_for_green(member_dir: Path, stack: str) -> None:
     """Apply the stack-specific setup a freshly-scaffolded member needs to be green.
 
-    ``generic`` ships ``run.sh``/``test.sh`` as 0644 text (compose writes no exec
-    bit), so they must be made executable. ``typescript`` needs its dev-deps
+    ``generic`` ships ``run.sh``/``test.sh`` already executable (scaffold sets the
+    exec bit on shell-script templates, REQ-STACK-03), so it needs no prep — the
+    baseline is genuinely green as scaffolded. ``typescript`` needs its dev-deps
     installed before ``npx tsc``/``vitest`` can run; an offline ``npm install``
     failure soft-skips so the suite stays portable. Other stacks need no prep
     (go/rust build from source; python uses host mypy/pytest).
     """
-    if stack == "generic":
-        _chmod_x(member_dir / "run.sh", member_dir / "test.sh")
-    elif stack == "typescript":
+    if stack == "typescript":
         proc = subprocess.run(
             ["npm", "install"], cwd=str(member_dir), capture_output=True, text=True
         )

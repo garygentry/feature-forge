@@ -116,3 +116,15 @@
   Already wired into scaffold() (line ~647) from item 006.
 - Added 3 CI tests (ci:false no file; ci:true single one job; ci:true monorepo
   step-per-member). 49 passed, 2 skipped. py_compile passes.
+
+## Item 016 — fix generic stack exec-bit (scaffold sets +x on shell scripts)
+- Root cause: `_write_artifact` wrote all templates with default perms (0644), so
+  the generic stack's `./test.sh` failed permission-denied → verify green:false/exit 1.
+- Fix: `_write_artifact` now takes `executable: bool`; on True it `dest.chmod(0o755)`.
+  `compose_member` sets `executable = rel.endswith(".sh") or text.startswith("#!")`
+  so any shell-script/shebang template is scaffolded 0755 (REQ-STACK-03).
+- Dropped the masking `_chmod_x` from the green-baseline/monorepo tests
+  (`_prepare_member_for_green` now no-ops for generic; verify green/member-path unit
+  tests too). `_chmod_x` is kept only by the not-green test (which rewrites test.sh).
+- Verified real /tmp scaffold→verify of generic = green:true/exit 0, scripts 0755,
+  NO manual chmod. 52 passed/2 skipped; full validate.sh exits 0.
