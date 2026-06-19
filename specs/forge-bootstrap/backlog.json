@@ -1,0 +1,342 @@
+{
+  "project": "forge-bootstrap",
+  "description": "Add the unnumbered `forge-bootstrap` skill to the feature-forge plugin: a greenfield scaffolder that takes an empty repo to a pipeline-ready, green (lint+test) baseline with a valid forge.config.json, then optionally chains into the pipeline. Deliverables: an additive workspaces[] schema field, a stdlib-only Python helper CLI (scripts/forge-bootstrap.py with check/scaffold/verify/commit/status), editable per-stack templates, the SKILL.md orchestration body, a pytest suite, and build wiring (validate.sh py_compile + adapter regeneration). Implementation specs live under specs/forge-bootstrap/ (00-core-definitions, 01-architecture-layout, 02-helper-cli, 03-stack-templates, 04-skill-orchestration, 05-testing-strategy). Verify commands: `python3 -m py_compile scripts/forge-bootstrap.py`, `python3 -m pytest tests/test_forge_bootstrap.py -q`, full gate `bash scripts/validate.sh`.",
+  "items": [
+    {
+      "id": "001",
+      "type": "feature",
+      "priority": 1,
+      "title": "Extend forge-config-schema.json with additive workspaces[] array",
+      "description": "Modify references/forge-config-schema.json to add ONE new optional top-level property `workspaces` — a purely additive change for monorepo representation (REQ-MONO-05, REQ-CFG-02). Do NOT alter, reorder, or constrain any existing property, and do NOT add a top-level `required` or top-level `additionalProperties`. The new property: `\"workspaces\": { \"type\": \"array\", \"description\": \"Monorepo members. Absent for single-package projects.\", \"items\": { \"type\": \"object\", \"required\": [\"name\", \"path\", \"stack\"], \"additionalProperties\": false, \"properties\": { \"name\": {\"type\": \"string\"}, \"path\": {\"type\": \"string\", \"description\": \"Repo-relative member dir\"}, \"stack\": {\"type\": \"string\"}, \"typeCheckCommand\": {\"type\": [\"string\", \"null\"]}, \"testCommand\": {\"type\": [\"string\", \"null\"]} } } }`. The item schema is intentionally closed (additionalProperties:false) and deliberately omits packageManager — each member's commands are pre-resolved, so no downstream consumer needs the raw package manager. The three keys bootstrap resolves (stack, typeCheckCommand, testCommand) already exist at top level; the ONLY edit is adding `workspaces`. Confirm the file remains valid JSON.",
+      "acceptanceCriteria": [
+        "references/forge-config-schema.json contains a new optional top-level `workspaces` array property matching 00-core-definitions.md §7.1",
+        "Each workspaces[] item requires name/path/stack, allows optional typeCheckCommand/testCommand, and sets additionalProperties:false; packageManager is NOT present",
+        "No existing top-level property is changed; no top-level `required` or `additionalProperties` is introduced",
+        "A pre-existing forge.config.json that has no `workspaces` key still validates against the edited schema",
+        "python3 -c \"import json; json.load(open('references/forge-config-schema.json'))\" exits 0 (valid JSON)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": [],
+      "notes": "See 00-core-definitions.md §7.1 for the exact jsonc snippet and the closed-shape/packageManager-omission rationale. Additive-only is a hard back-compat requirement (REQ-COMPAT).",
+      "estimatedIterations": 1,
+      "model": "sonnet",
+      "specReferences": [
+        "specs/forge-bootstrap/00-core-definitions.md",
+        "specs/forge-bootstrap/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "002",
+      "type": "feature",
+      "priority": 1,
+      "title": "Create forge-bootstrap.py foundation + pytest fixtures",
+      "description": "Create scripts/forge-bootstrap.py modeled structurally on scripts/epic-manifest.py (stdlib only — no third-party deps). Implement the foundation, leaving subcommand bodies as stubs filled by later items: (1) module docstring with usage + the exit-code contract (0 ok / 1 actionable findings / 2 usage-or-IO, plus verify toolchain-missing = 2) per 00 §9; (2) constants: ALLOWED_META_FILE_RE (allowed-meta regex per 00 §3), SENTINEL_FILENAME = \".forge-bootstrap.json\", Stack Literal of the five values, PACKAGE_MANAGERS map (typescript: npm/pnpm/yarn, python: uv/poetry/pip), STACK_COMMANDS map (resolved lint/test per 00 §6); (3) typed structures as TypedDicts mirroring 00 §4/§5/§8: Sentinel, Answers, Member, CheckResult, VerifyResult, CommitResult, CommandOutcome — each with per-field Attributes docstrings; (4) internal exceptions UsageError (exit 2) and FindingsError (exit 1), as in epic-manifest.py; (5) IO layer: read_sentinel(target)/write_sentinel(target, sentinel) and run(cmd, cwd) -> CompletedProcess (subprocess wrapper); (6) argparse main() with subparsers check/scaffold/verify/commit/status dispatching to stub functions that raise NotImplementedError for now, guarded by `if __name__ == \"__main__\": sys.exit(main())`. Also create tests/test_forge_bootstrap.py with the shared fixtures from 05 §2: the `run_bootstrap` fixture (subprocess runner accepting *args, cwd=None, env=None — merge env over os.environ; import os), the `bootstrap_module` in-process loader (importlib), CliResult dataclass, and small helpers (_answers, _member, _git, _scaffold). py_compile must pass and the fixtures must import cleanly.",
+      "acceptanceCriteria": [
+        "scripts/forge-bootstrap.py exists with module docstring, constants, TypedDict structures, UsageError/FindingsError, read_sentinel/write_sentinel, run(), and an argparse main() with check/scaffold/verify/commit/status subparsers",
+        "Subcommand bodies are stubs (NotImplementedError) — later items fill them — but main() dispatch and --json/--answers/--stage-only flags parse correctly",
+        "tests/test_forge_bootstrap.py defines the 05 §2 fixtures: run_bootstrap (with cwd + env params, env merged over os.environ), bootstrap_module, CliResult, and helpers; `import os` is present",
+        "python3 -m py_compile scripts/forge-bootstrap.py passes",
+        "python3 -m pytest tests/test_forge_bootstrap.py -q runs (collection succeeds; foundation/fixture tests pass)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": [],
+      "notes": "Mirror epic-manifest.py's style (flat functions + IO layer, no class hierarchy) per 01 §3. Constants/types are referenced verbatim from 00 — do not invent fields. The fixture env hook is required by the deterministic toolchain-missing test in item 008/011.",
+      "estimatedIterations": 2,
+      "model": "opus",
+      "specReferences": [
+        "specs/forge-bootstrap/00-core-definitions.md",
+        "specs/forge-bootstrap/01-architecture-layout.md",
+        "specs/forge-bootstrap/02-helper-cli.md",
+        "specs/forge-bootstrap/05-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "003",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement the `check` subcommand (greenfield gate + recovery)",
+      "description": "Implement the `check` subcommand in scripts/forge-bootstrap.py per 02 §3 and 00 §3/§4. It performs the greenfield gate and recovery detection over the target directory: (1) walk the target's top-level entries; allow only repo-meta matching ALLOWED_META_FILE_RE (.git/, README*, LICENSE*, .gitignore) plus the configured specs directory (default ./specs, passed via --specs-dir); any source file, package manifest, or build/tooling config is disqualifying; (2) recovery: if a .forge-bootstrap.json sentinel from this tool's OWN prior partial run is present, return it as resumeMarker and do NOT treat the run as a greenfield refusal (REQ-LIFE-02 — never misfire the gate against its own in-progress artifacts); (3) return CheckResult{eligible, disqualifying[], resumeMarker} as JSON. Exit 0 when eligible (or resumable), exit 1 on refusal with the disqualifying paths populated. Add check tests covering: empty dir eligible; dir with README+LICENSE+.gitignore eligible (REQ-GATE-04); dir with src/index.ts or package.json refused with that path named (REQ-GATE-01/02); own-sentinel present → resumeMarker set, eligible (REQ-LIFE-02). The gate is strictly read-only (REQ-SEC-01) — it must touch no files.",
+      "acceptanceCriteria": [
+        "check returns CheckResult{eligible, disqualifying[], resumeMarker} JSON and uses exit 0 (eligible/resumable) / exit 1 (refusal)",
+        "A freshly-created-remote layout (README + LICENSE + .gitignore + ./specs) is eligible; a source/manifest file is disqualifying and named in disqualifying[]",
+        "An own .forge-bootstrap.json sentinel yields resumeMarker != null and does NOT trigger refusal",
+        "check writes/deletes no files (read-only gate)",
+        "python3 -m pytest tests/test_forge_bootstrap.py -q passes (check tests green) and python3 -m py_compile scripts/forge-bootstrap.py passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["002"],
+      "notes": "Allowed-meta matching rules (filename globs, case, README/LICENSE variants) are in 00 §3 (OQ-02 resolved). resumeMarker shape = the Sentinel from 00 §8.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/forge-bootstrap/02-helper-cli.md",
+        "specs/forge-bootstrap/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "004",
+      "type": "feature",
+      "priority": 1,
+      "title": "Author typescript & python stack templates",
+      "description": "Create the editable scaffold templates for two stacks under skills/forge-bootstrap/references/templates/<stack>/, using {{TOKENS}} ({{PROJECT_NAME}}, {{PKG}}, {{PM}}, {{PURPOSE}}) substituted at compose time. These are static asset files, not generated code. typescript/ (per 03 §2) = exactly package.json, tsconfig.json, src/index.ts, test/smoke.test.ts, .gitignore — Vitest as the test runner, lint = `npx tsc --noEmit`, dev-deps pinned to exactly typescript + vitest, src/index.ts exports a typed pure function imported by test/smoke.test.ts whose single assertion passes; tsconfig is strict/noEmit with include covering src and test. python/ (per 03 §3) = the exact file set in 03 §3.1 with its resolved lint/test commands. Each stack's .gitignore MUST list .forge-bootstrap.json (belt-and-suspenders so the sentinel can never be committed, OQ-T3). Match the 03 file lists exactly — no extra files (no eslint config).",
+      "acceptanceCriteria": [
+        "skills/forge-bootstrap/references/templates/typescript/ contains exactly the 03 §2.1 file set (package.json, tsconfig.json, src/index.ts, test/smoke.test.ts, .gitignore) — no eslint config",
+        "skills/forge-bootstrap/references/templates/python/ contains exactly the 03 §3.1 file set",
+        "Templates use {{PROJECT_NAME}}/{{PKG}}/{{PM}}/{{PURPOSE}} tokens per 03 §7 and each .gitignore lists .forge-bootstrap.json",
+        "typescript dev-deps pin only typescript + vitest; lint command is `npx tsc --noEmit` and a test/smoke.test.ts asserts the exported function",
+        "No code in scripts/ changes; python3 -m py_compile scripts/forge-bootstrap.py still passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": [],
+      "notes": "These are consumed by compose_member in item 006; verification that they actually lint/test green happens in items 008/011. Token list and per-stack commands: 03 §2/§3/§7 and 00 §6.",
+      "estimatedIterations": 1,
+      "model": "sonnet",
+      "specReferences": [
+        "specs/forge-bootstrap/03-stack-templates.md",
+        "specs/forge-bootstrap/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "005",
+      "type": "feature",
+      "priority": 1,
+      "title": "Author go, rust & generic stack templates",
+      "description": "Create the editable scaffold templates for three stacks under skills/forge-bootstrap/references/templates/<stack>/ with {{TOKENS}} substituted at compose time (static assets, not generated code). go/ per 03 §4 (go.mod, main.go, main_test.go, .gitignore). rust/ per 03 §5 MUST include FIVE files: Cargo.toml, src/lib.rs, src/main.rs, tests/smoke.rs, .gitignore — Cargo.toml declares both a [lib] (path src/lib.rs) and [[bin]] so the external integration test tests/smoke.rs can import {{PKG}}::greet; src/main.rs calls the library function. generic/ per 03 §6 = a language-neutral structure with a REAL (non-fake) passing lint/test step (run.sh, test.sh, .gitignore) so the baseline is genuinely green (REQ-STACK-03). Each stack's .gitignore MUST list .forge-bootstrap.json (OQ-T3). Match the 03 file lists exactly. This item has three independent stack directories with no cross-dependencies — parallelize with sub-agents.",
+      "acceptanceCriteria": [
+        "skills/forge-bootstrap/references/templates/go/ matches the 03 §4 file set",
+        "skills/forge-bootstrap/references/templates/rust/ contains exactly Cargo.toml, src/lib.rs, src/main.rs, tests/smoke.rs, .gitignore; Cargo.toml has [lib]+[[bin]] and tests/smoke.rs imports {{PKG}}::greet",
+        "skills/forge-bootstrap/references/templates/generic/ provides a real passing lint+test (run.sh, test.sh, .gitignore) — no fake/always-true step",
+        "Each stack uses the 03 §7 tokens and each .gitignore lists .forge-bootstrap.json",
+        "python3 -m py_compile scripts/forge-bootstrap.py still passes (no scripts/ change)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": [],
+      "notes": "rust src/lib.rs is load-bearing (03 §5.2): without it the integration test cannot link the public function. Consumed by compose_member (006); green verification in 008/011.",
+      "estimatedIterations": 1,
+      "model": "sonnet",
+      "agentDelegation": {
+        "recommendedConcurrency": 3,
+        "strategy": "Each sub-agent authors one stack template directory independently — disjoint file trees, no shared state, single shared verification (py_compile + file-set check).",
+        "subtasks": [
+          "Create skills/forge-bootstrap/references/templates/go/ per spec 03 §4 (go.mod, main.go, main_test.go, .gitignore) with {{TOKENS}} and .forge-bootstrap.json in .gitignore",
+          "Create skills/forge-bootstrap/references/templates/rust/ per spec 03 §5 with FIVE files incl. src/lib.rs; Cargo.toml [lib]+[[bin]], tests/smoke.rs imports {{PKG}}::greet, .gitignore lists .forge-bootstrap.json",
+          "Create skills/forge-bootstrap/references/templates/generic/ per spec 03 §6 (run.sh, test.sh, .gitignore) with a real passing lint+test and .forge-bootstrap.json in .gitignore"
+        ]
+      },
+      "specReferences": [
+        "specs/forge-bootstrap/03-stack-templates.md",
+        "specs/forge-bootstrap/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "006",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement the `scaffold` subcommand",
+      "description": "Implement `scaffold --answers '<json>'` in scripts/forge-bootstrap.py per 02 §4. Three parts: (1) compose_member(member, target) — resolve the template root as Path(__file__).resolve().parent.parent / 'skills' / 'forge-bootstrap' / 'references' / 'templates' / member['stack'] (the two-level-up join is correct because the helper lives at scripts/forge-bootstrap.py, 01 §1.1), copy each template file to the member's path with {{TOKEN}} substitution ({{PROJECT_NAME}}, {{PKG}} = sanitized name, {{PM}}, {{PURPOSE}}); (2) write_config(answers, target) — write forge.config.json reproducing forge-init's exact field set + defaults (00 §7: specsDir, docsDir, backlogDir, gitCommitAfterStage, commitPrefix, stack, typeCheckCommand, testCommand, loopIterationMultiplier) PLUS an explicit minimal loopRunner block {name:'rauf', bin:'rauf'}; for a monorepo set the three top-level scalars to null and populate workspaces[] from members; equivalence is semantic (key/value set), not byte-order; (3) scaffold(target, answers) — git init if absent, compose every member (single package = one implicit member at path '.'), write config, generate repo-hygiene files (README/LICENSE/.gitignore/AGENTS.md|CLAUDE.md) WITHOUT overwriting any existing allowed-meta file (REQ-SCAF-09), record every written file into the sentinel's artifactsWritten[], and be idempotent on re-run (skip files already recorded). Add scaffold tests: single-package emits the stack file set; monorepo emits workspaces[] and per-member trees; resume is idempotent; config equals forge-init field set + loopRunner.",
+      "acceptanceCriteria": [
+        "scaffold composes each member's template with token substitution and writes forge.config.json with forge-init's field set + an explicit loopRunner block",
+        "A monorepo run sets top-level stack/typeCheckCommand/testCommand to null and populates workspaces[] (name/path/stack/typeCheckCommand/testCommand) from members",
+        "scaffold runs git init when absent, never overwrites a pre-existing allowed-meta file (README/LICENSE), and records all written files into the sentinel artifactsWritten[]",
+        "Re-running scaffold over its own partial output is idempotent (files already recorded are skipped)",
+        "python3 -m pytest tests/test_forge_bootstrap.py -q passes (scaffold single+monorepo+idempotent+config tests) and py_compile passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["001", "002", "004", "005"],
+      "notes": "compose_member template-root invariant: 02 §4.2 + 01 §1.1. Config equivalence is semantic per 00 §7 note. Single package = one Member with path '.' (00 §5). Do not inline CI here — that is item 007.",
+      "estimatedIterations": 2,
+      "model": "opus",
+      "specReferences": [
+        "specs/forge-bootstrap/02-helper-cli.md",
+        "specs/forge-bootstrap/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "007",
+      "type": "feature",
+      "priority": 2,
+      "title": "Add CI workflow template + maybe_write_ci composition",
+      "description": "Add the CI workflow template at skills/forge-bootstrap/references/templates/ci/github-actions.yml (per 03 §9) and implement maybe_write_ci(answers, target, sentinel) in scripts/forge-bootstrap.py (per 02 §4.4). Behavior: no-op when answers['ci'] is false (REQ-SCAF-07 — CI is skippable); when enabled, compose .github/workflows/ci.yml from the template — for a single package one lint+test job using the resolved top-level commands; for a monorepo one lint+test step per member iterating workspaces[] so CI exercises EVERY member (REQ-MONO-04). Record the written workflow into the sentinel via the same artifact-tracking path used by scaffold. Wire maybe_write_ci into the scaffold flow (called when answers.ci). Add CI tests: ci:false writes nothing; ci:true single-package writes one job; ci:true monorepo writes one step per member.",
+      "acceptanceCriteria": [
+        "skills/forge-bootstrap/references/templates/ci/github-actions.yml exists per 03 §9",
+        "maybe_write_ci is a no-op when answers.ci is false and writes .github/workflows/ci.yml when true, recording it in the sentinel",
+        "For a monorepo, the generated workflow runs lint+test for every member in workspaces[] (REQ-MONO-04)",
+        "python3 -m pytest tests/test_forge_bootstrap.py -q passes (CI tests green) and py_compile passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["006"],
+      "notes": "Provider is GitHub Actions by choice (not mandated). The workflow template + per-member step expansion live in 03 §9; the helper only gates on answers.ci and delegates composition.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/forge-bootstrap/03-stack-templates.md",
+        "specs/forge-bootstrap/02-helper-cli.md"
+      ]
+    },
+    {
+      "id": "008",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement the `verify` subcommand",
+      "description": "Implement `verify --answers '<json>'` in scripts/forge-bootstrap.py per 02 §5 and 00 §6/§9. (1) toolchain_present(stacks, pms) — probe each required tool via shutil.which / `command -v` for the chosen stack(s); (2) when present, for each member run its resolved typeCheckCommand (lint) then testCommand (00 §6) with cwd = target / member['path'], appending one CommandOutcome{command, ok, member} per command where `member` is the member's PATH ('.' for a single package, e.g. 'packages/api' for a monorepo member); (3) return VerifyResult{green, toolchainPresent, lint[], test[]} as JSON. green is true iff toolchainPresent and every CommandOutcome.ok. Exit codes: 0 green, 1 not-green (toolchain present but a command failed), 2 toolchain missing (the distinct false-green guard the Mode B gate depends on). Add verify tests INCLUDING the deterministic toolchain-missing test: run verify with env={'PATH': ''} via the fixture's env hook so the probe always misses regardless of host — assert exit 2 and toolchainPresent:false (must run unconditionally, no pytest.skip).",
+      "acceptanceCriteria": [
+        "verify returns VerifyResult{green, toolchainPresent, lint[], test[]} JSON; each CommandOutcome.member is the member PATH ('.' for single package)",
+        "Exit code is 0 when green, 1 when toolchain present but a lint/test command fails, 2 when the toolchain is missing",
+        "The toolchain-missing test forces PATH='' via the run_bootstrap env hook, runs unconditionally (no skip), and asserts exit 2 + toolchainPresent:false",
+        "green is true only when toolchainPresent and all CommandOutcome.ok are true",
+        "python3 -m pytest tests/test_forge_bootstrap.py -q passes (verify tests green) and py_compile passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["006"],
+      "notes": "member must be member['path'] (not name) per the verified spec (00 §4 docstring). The exit-2 toolchain-missing path is safety-critical (REQ-MODEB-04) — it must be deterministically tested via env PATH control.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/forge-bootstrap/02-helper-cli.md",
+        "specs/forge-bootstrap/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "009",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement the `commit` subcommand",
+      "description": "Implement `commit [--stage-only]` in scripts/forge-bootstrap.py per 02 §6, following the Git Commit Protocol (REQ-SEC-02): (1) read the sentinel; the staged set is exactly sentinel['artifactsWritten']; (2) remove the .forge-bootstrap.json sentinel BEFORE staging (unlink missing_ok=True) so it can never enter history (OQ-T3); (3) `git add -- <exact list>` — NEVER `git add -A`, `--force`, or `--no-verify`; (4) if --stage-only (or answers.commitStyle == 'stage-only') return CommitResult{committed:false, commitHash:null, staged, sentinelRemoved:true} with no commit; (5) otherwise build the message as `<prefix>: bootstrap baseline` where prefix is read from the just-written forge.config.json's commitPrefix field (default 'forge') — NOT from answers, which has no commitPrefix field; commit, capture HEAD, return CommitResult{committed:true, commitHash, staged, sentinelRemoved:true}. On git/IO failure raise UsageError (exit 2); the sentinel is already removed so the run is re-stageable. Add commit tests: single baseline commit captures HEAD; --stage-only leaves staged with no commit; the no-add-A guard (a stray untracked STRAY.txt is NOT staged — assert it is absent from payload['staged'] and from `git diff --cached`); sentinel removed before staging.",
+      "acceptanceCriteria": [
+        "commit stages exactly sentinel.artifactsWritten via `git add -- <list>` and never uses -A/--force/--no-verify",
+        "The sentinel file is removed before staging (sentinelRemoved:true) and is never committed",
+        "Commit message prefix is read from forge.config.json commitPrefix (default 'forge'), not from answers",
+        "--stage-only returns committed:false with the scaffold staged; default returns committed:true with a real commitHash",
+        "python3 -m pytest tests/test_forge_bootstrap.py -q passes (commit + no-add-A guard tests) and py_compile passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["006"],
+      "notes": "commitPrefix source is forge.config.json (00 §7), read back from the file scaffold wrote — Answers (00 §5) has no commitPrefix field. The no-add-A guard test is the flagship REQ-SEC-02 test.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/forge-bootstrap/02-helper-cli.md",
+        "specs/forge-bootstrap/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "010",
+      "type": "feature",
+      "priority": 2,
+      "title": "Implement the `status` subcommand",
+      "description": "Implement the `status` subcommand in scripts/forge-bootstrap.py per 02 §7: read the target's .forge-bootstrap.json sentinel and emit it as JSON (the full Sentinel: version, status, startedAt, answers mirror, artifactsWritten[]), or emit null when no sentinel exists. status is read-only and used by the skill body to inspect a partial run for resume. Exit 0 in both cases (present or absent). Add status tests: returns null on a clean dir; returns the sentinel content after a scaffold has written one.",
+      "acceptanceCriteria": [
+        "status emits the full Sentinel JSON when .forge-bootstrap.json exists and null when it does not, exit 0 either way",
+        "status is read-only (writes/deletes nothing)",
+        "python3 -m pytest tests/test_forge_bootstrap.py -q passes (status tests green) and py_compile passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["002"],
+      "notes": "Sentinel shape is 00 §8. Small, self-contained; depends only on the foundation's read_sentinel + types.",
+      "estimatedIterations": 1,
+      "model": "sonnet",
+      "specReferences": [
+        "specs/forge-bootstrap/02-helper-cli.md",
+        "specs/forge-bootstrap/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "011",
+      "type": "test",
+      "priority": 1,
+      "title": "End-to-end integration tests (green baseline, monorepo, four outcomes)",
+      "description": "Add end-to-end integration tests to tests/test_forge_bootstrap.py per 05 §3/§4 that exercise full check→scaffold→verify→commit flows: (1) green-baseline-per-stack — for each stack, scaffold then verify; where the stack's toolchain is present assert green:true and exit 0, skip-guarded only on the genuine toolchain absence (per 05's portability scheme); (2) monorepo aggregate-green — a mixed-member workspace scaffolds, workspaces[] is populated, and verify is green across all members where toolchains are present (REQ-MONO-03); (3) the four terminal outcomes (REQ-OBS-01): success (commit exit 0 + green), greenfield refusal (check eligible:false names disqualifying[]), missing toolchain (verify exit 2 via PATH='' — reuse the env hook), and partial-state resume (an own sentinel → check resumeMarker set, re-scaffold idempotent). These tests span multiple subcommands and assert the cross-subcommand contracts, not individual units.",
+      "acceptanceCriteria": [
+        "Integration tests scaffold+verify a green baseline for each stack (toolchain-present cases assert green:true/exit 0; absence is skip-guarded)",
+        "A monorepo scaffold populates workspaces[] and verify aggregates per-member lint+test green where toolchains exist",
+        "All four terminal outcomes are asserted: success, greenfield refusal (disqualifying named), missing toolchain (exit 2 via PATH=''), partial-state resume (resumeMarker + idempotent re-scaffold)",
+        "python3 -m pytest tests/test_forge_bootstrap.py -q passes and py_compile scripts/forge-bootstrap.py passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["006", "008", "009"],
+      "notes": "These are integration-level tests across subcommands; unit tests for each subcommand live in their own items. Follow the 05 §3/§4 test layout and the portability/skip scheme. Missing-toolchain uses the deterministic PATH='' env hook, not host state.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/forge-bootstrap/05-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "012",
+      "type": "feature",
+      "priority": 1,
+      "title": "Author skills/forge-bootstrap/SKILL.md orchestration body",
+      "description": "Author skills/forge-bootstrap/SKILL.md (prose) per spec 04 — the orchestration half. It MUST contain: (1) YAML front-matter with name: forge-bootstrap and a description encoding the trigger plus the NEGATIVE trigger that disambiguates it from forge-init (non-empty repo) and generic setup; argument-hint metadata; (2) the byte-identical portable-root prelude (04 §3) before every bash invocation, calling `python3 \"$R/scripts/forge-bootstrap.py\" <subcommand> \"<target-dir>\" --json ...`; (3) the §4 interview question set Q1–Q9 in order with Q4 gated on PACKAGE_MANAGERS (skipped for go/rust/generic), Q6a gated on monorepo, Q8 gated on a verified-green Mode B baseline; (4) the conversational fallback note (§6) with an identical question set and an explicit wait-for-text-reply instruction (REQ-PORT-01); (5) the Mode A flow driven off check/scaffold/verify/commit exit codes (§7) branching to all four terminal outcomes (§10); (6) the Mode B hand-off (§8) launching forge-1-prd/forge-0-epic skill-to-skill ONLY when VerifyResult.green and the commit succeeded, seeding the epic from project name+purpose user-confirmed, launching instead of printing (REQ-OUT-02); (7) the completion summary (§9). CRITICAL: the prose body (everything after front-matter) MUST stay ≤300 lines AND ≤5000 words — a hard validate.sh spec-purity gate (check-spec-purity.py). The body MUST NOT inline file-generation logic, template contents, the config field list, or the greenfield allow-list — those live in the helper and are referenced, not duplicated. Model it tonally on skills/forge-init/SKILL.md and skills/forge-verify/SKILL.md.",
+      "acceptanceCriteria": [
+        "skills/forge-bootstrap/SKILL.md has front-matter (name: forge-bootstrap, trigger + negative trigger, argument-hint) and a prose body covering the §4 interview, §6 fallback, §7 Mode A flow, §8 Mode B, §9 summary, §10 four outcomes",
+        "Every helper invocation uses the byte-identical portable-root prelude (04 §3) with <target-dir> distinct from $R; no hardcoded/Claude-only path appears",
+        "The body delegates ALL mechanics to the helper (no inlined file generation, template contents, config field list, or allow-list)",
+        "Mode B launches forge-1-prd/forge-0-epic skill-to-skill only when green and committed (REQ-MODEB-04)",
+        "bash scripts/validate.sh spec-purity check passes for SKILL.md: body ≤300 lines and ≤5000 words (check-spec-purity.py)"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["003", "006", "008", "009"],
+      "notes": "Spec-purity is a HARD gate — keep the body lean by referencing 00/02/03 rather than duplicating. The four outcomes map to helper results per 04 §10. Verify the budget with scripts/check-spec-purity.py before finishing.",
+      "estimatedIterations": 2,
+      "model": "opus",
+      "specReferences": [
+        "specs/forge-bootstrap/04-skill-orchestration.md",
+        "specs/forge-bootstrap/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "013",
+      "type": "chore",
+      "priority": 2,
+      "title": "Wire validate.sh py_compile check for forge-bootstrap.py",
+      "description": "Edit scripts/validate.sh to add a `python3 -m py_compile scripts/forge-bootstrap.py` check directly alongside the existing epic-manifest.py compile-check, mirroring its exact style: the same PASS:/FAIL: echo convention and the `ERRORS=$((ERRORS + 1))` increment on failure (the typeCheckCommand analogue for the new helper). Do not change any other validate.sh behavior; the pytest sweep already discovers tests/test_forge_bootstrap.py with no change, and the adapter drift gate is handled in item 014. Locate the epic-manifest.py py_compile block and add the parallel block for forge-bootstrap.py.",
+      "acceptanceCriteria": [
+        "scripts/validate.sh runs `python3 -m py_compile scripts/forge-bootstrap.py` next to the epic-manifest.py compile-check, with matching PASS/FAIL output and ERRORS increment",
+        "No other validate.sh behavior changes",
+        "bash scripts/validate.sh runs the new compile check (it appears in output) and exits 0 once scripts/forge-bootstrap.py compiles"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["002"],
+      "notes": "Mirror the existing epic-manifest.py compile-check block exactly (01 §6.2). Mechanical, low-ambiguity.",
+      "estimatedIterations": 1,
+      "model": "sonnet",
+      "specReferences": [
+        "specs/forge-bootstrap/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "014",
+      "type": "chore",
+      "priority": 1,
+      "title": "Regenerate adapters and confirm full validate.sh green",
+      "description": "Final integration gate. (1) Run `python3 scripts/build-adapters.py` to regenerate the per-agent adapter bundles — the generator discovers the new skills/forge-bootstrap/ (SKILL.md + references/templates/) by glob and propagates its references/ tree automatically (no generator code change). Commit the regenerated repo-root adapters/ tree (this is what validate.sh's `build-adapters.py --check` hard gate diffs against — NOT installer/adapters/). (2) Run the full `bash scripts/validate.sh` and ensure it exits 0: spec-purity (SKILL.md within budget), adapter drift (`build-adapters.py --check` clean), the forge-bootstrap.py py_compile check, and the pytest sweep (tests/test_forge_bootstrap.py) all green. Fix any drift or failure surfaced by the gate. Do not leave adapters/ out of sync.",
+      "acceptanceCriteria": [
+        "python3 scripts/build-adapters.py has been run and the regenerated repo-root adapters/ tree is committed (includes the forge-bootstrap skill + templates)",
+        "python3 scripts/build-adapters.py --check exits 0 (no adapter drift)",
+        "bash scripts/validate.sh exits 0 with spec-purity, adapter-drift, py_compile, and pytest all passing"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["003", "006", "007", "008", "009", "010", "011", "012", "013"],
+      "notes": "Regen target is the repo-root adapters/ (01 §6.3), gated by validate.sh build-adapters.py --check — not installer/adapters/. This is the last item: the whole feature must be green here.",
+      "estimatedIterations": 1,
+      "model": "opus",
+      "specReferences": [
+        "specs/forge-bootstrap/01-architecture-layout.md"
+      ]
+    }
+  ]
+}
