@@ -43,7 +43,7 @@ After verification, fixes can be applied via:
 
 ### Stage 4: Backlog (`/feature-forge:forge-4-backlog <feature>`)
 **Input:** Full spec suite
-**Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if backlogDir is configured)
+**Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/{feature}/backlog.json` if backlogDir is configured)
 **Method:** Generate structured backlog items with spec references, acceptance criteria, and dependencies. Backlog is collocated with feature specs by default.
 
 ### Stage 5: Rauf Loop (`/feature-forge:forge-5-loop <feature>`)
