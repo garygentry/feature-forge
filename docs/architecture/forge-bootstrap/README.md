@@ -1,6 +1,10 @@
+---
+title: "Forge Bootstrap"
+---
+
 # Forge Bootstrap
 
-> New to the pipeline? Start with the [main README's pipeline overview](../../../README.md#the-pipeline-at-a-glance);
+> New to the pipeline? Start with the [main README's pipeline overview](https://github.com/garygentry/feature-forge#the-pipeline-at-a-glance);
 > bootstrap is an optional **pre-pipeline** step that runs before Stage 1.
 
 `forge-bootstrap` takes a brand-new **empty** repository to a pipeline-ready,

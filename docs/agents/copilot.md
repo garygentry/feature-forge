@@ -1,3 +1,7 @@
+---
+title: "feature-forge on Copilot"
+---
+
 # feature-forge on Copilot
 
 > Canonical skills for the feature-forge pipeline, installed onto Copilot.

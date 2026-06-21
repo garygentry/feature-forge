@@ -1,3 +1,7 @@
+---
+title: "feature-forge on Codex"
+---
+
 # feature-forge on Codex
 
 > Canonical skills for the feature-forge pipeline, installed onto Codex.

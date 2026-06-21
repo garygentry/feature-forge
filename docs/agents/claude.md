@@ -1,3 +1,7 @@
+---
+title: "feature-forge on Claude"
+---
+
 # feature-forge on Claude
 
 > Canonical skills for the feature-forge pipeline, installed onto Claude Code.
@@ -83,4 +87,4 @@ that ships the `--agent` flag, the `agents` probe, and the preset agent registry
 [garygentry/rauf#28](https://github.com/garygentry/rauf/issues/28). Today, install rauf via its
 binary script: `curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`.)*
 
-See [the loop-runner contract](../../references/ralph-loop-contract.md) for the full spec.
+See [the loop-runner contract](https://github.com/garygentry/feature-forge/blob/main/references/ralph-loop-contract.md) for the full spec.

@@ -1,3 +1,7 @@
+---
+title: "CLI Reference — `scripts/epic-manifest.py`"
+---
+
 # CLI Reference — `scripts/epic-manifest.py`
 
 The deterministic core of Epic Orchestration: name→directory resolution,
