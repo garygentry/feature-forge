@@ -1,0 +1,50 @@
+---
+title: "Stage 1 · PRD"
+description: "Capture what your feature must do as a requirements PRD through a structured interview."
+---
+
+Stage 1 turns your feature idea into a Product Requirements Document — a clear, stakeholder-readable statement of what the feature must do.
+
+## What it does
+
+Captures **what** the feature must do (the requirements), not **how** to build it, through a structured interview. The result is a PRD that a non-technical stakeholder can read. Every requirement gets a unique ID of the form `REQ-CATEGORY-NN` so it can be traced through later stages.
+
+## Command
+
+```
+/feature-forge:forge-1-prd <feature-name>
+```
+
+The feature name is kebab-case, e.g. `user-export`.
+
+## Inputs it consumes
+
+- Your feature idea.
+- Project context.
+- If the feature is a member of an epic: its charter and contract obligations.
+
+## Artifacts it produces
+
+- `PRD.md` in the feature's spec directory (default `specs/<feature>/PRD.md`).
+- Creates or updates `.pipeline-state.json`.
+- Commits automatically if `gitCommitAfterStage` is true.
+
+## What you review & approve
+
+The interview runs interactively, asking questions by category. You review every interview category and the full PRD draft before it is finalized.
+
+## What comes next
+
+Verify the PRD, then move on to the tech spec:
+
+```
+/feature-forge:forge-verify <feature>
+/feature-forge:forge-2-tech <feature>
+```
+
+See [verify](./verify-and-fix.mdx) or [Stage 2 · Tech Spec](./stage-2-tech.mdx).
+
+## Notes & gotchas
+
+- No technology decisions happen here — capture tech only as constraints.
+- If a complete PRD already exists, you'll be asked before it is revised.

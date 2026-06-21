@@ -2,16 +2,33 @@
   "$schema": "./docs.manifest.schema.json",
   "site": {
     "title": "Feature Forge",
-    "description": "Documentation for Feature Forge",
+    "description": "PRD → tech spec → specs → backlog → autonomous loop → docs. An end-to-end feature development pipeline.",
     "social": { "github": "https://github.com/garygentry/feature-forge" }
   },
   "pages": [
-    { "slug": "guides/setup", "source": "native" },
-    { "slug": "agents/claude", "source": "symlink", "from": "docs/agents/claude.md" },
-    { "slug": "agents/codex", "source": "symlink", "from": "docs/agents/codex.md" },
-    { "slug": "agents/copilot", "source": "symlink", "from": "docs/agents/copilot.md" },
-    { "slug": "agents/cursor", "source": "symlink", "from": "docs/agents/cursor.md" },
-    { "slug": "agents/gemini", "source": "symlink", "from": "docs/agents/gemini.md" },
+    { "slug": "start-here/install", "source": "native" },
+    { "slug": "start-here/quick-start", "source": "native" },
+    { "slug": "start-here/concepts", "source": "native" },
+
+    { "slug": "pipeline/overview", "source": "native" },
+    { "slug": "pipeline/init", "source": "native" },
+    { "slug": "pipeline/stage-1-prd", "source": "native" },
+    { "slug": "pipeline/stage-2-tech", "source": "native" },
+    { "slug": "pipeline/stage-3-specs", "source": "native" },
+    { "slug": "pipeline/stage-4-backlog", "source": "native" },
+    { "slug": "pipeline/stage-5-loop", "source": "native" },
+    { "slug": "pipeline/stage-6-docs", "source": "native" },
+    { "slug": "pipeline/verify-and-fix", "source": "native" },
+    { "slug": "pipeline/dashboard", "source": "native" },
+
+    { "slug": "example/walkthrough", "source": "native" },
+
+    { "slug": "advanced/epics", "source": "native" },
+    { "slug": "advanced/bootstrapping", "source": "native" },
+    { "slug": "advanced/config", "source": "native" },
+    { "slug": "advanced/cross-agent", "source": "native" },
+
+    { "slug": "reference/troubleshooting", "source": "native" },
     { "slug": "forge-bootstrap/overview", "source": "symlink", "from": "docs/architecture/forge-bootstrap/README.md" },
     { "slug": "forge-bootstrap/architecture", "source": "symlink", "from": "docs/architecture/forge-bootstrap/architecture.md" },
     { "slug": "forge-bootstrap/cli-reference", "source": "symlink", "from": "docs/architecture/forge-bootstrap/cli-reference.md" },

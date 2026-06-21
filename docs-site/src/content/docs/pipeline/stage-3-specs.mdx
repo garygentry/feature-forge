@@ -1,0 +1,45 @@
+---
+title: "Stage 3 · Implementation Specs"
+description: "Generate numbered implementation spec documents with complete type definitions, error handling, examples, and full requirement traceability."
+---
+
+Stage 3 turns your approved PRD and tech spec into a numbered suite of implementation specs — the buildable blueprint for your feature, with real type definitions instead of pseudocode.
+
+## What it does
+
+Generates numbered implementation spec documents containing everything needed to build the feature: complete type definitions in the project language (not pseudocode), error handling, examples, and cross-references between docs.
+
+The `00-` and `01-` foundation docs are written first; the remaining domain docs are then fanned out in parallel (via `forge-spec-writer` subagents) for speed.
+
+## Command
+
+```
+/feature-forge:forge-3-specs <feature-name>
+```
+
+## Inputs it consumes
+
+- A completed `PRD.md` and `tech-spec.md` (both prerequisites)
+- Existing codebase patterns
+- The project's stack profile
+
+## Artifacts it produces
+
+- Sequentially numbered spec docs: `00-core-definitions.md`, `01-architecture-layout.md`, `02-*.md` … up to a testing-strategy doc
+- `TRACEABILITY.md` — maps every `REQ-XXX-NN` to the spec section that covers it
+- Updates `.pipeline-state.json`
+- Auto-commits if enabled
+
+## What you review & approve
+
+You review the document plan (the titles and descriptions of the planned docs) and the depth/detail of the resulting suite.
+
+## What comes next
+
+- `/feature-forge:forge-verify <feature>` — strongly recommended before moving on. See [Verify & Fix](./verify-and-fix.mdx).
+- `/feature-forge:forge-4-backlog <feature>` — see [Stage 4 · Backlog](./stage-4-backlog.mdx).
+
+## Notes & gotchas
+
+- Stages forge-1 (PRD) and forge-2 (tech spec) must be complete before this runs.
+- Every PRD requirement must be covered by at least one spec — traceability is validated, so gaps are caught here rather than during implementation.

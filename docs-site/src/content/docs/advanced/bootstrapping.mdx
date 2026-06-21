@@ -1,0 +1,48 @@
+---
+title: "Bootstrapping an Empty Repo"
+description: "Scaffold a brand-new empty repository into a pipeline-ready, green baseline with forge-bootstrap before starting the pipeline."
+---
+
+`forge-bootstrap` scaffolds a **brand-new, empty** repository into a pipeline-ready, green baseline — project structure, toolchain, passing lint and test, and a `forge.config.json` — before you start the pipeline. Use it instead of [`forge-init`](../pipeline/init.mdx) when the repo is empty.
+
+## Running bootstrap
+
+```
+/feature-forge:forge-bootstrap
+```
+
+It operates on the current directory by default; you can also target a directory. The command runs a short interview covering project name, purpose, stack, package manager, license, layout (single-repo vs. monorepo), and more.
+
+### Greenfield gate
+
+Bootstrap **refuses to run on a non-empty repo** — it will not overwrite existing project files. A pre-existing `LICENSE` seeds the license question but is never overwritten.
+
+## What it produces
+
+- A project scaffold: boilerplate, toolchain configs, and entry points.
+- `forge.config.json`, `README.md`, `LICENSE`, `AGENTS.md`, `CLAUDE.md`.
+- The stack manifest (e.g. `package.json`, `pyproject.toml`, or `go.mod`).
+- `.gitignore`.
+- An initial commit — the baseline.
+
+A partial run leaves a `.forge-bootstrap.json` resume marker, so a re-run can resume, restart, or cancel.
+
+## Mode A — bootstrap, then start manually (default)
+
+Bootstrap finishes, and you manually start the pipeline:
+
+```
+/feature-forge:forge-1-prd <feature>
+```
+
+See [Stage 1](../pipeline/stage-1-prd.mdx).
+
+## Mode B — chain into the pipeline (opt-in)
+
+With `--mode-b`, after a verified-green **and** committed baseline, bootstrap chains directly into the pipeline — launching either [`/feature-forge:forge-0-epic`](./epics.mdx) or `/feature-forge:forge-1-prd`.
+
+The Mode B chain is gated on **both** a verified-green baseline **and** a successful commit — there is no "proceed on red" override. If the toolchain is missing, bootstrap can finish the scaffold as **unverified**, but that blocks Mode B.
+
+## Reference
+
+For internals and the CLI, see the maintainer reference pages: [bootstrap overview](../forge-bootstrap/overview.md), [bootstrap architecture](../forge-bootstrap/architecture.md), and [bootstrap CLI reference](../forge-bootstrap/cli-reference.md).

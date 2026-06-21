@@ -17,43 +17,64 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Feature Forge",
-      description: "Documentation for Feature Forge",
+      description:
+        "PRD → tech spec → specs → backlog → autonomous loop → docs. An end-to-end feature development pipeline.",
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/garygentry/feature-forge" },
       ],
       // Generated from docs.manifest.json (REQ-CONTENT-03: single source of
       // truth; never hand-kept in parallel). Edit the manifest, not this array.
+      // Order and slug membership must stay in parity with docs.manifest.json
+      // (enforced by check-docs.mjs sidebar-parity); group labels are free.
       sidebar: [
         {
-          label: "Guides",
-          items: [{ label: "Setup", slug: "guides/setup" }],
-        },
-        {
-          label: "Agents",
+          label: "Start Here",
           items: [
-            { label: "Claude", slug: "agents/claude" },
-            { label: "Codex", slug: "agents/codex" },
-            { label: "Copilot", slug: "agents/copilot" },
-            { label: "Cursor", slug: "agents/cursor" },
-            { label: "Gemini", slug: "agents/gemini" },
+            { label: "Install", slug: "start-here/install" },
+            { label: "Quick Start", slug: "start-here/quick-start" },
+            { label: "Key Concepts & Glossary", slug: "start-here/concepts" },
           ],
         },
         {
-          label: "Forge Bootstrap",
+          label: "Using the Pipeline",
           items: [
-            { label: "Overview", slug: "forge-bootstrap/overview" },
-            { label: "Architecture", slug: "forge-bootstrap/architecture" },
-            { label: "Cli Reference", slug: "forge-bootstrap/cli-reference" },
-            { label: "Integration", slug: "forge-bootstrap/guides/integration" },
+            { label: "Pipeline Overview", slug: "pipeline/overview" },
+            { label: "Setup: init vs bootstrap", slug: "pipeline/init" },
+            { label: "Stage 1 · PRD", slug: "pipeline/stage-1-prd" },
+            { label: "Stage 2 · Tech Spec", slug: "pipeline/stage-2-tech" },
+            { label: "Stage 3 · Specs", slug: "pipeline/stage-3-specs" },
+            { label: "Stage 4 · Backlog", slug: "pipeline/stage-4-backlog" },
+            { label: "Stage 5 · Loop", slug: "pipeline/stage-5-loop" },
+            { label: "Stage 6 · Docs", slug: "pipeline/stage-6-docs" },
+            { label: "Verify & Fix", slug: "pipeline/verify-and-fix" },
+            { label: "Dashboard", slug: "pipeline/dashboard" },
           ],
         },
         {
-          label: "Epic Orchestration",
+          label: "Worked Example",
+          items: [{ label: "Walkthrough", slug: "example/walkthrough" }],
+        },
+        {
+          label: "Advanced",
           items: [
-            { label: "Overview", slug: "epic-orchestration/overview" },
-            { label: "Architecture", slug: "epic-orchestration/architecture" },
-            { label: "Cli Reference", slug: "epic-orchestration/cli-reference" },
-            { label: "Integration", slug: "epic-orchestration/guides/integration" },
+            { label: "Epics (Stage 0)", slug: "advanced/epics" },
+            { label: "Bootstrapping a Repo", slug: "advanced/bootstrapping" },
+            { label: "forge.config.json", slug: "advanced/config" },
+            { label: "Cross-Agent Usage", slug: "advanced/cross-agent" },
+          ],
+        },
+        {
+          label: "Reference / Architecture",
+          items: [
+            { label: "Troubleshooting & FAQ", slug: "reference/troubleshooting" },
+            { label: "Bootstrap · Overview", slug: "forge-bootstrap/overview" },
+            { label: "Bootstrap · Architecture", slug: "forge-bootstrap/architecture" },
+            { label: "Bootstrap · CLI Reference", slug: "forge-bootstrap/cli-reference" },
+            { label: "Bootstrap · Integration", slug: "forge-bootstrap/guides/integration" },
+            { label: "Epics · Overview", slug: "epic-orchestration/overview" },
+            { label: "Epics · Architecture", slug: "epic-orchestration/architecture" },
+            { label: "Epics · CLI Reference", slug: "epic-orchestration/cli-reference" },
+            { label: "Epics · Integration", slug: "epic-orchestration/guides/integration" },
           ],
         },
       ],

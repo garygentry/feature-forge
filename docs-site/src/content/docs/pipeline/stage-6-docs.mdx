@@ -1,0 +1,42 @@
+---
+title: "Stage 6 · Docs"
+description: "Generate developer-focused architecture documentation for the finished feature, read from the actual implementation — for onboarding, reference, and maintenance."
+---
+
+Stage 6 is the final stage: it produces architecture docs for the shipped feature, written from the real code so they reflect what was actually built.
+
+## What it does
+
+Generates developer-focused architecture documentation for the finished feature, read from the ACTUAL implementation (not just the specs) — for onboarding, reference, and maintenance.
+
+## Command
+
+```
+/feature-forge:forge-6-docs <feature-name>
+```
+
+## Inputs it consumes
+
+- The completed specs **and** the implemented source code
+- The backlog (used to check implementation completeness)
+- `.pipeline-state.json`
+
+## Artifacts it produces
+
+- Per-feature docs under `docs/architecture/<feature>/` (e.g. `README.md`, `architecture.md`, `api-reference.md`, plus configuration/guides as appropriate)
+- Sets the pipeline state to `complete`
+- Auto-commits if enabled
+
+## What you review & approve
+
+You review the documentation plan (minimum / standard / comprehensive) and the generated docs.
+
+## What comes next
+
+The pipeline is complete for this feature. View final status with `/feature-forge:forge <feature>` — see [the dashboard](./dashboard.mdx).
+
+## Notes & gotchas
+
+- PRD, tech spec, and specs must be complete before this runs.
+- If implementation is under 80% done, it warns and marks the docs PRE-IMPLEMENTATION.
+- Docs are self-contained and describe the real implementation. If the code diverged from the spec, the implementation wins.

@@ -1,0 +1,43 @@
+---
+title: "Stage 4 · Backlog"
+description: "Turn the spec suite into a validated backlog.json — a queue of self-contained work items the autonomous loop implements one at a time."
+---
+
+Stage 4 converts your implementation specs into a validated `backlog.json`: an ordered queue of work items the autonomous loop will pick up and build one at a time.
+
+## What it does
+
+Turns the spec suite into a validated `backlog.json` — a queue of self-contained work items the autonomous loop will implement one at a time. Each item must be self-contained because the loop runs with a [fresh context](../start-here/concepts.mdx) per item, so an item can't rely on memory from previous ones.
+
+Backlog authoring is delegated to the `rauf:author-backlog` skill. Spec references inside items are project-root-relative (e.g. `specs/<feature>/00-core-definitions.md`).
+
+## Command
+
+```
+/feature-forge:forge-4-backlog <feature-name>
+```
+
+## Inputs it consumes
+
+- A completed PRD, tech spec, and all implementation specs
+- The loop-runner config from `forge.config.json` (defaults to rauf)
+
+## Artifacts it produces
+
+- `backlog.json` — by default at `specs/<feature>/backlog.json`; if `backlogDir` is configured, at `<backlogDir>/<feature>/backlog.json`
+- Updates `.pipeline-state.json`
+- Auto-commits if enabled
+
+## What you review & approve
+
+You review the backlog plan (item breakdown, dependencies, priorities) and the validation result.
+
+## What comes next
+
+- `/feature-forge:forge-verify <feature>` — see [Verify & Fix](./verify-and-fix.mdx).
+- `/feature-forge:forge-5-loop <feature>` — see [Stage 5 · Loop](./stage-5-loop.mdx).
+
+## Notes & gotchas
+
+- Stages forge-1, forge-2, and forge-3 must be complete before this runs.
+- Validation runs the loop runner's validate command. If the runner is missing or too old, validation is skipped with a warning and that fact is recorded in state.

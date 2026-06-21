@@ -1,0 +1,52 @@
+---
+title: forge.config.json Reference
+description: Every key in forge.config.json, its type, default, and meaning, plus the loopRunner block.
+---
+
+`forge.config.json` lives at the project root and is created by [forge-init](../pipeline/init.mdx) or `forge-bootstrap`. All keys are optional; the defaults below apply when a key is absent.
+
+## Top-level keys
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `specsDir` | string | `./specs` | Root directory for feature spec documents. |
+| `docsDir` | string | `./docs/architecture` | Root directory for generated architecture docs. |
+| `backlogDir` | string or null | `null` | If null, backlog lives at `<specsDir>/<feature>/backlog.json`; when set, at `<backlogDir>/<feature>/backlog.json`. |
+| `gitCommitAfterStage` | boolean | `true` | Auto-commit after each stage completes. |
+| `commitPrefix` | string | `forge` | Conventional-commit prefix; commits look like `forge(<feature>): <action>`. |
+| `stack` | string or null | `null` | Project stack id; set during Stage 2 (tech spec). |
+| `typeCheckCommand` | string or null | `null` | Type-check command (e.g. `bun run typecheck`, `mypy .`); resolved in Stage 2. |
+| `testCommand` | string or null | `null` | Test command (e.g. `bun test`, `pytest`); resolved in Stage 2. |
+| `loopIterationMultiplier` | number | `1.5` | Multiplier applied to the pending-item count to compute loop iterations (e.g. 10 items × 1.5 = 15). |
+| `workspaces` | array | (absent) | Monorepo members; each has `name`, `path`, `stack`, and optional `typeCheckCommand`/`testCommand`. |
+| `loopRunner` | object | (absent → rauf defaults) | Configures the Stage-5 loop runner. See below. |
+
+## The loopRunner block
+
+The Stage-5 loop runner is configured, not hardcoded. When the `loopRunner` block is absent, Feature Forge defaults to [rauf](https://github.com/garygentry/rauf). The most useful sub-keys:
+
+| Sub-key | Default | Meaning |
+| --- | --- | --- |
+| `name` | `rauf` | Loop runner identifier. |
+| `bin` | `rauf` | Executable used to invoke the runner. |
+| `defaultAgent` | `""` | Empty string means use the runner's own default agent. |
+| `minRunnerVersion` | `0.6.0` | Minimum runner version required. |
+| `stateDir` | `.rauf` | Directory for runner state. |
+| `logFile` | `rauf.log` | Loop log file. |
+| `preconditionFile` | `.rauf.json` | Precondition / config file checked before the loop runs. |
+
+All of the runner command keys are templates with `{bin}`, `{backlogDir}`, `{specsDir}`, and `{iterations}` substituted at call time; most users never need to set these. See [Stage 5](../pipeline/stage-5-loop.mdx) for usage.
+
+## Example
+
+A minimal config:
+
+```json
+{
+  "specsDir": "./specs",
+  "docsDir": "./docs/architecture",
+  "gitCommitAfterStage": true,
+  "commitPrefix": "forge",
+  "loopIterationMultiplier": 1.5
+}
+```

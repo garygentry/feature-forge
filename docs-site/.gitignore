@@ -4,7 +4,6 @@ dist/
 .astro/
 public/diagrams/
 # Symlinked content materialized by setup-docs.sh (regenerated, not committed)
-src/content/docs/agents/
 src/content/docs/forge-bootstrap/
 src/content/docs/epic-orchestration/
 src/content/docs/images

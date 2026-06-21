@@ -1,0 +1,70 @@
+---
+title: Install
+description: Install Feature Forge on Claude Code via the plugin marketplace, or on any supported coding agent with the universal npx installer — and install the Stage-5 loop runner.
+---
+
+Feature Forge runs on Claude Code (the first-class surface) and on other coding
+agents through generated adapter bundles. Pick the path that matches your agent,
+then install the Stage-5 loop runner.
+
+## Claude Code (preferred)
+
+Register the marketplace once, then install the plugin:
+
+```bash
+# Register the marketplace (one-time)
+/plugin marketplace add garygentry/feature-forge
+
+# Install the plugin
+/plugin install feature-forge@feature-forge
+```
+
+Skills are then available as slash commands — e.g. `/feature-forge:forge-init`
+or `/feature-forge:forge` for a status check. Claude installs under `~/.claude`.
+
+## Other agents (Codex, Copilot, Cursor, Gemini)
+
+The universal installer copies the generated adapter bundle into every coding
+agent it detects on your machine:
+
+```bash
+npx @garygentry/feature-forge install                    # all detected agents
+npx @garygentry/feature-forge install -a codex           # a single agent
+npx @garygentry/feature-forge install --dry-run --json   # preview the plan, change nothing
+```
+
+The `--dry-run --json` plan reports the exact install destination per agent. See
+[Cross-agent usage](../advanced/cross-agent.mdx) for per-agent notes and the
+agent-selection rules used by the loop.
+
+## Install the loop runner (for Stage 5)
+
+[Stage 5](../pipeline/stage-5-loop.mdx) runs an autonomous coding loop. The
+default runner is **rauf**. Install the rauf CLI:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash
+```
+
+Then, inside each project where you'll run the loop, set up rauf's per-project
+files:
+
+```bash
+rauf install .
+```
+
+You only need the runner before you reach Stage 5 — you can install the plugin
+and start writing a PRD right away.
+
+## Verify the install
+
+```bash
+npx @garygentry/feature-forge list        # per-agent installed / up-to-date status
+```
+
+In Claude Code, type `/feature-forge:forge-init` and confirm the skill resolves.
+
+## Next
+
+Head to the [Quick Start](./quick-start.mdx) to ship your first feature, or skim
+the [Key Concepts](./concepts.mdx) first.

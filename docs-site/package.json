@@ -9,7 +9,7 @@
     "preview": "astro preview",
     "predev": "sh ./setup-docs.sh",
     "prebuild": "sh ./setup-docs.sh && npm run diagrams",
-    "diagrams": "node scripts/diagram-render.mjs src/diagrams/arch.json --theme light --accent '#4f46e5' --format svg --out-file public/diagrams/arch.light.svg && node scripts/diagram-render.mjs src/diagrams/arch.json --theme dark --accent '#a5b4fc' --format svg --out-file public/diagrams/arch.dark.svg",
+    "diagrams": "node scripts/diagram-render.mjs src/diagrams/arch.json --theme light --accent '#4f46e5' --format svg --out-file public/diagrams/arch.light.svg && node scripts/diagram-render.mjs src/diagrams/arch.json --theme dark --accent '#a5b4fc' --format svg --out-file public/diagrams/arch.dark.svg && node scripts/diagram-render.mjs src/diagrams/rauf-loop.json --theme light --accent '#4f46e5' --format svg --out-file public/diagrams/rauf-loop.light.svg && node scripts/diagram-render.mjs src/diagrams/rauf-loop.json --theme dark --accent '#a5b4fc' --format svg --out-file public/diagrams/rauf-loop.dark.svg",
     "docs:check": "node check-docs.mjs"
   },
   "dependencies": {

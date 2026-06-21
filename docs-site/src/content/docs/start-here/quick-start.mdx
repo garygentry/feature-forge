@@ -1,0 +1,73 @@
+---
+title: Quick Start
+description: Go from an installed plugin to your first shipped feature — initialize the project, then run the six pipeline stages in order.
+---
+
+This walks you from a freshly installed plugin to a shipped feature. It assumes
+you've already [installed Feature Forge](./install.mdx) and have an existing
+project. (Starting from an *empty* repo? Use
+[bootstrapping](../advanced/bootstrapping.mdx) instead of step 1.)
+
+Throughout, `<feature-name>` is a short kebab-case name like `api-key-auth`.
+
+## 1. Initialize the project
+
+```bash
+/feature-forge:forge-init
+```
+
+Creates `forge.config.json` with sensible defaults. One-time per project. See
+[init vs bootstrap](../pipeline/init.mdx).
+
+## 2. Run the six stages in order
+
+Each command interviews you, produces an artifact, and (by default) commits it.
+Review the output before moving on — and run the verify gate whenever you want
+extra confidence.
+
+```bash
+/feature-forge:forge-1-prd  <feature-name>   # WHAT to build  → PRD.md
+/feature-forge:forge-2-tech <feature-name>   # HOW to build   → tech-spec.md
+/feature-forge:forge-3-specs <feature-name>  # detailed specs → 00-…NN-*.md
+/feature-forge:forge-4-backlog <feature-name># work items     → backlog.json
+/feature-forge:forge-5-loop <feature-name>   # implement it   → committed code
+/feature-forge:forge-6-docs <feature-name>   # document it    → docs/architecture/<feature>/
+```
+
+What each stage does, in one line:
+
+| Step | Stage | You get |
+| ---- | ----- | ------- |
+| 1 | [PRD](../pipeline/stage-1-prd.mdx) | Requirements with stable `REQ-*` IDs |
+| 2 | [Tech Spec](../pipeline/stage-2-tech.mdx) | Technical design tracing to those requirements |
+| 3 | [Specs](../pipeline/stage-3-specs.mdx) | Numbered, build-ready implementation docs |
+| 4 | [Backlog](../pipeline/stage-4-backlog.mdx) | A queue of self-contained work items |
+| 5 | [Loop](../pipeline/stage-5-loop.mdx) | Implemented, tested, committed code |
+| 6 | [Docs](../pipeline/stage-6-docs.mdx) | Architecture docs from the real code |
+
+## 3. Verify when you want a gate
+
+After any stage you can check the artifacts and apply fixes:
+
+```bash
+/feature-forge:forge-verify <feature-name>   # writes a findings document
+/feature-forge:forge-fix    <feature-name>   # applies the fixes
+```
+
+See [Verify & Fix](../pipeline/verify-and-fix.mdx).
+
+## 4. Check status anytime
+
+```bash
+/feature-forge:forge <feature-name>          # where am I, what's next?
+```
+
+The [dashboard](../pipeline/dashboard.mdx) is read-only and always tells you the
+next command.
+
+## Where to go next
+
+- New to the vocabulary? Read [Key Concepts & Glossary](./concepts.mdx).
+- Want to see it all on one feature? The [Worked Example](../example/walkthrough.mdx)
+  runs `api-key-auth` through every stage with real artifacts.
+- Shipping something large? Learn about [Epics](../advanced/epics.mdx).

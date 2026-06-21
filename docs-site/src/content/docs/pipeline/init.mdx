@@ -1,0 +1,49 @@
+---
+title: "Setup: init vs bootstrap"
+description: "Initialize feature-forge in an existing project, and choose between forge-init and forge-bootstrap."
+---
+
+Before you can run the pipeline, your project needs a `forge.config.json`. This page covers how to create one and how to decide between `forge-init` and `forge-bootstrap`.
+
+## forge-init
+
+Run this in a project that already has code:
+
+```
+/feature-forge:forge-init
+```
+
+It creates a `forge.config.json` with sensible defaults. It takes no arguments and will **not** overwrite an existing `forge.config.json`, so it is safe to re-run.
+
+### Defaults written
+
+| Key | Default |
+| --- | --- |
+| `specsDir` | `./specs` |
+| `docsDir` | `./docs/architecture` |
+| `backlogDir` | `null` |
+| `gitCommitAfterStage` | `true` |
+| `commitPrefix` | `forge` |
+| `stack` | `null` (detected later in Stage 2) |
+| `typeCheckCommand` | `null` |
+| `testCommand` | `null` |
+| `loopIterationMultiplier` | `1.5` |
+
+For the full reference, see [forge.config.json](../advanced/config.mdx).
+
+## init or bootstrap?
+
+- Use **`forge-init`** when you already have a project or codebase. It only writes the config and gets out of your way.
+- Use **`forge-bootstrap`** when the repo is brand-new and **empty**. It scaffolds a toolchain and a green baseline first. `forge-bootstrap` refuses to run on a non-empty repo.
+
+For deep bootstrap details, see [bootstrapping](../advanced/bootstrapping.mdx).
+
+## What comes next
+
+After either command, start the pipeline:
+
+```
+/feature-forge:forge-1-prd <feature-name>
+```
+
+Continue to [Stage 1 · PRD](./stage-1-prd.mdx).

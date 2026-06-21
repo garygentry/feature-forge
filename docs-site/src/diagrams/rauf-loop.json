@@ -1,0 +1,27 @@
+{
+  "diagramType": "flowchart",
+  "title": "Stage 5 — The rauf Fresh-Context Loop",
+  "description": "How the Stage-5 loop processes a backlog: it picks the next pending item, spawns a fresh-context coding agent, runs the project's verification command, and on success commits and advances; the agent signals DONE, BLOCKED, or NEEDS_HUMAN.",
+  "nodes": [
+    { "id": "pick", "label": "Pick next pending item", "role": "queue", "shape": "rounded" },
+    { "id": "agent", "label": "Spawn fresh-context coding agent", "role": "backend" },
+    { "id": "verify", "label": "Run verification command", "role": "security", "shape": "diamond" },
+    { "id": "commit", "label": "Commit item · mark done", "role": "storage" },
+    { "id": "blocked", "label": "RAUF_BLOCKED (dependency / unclear)", "role": "external" },
+    { "id": "human", "label": "RAUF_NEEDS_HUMAN (await answer)", "role": "external" },
+    { "id": "done", "label": "Backlog empty · loop complete", "role": "compute", "shape": "rounded" }
+  ],
+  "edges": [
+    { "from": "pick", "to": "agent" },
+    { "from": "agent", "to": "verify", "label": "RAUF_DONE" },
+    { "from": "agent", "to": "blocked" },
+    { "from": "agent", "to": "human" },
+    { "from": "verify", "to": "commit", "label": "pass" },
+    { "from": "verify", "to": "agent", "label": "fail / retry", "style": "dashed" },
+    { "from": "commit", "to": "pick", "label": "next", "style": "bold" },
+    { "from": "pick", "to": "done", "label": "none left", "style": "dashed" }
+  ],
+  "containers": [
+    { "id": "iteration", "label": "One iteration (fresh context)", "children": ["agent", "verify", "commit"] }
+  ]
+}
