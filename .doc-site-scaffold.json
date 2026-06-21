@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "diagramContract": "1.0.0",
+  "astroPin": "6.4.8",
+  "starlightPin": "0.40.0",
+  "files": {
+    "docs-site/package.json": "sha256:21968a56b0237ebe65e362a5595c88f7e82328b9b17432a441fde0f9da7bc765",
+    "docs-site/astro.config.mjs": "sha256:95cb6558c14a2e570a173436e0a752d8a358f63d90a8254f0b7c826b61cc8916",
+    "docs-site/tsconfig.json": "sha256:974b0a3b37e52f3649d9df63e72e374794e9e797c8ae61eca4812f844406f7ef",
+    "docs-site/src/content.config.ts": "sha256:1f8b206b5f7c0afb44c3715a3fe79954b448885fe9e753ba372dddf1210ecfd5",
+    "docs-site/src/styles/custom.css": "sha256:3b0b20007d2a4eaf6622a841004b779383c562b89e3f47c6426d785c2b90e2e0",
+    "docs-site/src/content/docs/index.mdx": "sha256:e2c88fe8a01af9f63db5b40d7d967a9588979cba7ab5df6353ffe1c638917cf8",
+    "docs-site/src/content/docs/guides/setup.mdx": "sha256:ca1a99b151eadfb0ebd1c41c05607a759ee1020792abbce2ccf77aced5572bc2",
+    "docs-site/public/favicon.svg": "sha256:c5502606818d508b5d91a75ceef9a00e59b36c3cbcfcfa8659313cfb9cb3d064",
+    "docs-site/setup-docs.sh": "sha256:2aa4e97075b610ee849615e94f2c17fe909cc8c93943d0aa9310d67892e87bd6",
+    "docs-site/check-docs.mjs": "sha256:189c99723353b7fc2292a41099235e2c2ead05709a8a8a83a1223dd67d43d6b6",
+    "docs-site/scripts/diagram-render.mjs": "sha256:e642c97b7ea6b28a707d04682b08b572171374083b2d0d2fc821c529dde9dd3a",
+    "docs-site/src/diagrams/arch.json": "sha256:abdb395f194fbe0ac7d8a3230002cd088d0a63e9bd14239cd24668979c87c299",
+    "docs-site/.gitignore": "sha256:952de5780ea498455e49715b4491dd89073404bca505f74c70e6c1b5cf64f85e",
+    ".github/workflows/docs.yml": "sha256:0333e9a7c144a8569c07b104928dc6b515d790eed93a179e135be738bb9651cd",
+    "docs-site/docs.manifest.json": "sha256:f69f2fcbd07a8579806edee6b9ed2d127a863f86c720dc5969017398139273c7",
+    "docs-site/docs.manifest.schema.json": "sha256:87ab494c1da5e75f0ad71df809f49fdbdc49864b9b164727e6a136b96301a7a4"
+  }
+}

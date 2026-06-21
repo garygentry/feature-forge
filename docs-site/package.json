@@ -1,0 +1,19 @@
+{
+  "name": "Feature Forge-docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "predev": "sh ./setup-docs.sh",
+    "prebuild": "sh ./setup-docs.sh && npm run diagrams",
+    "diagrams": "node scripts/diagram-render.mjs src/diagrams/arch.json --theme light --accent '#4f46e5' --format svg --out-file public/diagrams/arch.light.svg && node scripts/diagram-render.mjs src/diagrams/arch.json --theme dark --accent '#a5b4fc' --format svg --out-file public/diagrams/arch.dark.svg",
+    "docs:check": "node check-docs.mjs"
+  },
+  "dependencies": {
+    "astro": "^6.4.8",
+    "@astrojs/starlight": "^0.40.0"
+  }
+}
