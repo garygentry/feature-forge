@@ -17,16 +17,7 @@ It is tuned for Claude but stays agent-agnostic, and runs on any of the supporte
 
 ### The pipeline at a glance
 
-```
-                                    Verification Gates
-                                    ─────────────────
-[forge-0-epic] ─► forge-1-prd ─► forge-2-tech ─► forge-3-specs ─► forge-verify ─┐
-   (optional)                                                                    │
-                    ┌────────────────────────────────────────────────────────────┘
-                    │
-                    ▼
-              forge-4-backlog ─► forge-verify ─► forge-5-loop ─► forge-verify ─► forge-6-docs
-```
+![feature-forge pipeline: stages flow left-to-right with forge-verify gates between them](docs/images/pipeline.svg)
 
 | Stage | Skill | Why it exists |
 |-------|-------|---------------|
