@@ -1,3 +1,7 @@
+---
+title: "Epic Orchestration — Architecture"
+---
+
 # Epic Orchestration — Architecture
 
 This document explains how Epic Orchestration is designed and why. For the

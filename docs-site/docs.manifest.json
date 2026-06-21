@@ -1,0 +1,24 @@
+{
+  "$schema": "./docs.manifest.schema.json",
+  "site": {
+    "title": "Feature Forge",
+    "description": "Documentation for Feature Forge",
+    "social": { "github": "https://github.com/garygentry/feature-forge" }
+  },
+  "pages": [
+    { "slug": "guides/setup", "source": "native" },
+    { "slug": "agents/claude", "source": "symlink", "from": "docs/agents/claude.md" },
+    { "slug": "agents/codex", "source": "symlink", "from": "docs/agents/codex.md" },
+    { "slug": "agents/copilot", "source": "symlink", "from": "docs/agents/copilot.md" },
+    { "slug": "agents/cursor", "source": "symlink", "from": "docs/agents/cursor.md" },
+    { "slug": "agents/gemini", "source": "symlink", "from": "docs/agents/gemini.md" },
+    { "slug": "forge-bootstrap/overview", "source": "symlink", "from": "docs/architecture/forge-bootstrap/README.md" },
+    { "slug": "forge-bootstrap/architecture", "source": "symlink", "from": "docs/architecture/forge-bootstrap/architecture.md" },
+    { "slug": "forge-bootstrap/cli-reference", "source": "symlink", "from": "docs/architecture/forge-bootstrap/cli-reference.md" },
+    { "slug": "forge-bootstrap/guides/integration", "source": "symlink", "from": "docs/architecture/forge-bootstrap/guides/integration.md" },
+    { "slug": "epic-orchestration/overview", "source": "symlink", "from": "docs/architecture/epic-orchestration/README.md" },
+    { "slug": "epic-orchestration/architecture", "source": "symlink", "from": "docs/architecture/epic-orchestration/architecture.md" },
+    { "slug": "epic-orchestration/cli-reference", "source": "symlink", "from": "docs/architecture/epic-orchestration/cli-reference.md" },
+    { "slug": "epic-orchestration/guides/integration", "source": "symlink", "from": "docs/architecture/epic-orchestration/guides/integration.md" }
+  ]
+}

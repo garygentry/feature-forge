@@ -1,3 +1,7 @@
+---
+title: "Integration Guide — Forge Bootstrap"
+---
+
 # Integration Guide — Forge Bootstrap
 
 How `forge-bootstrap` fits into the pipeline, and how to extend it. For the command

@@ -1,3 +1,7 @@
+---
+title: "Integration Guide — Epic-Awareness Across the Pipeline"
+---
+
 # Integration Guide — Epic-Awareness Across the Pipeline
 
 Epic Orchestration is woven into the existing forge pipeline as **conditional,

@@ -1,3 +1,7 @@
+---
+title: "CLI Reference — `scripts/forge-bootstrap.py`"
+---
+
 # CLI Reference — `scripts/forge-bootstrap.py`
 
 The deterministic core of forge-bootstrap: the greenfield gate, template

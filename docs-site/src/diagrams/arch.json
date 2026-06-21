@@ -1,0 +1,23 @@
+{
+  "diagramType": "architecture",
+  "title": "Feature Forge Pipeline",
+  "description": "The feature-forge pipeline stages from PRD through the autonomous loop to docs.",
+  "nodes": [
+    { "id": "prd", "label": "PRD", "role": "frontend" },
+    { "id": "tech", "label": "Tech Spec", "role": "compute" },
+    { "id": "specs", "label": "Impl Specs", "role": "compute" },
+    { "id": "backlog", "label": "Backlog", "role": "queue" },
+    { "id": "loop", "label": "Autonomous Loop", "role": "backend" },
+    { "id": "docs", "label": "Docs", "role": "storage" }
+  ],
+  "edges": [
+    { "from": "prd", "to": "tech" },
+    { "from": "tech", "to": "specs" },
+    { "from": "specs", "to": "backlog" },
+    { "from": "backlog", "to": "loop" },
+    { "from": "loop", "to": "docs" }
+  ],
+  "containers": [
+    { "id": "pipeline", "label": "Feature Forge", "children": ["prd", "tech", "specs", "backlog", "loop", "docs"] }
+  ]
+}

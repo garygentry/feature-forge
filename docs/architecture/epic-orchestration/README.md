@@ -1,6 +1,10 @@
+---
+title: "Epic Orchestration"
+---
+
 # Epic Orchestration
 
-> New to the pipeline? Start with the [main README's pipeline overview](../../../README.md#the-pipeline-at-a-glance);
+> New to the pipeline? Start with the [main README's pipeline overview](https://github.com/garygentry/feature-forge#the-pipeline-at-a-glance);
 > epics are an optional Stage 0 layered on top of it.
 
 Epic Orchestration lets you group several related forge features into a single

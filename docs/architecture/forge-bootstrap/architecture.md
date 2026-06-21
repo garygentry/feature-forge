@@ -1,7 +1,11 @@
+---
+title: "Forge Bootstrap — Architecture"
+---
+
 # Forge Bootstrap — Architecture
 
 How `forge-bootstrap` is built and why. For the command surface see
-[cli-reference.md](./cli-reference.md); for usage see the [README](./README.md).
+[cli-reference.md](./cli-reference.md); for usage see the [README](https://github.com/garygentry/feature-forge/blob/main/docs/architecture/forge-bootstrap/README.md).
 
 ## The hybrid split (skill + helper)
 

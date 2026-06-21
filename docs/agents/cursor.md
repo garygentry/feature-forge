@@ -1,3 +1,7 @@
+---
+title: "feature-forge on Cursor"
+---
+
 # feature-forge on Cursor
 
 > Canonical skills for the feature-forge pipeline, installed onto Cursor.

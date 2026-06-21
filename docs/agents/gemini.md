@@ -1,3 +1,7 @@
+---
+title: "feature-forge on Gemini"
+---
+
 # feature-forge on Gemini
 
 > Canonical skills for the feature-forge pipeline, installed onto Gemini.
