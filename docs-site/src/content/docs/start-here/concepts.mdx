@@ -10,32 +10,32 @@ stage where it's used.
 
 **Pipeline** — the fixed sequence of stages that takes a feature from idea to
 shipped code: PRD → tech spec → implementation specs → backlog → loop → docs. See
-the [pipeline overview](../pipeline/overview.mdx). Progress is tracked in
+the [pipeline overview](/pipeline/overview/). Progress is tracked in
 `.pipeline-state.json`, so the pipeline is **resumable** across sessions.
 
 **PRD (Product Requirements Document)** — captures *what* the feature must do, in
 language a non-technical stakeholder can read. Produced by
-[Stage 1](../pipeline/stage-1-prd.mdx) as `PRD.md`.
+[Stage 1](/pipeline/stage-1-prd/) as `PRD.md`.
 
 **REQ ID** — a stable identifier for a single requirement, formatted
 `REQ-CATEGORY-NN` (e.g. `REQ-AUTH-01`). Every later artifact traces back to these
 IDs, so nothing is silently dropped.
 
 **Tech spec** — the technical design (*how* to build it), where every decision
-references a requirement. Produced by [Stage 2](../pipeline/stage-2-tech.mdx) as
+references a requirement. Produced by [Stage 2](/pipeline/stage-2-tech/) as
 `tech-spec.md`.
 
 **Implementation specs** — numbered documents (`00-core-definitions.md`,
 `01-architecture-layout.md`, …) with complete type definitions, error handling,
 and examples — everything needed to build the feature. Produced by
-[Stage 3](../pipeline/stage-3-specs.mdx).
+[Stage 3](/pipeline/stage-3-specs/).
 
 **Traceability** — the mapping from every requirement to the spec section that
 covers it, recorded in `TRACEABILITY.md`. It's how the pipeline proves the specs
 cover the PRD.
 
 **Backlog** — a `backlog.json` queue of self-contained work items the autonomous
-loop implements one at a time. Produced by [Stage 4](../pipeline/stage-4-backlog.mdx).
+loop implements one at a time. Produced by [Stage 4](/pipeline/stage-4-backlog/).
 
 **Acceptance criteria** — the verifiable conditions on each backlog item that
 define "done" for that item. The loop must satisfy them before marking the item
@@ -46,13 +46,13 @@ complete.
 **Verify & Fix gate** — after any stage you can run `forge-verify` to analyze the
 artifacts for gaps, inconsistencies, and errors; it writes a findings document.
 `forge-fix` then applies those fixes. See
-[Verify & Fix](../pipeline/verify-and-fix.mdx).
+[Verify & Fix](/pipeline/verify-and-fix/).
 
 ## The autonomous loop
 
 **Loop (Stage 5)** — an autonomous coding loop (the default runner is **rauf**)
 that implements the backlog item by item, runs your tests, and commits each item.
-See [Stage 5](../pipeline/stage-5-loop.mdx).
+See [Stage 5](/pipeline/stage-5-loop/).
 
 **Fresh context per item** — the loop starts each backlog item from a clean slate,
 with no memory of previous items. That's *why* every backlog item must be
@@ -66,7 +66,7 @@ needed; awaits your answer).
 
 ## Epics (large changes)
 
-**Epic** — an optional [Stage 0](../advanced/epics.mdx) wrapper that decomposes a
+**Epic** — an optional [Stage 0](/advanced/epics/) wrapper that decomposes a
 change too large for one feature into several **member features**. Recorded in
 `epic-manifest.json` + `EPIC.md`.
 
@@ -83,4 +83,4 @@ they define the epic's dependency graph.
 
 **`forge.config.json`** — project-root configuration (specs/docs locations, commit
 behavior, stack, loop runner, …). Full key reference:
-[forge.config.json](../advanced/config.mdx).
+[forge.config.json](/advanced/config/).

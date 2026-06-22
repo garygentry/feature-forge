@@ -14,34 +14,34 @@ up later.
 
 ## Before the pipeline: setup
 
-- **Existing project** → run [`forge-init`](./init.mdx) once to create
+- **Existing project** → run [`forge-init`](/pipeline/init/) once to create
   `forge.config.json`.
-- **Empty repo** → run [`forge-bootstrap`](../advanced/bootstrapping.mdx) to
+- **Empty repo** → run [`forge-bootstrap`](/advanced/bootstrapping/) to
   scaffold a green baseline first.
 - **Change too large for one feature** → start with an optional
-  [epic (Stage 0)](../advanced/epics.mdx) to break it into member features.
+  [epic (Stage 0)](/advanced/epics/) to break it into member features.
 
 ## The six stages
 
 | Stage | Command | What it does | Produces |
 | ----- | ------- | ------------ | -------- |
-| [1 · PRD](./stage-1-prd.mdx) | `forge-1-prd` | Capture requirements (what) | `PRD.md` |
-| [2 · Tech Spec](./stage-2-tech.mdx) | `forge-2-tech` | Technical design (how) | `tech-spec.md` |
-| [3 · Specs](./stage-3-specs.mdx) | `forge-3-specs` | Build-ready detail | `00-…NN-*.md`, `TRACEABILITY.md` |
-| [4 · Backlog](./stage-4-backlog.mdx) | `forge-4-backlog` | Queue of work items | `backlog.json` |
-| [5 · Loop](./stage-5-loop.mdx) | `forge-5-loop` | Implement autonomously | committed code |
-| [6 · Docs](./stage-6-docs.mdx) | `forge-6-docs` | Document the result | `docs/architecture/<feature>/` |
+| [1 · PRD](/pipeline/stage-1-prd/) | `forge-1-prd` | Capture requirements (what) | `PRD.md` |
+| [2 · Tech Spec](/pipeline/stage-2-tech/) | `forge-2-tech` | Technical design (how) | `tech-spec.md` |
+| [3 · Specs](/pipeline/stage-3-specs/) | `forge-3-specs` | Build-ready detail | `00-…NN-*.md`, `TRACEABILITY.md` |
+| [4 · Backlog](/pipeline/stage-4-backlog/) | `forge-4-backlog` | Queue of work items | `backlog.json` |
+| [5 · Loop](/pipeline/stage-5-loop/) | `forge-5-loop` | Implement autonomously | committed code |
+| [6 · Docs](/pipeline/stage-6-docs/) | `forge-6-docs` | Document the result | `docs/architecture/<feature>/` |
 
 Each stage runs as `/feature-forge:<command> <feature-name>`.
 
 ## The verification gate
 
-After **any** stage you can run the [Verify & Fix](./verify-and-fix.mdx) gate:
+After **any** stage you can run the [Verify & Fix](/pipeline/verify-and-fix/) gate:
 `forge-verify` analyzes the stage's artifacts and writes a findings document;
 `forge-fix` applies the fixes. It's optional but recommended before Stages 4 and 5.
 
 ## Tracking progress
 
-Run [`/feature-forge:forge <feature-name>`](./dashboard.mdx) anytime to see which
+Run [`/feature-forge:forge <feature-name>`](/pipeline/dashboard/) anytime to see which
 stage you're at and what command comes next. New to the terms used here? See
-[Key Concepts & Glossary](../start-here/concepts.mdx).
+[Key Concepts & Glossary](/start-here/concepts/).

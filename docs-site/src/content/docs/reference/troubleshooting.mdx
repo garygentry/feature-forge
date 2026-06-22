@@ -7,17 +7,17 @@ Quick answers to the issues you're most likely to hit while running the pipeline
 
 ## forge-bootstrap refuses: repo not empty
 
-`forge-bootstrap` has a greenfield gate: it only runs against an empty repository and will not overwrite existing files. If you already have a project, don't use bootstrap — run [`forge-init`](../pipeline/init.mdx) on the existing repo instead. See [bootstrapping](../advanced/bootstrapping.mdx) for the full distinction.
+`forge-bootstrap` has a greenfield gate: it only runs against an empty repository and will not overwrite existing files. If you already have a project, don't use bootstrap — run [`forge-init`](/pipeline/init/) on the existing repo instead. See [bootstrapping](/advanced/bootstrapping/) for the full distinction.
 
 ## A stage says a prerequisite isn't complete
 
-The stages are sequential — each one needs the previous stage finished. The PRD must exist before the tech spec, the tech spec before the implementation specs, and so on. Check where you actually are with the [dashboard](../pipeline/dashboard.mdx).
+The stages are sequential — each one needs the previous stage finished. The PRD must exist before the tech spec, the tech spec before the implementation specs, and so on. Check where you actually are with the [dashboard](/pipeline/dashboard/).
 
 Most stages accept a force mode (`--force`) that skips the prerequisite check while still loading any existing artifacts. Use it sparingly, since the prerequisite usually exists for a reason.
 
 ## Stage 5 won't start
 
-The [loop stage](../pipeline/stage-5-loop.mdx) has a few preconditions. Common causes when it refuses to launch:
+The [loop stage](/pipeline/stage-5-loop/) has a few preconditions. Common causes when it refuses to launch:
 
 - The backlog hasn't been created and verified yet.
 - The loop runner (rauf) is missing, or older than the required `minRunnerVersion` (`0.6.0`).
@@ -26,7 +26,7 @@ The [loop stage](../pipeline/stage-5-loop.mdx) has a few preconditions. Common c
 
 ## The loop stopped — what do the signals mean?
 
-For each item, the agent emits one signal (see [core concepts](../start-here/concepts.mdx) and the [loop stage](../pipeline/stage-5-loop.mdx)):
+For each item, the agent emits one signal (see [core concepts](/start-here/concepts/) and the [loop stage](/pipeline/stage-5-loop/)):
 
 - `RAUF_DONE` — the item passed; the loop continues to the next item.
 - `RAUF_BLOCKED` — a missing dependency or unclear requirement; the item is set aside.
@@ -40,11 +40,11 @@ Run the dashboard:
 /feature-forge:forge <feature>
 ```
 
-See [the dashboard](../pipeline/dashboard.mdx) for what it reports. The underlying state lives in `specs/<feature>/.pipeline-state.json`.
+See [the dashboard](/pipeline/dashboard/) for what it reports. The underlying state lives in `specs/<feature>/.pipeline-state.json`.
 
 ## Verification found problems
 
-When [`forge-verify`](../pipeline/verify-and-fix.mdx) finds issues, it writes a findings document rather than changing anything. To apply the suggested fixes, run:
+When [`forge-verify`](/pipeline/verify-and-fix/) finds issues, it writes a findings document rather than changing anything. To apply the suggested fixes, run:
 
 ```
 /feature-forge:forge-fix <feature>

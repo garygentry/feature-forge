@@ -5,10 +5,10 @@ description: Run the autonomous coding loop (rauf by default) against your backl
 
 import Diagram from "../../../components/Diagram.astro";
 
-Stage 5 hands your [backlog](./stage-4-backlog.mdx) to an autonomous coding loop.
+Stage 5 hands your [backlog](/pipeline/stage-4-backlog/) to an autonomous coding loop.
 The loop implements each item in a **fresh context**, runs your verification
 command, and commits per item. The default runner is **rauf**; the runner is
-configured, not hardcoded (see the [`loopRunner` config](../advanced/config.mdx)).
+configured, not hardcoded (see the [`loopRunner` config](/advanced/config/)).
 
 ## What it does
 
@@ -16,7 +16,7 @@ The loop picks the next pending backlog item, spawns a coding agent with that it
 as its entire brief, runs the project's test/type-check command, and — on success —
 commits the item and advances. Because each item runs in a fresh context (no memory
 of prior items), backlog items must be self-contained. See
-[fresh context per item](../start-here/concepts.mdx).
+[fresh context per item](/start-here/concepts/).
 
 <Diagram name="rauf-loop" alt="The Stage-5 loop: pick the next pending item, spawn a fresh-context coding agent, run the verification command; on pass commit and mark done then advance; the agent can also signal BLOCKED or NEEDS_HUMAN; when no items remain, the loop completes." />
 
@@ -33,7 +33,7 @@ background and is supervised live; you don't need to babysit it.
 
 ## Inputs it consumes
 
-- A complete `backlog.json` (from [Stage 4](./stage-4-backlog.mdx)).
+- A complete `backlog.json` (from [Stage 4](/pipeline/stage-4-backlog/)).
 - The `loopRunner` config from `forge.config.json` (defaults to rauf).
 - The project's verification command (`testCommand` / `typeCheckCommand`).
 
@@ -52,8 +52,8 @@ background and is supervised live; you don't need to babysit it.
 
 ## What comes next
 
-- Optionally run the [Verify & Fix](./verify-and-fix.mdx) gate on the implementation.
-- Generate documentation with [Stage 6](./stage-6-docs.mdx).
+- Optionally run the [Verify & Fix](/pipeline/verify-and-fix/) gate on the implementation.
+- Generate documentation with [Stage 6](/pipeline/stage-6-docs/).
 
 ## Watching and controlling the loop (rauf)
 
@@ -94,16 +94,16 @@ adjust the backlog, and re-run.
 
 ## Notes & gotchas
 
-- The backlog should be created (and ideally [verified](./verify-and-fix.mdx))
+- The backlog should be created (and ideally [verified](/pipeline/verify-and-fix/))
   first.
 - rauf must be installed and meet the minimum version (`0.6.0`), and set up in the
-  project (`rauf install .` creates `.rauf.json`). See [Install](../start-here/install.mdx).
+  project (`rauf install .` creates `.rauf.json`). See [Install](/start-here/install/).
 - The runner refuses a dirty working tree; the stage commits pipeline state before
   launching.
 - If you run a non-default agent but your items carry Claude model aliases, the loop
   warns and offers to strip them. Agent precedence: `item.model` > run `--agent` >
   project `defaultAgent` > runner default. See
-  [Cross-agent usage](../advanced/cross-agent.mdx).
+  [Cross-agent usage](/advanced/cross-agent/).
 - For epic members, an unmet dependency triggers a gate you must explicitly clear.
 - rauf internals (full CLI, recovery, archives) live in the
   [rauf repository](https://github.com/garygentry/rauf).
