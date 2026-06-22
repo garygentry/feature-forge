@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="510" viewBox="0 0 680 510" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="Stage 5 rauf loop: pick the next backlog item, run a fresh-context coding agent, run the verification command, and on pass commit and advance to the next item. The agent may signal RAUF_BLOCKED or RAUF_NEEDS_HUMAN, which are set aside; the loop ends when the backlog is empty.">
+<defs>
+  <filter id="sh" x="-6%" y="-6%" width="112%" height="118%"><feDropShadow dx="1.5" dy="2" stdDeviation="2.5" flood-opacity="0.40"/></filter>
+  <marker id="ar" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#8b949e"/></marker>
+  <marker id="arG" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#f59e0b"/></marker>
+</defs>
+<rect x="0" y="0" width="680" height="510" rx="14" fill="#161b22" stroke="#30363d"/>
+<text x="28" y="34" font-size="12" fill="#8b949e">Stage 5 runs a fresh-context agent per backlog item — each is verify-gated, then committed, until the backlog is empty</text>
+
+<rect x="208" y="152" width="192" height="288" rx="12" fill="none" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.7"/>
+<text x="216" y="146" font-size="11" fill="#8b949e">one iteration (fresh context)</text>
+
+<!-- main loop arrows (behind cards) -->
+<line x1="304" y1="130" x2="304" y2="168" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<line x1="304" y1="230" x2="304" y2="268" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<line x1="304" y1="330" x2="304" y2="368" stroke="#f59e0b" stroke-width="2" marker-end="url(#arG)"/>
+<text x="314" y="353" font-size="10.5" fill="#fbbf24">pass</text>
+<!-- pick -> done (none left) -->
+<line x1="390" y1="99" x2="458" y2="99" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<text x="396" y="90" font-size="10.5" fill="#8b949e">none left</text>
+<!-- agent -> set-aside outcomes -->
+<line x1="390" y1="193" x2="458" y2="181" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<line x1="390" y1="206" x2="458" y2="251" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<!-- return: commit -> pick (next item) -->
+<path d="M 220 399 H 172 V 99 H 218" fill="none" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<text x="110" y="300" font-size="10.5" fill="#8b949e">next item</text>
+<!-- retry: verify fail -> agent -->
+<path d="M 220 299 H 190 V 199 H 218" fill="none" stroke="#8b949e" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+<text x="110" y="205" font-size="10.5" fill="#8b949e">fail / retry</text>
+
+<!-- Pick -->
+<rect x="220" y="70" width="168" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
+<circle cx="236" cy="86" r="11" fill="#3b82f6"/>
+<text x="236" y="90" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">1</text>
+<text x="304" y="95" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">pick item</text>
+<text x="304" y="112" font-size="10.5" fill="#8b949e" text-anchor="middle">next pending</text>
+
+<!-- Agent -->
+<rect x="220" y="170" width="168" height="58" rx="11" fill="#0f2e1c" stroke="#22c55e" stroke-width="2" filter="url(#sh)"/>
+<circle cx="236" cy="186" r="11" fill="#22c55e"/>
+<text x="236" y="190" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">2</text>
+<text x="304" y="195" font-size="13" font-weight="600" fill="#4ade80" text-anchor="middle">run agent</text>
+<text x="304" y="212" font-size="10.5" fill="#8b949e" text-anchor="middle">fresh context + specs</text>
+
+<!-- Verify -->
+<rect x="220" y="270" width="168" height="58" rx="11" fill="#3a2c0a" stroke="#f59e0b" stroke-width="2" filter="url(#sh)"/>
+<text x="234" y="294" font-size="15" fill="#fbbf24">✓</text>
+<text x="304" y="295" font-size="13" font-weight="600" fill="#fbbf24" text-anchor="middle">verify</text>
+<text x="304" y="312" font-size="10.5" fill="#8b949e" text-anchor="middle">test + typecheck</text>
+
+<!-- Commit -->
+<rect x="220" y="370" width="168" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
+<circle cx="236" cy="386" r="11" fill="#3b82f6"/>
+<text x="236" y="390" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">3</text>
+<text x="304" y="395" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">commit + next</text>
+<text x="304" y="412" font-size="10.5" fill="#8b949e" text-anchor="middle">one commit / item</text>
+
+<!-- Done -->
+<rect x="460" y="70" width="168" height="58" rx="11" fill="#1d1b3a" stroke="#818cf8" stroke-width="2" filter="url(#sh)"/>
+<text x="544" y="95" font-size="13" font-weight="600" fill="#c7d2fe" text-anchor="middle">backlog empty</text>
+<text x="544" y="112" font-size="10.5" fill="#8b949e" text-anchor="middle">loop complete</text>
+
+<!-- Blocked -->
+<rect x="460" y="150" width="168" height="58" rx="11" fill="#2d0f16" stroke="#f43f5e" stroke-width="2" filter="url(#sh)"/>
+<text x="544" y="175" font-size="13" font-weight="600" fill="#fb7185" text-anchor="middle">set aside</text>
+<text x="544" y="192" font-size="10.5" fill="#8b949e" text-anchor="middle">RAUF_BLOCKED</text>
+
+<!-- Needs human -->
+<rect x="460" y="224" width="168" height="58" rx="11" fill="#2d0f16" stroke="#f43f5e" stroke-width="2" filter="url(#sh)"/>
+<text x="544" y="249" font-size="13" font-weight="600" fill="#fb7185" text-anchor="middle">set aside</text>
+<text x="544" y="266" font-size="10.5" fill="#8b949e" text-anchor="middle">RAUF_NEEDS_HUMAN</text>
+
+<!-- legend -->
+<rect x="120" y="468" width="13" height="13" rx="3" fill="#16243d" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="138" y="479" font-size="10.5" fill="#8b949e">loop step</text>
+<rect x="210" y="468" width="13" height="13" rx="3" fill="#0f2e1c" stroke="#22c55e" stroke-width="1.5"/>
+<text x="228" y="479" font-size="10.5" fill="#8b949e">agent</text>
+<rect x="288" y="468" width="13" height="13" rx="3" fill="#3a2c0a" stroke="#f59e0b" stroke-width="1.5"/>
+<text x="306" y="479" font-size="10.5" fill="#8b949e">verify gate</text>
+<rect x="392" y="468" width="13" height="13" rx="3" fill="#2d0f16" stroke="#f43f5e" stroke-width="1.5"/>
+<text x="410" y="479" font-size="10.5" fill="#8b949e">set aside</text>
+<rect x="480" y="468" width="13" height="13" rx="3" fill="#1d1b3a" stroke="#818cf8" stroke-width="1.5"/>
+<text x="498" y="479" font-size="10.5" fill="#8b949e">done</text>
+</svg>
