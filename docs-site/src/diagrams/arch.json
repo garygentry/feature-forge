@@ -3,15 +3,15 @@
   "title": "Feature Forge Pipeline",
   "description": "The feature-forge pipeline: from project setup through the six stages (PRD, tech spec, implementation specs, backlog, autonomous loop, docs), with an optional epic stage and a verification gate available after each stage.",
   "nodes": [
-    { "id": "setup", "label": "Setup · forge-init / forge-bootstrap", "role": "gateway", "shape": "rounded" },
-    { "id": "epic", "label": "Stage 0 · Epic (forge-0-epic, optional)", "role": "external", "shape": "rounded" },
-    { "id": "prd", "label": "Stage 1 · PRD (forge-1-prd)", "role": "frontend" },
-    { "id": "tech", "label": "Stage 2 · Tech Spec (forge-2-tech)", "role": "compute" },
-    { "id": "specs", "label": "Stage 3 · Impl Specs (forge-3-specs)", "role": "compute" },
-    { "id": "backlog", "label": "Stage 4 · Backlog (forge-4-backlog)", "role": "queue" },
-    { "id": "loop", "label": "Stage 5 · Loop (forge-5-loop · rauf)", "role": "backend" },
-    { "id": "docs", "label": "Stage 6 · Docs (forge-6-docs)", "role": "storage" },
-    { "id": "verify", "label": "Verify & Fix gate", "role": "security", "shape": "diamond" }
+    { "id": "setup", "label": "Setup\nforge-init\nforge-bootstrap", "role": "gateway", "shape": "rounded" },
+    { "id": "epic", "label": "Stage 0\nEpic (opt.)\nforge-0-epic", "role": "external", "shape": "rounded" },
+    { "id": "prd", "label": "Stage 1\nPRD\nforge-1-prd", "role": "frontend" },
+    { "id": "tech", "label": "Stage 2\nTech Spec\nforge-2-tech", "role": "compute" },
+    { "id": "specs", "label": "Stage 3\nImpl Specs\nforge-3-specs", "role": "compute" },
+    { "id": "backlog", "label": "Stage 4\nBacklog\nforge-4-backlog", "role": "queue" },
+    { "id": "loop", "label": "Stage 5\nLoop · rauf\nforge-5-loop", "role": "backend" },
+    { "id": "docs", "label": "Stage 6\nDocs\nforge-6-docs", "role": "storage" },
+    { "id": "verify", "label": "Verify & Fix\ngate", "role": "security", "shape": "diamond" }
   ],
   "edges": [
     { "from": "setup", "to": "prd", "label": "new feature" },
