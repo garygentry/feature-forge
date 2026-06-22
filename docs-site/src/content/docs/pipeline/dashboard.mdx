@@ -1,0 +1,34 @@
+---
+title: "Tracking Progress with the Dashboard"
+description: "Use the forge navigator — the read-only status view for the whole pipeline — to see what stage you're at and what command to run next."
+---
+
+The `forge` navigator is the read-only status view for the whole pipeline. Reach for it any time you're unsure what stage a feature is at or what to run next.
+
+## Commands
+
+```
+/feature-forge:forge                 # list all features
+/feature-forge:forge <feature-name>  # show one feature's status and next command
+```
+
+Running it on a single feature shows its pipeline status and tells you the next command to run.
+
+## What it shows
+
+- The current stage, per-stage status, and verification status
+- For epics, the epic dashboard (member features and their states)
+
+It reads `.pipeline-state.json` (and `epic-manifest.json` for epics).
+
+## Lifecycle controls
+
+The navigator can pause, resume, or abandon a feature's pipeline via the `pause`, `resume`, and `abandon` sub-commands, and record free-form `notes`. It is otherwise read-only — it never edits your specs.
+
+## When to use it
+
+Use it whenever you're unsure what stage you're at or what to run next.
+
+- See [Concepts](../start-here/concepts.mdx) for the terms used here.
+- See [Pipeline Overview](./overview.mdx) for the full stage map.
+- Working with epics? See [Epics](../advanced/epics.mdx).

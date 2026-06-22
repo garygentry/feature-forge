@@ -1,25 +1,63 @@
 ---
 title: Feature Forge
-description: Documentation for Feature Forge
+description: Turn a feature idea into shipped, verified code through a fixed, resumable pipeline — PRD, tech spec, implementation specs, backlog, an autonomous coding loop, and docs.
 template: splash
 hero:
-  tagline: Documentation for Feature Forge
+  tagline: From a fuzzy idea to shipped, verified code — one stage at a time.
   actions:
-    - text: Get Started
-      link: guides/setup/
+    - text: Install
+      link: start-here/install/
       icon: right-arrow
+      variant: primary
+    - text: Quick Start
+      link: start-here/quick-start/
+      icon: rocket
+    - text: View on GitHub
+      link: https://github.com/garygentry/feature-forge
+      icon: external
+      variant: minimal
 ---
 
 import { Card, CardGrid } from "@astrojs/starlight/components";
+import Diagram from "../../components/Diagram.astro";
 
-Welcome to the **Feature Forge** documentation.
+**Feature Forge** is a plugin that turns a feature idea into shipped, verified
+code through a fixed, resumable **pipeline**. Each stage is a slash command you
+invoke; state persists between stages, so you can stop and resume anytime.
 
-<CardGrid>
-  <Card title="Get started" icon="rocket">
-    Head to the [setup guide](guides/setup/) to begin.
+<Diagram name="arch" alt="The Feature Forge pipeline: setup, optional epic, then the six stages PRD, tech spec, implementation specs, backlog, autonomous loop, and docs, with a verify-and-fix gate available after each stage." />
+
+## The pipeline at a glance
+
+You write a **PRD** (what to build); Feature Forge turns it into a **tech spec**
+(how), then granular **implementation specs**, then a **backlog** of self-contained
+work items. An **autonomous loop** implements the backlog item by item — running
+your tests and committing as it goes — and finally generates **docs**. A
+**verify & fix** gate is available after every stage.
+
+<CardGrid stagger>
+  <Card title="Install" icon="download">
+    Add Feature Forge to Claude Code or any supported agent.
+    [Install →](./start-here/install.mdx)
   </Card>
-  <Card title="Single source of truth" icon="document">
-    Pages are driven by `docs.manifest.json`; edit the manifest to change the
-    sidebar.
+  <Card title="Quick Start" icon="rocket">
+    Go from zero to your first shipped feature in a handful of commands.
+    [Quick Start →](./start-here/quick-start.mdx)
+  </Card>
+  <Card title="Key Concepts" icon="open-book">
+    PRD, REQ IDs, specs, backlog, the verification gate, the fresh-context loop.
+    [Concepts & glossary →](./start-here/concepts.mdx)
+  </Card>
+  <Card title="Using the Pipeline" icon="list-format">
+    A page per stage: the command, its inputs, what it produces, what you approve.
+    [Pipeline overview →](./pipeline/overview.mdx)
+  </Card>
+  <Card title="Worked Example" icon="seti:notebook">
+    One small feature walked through all six stages with real artifacts.
+    [See the walkthrough →](./example/walkthrough.mdx)
+  </Card>
+  <Card title="Advanced" icon="setting">
+    Epics, bootstrapping an empty repo, config, and cross-agent usage.
+    [Advanced topics →](./advanced/epics.mdx)
   </Card>
 </CardGrid>

@@ -1,0 +1,47 @@
+---
+title: Pipeline Overview
+description: The six Feature Forge stages and how project setup, the optional epic stage, and the verification gate fit around them.
+---
+
+import Diagram from "../../../components/Diagram.astro";
+
+The Feature Forge pipeline is a fixed, resumable sequence of stages. You drive
+each one with a slash command; each consumes the previous stage's output and
+produces the next. State lives in `.pipeline-state.json`, so you can stop and pick
+up later.
+
+<Diagram name="arch" alt="Setup (forge-init or forge-bootstrap) feeds into either a new feature or an optional epic; the core pipeline runs PRD, tech spec, implementation specs, backlog, autonomous loop, and docs; a verify-and-fix gate attaches after any stage." />
+
+## Before the pipeline: setup
+
+- **Existing project** → run [`forge-init`](./init.mdx) once to create
+  `forge.config.json`.
+- **Empty repo** → run [`forge-bootstrap`](../advanced/bootstrapping.mdx) to
+  scaffold a green baseline first.
+- **Change too large for one feature** → start with an optional
+  [epic (Stage 0)](../advanced/epics.mdx) to break it into member features.
+
+## The six stages
+
+| Stage | Command | What it does | Produces |
+| ----- | ------- | ------------ | -------- |
+| [1 · PRD](./stage-1-prd.mdx) | `forge-1-prd` | Capture requirements (what) | `PRD.md` |
+| [2 · Tech Spec](./stage-2-tech.mdx) | `forge-2-tech` | Technical design (how) | `tech-spec.md` |
+| [3 · Specs](./stage-3-specs.mdx) | `forge-3-specs` | Build-ready detail | `00-…NN-*.md`, `TRACEABILITY.md` |
+| [4 · Backlog](./stage-4-backlog.mdx) | `forge-4-backlog` | Queue of work items | `backlog.json` |
+| [5 · Loop](./stage-5-loop.mdx) | `forge-5-loop` | Implement autonomously | committed code |
+| [6 · Docs](./stage-6-docs.mdx) | `forge-6-docs` | Document the result | `docs/architecture/<feature>/` |
+
+Each stage runs as `/feature-forge:<command> <feature-name>`.
+
+## The verification gate
+
+After **any** stage you can run the [Verify & Fix](./verify-and-fix.mdx) gate:
+`forge-verify` analyzes the stage's artifacts and writes a findings document;
+`forge-fix` applies the fixes. It's optional but recommended before Stages 4 and 5.
+
+## Tracking progress
+
+Run [`/feature-forge:forge <feature-name>`](./dashboard.mdx) anytime to see which
+stage you're at and what command comes next. New to the terms used here? See
+[Key Concepts & Glossary](../start-here/concepts.mdx).

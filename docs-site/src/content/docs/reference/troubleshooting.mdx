@@ -1,0 +1,57 @@
+---
+title: "Troubleshooting & FAQ"
+description: "Common problems running the forge pipeline and how to resolve them."
+---
+
+Quick answers to the issues you're most likely to hit while running the pipeline.
+
+## forge-bootstrap refuses: repo not empty
+
+`forge-bootstrap` has a greenfield gate: it only runs against an empty repository and will not overwrite existing files. If you already have a project, don't use bootstrap — run [`forge-init`](../pipeline/init.mdx) on the existing repo instead. See [bootstrapping](../advanced/bootstrapping.mdx) for the full distinction.
+
+## A stage says a prerequisite isn't complete
+
+The stages are sequential — each one needs the previous stage finished. The PRD must exist before the tech spec, the tech spec before the implementation specs, and so on. Check where you actually are with the [dashboard](../pipeline/dashboard.mdx).
+
+Most stages accept a force mode (`--force`) that skips the prerequisite check while still loading any existing artifacts. Use it sparingly, since the prerequisite usually exists for a reason.
+
+## Stage 5 won't start
+
+The [loop stage](../pipeline/stage-5-loop.mdx) has a few preconditions. Common causes when it refuses to launch:
+
+- The backlog hasn't been created and verified yet.
+- The loop runner (rauf) is missing, or older than the required `minRunnerVersion` (`0.6.0`).
+- The runner isn't set up in the project — rauf needs a `.rauf.json`, created by running `rauf install .`.
+- There are uncommitted changes. The runner refuses a dirty tree, so the stage commits pipeline state before launching.
+
+## The loop stopped — what do the signals mean?
+
+For each item, the agent emits one signal (see [core concepts](../start-here/concepts.mdx) and the [loop stage](../pipeline/stage-5-loop.mdx)):
+
+- `RAUF_DONE` — the item passed; the loop continues to the next item.
+- `RAUF_BLOCKED` — a missing dependency or unclear requirement; the item is set aside.
+- `RAUF_NEEDS_HUMAN` — a decision or secret (such as an API key) is needed; the loop waits for your answer.
+
+## How do I see what stage I'm at / read pipeline state?
+
+Run the dashboard:
+
+```
+/feature-forge:forge <feature>
+```
+
+See [the dashboard](../pipeline/dashboard.mdx) for what it reports. The underlying state lives in `specs/<feature>/.pipeline-state.json`.
+
+## Verification found problems
+
+When [`forge-verify`](../pipeline/verify-and-fix.mdx) finds issues, it writes a findings document rather than changing anything. To apply the suggested fixes, run:
+
+```
+/feature-forge:forge-fix <feature>
+```
+
+Then re-verify to confirm the findings are resolved.
+
+## Installed-bundle self-location (non-Claude agents)
+
+A known limitation: an installed non-Claude adapter bundle does not currently carry `epic-manifest.py` or `.claude-plugin/plugin.json`, so the portable resolver cannot self-locate from an installed bundle. This does not block normal use.

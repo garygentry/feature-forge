@@ -1,0 +1,109 @@
+---
+title: Stage 5 · Loop
+description: Run the autonomous coding loop (rauf by default) against your backlog — implementing, testing, and committing each item in a fresh context — and learn how to run, watch, and stop it.
+---
+
+import Diagram from "../../../components/Diagram.astro";
+
+Stage 5 hands your [backlog](./stage-4-backlog.mdx) to an autonomous coding loop.
+The loop implements each item in a **fresh context**, runs your verification
+command, and commits per item. The default runner is **rauf**; the runner is
+configured, not hardcoded (see the [`loopRunner` config](../advanced/config.mdx)).
+
+## What it does
+
+The loop picks the next pending backlog item, spawns a coding agent with that item
+as its entire brief, runs the project's test/type-check command, and — on success —
+commits the item and advances. Because each item runs in a fresh context (no memory
+of prior items), backlog items must be self-contained. See
+[fresh context per item](../start-here/concepts.mdx).
+
+<Diagram name="rauf-loop" alt="The Stage-5 loop: pick the next pending item, spawn a fresh-context coding agent, run the verification command; on pass commit and mark done then advance; the agent can also signal BLOCKED or NEEDS_HUMAN; when no items remain, the loop completes." />
+
+## Command
+
+```bash
+/feature-forge:forge-5-loop <feature-name>
+```
+
+(`/feature-forge:forge-5-rauf-loop` is an equivalent alias.) Before launching,
+Feature Forge previews the run, checks prerequisites, and — if your runner supports
+agent selection — lets you choose the coding agent. The loop runs in the
+background and is supervised live; you don't need to babysit it.
+
+## Inputs it consumes
+
+- A complete `backlog.json` (from [Stage 4](./stage-4-backlog.mdx)).
+- The `loopRunner` config from `forge.config.json` (defaults to rauf).
+- The project's verification command (`testCommand` / `typeCheckCommand`).
+
+## Artifacts it produces
+
+- Implemented source code, **committed per backlog item** by the runner.
+- Loop state and logs under the runner's state dir (rauf: `.rauf/`, with
+  `state.json`, `events.ndjson`, and `rauf.log`).
+- An updated `.pipeline-state.json` (Stage 5 marked complete when all items are done).
+
+## What you review & approve
+
+- The run preview (command, backlog summary) and any agent selection.
+- The live progress as items complete.
+- Whatever the loop flags as blocked or needing a human (see signals below).
+
+## What comes next
+
+- Optionally run the [Verify & Fix](./verify-and-fix.mdx) gate on the implementation.
+- Generate documentation with [Stage 6](./stage-6-docs.mdx).
+
+## Watching and controlling the loop (rauf)
+
+You can observe and steer the rauf loop directly from a terminal:
+
+```bash
+rauf status <path>            # one-shot snapshot: state, current item, counts
+rauf status <path> --follow   # live-refreshing status
+rauf follow <path>            # rich live event view
+rauf log <path> --follow      # tail the human-readable log
+rauf loop stop <path>         # stop a running loop
+rauf resume <path>            # continue where it left off
+```
+
+## The signals
+
+Each item's agent reports one of three outcomes:
+
+- **`RAUF_DONE`** — all acceptance criteria passed; the item is committed and the
+  loop moves on.
+- **`RAUF_BLOCKED`** — a missing dependency or unclear requirement; the item is set
+  aside as blocked.
+- **`RAUF_NEEDS_HUMAN`** — a decision, secret, or API key is required; the item is
+  set aside and the loop keeps working other runnable items.
+
+The runner does **not** pause for input. Blocked and needs-human items are surfaced
+live (watch them with `rauf follow`/`rauf status`) and set aside while the rest of
+the backlog runs to completion. To resolve a set-aside item, supply the missing
+decision or secret and then re-run the loop — it picks up the items that were set
+aside:
+
+```bash
+rauf resume <path>            # continue the loop; retries set-aside items
+```
+
+If the answer changes the plan, stop the loop early (`rauf loop stop <path>`),
+adjust the backlog, and re-run.
+
+## Notes & gotchas
+
+- The backlog should be created (and ideally [verified](./verify-and-fix.mdx))
+  first.
+- rauf must be installed and meet the minimum version (`0.6.0`), and set up in the
+  project (`rauf install .` creates `.rauf.json`). See [Install](../start-here/install.mdx).
+- The runner refuses a dirty working tree; the stage commits pipeline state before
+  launching.
+- If you run a non-default agent but your items carry Claude model aliases, the loop
+  warns and offers to strip them. Agent precedence: `item.model` > run `--agent` >
+  project `defaultAgent` > runner default. See
+  [Cross-agent usage](../advanced/cross-agent.mdx).
+- For epic members, an unmet dependency triggers a gate you must explicitly clear.
+- rauf internals (full CLI, recovery, archives) live in the
+  [rauf repository](https://github.com/garygentry/rauf).

@@ -1,0 +1,49 @@
+---
+// Diagram.astro — theme-aware embed for a light/dark SVG pair rendered by the
+// diagram build step (npm run diagrams → public/diagrams/<name>.{light,dark}.svg).
+//
+// Starlight switches theme via the `data-theme` attribute on <html> (manual
+// toggle), so a `prefers-color-scheme` <picture> is not enough on its own. We
+// embed BOTH images and toggle visibility with CSS keyed on `:root[data-theme]`,
+// with a `prefers-color-scheme` fallback for no-JS / pre-hydration.
+//
+// `name` is the basename under public/diagrams (e.g. "arch" or "rauf-loop").
+interface Props {
+  name: string;
+  alt: string;
+}
+const { name, alt } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const light = `${base}/diagrams/${name}.light.svg`;
+const dark = `${base}/diagrams/${name}.dark.svg`;
+---
+
+<figure class="ff-diagram">
+  <img class="ff-diagram-light" src={light} alt={alt} loading="lazy" />
+  <img class="ff-diagram-dark" src={dark} alt={alt} loading="lazy" />
+</figure>
+
+<style>
+  .ff-diagram {
+    margin: 1.5rem 0;
+    text-align: center;
+  }
+  .ff-diagram img {
+    max-width: 100%;
+    height: auto;
+  }
+  /* Default (Starlight defaults to dark): show dark, hide light. */
+  .ff-diagram-light {
+    display: none;
+  }
+  .ff-diagram-dark {
+    display: inline-block;
+  }
+  /* Manual light theme. */
+  :global(:root[data-theme="light"]) .ff-diagram-light {
+    display: inline-block;
+  }
+  :global(:root[data-theme="light"]) .ff-diagram-dark {
+    display: none;
+  }
+</style>

@@ -1,0 +1,41 @@
+---
+title: Cross-Agent Usage
+description: How to install and run the Feature Forge pipeline on Claude Code and other coding agents.
+---
+
+Feature Forge's skills are vendor-neutral canon; Claude Code is the first-class surface, but the same pipeline runs on other coding agents via generated adapter bundles. For first-time install steps see [install](../start-here/install.mdx).
+
+## Claude Code (preferred)
+
+Install via the plugin marketplace:
+
+```
+/plugin marketplace add garygentry/feature-forge
+/plugin install feature-forge@feature-forge
+```
+
+Skills are invoked as slash commands like `/feature-forge:forge-init`. Claude installs under `~/.claude`.
+
+## Other agents (Codex, Copilot, Cursor, Gemini)
+
+Install with the universal one-liner, which copies the generated adapter bundle into each detected agent's config directory:
+
+```
+npx @garygentry/feature-forge install            # all detected agents
+npx @garygentry/feature-forge install -a codex   # one agent (codex|copilot|cursor|gemini|claude)
+npx @garygentry/feature-forge install --dry-run --json   # preview the plan, change nothing
+```
+
+The `--dry-run --json` plan reports the resolved install destination per agent. Claude's `~/.claude` is the only hard-coded well-known destination; for the others the destination comes from the dry-run plan.
+
+## Checking what's installed
+
+Run `npx @garygentry/feature-forge list` (optionally `-a <agent>`) to show per-agent installed / up-to-date status.
+
+## Known gap
+
+An installed non-Claude adapter bundle does not currently carry `epic-manifest.py` / `.claude-plugin/plugin.json`, so the portable resolver `scripts/forge-root.sh` cannot self-locate from an installed bundle. This is a known limitation owned by the adapter generator; it does not block install or first use.
+
+## The loop runner across agents
+
+At [Stage 5](../pipeline/stage-5-loop.mdx) the coding agent that runs the loop is chosen by precedence: `item.provider` > `--agent` (run-level) > project `defaultAgent` > the runner's default (`claude-cli`). The agent (who runs each item) is selected separately from the model (which model that agent uses) — an item's `model` alias never decides the agent. If you select a non-Claude agent but your backlog items carry Claude model aliases, the loop warns and offers to strip them or proceed.

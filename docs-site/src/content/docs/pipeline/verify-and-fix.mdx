@@ -1,0 +1,68 @@
+---
+title: Verify & Fix
+description: The Feature Forge quality gate — forge-verify analyzes a stage's artifacts and writes an actionable findings document, and forge-fix applies the fixes.
+---
+
+The verification gate is available after **every** stage. `forge-verify` analyzes
+the current stage's artifacts for completeness, consistency, and quality, then
+writes a findings document. `forge-fix` applies those findings. It's optional but
+recommended — especially before [Stage 4](./stage-4-backlog.mdx) and
+[Stage 5](./stage-5-loop.mdx).
+
+## Verify
+
+```bash
+/feature-forge:forge-verify <feature-name> [stage]
+```
+
+`stage` is one of `prd`, `tech`, `specs`, `backlog`, `impl`, or `epic`. If you omit
+it, the stage is auto-detected from the pipeline state.
+
+**What it produces:** a findings document at
+`specs/<feature>/.verification/VERIFY-<stage>-<date>.md` containing a list of
+findings and a **Fix Execution Plan**. The pipeline state records the findings
+file and count. Findings are categorized by severity:
+
+- **gap** — missing coverage.
+- **inconsistency** — two artifacts contradict each other.
+- **improvement** — correct, but could be better.
+- **error** — factually wrong.
+
+For large stages (specs, backlog, impl) the checks fan out across parallel
+verifier instances. Backlog verification also runs the loop runner's own validate
+command; specs verification runs a deterministic traceability check.
+
+## Fix
+
+```bash
+/feature-forge:forge-fix <feature-name>
+```
+
+`forge-fix` reads the most recent findings document and applies its Fix Execution
+Plan step by step. It:
+
+- prompts you for any "User Decisions Required" items before executing dependent steps;
+- verifies each change after applying it;
+- tracks progress in the findings document, so an interrupted run can resume without
+  redoing applied steps;
+- stops on the first failed step rather than continuing blindly.
+
+## The loop
+
+A typical gate cycle:
+
+1. `forge-verify <feature>` → review the findings document.
+2. `forge-fix <feature>` → apply the fixes.
+3. `forge-verify <feature>` again → confirm the issues are resolved.
+
+Then continue the pipeline. Check overall status anytime with the
+[dashboard](./dashboard.mdx).
+
+## Notes
+
+- Run `forge-verify` before `forge-fix` — `forge-fix` needs a findings document to
+  apply.
+- Verification is read-and-report; it doesn't change your artifacts. `forge-fix` is
+  what edits them.
+- When the verification or fix touches a stage, re-running the relevant stage may be
+  appropriate if findings are structural.

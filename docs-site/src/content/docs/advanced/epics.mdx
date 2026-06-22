@@ -1,0 +1,56 @@
+---
+title: "Epics (Stage 0)"
+description: "Decompose a change too large for one feature into multiple member features with declared dependencies and contracts."
+---
+
+An epic is an optional Stage 0 that splits a change too large for a single feature into multiple discrete **member features** with declared dependencies and contracts. Most features skip it — reach for an epic only when one feature can't cleanly hold the work.
+
+## When to use an epic
+
+Use an epic when a change naturally breaks into several features that depend on one another and need to agree on interfaces. Each member then runs the normal pipeline on its own. See [concepts](../start-here/concepts.mdx) for the glossary terms (epic, charter, contracts, member feature).
+
+## Creating an epic
+
+```
+/feature-forge:forge-0-epic <epic-name>
+```
+
+The epic name is kebab-case. The command runs an interview that frames the epic (goal, description), then walks you through:
+
+1. **List member features** — the discrete features that make up the epic.
+2. **Charter** — a one-paragraph charter per member describing its responsibility. A charter is *not* a PRD; PRD-level detail belongs in [Stage 1](../pipeline/stage-1-prd.mdx).
+3. **Contracts** — structured per member: `exposes` (what it provides to siblings) and `consumes` (what it needs from siblings).
+4. **Dependencies** — declare `dependsOn` relationships between members.
+
+Re-running `/feature-forge:forge-0-epic <epic-name>` on an existing epic enters **EDIT mode**, where you can add, remove, or reorder features and change dependencies or contracts.
+
+## What it produces
+
+Under `specs/<epic>/`:
+
+- `epic-manifest.json` — the source of truth.
+- `EPIC.md` — a human-readable mirror.
+- A subdirectory plus a `.pipeline-state.json` per member feature.
+
+## Running members through the pipeline
+
+Each member feature goes through the normal pipeline, starting at:
+
+```
+/feature-forge:forge-1-prd <member>
+```
+
+See [Stage 1](../pipeline/stage-1-prd.mdx). When a member's PRD and tech spec are written, the relevant epic context — its charter, its contracts, and any **completed** direct dependencies — is injected automatically.
+
+### Dependency gate
+
+At Stage 5, if a member has unmet direct dependencies the loop warns you and requires you to explicitly proceed (unless forced). Completing a member can unlock its dependents.
+
+## Dashboard and verification
+
+- `/feature-forge:forge <epic>` shows the epic [dashboard](../pipeline/dashboard.mdx) — the members and their states.
+- `/feature-forge:forge-verify <epic>` verifies the epic: manifest validity, member-state coherence, and contract drift.
+
+## Reference
+
+For internals and the CLI, see the maintainer reference pages: [epic overview](../epic-orchestration/overview.md), [epic architecture](../epic-orchestration/architecture.md), and [epic CLI reference](../epic-orchestration/cli-reference.md).

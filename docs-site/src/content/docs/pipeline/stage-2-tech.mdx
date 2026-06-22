@@ -1,0 +1,52 @@
+---
+title: "Stage 2 · Tech Spec"
+description: "Decide how to build the feature with a technical specification grounded in the PRD."
+---
+
+Stage 2 turns the approved PRD into a technical specification — the decisions about how the feature will actually be built.
+
+## What it does
+
+Decides **how** to build the feature, producing a technical specification grounded in the PRD. Every technical decision must trace back to a PRD requirement (`REQ-XXX-NN`). It also detects and confirms the project's stack.
+
+## Command
+
+```
+/feature-forge:forge-2-tech <feature-name>
+```
+
+## Inputs it consumes
+
+- A completed `PRD.md` (prerequisite).
+- Codebase research — a `forge-researcher` subagent explores the codebase, with a manual fallback.
+- Stack detection.
+
+## Artifacts it produces
+
+- `tech-spec.md`, with sections including Overview, Module Structure, Technical Decisions, Data Model, API Design, Integration Points, Error Handling, Testing, Dependencies, and Open Questions.
+- Updates `forge.config.json` with `stack`, `typeCheckCommand`, and `testCommand`.
+- Updates `.pipeline-state.json`.
+- Auto-commits if enabled.
+
+## What you review & approve
+
+- The detected stack.
+- Each technical-decision area.
+- The full tech-spec draft.
+
+## What comes next
+
+Verify the tech spec, then generate implementation specs:
+
+```
+/feature-forge:forge-verify <feature>
+/feature-forge:forge-3-specs <feature>
+```
+
+See [verify](./verify-and-fix.mdx) or [Stage 3 · Specs](./stage-3-specs.mdx).
+
+## Notes & gotchas
+
+- `forge-1-prd` must be complete first.
+- The tech spec answers **how**, not **what** — don't duplicate the PRD.
+- Integration points are verified against actual source code.

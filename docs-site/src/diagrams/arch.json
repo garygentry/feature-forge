@@ -1,23 +1,31 @@
 {
-  "diagramType": "architecture",
+  "diagramType": "flowchart",
   "title": "Feature Forge Pipeline",
-  "description": "The feature-forge pipeline stages from PRD through the autonomous loop to docs.",
+  "description": "The feature-forge pipeline: from project setup through the six stages (PRD, tech spec, implementation specs, backlog, autonomous loop, docs), with an optional epic stage and a verification gate available after each stage.",
   "nodes": [
-    { "id": "prd", "label": "PRD", "role": "frontend" },
-    { "id": "tech", "label": "Tech Spec", "role": "compute" },
-    { "id": "specs", "label": "Impl Specs", "role": "compute" },
-    { "id": "backlog", "label": "Backlog", "role": "queue" },
-    { "id": "loop", "label": "Autonomous Loop", "role": "backend" },
-    { "id": "docs", "label": "Docs", "role": "storage" }
+    { "id": "setup", "label": "Setup · forge-init / forge-bootstrap", "role": "gateway", "shape": "rounded" },
+    { "id": "epic", "label": "Stage 0 · Epic (forge-0-epic, optional)", "role": "external", "shape": "rounded" },
+    { "id": "prd", "label": "Stage 1 · PRD (forge-1-prd)", "role": "frontend" },
+    { "id": "tech", "label": "Stage 2 · Tech Spec (forge-2-tech)", "role": "compute" },
+    { "id": "specs", "label": "Stage 3 · Impl Specs (forge-3-specs)", "role": "compute" },
+    { "id": "backlog", "label": "Stage 4 · Backlog (forge-4-backlog)", "role": "queue" },
+    { "id": "loop", "label": "Stage 5 · Loop (forge-5-loop · rauf)", "role": "backend" },
+    { "id": "docs", "label": "Stage 6 · Docs (forge-6-docs)", "role": "storage" },
+    { "id": "verify", "label": "Verify & Fix gate", "role": "security", "shape": "diamond" }
   ],
   "edges": [
+    { "from": "setup", "to": "prd", "label": "new feature" },
+    { "from": "setup", "to": "epic", "label": "large change" },
+    { "from": "epic", "to": "prd", "label": "per member" },
     { "from": "prd", "to": "tech" },
     { "from": "tech", "to": "specs" },
     { "from": "specs", "to": "backlog" },
     { "from": "backlog", "to": "loop" },
-    { "from": "loop", "to": "docs" }
+    { "from": "loop", "to": "docs" },
+    { "from": "verify", "to": "tech", "direction": "both", "style": "dashed" },
+    { "from": "verify", "to": "backlog", "label": "after any stage", "direction": "both", "style": "dashed" }
   ],
   "containers": [
-    { "id": "pipeline", "label": "Feature Forge", "children": ["prd", "tech", "specs", "backlog", "loop", "docs"] }
+    { "id": "pipeline", "label": "Core Pipeline", "children": ["prd", "tech", "specs", "backlog", "loop", "docs"] }
   ]
 }
