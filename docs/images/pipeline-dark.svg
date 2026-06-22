@@ -1,73 +1,88 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="982" height="330" viewBox="0 0 982 330" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="Feature Forge pipeline: forge-0-epic (optional) then forge-1-prd, forge-2-tech, forge-3-specs, a forge-verify gate, forge-4-backlog, a forge-verify gate, forge-5-loop, a forge-verify gate, and forge-6-docs. Verification gates run between stages.">
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="330" viewBox="0 0 860 330" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="Feature Forge pipeline: forge-0-epic (optional), then forge-1-prd, forge-2-tech, forge-3-specs, forge-4-backlog, forge-5-loop, and forge-6-docs. A forge-verify gate (amber) is available after every stage from PRD through implementation.">
 <defs>
   <filter id="sh" x="-6%" y="-6%" width="112%" height="118%"><feDropShadow dx="1.5" dy="2" stdDeviation="2.5" flood-opacity="0.40"/></filter>
   <marker id="ar" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#8b949e"/></marker>
-  <marker id="arG" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#f59e0b"/></marker>
 </defs>
-<rect x="0" y="0" width="982" height="330" rx="14" fill="#161b22" stroke="#30363d"/>
-<text x="28" y="34" font-size="12" fill="#8b949e">Verification gates (amber) run between stages to catch gaps before they reach downstream work</text>
-<line x1="186" y1="115" x2="218" y2="115" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
-<line x1="378" y1="115" x2="410" y2="115" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
-<line x1="570" y1="115" x2="602" y2="115" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
-<line x1="762" y1="115" x2="794" y2="115" stroke="#f59e0b" stroke-width="2" marker-end="url(#arG)"/>
-<line x1="186" y1="237" x2="218" y2="237" stroke="#f59e0b" stroke-width="2" marker-end="url(#arG)"/>
-<line x1="378" y1="237" x2="410" y2="237" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
-<line x1="570" y1="237" x2="602" y2="237" stroke="#f59e0b" stroke-width="2" marker-end="url(#arG)"/>
-<line x1="762" y1="237" x2="794" y2="237" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
-<path d="M 875 144 V 176 H 107 V 206" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="0" marker-end="url(#arG)"/>
-<rect x="28" y="86" width="158" height="58" rx="11" fill="#1d1b3a" stroke="#818cf8" stroke-width="2" stroke-dasharray="5 4" filter="url(#sh)"/>
+<rect x="0" y="0" width="860" height="330" rx="14" fill="#161b22" stroke="#30363d"/>
+<text x="28" y="34" font-size="12" fill="#8b949e">A forge-verify gate (amber) is available after every stage — run it to catch gaps before they reach downstream work</text>
+
+<!-- flow arrows (behind cards/gates) -->
+<line x1="180" y1="115" x2="238" y2="115" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<line x1="392" y1="115" x2="450" y2="115" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<path d="M 527 144 V 176 H 103 V 206" fill="none" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<line x1="180" y1="237" x2="238" y2="237" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<line x1="392" y1="237" x2="450" y2="237" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+<line x1="604" y1="237" x2="662" y2="237" stroke="#8b949e" stroke-width="2" marker-end="url(#ar)"/>
+
+<!-- Stage 0: epic (optional) -->
+<rect x="28" y="86" width="150" height="58" rx="11" fill="#1d1b3a" stroke="#818cf8" stroke-width="2" stroke-dasharray="5 4" filter="url(#sh)"/>
 <circle cx="44" cy="102" r="11" fill="#818cf8"/>
 <text x="44" y="106" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">0</text>
-<text x="113" y="111" font-size="13" font-weight="600" fill="#c7d2fe" text-anchor="middle">forge-0-epic</text>
-<text x="113" y="128" font-size="10.5" fill="#8b949e" text-anchor="middle">optional</text>
-<rect x="220" y="86" width="158" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
-<circle cx="236" cy="102" r="11" fill="#3b82f6"/>
-<text x="236" y="106" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">1</text>
-<text x="305" y="111" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-1-prd</text>
-<text x="305" y="128" font-size="10.5" fill="#8b949e" text-anchor="middle">requirements</text>
-<rect x="412" y="86" width="158" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
-<circle cx="428" cy="102" r="11" fill="#3b82f6"/>
-<text x="428" y="106" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">2</text>
-<text x="497" y="111" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-2-tech</text>
-<text x="497" y="128" font-size="10.5" fill="#8b949e" text-anchor="middle">design</text>
-<rect x="604" y="86" width="158" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
-<circle cx="620" cy="102" r="11" fill="#3b82f6"/>
-<text x="620" y="106" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">3</text>
-<text x="689" y="111" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-3-specs</text>
-<text x="689" y="128" font-size="10.5" fill="#8b949e" text-anchor="middle">specs</text>
-<rect x="796" y="86" width="158" height="58" rx="11" fill="#3a2c0a" stroke="#f59e0b" stroke-width="2" filter="url(#sh)"/>
-<text x="810" y="108" font-size="15" fill="#fbbf24">✓</text>
-<text x="881" y="111" font-size="13" font-weight="600" fill="#fbbf24" text-anchor="middle">forge-verify</text>
-<text x="881" y="128" font-size="10.5" fill="#8b949e" text-anchor="middle">gate</text>
-<rect x="28" y="208" width="158" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
+<text x="103" y="111" font-size="13" font-weight="600" fill="#c7d2fe" text-anchor="middle">forge-0-epic</text>
+<text x="103" y="128" font-size="10.5" fill="#8b949e" text-anchor="middle">optional</text>
+
+<!-- Stage 1: prd -->
+<rect x="240" y="86" width="150" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
+<circle cx="256" cy="102" r="11" fill="#3b82f6"/>
+<text x="256" y="106" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">1</text>
+<text x="315" y="111" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-1-prd</text>
+<text x="315" y="128" font-size="10.5" fill="#8b949e" text-anchor="middle">requirements</text>
+
+<!-- Stage 2: tech -->
+<rect x="452" y="86" width="150" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
+<circle cx="468" cy="102" r="11" fill="#3b82f6"/>
+<text x="468" y="106" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">2</text>
+<text x="527" y="111" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-2-tech</text>
+<text x="527" y="128" font-size="10.5" fill="#8b949e" text-anchor="middle">design</text>
+
+<!-- Stage 3: specs -->
+<rect x="28" y="208" width="150" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
 <circle cx="44" cy="224" r="11" fill="#3b82f6"/>
-<text x="44" y="228" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">4</text>
-<text x="113" y="233" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-4-backlog</text>
-<text x="113" y="250" font-size="10.5" fill="#8b949e" text-anchor="middle">backlog.json</text>
-<rect x="220" y="208" width="158" height="58" rx="11" fill="#3a2c0a" stroke="#f59e0b" stroke-width="2" filter="url(#sh)"/>
-<text x="234" y="230" font-size="15" fill="#fbbf24">✓</text>
-<text x="305" y="233" font-size="13" font-weight="600" fill="#fbbf24" text-anchor="middle">forge-verify</text>
-<text x="305" y="250" font-size="10.5" fill="#8b949e" text-anchor="middle">gate</text>
-<rect x="412" y="208" width="158" height="58" rx="11" fill="#0f2e1c" stroke="#22c55e" stroke-width="2" filter="url(#sh)"/>
-<circle cx="428" cy="224" r="11" fill="#22c55e"/>
-<text x="428" y="228" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">5</text>
-<text x="497" y="233" font-size="13" font-weight="600" fill="#4ade80" text-anchor="middle">forge-5-loop</text>
-<text x="497" y="250" font-size="10.5" fill="#8b949e" text-anchor="middle">implement</text>
-<rect x="604" y="208" width="158" height="58" rx="11" fill="#3a2c0a" stroke="#f59e0b" stroke-width="2" filter="url(#sh)"/>
-<text x="618" y="230" font-size="15" fill="#fbbf24">✓</text>
-<text x="689" y="233" font-size="13" font-weight="600" fill="#fbbf24" text-anchor="middle">forge-verify</text>
-<text x="689" y="250" font-size="10.5" fill="#8b949e" text-anchor="middle">gate</text>
-<rect x="796" y="208" width="158" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
-<circle cx="812" cy="224" r="11" fill="#3b82f6"/>
-<text x="812" y="228" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">6</text>
-<text x="881" y="233" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-6-docs</text>
-<text x="881" y="250" font-size="10.5" fill="#8b949e" text-anchor="middle">document</text>
-<rect x="650" y="303" width="13" height="13" rx="3" fill="#16243d" stroke="#3b82f6" stroke-width="1.5"/>
-<text x="668" y="314" font-size="10.5" fill="#8b949e">Stage</text>
-<rect x="716" y="303" width="13" height="13" rx="3" fill="#1d1b3a" stroke="#818cf8" stroke-width="1.5"/>
-<text x="734" y="314" font-size="10.5" fill="#8b949e">Optional</text>
-<rect x="801.2" y="303" width="13" height="13" rx="3" fill="#3a2c0a" stroke="#f59e0b" stroke-width="1.5"/>
-<text x="819.2" y="314" font-size="10.5" fill="#8b949e">Verify gate</text>
-<rect x="905.6" y="303" width="13" height="13" rx="3" fill="#0f2e1c" stroke="#22c55e" stroke-width="1.5"/>
-<text x="923.6" y="314" font-size="10.5" fill="#8b949e">Loop</text>
+<text x="44" y="228" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">3</text>
+<text x="103" y="233" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-3-specs</text>
+<text x="103" y="250" font-size="10.5" fill="#8b949e" text-anchor="middle">specs</text>
+
+<!-- Stage 4: backlog -->
+<rect x="240" y="208" width="150" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
+<circle cx="256" cy="224" r="11" fill="#3b82f6"/>
+<text x="256" y="228" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">4</text>
+<text x="315" y="233" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-4-backlog</text>
+<text x="315" y="250" font-size="10.5" fill="#8b949e" text-anchor="middle">backlog.json</text>
+
+<!-- Stage 5: loop -->
+<rect x="452" y="208" width="150" height="58" rx="11" fill="#0f2e1c" stroke="#22c55e" stroke-width="2" filter="url(#sh)"/>
+<circle cx="468" cy="224" r="11" fill="#22c55e"/>
+<text x="468" y="228" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">5</text>
+<text x="527" y="233" font-size="13" font-weight="600" fill="#4ade80" text-anchor="middle">forge-5-loop</text>
+<text x="527" y="250" font-size="10.5" fill="#8b949e" text-anchor="middle">implement</text>
+
+<!-- Stage 6: docs -->
+<rect x="664" y="208" width="150" height="58" rx="11" fill="#16243d" stroke="#3b82f6" stroke-width="2" filter="url(#sh)"/>
+<circle cx="680" cy="224" r="11" fill="#3b82f6"/>
+<text x="680" y="228" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">6</text>
+<text x="739" y="233" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">forge-6-docs</text>
+<text x="739" y="250" font-size="10.5" fill="#8b949e" text-anchor="middle">document</text>
+
+<!-- verify gates (amber): named once, then compact markers after each later stage -->
+<rect x="409" y="103" width="24" height="24" rx="6" fill="#3a2c0a" stroke="#f59e0b" stroke-width="2" filter="url(#sh)"/>
+<text x="421" y="120" font-size="14" fill="#fbbf24" text-anchor="middle">✓</text>
+<text x="421" y="161" font-size="10.5" font-weight="600" fill="#fbbf24" text-anchor="middle">forge-verify</text>
+<rect x="303" y="164" width="24" height="24" rx="6" fill="#3a2c0a" stroke="#f59e0b" stroke-width="2" filter="url(#sh)"/>
+<text x="315" y="181" font-size="14" fill="#fbbf24" text-anchor="middle">✓</text>
+<rect x="197" y="225" width="24" height="24" rx="6" fill="#3a2c0a" stroke="#f59e0b" stroke-width="2" filter="url(#sh)"/>
+<text x="209" y="242" font-size="14" fill="#fbbf24" text-anchor="middle">✓</text>
+<rect x="409" y="225" width="24" height="24" rx="6" fill="#3a2c0a" stroke="#f59e0b" stroke-width="2" filter="url(#sh)"/>
+<text x="421" y="242" font-size="14" fill="#fbbf24" text-anchor="middle">✓</text>
+<rect x="621" y="225" width="24" height="24" rx="6" fill="#3a2c0a" stroke="#f59e0b" stroke-width="2" filter="url(#sh)"/>
+<text x="633" y="242" font-size="14" fill="#fbbf24" text-anchor="middle">✓</text>
+
+<!-- legend -->
+<rect x="240" y="303" width="13" height="13" rx="3" fill="#16243d" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="258" y="314" font-size="10.5" fill="#8b949e">Stage</text>
+<rect x="310" y="303" width="13" height="13" rx="3" fill="#1d1b3a" stroke="#818cf8" stroke-width="1.5"/>
+<text x="328" y="314" font-size="10.5" fill="#8b949e">Optional</text>
+<rect x="400" y="303" width="13" height="13" rx="3" fill="#3a2c0a" stroke="#f59e0b" stroke-width="1.5"/>
+<text x="418" y="314" font-size="10.5" fill="#8b949e">Verify gate · any stage</text>
+<rect x="572" y="303" width="13" height="13" rx="3" fill="#0f2e1c" stroke="#22c55e" stroke-width="1.5"/>
+<text x="590" y="314" font-size="10.5" fill="#8b949e">Loop</text>
 </svg>
