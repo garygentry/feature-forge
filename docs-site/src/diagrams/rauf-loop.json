@@ -3,13 +3,13 @@
   "title": "Stage 5 — The rauf Fresh-Context Loop",
   "description": "How the Stage-5 loop processes a backlog: it picks the next pending item, spawns a fresh-context coding agent, runs the project's verification command, and on success commits and advances; the agent signals DONE, BLOCKED, or NEEDS_HUMAN.",
   "nodes": [
-    { "id": "pick", "label": "Pick next pending item", "role": "queue", "shape": "rounded" },
-    { "id": "agent", "label": "Spawn fresh-context coding agent", "role": "backend" },
-    { "id": "verify", "label": "Run verification command", "role": "security", "shape": "diamond" },
-    { "id": "commit", "label": "Commit item · mark done", "role": "storage" },
-    { "id": "blocked", "label": "RAUF_BLOCKED (dependency / unclear)", "role": "external" },
-    { "id": "human", "label": "RAUF_NEEDS_HUMAN (await answer)", "role": "external" },
-    { "id": "done", "label": "Backlog empty · loop complete", "role": "compute", "shape": "rounded" }
+    { "id": "pick", "label": "Pick next\npending item", "role": "queue", "shape": "rounded" },
+    { "id": "agent", "label": "Spawn\nfresh-context\ncoding agent", "role": "backend" },
+    { "id": "verify", "label": "Run\nverification\ncommand", "role": "security", "shape": "diamond" },
+    { "id": "commit", "label": "Commit item\nmark done", "role": "storage" },
+    { "id": "blocked", "label": "RAUF_BLOCKED\ndep / unclear", "role": "external" },
+    { "id": "human", "label": "NEEDS_HUMAN\nset aside", "role": "external" },
+    { "id": "done", "label": "Backlog empty\nloop complete", "role": "compute", "shape": "rounded" }
   ],
   "edges": [
     { "from": "pick", "to": "agent" },
