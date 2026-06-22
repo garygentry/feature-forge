@@ -3,7 +3,7 @@ title: Cross-Agent Usage
 description: How to install and run the Feature Forge pipeline on Claude Code and other coding agents.
 ---
 
-Feature Forge's skills are vendor-neutral canon; Claude Code is the first-class surface, but the same pipeline runs on other coding agents via generated adapter bundles. For first-time install steps see [install](../start-here/install.mdx).
+Feature Forge's skills are vendor-neutral canon; Claude Code is the first-class surface, but the same pipeline runs on other coding agents via generated adapter bundles. For first-time install steps see [install](/start-here/install/).
 
 ## Claude Code (preferred)
 
@@ -38,4 +38,4 @@ An installed non-Claude adapter bundle does not currently carry `epic-manifest.p
 
 ## The loop runner across agents
 
-At [Stage 5](../pipeline/stage-5-loop.mdx) the coding agent that runs the loop is chosen by precedence: `item.provider` > `--agent` (run-level) > project `defaultAgent` > the runner's default (`claude-cli`). The agent (who runs each item) is selected separately from the model (which model that agent uses) — an item's `model` alias never decides the agent. If you select a non-Claude agent but your backlog items carry Claude model aliases, the loop warns and offers to strip them or proceed.
+At [Stage 5](/pipeline/stage-5-loop/) the coding agent that runs the loop is chosen by precedence: `item.provider` > `--agent` (run-level) > project `defaultAgent` > the runner's default (`claude-cli`). The agent (who runs each item) is selected separately from the model (which model that agent uses) — an item's `model` alias never decides the agent. If you select a non-Claude agent but your backlog items carry Claude model aliases, the loop warns and offers to strip them or proceed.

@@ -3,7 +3,7 @@ title: forge.config.json Reference
 description: Every key in forge.config.json, its type, default, and meaning, plus the loopRunner block.
 ---
 
-`forge.config.json` lives at the project root and is created by [forge-init](../pipeline/init.mdx) or `forge-bootstrap`. All keys are optional; the defaults below apply when a key is absent.
+`forge.config.json` lives at the project root and is created by [forge-init](/pipeline/init/) or `forge-bootstrap`. All keys are optional; the defaults below apply when a key is absent.
 
 ## Top-level keys
 
@@ -35,7 +35,7 @@ The Stage-5 loop runner is configured, not hardcoded. When the `loopRunner` bloc
 | `logFile` | `rauf.log` | Loop log file. |
 | `preconditionFile` | `.rauf.json` | Precondition / config file checked before the loop runs. |
 
-All of the runner command keys are templates with `{bin}`, `{backlogDir}`, `{specsDir}`, and `{iterations}` substituted at call time; most users never need to set these. See [Stage 5](../pipeline/stage-5-loop.mdx) for usage.
+All of the runner command keys are templates with `{bin}`, `{backlogDir}`, `{specsDir}`, and `{iterations}` substituted at call time; most users never need to set these. See [Stage 5](/pipeline/stage-5-loop/) for usage.
 
 ## Example
 

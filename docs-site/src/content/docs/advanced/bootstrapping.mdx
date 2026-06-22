@@ -3,7 +3,7 @@ title: "Bootstrapping an Empty Repo"
 description: "Scaffold a brand-new empty repository into a pipeline-ready, green baseline with forge-bootstrap before starting the pipeline."
 ---
 
-`forge-bootstrap` scaffolds a **brand-new, empty** repository into a pipeline-ready, green baseline — project structure, toolchain, passing lint and test, and a `forge.config.json` — before you start the pipeline. Use it instead of [`forge-init`](../pipeline/init.mdx) when the repo is empty.
+`forge-bootstrap` scaffolds a **brand-new, empty** repository into a pipeline-ready, green baseline — project structure, toolchain, passing lint and test, and a `forge.config.json` — before you start the pipeline. Use it instead of [`forge-init`](/pipeline/init/) when the repo is empty.
 
 ## Running bootstrap
 
@@ -35,14 +35,14 @@ Bootstrap finishes, and you manually start the pipeline:
 /feature-forge:forge-1-prd <feature>
 ```
 
-See [Stage 1](../pipeline/stage-1-prd.mdx).
+See [Stage 1](/pipeline/stage-1-prd/).
 
 ## Mode B — chain into the pipeline (opt-in)
 
-With `--mode-b`, after a verified-green **and** committed baseline, bootstrap chains directly into the pipeline — launching either [`/feature-forge:forge-0-epic`](./epics.mdx) or `/feature-forge:forge-1-prd`.
+With `--mode-b`, after a verified-green **and** committed baseline, bootstrap chains directly into the pipeline — launching either [`/feature-forge:forge-0-epic`](/advanced/epics/) or `/feature-forge:forge-1-prd`.
 
 The Mode B chain is gated on **both** a verified-green baseline **and** a successful commit — there is no "proceed on red" override. If the toolchain is missing, bootstrap can finish the scaffold as **unverified**, but that blocks Mode B.
 
 ## Reference
 
-For internals and the CLI, see the maintainer reference pages: [bootstrap overview](../forge-bootstrap/overview.md), [bootstrap architecture](../forge-bootstrap/architecture.md), and [bootstrap CLI reference](../forge-bootstrap/cli-reference.md).
+For internals and the CLI, see the maintainer reference pages: [bootstrap overview](/forge-bootstrap/overview/), [bootstrap architecture](/forge-bootstrap/architecture/), and [bootstrap CLI reference](/forge-bootstrap/cli-reference/).

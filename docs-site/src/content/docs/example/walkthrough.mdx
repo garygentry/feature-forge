@@ -5,11 +5,11 @@ description: "Follow one small feature, api-key-auth, through all six forge stag
 
 This walkthrough takes a single small feature — `api-key-auth` (authenticate API requests with an `X-API-Key` header) — through all six stages of the pipeline. Each section shows the command you run, what you approve, and a short illustrative artifact.
 
-Before you start, make sure the project is initialized — run [`/feature-forge:forge-init`](../pipeline/init.mdx) once if you haven't. You can check status at any point with [`/feature-forge:forge api-key-auth`](../pipeline/dashboard.mdx), and the [verify gate](../pipeline/verify-and-fix.mdx) is available after any stage.
+Before you start, make sure the project is initialized — run [`/feature-forge:forge-init`](/pipeline/init/) once if you haven't. You can check status at any point with [`/feature-forge:forge api-key-auth`](/pipeline/dashboard/), and the [verify gate](/pipeline/verify-and-fix/) is available after any stage.
 
 ## Stage 1 — PRD
 
-Run the [PRD stage](../pipeline/stage-1-prd.mdx):
+Run the [PRD stage](/pipeline/stage-1-prd/):
 
 ```
 /feature-forge:forge-1-prd api-key-auth
@@ -25,7 +25,7 @@ You answer a short interview about scope and behavior, then approve the result. 
 
 ## Stage 2 — Tech Spec
 
-Run the [tech spec stage](../pipeline/stage-2-tech.mdx):
+Run the [tech spec stage](/pipeline/stage-2-tech/):
 
 ```
 /feature-forge:forge-2-tech api-key-auth
@@ -42,7 +42,7 @@ This produces `specs/api-key-auth/tech-spec.md` and sets `stack` and `testComman
 
 ## Stage 3 — Implementation Specs
 
-Run the [implementation specs stage](../pipeline/stage-3-specs.mdx):
+Run the [implementation specs stage](/pipeline/stage-3-specs/):
 
 ```
 /feature-forge:forge-3-specs api-key-auth
@@ -58,7 +58,7 @@ It produces a set of numbered spec documents — `00-core-definitions.md`, `01-a
 
 ## Stage 4 — Backlog
 
-Run the [backlog stage](../pipeline/stage-4-backlog.mdx):
+Run the [backlog stage](/pipeline/stage-4-backlog/):
 
 ```
 /feature-forge:forge-4-backlog api-key-auth
@@ -88,7 +88,7 @@ It turns the specs into discrete, verifiable work items. A single item looks lik
 
 ## Stage 5 — Loop
 
-Run the [loop stage](../pipeline/stage-5-loop.mdx):
+Run the [loop stage](/pipeline/stage-5-loop/):
 
 ```
 /feature-forge:forge-5-loop api-key-auth
@@ -98,7 +98,7 @@ The loop runner (rauf) works through the backlog one item at a time. It implemen
 
 ## Stage 6 — Docs
 
-Run the [docs stage](../pipeline/stage-6-docs.mdx):
+Run the [docs stage](/pipeline/stage-6-docs/):
 
 ```
 /feature-forge:forge-6-docs api-key-auth
@@ -115,4 +115,4 @@ This produces `docs/architecture/api-key-auth/` with a README, an architecture d
 - Implemented, tested, committed code — one commit per backlog item
 - `docs/architecture/api-key-auth/` developer documentation
 
-At any point you can re-check progress with [`/feature-forge:forge api-key-auth`](../pipeline/dashboard.mdx) or run the [verify gate](../pipeline/verify-and-fix.mdx). For the bigger picture, see the [pipeline overview](../pipeline/overview.mdx) and [core concepts](../start-here/concepts.mdx).
+At any point you can re-check progress with [`/feature-forge:forge api-key-auth`](/pipeline/dashboard/) or run the [verify gate](/pipeline/verify-and-fix/). For the bigger picture, see the [pipeline overview](/pipeline/overview/) and [core concepts](/start-here/concepts/).

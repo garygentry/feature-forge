@@ -4,9 +4,9 @@ description: Go from an installed plugin to your first shipped feature — initi
 ---
 
 This walks you from a freshly installed plugin to a shipped feature. It assumes
-you've already [installed Feature Forge](./install.mdx) and have an existing
+you've already [installed Feature Forge](/start-here/install/) and have an existing
 project. (Starting from an *empty* repo? Use
-[bootstrapping](../advanced/bootstrapping.mdx) instead of step 1.)
+[bootstrapping](/advanced/bootstrapping/) instead of step 1.)
 
 Throughout, `<feature-name>` is a short kebab-case name like `api-key-auth`.
 
@@ -17,7 +17,7 @@ Throughout, `<feature-name>` is a short kebab-case name like `api-key-auth`.
 ```
 
 Creates `forge.config.json` with sensible defaults. One-time per project. See
-[init vs bootstrap](../pipeline/init.mdx).
+[init vs bootstrap](/pipeline/init/).
 
 ## 2. Run the six stages in order
 
@@ -38,12 +38,12 @@ What each stage does, in one line:
 
 | Step | Stage | You get |
 | ---- | ----- | ------- |
-| 1 | [PRD](../pipeline/stage-1-prd.mdx) | Requirements with stable `REQ-*` IDs |
-| 2 | [Tech Spec](../pipeline/stage-2-tech.mdx) | Technical design tracing to those requirements |
-| 3 | [Specs](../pipeline/stage-3-specs.mdx) | Numbered, build-ready implementation docs |
-| 4 | [Backlog](../pipeline/stage-4-backlog.mdx) | A queue of self-contained work items |
-| 5 | [Loop](../pipeline/stage-5-loop.mdx) | Implemented, tested, committed code |
-| 6 | [Docs](../pipeline/stage-6-docs.mdx) | Architecture docs from the real code |
+| 1 | [PRD](/pipeline/stage-1-prd/) | Requirements with stable `REQ-*` IDs |
+| 2 | [Tech Spec](/pipeline/stage-2-tech/) | Technical design tracing to those requirements |
+| 3 | [Specs](/pipeline/stage-3-specs/) | Numbered, build-ready implementation docs |
+| 4 | [Backlog](/pipeline/stage-4-backlog/) | A queue of self-contained work items |
+| 5 | [Loop](/pipeline/stage-5-loop/) | Implemented, tested, committed code |
+| 6 | [Docs](/pipeline/stage-6-docs/) | Architecture docs from the real code |
 
 ## 3. Verify when you want a gate
 
@@ -54,7 +54,7 @@ After any stage you can check the artifacts and apply fixes:
 /feature-forge:forge-fix    <feature-name>   # applies the fixes
 ```
 
-See [Verify & Fix](../pipeline/verify-and-fix.mdx).
+See [Verify & Fix](/pipeline/verify-and-fix/).
 
 ## 4. Check status anytime
 
@@ -62,12 +62,12 @@ See [Verify & Fix](../pipeline/verify-and-fix.mdx).
 /feature-forge:forge <feature-name>          # where am I, what's next?
 ```
 
-The [dashboard](../pipeline/dashboard.mdx) is read-only and always tells you the
+The [dashboard](/pipeline/dashboard/) is read-only and always tells you the
 next command.
 
 ## Where to go next
 
-- New to the vocabulary? Read [Key Concepts & Glossary](./concepts.mdx).
-- Want to see it all on one feature? The [Worked Example](../example/walkthrough.mdx)
+- New to the vocabulary? Read [Key Concepts & Glossary](/start-here/concepts/).
+- Want to see it all on one feature? The [Worked Example](/example/walkthrough/)
   runs `api-key-auth` through every stage with real artifacts.
-- Shipping something large? Learn about [Epics](../advanced/epics.mdx).
+- Shipping something large? Learn about [Epics](/advanced/epics/).
