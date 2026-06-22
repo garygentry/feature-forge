@@ -19,16 +19,16 @@ It is tuned for Claude but stays agent-agnostic, and runs on any of the supporte
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/pipeline-dark.svg" />
-  <img alt="feature-forge pipeline: forge-0-epic (optional) → forge-1-prd → forge-2-tech → forge-3-specs → forge-verify → forge-4-backlog → forge-verify → forge-5-loop → forge-verify → forge-6-docs, with forge-verify gates between stages" src="docs/images/pipeline-light.svg" />
+  <img alt="feature-forge pipeline: forge-0-epic (optional) → forge-1-prd → forge-2-tech → forge-3-specs → forge-4-backlog → forge-5-loop → forge-6-docs, with a forge-verify gate available after every stage (PRD through implementation)" src="docs/images/pipeline-light.svg" />
 </picture>
 
 | Stage | Skill | Why it exists |
 |-------|-------|---------------|
 | 0 _(optional)_ | `forge-0-epic` | Decompose a large change into related member features with declared dependencies and contracts (see [Epics](#epics-optional)) |
+| ⟳ _(any stage)_ | `forge-verify` | Catch gaps and contradictions before they reach later stages — **available after any stage** (PRD, tech spec, specs, backlog, or implementation), not just one |
 | 1 | `forge-1-prd` | Pin down *what* the feature must do, with stable requirement IDs, before any design decision is made |
 | 2 | `forge-2-tech` | Decide *how* to build it, grounding every choice in a specific requirement and in real codebase patterns |
 | 3 | `forge-3-specs` | Turn decisions into implementation-ready specs (types, signatures, contracts) the loop can build against |
-| -- | `forge-verify` | Catch gaps and contradictions before they reach later stages |
 | 4 | `forge-4-backlog` | Compile the specs into a validated backlog of self-contained, criteria-driven work items |
 | 5 | `forge-5-loop` | Implement the backlog autonomously, a fresh agent session per item, committed atomically |
 | 6 | `forge-6-docs` | Document the architecture from the *actual* implementation, for onboarding and maintenance |
@@ -110,14 +110,12 @@ Artifacts produced at each stage (see [the pipeline at a glance](#the-pipeline-a
 | Stage | Skill | Artifact | Purpose |
 |-------|-------|----------|---------|
 | 0 _(optional)_ | `forge-0-epic` | `epic-manifest.json`, `EPIC.md` | Decompose a large change into related member features (see [Epics](#epics-optional)) |
+| ⟳ _(any stage)_ | `forge-verify` | `.verification/VERIFY-*.md` | Verify artifacts for completeness and consistency — runnable after **any** stage (PRD, tech spec, specs, backlog, or implementation) |
 | 1 | `forge-1-prd` | `PRD.md` | Capture requirements through structured interview |
 | 2 | `forge-2-tech` | `tech-spec.md` | Define technical approach grounded in PRD |
 | 3 | `forge-3-specs` | Numbered spec suite | Generate implementation specifications |
-| -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify artifacts for completeness and consistency |
 | 4 | `forge-4-backlog` | `backlog.json` | Generate structured work items for implementation |
-| -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify backlog coverage and quality |
 | 5 | `forge-5-loop` | Source code | Execute rauf autonomous loop to implement backlog |
-| -- | `forge-verify` | `.verification/VERIFY-*.md` | Verify implementation against specs |
 | 6 | `forge-6-docs` | Documentation suite | Generate architecture documentation |
 
 ## Pipeline Stages
