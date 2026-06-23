@@ -132,8 +132,13 @@ workflow, and verify.
    green CI — never a direct push to `main`.
 4. **Pre-flight the package locally** to catch build/bundle failures before spending a CI run:
    `cd installer && npm ci && npm run prepack && npm pack --dry-run`. Confirm the new version and
-   that `adapters/` carries your change (`grep -rl <marker> adapters/`). The `prepack` copy under
-   `installer/adapters/` is gitignored — leave it.
+   that `adapters/` carries your change (`grep -rl <marker> adapters/`). **Clean up afterward:**
+   `prepack` copies the repo `adapters/` tree into `installer/adapters/` (gitignored, so it never
+   commits) — but if left in place it pollutes the test glob and makes `bash scripts/validate.sh`
+   report **false failures** (e.g. template `smoke.test.ts` files failing with
+   `Cannot find package 'vitest'`). Remove it before re-validating: `rm -rf installer/adapters`.
+   CI never hits this (fresh checkout), so a failure that disappears after that `rm` is the
+   leftover copy, not your change.
 5. **Dispatch the publish workflow** (only after the version bump is on `main`):
    `gh workflow run npm-publish.yml -f dist-tag=latest`, then watch it:
    `gh run watch <run-id> --exit-status`. It uses npm Trusted Publishing (OIDC) — no token.
