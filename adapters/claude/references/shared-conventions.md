@@ -48,6 +48,8 @@ Extract these config values (use defaults if not present):
 - `backlogDir` (default: null — backlog lives at `{specsDir}/{feature}/backlog.json`; when `backlogDir` is configured, forge-4 composes `{backlogDir}/{feature}/`)
 - `gitCommitAfterStage` (default: true)
 - `commitPrefix` (default: `forge`)
+- `branchPerFeature` (default: true)
+- `branchPrefix` (default: `forge/`)
 - `loopIterationMultiplier` (default: `1.5`)
 - `loopRunner` (optional object — the loop runner to drive; **defaults to rauf** when absent, with every command templated. See `references/forge-config-schema.json` and `references/ralph-loop-contract.md`.)
 
@@ -130,6 +132,29 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`. Alwa
 When loading upstream artifacts as prerequisites, check `basedOnVersions` in the pipeline state for this stage. If any upstream stage's current version is newer than the version recorded in `basedOnVersions`, warn the user before proceeding:
 
 > "This stage was built against {upstream} v{old}, but {upstream} is now at v{new}. The current artifacts may be outdated. Consider re-running this stage, or use --force to proceed with potentially stale inputs."
+
+## Branch Setup
+
+Invoke this block at the **very start** of a pipeline entry point — `forge-1-prd` (standalone feature) and `forge-0-epic` (epic) — **before** any directory resolution or interview, so the rest of the run lands on the intended branch. `{label}` is the feature name (forge-1-prd) or epic name (forge-0-epic); `{scope}` is `feature` or `epic` correspondingly.
+
+**Gate.** Run this block only when the project uses git (a `.git` directory resolves) **and** `branchPerFeature` is true. It is **independent of `gitCommitAfterStage`** — branch isolation matters whether or not forge auto-commits. If `branchPerFeature` is false, skip silently.
+
+**Epic-member inheritance.** In `forge-1-prd`, if the feature has an `epic` back-pointer (an `epic` field resolves via Epic Context Injection, or the directory is nested under an epic), the epic already established the branch in `forge-0-epic`. Skip the prompt — inherit the current branch.
+
+**Detection, then a branch-aware prompt:**
+
+1. Read the current branch: `git rev-parse --abbrev-ref HEAD`.
+2. Determine the default branch: `git symbolic-ref --quiet refs/remotes/origin/HEAD` (strip to the last path segment); if that fails, fall back to `main`, else `master` — whichever the repo has.
+3. **If the current branch is NOT the default branch** (the user is already on a topic/`{branchPrefix}*` branch) → record it (see below) and proceed silently. Do not prompt.
+4. **If the current branch IS the default branch** → use `AskUserQuestion` with a **strong recommendation** (still optional):
+
+   > "You're on `{defaultBranch}`. Strongly recommended: create `{branchPrefix}{label}` so this {scope}'s work stays isolated and reviewable as one branch. Create it?"
+   > Options: **Create `{branchPrefix}{label}` (recommended)** · **Stay on `{defaultBranch}`**
+
+   - **Create** → `git switch -c {branchPrefix}{label}` (or `git checkout -b` if `switch` is unavailable). If the branch already exists, `git switch {branchPrefix}{label}`.
+   - **Stay** → proceed on the default branch; note that subsequent commits (and any `forge-5-loop` run) will land directly on `{defaultBranch}`.
+
+**Record the branch.** After this block resolves, write the resulting branch name to the feature's `.pipeline-state.json` top-level `branch` field (create/update it when the state file is first written for this stage). Downstream stages and `forge-5-loop` read it to detect drift back onto the default branch.
 
 ## Git Commit Protocol
 
