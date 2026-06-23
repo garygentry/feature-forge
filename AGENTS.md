@@ -94,10 +94,55 @@ The installer is published to npm as `@garygentry/feature-forge` — this is wha
 - It uses npm Trusted Publishing (OIDC) — no token — and must be dispatched by the repository
   owner.
 
-**Agent guidance — offer, don't act.** When a merged change is user-facing and worth getting to
-`npx` users (an installer fix, a new adapter, a CLI behavior change), proactively **suggest** a
-publish and spell out the steps (version bump + manual dispatch). Never run `npm publish`
-yourself, and don't treat a merge as implying a release — the human decides when to cut one.
+### Does this change impact the published build?
+
+The npm package bundles `dist/` (built from `installer/src/`) **and** the generated `adapters/`
+tree. So a change reaches `npx` users — and is **publish-worthy** — when it touches any of:
+
+- `installer/` source, CLI behavior, `package.json`, or `prepack`/bundling;
+- **canon** (`skills/`, `agents/`, `references/`) — because regenerating `adapters/` changes what
+  the package ships (this is the easy one to miss: a docs-only edit to a SKILL.md still ships);
+- `RAUF_PIN` / the provisioned rauf coordinate;
+- anything else that lands in the npm tarball (`cd installer && npm pack --dry-run` to see it).
+
+Pure-repo changes that **don't** ship (CI config, `scripts/` dev tooling, `AGENTS.md`/docs not
+under canon, tests) are not publish-worthy on their own.
+
+### Agent guidance — prompt after merge, then offer to run the runbook
+
+When a **publish-worthy** change (per above) is merged to `main`, **proactively prompt the user**:
+note that the change is now on `main` but not yet on npm, and ask whether they want to publish.
+Do **not** publish unprompted and do **not** treat a merge as implying a release — but once the
+user approves, **offer to run the full runbook below on their behalf** rather than just handing
+them steps. Publishing is owner-gated, but with explicit user approval you may bump, dispatch the
+workflow, and verify.
+
+### Publish runbook
+
+1. **Decide the version.** Compare `installer/package.json` `version` against npm
+   (`npm view @garygentry/feature-forge version`). If local is **already ahead** and unpublished
+   (a prior change bumped it), reuse it — **do not double-bump**. Otherwise bump
+   `installer/package.json` `version` (independent line; npm rejects republishing a version, 409).
+   This repo **does not git-tag releases** — don't create a tag.
+2. **CHANGELOG.** Ensure the change is recorded under `## [Unreleased]` in `CHANGELOG.md` (the
+   installer is an independent version line, so no dated heading rename is required for an
+   installer-only publish).
+3. **Regenerate + verify** if canon changed: `python3 scripts/build-adapters.py` then
+   `bash scripts/validate.sh` (green). Any version bump / changelog edit goes through a PR with
+   green CI — never a direct push to `main`.
+4. **Pre-flight the package locally** to catch build/bundle failures before spending a CI run:
+   `cd installer && npm ci && npm run prepack && npm pack --dry-run`. Confirm the new version and
+   that `adapters/` carries your change (`grep -rl <marker> adapters/`). The `prepack` copy under
+   `installer/adapters/` is gitignored — leave it.
+5. **Dispatch the publish workflow** (only after the version bump is on `main`):
+   `gh workflow run npm-publish.yml -f dist-tag=latest`, then watch it:
+   `gh run watch <run-id> --exit-status`. It uses npm Trusted Publishing (OIDC) — no token.
+6. **Verify it's live:** `npm view @garygentry/feature-forge version dist-tags` shows the new
+   version under `latest`.
+
+**Human prerequisites:** the npm **Trusted Publisher (OIDC)** must be configured on the package
+(one-time, already done — every prior release used it). The publish must be **dispatched by / on
+behalf of the repository owner**; there is no npm login or token for the agent to manage.
 
 ### On a new rauf release — advance the pin
 
