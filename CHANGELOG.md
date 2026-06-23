@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Reliable, state-aware branch setup at pipeline entry.** The new-feature /
+  epic branch prompt was previously gated on `gitCommitAfterStage`, soft, and
+  blind to the current branch — so features often started on the default branch.
+  A centralized **Branch Setup** block (`shared-conventions.md`, invoked by
+  `forge-1-prd` and `forge-0-epic`) now gates on a new `branchPerFeature` config
+  (default `true`, independent of `gitCommitAfterStage`), detects the current vs.
+  default branch, and **strongly recommends (still declinable)** creating
+  `{branchPrefix}{label}` (default prefix `forge/`) when on the default branch;
+  it skips silently on a topic branch, and epic members inherit the epic branch.
+  The chosen branch is recorded in `.pipeline-state.json` (`branch` field), and
+  `forge-5-loop` re-checks it in a pre-flight guard before the loop commits
+  per item. New config: `branchPerFeature`, `branchPrefix`.
+
 ### Fixed
 
 - **`npx @garygentry/feature-forge` / `npm i -g` silently did nothing on
