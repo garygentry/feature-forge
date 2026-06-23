@@ -86,11 +86,13 @@ python3 "$R/scripts/epic-manifest.py" check-name "{epic}" --specs-dir "{specsDir
 
 ## Creation Branch
 
-### Step 1 — Branch Setup (optional)
+### Step 1 — Branch Setup
 
-If `gitCommitAfterStage` is true and the project uses git, use `AskUserQuestion`:
-"Create a `forge/{epic}` branch for this epic? (Recommended — keeps epic work isolated.)"
-If yes, create and checkout the branch before proceeding.
+Invoke the **Branch Setup** block in `references/shared-conventions.md` with `{label}` = `{epic}` and
+`{scope}` = `epic`. It self-gates (skips when not a git repo or when `branchPerFeature` is false),
+detects whether you're on the default branch, and strongly recommends — still optionally — creating
+`{branchPrefix}{epic}` when you are. Each member feature's `forge-1-prd` inherits this branch rather
+than prompting again.
 
 ### Step C1 — Epic Framing Interview
 

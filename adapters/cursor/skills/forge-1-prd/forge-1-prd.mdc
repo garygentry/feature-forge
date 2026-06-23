@@ -16,7 +16,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 ## Step 1: Read Configuration and Check State
 
 ### Branch Setup (if using git)
-If `gitCommitAfterStage` is true and the project uses git, use `AskUserQuestion` to offer: "Want me to create a `forge/{feature}` branch for this pipeline? (Recommended — keeps forge work isolated.)" If yes, create and checkout the branch before proceeding.
+Invoke the **Branch Setup** block in `references/shared-conventions.md` with `{label}` = `{feature}` and `{scope}` = `feature`. It self-gates (skips when not a git repo, when `branchPerFeature` is false, or for an epic member that inherits the epic's branch), detects whether you're on the default branch, and strongly recommends — still optionally — creating `{branchPrefix}{feature}` when you are. Do this before directory resolution.
 
 Set the working directory by invoking the **Feature Directory Resolution** block in `references/shared-conventions.md`, which yields `{resolvedFeatureDir}`. Note one PRD-specific caveat: at PRD time a brand-new standalone feature may have NO directory yet, so resolution is expected to fail `not-found` for a never-started standalone feature — in that case forge-1 creates `{specsDir}/{feature}/` as today. For an epic member the directory already exists (created empty by forge-0-epic with an `epic` back-pointer), so resolution succeeds and yields the nested path.
 

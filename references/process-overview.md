@@ -79,7 +79,9 @@ Read `forge.config.json` from project root for path overrides. See `references/f
 
 ## Git Workflow
 
-Recommended: create a `forge/{feature}` branch before starting the pipeline. All forge commits go to this branch. After implementation, merge to your development branch.
+Recommended: forge work lives on an isolated `forge/{feature}` (or `forge/{epic}`) branch so all commits land together and review as one branch. The entry stages (`forge-1-prd`, `forge-0-epic`) detect whether you're on the default branch (main/master) and **strongly recommend** creating that branch when you are — still letting you decline and stay. The chosen branch is recorded in `.pipeline-state.json`, and `forge-5-loop` re-checks it before the autonomous loop starts committing per item. After implementation, merge to your development branch.
+
+To customize: `branchPrefix` (default `forge/`) sets the branch name, and `branchPerFeature: false` disables the prompt entirely (forge then works on whatever branch is checked out). Branch Setup is gated only on the project using git — independent of `gitCommitAfterStage`.
 
 If you prefer manual commit control, set `gitCommitAfterStage: false` in `forge.config.json`.
 

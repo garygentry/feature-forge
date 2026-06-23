@@ -18,6 +18,10 @@
       "type": "string",
       "description": "Back-pointer to the owning epic's name. Absent for standalone features. The epic-manifest.json is canonical on conflict (REQ-STATE-01)."
     },
+    "branch": {
+      "type": "string",
+      "description": "Git branch this feature's pipeline work is intended to land on, recorded by the Branch Setup block (shared-conventions.md) at the entry stage. Absent when the project isn't a git repo or branchPerFeature is false. Downstream stages and forge-5-loop compare the current branch against this to detect drift back onto the default branch before committing."
+    },
     "createdAt": {
       "type": "string",
       "format": "date-time"

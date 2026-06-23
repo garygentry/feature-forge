@@ -28,6 +28,16 @@
       "default": "forge",
       "description": "Prefix for conventional commit messages, e.g., forge(auth): complete PRD"
     },
+    "branchPerFeature": {
+      "type": "boolean",
+      "default": true,
+      "description": "Offer to create an isolated git branch when a feature/epic starts on the default branch (main/master). Gated only on the project using git — independent of gitCommitAfterStage. When false, forge never prompts for a branch and works on whatever branch is checked out. See the Branch Setup block in references/shared-conventions.md."
+    },
+    "branchPrefix": {
+      "type": "string",
+      "default": "forge/",
+      "description": "Prefix for the branch name suggested by Branch Setup, e.g. 'forge/' yields 'forge/{feature}' or 'forge/{epic}'. Ignored when branchPerFeature is false."
+    },
     "stack": {
       "type": ["string", "null"],
       "description": "Detected or configured project stack identifier. Selects guidance from references/stacks/{stack}.md. Set during forge-2-tech or manually (null until then). Examples: 'typescript', 'python', 'go', 'rust'."
