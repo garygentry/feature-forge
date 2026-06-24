@@ -3,6 +3,7 @@
 // array is generated from docs.manifest.json — edit the manifest, not this file.
 import { defineConfig, passthroughImageService } from "astro/config";
 import starlight from "@astrojs/starlight";
+import rehypeBaseLinks from "./rehype-base-links.mjs";
 
 export default defineConfig({
   // REQ-CORE-02: derive site/base from env so the SAME build works on a hosted
@@ -11,6 +12,13 @@ export default defineConfig({
   // an undefined `base` as "/" and an undefined `site` as a relative build.
   site: process.env.SITE,
   base: process.env.BASE_PATH,
+  // Astro does NOT apply `base` to root-absolute links written in Markdown/MDX
+  // content, so on a subpath deploy (BASE_PATH="/repo/") links like
+  // `[x](/start-here/install/)` would 404. This plugin prepends the base at
+  // build time; authors keep writing clean `/slug/` links. No-op at root.
+  markdown: {
+    rehypePlugins: [[rehypeBaseLinks, { base: process.env.BASE_PATH }]],
+  },
   // REQ-CORE-03: SVG diagrams need no rasterization; the passthrough image
   // service serves them as-is and keeps the install free of the Sharp dependency.
   image: { service: passthroughImageService() },
