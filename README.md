@@ -1,12 +1,16 @@
 # feature-forge
 
-End-to-end feature development pipeline that runs on any coding agent — Claude, Codex, Copilot, Cursor, or Gemini. It compiles a fuzzy feature idea into a machine-executable `backlog.json` that an autonomous loop then implements.
+A feature development pipeline that starts from true _requirements_ (deliberately abstracted from tech or implementation details) and enforces a structured flow, producing a complete implementation backlog an agent can process in an autonomous loop.
+
+Works with any coding agent (Claude, Codex, Copilot, Cursor, or Gemini).
 
 ## How it works
 
-feature-forge works like a compiler. You start with a vague idea, and each stage narrows it down and adds structure, until the output is a backlog of self-contained work items an agent can implement without any further context. The stages are kept separate on purpose, so each one does a single job:
+feature-forge works like a compiler. You start with a vague idea, the agent helps you refine it through interaction, and each stage narrows it down and adds structure, until the output is a backlog of self-contained work items an agent can implement without any further context. Each loop iteration runs with a clean agent context (against artifacts that contain required context) to maximize results and minimize token consumption.
 
-- **Requirements before design.** Stage 1 captures *what* the feature must do, never *how*, and assigns stable `REQ-XXX-NN` identifiers. Those IDs become a traceability spine: every downstream artifact references the requirement it satisfies, and a coverage pass proves nothing was dropped.
+The stages are kept separate on purpose, so each one does a single job and isn't burdened with unnecessary context:
+
+- **Requirements before design.** Stage 1 captures _what_ the feature must do, never _how_, and assigns stable `REQ-XXX-NN` identifiers. Those IDs become a traceability spine: every downstream artifact references the requirement it satisfies, and a coverage pass proves nothing was dropped.
 - **Verification gates between stages.** A verification pass runs between stages to catch gaps and contradictions before they reach downstream stages, where they cost far more to fix.
 - **Context hygiene through isolated subagents.** Codebase research, spec authoring, and artifact verification run in separate, mostly read-only subagent contexts, so the main session stays focused and fast.
 - **State that persists across sessions.** Each feature's progress, versions, and commit hashes live in a state file, so you can stop, clear context, and pick up where you left off. If you revise an upstream artifact, staleness detection flags the downstream stages that depend on it.
@@ -22,16 +26,16 @@ It is tuned for Claude but stays agent-agnostic, and runs on any of the supporte
   <img alt="feature-forge pipeline: forge-0-epic (optional) → forge-1-prd → forge-2-tech → forge-3-specs → forge-4-backlog → forge-5-loop → forge-6-docs, with a forge-verify gate available after every stage (PRD through implementation)" src="docs/images/pipeline-light.svg" />
 </picture>
 
-| Stage | Skill | Why it exists |
-|-------|-------|---------------|
-| 0 _(optional)_ | `forge-0-epic` | Decompose a large change into related member features with declared dependencies and contracts (see [Epics](#epics-optional)) |
-| ⟳ _(any stage)_ | `forge-verify` | Catch gaps and contradictions before they reach later stages — **available after any stage** (PRD, tech spec, specs, backlog, or implementation), not just one |
-| 1 | `forge-1-prd` | Pin down *what* the feature must do, with stable requirement IDs, before any design decision is made |
-| 2 | `forge-2-tech` | Decide *how* to build it, grounding every choice in a specific requirement and in real codebase patterns |
-| 3 | `forge-3-specs` | Turn decisions into implementation-ready specs (types, signatures, contracts) the loop can build against |
-| 4 | `forge-4-backlog` | Compile the specs into a validated backlog of self-contained, criteria-driven work items |
-| 5 | `forge-5-loop` | Implement the backlog autonomously, a fresh agent session per item, committed atomically |
-| 6 | `forge-6-docs` | Document the architecture from the *actual* implementation, for onboarding and maintenance |
+| Stage           | Skill             | Why it exists                                                                                                                                                  |
+| --------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 _(optional)_  | `forge-0-epic`    | Decompose a large change into related member features with declared dependencies and contracts (see [Epics](#epics-optional))                                  |
+| 1               | `forge-1-prd`     | Pin down _what_ the feature must do, with stable requirement IDs, before any design decision is made                                                           |
+| 2               | `forge-2-tech`    | Decide _how_ to build it, grounding every choice in a specific requirement and in real codebase patterns                                                       |
+| 3               | `forge-3-specs`   | Turn decisions into implementation-ready specs (types, signatures, contracts) the loop can build against                                                       |
+| 4               | `forge-4-backlog` | Compile the specs into a validated backlog of self-contained, criteria-driven work items                                                                       |
+| 5               | `forge-5-loop`    | Implement the backlog autonomously, a fresh agent session per item, committed atomically                                                                       |
+| 6               | `forge-6-docs`    | Document the architecture from the _actual_ implementation, for onboarding and maintenance                                                                     |
+| ⟳ _(any stage)_ | `forge-verify`    | Catch gaps and contradictions before they reach later stages — **available after any stage** (PRD, tech spec, specs, backlog, or implementation), not just one |
 
 Run `/feature-forge:forge <feature>` at any point to see what's complete, what's next, and what needs attention.
 
@@ -78,13 +82,13 @@ npx @garygentry/feature-forge install --dry-run --json # preview the plan, chang
 
 ### (c) Per-surface setup
 
-| Agent   | Install                                                                                          | Setup doc                                        |
-| ------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Agent   | Install                                                                                                | Setup doc                                        |
+| ------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
 | Claude  | `/plugin install feature-forge@feature-forge` _(or `npx @garygentry/feature-forge install -a claude`)_ | [docs/agents/claude.md](docs/agents/claude.md)   |
-| Codex   | `npx @garygentry/feature-forge install -a codex`                                                 | [docs/agents/codex.md](docs/agents/codex.md)     |
-| Copilot | `npx @garygentry/feature-forge install -a copilot`                                               | [docs/agents/copilot.md](docs/agents/copilot.md) |
-| Cursor  | `npx @garygentry/feature-forge install -a cursor`                                                | [docs/agents/cursor.md](docs/agents/cursor.md)   |
-| Gemini  | `npx @garygentry/feature-forge install -a gemini`                                                | [docs/agents/gemini.md](docs/agents/gemini.md)   |
+| Codex   | `npx @garygentry/feature-forge install -a codex`                                                       | [docs/agents/codex.md](docs/agents/codex.md)     |
+| Copilot | `npx @garygentry/feature-forge install -a copilot`                                                     | [docs/agents/copilot.md](docs/agents/copilot.md) |
+| Cursor  | `npx @garygentry/feature-forge install -a cursor`                                                      | [docs/agents/cursor.md](docs/agents/cursor.md)   |
+| Gemini  | `npx @garygentry/feature-forge install -a gemini`                                                      | [docs/agents/gemini.md](docs/agents/gemini.md)   |
 
 > The default loop runner ([forge-5-loop](#stage-5-loop-forge-5-loop)) is **rauf**. Provisioning it
 > via `npx rauf@…` will be available once rauf is published to npm
@@ -105,18 +109,18 @@ The pipeline guides you through each subsequent stage. Run `/feature-forge:forge
 
 ## Pipeline
 
-Artifacts produced at each stage (see [the pipeline at a glance](#the-pipeline-at-a-glance) for the flow and the *why* of each stage):
+Artifacts produced at each stage (see [the pipeline at a glance](#the-pipeline-at-a-glance) for the flow and the _why_ of each stage):
 
-| Stage | Skill | Artifact | Purpose |
-|-------|-------|----------|---------|
-| 0 _(optional)_ | `forge-0-epic` | `epic-manifest.json`, `EPIC.md` | Decompose a large change into related member features (see [Epics](#epics-optional)) |
-| ⟳ _(any stage)_ | `forge-verify` | `.verification/VERIFY-*.md` | Verify artifacts for completeness and consistency — runnable after **any** stage (PRD, tech spec, specs, backlog, or implementation) |
-| 1 | `forge-1-prd` | `PRD.md` | Capture requirements through structured interview |
-| 2 | `forge-2-tech` | `tech-spec.md` | Define technical approach grounded in PRD |
-| 3 | `forge-3-specs` | Numbered spec suite | Generate implementation specifications |
-| 4 | `forge-4-backlog` | `backlog.json` | Generate structured work items for implementation |
-| 5 | `forge-5-loop` | Source code | Execute rauf autonomous loop to implement backlog |
-| 6 | `forge-6-docs` | Documentation suite | Generate architecture documentation |
+| Stage           | Skill             | Artifact                        | Purpose                                                                                                                              |
+| --------------- | ----------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 0 _(optional)_  | `forge-0-epic`    | `epic-manifest.json`, `EPIC.md` | Decompose a large change into related member features (see [Epics](#epics-optional))                                                 |
+| ⟳ _(any stage)_ | `forge-verify`    | `.verification/VERIFY-*.md`     | Verify artifacts for completeness and consistency — runnable after **any** stage (PRD, tech spec, specs, backlog, or implementation) |
+| 1               | `forge-1-prd`     | `PRD.md`                        | Capture requirements through structured interview                                                                                    |
+| 2               | `forge-2-tech`    | `tech-spec.md`                  | Define technical approach grounded in PRD                                                                                            |
+| 3               | `forge-3-specs`   | Numbered spec suite             | Generate implementation specifications                                                                                               |
+| 4               | `forge-4-backlog` | `backlog.json`                  | Generate structured work items for implementation                                                                                    |
+| 5               | `forge-5-loop`    | Source code                     | Execute rauf autonomous loop to implement backlog                                                                                    |
+| 6               | `forge-6-docs`    | Documentation suite             | Generate architecture documentation                                                                                                  |
 
 ## Pipeline Stages
 
@@ -170,17 +174,17 @@ Every spec document includes a requirement traceability table mapping back to PR
 
 **Standard document set:**
 
-| Document | Purpose |
-|----------|---------|
-| `00-core-definitions.md` | Types, error classes, contracts, constants |
+| Document                    | Purpose                                      |
+| --------------------------- | -------------------------------------------- |
+| `00-core-definitions.md`    | Types, error classes, contracts, constants   |
 | `01-architecture-layout.md` | Directory structure, exports, dependency map |
-| `02-NN-*.md` | Feature-specific implementation specs |
-| `NN-testing-strategy.md` | Test approach, coverage targets, fixtures |
-| `TRACEABILITY.md` | Complete REQ-XXX-NN to spec section mapping |
+| `02-NN-*.md`                | Feature-specific implementation specs        |
+| `NN-testing-strategy.md`    | Test approach, coverage targets, fixtures    |
+| `TRACEABILITY.md`           | Complete REQ-XXX-NN to spec section mapping  |
 
 **Output:** `{specsDir}/{feature}/` (multiple documents)
 
-> **Specs are pre-implementation, not living contracts.** The spec suite exists to establish the backlog; it is intentionally *not* kept in sync with the code as the implementation evolves. To stop coding agents in your repo from flagging spec↔code drift, feature-forge drops a `specs/AGENTS.md` (and `specs/CLAUDE.md` on the Claude host) the first time the specs tree is created. For the same reason, implementation artifacts the pipeline writes into your repo (code, generated skills, docs) are kept self-contained and do not reference spec files — though the specs and `backlog.json` themselves freely cite each other for provenance.
+> **Specs are pre-implementation, not living contracts.** The spec suite exists to establish the backlog; it is intentionally _not_ kept in sync with the code as the implementation evolves. To stop coding agents in your repo from flagging spec↔code drift, feature-forge drops a `specs/AGENTS.md` (and `specs/CLAUDE.md` on the Claude host) the first time the specs tree is created. For the same reason, implementation artifacts the pipeline writes into your repo (code, generated skills, docs) are kept self-contained and do not reference spec files — though the specs and `backlog.json` themselves freely cite each other for provenance.
 
 ### Stage 4: Backlog (forge-4-backlog)
 
@@ -232,12 +236,12 @@ Each finding includes a unique identifier (e.g., `V-001`), severity level, preci
 
 **Severity levels:**
 
-| Level | Meaning |
-|-------|---------|
-| `error` | Blocks progress — must be fixed |
-| `gap` | Missing requirement coverage |
+| Level           | Meaning                          |
+| --------------- | -------------------------------- |
+| `error`         | Blocks progress — must be fixed  |
+| `gap`           | Missing requirement coverage     |
 | `inconsistency` | Contradictions between artifacts |
-| `improvement` | Quality enhancement opportunity |
+| `improvement`   | Quality enhancement opportunity  |
 
 **Output:** `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`
 
@@ -264,11 +268,11 @@ Displays a status dashboard showing pipeline progress with stage indicators. Sup
 
 feature-forge delegates specific workloads to specialized subagents that operate in isolated contexts, reducing pressure on the main session's context window.
 
-| Agent | Model | Purpose |
-|-------|-------|---------|
-| **forge-researcher** | Sonnet | Explores codebase structure, integration surfaces, existing patterns, and conventions. Dispatched during Stage 2 (one or several in parallel) to inform technical decisions. Read-only access. |
-| **forge-verifier** | Opus | Verifies pipeline artifacts against structured checklists. For large stages, several run in parallel — one per verification dimension — and the parent merges findings. Produces findings with actionable fix suggestions and execution plans. Read-only access with persistent project-scoped memory. |
-| **forge-spec-writer** | Opus | Authors a single numbered implementation spec document. Dispatched by Stage 3 as a parallel fan-out (one writer per doc) after the shared foundation specs are written. Has Write access, constrained to its one assigned file. |
+| Agent                 | Model  | Purpose                                                                                                                                                                                                                                                                                                |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **forge-researcher**  | Sonnet | Explores codebase structure, integration surfaces, existing patterns, and conventions. Dispatched during Stage 2 (one or several in parallel) to inform technical decisions. Read-only access.                                                                                                         |
+| **forge-verifier**    | Opus   | Verifies pipeline artifacts against structured checklists. For large stages, several run in parallel — one per verification dimension — and the parent merges findings. Produces findings with actionable fix suggestions and execution plans. Read-only access with persistent project-scoped memory. |
+| **forge-spec-writer** | Opus   | Authors a single numbered implementation spec document. Dispatched by Stage 3 as a parallel fan-out (one writer per doc) after the shared foundation specs are written. Has Write access, constrained to its one assigned file.                                                                        |
 
 The two research/verification agents are read-only — they cannot modify files, run package managers, or execute git commands. `forge-spec-writer` additionally has Write access, restricted to authoring its single assigned spec document. Agents use model aliases (`opus`/`sonnet`), so they track the current model tier.
 
@@ -276,13 +280,13 @@ The two research/verification agents are read-only — they cannot modify files,
 
 Built-in profiles tailor spec conventions, verification checks, and acceptance criteria to your project's toolchain.
 
-| Stack | Profile |
-|-------|---------|
-| TypeScript | `references/stacks/typescript.md` |
-| Python | `references/stacks/python.md` |
-| Go | `references/stacks/go.md` |
-| Rust | `references/stacks/rust.md` |
-| Generic | `references/stacks/_generic.md` (fallback) |
+| Stack      | Profile                                    |
+| ---------- | ------------------------------------------ |
+| TypeScript | `references/stacks/typescript.md`          |
+| Python     | `references/stacks/python.md`              |
+| Go         | `references/stacks/go.md`                  |
+| Rust       | `references/stacks/rust.md`                |
+| Generic    | `references/stacks/_generic.md` (fallback) |
 
 **Resolution order** (highest precedence first):
 
@@ -309,17 +313,17 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
 }
 ```
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `specsDir` | string | `"./specs"` | Root directory for feature specification artifacts |
-| `docsDir` | string | `"./docs/architecture"` | Root directory for generated documentation |
-| `backlogDir` | string | `null` | Override location for `backlog.json`. When null, backlog is placed alongside specs |
-| `gitCommitAfterStage` | boolean | `true` | Automatically commit artifacts after each stage completes |
-| `commitPrefix` | string | `"forge"` | Prefix for conventional commit messages (e.g., `forge(auth): complete PRD v1`) |
-| `stack` | string | `null` | Stack identifier (e.g., `"typescript"`, `"python"`, `"go"`, `"rust"`). Auto-detected in Stage 2 |
-| `typeCheckCommand` | string | `null` | Type-check command used in acceptance criteria and verification. Set during Stage 2 |
-| `testCommand` | string | `null` | Test command used in acceptance criteria and verification. Set during Stage 2 |
-| `loopRunner` | object | rauf defaults | Loop-runner binding for `forge-5-loop` (`bin`, command templates, `defaultAgent`, `minRunnerVersion` — floor **rauf ≥ 0.6.0**). See [docs/agents/claude.md](docs/agents/claude.md) "The default loop runner" |
+| Field                 | Type    | Default                 | Description                                                                                                                                                                                                  |
+| --------------------- | ------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `specsDir`            | string  | `"./specs"`             | Root directory for feature specification artifacts                                                                                                                                                           |
+| `docsDir`             | string  | `"./docs/architecture"` | Root directory for generated documentation                                                                                                                                                                   |
+| `backlogDir`          | string  | `null`                  | Override location for `backlog.json`. When null, backlog is placed alongside specs                                                                                                                           |
+| `gitCommitAfterStage` | boolean | `true`                  | Automatically commit artifacts after each stage completes                                                                                                                                                    |
+| `commitPrefix`        | string  | `"forge"`               | Prefix for conventional commit messages (e.g., `forge(auth): complete PRD v1`)                                                                                                                               |
+| `stack`               | string  | `null`                  | Stack identifier (e.g., `"typescript"`, `"python"`, `"go"`, `"rust"`). Auto-detected in Stage 2                                                                                                              |
+| `typeCheckCommand`    | string  | `null`                  | Type-check command used in acceptance criteria and verification. Set during Stage 2                                                                                                                          |
+| `testCommand`         | string  | `null`                  | Test command used in acceptance criteria and verification. Set during Stage 2                                                                                                                                |
+| `loopRunner`          | object  | rauf defaults           | Loop-runner binding for `forge-5-loop` (`bin`, command templates, `defaultAgent`, `minRunnerVersion` — floor **rauf ≥ 0.6.0**). See [docs/agents/claude.md](docs/agents/claude.md) "The default loop runner" |
 
 ## Pipeline State
 
@@ -364,8 +368,8 @@ Validates requirement traceability between the PRD and implementation specs. Ext
 
 ## Hooks
 
-| Event | Behavior |
-|-------|----------|
+| Event            | Behavior                                                                                                                                                        |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **SessionStart** | Checks for `forge.config.json`. If absent but pipeline state files exist, warns that configuration is missing and suggests running `/feature-forge:forge-init`. |
 
 ## Advanced Usage
@@ -456,10 +460,10 @@ Restart and re-check with `claude plugin list`.
 
 ### Edit → effect
 
-| You changed… | Takes effect… |
-|--------------|---------------|
-| A `SKILL.md` (skill body/description) | Immediately, same session |
-| `hooks/`, `agents/`, or `.mcp.json` | After `/reload-plugins` or a restart |
+| You changed…                          | Takes effect…                        |
+| ------------------------------------- | ------------------------------------ |
+| A `SKILL.md` (skill body/description) | Immediately, same session            |
+| `hooks/`, `agents/`, or `.mcp.json`   | After `/reload-plugins` or a restart |
 
 No version bump is ever needed while developing this way.
 
