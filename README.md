@@ -1,8 +1,13 @@
 # feature-forge
 
-A feature development pipeline that starts from true _requirements_ (deliberately abstracted from tech or implementation details) and enforces a structured flow, producing a complete implementation backlog an agent can process in an autonomous loop.
+> Turn a feature idea into shipped, verified code through a fixed, resumable pipeline — works with any coding agent.
 
-Works with any coding agent (Claude, Codex, Copilot, Cursor, or Gemini).
+[![CI](https://github.com/garygentry/feature-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/garygentry/feature-forge/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@garygentry/feature-forge)](https://www.npmjs.com/package/@garygentry/feature-forge)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![agents](https://img.shields.io/badge/agents-5_supported-blue)](#c-per-surface-setup)
+
+A feature development pipeline that starts from true _requirements_ (deliberately abstracted from tech or implementation details) and enforces a structured flow, producing a complete implementation backlog an agent can process in an autonomous loop.
 
 ## How it works
 
