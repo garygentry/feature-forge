@@ -4,7 +4,10 @@ How feature-forge resolves stack-specific guidance for a project.
 
 ## Resolution Order (highest priority first)
 
-1. **Project-level override**: `.claude/references/stack-decisions.md` in the project root. If this file exists, it takes absolute precedence — it contains the team's explicit technology decisions.
+1. **Project-level override** (first existing path wins). These hold the team's explicit technology decisions and take absolute precedence:
+   1. `.feature-forge/stack-decisions.md` — the preferred, host-neutral location (it belongs to this tool, not to any one agent).
+   2. `.agents/references/stack-decisions.md` — for projects that centralize cross-agent config under `.agents/`.
+   3. `.claude/references/stack-decisions.md` — **legacy alias**, still honored for backward compatibility. If only this file exists, use it and suggest copying it to `.feature-forge/stack-decisions.md`.
 
 2. **Detected stack profile**: `references/stacks/{stack}.md` in this plugin, where `{stack}` matches the `stack` field in `forge.config.json`. Provides language-specific conventions for spec writing, verification, and examples.
 

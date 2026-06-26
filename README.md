@@ -289,7 +289,7 @@ Built-in profiles tailor spec conventions, verification checks, and acceptance c
 
 **Resolution order** (highest precedence first):
 
-1. `.claude/references/stack-decisions.md` — Project-level overrides you define
+1. `.feature-forge/stack-decisions.md` — Project-level overrides you define (legacy alias: `.claude/references/stack-decisions.md`)
 2. `references/stacks/{stack}.md` — Detected stack profile
 3. `references/stacks/_generic.md` — Language-neutral fallback
 

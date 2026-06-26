@@ -111,7 +111,7 @@ When examining a Go project, check for:
 
 ## Example: Project-Level Override
 
-Create `.claude/references/stack-decisions.md` in your project root:
+Create `.feature-forge/stack-decisions.md` (legacy alias: `.claude/references/stack-decisions.md`) in your project root:
 
 ```markdown
 # Stack Decisions
