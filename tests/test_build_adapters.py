@@ -428,3 +428,120 @@ def test_drift_guard_detects_mutation(fixture_copy):
     combined = result.stdout + result.stderr
     assert "adapters/ is out of date" in combined
     assert "python3 scripts/build-adapters.py" in combined
+
+
+# --------------------------------------------------------------------------- #
+# 3.11 Host-specific instruction translation (Finding 4, A3)
+# --------------------------------------------------------------------------- #
+#
+# These contract tests run over the COMMITTED ``adapters/`` tree (real canon, which
+# actually names Claude tools) rather than the token-less minimal-canon fixture, so
+# they exercise the real translation. "Skill body file" = the top-level instruction
+# file in each ``adapters/<agent>/skills/<name>/`` dir (SKILL.md / <name>.md /
+# <name>.mdc); the verbatim ``references/`` closure is intentionally out of scope
+# for A3 (the Host execution notes overlay tells non-Claude hosts how to read any
+# residual tool references there).
+
+ADAPTERS = REPO_ROOT / "adapters"
+
+# Claude-native tool tokens that MUST NOT survive into a non-Claude skill body.
+_CLAUDE_TOOL_TOKENS = (
+    "AskUserQuestion",
+    "subagent_type=",
+    "Agent tool",
+    "Task tool",
+    "run_in_background",
+    "`Monitor`",
+    "Monitor tool",
+)
+_CLAUDE_MODEL_ALIASES = ("sonnet", "opus", "haiku")
+
+
+def _skill_body_files(agent: str) -> list[Path]:
+    """Top-level skill instruction files for ``agent`` (excludes references/)."""
+    skills_dir = ADAPTERS / agent / "skills"
+    return [
+        p
+        for p in sorted(skills_dir.rglob("*"))
+        if p.is_file() and "references" not in p.relative_to(skills_dir).parts
+    ]
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+def test_claude_skill_bodies_retain_claude_tooling():
+    """The Claude adapter stays rich: its skill bodies still name Claude-native tools."""
+    bodies = "\n".join(p.read_text("utf-8") for p in _skill_body_files("claude"))
+    assert "AskUserQuestion" in bodies  # REQ-VND-02: Claude path is not flattened
+    assert "subagent_type=" in bodies
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+@pytest.mark.parametrize("agent", ("codex", "copilot", "cursor", "gemini"))
+def test_non_claude_skill_bodies_strip_claude_tooling(agent):
+    """No non-Claude skill body instructs the host to use a Claude-only tool (Finding 4)."""
+    for path in _skill_body_files(agent):
+        text = path.read_text("utf-8")
+        for token in _CLAUDE_TOOL_TOKENS:
+            assert token not in text, f"{path.relative_to(ADAPTERS)} still names {token!r}"
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+@pytest.mark.parametrize("agent", ("codex", "copilot", "cursor", "gemini"))
+def test_non_claude_skills_carry_host_execution_notes(agent):
+    """Every non-Claude skill body ends with a per-target Host execution notes overlay."""
+    expected = "Host execution notes (Codex)" if agent == "codex" else "Host execution notes"
+    for path in _skill_body_files(agent):
+        assert expected in path.read_text("utf-8"), f"{path.relative_to(ADAPTERS)} missing overlay"
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+def test_codex_agent_toml_has_no_claude_model_aliases():
+    """Codex custom-agent TOML never carries a Claude model alias (sonnet/opus/haiku)."""
+    tomls = sorted((ADAPTERS / "codex" / "agents").glob("*.toml"))
+    assert tomls, "expected codex custom-agent TOML files"
+    for path in tomls:
+        # Whole-word match so prose like "opusculum" could not false-positive (none today).
+        words = set(re.findall(r"[A-Za-z][A-Za-z0-9_-]*", path.read_text("utf-8")))
+        leaked = words & set(_CLAUDE_MODEL_ALIASES)
+        assert not leaked, f"{path.name} leaks Claude model alias(es): {sorted(leaked)}"
+
+
+def _load_generator_module():
+    """Import the hyphenated generator in-process for unit-testing pure helpers."""
+    pytest.importorskip("yaml")
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("build_adapters_mod", GENERATOR)
+    module = importlib.util.module_from_spec(spec)
+    # Register before exec so dataclasses can resolve annotations via sys.modules.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_translate_host_terms_is_deterministic_and_idempotent():
+    """The translation maps known tokens and is a fixed point on its own output."""
+    mod = _load_generator_module()
+    src = (
+        'Use the `AskUserQuestion` tool. Dispatch via the Agent tool with '
+        'subagent_type="forge-verifier". Launch `run_in_background: true` and arm '
+        "the `Monitor` tool. Use multiple Agent calls."
+    )
+    once = mod.translate_host_terms(src)
+    for token in ("AskUserQuestion", "subagent_type=", "Agent tool", "run_in_background", "`Monitor`"):
+        assert token not in once
+    assert "the forge-verifier custom agent" in once
+    assert "subagent calls" in once
+    assert mod.translate_host_terms(once) == once  # idempotent
+
+
+def test_claude_body_helpers_are_verbatim_passthrough():
+    """skill_body_for / agent_body_for never alter the Claude path (byte-identical)."""
+    mod = _load_generator_module()
+    body = 'Use `AskUserQuestion` and the Agent tool with subagent_type="x".\n'
+    assert mod.skill_body_for(body, "claude") == body
+    assert mod.agent_body_for(body, "claude") == body
+    # A non-Claude skill body is translated AND gains the overlay.
+    codex = mod.skill_body_for(body, "codex")
+    assert "AskUserQuestion" not in codex
+    assert "Host execution notes (Codex)" in codex

@@ -28,6 +28,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -684,6 +685,140 @@ def drop_all_claude_keys(
 
 
 # --------------------------------------------------------------------------- #
+# Host-specific instruction translation (Finding 4, A3) — non-Claude only
+# --------------------------------------------------------------------------- #
+#
+# Canon is authored Claude-first and names Claude-native tools directly
+# (`AskUserQuestion`, the Agent/Task tool, `subagent_type=`, `run_in_background`,
+# the `Monitor` tool). Those names are correct and rich for the Claude adapter,
+# which therefore emits canon VERBATIM (ClaudeEmitter is unchanged — byte-identical
+# guarantee). For every NON-Claude adapter we run a deterministic, explicit
+# translation pass over the emitted body so the output never instructs a host to
+# use a tool it does not have, then append a per-target "Host execution notes"
+# overlay (review Option B) that states the host-native way to ask questions,
+# dispatch subagents, and run/monitor background work.
+#
+# The translation is a fixed table of literal substitutions (longest-match-first
+# so wrapper phrases like "the `AskUserQuestion` tool" collapse cleanly) plus one
+# regex for the parameterized `subagent_type="<name>"` form. No fuzzy matching —
+# every replacement is an explicit constant (review: "avoid brittle regex if a
+# small set of known tokens can be replaced by constants"). The pass is applied
+# only to emitter bodies (skills + sub-agents); the verbatim references closure
+# (run_self_containment_pass) is unchanged, and the overlay tells non-Claude hosts
+# how to read any residual tool references in those bundled reference files.
+
+# (literal_old, replacement) — applied in order; longest/most-specific first so a
+# wrapper phrase is consumed before its bare token. Backticked forms precede bare.
+_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    # user-input surface → host question mechanism
+    ("the `AskUserQuestion` tool", "the host's question mechanism"),
+    ("`AskUserQuestion` tool", "the host's question mechanism"),
+    ("`AskUserQuestion`", "the host's question mechanism"),
+    ("AskUserQuestion", "the host's question mechanism"),
+    # sub-agent dispatch surface → host subagent mechanism
+    ("the Agent tool", "the host's subagent mechanism"),
+    ("the Task tool", "the host's subagent mechanism"),
+    ("Agent tool", "host's subagent mechanism"),
+    ("Task tool", "host's subagent mechanism"),
+    # background-execution surface → host background mechanism
+    ("`run_in_background: true`", "the host's background-execution mechanism"),
+    ("run_in_background: true", "the host's background-execution mechanism"),
+    ("`run_in_background`", "the host's background-execution mechanism"),
+    ("run_in_background", "the host's background-execution mechanism"),
+    # monitoring surface → host monitoring mechanism (backtick-scoped so the bare
+    # verb "Monitor the stream" is never rewritten — only the tool reference is)
+    ("the `Monitor` tool", "the host's monitoring mechanism"),
+    ("`Monitor` tool", "the host's monitoring mechanism"),
+    ("`Monitor`", "the host's monitoring mechanism"),
+    ("Monitor tool", "host's monitoring mechanism"),
+)
+
+# subagent_type="forge-verifier" → "the forge-verifier custom agent"
+_SUBAGENT_TYPE_QUOTED = re.compile(r'subagent_type="([^"]+)"')
+_SUBAGENT_TYPE_BARE = re.compile(r"subagent_type=(\S+)")
+
+# "Agent call"/"Agent calls" (the Claude Agent-tool dispatch idiom) → "subagent
+# call(s)". Whitespace-tolerant so the canon line-wrapped "Agent\ncalls" matches too.
+_AGENT_CALL = re.compile(r"\bAgent(\s+)call")
+
+# Per-target overlay appended to each non-Claude SKILL.md body. Claude is absent
+# (verbatim). Codex gets a Codex-native note; the other non-Claude targets share a
+# neutral note. Overlays deliberately avoid the literal Claude tool tokens so the
+# adapter-contract tests (no `AskUserQuestion`/`subagent_type=`/`Monitor` in
+# non-Claude skill bodies) hold for the overlay text too.
+_HOST_NOTES_CODEX = (
+    "## Host execution notes (Codex)\n\n"
+    "This skill was authored Claude-first; the body above refers to "
+    "\"the host's question mechanism\", \"the host's subagent mechanism\", and "
+    "\"the host's background-execution mechanism\". On Codex:\n\n"
+    "- **User input:** Codex has no structured question tool — ask the question "
+    "directly and wait for the user's reply before proceeding. Never skip a "
+    "required question or assume an answer.\n"
+    "- **Subagents:** spawn a Codex subagent using the named custom agent under "
+    "`.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly "
+    "asked; if the custom agent is unavailable, run that step inline yourself.\n"
+    "- **Background / monitoring:** run long-lived runner commands in your shell "
+    "session and report progress as it arrives — there is no Claude-style "
+    "background or monitoring tool to arm.\n"
+)
+_HOST_NOTES_NEUTRAL = (
+    "## Host execution notes\n\n"
+    "This skill was authored Claude-first; the body above refers to "
+    "\"the host's question mechanism\", \"the host's subagent mechanism\", and "
+    "\"the host's background-execution mechanism\". Use your runtime's equivalent "
+    "for each — and if your runtime has no such tool:\n\n"
+    "- **User input:** ask the question directly and wait for the answer before "
+    "proceeding. Do not skip a required question or assume an answer.\n"
+    "- **Subagents:** if your host cannot dispatch the named custom agent, run "
+    "that step inline yourself.\n"
+    "- **Background / monitoring:** run long-lived commands in the foreground (or "
+    "your host's background facility) and report progress as it arrives.\n"
+)
+_HOST_NOTES: dict[str, str] = {
+    "codex": _HOST_NOTES_CODEX,
+    "gemini": _HOST_NOTES_NEUTRAL,
+    "copilot": _HOST_NOTES_NEUTRAL,
+    "cursor": _HOST_NOTES_NEUTRAL,
+}
+
+
+def translate_host_terms(text: str) -> str:
+    """Rewrite Claude-native tool names to host-neutral phrasing (deterministic).
+
+    Applied to NON-Claude emitter bodies only. Literal substitutions run in the
+    fixed ``_HOST_TERM_REPLACEMENTS`` order (longest/most-specific first); the
+    parameterized ``subagent_type="<name>"`` form is rewritten by regex to
+    ``the <name> custom agent``. Idempotent on already-neutral text.
+    """
+    text = _SUBAGENT_TYPE_QUOTED.sub(r"the \1 custom agent", text)
+    text = _SUBAGENT_TYPE_BARE.sub(r"the \1 custom agent", text)
+    text = _AGENT_CALL.sub(r"subagent\1call", text)
+    for old, new in _HOST_TERM_REPLACEMENTS:
+        text = text.replace(old, new)
+    return text
+
+
+def skill_body_for(body: str, agent_id: str) -> str:
+    """Body for a skill on ``agent_id``: verbatim for Claude; translated + overlay else."""
+    if agent_id == "claude":
+        return body
+    translated = translate_host_terms(body)
+    overlay = _HOST_NOTES.get(agent_id, _HOST_NOTES_NEUTRAL)
+    # Separate the overlay from the body with a horizontal rule; body already ends
+    # in a newline (canon invariant), so one blank line then the rule.
+    return f"{translated}\n---\n\n{overlay}"
+
+
+def agent_body_for(body: str, agent_id: str) -> str:
+    """Body for a sub-agent on ``agent_id``: verbatim for Claude; translated else.
+
+    No overlay — a sub-agent definition is not an interactive instruction surface;
+    the tool-name translation alone keeps its developer_instructions executable.
+    """
+    return body if agent_id == "claude" else translate_host_terms(body)
+
+
+# --------------------------------------------------------------------------- #
 # claude emitter (03 §3, REQ-VND-01, REQ-VND-02, REQ-GEN-06) — CONFIRMED
 # --------------------------------------------------------------------------- #
 
@@ -741,7 +876,9 @@ class CursorEmitter:
             "globs": [],                       # deterministic default (REQ-DET-01)
             "alwaysApply": False,
         })
-        content = render_frontmatter_block(native, skill.source_path) + skill.body
+        content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
+            skill.body, "cursor"
+        )
         rel = f"skills/{skill.name}/{skill.name}.mdc"
         drops: tuple[DropRecord, ...] = ()
         if hint_value(skill) is not None:
@@ -754,7 +891,9 @@ class CursorEmitter:
         native = order_fields({"description": agent.description, "globs": [],
                                "alwaysApply": False})
         rel = f"agents/{agent.name}.mdc"
-        content = render_frontmatter_block(native, agent.source_path) + agent.body
+        content = render_frontmatter_block(native, agent.source_path) + agent_body_for(
+            agent.body, "cursor"
+        )
         drops = drop_all_claude_keys(agent, "cursor", "no Cursor sub-agent equivalent")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
@@ -817,7 +956,9 @@ class CodexEmitter:
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
         """Emit ``skills/<name>/SKILL.md`` with {name, description} + body."""
         native = order_fields({"name": skill.name, "description": skill.description})
-        content = render_frontmatter_block(native, skill.source_path) + skill.body
+        content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
+            skill.body, "codex"
+        )
         rel = f"skills/{skill.name}/SKILL.md"
         drops: tuple[DropRecord, ...] = ()
         if hint_value(skill) is not None:  # REQ-FMT-02 branch 2 (TQ-1)
@@ -837,11 +978,12 @@ class CodexEmitter:
             agent, "codex", "no Codex custom-agent equivalent in safe mapping (TQ-1)"
         )
         header = PROVENANCE_FM_COMMENT.format(source=agent.source_path)
+        instructions = _toml_multiline_string(agent_body_for(agent.body, "codex"))
         toml = (
             f"{header}\n"
             f"name = {_toml_basic_string(agent.name)}\n"
             f"description = {_toml_basic_string(agent.description)}\n"
-            f"developer_instructions = {_toml_multiline_string(agent.body)}\n"
+            f"developer_instructions = {instructions}\n"
         )
         rel = f"agents/{agent.name}.toml"
         return EmitResult(files=(EmittedFile(rel, toml),), drops=dropped)
@@ -869,7 +1011,9 @@ class CopilotEmitter:
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
         """Emit ``skills/<name>/<name>.md`` with {name, description} + body."""
         native = order_fields({"name": skill.name, "description": skill.description})
-        content = render_frontmatter_block(native, skill.source_path) + skill.body
+        content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
+            skill.body, "copilot"
+        )
         rel = f"skills/{skill.name}/{skill.name}.md"
         drops: tuple[DropRecord, ...] = ()
         if hint_value(skill) is not None:
@@ -883,7 +1027,7 @@ class CopilotEmitter:
         content = render_frontmatter_block(
             order_fields({"name": agent.name, "description": agent.description}),
             agent.source_path,
-        ) + agent.body
+        ) + agent_body_for(agent.body, "copilot")
         drops = drop_all_claude_keys(agent, "copilot", "no Copilot sub-agent construct (TQ-1)")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
@@ -919,7 +1063,7 @@ class GeminiEmitter:
         content = render_frontmatter_block(
             order_fields({"name": skill.name, "description": skill.description}),
             skill.source_path,
-        ) + skill.body
+        ) + skill_body_for(skill.body, "gemini")
         drops: tuple[DropRecord, ...] = ()
         if hint_value(skill) is not None:
             drops = (DropRecord("gemini", skill.source_path, "argument-hint",
@@ -937,7 +1081,7 @@ class GeminiEmitter:
         content = render_frontmatter_block(
             order_fields({"name": agent.name, "description": agent.description}),
             agent.source_path,
-        ) + agent.body
+        ) + agent_body_for(agent.body, "gemini")
         drops = drop_all_claude_keys(agent, "gemini", "no Gemini sub-agent construct (TQ-1)")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 

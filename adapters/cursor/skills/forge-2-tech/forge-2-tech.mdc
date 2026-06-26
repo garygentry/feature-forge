@@ -29,7 +29,7 @@ Before interviewing, you need to understand the existing codebase. This involves
 
 ### Recommended: Delegate to forge-researcher Subagent
 
-Spawn the `forge-researcher` subagent via the Agent tool to scan the codebase. Pass a prompt like: "Research the codebase for planning the {feature} feature. Focus on integration points, established patterns, and relevant packages."
+Spawn the `forge-researcher` subagent via the host's subagent mechanism to scan the codebase. Pass a prompt like: "Research the codebase for planning the {feature} feature. Focus on integration points, established patterns, and relevant packages."
 
 If this feature belongs to an epic, also add to the dispatch prompt: "If this feature belongs to an epic, also account for these epic contracts: {paste this feature's `consumes` and the `exposes` of its direct deps}, and the completed dependency tech-specs at {paths}. Do not re-research transitive deps." This threads epic context into the researcher without changing the agent's behavior.
 
@@ -38,7 +38,7 @@ The researcher runs in its own context window, reads the project structure, and 
 **Single vs. parallel research.** For a small or well-understood codebase, **one**
 researcher is the right default. For a **large codebase or uncertain scope** (many
 packages, several integration surfaces, monorepo), dispatch **multiple `forge-researcher`
-subagents in parallel — a single message with multiple Agent calls** (the
+subagents in parallel — a single message with multiple subagent calls** (the
 `superpowers:dispatching-parallel-agents` pattern), each scoped to a **disjoint focus**
 so they don't re-read the same ground:
 - one on **project structure & conventions** (layout, build, naming, error/test patterns),
@@ -67,7 +67,7 @@ If the `forge-researcher` subagent is not available, perform the research inline
 After researching the codebase, identify the primary stack (language, build tool, package manager, framework). Read `references/stack-resolution.md` for the full resolution protocol.
 
 1. Check if `forge.config.json` already has a `stack` field — if so, use it
-2. Otherwise, detect from project files and use `AskUserQuestion` to confirm: "I detected this as a {stack} project. Correct?"
+2. Otherwise, detect from project files and use the host's question mechanism to confirm: "I detected this as a {stack} project. Correct?"
 3. Update `forge.config.json` with `stack`, `typeCheckCommand`, and `testCommand`
 4. Verify that a matching stack profile exists at `references/stacks/{stack}.md`. If it does, load it for stack-specific guidance during this and all subsequent stages. If no profile exists, inform the user: "No dedicated profile for {stack}. Using generic fallback — spec conventions, verification checks, and examples will be language-neutral. Consider creating a project-level override at `.claude/references/stack-decisions.md`." Then load `references/stacks/_generic.md`.
 
@@ -77,18 +77,18 @@ Interview the user about technology decisions. Unlike the PRD interview, here yo
 
 ### Interview Approach
 
-**Turn structure:** Output your research findings, analysis, or technical proposals as regular text. Then use `AskUserQuestion` for the actual questions. NEVER put questions in your text output — they MUST go through `AskUserQuestion`.
+**Turn structure:** Output your research findings, analysis, or technical proposals as regular text. Then use the host's question mechanism for the actual questions. NEVER put questions in your text output — they MUST go through the host's question mechanism.
 
-**Pacing:** Present 1-2 decision areas per `AskUserQuestion` call and STOP to wait for the user's response before continuing. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch. Do NOT dump all decision areas in a single message — the interview is a conversation, not a document.
+**Pacing:** Present 1-2 decision areas per the host's question mechanism call and STOP to wait for the user's response before continuing. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch. Do NOT dump all decision areas in a single message — the interview is a conversation, not a document.
 
-**First message pattern:** Output the research summary as text, then use `AskUserQuestion` to confirm the stack and ask about the first decision area (typically package/module structure). Wait for the user to respond before proceeding to subsequent areas.
+**First message pattern:** Output the research summary as text, then use the host's question mechanism to confirm the stack and ask about the first decision area (typically package/module structure). Wait for the user to respond before proceeding to subsequent areas.
 
-**Question strategies** (use these as content for `AskUserQuestion`, not as inline prose). Follow the **Decision Support** protocol in `references/shared-conventions.md` — this interview is the richest decision surface in the pipeline, so don't just list options; lead with a recommended approach, put the trade-off in each option's description, and give a one-line rationale:
+**Question strategies** (use these as content for the host's question mechanism, not as inline prose). Follow the **Decision Support** protocol in `references/shared-conventions.md` — this interview is the richest decision surface in the pipeline, so don't just list options; lead with a recommended approach, put the trade-off in each option's description, and give a one-line rationale:
 - For each PRD requirement, propose a technical approach **with its trade-off and your recommendation**, then ask for confirmation or alternatives — don't present competing approaches flatly. You've just researched the codebase; spend that research here.
 - Recommend approaches consistent with the established stack, and say *why* the convention favors it (evidence-backed mode). Where the choice is genuine taste (e.g. folder layout, naming), give a default but flag it as preference.
 - Challenge over-engineering: does the feature need this, or is a simpler approach sufficient? Frame the simpler option's trade-off (less flexibility now vs. less to maintain).
 - Ask about every integration point and how the feature interacts with existing modules.
-- For competing module structures or code-shape choices, use the `AskUserQuestion` `preview` field to show the candidates side-by-side.
+- For competing module structures or code-shape choices, use the the host's question mechanism `preview` field to show the candidates side-by-side.
 
 **Parking lot:** If the user raises a concern that belongs to a different pipeline stage (e.g., backlog granularity, documentation format), acknowledge it and note it in the pipeline state's `notes` field: "Good point — I've noted that for the [specs/backlog/docs stage]. Let's continue with the tech spec."
 
@@ -176,7 +176,7 @@ Present the complete tech spec. Ask:
 - "Any patterns from the existing codebase I missed?"
 - "Are the integration points complete?"
 
-Use `AskUserQuestion` to collect this feedback.
+Use the host's question mechanism to collect this feedback.
 
 ## Step 7: Update Pipeline State and Commit
 
@@ -187,7 +187,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
    - Record `artifacts`, `completedAt`, `version`
    - Set `stages.forge-2-tech.basedOnVersions` to `{"forge-1-prd": <current forge-1-prd version>}`
    - Check downstream stages (forge-3-specs, forge-4-backlog, forge-5-loop, forge-6-docs). If any have `basedOnVersions` referencing an older version of forge-2-tech, set their status to `stale`
-2. Use `AskUserQuestion` to ask about notes to persist
+2. Use the host's question mechanism to ask about notes to persist
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete tech-spec v{n}"`, then set `stages.forge-2-tech.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 5. Tell the user: "Tech spec complete. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the tech spec\n  - `/feature-forge:forge-3-specs {feature}` to create implementation specs\n  - `/feature-forge:forge {feature}` to see full pipeline status"
 
@@ -197,3 +197,13 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 - When the user's stack decisions differ from what you'd recommend, document their choice AND note your concern as an "Alternatives Considered" item — don't silently override their preference.
 - Integration points are the #1 source of implementation surprises. Spend extra time here. Read the actual code of packages this feature touches, don't just guess at their APIs.
 - If the existing codebase has inconsistent patterns (it happens), call it out and ask which pattern should be followed for this feature.
+
+---
+
+## Host execution notes
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+
+- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
+- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
+- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.

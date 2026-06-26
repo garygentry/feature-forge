@@ -21,7 +21,7 @@ toolchain-missing.
 
 ## Host adaptation (conversational fallback)
 
-If the `AskUserQuestion` tool is available, ask the interview questions through it. If it is
+If the host's question mechanism is available, ask the interview questions through it. If it is
 **not** available (a non-Claude host such as Codex), emit the same questions as a single
 **numbered text list** — each line one question with its options in brackets and the default
 marked — then **stop and wait for a single text reply**. Parse the reply positionally
@@ -30,7 +30,7 @@ options, defaults) and the conditional gating (Q4 skipped for go/rust/generic; Q
 monorepo; Q8 only after a verified-green baseline) are **identical** across both paths — only
 the rendering changes. Never assume answers; always wait for the reply.
 
-Emit any context as plain text, then route **all** questions through `AskUserQuestion` (or the
+Emit any context as plain text, then route **all** questions through the host's question mechanism (or the
 fallback) — never as inline prose questions, which stall the session.
 
 ## Flow (Mode A — default)
@@ -130,7 +130,7 @@ it null.
 `host` — and pass it verbatim to `scaffold --answers '<json>'`. Invent no fields beyond that
 schema. Two fields come from your runtime, not the interview: `author` from `git config
 user.name` (else the project name; it is the LICENSE copyright holder), and `host` — `"claude"`
-when running under a Claude host (e.g. `AskUserQuestion` is available), else `"codex"`/`"other"`.
+when running under a Claude host (e.g. the host's question mechanism is available), else `"codex"`/`"other"`.
 `host` drives the host-conditional agent file: the helper always emits `AGENTS.md` and adds
 `CLAUDE.md` only when `host == "claude"`.
 
@@ -237,3 +237,13 @@ no run ends silently:
 - **Missing toolchain** — `verify` `toolchainPresent:false` (exit 2) → scaffold-anyway-unverified
   vs abort; mark **unverified**.
 - **Partial-state detected** — `check` `resumeMarker != null` → resume / restart / cancel.
+
+---
+
+## Host execution notes
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+
+- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
+- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
+- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.

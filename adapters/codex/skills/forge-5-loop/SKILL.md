@@ -35,7 +35,7 @@ Token substitution applies to every `*Command` string. Substitute:
 Whenever this skill says "run the **run command**" / "**status command**" /
 etc., it means the corresponding substituted `loopRunner.*Command`.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall.
 
 ## Step 1: Validate Prerequisites
 
@@ -49,7 +49,7 @@ Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, `stages.
 
 ### 1b. Verification Check
 
-Check if `stages.forge-verify-backlog` exists and has status `passed` or `findings-applied`. If not, use `AskUserQuestion` to warn:
+Check if `stages.forge-verify-backlog` exists and has status `passed` or `findings-applied`. If not, use the host's question mechanism to warn:
 
 "Backlog hasn't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — the loop implements items autonomously and commits as it goes, so a bad item (wrong scope, missing dependency, untestable acceptance criteria) is far cheaper to catch now than after several commits build on it. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
 
@@ -68,7 +68,7 @@ python3 "$R/scripts/epic-manifest.py" \
 
 2. Find this feature's entry; read its `unmetDeps` (the direct `dependsOn` not yet complete-for-orchestration per `00-core-definitions.md §7`).
 3. **If `unmetDeps` is empty**, proceed to 1c with no prompt.
-4. **If `unmetDeps` is non-empty**, use `AskUserQuestion` (do NOT inline the question as prose) to warn that the feature depends on the unmet dependencies, which are not yet complete, and that running the loop now means implementing against contracts that may still change:
+4. **If `unmetDeps` is non-empty**, use the host's question mechanism (do NOT inline the question as prose) to warn that the feature depends on the unmet dependencies, which are not yet complete, and that running the loop now means implementing against contracts that may still change:
 
    > "{feature} depends on {unmetDeps joined}, which are not yet complete. Running the loop now means implementing against contracts that may still change. Proceed anyway, or stop and finish the dependencies first?"
 
@@ -113,7 +113,7 @@ Verify the file exists on disk. If not, STOP and tell the user: "No backlog.json
 
 ### 1f. Branch Pre-flight (if using git)
 
-The runner commits each completed item straight onto the current branch, so guard against committing onto the default branch. Skip if not a git repo or `branchPerFeature` is false. Read the current branch (`git rev-parse --abbrev-ref HEAD`) and default branch (`git symbolic-ref --quiet refs/remotes/origin/HEAD`, else `main`/`master`). If `.pipeline-state.json` records a `branch` that differs from the current one, warn via `AskUserQuestion` (offer **switch back** or **proceed here**). Otherwise, if the current branch **is** the default, strongly recommend via `AskUserQuestion` creating/switching to `{branchPrefix}{feature}` (`git switch -c`, then record it to the state `branch` field) before the loop commits — still allowing **proceed on `{defaultBranch}`**. Never hard-stop.
+The runner commits each completed item straight onto the current branch, so guard against committing onto the default branch. Skip if not a git repo or `branchPerFeature` is false. Read the current branch (`git rev-parse --abbrev-ref HEAD`) and default branch (`git symbolic-ref --quiet refs/remotes/origin/HEAD`, else `main`/`master`). If `.pipeline-state.json` records a `branch` that differs from the current one, warn via the host's question mechanism (offer **switch back** or **proceed here**). Otherwise, if the current branch **is** the default, strongly recommend via the host's question mechanism creating/switching to `{branchPrefix}{feature}` (`git switch -c`, then record it to the state `branch` field) before the loop commits — still allowing **proceed on `{defaultBranch}`**. Never hard-stop.
 
 ## Step 2: Construct the Loop Command
 
@@ -146,7 +146,7 @@ rauf loop run . --backlog specs/auth --iterations 15
 
 ### 2d. Confirm with User
 
-Use `AskUserQuestion` to present the rendered run command and options. The following block is the content for `AskUserQuestion` — do NOT output it as text:
+Use the host's question mechanism to present the rendered run command and options. The following block is the content for the host's question mechanism — do NOT output it as text:
 
 ```
 Ready to run the loop for {feature}:
@@ -175,10 +175,10 @@ For the full loop-runner contract — event-stream vs. log-fallback launch, the 
 **Capability gate.** Everything below applies **only when** the effective `loopRunner.agentArgument` is present and non-empty. **When it is absent or empty, Step 2d is exactly the confirmation above — no probe, no agent question, no availability listing, no `Agent:` line — byte-identical to today** (REQ-PLUG-02, REQ-COMPAT-01). The full algorithm, precedence, and verbatim message shapes are in `## Agent selection` of `references/runner-contract.md`; read it. When the gate is on, augment Step 2d in order:
 
 - **(a) Probe once.** Before confirming, run `loopRunner.agentsProbeCommand` (default `{bin} agents --json`) **exactly once** (no retries, no second probe); it exits 0 with `{ agents: [...] }`. Parse `agents[]`; build the advertised set `{ row.id }` — this one parsed array drives (b)–(d).
-- **(b) Agent question.** Add an **"agent"** question to the same `AskUserQuestion` surface: **one option per advertised row** labelled `"{displayName} ({id}) — available/not found"`, **plus an explicit `"default (claude-cli)"` choice mapping to `run_selection = None`**. Resolve the pick (run > project, empty/whitespace unset, an explicit runner-default pick collapses to the default path) into `{resolved.agent, resolved.source}`. Precedence: `item.provider > --agent > project defaultAgent > runner default` (forge never reads a backlog item's provider).
+- **(b) Agent question.** Add an **"agent"** question to the same the host's question mechanism surface: **one option per advertised row** labelled `"{displayName} ({id}) — available/not found"`, **plus an explicit `"default (claude-cli)"` choice mapping to `run_selection = None`**. Resolve the pick (run > project, empty/whitespace unset, an explicit runner-default pick collapses to the default path) into `{resolved.agent, resolved.source}`. Precedence: `item.provider > --agent > project defaultAgent > runner default` (forge never reads a backlog item's provider).
 - **(c) Availability listing.** From the **same** parsed `agents[]` (no second probe), list `id` / `displayName` / available (`yes`/`no`, `detail` on unavailable rows).
-- **(d) Verdict** — only for a **non-default** resolved agent (default path `None`/`claude-cli` → no probe, byte-identical to today). Classify by **membership** then `available` (never by exit code): **UNKNOWN** (`∉` set) → **hard-reject BEFORE any loop side-effect**, error lists the **sorted** valid ids, **NO proceed-anyway**; **UNAVAILABLE** (member, `available False`) → warn with `detail`, `AskUserQuestion` offering **proceed-anyway OR choose-another** (re-presents the same `agents[]`), never silent; **AVAILABLE** → proceed, the validated id fills `{agent}`; **probe failure** (non-zero exit / unparseable / missing or empty `agents[]` / row lacking `id`) → surface it, offer **choose-another OR abort**, **never launch the non-default agent unvalidated** and never silently fall back to the default.
-- **(d-model) Claude-only model-alias guard.** Runs **only** when the resolved agent is **non-default** (not the default / `claude-cli` path). Read the backlog.json (Step 1e path); collect items whose `model` is a **Claude-specific alias** (tier `opus`/`sonnet`/`haiku` or a `claude-*` id). **If none, skip silently.** Otherwise warn before launch via `AskUserQuestion` (NOT prose): `item.model` outranks `--agent`, so the alias is forwarded verbatim to `{agent}`, which will likely reject it (e.g. codex 400 *"The 'sonnet' model is not supported…"*) — every spawn exits 1 and rauf circuit-breaks (*"3 consecutive infra failures — halting"*) with no hint of the cause. Offer: **(1) Strip `model` for this run (recommended)** — rewrite backlog.json removing the `model` key from each affected item (persistent edit; re-run forge-4-backlog to restore), then proceed; **(2) Proceed as-is** — only safe if `{agent}` understands the pinned ids. forge touches only `model`, never `provider`. Full rationale: `references/runner-contract.md`.
+- **(d) Verdict** — only for a **non-default** resolved agent (default path `None`/`claude-cli` → no probe, byte-identical to today). Classify by **membership** then `available` (never by exit code): **UNKNOWN** (`∉` set) → **hard-reject BEFORE any loop side-effect**, error lists the **sorted** valid ids, **NO proceed-anyway**; **UNAVAILABLE** (member, `available False`) → warn with `detail`, the host's question mechanism offering **proceed-anyway OR choose-another** (re-presents the same `agents[]`), never silent; **AVAILABLE** → proceed, the validated id fills `{agent}`; **probe failure** (non-zero exit / unparseable / missing or empty `agents[]` / row lacking `id`) → surface it, offer **choose-another OR abort**, **never launch the non-default agent unvalidated** and never silently fall back to the default.
+- **(d-model) Claude-only model-alias guard.** Runs **only** when the resolved agent is **non-default** (not the default / `claude-cli` path). Read the backlog.json (Step 1e path); collect items whose `model` is a **Claude-specific alias** (tier `opus`/`sonnet`/`haiku` or a `claude-*` id). **If none, skip silently.** Otherwise warn before launch via the host's question mechanism (NOT prose): `item.model` outranks `--agent`, so the alias is forwarded verbatim to `{agent}`, which will likely reject it (e.g. codex 400 *"The 'sonnet' model is not supported…"*) — every spawn exits 1 and rauf circuit-breaks (*"3 consecutive infra failures — halting"*) with no hint of the cause. Offer: **(1) Strip `model` for this run (recommended)** — rewrite backlog.json removing the `model` key from each affected item (persistent edit; re-run forge-4-backlog to restore), then proceed; **(2) Proceed as-is** — only safe if `{agent}` understands the pinned ids. forge touches only `model`, never `provider`. Full rationale: `references/runner-contract.md`.
 - **(e) Optional-flags line.** Replace the confirmation's optional-flags line with one that lists `--agent <id>` first plus the agent precedence pointer (`item.provider > --agent > project defaultAgent > runner default`) alongside the model precedence.
 - **(f) Resolved-agent line.** Add to the confirmation block: `Agent: {resolved.agent or claude-cli} (source: {sourceLabel})` — `sourceLabel`: `RUN` → `"per-run selection"`, `PROJECT` → `"project default (loopRunner.defaultAgent)"`, `DEFAULT` → `"runner default — claude-cli"`.
 
@@ -196,7 +196,7 @@ Then commit this state write before launching (mandatory). The runner refuses to
 
 ### 3b. Launch Background Process
 
-Launch the loop **backgrounded** (`run_in_background: true`) so it survives session end and does not block the session, and prefer the machine-readable event stream (`loopRunner.eventStreamCommand`, default for rauf) redirected to a stable `events.ndjson` so the session can supervise it live; fall back to the plain `runCommand` (tailing the human log) when no `eventStreamCommand` is configured. The background task's exit notification is the single authoritative terminal signal (Step 4). Loop runs can take significant time (minutes to hours depending on backlog size). For the exact launch commands (incl. the `mkdir -p` state-dir guard) and the event-stream vs. log-fallback detail, read `references/runner-contract.md`.
+Launch the loop **backgrounded** (the host's background-execution mechanism) so it survives session end and does not block the session, and prefer the machine-readable event stream (`loopRunner.eventStreamCommand`, default for rauf) redirected to a stable `events.ndjson` so the session can supervise it live; fall back to the plain `runCommand` (tailing the human log) when no `eventStreamCommand` is configured. The background task's exit notification is the single authoritative terminal signal (Step 4). Loop runs can take significant time (minutes to hours depending on backlog size). For the exact launch commands (incl. the `mkdir -p` state-dir guard) and the event-stream vs. log-fallback detail, read `references/runner-contract.md`.
 
 ### 3c. Inform User
 
@@ -210,9 +210,9 @@ verbatim "Loop started…" inform-user output template is in
 
 ### 3d. Arm a Monitor on the event stream, and react to events
 
-Arm the **`Monitor` tool** on the structured event stream (the NDJSON file, or the
+Arm the **the host's monitoring mechanism** on the structured event stream (the NDJSON file, or the
 human log as fallback) so events flow back into this session as they happen. Use
-**`persistent: true`** — runs can exceed `Monitor`'s maximum `timeout_ms` (1 hour),
+**`persistent: true`** — runs can exceed the host's monitoring mechanism's maximum `timeout_ms` (1 hour),
 and a bounded timeout would silently stop watching a still-running loop. The filter
 MUST match every terminal and exception state, not just the happy path (silence is
 not success). Monitor the **structured** surface, never raw `RAUF_*` tokens.
@@ -270,13 +270,13 @@ Update `{resolvedFeatureDir}/.pipeline-state.json`:
 
 ## Step 5b: Offer Impl-Verify (standalone path)
 
-**Gate:** run only if (a) the feature's `.pipeline-state.json` has **no** `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete`. Otherwise **skip** — partial runs end as today, and epic members get the equivalent offer in Step 6.1 (do **not** prompt twice). This standalone counterpart to Step 6.1 nudges verification interactively rather than via the easily-missed "Next steps" text. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is complete. Recommended: run `/feature-forge:forge-verify {feature} impl` to audit the implementation before generating docs. Run it now, or skip to forge-6-docs?"* On **run**, hand off to `/feature-forge:forge-verify {feature} impl`. On **skip**, record `stages.forge-verify-impl.status` as `"skipped"` (mirrors `forge-4-backlog`'s skip handling) and point the user at `/feature-forge:forge-6-docs {feature}` — the forge-6-docs backstop re-surfaces the skip.
+**Gate:** run only if (a) the feature's `.pipeline-state.json` has **no** `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete`. Otherwise **skip** — partial runs end as today, and epic members get the equivalent offer in Step 6.1 (do **not** prompt twice). This standalone counterpart to Step 6.1 nudges verification interactively rather than via the easily-missed "Next steps" text. Use the host's question mechanism (NOT inline prose) to offer: *"{feature}'s loop is complete. Recommended: run `/feature-forge:forge-verify {feature} impl` to audit the implementation before generating docs. Run it now, or skip to forge-6-docs?"* On **run**, hand off to `/feature-forge:forge-verify {feature} impl`. On **skip**, record `stages.forge-verify-impl.status` as `"skipped"` (mirrors `forge-4-backlog`'s skip handling) and point the user at `/feature-forge:forge-6-docs {feature}` — the forge-6-docs backstop re-surfaces the skip.
 
 ## Step 6: Epic Handoff
 
 **Gate:** only run this step if (a) the resolved feature's `.pipeline-state.json` has an `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete` (all backlog items done). If either is false, **skip** — standalone completed features are handled by Step 5b, and partial runs end as today (REQ-COMPAT-01).
 
-1. **Offer impl-verify first (recommended, skippable).** Per the completion rule (`00-core-definitions.md §7`), a feature whose `forge-verify-impl.status == findings-reported` does **not** unblock dependents. Use `AskUserQuestion` (NOT inline prose) to offer:
+1. **Offer impl-verify first (recommended, skippable).** Per the completion rule (`00-core-definitions.md §7`), a feature whose `forge-verify-impl.status == findings-reported` does **not** unblock dependents. Use the host's question mechanism (NOT inline prose) to offer:
 
    > "{feature}'s loop is done. Recommended: run `/feature-forge:forge-verify {feature} impl` before unblocking dependents. Run it now, or skip and continue the handoff?"
 
@@ -286,7 +286,7 @@ Update `{resolvedFeatureDir}/.pipeline-state.json`:
    - **None actionable** (everything done, or remaining features still blocked): say so.
      - If `rollup.total > 0` **AND** `rollup.complete == rollup.total`, suggest `/feature-forge:forge-6-docs {feature}` and note the epic-level documentation offer (§10). The `rollup.total > 0` guard prevents an **empty epic** (`0 == 0`) from being reported complete.
      - Otherwise, list what is still blocked and on which dependencies. End — do not prompt to start a feature that cannot start.
-   - **One or more actionable:** use `AskUserQuestion` presenting **each actionable feature** as an option (plus "stop here"). Execution is **serial** — the user picks exactly one (REQ-ORCH-03). Do **not** autonomously chain into the next pipeline.
+   - **One or more actionable:** use the host's question mechanism presenting **each actionable feature** as an option (plus "stop here"). Execution is **serial** — the user picks exactly one (REQ-ORCH-03). Do **not** autonomously chain into the next pipeline.
 4. **Begin the chosen feature.** For the picked feature:
    - **PRD absent** (no `PRD.md`, or `stages.forge-1-prd` not complete): offer to author it now — "Start `/feature-forge:forge-1-prd {chosen}`?" (REQ-ORCH-02). On yes, hand off to forge-1-prd (which injects epic context per §5.1).
    - **PRD present:** point the user at the chosen feature's `nextCommand` from render-status.
@@ -298,7 +298,17 @@ Update `{resolvedFeatureDir}/.pipeline-state.json`:
 - rauf resolves `RAUF.md` with fallback: checks `{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`. As long as the runner is installed in the project, the prompt template will be found.
 - State files (state.json, {loopRunner.logFile}, etc.) are created at `{backlogDir}/{loopRunner.stateDir}/` — this is within the feature's spec directory and is expected. State is isolated per backlog dir, so concurrent features don't collide.
 - If the session disconnects during a long-running loop, the runner process continues independently. The user can check results later with the status / list commands.
-- Never run the run command in the foreground (without `run_in_background`) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the `Monitor` tool (3d), never `sleep`/poll in the foreground. The `Monitor` must use `persistent: true` (not a bounded `timeout_ms`), watch the **structured** surface (`events.ndjson`), and never filter on raw `RAUF_*` tokens — they appear in agent prose and false-match. A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting. See `references/runner-contract.md` for the full monitoring rules.
+- Never run the run command in the foreground (without the host's background-execution mechanism) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the host's monitoring mechanism (3d), never `sleep`/poll in the foreground. The the host's monitoring mechanism must use `persistent: true` (not a bounded `timeout_ms`), watch the **structured** surface (`events.ndjson`), and never filter on raw `RAUF_*` tokens — they appear in agent prose and false-match. A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting. See `references/runner-contract.md` for the full monitoring rules.
 - If a previous loop run left a stale lock, the user may need to pass `--force` to clear it. rauf will report this error clearly.
 - The version gate (1c) uses the `--json` form on purpose; never parse `rauf version`'s human output.
 - **Implementation artifacts must not cite specs.** The loop should **read** the specs and `backlog.json` freely — they are the source of truth for what to build, and the backlog rightly references specs for provenance. But the artifacts the loop **writes into the target repo** (source code, generated `SKILL.md`/agent files, configs, code comments) must be **self-contained**: they must NOT reference feature-forge spec files (no `See specs/{feature}/NN-*.md`, no "source spec" provenance notes in shipped output). Specs are pre-implementation inputs that may be archived or deleted once the feature ships; the implementation must stand on its own. This applies only to shipped implementation output — never to the backlog or spec documents, which should keep citing specs.
+
+---
+
+## Host execution notes (Codex)
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". On Codex:
+
+- **User input:** Codex has no structured question tool — ask the question directly and wait for the user's reply before proceeding. Never skip a required question or assume an answer.
+- **Subagents:** spawn a Codex subagent using the named custom agent under `.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly asked; if the custom agent is unavailable, run that step inline yourself.
+- **Background / monitoring:** run long-lived runner commands in your shell session and report progress as it arrives — there is no Claude-style background or monitoring tool to arm.

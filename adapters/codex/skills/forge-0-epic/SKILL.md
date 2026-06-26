@@ -13,13 +13,13 @@ is delegated to `scripts/epic-manifest.py`.
 
 This skill **composes** JSON and **issues** helper commands. It NEVER eyeballs a dependency
 graph for cycles, NEVER hand-rolls a manifest write where a mutator exists, and NEVER asks a
-question in inline prose — every question goes through `AskUserQuestion`.
+question in inline prose — every question goes through the host's question mechanism.
 
 ## Prerequisites
 
 Read and follow `references/shared-conventions.md` for:
 - the **Feature Name Requirement** (applied here to the *epic* name — see below),
-- the **User Input Protocol** (the AskUserQuestion guardrail — all questions go through the tool),
+- the **User Input Protocol** (the the host's question mechanism guardrail — all questions go through the tool),
 - **Configuration Reading**, and
 - the **Git Commit Protocol**.
 
@@ -79,7 +79,7 @@ python3 "$R/scripts/epic-manifest.py" check-name "{epic}" --specs-dir "{specsDir
 
    - Exit `0` → the name is free; proceed to C1.
    - Exit `1` (`duplicate-name`) → STOP and surface the helper's finding **verbatim**; ask
-     (via `AskUserQuestion`) for a different epic name, then re-run check-name.
+     (via the host's question mechanism) for a different epic name, then re-run check-name.
    - Exit `2` (unsafe name) → STOP and surface the finding; ask for a corrected name.
 
 ---
@@ -97,7 +97,7 @@ than prompting again.
 ### Step C1 — Epic Framing Interview
 
 Output context as text (what an epic is, that a decomposition interview will follow). Then
-call `AskUserQuestion` to elicit:
+call the host's question mechanism to elicit:
 
 1. **Epic goal / problem** — the overarching change being decomposed. Becomes the EPIC.md
    "Overall Goal" narrative and seeds the manifest `description`.
@@ -110,7 +110,7 @@ The epic `name` is the validated CLI argument from Step 0 — do NOT prompt for 
 Drive a decomposition dialogue. Output your analysis as text first (how the goal might split,
 right-sizing guidance: each feature should be a single pipeline-sized unit — a unit forge-1-prd
 through forge-5-loop would carry end-to-end — not item-level interleaving). Then use
-`AskUserQuestion` to elicit the candidate feature list. Per the **Decision Support** protocol in `references/shared-conventions.md`, lead with a **recommended decomposition** and a one-line rationale rather than asking the user to invent it unaided, then probe its seams ("Is any of these two really one? Is any one really two?"), naming the trade-off (more features = more parallelism but more edges). Iterate until the user confirms.
+the host's question mechanism to elicit the candidate feature list. Per the **Decision Support** protocol in `references/shared-conventions.md`, lead with a **recommended decomposition** and a one-line rationale rather than asking the user to invent it unaided, then probe its seams ("Is any of these two really one? Is any one really two?"), naming the trade-off (more features = more parallelism but more edges). Iterate until the user confirms.
 
 For **each** proposed feature name, before accepting it into the set, enforce global uniqueness
 and name safety via the helper:
@@ -123,14 +123,14 @@ python3 "$R/scripts/epic-manifest.py" check-name "{feature}" --specs-dir "{specs
 
 - Exit `0` → accept the name.
 - Exit `1` (`duplicate-name`) → reject that name; surface the finding verbatim and re-prompt
-  (via `AskUserQuestion`) for a different name.
+  (via the host's question mechanism) for a different name.
 - Exit `2` (`unsafe-name`) → reject; surface the finding and re-prompt.
 
 Never accept a feature name that has not passed `check-name` exit 0.
 
 ### Step C3 — Per-Feature Charter + Structured Contracts
 
-For each confirmed feature, run a focused `AskUserQuestion` batch (one feature at a time,
+For each confirmed feature, run a focused the host's question mechanism batch (one feature at a time,
 2–3 questions per call) eliciting:
 
 - **Charter** — a single paragraph: scope statement + contract obligations. This is a
@@ -149,7 +149,7 @@ the structured arrays are the source of truth; EPIC.md renders them as prose lat
 
 ### Step C4 — Dependency-Edge Interview
 
-For each feature, use `AskUserQuestion`: "Which sibling features must be complete before this
+For each feature, use the host's question mechanism: "Which sibling features must be complete before this
 one can build?" → populates `dependsOn: [names]`.
 
 **Seed the suggestion from `consumes`:** a `consumes.from` X strongly implies `dependsOn` X. Per the **Decision Support** protocol, offer the union of each feature's `consumes.from` set as the **recommended default**, evidence-backed — but flag the cost (each edge serializes the loop and blocks dependents, so add only what contracts require). User confirms/overrides; `dependsOn` is authoritative.
@@ -237,7 +237,7 @@ now self-contained: manifest + EPIC.md + one subdirectory per member.
 ### Step C8 — Review, Pipeline State & Commit
 
 1. **Review.** Present a summary (epic name, N features, dependency edges, contracts) as text,
-   then use `AskUserQuestion`: "Does this epic decomposition look right? Any feature, dependency,
+   then use the host's question mechanism: "Does this epic decomposition look right? Any feature, dependency,
    or contract to change before I commit?" If the user wants changes, loop back to the relevant
    creation step, re-compose, and re-validate.
 
@@ -268,7 +268,7 @@ Entered from Step 0 when `{specsDir}/{epic}/epic-manifest.json` already exists (
 branch). The edit branch mutates the manifest **only** through helper mutators — atomic
 (temp file + `os.replace`) and internally re-validated, so a refused write leaves the manifest
 **byte-identical**; the skill never hand-rolls an in-place write. Every question goes through
-`AskUserQuestion`, and **every mutation is committed individually** so git history is the audit trail.
+the host's question mechanism, and **every mutation is committed individually** so git history is the audit trail.
 
 For the full E1–E6 mechanics — the E1 refuse-if-invalid protocol, E2 operation→mutator table, E3
 contracts/remove-feature caveats (incl. the verbatim WARN block), E4 impact-warning rules, E5
@@ -297,4 +297,14 @@ section).
 - A charter is one paragraph, not a PRD. Redirect requirement-level detail to `forge-1-prd`.
 - Contracts have no mutator: edit `exposes`/`consumes` in the composed manifest entry, then
   re-run `validate`.
-- All questions go through `AskUserQuestion`. Never put a question in your text output.
+- All questions go through the host's question mechanism. Never put a question in your text output.
+
+---
+
+## Host execution notes (Codex)
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". On Codex:
+
+- **User input:** Codex has no structured question tool — ask the question directly and wait for the user's reply before proceeding. Never skip a required question or assume an answer.
+- **Subagents:** spawn a Codex subagent using the named custom agent under `.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly asked; if the custom agent is unavailable, run that step inline yourself.
+- **Background / monitoring:** run long-lived runner commands in your shell session and report progress as it arrives — there is no Claude-style background or monitoring tool to arm.

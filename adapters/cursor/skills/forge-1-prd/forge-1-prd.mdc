@@ -20,7 +20,7 @@ Invoke the **Branch Setup** block in `references/shared-conventions.md` with `{l
 
 Set the working directory by invoking the **Feature Directory Resolution** block in `references/shared-conventions.md`, which yields `{resolvedFeatureDir}`. Note one PRD-specific caveat: at PRD time a brand-new standalone feature may have NO directory yet, so resolution is expected to fail `not-found` for a never-started standalone feature — in that case forge-1 creates `{specsDir}/{feature}/` as today. For an epic member the directory already exists (created empty by forge-0-epic with an `epic` back-pointer), so resolution succeeds and yields the nested path.
 
-If `.pipeline-state.json` exists for this feature and `forge-1-prd` is already marked complete, use `AskUserQuestion` to warn: "A PRD already exists for '{feature}'. Continuing will create a new version. Proceed?"
+If `.pipeline-state.json` exists for this feature and `forge-1-prd` is already marked complete, use the host's question mechanism to warn: "A PRD already exists for '{feature}'. Continuing will create a new version. Proceed?"
 
 ## Step 2: Examine Existing Context
 
@@ -61,11 +61,11 @@ A technology constraint is valid when it stems from organizational mandate, exis
 
 ### Interview Approach
 
-**Turn structure:** Output your analysis or context as regular text, then use `AskUserQuestion` for the actual questions. NEVER put questions in your text output — they MUST go through `AskUserQuestion`.
+**Turn structure:** Output your analysis or context as regular text, then use the host's question mechanism for the actual questions. NEVER put questions in your text output — they MUST go through the host's question mechanism.
 
-**Pacing:** Cover one topic area at a time, asking 2-3 related questions per `AskUserQuestion` call. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch.
+**Pacing:** Cover one topic area at a time, asking 2-3 related questions per the host's question mechanism call. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch.
 
-**Question strategies** (use these as content for `AskUserQuestion`, not as inline prose). The PRD stays at the requirements level (the *what*, not the *how* — that's forge-2-tech), so most questions are open elicitation. But whenever you offer the user a *choice* (scope boundary, MVP cut, a non-functional target), apply the **Decision Support** protocol in `references/shared-conventions.md`: propose a sensible default with its trade-off rather than an empty menu — e.g. "I'd scope V1 to X and defer Y; that ships sooner but means Y waits. Agree?":
+**Question strategies** (use these as content for the host's question mechanism, not as inline prose). The PRD stays at the requirements level (the *what*, not the *how* — that's forge-2-tech), so most questions are open elicitation. But whenever you offer the user a *choice* (scope boundary, MVP cut, a non-functional target), apply the **Decision Support** protocol in `references/shared-conventions.md`: propose a sensible default with its trade-off rather than an empty menu — e.g. "I'd scope V1 to X and defer Y; that ships sooner but means Y waits. Agree?":
 - Probe deeper after each answer: failure modes, stakeholders, minimum viable version
 - Challenge assumptions: which users specifically, what does "fast" mean quantitatively
 - Identify edge cases: empty input, concurrent access, scale
@@ -77,7 +77,7 @@ A technology constraint is valid when it stems from organizational mandate, exis
 2. The user has confirmed there's nothing else to add
 3. You can draft every PRD section without leaving TBD placeholders
 
-Before moving to Step 4, summarize your coverage as text, then use `AskUserQuestion` to ask: "Anything I'm missing?"
+Before moving to Step 4, summarize your coverage as text, then use the host's question mechanism to ask: "Anything I'm missing?"
 
 **Parking lot:** If the user raises a concern that belongs to a different pipeline stage, acknowledge it and note it in the pipeline state's `notes` field: "Good point — I've noted that for the [tech spec/implementation specs]. Let's continue with [current stage]."
 
@@ -96,7 +96,7 @@ Present the complete PRD to the user. Ask:
 - "Are the priorities correct?"
 - "Anything in here that should be out of scope?"
 
-Use `AskUserQuestion` to collect this feedback.
+Use the host's question mechanism to collect this feedback.
 
 Iterate until the user confirms the PRD is complete.
 
@@ -110,7 +110,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
    - Record `artifacts`, `completedAt`
    - Set `stages.forge-1-prd.basedOnVersions` to `{}` (no upstream dependencies)
    - Check downstream stages (`forge-2-tech`, `forge-3-specs`, `forge-4-backlog`, `forge-5-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-1-prd`, set their status to `stale`.
-2. Use `AskUserQuestion` to ask: "Anything you want to note before we wrap? (preserved across sessions)"
+2. Use the host's question mechanism to ask: "Anything you want to note before we wrap? (preserved across sessions)"
    - If yes, store in the `notes` field
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (including `{specsDir}/AGENTS.md` / `{specsDir}/CLAUDE.md` if the Specs Directory Hygiene step just wrote them), attempt commit with message `"{commitPrefix}({feature}): complete PRD v{n}"`, then set `stages.forge-1-prd.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 5. Tell the user: "PRD complete. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the PRD\n  - `/feature-forge:forge-2-tech {feature}` to start the tech spec\n  - `/feature-forge:forge {feature}` to see full pipeline status"
@@ -121,3 +121,13 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 - If the user provides a very detailed initial description, don't skip the interview. Use their description as a starting point but probe for what's missing. Long descriptions often have big gaps in edge cases and non-functional requirements.
 - Don't number requirements sequentially across categories (REQ-01, REQ-02...). Use category prefixes (REQ-AUTH-01, REQ-PERF-01) so inserting new requirements doesn't require renumbering.
 - The PRD should be readable by a non-technical stakeholder. If a section requires deep technical knowledge to understand, it probably belongs in the tech spec, not the PRD.
+
+---
+
+## Host execution notes
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+
+- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
+- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
+- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
