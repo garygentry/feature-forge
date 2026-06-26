@@ -98,7 +98,7 @@ When creating specs, always examine the existing codebase for patterns, conventi
 - Shared types, utilities, and conventions
 
 ### Stack Context
-The project's stack is detected during forge-2-tech and persisted in `forge.config.json` (the `stack`, `typeCheckCommand`, and `testCommand` fields). See `references/stack-resolution.md` for the full resolution protocol. The project may also have a `stack-decisions.md` in `.claude/references/` with established technology decisions — if present, it takes highest precedence.
+The project's stack is detected during forge-2-tech and persisted in `forge.config.json` (the `stack`, `typeCheckCommand`, and `testCommand` fields). See `references/stack-resolution.md` for the full resolution protocol. The project may also have a `stack-decisions.md` (preferred at `.feature-forge/`; legacy `.claude/references/`) with established technology decisions — if present, it takes highest precedence.
 
 ## Subagents
 

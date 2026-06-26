@@ -55,7 +55,7 @@ If the `forge-researcher` subagent is not available, perform the research inline
 ### Manual Research (fallback)
 
 1. **Read the PRD thoroughly**: Understand all requirements and constraints
-2. **Check for project-level stack decisions**: Look for `.claude/references/stack-decisions.md` in the project root. If present, read it — these are established technology choices that should be respected unless there's a strong reason to deviate.
+2. **Check for project-level stack decisions**: Look for a project stack-decisions file, first existing path wins: `.feature-forge/stack-decisions.md` (preferred), then `.agents/references/stack-decisions.md`, then `.claude/references/stack-decisions.md` (legacy alias). If present, read it — these are established technology choices that should be respected unless there's a strong reason to deviate.
 3. **Read the plugin's default stack reference**: Read `references/stack-discovery-checklist.md` for general stack context (only if no project-level override exists)
 4. **Examine the existing codebase**: Look at `package.json` files, existing packages, directory structure, and established patterns. Understand what conventions are already in place.
 5. **Review other features' tech specs**: Check `{specsDir}/*/tech-spec.md` and `{specsDir}/*/*/tech-spec.md` (depth-2, to find nested epic members) for consistency in approach and to identify shared infrastructure. Apply the **feature-shaped-dir bound**: only treat a directory as a feature if it directly contains a `.pipeline-state.json` (filter matches whose parent directory holds one, or enumerate members via the helper). A flat-only tree has no depth-2 feature dirs, so this gains no new matches there (REQ-COMPAT-01).
@@ -68,7 +68,7 @@ After researching the codebase, identify the primary stack (language, build tool
 1. Check if `forge.config.json` already has a `stack` field — if so, use it
 2. Otherwise, detect from project files and use the host's question mechanism to confirm: "I detected this as a {stack} project. Correct?"
 3. Update `forge.config.json` with `stack`, `typeCheckCommand`, and `testCommand`
-4. Verify that a matching stack profile exists at `references/stacks/{stack}.md`. If it does, load it for stack-specific guidance during this and all subsequent stages. If no profile exists, inform the user: "No dedicated profile for {stack}. Using generic fallback — spec conventions, verification checks, and examples will be language-neutral. Consider creating a project-level override at `.claude/references/stack-decisions.md`." Then load `references/stacks/_generic.md`.
+4. Verify that a matching stack profile exists at `references/stacks/{stack}.md`. If it does, load it for stack-specific guidance during this and all subsequent stages. If no profile exists, inform the user: "No dedicated profile for {stack}. Using generic fallback — spec conventions, verification checks, and examples will be language-neutral. Consider creating a project-level override at `.feature-forge/stack-decisions.md`." Then load `references/stacks/_generic.md`.
 
 ## Step 3: Conduct the Interview
 
