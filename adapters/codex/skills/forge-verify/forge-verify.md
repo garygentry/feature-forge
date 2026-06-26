@@ -175,7 +175,12 @@ When building the Fix Execution Plan:
 **If not in plan mode:** Output the following as text:
 "Findings and fix plan written to `{findings-file}`."
 
-Then use `AskUserQuestion` to ask: "Would you like to: (a) Review the findings first, (b) Run `/feature-forge:forge-fix {feature}` to apply fixes now, or (c) Enter plan mode and re-run `/feature-forge:forge-verify {feature}` for plan-mode workflow?" Do NOT embed this question in your text output.
+Then use `AskUserQuestion` to ask how to proceed. Follow the **Decision Support** protocol in `references/shared-conventions.md`: recommend a path based on the findings and give each option a one-line trade-off. Let the severity and volume of findings drive the recommendation — e.g. recommend (b) **Apply fixes now** when findings are clear-cut and mechanical; recommend (a) **Review first** when findings involve design judgment or you flagged low-confidence items; recommend (c) **plan-mode workflow** when the fixes are large or interdependent enough to warrant a reviewed plan. Present:
+- **(a) Review the findings first** — read `{findings-file}` and decide per-finding; safest, but you act on nothing until you return.
+- **(b) Run `/feature-forge:forge-fix {feature}` now** — applies the fix plan immediately; fastest, best when findings are unambiguous.
+- **(c) Enter plan mode and re-run `/feature-forge:forge-verify {feature}`** — produces a reviewable plan before any edits; best for large or risky fix sets.
+
+Do NOT embed this question in your text output.
 
 ## Step 6: Update Pipeline State
 

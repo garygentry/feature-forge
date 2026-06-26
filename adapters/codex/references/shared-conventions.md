@@ -34,7 +34,24 @@ I found that the codebase uses React and TanStack Router.
 [then call AskUserQuestion with: "1. Where should this component live? 2. Should we use server-side rendering?"]
 ```
 
-**Recommendations:** Only recommend a specific option when codebase evidence, established conventions, or strong technical rationale clearly favors it. If options are equally valid, present them neutrally — let the user decide without bias.
+### Decision Support: Help the User Choose
+
+When an `AskUserQuestion` carries substantive options (a real choice — not a trivial yes/no confirmation), do not just list them. The interview stages have already done codebase research and integration analysis; surfacing that synthesis at the decision moment is the whole point. For every such question:
+
+- **Lead with a recommended option.** Place it first and label it `(recommended)` (matching the `AskUserQuestion` "(Recommended)" convention).
+- **Put the trade-off in each option's `description`.** Say why you'd pick it and what you give up versus the alternatives — the cost, not just the benefit.
+- **State a one-line rationale** in the text before the question for *why* the recommendation wins.
+
+Two modes, and make clear which one you're in:
+
+- **Evidence-backed** — codebase evidence, an established convention, or a clear technical rationale favors one option. Recommend it with confidence and cite the evidence ("the codebase already uses X, so…").
+- **Preference** — no option clearly wins (taste, team workflow, risk appetite). Still offer a sensible **default** and the trade-offs, but say plainly this is a judgment call / the user's preference, so you don't manufacture false confidence.
+
+**The only thing to avoid is false confidence** — recommending as if evidence-backed when it's really preference. Never respond to the absence of a clear winner by going silent: a defaulted recommendation with honest trade-offs always beats a neutral option dump.
+
+For genuinely comparable artifacts (competing module structures, two code snippets, layout variants), use the `AskUserQuestion` `preview` field to show them side-by-side.
+
+The **Branch Setup** block below is the reference pattern: a strong recommendation as the first option, rationale inline, the alternative still available, never a hard-stop.
 
 ## Configuration Reading
 
@@ -133,6 +150,8 @@ When loading upstream artifacts as prerequisites, check `basedOnVersions` in the
 
 > "This stage was built against {upstream} v{old}, but {upstream} is now at v{new}. The current artifacts may be outdated. Consider re-running this stage, or use --force to proceed with potentially stale inputs."
 
+Frame the choice with its cost: re-running re-derives this stage from the current upstream (safest, but discards any hand-edits to this stage's artifacts); proceeding stale is faster but risks baking outdated assumptions into everything downstream. Recommend re-running unless the user knows the upstream change doesn't affect this stage.
+
 ## Branch Setup
 
 Invoke this block at the **very start** of a pipeline entry point — `forge-1-prd` (standalone feature) and `forge-0-epic` (epic) — **before** any directory resolution or interview, so the rest of the run lands on the intended branch. `{label}` is the feature name (forge-1-prd) or epic name (forge-0-epic); `{scope}` is `feature` or `epic` correspondingly.
@@ -185,6 +204,6 @@ When a skill detects that `currentStage` matches itself and the stage status is 
 
 If the user passes `--force` as an argument, skip prerequisite validation with a warning:
 
-> Force mode: skipping prerequisite checks. Pipeline state tracking may be incomplete. Recommend running `/feature-forge:forge {feature}` after to verify status.
+> Force mode: skipping prerequisite checks. Pipeline state tracking may be incomplete — this stage may build on prior stages that were never completed or verified, so its output can be silently wrong. Recommend running `/feature-forge:forge {feature}` after to verify status.
 
 Continue with the stage even if prior stages are not marked complete. Still read any existing artifacts (PRD.md, tech-spec.md, etc.) if they exist on disk — force mode skips the pipeline state check, not the artifact loading.

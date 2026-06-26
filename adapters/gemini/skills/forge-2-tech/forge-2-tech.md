@@ -82,11 +82,12 @@ Interview the user about technology decisions. Unlike the PRD interview, here yo
 
 **First message pattern:** Output the research summary as text, then use `AskUserQuestion` to confirm the stack and ask about the first decision area (typically package/module structure). Wait for the user to respond before proceeding to subsequent areas.
 
-**Question strategies** (use these as content for `AskUserQuestion`, not as inline prose):
-- For each PRD requirement, propose a technical approach and ask for confirmation or alternatives
-- Proactively suggest approaches consistent with the established stack
-- Challenge over-engineering: does the feature need this, or is a simpler approach sufficient?
-- Ask about every integration point and how the feature interacts with existing modules
+**Question strategies** (use these as content for `AskUserQuestion`, not as inline prose). Follow the **Decision Support** protocol in `references/shared-conventions.md` — this interview is the richest decision surface in the pipeline, so don't just list options; lead with a recommended approach, put the trade-off in each option's description, and give a one-line rationale:
+- For each PRD requirement, propose a technical approach **with its trade-off and your recommendation**, then ask for confirmation or alternatives — don't present competing approaches flatly. You've just researched the codebase; spend that research here.
+- Recommend approaches consistent with the established stack, and say *why* the convention favors it (evidence-backed mode). Where the choice is genuine taste (e.g. folder layout, naming), give a default but flag it as preference.
+- Challenge over-engineering: does the feature need this, or is a simpler approach sufficient? Frame the simpler option's trade-off (less flexibility now vs. less to maintain).
+- Ask about every integration point and how the feature interacts with existing modules.
+- For competing module structures or code-shape choices, use the `AskUserQuestion` `preview` field to show the candidates side-by-side.
 
 **Parking lot:** If the user raises a concern that belongs to a different pipeline stage (e.g., backlog granularity, documentation format), acknowledge it and note it in the pipeline state's `notes` field: "Good point — I've noted that for the [specs/backlog/docs stage]. Let's continue with the tech spec."
 
