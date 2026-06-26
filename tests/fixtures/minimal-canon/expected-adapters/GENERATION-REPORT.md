@@ -12,15 +12,15 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
-| `agents/researcher.md` | `sub-agent key 'effort'` | not representable in agents/openai.yaml (TQ-1) |
-| `agents/researcher.md` | `sub-agent key 'maxTurns'` | not representable in agents/openai.yaml (TQ-1) |
-| `agents/researcher.md` | `sub-agent key 'model'` | not representable in agents/openai.yaml (TQ-1) |
-| `agents/researcher.md` | `sub-agent key 'tools'` | not representable in agents/openai.yaml (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'maxTurns'` | not representable in agents/openai.yaml (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'memory'` | not representable in agents/openai.yaml (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'model'` | not representable in agents/openai.yaml (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'skills'` | not representable in agents/openai.yaml (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'tools'` | not representable in agents/openai.yaml (TQ-1) |
+| `agents/researcher.md` | `sub-agent key 'effort'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/researcher.md` | `sub-agent key 'maxTurns'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/researcher.md` | `sub-agent key 'model'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/researcher.md` | `sub-agent key 'tools'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/verifier.md` | `sub-agent key 'maxTurns'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/verifier.md` | `sub-agent key 'memory'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/verifier.md` | `sub-agent key 'model'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/verifier.md` | `sub-agent key 'skills'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/verifier.md` | `sub-agent key 'tools'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
 | `skills/with-refs/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 
 ## copilot

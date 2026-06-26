@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Codex adapter uses current Codex skill/agent shapes.** Codex skills are now
+  emitted as `skills/<name>/SKILL.md` (the documented Codex skill directory shape)
+  instead of `skills/<name>/<name>.md`, and Codex subagents are emitted as
+  standalone `agents/<name>.toml` custom-agent files
+  (`name`/`description`/`developer_instructions`) — the current Codex custom-agent
+  format — replacing the aggregate `agents/openai.yaml` that Codex does not load.
+  Claude-only structural keys (tools/model/maxTurns/effort/memory/skills) are
+  drop-recorded in `GENERATION-REPORT.md`, so no Claude model aliases leak into
+  Codex config. The Claude adapter is unchanged. (Codex install-destination
+  reshaping — `.agents/skills` + `.codex/agents` — follows in a later phase.)
+
 ### Added
 
 - **Self-contained adapter bundles for true cross-agent installs.** Every
