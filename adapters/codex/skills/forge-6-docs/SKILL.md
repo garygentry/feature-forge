@@ -12,7 +12,7 @@ Generate developer-focused architecture documentation for a feature, suitable fo
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall.
 
 ## Step 1: Read Context
 
@@ -30,13 +30,13 @@ Load into context:
 
 ### Implementation Completeness Check
 
-Check `{resolvedFeatureDir}/backlog.json` (or `{backlogDir}/{feature}/backlog.json` if configured). Count items with status `complete` vs total. If implementation is less than 80% complete, use `AskUserQuestion` to warn: "Implementation is only N% complete. Documentation will be based primarily on specs and may need updates after implementation. Proceed?" If user proceeds, add a `PRE-IMPLEMENTATION` notice at the top of each generated doc.
+Check `{resolvedFeatureDir}/backlog.json` (or `{backlogDir}/{feature}/backlog.json` if configured). Count items with status `complete` vs total. If implementation is less than 80% complete, use the host's question mechanism to warn: "Implementation is only N% complete. Documentation will be based primarily on specs and may need updates after implementation. Proceed?" If user proceeds, add a `PRE-IMPLEMENTATION` notice at the top of each generated doc.
 
 Also check `.pipeline-state.json` for `stages.forge-5-loop`. If it exists and has status `in-progress` (some items incomplete), include this in the warning: "The rauf loop has not fully completed — {done}/{total} items done. Documentation may need updates after remaining items are implemented."
 
 ### Impl-Verify Backstop
 
-Check `.pipeline-state.json` for `stages.forge-verify-impl`. If it is **absent** or has status `"skipped"`, use `AskUserQuestion` to warn with the cost of skipping: "Implementation hasn't been verified yet. Recommended: run `/feature-forge:forge-verify {feature} impl` first to audit the loop's output — docs generated over unverified code can document bugs or gaps as if they were intended behavior, and readers will trust them. Generate docs anyway?" Offer **Verify first (recommended)** · **Generate docs anyway**. This mirrors `forge-4-backlog`'s pre-stage verification check and backstops a skipped impl-verify regardless of how the loop ended. If `stages.forge-verify-impl` shows it already ran (`findings-applied`, `findings-reported`, or `passed`), proceed with no warning.
+Check `.pipeline-state.json` for `stages.forge-verify-impl`. If it is **absent** or has status `"skipped"`, use the host's question mechanism to warn with the cost of skipping: "Implementation hasn't been verified yet. Recommended: run `/feature-forge:forge-verify {feature} impl` first to audit the loop's output — docs generated over unverified code can document bugs or gaps as if they were intended behavior, and readers will trust them. Generate docs anyway?" Offer **Verify first (recommended)** · **Generate docs anyway**. This mirrors `forge-4-backlog`'s pre-stage verification check and backstops a skipped impl-verify regardless of how the loop ended. If `stages.forge-verify-impl` shows it already ran (`findings-applied`, `findings-reported`, or `passed`), proceed with no warning.
 
 ### Epic-Level Documentation (epic members only)
 
@@ -50,7 +50,7 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
 
 If `render-status` fails, skip the epic-level offer and proceed with the per-feature docs only; surface the error per the exit-1/exit-2 split in the **Feature Directory Resolution** block of `references/shared-conventions.md` (exit 1 → parse `{findings[]}` from stdout; exit 2 → surface the plain `Error:` stderr line verbatim).
 
-**Only if `rollup.total > 0 AND rollup.complete == rollup.total`** (every member is complete-for-orchestration; the `total > 0` guard excludes an empty epic), use `AskUserQuestion` to offer:
+**Only if `rollup.total > 0 AND rollup.complete == rollup.total`** (every member is complete-for-orchestration; the `total > 0` guard excludes an empty epic), use the host's question mechanism to offer:
 
 "All {total} features in the '{epic}' epic are complete. Generate an **epic-level architecture document** spanning the features, in addition to {feature}'s per-feature docs?"
 
@@ -96,7 +96,7 @@ Based on feature complexity and existing doc conventions, propose a doc plan:
     └── adr-001-*.md   — Architecture decision records (if significant decisions were made)
 ```
 
-Present the plan and use `AskUserQuestion` to get the user's confirmation.
+Present the plan and use the host's question mechanism to get the user's confirmation.
 
 ## Step 3: Write Documentation
 
@@ -163,7 +163,7 @@ Adapt export paths to match the project's module/package conventions.
 
 ## Step 4: Review with User
 
-Present the docs as text. Then use `AskUserQuestion` to collect feedback — do NOT include these questions in your text output:
+Present the docs as text. Then use the host's question mechanism to collect feedback — do NOT include these questions in your text output:
 
 "1. Does this accurately reflect the implementation? 2. Is the level of detail appropriate for your team? 3. Any areas that need more explanation?"
 
@@ -186,3 +186,13 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 - API reference should include actual function signatures from the code, not from the spec (they may differ).
 - Don't generate docs that will immediately be stale. Focus on concepts, architecture, and patterns rather than line-by-line code walkthroughs.
 - Include "When to use" and "When NOT to use" sections — they save developers more time than any other documentation pattern.
+
+---
+
+## Host execution notes (Codex)
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". On Codex:
+
+- **User input:** Codex has no structured question tool — ask the question directly and wait for the user's reply before proceeding. Never skip a required question or assume an answer.
+- **Subagents:** spawn a Codex subagent using the named custom agent under `.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly asked; if the custom agent is unavailable, run that step inline yourself.
+- **Background / monitoring:** run long-lived runner commands in your shell session and report progress as it arrives — there is no Claude-style background or monitoring tool to arm.

@@ -10,7 +10,7 @@ Analyze feature artifacts for completeness, consistency, and quality. Produce st
 
 ## Subagent Delegation
 
-This skill is delegated to the `forge-verifier` subagent via the Agent tool. The verifier subagent has:
+This skill is delegated to the `forge-verifier` subagent via the host's subagent mechanism. The verifier subagent has:
 - **Read-only tools** (Read, Glob, Grep, Bash) — it cannot accidentally modify specs
 - **Persistent memory** — it accumulates knowledge about this project's recurring issues and patterns across sessions
 - **The forge-verify skill pre-loaded** — so it has all verification checklists and guidance at startup
@@ -19,12 +19,12 @@ This skill is delegated to the `forge-verifier` subagent via the Agent tool. The
 
 Pick based on how many checks the mode carries (see the per-mode totals in Step 3):
 
-- **Small modes (prd ~15, tech ~15): single verifier.** Use the Agent tool once with
-  `subagent_type="forge-verifier"`, passing the feature name and mode. It runs all
+- **Small modes (prd ~15, tech ~15): single verifier.** Use the host's subagent mechanism once with
+  `the forge-verifier custom agent`, passing the feature name and mode. It runs all
   checks and returns findings.
 - **Large modes (specs ~38, backlog ~25, impl ~20): parallel dimensioned fan-out.**
   Split the mode's checklist into **dimension groups** and dispatch **one
-  `forge-verifier` per group, in parallel — a single message with multiple Agent
+  `forge-verifier` per group, in parallel — a single message with multiple subagent
   calls** (the `superpowers:dispatching-parallel-agents` pattern). Each instance owns a
   disjoint slice of CHECK-IDs, so it verifies deeper over a narrower scope and they all
   run concurrently. Suggested groups (map to the category clusters in
@@ -76,7 +76,7 @@ without subagents), fall back to running verification inline in the current sess
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall.
 
 ## Step 1: Read Configuration and Determine Mode
 
@@ -93,7 +93,7 @@ If a stage is specified as a second argument (e.g., `/feature-forge:forge-verify
 - **backlog mode**: If `forge-4-backlog` is complete but `forge-verify-backlog` is not `passed` or `findings-applied`
 - **impl mode**: If user explicitly requests or if implementation code exists for this feature
 
-If ambiguous, use `AskUserQuestion` to ask which stage to verify.
+If ambiguous, use the host's question mechanism to ask which stage to verify.
 
 ## Step 2: Load All Relevant Artifacts
 
@@ -132,7 +132,7 @@ Read `references/verification-checklists.md` for the detailed checklists per mod
 
 Each check in `verification-checklists.md` has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: ~15 checks, tech: ~15 checks, specs: ~38 checks, backlog: ~25 checks, impl: ~20 checks, epic: ~8 checks), you likely skipped checks — go back and complete them.
 
-**Epic mode dispatch.** Epic mode is a small (~8-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the Agent tool, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E08 from the `## Epic Mode Checklist` in `references/verification-checklists.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07 are verifier judgment) and returns its findings.
+**Epic mode dispatch.** Epic mode is a small (~8-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the host's subagent mechanism, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E08 from the `## Epic Mode Checklist` in `references/verification-checklists.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07 are verifier judgment) and returns its findings.
 
 ### Important: Be Specific, Not General
 
@@ -175,7 +175,7 @@ When building the Fix Execution Plan:
 **If not in plan mode:** Output the following as text:
 "Findings and fix plan written to `{findings-file}`."
 
-Then use `AskUserQuestion` to ask how to proceed. Follow the **Decision Support** protocol in `references/shared-conventions.md`: recommend a path based on the findings and give each option a one-line trade-off. Let the severity and volume of findings drive the recommendation — e.g. recommend (b) **Apply fixes now** when findings are clear-cut and mechanical; recommend (a) **Review first** when findings involve design judgment or you flagged low-confidence items; recommend (c) **plan-mode workflow** when the fixes are large or interdependent enough to warrant a reviewed plan. Present:
+Then use the host's question mechanism to ask how to proceed. Follow the **Decision Support** protocol in `references/shared-conventions.md`: recommend a path based on the findings and give each option a one-line trade-off. Let the severity and volume of findings drive the recommendation — e.g. recommend (b) **Apply fixes now** when findings are clear-cut and mechanical; recommend (a) **Review first** when findings involve design judgment or you flagged low-confidence items; recommend (c) **plan-mode workflow** when the fixes are large or interdependent enough to warrant a reviewed plan. Present:
 - **(a) Review the findings first** — read `{findings-file}` and decide per-finding; safest, but you act on nothing until you return.
 - **(b) Run `/feature-forge:forge-fix {feature}` now** — applies the fix plan immediately; fastest, best when findings are unambiguous.
 - **(c) Enter plan mode and re-run `/feature-forge:forge-verify {feature}`** — produces a reviewable plan before any edits; best for large or risky fix sets.
@@ -221,3 +221,13 @@ R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/fea
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/validate-traceability.py" {specsDir}/{feature}/PRD.md {specsDir}/{feature}/ --json
 ```
+
+---
+
+## Host execution notes
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+
+- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
+- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
+- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.

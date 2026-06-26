@@ -34,7 +34,7 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
    ```
    and show one rollup line: `{epic} — {complete}/{total} complete, next: {nextCommand}`.
 2. **Standalone features below.** Scan the remaining `{specsDir}/*/` that directly contain a `.pipeline-state.json` **without** an `epic` back-pointer. A nested member's `.pipeline-state.json` is **attributed to its epic (Tier 1), never listed as a standalone feature**.
-   - Within this standalone tier the existing logic still applies: if exactly one active (non-complete) standalone pipeline exists, show its dashboard; if multiple exist, list them with a one-line summary each and use `AskUserQuestion` to ask which to focus on.
+   - Within this standalone tier the existing logic still applies: if exactly one active (non-complete) standalone pipeline exists, show its dashboard; if multiple exist, list them with a one-line summary each and use the host's question mechanism to ask which to focus on.
 
 If no epics and no standalone features exist, say: "No active feature pipelines found. Start one with `/feature-forge:forge-1-prd <feature-name>` or group several with `/feature-forge:forge-0-epic <epic-name>`."
 
@@ -141,7 +141,7 @@ Commands:
 Support these sub-commands for pipeline lifecycle management:
 - `/feature-forge:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
 - `/feature-forge:forge resume {feature}` — Set `pipelineStatus` back to `"active"`. Calculate how long the feature was paused (from `updatedAt` to now). If paused for more than 24 hours, show a hint: "This feature was paused for {duration}. Session context may have been lost — consider re-running `/feature-forge:forge-{currentStage} {feature}` to rebuild context."
-- `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Use `AskUserQuestion` to confirm first, and state what's reversible: abandoning does not delete artifacts and can be undone with `/feature-forge:forge resume {feature}`, so the cost is low — but if the user really means "stop and discard," point out that `pause` is the better choice when they're only setting it aside. Offer **Abandon** · **Pause instead** · **Cancel**.
+- `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Use the host's question mechanism to confirm first, and state what's reversible: abandoning does not delete artifacts and can be undone with `/feature-forge:forge resume {feature}`, so the cost is low — but if the user really means "stop and discard," point out that `pause` is the better choice when they're only setting it aside. Offer **Abandon** · **Pause instead** · **Cancel**.
 
 **Epic lifecycle.** When the argument names an **epic** (`{specsDir}/{name}/epic-manifest.json` exists), `pause` / `resume` / `abandon` operate on the epic manifest, not a `.pipeline-state.json`:
 
@@ -152,7 +152,7 @@ R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/fea
 python3 "$R/scripts/epic-manifest.py" set-status "{epic}" --status paused --specs-dir "{specsDir}"
   ```
   For `complete`, do **not** set the status directly — completion is *derived* from member states (the rollup), so the manifest `status` is a lifecycle flag, never a completion signal.
-- **Member feature states are NOT silently mutated.** Pausing/abandoning the epic changes only the manifest `status`. Before doing so, use `AskUserQuestion` to make the relationship explicit and frame the trade-off: "Pausing the epic does not pause its in-flight member features. {N} members are active. Pause the epic only, or also pause each member?" Recommend **epic only** when members are mid-stage and the user just wants to stop *new* orchestration; recommend **also pause members** when the intent is a hard freeze of all in-flight work. If the user opts to pause members too, update each member's own `pipelineStatus` **individually and visibly** (one explicit action per member), never as a hidden side-effect.
+- **Member feature states are NOT silently mutated.** Pausing/abandoning the epic changes only the manifest `status`. Before doing so, use the host's question mechanism to make the relationship explicit and frame the trade-off: "Pausing the epic does not pause its in-flight member features. {N} members are active. Pause the epic only, or also pause each member?" Recommend **epic only** when members are mid-stage and the user just wants to stop *new* orchestration; recommend **also pause members** when the intent is a hard freeze of all in-flight work. If the user opts to pause members too, update each member's own `pipelineStatus` **individually and visibly** (one explicit action per member), never as a hidden side-effect.
 - Commit the change via the Git Commit Protocol, staging `{specsDir}/{epic}/`.
 
 When listing features, show active pipelines by default. Include a count of paused/abandoned: "3 active pipelines (1 paused, 1 abandoned — use `/feature-forge:forge list all` to see them)."
@@ -162,3 +162,13 @@ When listing features, show active pipelines by default. Include a count of paus
 - Never modify any spec files, backlog files, or pipeline state beyond the `notes`, `updatedAt`, and `pipelineStatus` fields. The navigator is read-only except for notes and lifecycle commands.
 - If a user asks to "continue" or "pick up where I left off" without naming a feature, check for active pipelines before asking. Only ask if ambiguous.
 - The pipeline state file is the source of truth. Don't infer stage from the existence of files alone — a file might exist from a previous incomplete run.
+
+---
+
+## Host execution notes (Codex)
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". On Codex:
+
+- **User input:** Codex has no structured question tool — ask the question directly and wait for the user's reply before proceeding. Never skip a required question or assume an answer.
+- **Subagents:** spawn a Codex subagent using the named custom agent under `.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly asked; if the custom agent is unavailable, run that step inline yourself.
+- **Background / monitoring:** run long-lived runner commands in your shell session and report progress as it arrives — there is no Claude-style background or monitoring tool to arm.

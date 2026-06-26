@@ -30,7 +30,7 @@ This is the **single** place this rule is implemented. forge-5-loop's backlog-fi
 
 Resolve the **loop runner** from the `loopRunner` block in `forge.config.json`, filling missing fields from the defaults in `references/forge-config-schema.json` (defaults to rauf). You need its `bin`, `validateCommand`, `versionCommand`, `minRunnerVersion`, and `installHint`.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall.
 
 ## Step 1: Validate Prerequisites
 
@@ -38,7 +38,7 @@ Resolve the **loop runner** from the `loopRunner` block in `forge.config.json`, 
 
 **Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, stages `forge-1-prd`, `forge-2-tech`, and `forge-3-specs` must all be `complete`. If not, STOP and tell the user which prerequisites are missing.
 
-**Strongly recommended:** Check if specs have been verified. If not, use `AskUserQuestion` to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
+**Strongly recommended:** Check if specs have been verified. If not, use the host's question mechanism to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
 
 ## Step 2: Load All Specs
 
@@ -67,7 +67,7 @@ Proposed backlog for {feature} ({N} items):
   ...
 ```
 
-After presenting the plan as text, use `AskUserQuestion` following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this breakdown as the default (it's your evidence-backed read of the specs and dependency order) and name the trade-off that governs item granularity — finer items are each easier to verify in one loop iteration but multiply coordination and dependency edges; coarser items mean fewer handoffs but risk an item too big to complete or verify in a single iteration. Lead with: "I recommend this breakdown. Any items to split, merge, or reorder?" Do NOT include this question in your text output. Wait for the user's response before generating the JSON.
+After presenting the plan as text, use the host's question mechanism following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this breakdown as the default (it's your evidence-backed read of the specs and dependency order) and name the trade-off that governs item granularity — finer items are each easier to verify in one loop iteration but multiply coordination and dependency edges; coarser items mean fewer handoffs but risk an item too big to complete or verify in a single iteration. Lead with: "I recommend this breakdown. Any items to split, merge, or reorder?" Do NOT include this question in your text output. Wait for the user's response before generating the JSON.
 
 ## Step 4: Author backlog.json — delegate to `author-backlog`
 
@@ -122,7 +122,7 @@ Interpret the result:
 
 Present a summary: total items N, dependency-chain depth, estimated loop iterations (`ceil(pendingItems * loopIterationMultiplier)`). Note whether validation passed or was skipped (runner not yet available).
 
-Use `AskUserQuestion` to ask: "Ready to proceed, or any adjustments needed?"
+Use the host's question mechanism to ask: "Ready to proceed, or any adjustments needed?"
 
 ## Step 7: Update Pipeline State and Commit
 
@@ -133,7 +133,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`. Foll
    - Set `stages.forge-4-backlog.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>, "forge-3-specs": <current version>}`
    - Set `currentStage` to `forge-5-loop`
    - Check downstream stages (`forge-5-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-4-backlog`, set their status to `stale`.
-2. Use `AskUserQuestion` to ask about notes to persist
+2. Use the host's question mechanism to ask about notes to persist
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files, attempt commit, then set status to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 4. If verification was available but the user chose to skip it, record `stages.forge-verify-backlog.status` as `"skipped"` in pipeline state.
 5. Tell user: "Backlog complete with {N} items. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the backlog\n  - `/feature-forge:forge-5-loop {feature}` to run the loop\n  - `/feature-forge:forge {feature}` to see full pipeline status"
@@ -143,3 +143,13 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`. Foll
 - The loop runs each item in a FRESH context. Every item description must be self-contained — `author-backlog` enforces this, but double-check Step-3 plan items aren't "same as above."
 - Spec references must be project-root-relative paths that actually exist — the validate command enforces this when `--specs-dir` is passed (resolving them from the project root).
 - Don't present a backlog to the user before it validates (or before you've explicitly recorded that validation was skipped because the runner isn't installed yet).
+
+---
+
+## Host execution notes
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+
+- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
+- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
+- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.

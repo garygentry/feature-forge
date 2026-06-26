@@ -13,7 +13,7 @@ Generate a comprehensive suite of numbered implementation specification document
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall.
 
 ## Step 1: Validate Prerequisites
 
@@ -37,7 +37,7 @@ After reading the PRD and tech spec, invoke the **Epic Context Injection** block
 
 Read `references/spec-archetypes.md` for the menu of document types.
 
-Based on the feature's complexity, propose a document plan to the user before writing. Output the document list as text, then use `AskUserQuestion` for the question — do NOT include the question in your text output.
+Based on the feature's complexity, propose a document plan to the user before writing. Output the document list as text, then use the host's question mechanism for the question — do NOT include the question in your text output.
 
 **Example text output (no question here):**
 ```
@@ -54,7 +54,7 @@ Feature-specific:
   04-integration-points.md    — Integration with existing project modules
 ```
 
-**Then call `AskUserQuestion`** following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this plan as the default (it's your evidence-backed read of the feature's complexity) and name the trade-off so the user can push back knowingly — more documents means finer separation of concerns but more to keep in sync; fewer means tighter docs but risks one document carrying multiple concerns. Lead with: "I recommend this plan. Add or remove any documents?" Note the guidance below — resist splitting a concern into a sub-50-line document.
+**Then call the host's question mechanism** following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this plan as the default (it's your evidence-backed read of the feature's complexity) and name the trade-off so the user can push back knowingly — more documents means finer separation of concerns but more to keep in sync; fewer means tighter docs but risks one document carrying multiple concerns. Lead with: "I recommend this plan. Add or remove any documents?" Note the guidance below — resist splitting a concern into a sub-50-line document.
 
 **Incremental artifact tracking:** After each spec document is written (by you or a writer subagent), immediately update the `artifacts` array in `.pipeline-state.json` with the new file path. This enables crash recovery if the session is interrupted mid-suite (see shared-conventions.md "Crash Recovery").
 
@@ -73,7 +73,7 @@ and the directory/exports map, so they must exist and be stable first.
 ### 4b. Domain fan-out (parallel `forge-spec-writer` subagents)
 
 Once the foundation is written, dispatch the remaining numbered docs in parallel — **one
-`forge-spec-writer` subagent per document, in a single message with multiple Agent
+`forge-spec-writer` subagent per document, in a single message with multiple subagent
 calls** (the `superpowers:dispatching-parallel-agents` pattern). Each writer is given:
 - the PRD and tech-spec,
 - the just-written `00-core-definitions.md` and `01-architecture-layout.md` (so it builds
@@ -128,7 +128,7 @@ List any gaps or inconsistencies found and resolve them.
 
 ## Step 6: Review with User
 
-Present a summary of all documents created as text, with key decisions highlighted. Then use `AskUserQuestion` to collect feedback — do NOT include these questions in your text output:
+Present a summary of all documents created as text, with key decisions highlighted. Then use the host's question mechanism to collect feedback — do NOT include these questions in your text output:
 
 "1. Does the level of detail match what you need? 2. Any areas that need more depth? 3. Any missing subsystems or concerns?"
 
@@ -141,7 +141,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
    - Record all created files in `artifacts`, including `TRACEABILITY.md`
    - Set `stages.forge-3-specs.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>}`
    - Check downstream stages (forge-4-backlog, forge-5-loop, forge-6-docs). If any have `basedOnVersions` referencing older versions, set their status to `stale`
-2. Use `AskUserQuestion` to ask about notes to persist
+2. Use the host's question mechanism to ask about notes to persist
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete implementation specs v{n}"`, then set `stages.forge-3-specs.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
 5. Tell the user: "Implementation specs complete. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the specs (strongly recommended)\n  - `/feature-forge:forge-4-backlog {feature}` to generate the backlog\n  - `/feature-forge:forge {feature}` to see full pipeline status"
 
@@ -152,3 +152,13 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 - Resist the urge to create too many documents. Each document should represent a major concern. If a "document" would be under 50 lines, it probably belongs as a section in another document.
 - Watch for implicit dependencies between subsystems. If subsystem A's types are used by subsystem B, the spec should explicitly state this and ensure the types are defined in the shared types document.
 - If the feature is large, the spec suite might be 8-12 documents. If it's simple, 3-4 is fine. Match complexity to the feature, not a fixed template.
+
+---
+
+## Host execution notes
+
+This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+
+- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
+- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
+- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
