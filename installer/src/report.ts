@@ -68,6 +68,8 @@ function renderAgent(subcommand: RunReport["subcommand"], a: AgentReport): strin
     // Decode the synthetic status rows (§3.3) into one human line.
     const status = a.actions.map((f) => f.relpath).join("  ");
     lines.push(`${a.agent}: ${a.detected ? "detected" : "not detected"}  ${status}`);
+    const note = confidenceNote(a);
+    if (note) lines.push(`  ${note}`);
     return lines;
   }
 
@@ -81,8 +83,26 @@ function renderAgent(subcommand: RunReport["subcommand"], a: AgentReport): strin
   for (const f of a.actions) {
     lines.push(`  ${actionVerb(f.action)} ${f.relpath}`);
   }
+  const note = confidenceNote(a);
+  if (note) lines.push(`  ${note}`);
   if (a.raufPin) lines.push(`  rauf default runner pinned: ${a.raufPin}`);
   return lines;
+}
+
+/**
+ * Honest per-agent confidence note (A4 / Finding 6): silent for fully-trusted targets
+ * (`confirmed`/`verified-current`), explicit for `best-known`/`unsupported` so a user knows
+ * an install path may not be auto-loaded by that agent and where to check current docs. Pure.
+ */
+function confidenceNote(a: AgentReport): string | null {
+  if (!a.confidence || a.confidence === "confirmed" || a.confidence === "verified-current") {
+    return null;
+  }
+  const where = a.docsUrl ? ` — see ${a.docsUrl}` : "";
+  if (a.confidence === "unsupported") {
+    return `note: ${a.agent} has no confirmed install surface (unsupported)${where}`;
+  }
+  return `note: ${a.agent} install path is best-known, not vendor-confirmed${where}`;
 }
 
 /** Map a FileActionKind to its human verb (REQ-OBS-01 vocabulary). */

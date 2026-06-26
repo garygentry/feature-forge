@@ -27,15 +27,16 @@ The `--dry-run --json` plan reports the resolved install destination — use tha
 authoritative path. (The install destination is derived from the installer, not asserted here;
 see the note below.)
 
-> **Note (install path):** the destination for Gemini is taken from the installer's
-> `--dry-run --json` plan, not hard-coded in this doc — the cross-agent installer treats the
-> gemini config-dir convention as best-known but unverified. (Only Claude's `~/.claude`
-> destination is treated as well-known.)
+> **Note (install path):** Gemini installs as a CLI extension. **Global** scope
+> (`~/.gemini/extensions/feature-forge/`) matches current Gemini docs (verified-current).
+> **Project** scope (`.gemini/extensions/feature-forge/`) is **best-known** — project-scoped
+> extension install is not clearly documented, so the install report labels it as such; prefer
+> `--global` for Gemini. Use the `--dry-run --json` plan for the exact resolved path.
 
-> **Known gap (installed-bundle self-location):** an installed `adapters/gemini/` bundle does not
-> currently carry `epic-manifest.py` / `.claude-plugin/plugin.json`, so the portable resolver
-> `scripts/forge-root.sh` cannot self-locate from an installed bundle. This is a known
-> limitation owned by the adapter generator; it does not block install/first-use here.
+> **Runtime helpers:** installed bundles are self-contained — every runtime helper
+> (`forge-root.sh`, `forge-init.sh`, `epic-manifest.py`, `validate-traceability.py`,
+> `forge-bootstrap.py`) plus the neutral `.feature-forge-bundle.json` sentinel ship in the
+> bundle, so `scripts/forge-root.sh` self-locates from the installed location.
 
 ## First-use check
 

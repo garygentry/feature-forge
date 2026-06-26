@@ -37,7 +37,7 @@ import {
   err,
   ok,
 } from "./types.js";
-import { detectAgent, detectAgents, resolveRoots } from "./agent-targets.js"; // 02
+import { detectAgent, detectAgents, agentRootFor } from "./agent-targets.js"; // 02
 import { locateSource } from "./source.js"; // 03
 import { plan, resolveMode, type PlanContext } from "./plan.js"; // 04
 import { apply, type ApplyContext } from "./apply.js"; // 04
@@ -363,7 +363,8 @@ async function runMutation(
   for (const agent of targets) {
     const detection = detectAgent(agent, ropts);
     const r = await runOneAgent(subcommand, agent, detection, flags, scope, mode, raufPin, env);
-    agentReports.push(r);
+    // Carry the scope-effective confidence + docs URL onto the report for honest labeling (A4).
+    agentReports.push({ ...r, confidence: detection.confidence, docsUrl: detection.docsUrl });
   }
 
   const anyAgentFailed = agentReports.some((r) => !r.ok);
@@ -395,9 +396,9 @@ async function runOneAgent(
   env: CliEnv,
 ): Promise<AgentReport> {
   const mpath = manifestPath(agent, scope, { home: env.home, cwd: env.cwd });
-  const roots = resolveRoots({ home: env.home, cwd: env.cwd, scope });
-  const scopeRoot = scope === "global" ? roots.home : roots.cwd;
-  const agentRoot = path.join(scopeRoot, AGENT_TARGETS[agent].configDirName);
+  // Containment boundary = the agent's install base dir (A4: decoupled from the detection dir,
+  // so codex contains under `.agents` and copilot under `.github`).
+  const agentRoot = agentRootFor(AGENT_TARGETS[agent], scope, { home: env.home, cwd: env.cwd });
 
   // uninstall path: manifest → planUninstall → apply.
   if (subcommand === "uninstall") {
@@ -500,7 +501,8 @@ async function runList(flags: CliFlags, env: CliEnv): Promise<RunReport> {
   const agentReports: AgentReport[] = [];
   for (const agent of targets) {
     const detection = detectAgent(agent, ropts);
-    agentReports.push(listOneAgent(agent, detection, flags, scope, env));
+    const base = listOneAgent(agent, detection, flags, scope, env);
+    agentReports.push({ ...base, confidence: detection.confidence, docsUrl: detection.docsUrl });
   }
 
   const anyFailed = agentReports.some((r) => !r.ok);

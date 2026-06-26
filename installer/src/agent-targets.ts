@@ -19,6 +19,7 @@ import {
   FEATURE_FORGE_NS,
   type AgentId,
   type AgentTarget,
+  type Confidence,
   type DetectionResult,
   type ResolveOpts,
   type Scope,
@@ -58,13 +59,16 @@ function scopeRootFor(scope: Scope, roots: { home: string; cwd: string }): strin
  * Derive the absolute install destination for one agent under a given scope (REQ-DET-01,
  * REQ-FLAG-02):
  *
- *     <scopeRoot>/<configDirName>/<installSubdir>/<FEATURE_FORGE_NS>/
+ *     <scopeRoot>/<installBaseDir>/<installSubpath>/<FEATURE_FORGE_NS>/
  *
- * where `scopeRoot` is the home dir for `"global"` and the cwd for `"project"`. The path is
- * derived, never stored, so a new agent is one `AGENT_TARGETS` row (REQ-SCALE-01). Pure.
+ * where `scopeRoot` is the home dir for `"global"` and the cwd for `"project"`, and an empty
+ * `installSubpath` is skipped (the namespace dir sits directly under `installBaseDir`). The path
+ * is derived, never stored, so a new agent is one `AGENT_TARGETS` row (REQ-SCALE-01). Pure.
  *
  * @example destinationFor(AGENT_TARGETS.claude, "global", { home: "/h" })
  *   // → "/h/.claude/skills/feature-forge"
+ * @example destinationFor(AGENT_TARGETS.codex, "project", { cwd: "/p" })
+ *   // → "/p/.agents/skills/feature-forge"
  */
 export function destinationFor(
   target: AgentTarget,
@@ -75,10 +79,36 @@ export function destinationFor(
   const root = scopeRootFor(scope, roots);
   return path.resolve(
     root,
-    target.configDirName,
-    target.installSubdir,
+    target.installBaseDir,
+    ...(target.installSubpath ? [target.installSubpath] : []),
     FEATURE_FORGE_NS,
   );
+}
+
+/**
+ * The filesystem containment boundary every write for `target` is checked against (REQ-SEC-02):
+ *     <scopeRoot>/<installBaseDir>
+ * Decoupled from the detection dir so codex (installs under `.agents`) and copilot (`.github`)
+ * contain correctly even though they detect on `.codex`/`.copilot`. Pure.
+ */
+export function agentRootFor(
+  target: AgentTarget,
+  scope: Scope,
+  opts?: ResolveOpts,
+): string {
+  const roots = resolveRoots(opts);
+  return path.resolve(scopeRootFor(scope, roots), target.installBaseDir);
+}
+
+/**
+ * The effective confidence for `target` under `scope` (A4): the per-row `projectConfidence`
+ * override applies only to project scope (e.g. gemini project = best-known); otherwise the
+ * row's `confidence`. Pure — surfaced in the report so install honesty is scope-accurate.
+ */
+export function confidenceFor(target: AgentTarget, scope: Scope): Confidence {
+  return scope === "project" && target.projectConfidence
+    ? target.projectConfidence
+    : target.confidence;
 }
 
 /**
@@ -105,6 +135,8 @@ export function detectAgent(id: AgentId, opts?: ResolveOpts): DetectionResult {
     detected,
     configDirsProbed: [configDir],
     destination: destinationFor(target, scope, opts),
+    confidence: confidenceFor(target, scope),
+    docsUrl: target.docsUrl,
     cliOnPath: cliOnPath(id), // advisory only; never gates `detected`
   };
 }

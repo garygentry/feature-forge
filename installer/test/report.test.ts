@@ -164,3 +164,63 @@ test("actionVerb covers every FileActionKind branch", () => {
   assert.ok(actionVerb("unchanged").trim() === "unchanged");
   assert.ok(actionVerb("remove").trim() === "remove");
 });
+
+// --------------------------------------------------------------------------- //
+// A4: honest confidence labeling (Finding 6)
+// --------------------------------------------------------------------------- //
+
+test("A4: human report shows a best-known note with docs URL, and stays silent for confirmed", () => {
+  const report: RunReport = {
+    subcommand: "install",
+    scope: "project",
+    mode: "copy",
+    dryRun: true,
+    exitCode: 0,
+    agents: [
+      {
+        agent: "copilot",
+        detected: true,
+        ok: true,
+        actions: [{ relpath: "skills/forge-1-prd/forge-1-prd.md", action: "create" }],
+        confidence: "best-known",
+        docsUrl: "https://docs.github.com/copilot",
+      },
+      {
+        agent: "claude",
+        detected: true,
+        ok: true,
+        actions: [{ relpath: "skills/forge-1-prd/SKILL.md", action: "create" }],
+        confidence: "confirmed",
+        docsUrl: "https://docs.claude.com/skills",
+      },
+    ],
+  };
+  const text = renderReport(report, { json: false });
+  assert.ok(text.includes("copilot install path is best-known"));
+  assert.ok(text.includes("https://docs.github.com/copilot"));
+  // No note for a confirmed agent.
+  assert.ok(!text.includes("claude install path is best-known"));
+});
+
+test("A4: confidence + docsUrl ride the --json machine surface", () => {
+  const report: RunReport = {
+    subcommand: "list",
+    scope: "global",
+    mode: "copy",
+    dryRun: false,
+    exitCode: 0,
+    agents: [
+      {
+        agent: "gemini",
+        detected: false,
+        ok: true,
+        actions: [{ relpath: "detected:false", action: "unchanged" }],
+        confidence: "verified-current",
+        docsUrl: "https://example.test/gemini",
+      },
+    ],
+  };
+  const parsed = JSON.parse(renderReport(report, { json: true })) as RunReport;
+  assert.equal(parsed.agents[0]!.confidence, "verified-current");
+  assert.equal(parsed.agents[0]!.docsUrl, "https://example.test/gemini");
+});

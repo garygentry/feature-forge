@@ -53,12 +53,29 @@ export const MANIFEST_PREFIX = ".feature-forge." as const;
 // ---------------------------------------------------------------------------
 
 /**
+ * How honestly an agent's install paths track current vendor docs (Finding 6 / A4).
+ * - "confirmed"        — source-verified end-to-end (claude).
+ * - "verified-current" — matches the vendor's current docs, re-verified in A0 (2026-06-26).
+ * - "best-known"       — plausible but not doc-confirmed for this scope; install proceeds,
+ *                        labeled honestly in the report so users know it may not be loaded.
+ * - "unsupported"      — no usable install surface; not installed (reserved; none today).
+ */
+export type Confidence = "confirmed" | "verified-current" | "best-known" | "unsupported";
+
+/** How an agent consumes the bundle (documentation + future per-kind apply behavior). */
+export type InstallKind = "skills" | "extension" | "rules" | "instructions";
+
+/**
  * One row of the static per-agent detection map (REQ-DET-01, REQ-DET-05). Adding a new
  * agent is exactly adding one entry to `AGENT_TARGETS` — no logic change (REQ-SCALE-01).
  *
  * The on-disk destination for an agent under a given scope is derived, not stored:
- *   <scopeRoot>/<configDirName>/<installSubdir>/<FEATURE_FORGE_NS>/
- * where scopeRoot is the resolved home (global) or cwd (project).
+ *   <scopeRoot>/<installBaseDir>/<installSubpath>/<FEATURE_FORGE_NS>/
+ * where scopeRoot is the resolved home (global) or cwd (project), and `installSubpath` may
+ * be "" (installed directly under `installBaseDir`). Detection (`configDirName`) is decoupled
+ * from the install location because some agents load content from a different tree than the
+ * dir that signals their presence (A4): codex detects ".codex" but loads skills from
+ * ".agents/skills"; copilot detects ".copilot" but instructions live under ".github".
  */
 export interface AgentTarget {
   /** Stable agent identifier. */
@@ -69,22 +86,30 @@ export interface AgentTarget {
    */
   readonly configDirName: string;
   /**
-   * Sub-path under the config dir that holds the namespaced install dir, e.g.
-   * "skills" (claude/codex/copilot), "rules" (cursor), "extensions" (gemini).
+   * Top-level dir under the scope root that holds the install AND is the containment boundary
+   * every write is checked against (REQ-SEC-02). Usually equals `configDirName`; decoupled for
+   * codex (".agents") and copilot (".github").
    */
-  readonly installSubdir: string;
+  readonly installBaseDir: string;
+  /**
+   * Path under `installBaseDir` to the namespace parent, e.g. "skills" (claude/codex),
+   * "rules" (cursor), "extensions" (gemini), "" (copilot — directly under `.github`).
+   */
+  readonly installSubpath: string;
+  /** How this agent consumes the bundle (REQ-SCALE-01; per-kind placement extended in A4b). */
+  readonly installKind: InstallKind;
   /**
    * Informational: the skill-file form this agent's bundle uses — "SKILL.md" (claude, codex),
    * "<name>.md" (copilot/gemini), "<name>.mdc" (cursor). The installer copies the
    * bundle verbatim (REQ-SCALE-02) and does not parse skill files, so this is documentation.
    */
   readonly skillFileForm: string;
-  /**
-   * Confidence in this row's paths. "confirmed" = source-verified (claude). "best-known"
-   * = the TQ-1 paths (codex/copilot/cursor/gemini) to re-verify against each agent's current
-   * docs at implementation (REQ-SCALE-01 — isolated, localized correction).
-   */
-  readonly confidence: "confirmed" | "best-known";
+  /** Confidence for the default (global) scope. */
+  readonly confidence: Confidence;
+  /** Optional scope-specific override for project scope (e.g. gemini project = best-known). */
+  readonly projectConfidence?: Confidence;
+  /** Current vendor/docs URL for this target's install convention (surfaced in reports). */
+  readonly docsUrl: string;
 }
 
 /** Options for path resolution, injectable so tests never touch the real `~` (spec 02, spec 08). */
@@ -115,6 +140,10 @@ export interface DetectionResult {
   readonly cliOnPath?: boolean;
   /** Resolved absolute install destination for the active scope (the `feature-forge/` namespace dir). */
   readonly destination: string;
+  /** Effective confidence for the active scope (REQ-DET-05; honest dry-run/list labeling, A4). */
+  readonly confidence: Confidence;
+  /** Current vendor/docs URL for this target (REQ-DET-05). */
+  readonly docsUrl: string;
 }
 
 /** One file recorded in the manifest inventory (REQ-SAFE-01). */
@@ -214,6 +243,10 @@ export interface AgentReport {
   /** Present iff `ok` is false. */
   readonly error?: InstallerError;
   readonly raufPin?: string | null;
+  /** Effective install-path confidence for the active scope (A4; honest report labeling). */
+  readonly confidence?: Confidence;
+  /** Vendor/docs URL for this target (A4; shown when confidence is not full). */
+  readonly docsUrl?: string;
 }
 
 /** The whole-run summary, rendered human-readable or as `--json` (REQ-OBS-01, REQ-DET-05). */
@@ -251,16 +284,22 @@ export interface RunReport {
  * codex ships `skills/<name>/SKILL.md` + standalone `agents/<name>.toml` custom agents,
  * cursor uses `.mdc` files.
  *
- * NOTE: codex's `configDirName`/`installSubdir` (.codex/skills) is the legacy mapping; the
- * agent-neutral destination (`.agents/skills` + `.codex/agents` for custom agents) is reshaped
- * in the per-agent install-strategy phase (Finding 6 / A4), not here.
+ * A4 per-agent reality check (A0 re-verified vendor docs, 2026-06-26):
+ *  - codex   — detects `.codex`, loads skills from `.agents/skills` (verified-current).
+ *              The `.codex/agents/*.toml` second placement is added in A4b.
+ *  - copilot — detects `.copilot`, but has no skills loader; the bundle is staged under
+ *              `.github/feature-forge` and the managed instructions block (.github/
+ *              copilot-instructions.md) is added in A4b (best-known).
+ *  - cursor  — `.cursor/rules/*.mdc` confirmed current (verified-current).
+ *  - gemini  — `~/.gemini/extensions/feature-forge` global confirmed; project scope is
+ *              best-known (project extension install is not clearly documented).
  */
 export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
-  claude: { id: "claude", configDirName: ".claude", installSubdir: "skills", skillFileForm: "SKILL.md", confidence: "confirmed" },
-  codex: { id: "codex", configDirName: ".codex", installSubdir: "skills", skillFileForm: "SKILL.md", confidence: "best-known" },
-  copilot: { id: "copilot", configDirName: ".copilot", installSubdir: "skills", skillFileForm: "<name>.md", confidence: "best-known" },
-  cursor: { id: "cursor", configDirName: ".cursor", installSubdir: "rules", skillFileForm: "<name>.mdc", confidence: "best-known" },
-  gemini: { id: "gemini", configDirName: ".gemini", installSubdir: "extensions", skillFileForm: "<name>.md", confidence: "best-known" },
+  claude: { id: "claude", configDirName: ".claude", installBaseDir: ".claude", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "confirmed", docsUrl: "https://docs.claude.com/en/docs/claude-code/skills" },
+  codex: { id: "codex", configDirName: ".codex", installBaseDir: ".agents", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://developers.openai.com/codex/skills" },
+  copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "<name>.md", confidence: "best-known", docsUrl: "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions" },
+  cursor: { id: "cursor", configDirName: ".cursor", installBaseDir: ".cursor", installSubpath: "rules", installKind: "rules", skillFileForm: "<name>.mdc", confidence: "verified-current", docsUrl: "https://cursor.com/docs/context/rules" },
+  gemini: { id: "gemini", configDirName: ".gemini", installBaseDir: ".gemini", installSubpath: "extensions", installKind: "extension", skillFileForm: "<name>.md", confidence: "verified-current", projectConfidence: "best-known", docsUrl: "https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/index.md" },
 } as const;
 
 /**
