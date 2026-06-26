@@ -41,11 +41,22 @@ test("locateBundle returns SOURCE_MISSING naming the expected path + remedy", as
   });
 });
 
-test("checkIntegrity passes for a minimal valid bundle without plugin.json/epic-manifest.py", async () => {
+test("checkIntegrity passes for a minimal valid bundle without the Claude-only plugin.json", async () => {
   await withSandbox(async (sb) => {
     const fx = await makeFixtureBundle(sb, "claude");
     const r = checkIntegrity(fx.dir, "claude");
     assert.ok(r.ok);
+  });
+});
+
+test("checkIntegrity returns SOURCE_INVALID naming a missing .feature-forge-bundle.json", async () => {
+  await withSandbox(async (sb) => {
+    const fx = await makeFixtureBundle(sb, "claude");
+    await rm(join(fx.dir, ".feature-forge-bundle.json"), { force: true });
+    const r = checkIntegrity(fx.dir, "claude");
+    assert.ok(!r.ok);
+    assert.equal(r.error.code, "SOURCE_INVALID");
+    assert.equal(r.error.path, join(fx.dir, ".feature-forge-bundle.json"));
   });
 });
 

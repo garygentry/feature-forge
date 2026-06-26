@@ -169,6 +169,25 @@ def test_bundle_is_self_contained(fixture_copy, agent):
     assert (bundle / "references" / "shared-conventions.md").is_file()
     assert (bundle / "references" / "stacks" / "python.md").is_file()  # nested → whole-tree copy
     assert (bundle / "scripts" / "forge-root.sh").is_file()
+    # Every runtime helper a skill can invoke ships in the bundle (REQ-GEN-04), so a
+    # non-Claude install can run helper-backed skills after install.
+    for helper in (
+        "forge-init.sh",
+        "epic-manifest.py",
+        "validate-traceability.py",
+        "forge-bootstrap.py",
+    ):
+        assert (bundle / "scripts" / helper).is_file(), helper
+    # The neutral cross-agent sentinel forge-root.sh self-locates on (NOT plugin.json).
+    sentinel = bundle / ".feature-forge-bundle.json"
+    assert sentinel.is_file()
+    meta = json.loads(sentinel.read_text())
+    assert meta == {
+        "name": "feature-forge",
+        "version": meta["version"],  # canon-sourced; identity-checked elsewhere
+        "agent": agent,
+        "generatedBy": "python3 scripts/build-adapters.py",
+    }
     # the fixture's `with-refs` skill has an own references/ subdir
     assert (bundle / "skills" / "with-refs" / "references" / "detail.md").is_file()
     # NEGATIVE (V-017): the `noarg` skill has no own references/ — none must be copied.

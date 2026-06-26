@@ -74,9 +74,10 @@ export function locateBundle(
 
 /**
  * Minimal integrity check for a located bundle (REQ-OPS-06). Valid iff the `BUNDLE_REQUIRED_PATHS`
- * are present: `skills/` is a non-empty dir, `scripts/forge-root.sh` exists, and (gemini)
- * `gemini-extension.json` exists. Does NOT require `.claude-plugin/plugin.json` or
- * `epic-manifest.py` (IR-1 / OQ-A).
+ * are present: `skills/` is a non-empty dir, the neutral `.feature-forge-bundle.json` sentinel and
+ * every bundled runtime helper (`forge-root.sh`, `forge-init.sh`, `epic-manifest.py`,
+ * `validate-traceability.py`, `forge-bootstrap.py`) exist, and (gemini) `gemini-extension.json`
+ * exists. Keys on the neutral sentinel, NOT the Claude-only `.claude-plugin/plugin.json`.
  *
  * @returns ok(undefined) when every required path is present; err(SOURCE_INVALID) naming the
  *          first missing/invalid required path otherwise.

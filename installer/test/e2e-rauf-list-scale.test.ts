@@ -113,8 +113,16 @@ test("RAUF unresolvable: skills still install, exit FAILURE, raufError carries t
     await walk(dest, "");
     assert.deepEqual(
       [...present].sort(),
-      ["scripts/forge-root.sh", "skills/forge-1-prd/SKILL.md"],
-      "only the bundle's skill files exist — no vendored rauf binary",
+      [
+        ".feature-forge-bundle.json",
+        "scripts/epic-manifest.py",
+        "scripts/forge-bootstrap.py",
+        "scripts/forge-init.sh",
+        "scripts/forge-root.sh",
+        "scripts/validate-traceability.py",
+        "skills/forge-1-prd/SKILL.md",
+      ],
+      "only the bundle's own files exist — no vendored rauf binary",
     );
   });
 });

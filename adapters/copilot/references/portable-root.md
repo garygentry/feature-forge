@@ -12,7 +12,7 @@ against the fenced block here, byte-for-byte.
 ## Canonical bootstrap prelude
 
 ```bash
-R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 ```
 
@@ -24,7 +24,7 @@ makes several calls, add the prelude once and reuse `$R` for each. A fresh block
 prelude (per-block re-resolution). Worked example:
 
 ```bash
-R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
@@ -40,10 +40,13 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
    final root resolution to that script. The `for` list is a discovery order for `forge-root.sh`
    itself, not a fallback chain for the plugin root. Removing the `exec` to "keep looping" is a
    regression — once `exec`'d, the loop is replaced by the resolver process and never advances.
-3. **Prelude candidate set is a minimal `$HOME` bootstrap subset.** The prelude's `for d` list
+3. **Prelude candidate set is an agent-neutral bootstrap subset.** The prelude's `for d` list
    exists only to bootstrap-discover `forge-root.sh`; the authoritative multi-root probe lives in
-   `forge-root.sh` step 2. When adding an install root, update `forge-root.sh` first; extend the
-   prelude only if the new root is needed to bootstrap-discover `forge-root.sh` itself.
+   `forge-root.sh` step 2. The list enumerates install roots across agents — the Claude
+   skill/plugin dirs **and** the agent-neutral `.agents/skills/feature-forge` dirs (`$HOME` and the
+   project-relative `./.agents/...`) — so a non-Claude install (e.g. Codex under `.agents/skills`)
+   can still discover the resolver. When adding an install root, update `forge-root.sh` first;
+   extend the prelude only if the new root is needed to bootstrap-discover `forge-root.sh` itself.
 
 ## The resolver
 

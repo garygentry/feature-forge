@@ -300,6 +300,43 @@ GEMINI_EXTENSION_VERSION: str = "0.10.0"
 # Exempt — `forge-root.sh`: copied BYTE-IDENTICAL (REQ-GEN-05), so NO header is
 # injected. Its provenance is documented in GENERATION-REPORT.md instead.
 
+# Runtime helper scripts copied BYTE-IDENTICAL into EVERY adapter bundle so a non-Claude
+# install can execute helper-backed skill instructions after install (REQ-GEN-04). The
+# resolver (forge-root.sh) leads; the rest are the helpers skills invoke through the bootstrap
+# prelude as `$R/scripts/<x>`. Editing skill helper calls? Keep this list in sync.
+RUNTIME_HELPERS: tuple[str, ...] = (
+    "forge-root.sh",
+    "forge-init.sh",
+    "epic-manifest.py",
+    "validate-traceability.py",
+    "forge-bootstrap.py",
+)
+
+# The neutral, cross-agent bundle sentinel filename. forge-root.sh keys its is_root() predicate
+# on this file (NOT .claude-plugin/plugin.json), so every per-agent bundle is self-locatable.
+BUNDLE_SENTINEL_NAME: str = ".feature-forge-bundle.json"
+
+
+#: Deterministic version when no plugin manifest is present (e.g. the minimal-canon test
+#: fixture carries no .claude-plugin/plugin.json). Real installs always source the live version.
+_FALLBACK_BUNDLE_VERSION: str = "0.0.0"
+
+
+def _bundle_version(repo_root: Path) -> str:
+    """Read the canonical plugin version from .claude-plugin/plugin.json (source of record).
+
+    Falls back to a fixed, deterministic version when the manifest is absent or carries no
+    ``version`` (the canon-only test fixtures ship no plugin manifest) so the generator stays
+    byte-deterministic (REQ-DET-01) instead of crashing on a fixture build.
+    """
+    try:
+        manifest = json.loads(
+            (repo_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
+        return str(manifest["version"])
+    except (FileNotFoundError, KeyError, json.JSONDecodeError):
+        return _FALLBACK_BUNDLE_VERSION
+
 
 # --------------------------------------------------------------------------- #
 # 8. Error Hierarchy (00 §8, REQ-ROB-01, REQ-OBS-02)
@@ -930,14 +967,33 @@ def run_self_containment_pass(
         dst_own = bundle_root / "skills" / skill.name / "references"
         _copytree_verbatim(skill.own_refs, dst_own, bundle_root)
 
-    # (3) Byte-identical forge-root.sh copy, mode 0755, NO header (§2.3, REQ-GEN-05).
-    src_resolver = repo_root / "scripts" / "forge-root.sh"
-    dst_resolver = bundle_root / "scripts" / "forge-root.sh"
-    dst_resolver.parent.mkdir(parents=True, exist_ok=True)
-    _assert_within(dst_resolver, bundle_root)
-    shutil.copyfile(src_resolver, dst_resolver)   # bytes only — never copystat/edit
-    dst_resolver.chmod(0o755)
-    _assert_byte_identical(src_resolver, dst_resolver)  # REQ-GEN-05 hard assertion
+    # (3) Byte-identical runtime-helper copies, NO header (§2.3, REQ-GEN-04/05). forge-root.sh
+    #     plus every helper a skill invokes via the bootstrap prelude. `.sh` files are mode 0755
+    #     (run via `bash`); `.py` files 0644 (run via `python3 <path>`). Each is asserted
+    #     byte-identical to canon so the resolver and helpers behave identically across agents.
+    for helper in RUNTIME_HELPERS:
+        src_helper = repo_root / "scripts" / helper
+        dst_helper = bundle_root / "scripts" / helper
+        dst_helper.parent.mkdir(parents=True, exist_ok=True)
+        _assert_within(dst_helper, bundle_root)
+        shutil.copyfile(src_helper, dst_helper)  # bytes only — never copystat/edit
+        dst_helper.chmod(0o755 if helper.endswith(".sh") else 0o644)
+        _assert_byte_identical(src_helper, dst_helper)  # REQ-GEN-05 hard assertion
+
+    # (4) Neutral bundle sentinel `.feature-forge-bundle.json` (REQ-GEN-04): the cross-agent root
+    #     marker forge-root.sh keys on, making every bundle self-locatable WITHOUT a Claude
+    #     plugin manifest. Fixed key order for byte-determinism (REQ-DET-01).
+    sentinel = {
+        "name": "feature-forge",
+        "version": _bundle_version(repo_root),
+        "agent": bundle_root.name,
+        "generatedBy": REGENERATE_CMD,
+    }
+    safe_write(
+        bundle_root,
+        BUNDLE_SENTINEL_NAME,
+        json.dumps(sentinel, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
+    )
 
 
 def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:

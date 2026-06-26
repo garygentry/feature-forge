@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Self-contained adapter bundles for true cross-agent installs.** Every
+  generated per-agent bundle now ships the neutral `.feature-forge-bundle.json`
+  sentinel plus byte-identical copies of every runtime helper a skill can invoke
+  (`forge-root.sh`, `forge-init.sh`, `epic-manifest.py`,
+  `validate-traceability.py`, `forge-bootstrap.py`). The portable root resolver
+  (`scripts/forge-root.sh`) now self-locates on the neutral sentinel (not the
+  Claude-only `.claude-plugin/plugin.json`), probes the agent-neutral
+  `.agents/skills/feature-forge` roots (project + `$HOME`) alongside the Claude
+  paths, and honors a neutral `FEATURE_FORGE_ROOT` override (keeping
+  `CLAUDE_PLUGIN_ROOT` as a backwards-compatible Claude fallback). The bootstrap
+  prelude was widened to discover the resolver under non-Claude install roots, so
+  helper-backed skills run after a `--agent codex` (etc.) install — previously
+  the first helper-backed skill could fail even after a successful install. The
+  installer's bundle-integrity check now requires these files on every agent.
+
 - **Reliable, state-aware branch setup at pipeline entry.** The new-feature /
   epic branch prompt was previously gated on `gitCommitAfterStage`, soft, and
   blind to the current branch — so features often started on the default branch.
