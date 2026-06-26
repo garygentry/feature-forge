@@ -13,13 +13,17 @@
 set -euo pipefail
 
 # Sentinel predicate (00-core-definitions.md §2 / SENTINEL_FILES). A directory is a valid
-# plugin root iff BOTH sentinel files exist. Content-based, so it identifies a feature-forge
-# install under ANY agent's directory layout.
+# feature-forge root iff it carries the neutral bundle sentinel `.feature-forge-bundle.json`
+# (emitted into EVERY per-agent adapter bundle) OR the legacy Claude plugin manifest
+# `.claude-plugin/plugin.json` (the canon repo root + the Claude bundle). Content-based, so it
+# identifies a feature-forge install under ANY agent's directory layout — not just Claude's.
 is_root() {  # $1 = candidate dir
-  [ -f "$1/scripts/epic-manifest.py" ] && [ -f "$1/.claude-plugin/plugin.json" ]
+  [ -f "$1/.feature-forge-bundle.json" ] || [ -f "$1/.claude-plugin/plugin.json" ]
 }
 
-# ── Step 1: self-location — parent of this script's dir is the plugin root. ──────────────
+# ── Step 1: self-location — parent of this script's dir is the install root. ─────────────
+# This is the PRIMARY path: a bundle ships its own scripts/forge-root.sh, so the parent of
+# this script's dir is that bundle's root under any agent's layout.
 self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 root="$(cd -- "$self_dir/.." && pwd -P)"
 if is_root "$root"; then
@@ -27,11 +31,14 @@ if is_root "$root"; then
   exit 0
 fi
 
-# ── Step 2: candidate-root probe (authoritative multi-root list; extend here first). ─────
+# ── Step 2: candidate-root probe (authoritative multi-agent root list; extend here first). ─
 # Globs that match nothing expand to themselves; the is_root test rejects such literals.
 for candidate in \
   "$HOME/.claude/skills/feature-forge" \
   "$HOME"/.claude/plugins/*/feature-forge \
+  "$HOME/.agents/skills/feature-forge" \
+  "$PWD/.agents/skills/feature-forge" \
+  "$HOME/.gemini/extensions/feature-forge" \
 ; do
   if is_root "$candidate"; then
     printf '%s\n' "$candidate"
@@ -39,12 +46,18 @@ for candidate in \
   fi
 done
 
-# ── Step 3: env fallback — the SINGLE sanctioned residual ${CLAUDE_PLUGIN_ROOT} (C-4). ───
+# ── Step 3: env fallback — neutral FEATURE_FORGE_ROOT, then the legacy CLAUDE_PLUGIN_ROOT. ─
+# The neutral override works for every agent; CLAUDE_PLUGIN_ROOT is kept only for backwards
+# compatibility with existing Claude installs (C-4).
+if [ -n "${FEATURE_FORGE_ROOT:-}" ] && is_root "$FEATURE_FORGE_ROOT"; then
+  printf '%s\n' "$FEATURE_FORGE_ROOT"
+  exit 0
+fi
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && is_root "$CLAUDE_PLUGIN_ROOT"; then
   printf '%s\n' "$CLAUDE_PLUGIN_ROOT"
   exit 0
 fi
 
 # ── Step 4: failure — actionable message to stderr, exit 1 (REQ-RES-04). ─────────────────
-echo "feature-forge: cannot locate plugin root. Set CLAUDE_PLUGIN_ROOT or run from an installed skill dir." >&2
+echo "feature-forge: cannot locate install root. Set FEATURE_FORGE_ROOT to the bundle dir, or run from an installed skill dir." >&2
 exit 1

@@ -36,6 +36,21 @@ export async function makeFixtureBundle(
   const dir = join(sb.source, agent);
   await mkdir(join(dir, "scripts"), { recursive: true });
   await writeFile(join(dir, "scripts", "forge-root.sh"), "#!/usr/bin/env bash\n# fixture\n");
+  // The runtime helpers a skill can invoke — required of every bundle so helper-backed skills
+  // run after install on any agent (BUNDLE_REQUIRED_PATHS.common).
+  for (const helper of [
+    "forge-init.sh",
+    "epic-manifest.py",
+    "validate-traceability.py",
+    "forge-bootstrap.py",
+  ]) {
+    await writeFile(join(dir, "scripts", helper), `# fixture ${helper}\n`);
+  }
+  // The neutral cross-agent bundle sentinel.
+  await writeFile(
+    join(dir, ".feature-forge-bundle.json"),
+    JSON.stringify({ name: "feature-forge", version: "0.0.0", agent, generatedBy: "test-fixture" }, null, 2) + "\n",
+  );
   for (const id of skills) {
     await mkdir(join(dir, "skills", id), { recursive: true });
     await writeFile(join(dir, "skills", id, "SKILL.md"), `# ${id}\nfixture skill body\n`);

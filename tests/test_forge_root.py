@@ -24,8 +24,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 RESOLVER = REPO_ROOT / "scripts" / "forge-root.sh"
 
 FAILURE_MESSAGE = (
-    "feature-forge: cannot locate plugin root. "
-    "Set CLAUDE_PLUGIN_ROOT or run from an installed skill dir."
+    "feature-forge: cannot locate install root. "
+    "Set FEATURE_FORGE_ROOT to the bundle dir, or run from an installed skill dir."
 )
 
 
@@ -117,3 +117,40 @@ def test_forge_root_candidate_probe(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == str(candidate)
+
+
+def test_forge_root_neutral_sentinel_self_location(tmp_path):
+    """A bundle carrying ONLY the neutral .feature-forge-bundle.json self-locates (no plugin.json).
+
+    This is the cross-agent path: non-Claude bundles have no .claude-plugin/plugin.json, so
+    is_root() must accept the neutral sentinel alone (step 1).
+    """
+    root = tmp_path / "bundle"
+    (root / "scripts").mkdir(parents=True)
+    (root / ".feature-forge-bundle.json").write_text('{"name":"feature-forge"}\n')
+    (root / "scripts" / "forge-root.sh").write_text(RESOLVER.read_text())
+    result = _run(
+        root / "scripts" / "forge-root.sh",
+        {"HOME": str(tmp_path / "empty-home"), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(root.resolve())
+
+
+def test_forge_root_neutral_env_fallback(tmp_path):
+    """FEATURE_FORGE_ROOT names a valid root when self/candidate probes fail → step 3 (neutral)."""
+    valid_root = _make_fake_install(tmp_path / "valid")
+    lone_dir = tmp_path / "lone" / "scripts"
+    lone_dir.mkdir(parents=True)
+    lone = lone_dir / "forge-root.sh"
+    lone.write_text(RESOLVER.read_text())
+    result = _run(
+        lone,
+        {
+            "HOME": str(tmp_path / "empty-home"),
+            "CLAUDE_PLUGIN_ROOT": "",
+            "FEATURE_FORGE_ROOT": str(valid_root),
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(valid_root)

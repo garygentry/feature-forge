@@ -260,12 +260,22 @@ export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
 
 /**
  * Minimal integrity check (REQ-OPS-06, spec 03): a located bundle is valid iff `skills/` is a
- * non-empty dir, `scripts/forge-root.sh` exists, and — for gemini only — `gemini-extension.json`
- * exists at the bundle root. Defined here as data so the check is a localized table read.
+ * non-empty dir, the neutral bundle sentinel `.feature-forge-bundle.json` exists, every runtime
+ * helper script a skill can invoke is present (so helper-backed skills run after install on ANY
+ * agent), and — for gemini only — `gemini-extension.json` exists at the bundle root. Defined here
+ * as data so the check is a localized table read.
  */
 export const BUNDLE_REQUIRED_PATHS = {
   /** Required of every agent bundle. */
-  common: ["skills", "scripts/forge-root.sh"] as const,
+  common: [
+    "skills",
+    ".feature-forge-bundle.json",
+    "scripts/forge-root.sh",
+    "scripts/forge-init.sh",
+    "scripts/epic-manifest.py",
+    "scripts/validate-traceability.py",
+    "scripts/forge-bootstrap.py",
+  ] as const,
   /** Additional per-agent requirements. */
   perAgent: { gemini: ["gemini-extension.json"] } as Partial<Record<AgentId, readonly string[]>>,
 } as const;

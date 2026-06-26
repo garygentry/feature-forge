@@ -1,0 +1,6 @@
+{
+  "name": "feature-forge",
+  "version": "0.0.0",
+  "agent": "gemini",
+  "generatedBy": "python3 scripts/build-adapters.py"
+}
