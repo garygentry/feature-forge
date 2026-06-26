@@ -39,7 +39,7 @@ Resolve the **loop runner** from the `loopRunner` block in `forge.config.json`, 
 
 **Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, stages `forge-1-prd`, `forge-2-tech`, and `forge-3-specs` must all be `complete`. If not, STOP and tell the user which prerequisites are missing.
 
-**Strongly recommended:** Check if specs have been verified. If not, use `AskUserQuestion` to warn: "Specs haven't been verified yet. It's recommended to run `/feature-forge:forge-verify {feature}` first. Continue anyway?"
+**Strongly recommended:** Check if specs have been verified. If not, use `AskUserQuestion` to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
 
 ## Step 2: Load All Specs
 
@@ -68,7 +68,7 @@ Proposed backlog for {feature} ({N} items):
   ...
 ```
 
-After presenting the plan as text, use `AskUserQuestion` to ask: "Does this breakdown look right? Any items to split, merge, or reorder?" Do NOT include this question in your text output. Wait for the user's response before generating the JSON.
+After presenting the plan as text, use `AskUserQuestion` following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this breakdown as the default (it's your evidence-backed read of the specs and dependency order) and name the trade-off that governs item granularity — finer items are each easier to verify in one loop iteration but multiply coordination and dependency edges; coarser items mean fewer handoffs but risk an item too big to complete or verify in a single iteration. Lead with: "I recommend this breakdown. Any items to split, merge, or reorder?" Do NOT include this question in your text output. Wait for the user's response before generating the JSON.
 
 ## Step 4: Author backlog.json — delegate to `author-backlog`
 

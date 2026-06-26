@@ -29,7 +29,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 ## Step 3: Handle User Decisions
 
 If the "User Decisions Required" section has unresolved items:
-1. Present each decision to the user with the context from the findings, using `AskUserQuestion` for each decision point. Only recommend a specific option if the findings provide clear evidence for it; otherwise present options neutrally.
+1. Present each decision to the user with the context from the findings, using `AskUserQuestion` for each decision point. Follow the **Decision Support** protocol in `references/shared-conventions.md`: lead with a recommended option and put the trade-off in each option's description. When the findings provide clear evidence, recommend with confidence and cite it. When they don't, still offer a sensible default with the trade-offs, but flag it plainly as a judgment call rather than going neutral — a defaulted recommendation beats an unguided option dump.
 2. Wait for answers before proceeding
 3. Record decisions in the findings document under the "User Decisions Required" section (mark each as resolved)
 

@@ -110,9 +110,7 @@ The epic `name` is the validated CLI argument from Step 0 — do NOT prompt for 
 Drive a decomposition dialogue. Output your analysis as text first (how the goal might split,
 right-sizing guidance: each feature should be a single pipeline-sized unit — a unit forge-1-prd
 through forge-5-loop would carry end-to-end — not item-level interleaving). Then use
-`AskUserQuestion` to elicit the candidate feature list. Probe with questions like "Is any of
-these two features really one?" and "Is any one of these really two?" Iterate until the user
-confirms the set.
+`AskUserQuestion` to elicit the candidate feature list. Per the **Decision Support** protocol in `references/shared-conventions.md`, lead with a **recommended decomposition** and a one-line rationale rather than asking the user to invent it unaided, then probe its seams ("Is any of these two really one? Is any one really two?"), naming the trade-off (more features = more parallelism but more edges). Iterate until the user confirms.
 
 For **each** proposed feature name, before accepting it into the set, enforce global uniqueness
 and name safety via the helper:
@@ -154,9 +152,7 @@ the structured arrays are the source of truth; EPIC.md renders them as prose lat
 For each feature, use `AskUserQuestion`: "Which sibling features must be complete before this
 one can build?" → populates `dependsOn: [names]`.
 
-**Seed the suggestion from `consumes`:** a `consumes.from` X strongly implies `dependsOn` X.
-Offer the union of each feature's `consumes.from` set as the default, but let the user confirm —
-`dependsOn` is the authoritative edge set.
+**Seed the suggestion from `consumes`:** a `consumes.from` X strongly implies `dependsOn` X. Per the **Decision Support** protocol, offer the union of each feature's `consumes.from` set as the **recommended default**, evidence-backed — but flag the cost (each edge serializes the loop and blocks dependents, so add only what contracts require). User confirms/overrides; `dependsOn` is authoritative.
 
 The `features[]` array order is the user-declared sequence from C2 (order is a presentation
 sequence, **not** a dependency ordering). Preserve the C2 order unless the user asks to reorder.

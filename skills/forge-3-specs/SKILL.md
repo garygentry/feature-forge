@@ -54,7 +54,7 @@ Feature-specific:
   04-integration-points.md    — Integration with existing project modules
 ```
 
-**Then call `AskUserQuestion`** with: "Does this look right? Should I add or remove any documents?"
+**Then call `AskUserQuestion`** following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this plan as the default (it's your evidence-backed read of the feature's complexity) and name the trade-off so the user can push back knowingly — more documents means finer separation of concerns but more to keep in sync; fewer means tighter docs but risks one document carrying multiple concerns. Lead with: "I recommend this plan. Add or remove any documents?" Note the guidance below — resist splitting a concern into a sub-50-line document.
 
 **Incremental artifact tracking:** After each spec document is written (by you or a writer subagent), immediately update the `artifacts` array in `.pipeline-state.json` with the new file path. This enables crash recovery if the session is interrupted mid-suite (see shared-conventions.md "Crash Recovery").
 

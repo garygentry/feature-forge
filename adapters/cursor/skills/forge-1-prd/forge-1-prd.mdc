@@ -65,12 +65,12 @@ A technology constraint is valid when it stems from organizational mandate, exis
 
 **Pacing:** Cover one topic area at a time, asking 2-3 related questions per `AskUserQuestion` call. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch.
 
-**Question strategies** (use these as content for `AskUserQuestion`, not as inline prose):
+**Question strategies** (use these as content for `AskUserQuestion`, not as inline prose). The PRD stays at the requirements level (the *what*, not the *how* — that's forge-2-tech), so most questions are open elicitation. But whenever you offer the user a *choice* (scope boundary, MVP cut, a non-functional target), apply the **Decision Support** protocol in `references/shared-conventions.md`: propose a sensible default with its trade-off rather than an empty menu — e.g. "I'd scope V1 to X and defer Y; that ships sooner but means Y waits. Agree?":
 - Probe deeper after each answer: failure modes, stakeholders, minimum viable version
 - Challenge assumptions: which users specifically, what does "fast" mean quantitatively
 - Identify edge cases: empty input, concurrent access, scale
 - Capture non-functional requirements: performance, security, accessibility, observability
-- Ask about what's OUT of scope — as important as what's in scope
+- Ask about what's OUT of scope — as important as what's in scope; when proposing a scope line, recommend one and name what each side gives up
 
 **Completion criteria:** The interview is complete when:
 1. Every category in `references/prd-template.md` has been covered with at least one question

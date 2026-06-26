@@ -142,7 +142,7 @@ Commands:
 Support these sub-commands for pipeline lifecycle management:
 - `/feature-forge:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
 - `/feature-forge:forge resume {feature}` — Set `pipelineStatus` back to `"active"`. Calculate how long the feature was paused (from `updatedAt` to now). If paused for more than 24 hours, show a hint: "This feature was paused for {duration}. Session context may have been lost — consider re-running `/feature-forge:forge-{currentStage} {feature}` to rebuild context."
-- `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Use `AskUserQuestion` to confirm with user first. Note: abandoned pipelines can be resumed with `/feature-forge:forge resume {feature}` if the user changes their mind.
+- `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Use `AskUserQuestion` to confirm first, and state what's reversible: abandoning does not delete artifacts and can be undone with `/feature-forge:forge resume {feature}`, so the cost is low — but if the user really means "stop and discard," point out that `pause` is the better choice when they're only setting it aside. Offer **Abandon** · **Pause instead** · **Cancel**.
 
 **Epic lifecycle.** When the argument names an **epic** (`{specsDir}/{name}/epic-manifest.json` exists), `pause` / `resume` / `abandon` operate on the epic manifest, not a `.pipeline-state.json`:
 
@@ -153,7 +153,7 @@ R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/fea
 python3 "$R/scripts/epic-manifest.py" set-status "{epic}" --status paused --specs-dir "{specsDir}"
   ```
   For `complete`, do **not** set the status directly — completion is *derived* from member states (the rollup), so the manifest `status` is a lifecycle flag, never a completion signal.
-- **Member feature states are NOT silently mutated.** Pausing/abandoning the epic changes only the manifest `status`. Before doing so, use `AskUserQuestion` to make the relationship explicit: "Pausing the epic does not pause its in-flight member features. {N} members are active. Pause the epic only, or also pause each member?" If the user opts to pause members too, update each member's own `pipelineStatus` **individually and visibly** (one explicit action per member), never as a hidden side-effect.
+- **Member feature states are NOT silently mutated.** Pausing/abandoning the epic changes only the manifest `status`. Before doing so, use `AskUserQuestion` to make the relationship explicit and frame the trade-off: "Pausing the epic does not pause its in-flight member features. {N} members are active. Pause the epic only, or also pause each member?" Recommend **epic only** when members are mid-stage and the user just wants to stop *new* orchestration; recommend **also pause members** when the intent is a hard freeze of all in-flight work. If the user opts to pause members too, update each member's own `pipelineStatus` **individually and visibly** (one explicit action per member), never as a hidden side-effect.
 - Commit the change via the Git Commit Protocol, staging `{specsDir}/{epic}/`.
 
 When listing features, show active pipelines by default. Include a count of paused/abandoned: "3 active pipelines (1 paused, 1 abandoned — use `/feature-forge:forge list all` to see them)."

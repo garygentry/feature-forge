@@ -51,7 +51,7 @@ Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, `stages.
 
 Check if `stages.forge-verify-backlog` exists and has status `passed` or `findings-applied`. If not, use `AskUserQuestion` to warn:
 
-"Backlog hasn't been verified yet. It's recommended to run `/feature-forge:forge-verify {feature}` first to catch issues before implementation. Continue anyway?"
+"Backlog hasn't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — the loop implements items autonomously and commits as it goes, so a bad item (wrong scope, missing dependency, untestable acceptance criteria) is far cheaper to catch now than after several commits build on it. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
 
 ### 1b-epic. Epic Dependency Gate
 

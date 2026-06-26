@@ -36,7 +36,7 @@ Also check `.pipeline-state.json` for `stages.forge-5-loop`. If it exists and ha
 
 ### Impl-Verify Backstop
 
-Check `.pipeline-state.json` for `stages.forge-verify-impl`. If it is **absent** or has status `"skipped"`, use `AskUserQuestion` to warn: "Implementation hasn't been verified yet. It's recommended to run `/feature-forge:forge-verify {feature} impl` first to audit the loop's output. Generate docs anyway?" This mirrors `forge-4-backlog`'s pre-stage verification check and backstops a skipped impl-verify regardless of how the loop ended. If `stages.forge-verify-impl` shows it already ran (`findings-applied`, `findings-reported`, or `passed`), proceed with no warning.
+Check `.pipeline-state.json` for `stages.forge-verify-impl`. If it is **absent** or has status `"skipped"`, use `AskUserQuestion` to warn with the cost of skipping: "Implementation hasn't been verified yet. Recommended: run `/feature-forge:forge-verify {feature} impl` first to audit the loop's output — docs generated over unverified code can document bugs or gaps as if they were intended behavior, and readers will trust them. Generate docs anyway?" Offer **Verify first (recommended)** · **Generate docs anyway**. This mirrors `forge-4-backlog`'s pre-stage verification check and backstops a skipped impl-verify regardless of how the loop ended. If `stages.forge-verify-impl` shows it already ran (`findings-applied`, `findings-reported`, or `passed`), proceed with no warning.
 
 ### Epic-Level Documentation (epic members only)
 
