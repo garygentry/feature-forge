@@ -1,8 +1,0 @@
-_generated:
-  source: agents/
-  regenerate: python3 scripts/build-adapters.py
-agents:
-- name: researcher
-  description: 'Researches the codebase: thoroughly and concisely.'
-- name: verifier
-  description: Verifies artifacts for completeness and consistency.

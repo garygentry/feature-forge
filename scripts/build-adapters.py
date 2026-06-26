@@ -776,26 +776,49 @@ class CursorEmitter:
 # the committed baseline (item 009) regardless of doc reachability (REQ-DET-01).
 
 
-class CodexEmitter:
-    """Emitter for ``codex``: skill mirror (.md) + an aggregate ``agents/openai.yaml``.
+def _toml_basic_string(value: str) -> str:
+    """Serialize ``value`` as a TOML basic string (single line), minimally escaped.
 
-    The native agent schema's representable key set is TQ-1 (03 §8); the safe
-    default emits ``name`` + ``description`` and drop-records the rest so no key is
-    silently lost (REQ-GEN-06 / REQ-OBS-01). The aggregate ``agents/openai.yaml`` is
-    written by the ENGINE from the collected ``manifest_entries`` (02 §4.1), never by
-    this emitter.
+    Escapes backslash and double-quote and the control chars TOML disallows bare
+    (tab/newline/CR), so a description with quotes round-trips. Deterministic.
+    """
+    out = value.replace("\\", "\\\\").replace('"', '\\"')
+    out = out.replace("\t", "\\t").replace("\r", "\\r").replace("\n", "\\n")
+    return f'"{out}"'
+
+
+def _toml_multiline_string(value: str) -> str:
+    """Serialize ``value`` as a TOML multi-line basic string (``\"\"\" … \"\"\"``).
+
+    Escapes backslashes, then any literal ``\"\"\"`` (so the body cannot close the
+    string early). A leading newline after the opening delimiter is TOML-trimmed, so
+    we add one for readable output; the trailing newline before the close is real
+    content and preserved. Deterministic (REQ-DET-01).
+    """
+    escaped = value.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    return f'"""\n{escaped}"""'
+
+
+class CodexEmitter:
+    """Emitter for ``codex``: ``skills/<name>/SKILL.md`` + per-agent ``agents/<name>.toml``.
+
+    Skills use Codex's documented directory shape (a ``SKILL.md`` with ``name`` +
+    ``description`` frontmatter — the only fields Codex reads). Custom agents are
+    standalone TOML files (``name`` / ``description`` / ``developer_instructions``),
+    the current Codex custom-agent format; Claude-only structural keys
+    (tools/model/maxTurns/effort/memory/skills) have no representable Codex
+    custom-agent equivalent in this safe mapping and are drop-recorded so nothing is
+    silently lost (REQ-GEN-06 / REQ-OBS-01). No aggregate ``agents/openai.yaml`` is
+    emitted — Codex does not load it as custom-agent definitions.
     """
 
     agent_id = "codex"
-    # Keys confirmed representable in agents/openai.yaml. EMPTY until TQ-1 confirms
-    # the schema; expand (e.g. {"model", "tools"}) once verified against OpenAI docs.
-    _CODEX_AGENT_KEYS: frozenset[str] = frozenset()
 
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
-        """Emit ``skills/<name>/<name>.md`` with {name, description} + body."""
+        """Emit ``skills/<name>/SKILL.md`` with {name, description} + body."""
         native = order_fields({"name": skill.name, "description": skill.description})
         content = render_frontmatter_block(native, skill.source_path) + skill.body
-        rel = f"skills/{skill.name}/{skill.name}.md"
+        rel = f"skills/{skill.name}/SKILL.md"
         drops: tuple[DropRecord, ...] = ()
         if hint_value(skill) is not None:  # REQ-FMT-02 branch 2 (TQ-1)
             drops = (DropRecord("codex", skill.source_path, "argument-hint",
@@ -803,34 +826,25 @@ class CodexEmitter:
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
-        """Emit a body artifact ``agents/<name>.md`` + one ManifestEntry per sub-agent.
+        """Emit a Codex custom-agent ``agents/<name>.toml`` (name/description/instructions).
 
-        Body+description preserved (REQ-FMT-04); structural keys not in
-        ``_CODEX_AGENT_KEYS`` are drop-recorded (REQ-GEN-06). The aggregate
-        ``agents/openai.yaml`` is NOT written here — the engine merges the returned
-        ManifestEntry(-ies) into the single manifest after the per-record loop
-        (00 §5, 02 §4.1).
+        The agent body becomes ``developer_instructions`` (REQ-FMT-04). Claude-only
+        structural keys are drop-recorded (REQ-GEN-06): they have no representable key
+        in this safe Codex custom-agent mapping, and Claude model aliases must never
+        leak into Codex config. No ManifestEntry is returned (no ``openai.yaml``).
         """
-        dropped = tuple(
-            DropRecord("codex", agent.source_path, f"sub-agent key '{k}'",
-                       "not representable in agents/openai.yaml (TQ-1)")
-            for k in agent.claude_keys if k not in self._CODEX_AGENT_KEYS
+        dropped = drop_all_claude_keys(
+            agent, "codex", "no Codex custom-agent equivalent in safe mapping (TQ-1)"
         )
-        rel = f"agents/{agent.name}.md"  # body artifact retains behavior text
-        content = render_frontmatter_block(
-            order_fields({"name": agent.name, "description": agent.description}),
-            agent.source_path,
-        ) + agent.body
-        # Representable structural keys (none until TQ-1 expands _CODEX_AGENT_KEYS)
-        # carried in `extra`; serialization/key-order owned by 04 §1.3.
-        extra = {k: agent.claude_keys[k] for k in agent.claude_keys
-                 if k in self._CODEX_AGENT_KEYS}
-        entry = ManifestEntry(name=agent.name, description=agent.description, extra=extra)
-        return EmitResult(
-            files=(EmittedFile(rel, content),),
-            drops=dropped,
-            manifest_entries=(entry,),
+        header = PROVENANCE_FM_COMMENT.format(source=agent.source_path)
+        toml = (
+            f"{header}\n"
+            f"name = {_toml_basic_string(agent.name)}\n"
+            f"description = {_toml_basic_string(agent.description)}\n"
+            f"developer_instructions = {_toml_multiline_string(agent.body)}\n"
         )
+        rel = f"agents/{agent.name}.toml"
+        return EmitResult(files=(EmittedFile(rel, toml),), drops=dropped)
 
 
 # --------------------------------------------------------------------------- #
@@ -1100,27 +1114,8 @@ def _publish_manifest(
         rel = "gemini-extension.json"
         content = json.dumps(manifest, indent=2, sort_keys=False, ensure_ascii=False) + "\n"
         safe_write(dest / agent_id, rel, content)  # 02 §4.2 sandbox guard
-    elif agent_id == "codex":
-        # agents/openai.yaml: same `_generated`-first rule (00 §7 / §1.3). The codex
-        # agent manifest is YAML; `_generated` provenance is the first serialized key,
-        # then the per-sub-agent array. Native key set is TQ-1 (03 §4) → entries carry
-        # {name, description} (+ any confirmed `extra`) only.
-        manifest = {
-            PROVENANCE_JSON_KEY: provenance_json("agents/"),
-            "agents": [
-                {"name": e.name, "description": e.description, **e.extra}
-                for e in entries
-            ],
-        }
-        rel = "agents/openai.yaml"
-        content = yaml.safe_dump(
-            manifest,
-            sort_keys=False,
-            default_flow_style=False,
-            allow_unicode=True,
-            width=4096,
-        )
-        safe_write(dest / agent_id, rel, content)  # 02 §4.2 sandbox guard
+    # codex emits no aggregate manifest: custom agents are standalone TOML files
+    # (CodexEmitter.emit_agent), which Codex loads directly from agents/<name>.toml.
 
 
 # --------------------------------------------------------------------------- #
