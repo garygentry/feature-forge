@@ -64,12 +64,6 @@ Stage 5 hands the backlog to an **autonomous loop runner** that spawns a fresh a
 /plugin install feature-forge@feature-forge
 ```
 
-> **Moved repo:** feature-forge previously shipped from the
-> `garygentry/agent-plugins` marketplace as `feature-forge@gwg-plugins`. It now
-> lives in its own repository. The old entry remains as a deprecated stub for
-> one release cycle; please re-add the marketplace above to keep receiving
-> updates.
-
 ### (b) Any agent — one-liner
 
 Installs the canonical skills into every coding agent detected on your machine:
@@ -425,8 +419,8 @@ Installing a plugin from a marketplace copies it into a versioned cache
 (`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>`). Claude Code loads
 that **cached copy**, not your working tree — so edits to the live source are
 silently ignored until you bump the version and reinstall. Worse, a stale
-marketplace can pin an old version (feature-forge was loading `0.6.0` from a
-legacy `gwg-plugins` cache while `0.9.0` source sat unused). The fix is to load
+marketplace can pin an old version (feature-forge was loading an old `0.6.0`
+from a legacy marketplace cache while `0.9.0` source sat unused). The fix is to load
 the plugin **live, in place**.
 
 ### Live-in-place via skills-dir symlinks (preferred)
@@ -442,7 +436,7 @@ ln -s ~/workspace/rauf          ~/.claude/skills/rauf
 
 Both repos carry a `.claude-plugin/plugin.json` and a `skills/` dir, so the
 symlink resolves to a named plugin. **Restart Claude Code**, then verify the
-active source (never a `@gwg-plugins` cache version):
+active source (never a stale cache version):
 
 ```bash
 claude plugin list | grep -E 'feature-forge|rauf'   # expect @skills-dir
@@ -452,7 +446,7 @@ claude plugin list | grep -E 'feature-forge|rauf'   # expect @skills-dir
 
 If a repo-root symlink does **not** load as `<plugin>@skills-dir`, remove the
 symlinks and install from a local marketplace instead — same end state (live
-source, no `gwg-plugins`):
+source, no stale cache):
 
 ```bash
 claude plugin marketplace add ~/workspace/feature-forge

@@ -5,8 +5,7 @@
 # catalog (.claude-plugin/marketplace.json) and the plugin manifest
 # (.claude-plugin/plugin.json), with the plugin registered as "source": ".".
 #
-# Adapted from the multi-plugin validator in garygentry/agent-plugins for the
-# flattened, self-contained layout. Requires python3.
+# Validates the flattened, self-contained single-plugin layout. Requires python3.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
