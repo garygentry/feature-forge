@@ -295,9 +295,12 @@ test("SCALE-01: a synthetic AGENT_TARGETS-shaped row flows through detectAgent +
     const synthetic = {
       id: "synthetic" as AgentId,
       configDirName: ".synthetic",
-      installSubdir: "skills",
+      installBaseDir: ".synthetic",
+      installSubpath: "skills",
+      installKind: "skills" as const,
       skillFileForm: "SKILL.md",
       confidence: "best-known" as const,
+      docsUrl: "https://example.test/synthetic",
     };
 
     // destinationFor is scope-correct for both scopes — one row, no logic change.
@@ -313,9 +316,10 @@ test("SCALE-01: a synthetic AGENT_TARGETS-shaped row flows through detectAgent +
       for (const scope of ["project", "global"] as Scope[]) {
         const root = scope === "global" ? sb.home : sb.cwd;
         const dest = destinationFor(target, scope, sb.resolve(scope));
+        const sub = target.installSubpath ? [target.installSubpath] : [];
         assert.equal(
           dest,
-          join(root, target.configDirName, target.installSubdir, "feature-forge"),
+          join(root, target.installBaseDir, ...sub, "feature-forge"),
         );
       }
     }

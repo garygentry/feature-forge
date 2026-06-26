@@ -27,15 +27,14 @@ The `--dry-run --json` plan reports the resolved install destination — use tha
 authoritative path. (The install destination is derived from the installer, not asserted here;
 see the note below.)
 
-> **Note (install path):** the destination for Cursor is taken from the installer's
-> `--dry-run --json` plan, not hard-coded in this doc — the cross-agent installer treats the
-> cursor config-dir convention as best-known but unverified. (Only Claude's `~/.claude`
-> destination is treated as well-known.)
+> **Note (install path):** Cursor rules install to `.cursor/rules/feature-forge/` (project) or
+> `~/.cursor/rules/feature-forge/` (global) as `.mdc` rule files — confirmed against current
+> Cursor docs (2026-06-26). Use the `--dry-run --json` plan for the exact resolved path.
 
-> **Known gap (installed-bundle self-location):** an installed `adapters/cursor/` bundle does not
-> currently carry `epic-manifest.py` / `.claude-plugin/plugin.json`, so the portable resolver
-> `scripts/forge-root.sh` cannot self-locate from an installed bundle. This is a known
-> limitation owned by the adapter generator; it does not block install/first-use here.
+> **Runtime helpers:** installed bundles are self-contained — every runtime helper
+> (`forge-root.sh`, `forge-init.sh`, `epic-manifest.py`, `validate-traceability.py`,
+> `forge-bootstrap.py`) plus the neutral `.feature-forge-bundle.json` sentinel ship in the
+> bundle, so `scripts/forge-root.sh` self-locates from the installed location.
 
 ## First-use check
 

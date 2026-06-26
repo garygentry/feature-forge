@@ -12,6 +12,8 @@ import {
   AGENT_TARGETS,
   resolveRoots,
   destinationFor,
+  agentRootFor,
+  confidenceFor,
   detectAgent,
   detectAgents,
   formatZeroDetection,
@@ -23,6 +25,59 @@ test("re-exports AGENT_TARGETS with all five rows", () => {
     Object.keys(AGENT_TARGETS).sort(),
     ["claude", "codex", "copilot", "cursor", "gemini"],
   );
+});
+
+// --------------------------------------------------------------------------- //
+// A4: per-agent install-strategy reshape (Finding 6)
+// --------------------------------------------------------------------------- //
+
+test("A4: every destination is contained within its agentRootFor (REQ-SEC-02)", () => {
+  for (const id of Object.keys(AGENT_TARGETS) as Array<keyof typeof AGENT_TARGETS>) {
+    for (const scope of ["project", "global"] as const) {
+      const opts = scope === "global" ? { home: "/h" } : { cwd: "/p" };
+      const root = agentRootFor(AGENT_TARGETS[id], scope, opts);
+      const dest = destinationFor(AGENT_TARGETS[id], scope, opts);
+      assert.ok(
+        dest === root || dest.startsWith(root + "/"),
+        `${id}/${scope}: destination ${dest} escapes agentRoot ${root}`,
+      );
+    }
+  }
+});
+
+test("A4: codex installs under .agents, copilot under .github (decoupled from detection dir)", () => {
+  // Detection still probes the agent's own config dir...
+  assert.equal(AGENT_TARGETS.codex.configDirName, ".codex");
+  assert.equal(AGENT_TARGETS.copilot.configDirName, ".copilot");
+  // ...but the install + containment root is the agent-neutral location.
+  assert.equal(agentRootFor(AGENT_TARGETS.codex, "global", { home: "/h" }), "/h/.agents");
+  assert.equal(agentRootFor(AGENT_TARGETS.copilot, "global", { home: "/h" }), "/h/.github");
+  assert.equal(destinationFor(AGENT_TARGETS.copilot, "global", { home: "/h" }), "/h/.github/feature-forge");
+});
+
+test("A4: confidenceFor applies the project-scope override (gemini) only on project scope", () => {
+  assert.equal(confidenceFor(AGENT_TARGETS.gemini, "global"), "verified-current");
+  assert.equal(confidenceFor(AGENT_TARGETS.gemini, "project"), "best-known");
+  // Targets without an override return the same confidence in both scopes.
+  assert.equal(confidenceFor(AGENT_TARGETS.claude, "project"), "confirmed");
+  assert.equal(confidenceFor(AGENT_TARGETS.codex, "project"), "verified-current");
+});
+
+test("A4: detectAgent surfaces scope-effective confidence + docsUrl", () => {
+  const g = detectAgent("gemini", { home: "/h", scope: "global" });
+  assert.equal(g.confidence, "verified-current");
+  const p = detectAgent("gemini", { cwd: "/p", scope: "project" });
+  assert.equal(p.confidence, "best-known");
+  assert.ok(p.docsUrl.startsWith("https://"));
+});
+
+test("A4: every AGENT_TARGETS row carries a docsUrl and a valid installKind", () => {
+  const kinds = new Set(["skills", "extension", "rules", "instructions"]);
+  for (const id of Object.keys(AGENT_TARGETS) as Array<keyof typeof AGENT_TARGETS>) {
+    const t = AGENT_TARGETS[id];
+    assert.ok(t.docsUrl.startsWith("https://"), `${id} docsUrl`);
+    assert.ok(kinds.has(t.installKind), `${id} installKind ${t.installKind}`);
+  }
 });
 
 test("resolveRoots honors overrides and resolves to absolute paths", () => {
@@ -37,8 +92,9 @@ test("resolveRoots honors overrides and resolves to absolute paths", () => {
 test("destinationFor matches the 5-agent x 2-scope table", () => {
   const cases: Array<[keyof typeof AGENT_TARGETS, "global" | "project", string, string]> = [
     ["claude", "global", "/home/.claude/skills/feature-forge", "/home"],
-    ["codex", "global", "/home/.codex/skills/feature-forge", "/home"],
-    ["copilot", "global", "/home/.copilot/skills/feature-forge", "/home"],
+    // A4: codex installs under the agent-neutral `.agents/skills`, copilot under `.github`.
+    ["codex", "global", "/home/.agents/skills/feature-forge", "/home"],
+    ["copilot", "global", "/home/.github/feature-forge", "/home"],
     ["cursor", "global", "/home/.cursor/rules/feature-forge", "/home"],
     ["gemini", "global", "/home/.gemini/extensions/feature-forge", "/home"],
   ];
@@ -109,9 +165,12 @@ test("synthetic 6th AGENT_TARGETS row flows through detection/destination with n
     const fakeTarget = {
       id: "frobnik" as any,
       configDirName: ".frobnik",
-      installSubdir: "skills",
+      installBaseDir: ".frobnik",
+      installSubpath: "skills",
+      installKind: "skills" as const,
       skillFileForm: "SKILL.md",
       confidence: "best-known" as const,
+      docsUrl: "https://example.test/frobnik",
     };
 
     // destinationFor is data-driven over the passed target row — no function edit needed.

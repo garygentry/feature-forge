@@ -27,15 +27,13 @@ The `--dry-run --json` plan reports the resolved install destination — use tha
 authoritative path. (The install destination is derived from the installer, not asserted here;
 see the note below.)
 
-> **Note (install path):** the destination for Copilot is taken from the installer's
-> `--dry-run --json` plan, not hard-coded in this doc — the cross-agent installer treats the
-> copilot config-dir convention as best-known but unverified. (Only Claude's `~/.claude`
-> destination is treated as well-known.)
-
-> **Known gap (installed-bundle self-location):** an installed `adapters/copilot/` bundle does
-> not currently carry `epic-manifest.py` / `.claude-plugin/plugin.json`, so the portable
-> resolver `scripts/forge-root.sh` cannot self-locate from an installed bundle. This is a known
-> limitation owned by the adapter generator; it does not block install/first-use here.
+> **Note (install path — best-known):** Copilot has no native skills loader; its documented
+> customization surface is repository instructions (`.github/copilot-instructions.md` /
+> `AGENTS.md`). The installer stages the bundle under `.github/feature-forge/` so the workflow
+> files are available, and a follow-up change writes a managed block into
+> `.github/copilot-instructions.md` pointing Copilot at them. This path is **best-known**, not
+> vendor-confirmed for skill auto-discovery — the install report labels it as such. Use the
+> `--dry-run --json` plan for the exact resolved path.
 
 ## First-use check
 

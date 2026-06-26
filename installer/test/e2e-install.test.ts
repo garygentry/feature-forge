@@ -239,7 +239,7 @@ test("install: DET-03 default scope acts on every detected agent, all succeed (Â
       assert.equal(a!.ok, true, `${id} install ok`);
       assert.equal(a!.detected, true, `${id} detected`);
       // The namespace dir is on disk for each agent.
-      const dest = join(sb.cwd, AGENT_TARGETS[id].configDirName, AGENT_TARGETS[id].installSubdir, "feature-forge");
+      const dest = join(sb.cwd, AGENT_TARGETS[id].installBaseDir, AGENT_TARGETS[id].installSubpath, "feature-forge");
       assert.ok((await stat(dest)).isDirectory(), `${id} namespace dir exists on disk`);
     }
   });

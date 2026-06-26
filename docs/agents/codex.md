@@ -27,15 +27,20 @@ The `--dry-run --json` plan reports the resolved install destination — use tha
 authoritative path. (The install destination is derived from the installer, not asserted here;
 see the note below.)
 
-> **Note (install path):** the destination for Codex is taken from the installer's
-> `--dry-run --json` plan, not hard-coded in this doc — the cross-agent installer treats the
-> codex config-dir convention as best-known but unverified. (Only Claude's `~/.claude`
-> destination is treated as well-known.)
+> **Note (install path):** Codex skills install to the agent-neutral
+> `.agents/skills/feature-forge/` (project) or `~/.agents/skills/feature-forge/` (global) —
+> the location Codex discovers skills from (verified against current Codex docs, 2026-06-26).
+> Codex detects on `.codex`; the install location is decoupled from it. Use the
+> `--dry-run --json` plan for the exact resolved path on your machine.
+>
+> Codex custom agents (`forge-researcher` / `forge-spec-writer` / `forge-verifier`) are emitted
+> as `.codex/agents/<name>.toml`; the installer placing them into `.codex/agents/` lands in a
+> follow-up change (until then, copy them from the installed bundle's `agents/` dir).
 
-> **Known gap (installed-bundle self-location):** an installed `adapters/codex/` bundle does not
-> currently carry `epic-manifest.py` / `.claude-plugin/plugin.json`, so the portable resolver
-> `scripts/forge-root.sh` cannot self-locate from an installed bundle. This is a known
-> limitation owned by the adapter generator; it does not block install/first-use here.
+> **Runtime helpers:** installed bundles are self-contained — every runtime helper
+> (`forge-root.sh`, `forge-init.sh`, `epic-manifest.py`, `validate-traceability.py`,
+> `forge-bootstrap.py`) plus the neutral `.feature-forge-bundle.json` sentinel ship in the
+> bundle, so `scripts/forge-root.sh` self-locates from the installed location.
 
 ## First-use check
 
