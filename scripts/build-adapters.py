@@ -978,11 +978,12 @@ class CodexEmitter:
             agent, "codex", "no Codex custom-agent equivalent in safe mapping (TQ-1)"
         )
         header = PROVENANCE_FM_COMMENT.format(source=agent.source_path)
+        instructions = _toml_multiline_string(agent_body_for(agent.body, "codex"))
         toml = (
             f"{header}\n"
             f"name = {_toml_basic_string(agent.name)}\n"
             f"description = {_toml_basic_string(agent.description)}\n"
-            f"developer_instructions = {_toml_multiline_string(agent_body_for(agent.body, 'codex'))}\n"
+            f"developer_instructions = {instructions}\n"
         )
         rel = f"agents/{agent.name}.toml"
         return EmitResult(files=(EmittedFile(rel, toml),), drops=dropped)
