@@ -74,8 +74,8 @@ export interface AgentTarget {
    */
   readonly installSubdir: string;
   /**
-   * Informational: the skill-file form this agent's bundle uses — "SKILL.md" (claude),
-   * "<name>.md" (codex/copilot/gemini), "<name>.mdc" (cursor). The installer copies the
+   * Informational: the skill-file form this agent's bundle uses — "SKILL.md" (claude, codex),
+   * "<name>.md" (copilot/gemini), "<name>.mdc" (cursor). The installer copies the
    * bundle verbatim (REQ-SCALE-02) and does not parse skill files, so this is documentation.
    */
   readonly skillFileForm: string;
@@ -248,11 +248,16 @@ export interface RunReport {
  *
  * Verified ground truth: every bundle has `skills/` (11 skills), `references/`,
  * `scripts/forge-root.sh`, `agents/`; gemini adds a root `gemini-extension.json`,
- * codex adds `agents/openai.yaml`, cursor uses `.mdc` files.
+ * codex ships `skills/<name>/SKILL.md` + standalone `agents/<name>.toml` custom agents,
+ * cursor uses `.mdc` files.
+ *
+ * NOTE: codex's `configDirName`/`installSubdir` (.codex/skills) is the legacy mapping; the
+ * agent-neutral destination (`.agents/skills` + `.codex/agents` for custom agents) is reshaped
+ * in the per-agent install-strategy phase (Finding 6 / A4), not here.
  */
 export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
   claude: { id: "claude", configDirName: ".claude", installSubdir: "skills", skillFileForm: "SKILL.md", confidence: "confirmed" },
-  codex: { id: "codex", configDirName: ".codex", installSubdir: "skills", skillFileForm: "<name>.md", confidence: "best-known" },
+  codex: { id: "codex", configDirName: ".codex", installSubdir: "skills", skillFileForm: "SKILL.md", confidence: "best-known" },
   copilot: { id: "copilot", configDirName: ".copilot", installSubdir: "skills", skillFileForm: "<name>.md", confidence: "best-known" },
   cursor: { id: "cursor", configDirName: ".cursor", installSubdir: "rules", skillFileForm: "<name>.mdc", confidence: "best-known" },
   gemini: { id: "gemini", configDirName: ".gemini", installSubdir: "extensions", skillFileForm: "<name>.md", confidence: "best-known" },
