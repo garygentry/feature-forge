@@ -4,7 +4,7 @@
     "regenerate": "python3 scripts/build-adapters.py"
   },
   "name": "feature-forge",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "skills": [
     {
       "name": "forge-0-epic",
