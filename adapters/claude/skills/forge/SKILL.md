@@ -97,7 +97,7 @@ R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/fea
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" context-usage --json
 ```
-- `{"available": true, ...}` → note `pct` (e.g. "context ~68% full") and `overThreshold`. Window/threshold come from `contextWindowTokens` / `contextWarnThreshold` in `forge.config.json` (the helper defaults to a 200k window and 0.7 threshold; **on a 1M-context model set `contextWindowTokens: 1000000` so the percentage is accurate**).
+- `{"available": true, ...}` → note `pct` (e.g. "context ~68% full") and `overThreshold`. Window/threshold come from `contextWindowTokens` / `contextWarnThreshold` in `forge.config.json` (the helper defaults to a 200k window and 0.7 threshold, and auto-bumps the assumed window to 1M once observed usage exceeds 200k; **on a 1M-context model set `contextWindowTokens: 1000000` so the percentage is accurate below 200k too** — 1M can't be detected from the transcript until usage crosses 200k).
 - `{"available": false, ...}` → omit context advice silently (non-Claude host, or a fresh session with no transcript). Never treat this as an error.
 
 **3. Offer the next step via `AskUserQuestion`.** Output the dashboard + a one-line context note as text, then ask (per the Decision Support protocol in `references/shared-conventions.md`). Options, in this order:

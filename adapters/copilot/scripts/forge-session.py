@@ -345,7 +345,11 @@ def context_usage(
     """Compute live context-window occupancy for the current session.
 
     Window precedence: ``--window`` > config ``contextWindowTokens`` > inferred
-    from the transcript's model id > ``_DEFAULT_WINDOW``. Threshold precedence:
+    from the transcript's model id > ``_DEFAULT_WINDOW``. When inferring (no
+    override, no config) and the observed token total already exceeds the default
+    window, the window is auto-bumped to ``_WIDE_WINDOW`` — observed tokens above
+    200k prove a wider (1M-beta) window is active, so this corrects the reading
+    without ever under-reporting a genuine 200k session. Threshold precedence:
     ``--threshold`` > config ``contextWarnThreshold`` > ``_DEFAULT_THRESHOLD``.
 
     Returns a dict with ``available: True`` and ``{tokens, windowTokens, pct,
@@ -371,11 +375,19 @@ def context_usage(
     tokens, model = found
 
     window = window_override
-    if window is None:
+    if window is None or window <= 0:
         cfg_window = _config_value(config_path, "contextWindowTokens")
-        window = int(cfg_window) if isinstance(cfg_window, int) else _infer_window(model)
-    if window <= 0:
-        window = _infer_window(model)
+        if isinstance(cfg_window, int) and cfg_window > 0:
+            window = cfg_window
+        else:
+            # Inferring (no override, no config). Start from the model marker /
+            # conservative default, then auto-bump: observed tokens above the
+            # default window PROVE a wider window is active (a 200k session can
+            # never exceed 200k), so widen to 1M rather than report a nonsensical
+            # >100%. Never under-reports a real 200k session, which can't trip it.
+            window = _infer_window(model)
+            if tokens > window:
+                window = _WIDE_WINDOW
 
     pct = round(tokens / window, 4)
     over = pct >= threshold
