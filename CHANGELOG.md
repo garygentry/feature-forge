@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updated. `minRunnerVersion` stays `0.6.0` (no compatibility floor change across B2/C);
   rauf and feature-forge remain independently versioned. The install-time check is a
   read-only `npm view` resolvability probe — existing installs are unaffected.
+  Installer published as `@garygentry/feature-forge@0.2.2` to carry the new pin.
 
 ## [0.11.0] — 2026-06-26
 
