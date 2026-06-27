@@ -32,13 +32,22 @@ if is_root "$root"; then
 fi
 
 # ── Step 2: candidate-root probe (authoritative multi-agent root list; extend here first). ─
-# Globs that match nothing expand to themselves; the is_root test rejects such literals.
+# Globs that match nothing expand to themselves; the is_root test rejects such literals. Covers
+# every supported agent's install destination under BOTH global ($HOME) and project ($PWD) scope,
+# matching the installer's per-agent layout: claude .claude/skills, codex .agents/skills, copilot
+# .github/feature-forge, cursor .cursor/rules, gemini .gemini/extensions.
 for candidate in \
   "$HOME/.claude/skills/feature-forge" \
+  "$PWD/.claude/skills/feature-forge" \
   "$HOME"/.claude/plugins/*/feature-forge \
   "$HOME/.agents/skills/feature-forge" \
   "$PWD/.agents/skills/feature-forge" \
+  "$HOME/.github/feature-forge" \
+  "$PWD/.github/feature-forge" \
+  "$HOME/.cursor/rules/feature-forge" \
+  "$PWD/.cursor/rules/feature-forge" \
   "$HOME/.gemini/extensions/feature-forge" \
+  "$PWD/.gemini/extensions/feature-forge" \
 ; do
   if is_root "$candidate"; then
     printf '%s\n' "$candidate"
