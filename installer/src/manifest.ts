@@ -54,7 +54,7 @@ export interface BuildManifestArgs {
   readonly skills: readonly string[];
   /** SHA-256 over the source bundle's canonical (sorted-path) file set — drift anchor (spec 03). */
   readonly sourceHash: string;
-  /** Recorded pinned rauf coordinate (e.g. "@garygentry/rauf@0.8.1"); `null` when `--skip-rauf` (spec 06). */
+  /** Recorded pinned rauf coordinate (e.g. "@garygentry/rauf@0.10.0"); `null` when `--skip-rauf` (spec 06). */
   readonly raufPin: string | null;
   /** Symlink mode only: the source bundle the namespace dir links to (REQ-SAFE-02). */
   readonly link?: { readonly target: string };

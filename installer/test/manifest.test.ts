@@ -32,7 +32,7 @@ function copyManifest(overrides: Partial<InstallManifest> = {}): InstallManifest
     destination: "/home/u/.claude/skills/feature-forge",
     featureForgeVersion: null,
     sourceHash: "deadbeef",
-    raufPin: "@garygentry/rauf@0.8.1",
+    raufPin: "@garygentry/rauf@0.10.0",
     installedAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     skills: ["forge-1-prd"],
@@ -145,7 +145,7 @@ test("buildManifest: featureForgeVersion null, sorts files/skills, fresh timesta
     ],
     skills: ["z", "a"],
     sourceHash: "h",
-    raufPin: "@garygentry/rauf@0.8.1",
+    raufPin: "@garygentry/rauf@0.10.0",
     now: FIXED_NOW,
   });
   assert.equal(m.featureForgeVersion, null);
@@ -186,7 +186,7 @@ test("buildManifest: symlink mode emits files:[] and records link", () => {
     files: [],
     skills: ["forge-1-prd"],
     sourceHash: "h",
-    raufPin: "@garygentry/rauf@0.8.1",
+    raufPin: "@garygentry/rauf@0.10.0",
     link: { target: "/src/adapters/claude" },
     now: FIXED_NOW,
   });

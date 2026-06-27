@@ -22,13 +22,13 @@ import { err, ok, type InstallerError, type Result } from "./types.js";
  *
  * Shape: `<name>@<version>` — the SCOPED package `@garygentry/rauf` (the unscoped `rauf` name is
  * blocked by npm's similarity filter). Advanced on each feature-forge release to a new
- * known-compatible rauf (REQ-RAUF-03). The current rauf version is 0.8.1.
+ * known-compatible rauf (REQ-RAUF-03). The current rauf version is 0.10.0.
  *
- * rauf is now PUBLISHED (rauf#28): `@garygentry/rauf@0.8.1` resolves from the npm registry, so the
+ * rauf is now PUBLISHED (rauf#28): `@garygentry/rauf@0.10.0` resolves from the npm registry, so the
  * preflight below passes by default. (Historically this pin pointed at an unpublished package and
  * the preflight was a designed-to-fail check — see the `--skip-rauf` escape hatch.)
  */
-export const RAUF_PIN = "@garygentry/rauf@0.8.1";
+export const RAUF_PIN = "@garygentry/rauf@0.10.0";
 
 /**
  * An injectable, READ-ONLY registry query (D1). Given a coordinate `name@version`, returns the
@@ -41,7 +41,7 @@ export const RAUF_PIN = "@garygentry/rauf@0.8.1";
  * Contract: the query MUST be read-only — it MUST NOT install, MUST NOT mutate global npm
  * state, and MUST NOT execute rauf. `npm view` satisfies this (it only reads registry metadata).
  *
- * @param coordinate - the `name@version` to resolve, e.g. "@garygentry/rauf@0.8.1"
+ * @param coordinate - the `name@version` to resolve, e.g. "@garygentry/rauf@0.10.0"
  * @returns Result<string> — the resolved version on success; RAUF_UNRESOLVABLE on failure.
  */
 export type RegistryQuery = (coordinate: string) => Result<string>;
