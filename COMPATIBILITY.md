@@ -36,7 +36,7 @@ before forge-5's setup gate.
 
 The cross-agent installer (`@garygentry/feature-forge`) records a single pinned
 rauf coordinate as the provisioned default loop runner — currently
-**`@garygentry/rauf@0.10.0`** (`installer/src/rauf.ts` `RAUF_PIN`). This **pin** is
+**`@garygentry/rauf@0.10.1`** (`installer/src/rauf.ts` `RAUF_PIN`). This **pin** is
 distinct from the `minRunnerVersion` **floor** above: the floor is the minimum
 rauf an existing install must satisfy (0.6.0), while the pin is the specific
 known-good rauf a fresh install provisions. The pin is advanced on each

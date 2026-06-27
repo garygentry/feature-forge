@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **rauf pin advanced to `@garygentry/rauf@0.10.0`.** rauf shipped 0.9.0 (Effort B2)
-  and 0.10.0 (Codex packaging + a dedicated, telemetry-capable `CodexCliProvider` that
+- **rauf pin advanced to `@garygentry/rauf@0.10.1`.** rauf shipped 0.9.0 (Effort B2),
+  0.10.0 (Codex packaging + a dedicated, telemetry-capable `CodexCliProvider` that
   fixes the broken codex loop — `--ask-for-approval` is a top-level flag current Codex
-  rejects after `exec`), so `RAUF_PIN` advances `0.8.1 → 0.10.0` (superseding the
+  rejects after `exec`), and 0.10.1 (cursor preset `--print` headless fix + real-CLI
+  preset argv validation), so `RAUF_PIN` advances `0.8.1 → 0.10.1` (superseding the
   still-unreleased 0.8.1 bump) — the version a fresh install provisions as the default
   loop runner. Canonical `installHint` (`references/forge-config-schema.json`),
   regenerated adapters, `COMPATIBILITY.md`, installer docs, and the installer pin tests

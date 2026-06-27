@@ -84,7 +84,7 @@ function ctxFor(
     source,
     priorManifest: null,
     force: false,
-    raufPin: "@garygentry/rauf@0.10.0",
+    raufPin: "@garygentry/rauf@0.10.1",
     ...overrides,
   };
 }
@@ -108,7 +108,7 @@ test("planInstall: fresh destination → every file is create; raufPin echoed; z
     const before = treeSnapshot(destination);
     const r = planInstall(ctxFor(source, destination));
     assert.ok(r.ok);
-    assert.equal(r.value.raufPin, "@garygentry/rauf@0.10.0");
+    assert.equal(r.value.raufPin, "@garygentry/rauf@0.10.1");
     assert.ok(r.value.files.length > 0);
     assert.ok(r.value.files.every((f) => f.action === "create"));
     // purity: the planner wrote nothing.
@@ -158,7 +158,7 @@ test("planUpdate: orphan removal is manifest-scoped; untracked file is never rem
       destination,
       featureForgeVersion: null,
       sourceHash: "old",
-      raufPin: "@garygentry/rauf@0.10.0",
+      raufPin: "@garygentry/rauf@0.10.1",
       installedAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       skills: ["forge-1-prd"],
@@ -324,7 +324,7 @@ function symlinkManifest(destination: string, target: string): InstallManifest {
     destination,
     featureForgeVersion: null,
     sourceHash: "x",
-    raufPin: "@garygentry/rauf@0.10.0",
+    raufPin: "@garygentry/rauf@0.10.1",
     installedAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     skills: ["forge-1-prd"],

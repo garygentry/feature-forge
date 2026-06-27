@@ -246,7 +246,7 @@ export interface InstallManifest {
   readonly featureForgeVersion: string | null;
   /** SHA-256 over the source bundle's canonical (sorted-path) file set — drift anchor (OQ-4, spec 03). */
   readonly sourceHash: string;
-  /** Pinned rauf coordinate recorded at install, e.g. "@garygentry/rauf@0.10.0"; `null` if `--skip-rauf` (spec 06). */
+  /** Pinned rauf coordinate recorded at install, e.g. "@garygentry/rauf@0.10.1"; `null` if `--skip-rauf` (spec 06). */
   readonly raufPin: string | null;
   /** ISO-8601 timestamps. */
   readonly installedAt: string;
