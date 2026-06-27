@@ -32,9 +32,11 @@ The `--dry-run --json` plan reports the resolved install destination per agent. 
 
 Run `npx @garygentry/feature-forge list` (optionally `-a <agent>`) to show per-agent installed / up-to-date status.
 
-## Known gap
+## Self-contained bundles
 
-An installed non-Claude adapter bundle does not currently carry `epic-manifest.py` / `.claude-plugin/plugin.json`, so the portable resolver `scripts/forge-root.sh` cannot self-locate from an installed bundle. This is a known limitation owned by the adapter generator; it does not block install or first use.
+Every installed adapter bundle is self-contained: it ships the neutral `.feature-forge-bundle.json` sentinel plus byte-identical copies of every runtime helper a skill can invoke (`forge-root.sh`, `forge-init.sh`, `epic-manifest.py`, `validate-traceability.py`, `forge-bootstrap.py`). The portable resolver `scripts/forge-root.sh` self-locates from the installed location via the neutral sentinel (and honors `FEATURE_FORGE_ROOT`), so helper-backed skills run after install on any agent — no dependency on Claude-only files.
+
+For agents whose install spans a second root, the installer also places the bundle where that agent actually loads it: Codex custom agents are mirrored into `.codex/agents/*.toml`, and Copilot gets a managed block in `.github/copilot-instructions.md` (merged without disturbing existing content; removed cleanly on `uninstall`).
 
 ## The loop runner across agents
 

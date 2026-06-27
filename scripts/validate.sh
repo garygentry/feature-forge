@@ -234,6 +234,28 @@ else
   ERRORS=$((ERRORS + 1))
 fi
 
+# 7b. ruff lint over the bundled Python (REQ-CI-03). CI's Quality Gate runs this,
+#     but historically validate.sh did NOT — so an E501 the local gate missed
+#     could still block a merge (A3). Fold it in so local == CI. HARD-fail when
+#     ruff is present; WARN (never silently pass) when it is absent so a dev
+#     without ruff still sees the gap. The eval/ dir may not exist yet — the
+#     absent-dir carve-out keeps the glob clean (mirrors the CI composite).
+echo ""
+echo "Linting bundled Python (ruff)..."
+if command -v ruff >/dev/null 2>&1; then
+  RUFF_TARGETS=("$REPO_ROOT/scripts")
+  [ -d "$REPO_ROOT/eval" ] && RUFF_TARGETS+=("$REPO_ROOT/eval")
+  if ruff check "${RUFF_TARGETS[@]}"; then
+    echo "PASS: ruff lint"
+  else
+    echo "FAIL: ruff lint (see above) — run 'ruff check scripts/ eval/' and fix"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "SKIP: ruff not installed; install it ('pip install ruff') to match CI's Quality Gate"
+  WARNINGS=$((WARNINGS + 1))
+fi
+
 # 8. Requirement traceability (REQ-CI-06). validate-traceability.py is standalone
 #    today; wire it as a BLOCKING gate. The validator's CLI takes exactly TWO
 #    positionals — a single PRD.md file and ITS specs dir — so it is invoked once

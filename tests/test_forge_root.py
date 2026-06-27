@@ -137,6 +137,45 @@ def test_forge_root_neutral_sentinel_self_location(tmp_path):
     assert result.stdout.strip() == str(root.resolve())
 
 
+import pytest
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        ".claude/skills/feature-forge",
+        ".agents/skills/feature-forge",
+        ".github/feature-forge",
+        ".cursor/rules/feature-forge",
+        ".gemini/extensions/feature-forge",
+    ],
+)
+def test_forge_root_project_scope_candidate_probe(tmp_path, rel):
+    """Step 2 resolves a PROJECT-scope ($PWD) install for every supported agent layout (A6).
+
+    Guards the per-agent first-use path: a helper invoked from a project root must locate a
+    project-scoped bundle wherever that agent loads it (codex .agents/skills, copilot
+    .github/feature-forge, cursor .cursor/rules, gemini .gemini/extensions, claude .claude/skills).
+    """
+    project = tmp_path / "project"
+    candidate = project / rel
+    _make_fake_install(candidate)
+    # A lone resolver copy outside any root so step 1 (self-location) cannot succeed.
+    lone_dir = tmp_path / "lone" / "scripts"
+    lone_dir.mkdir(parents=True)
+    lone = lone_dir / "forge-root.sh"
+    lone.write_text(RESOLVER.read_text())
+    result = subprocess.run(
+        ["bash", str(lone)],
+        capture_output=True,
+        text=True,
+        cwd=str(project),  # sets $PWD for the project-scope probe
+        env={**os.environ, "HOME": str(tmp_path / "empty-home"), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
 def test_forge_root_neutral_env_fallback(tmp_path):
     """FEATURE_FORGE_ROOT names a valid root when self/candidate probes fail → step 3 (neutral)."""
     valid_root = _make_fake_install(tmp_path / "valid")
