@@ -7,5 +7,6 @@
   "stack": null,
   "typeCheckCommand": null,
   "testCommand": null,
-  "loopIterationMultiplier": 1.5
+  "loopIterationMultiplier": 1.5,
+  "contextWindowTokens": 1000000
 }

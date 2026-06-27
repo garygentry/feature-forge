@@ -56,6 +56,23 @@
       "minimum": 1,
       "description": "Multiplier applied to pending backlog item count to calculate loop iterations. Higher values allow more retries. Default: 1.5 (e.g., 10 items = 15 iterations)."
     },
+    "autoInvokeNextStage": {
+      "type": "boolean",
+      "default": true,
+      "description": "When true (default), the /feature-forge:forge navigator auto-invokes the next pipeline stage via the Skill tool after the user confirms it, instead of only printing the command to copy. Set false to keep the old copy-paste behavior (the navigator suggests the command but never launches it). Ignored on non-Claude hosts, which always fall back to printing the command."
+    },
+    "contextWindowTokens": {
+      "type": ["integer", "null"],
+      "default": null,
+      "description": "Context window size (tokens) used by the navigator's context-usage check to compute how full the current session is. Null (default) lets the helper infer from the session model and fall back to 200000. Set this to your model's window (e.g. 1000000 for a 1M-context model) so the percentage and the clean-session recommendation are accurate."
+    },
+    "contextWarnThreshold": {
+      "type": "number",
+      "default": 0.7,
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of the context window (0-1) past which the navigator recommends starting the next stage in a clean session rather than continuing. Default: 0.7."
+    },
     "workspaces": {
       "type": "array",
       "description": "Monorepo members. Absent for single-package projects.",

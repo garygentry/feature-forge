@@ -21,7 +21,10 @@ cat > "$CONFIG_FILE" << 'EOF'
   "stack": null,
   "typeCheckCommand": null,
   "testCommand": null,
-  "loopIterationMultiplier": 1.5
+  "loopIterationMultiplier": 1.5,
+  "autoInvokeNextStage": true,
+  "contextWindowTokens": null,
+  "contextWarnThreshold": 0.7
 }
 EOF
 
@@ -37,6 +40,9 @@ echo "  stack:               null (auto-detected during forge-2-tech)"
 echo "  typeCheckCommand:    null (auto-detected during forge-2-tech)"
 echo "  testCommand:         null (auto-detected during forge-2-tech)"
 echo "  loopIterationMultiplier: 1.5 (multiplier for loop iterations)"
+echo "  autoInvokeNextStage: true (navigator auto-starts the next stage after you confirm)"
+echo "  contextWindowTokens: null (infer; set to 1000000 on a 1M-context model)"
+echo "  contextWarnThreshold: 0.7 (suggest a clean session past this fraction of the window)"
 echo ""
 echo "The loop runner defaults to rauf. To target a different ralph-style runner,"
 echo "add a \"loopRunner\" block (see references/forge-config-schema.json)."

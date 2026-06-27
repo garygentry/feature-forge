@@ -68,6 +68,9 @@ Extract these config values (use defaults if not present):
 - `branchPerFeature` (default: true)
 - `branchPrefix` (default: `forge/`)
 - `loopIterationMultiplier` (default: `1.5`)
+- `autoInvokeNextStage` (default: `true` — the `/feature-forge:forge` navigator auto-invokes the next stage via the `Skill` tool after the user confirms; `false` keeps copy-paste behavior. Navigator-only.)
+- `contextWindowTokens` (default: `null` — context window used by the navigator's context-usage check; `null` infers from the session model and falls back to 200000. Set to the model's window, e.g. `1000000` on a 1M model. Navigator-only.)
+- `contextWarnThreshold` (default: `0.7` — fraction of the window past which the navigator recommends a clean session. Navigator-only.)
 - `loopRunner` (optional object — the loop runner to drive; **defaults to rauf** when absent, with every command templated. See `references/forge-config-schema.json` and `references/ralph-loop-contract.md`.)
 
 ## Feature Directory Resolution
