@@ -64,7 +64,7 @@
     "contextWindowTokens": {
       "type": ["integer", "null"],
       "default": null,
-      "description": "Context window size (tokens) used by the navigator's context-usage check to compute how full the current session is. Null (default) lets the helper infer from the session model and fall back to 200000. Set this to your model's window (e.g. 1000000 for a 1M-context model) so the percentage and the clean-session recommendation are accurate."
+      "description": "Context window size (tokens) used by the navigator's context-usage check to compute how full the current session is. Null (default) lets the helper infer from the session model and fall back to 200000 — and if observed usage already exceeds 200000 it auto-bumps the assumed window to 1000000 (proof a 1M-beta window is active). Set this explicitly to your model's window (e.g. 1000000 for a 1M-context model) for accurate percentages below 200000 too, since 1M cannot be detected from the transcript until usage crosses 200000."
     },
     "contextWarnThreshold": {
       "type": "number",
