@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-06-26
+
+This release completes the agent-agnostic remediation: a non-Claude user can now
+install **and run** the full feature-forge workflow, with each agent's bundle placed
+where that agent actually loads it, while Claude stays the rich, byte-identical default
+path. Generated bundles are self-contained; the installer is per-agent honest about
+install confidence; and the local gate now matches CI.
+
 ### Added
 
 - **Installer second-root placements (manifest v2).** The cross-agent installer now
@@ -21,20 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manifest is bumped to `schemaVersion: 2` with an additive `placements[]` array; v1
   manifests (no placements) are still read and reconciled on the next update.
 
-### Changed
-
-- **Codex adapter uses current Codex skill/agent shapes.** Codex skills are now
-  emitted as `skills/<name>/SKILL.md` (the documented Codex skill directory shape)
-  instead of `skills/<name>/<name>.md`, and Codex subagents are emitted as
-  standalone `agents/<name>.toml` custom-agent files
-  (`name`/`description`/`developer_instructions`) — the current Codex custom-agent
-  format — replacing the aggregate `agents/openai.yaml` that Codex does not load.
-  Claude-only structural keys (tools/model/maxTurns/effort/memory/skills) are
-  drop-recorded in `GENERATION-REPORT.md`, so no Claude model aliases leak into
-  Codex config. The Claude adapter is unchanged. (Codex install-destination
-  reshaping — `.agents/skills` + `.codex/agents` — follows in a later phase.)
-
-### Added
+- **Host-specific instruction translation for non-Claude targets.** The adapter
+  generator now applies a deterministic per-target body transform to NON-Claude skill
+  and agent bodies: it strips Claude-only tooling idioms (`AskUserQuestion`, the
+  `Agent`/`Task tool` dispatch, `subagent_type=`, `run_in_background`, `` `Monitor` ``)
+  and appends a per-target "Host execution notes" overlay (Codex-native for codex,
+  neutral elsewhere) so the workflow reads correctly on each host. The Claude emitter is
+  unchanged — it emits canon **byte-identical** — the strongest "never disrupt Claude"
+  guarantee.
 
 - **Self-contained adapter bundles for true cross-agent installs.** Every
   generated per-agent bundle now ships the neutral `.feature-forge-bundle.json`
@@ -64,6 +66,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `forge-5-loop` re-checks it in a pre-flight guard before the loop commits
   per item. New config: `branchPerFeature`, `branchPrefix`.
 
+- **Cross-agent installer published to npm** as `@garygentry/feature-forge`
+  (independent version line; `0.1.1` adds a package README and validates the
+  OIDC trusted-publishing CI path). The one-liner is now
+  `npx @garygentry/feature-forge install` — the bare `feature-forge` name on npm
+  belongs to an unrelated package. The package now bundles the generated
+  `adapters/` at pack time (`prepack`), so it resolves agent bundles when
+  installed from npm; Python build artifacts are filtered out. A manual
+  `npm-publish.yml` (`workflow_dispatch`) workflow was added.
+
 ### Fixed
 
 - **`npx @garygentry/feature-forge` / `npm i -g` silently did nothing on
@@ -79,18 +90,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directly — never the real symlinked bin — and npm's Windows `.cmd` shims call
   `node` explicitly. (`0.1.3` shipped only the shebang half of this fix.)
 
-### Added
-
-- **Cross-agent installer published to npm** as `@garygentry/feature-forge`
-  (independent version line; `0.1.1` adds a package README and validates the
-  OIDC trusted-publishing CI path). The one-liner is now
-  `npx @garygentry/feature-forge install` — the bare `feature-forge` name on npm
-  belongs to an unrelated package. The package now bundles the generated
-  `adapters/` at pack time (`prepack`), so it resolves agent bundles when
-  installed from npm; Python build artifacts are filtered out. A manual
-  `npm-publish.yml` (`workflow_dispatch`) workflow was added.
-
 ### Changed
+
+- **Codex adapter uses current Codex skill/agent shapes.** Codex skills are now
+  emitted as `skills/<name>/SKILL.md` (the documented Codex skill directory shape)
+  instead of `skills/<name>/<name>.md`, and Codex subagents are emitted as
+  standalone `agents/<name>.toml` custom-agent files
+  (`name`/`description`/`developer_instructions`) — the current Codex custom-agent
+  format — replacing the aggregate `agents/openai.yaml` that Codex does not load.
+  Claude-only structural keys (tools/model/maxTurns/effort/memory/skills) are
+  drop-recorded in `GENERATION-REPORT.md`, so no Claude model aliases leak into
+  Codex config. The Claude adapter is unchanged.
+
+- **Installer per-agent install strategy + honest confidence.** The installer's
+  per-agent table now splits detection from placement: `configDirName` (the
+  detection probe) is decoupled from `installBaseDir`/`installSubpath` (the install
+  location AND the containment root), so each agent installs where it actually loads
+  content — codex under `.agents/skills/feature-forge`, copilot under
+  `.github/feature-forge`, cursor/gemini unchanged. A widened confidence vocabulary
+  (`confirmed`/`verified-current`/`best-known`/`unsupported`, with an optional
+  project-scope override) plus a per-target docs URL are surfaced in the run report,
+  so users see honestly when an install path is best-known rather than vendor-confirmed.
+
+- **Neutral stack-decisions resolution path.** Project stack overrides now resolve
+  `.feature-forge/stack-decisions.md` → `.agents/references/stack-decisions.md` →
+  `.claude/references/stack-decisions.md` (legacy alias) → `references/stacks/{stack}.md`
+  → `_generic.md`, so non-Claude users get a neutral, documented override location
+  while existing Claude paths keep working.
+
+- **Local gate parity + portable root-probe coverage.** `scripts/validate.sh` now
+  runs `ruff check scripts/ [eval/]` (hard-fail when ruff is present, warn when
+  absent) so the local gate matches CI's Quality Gate. The portable resolver
+  `scripts/forge-root.sh` now probes every supported agent's install destination
+  under both global and project scope (adding cursor `.cursor/rules`, copilot
+  `.github/feature-forge`, and project-scope `.claude`/`.gemini`), closing a
+  first-use gap where a helper invoked from a project root could not locate a
+  cursor/copilot install.
 
 - **rauf pin advanced to `@garygentry/rauf@0.8.0` (installer `0.1.5`).** rauf
   released 0.8.0 (provider-neutral backlogs + `rauf loop run --no-model`), so
