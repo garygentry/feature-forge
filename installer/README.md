@@ -71,7 +71,7 @@ Claude Code users can alternatively install via the plugin marketplace:
 
 The default loop runner is [**rauf**](https://github.com/garygentry/rauf), published as
 [`@garygentry/rauf`](https://www.npmjs.com/package/@garygentry/rauf). The installer runs a
-read-only resolvability preflight on the pin (`@garygentry/rauf@0.8.1`) and records it; pass
+read-only resolvability preflight on the pin (`@garygentry/rauf@0.10.1`) and records it; pass
 `--skip-rauf` to defer the check (e.g. offline installs). Install the rauf CLI itself with
 `npx @garygentry/rauf` or its
 [binary script](https://github.com/garygentry/rauf#install). See the
