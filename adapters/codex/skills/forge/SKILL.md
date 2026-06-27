@@ -34,7 +34,14 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
    ```
    and show one rollup line: `{epic} — {complete}/{total} complete, next: {nextCommand}`.
 2. **Standalone features below.** Scan the remaining `{specsDir}/*/` that directly contain a `.pipeline-state.json` **without** an `epic` back-pointer. A nested member's `.pipeline-state.json` is **attributed to its epic (Tier 1), never listed as a standalone feature**.
-   - Within this standalone tier the existing logic still applies: if exactly one active (non-complete) standalone pipeline exists, show its dashboard; if multiple exist, list them with a one-line summary each and use the host's question mechanism to ask which to focus on.
+   - **Rank by recency.** Run the recency ranker so the most-recently-touched active feature is the default — the user rarely has to type a name (especially on mobile after a `/clear`):
+     ```bash
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" rank-features --specs-dir "{specsDir}" --json
+     ```
+     This returns `{active: [...], counts: {...}}` with active features sorted by `updatedAt` **descending** (row 0 is the most recent). Each row carries `currentStage`, `nextStage`, `nextCommand`, `verifyPending`, and `verifyCommand` (the single source of stage order). The `active` list excludes nested epic members surfaced in Tier 1 — but the ranker scans them too, so ignore rows whose `epic` is non-null here (they belong to the epic rollup).
+   - **Pick the feature:** if exactly one active standalone pipeline exists, show its dashboard. If multiple exist, use the host's question mechanism — **list the most-recently-updated first, labeled `(recommended)`**, each option's description showing its `currentStage` and a relative age ("updated 2h ago"). Always include a free-form escape ("A different feature / something else") so the user is never boxed in. Then render the chosen feature's dashboard.
 
 If no epics and no standalone features exist, say: "No active feature pipelines found. Start one with `/feature-forge:forge-1-prd <feature-name>` or group several with `/feature-forge:forge-0-epic <epic-name>`."
 
@@ -76,6 +83,35 @@ Use these status indicators:
 - ✅🔍 = verified and fixes applied
 - ⏭️ = verification skipped (user chose to proceed without verifying)
 - ⚠️ = stale (built against an older version of an upstream artifact)
+
+### 3b. Drive to the Next Stage
+
+After rendering a **per-feature** dashboard for an **active** pipeline (skip this for paused/abandoned pipelines and for the Epic Dashboard), don't stop at a text suggestion — actively offer to start the next stage. This removes the copy-paste-after-`/clear` chore that makes long, multi-stage runs painful (especially on mobile).
+
+**1. Read the next step.** From the `rank-features --json` output (above), find this feature's row and read its `nextStage`, `nextCommand`, `verifyPending`, and `verifyCommand`. If the feature is not in the `active` list (paused/abandoned), or `nextStage` is `null` (every production stage complete), skip the drive prompt — instead congratulate the user and, if `forge-6-docs` has not run, offer it; otherwise note the pipeline is complete.
+
+**2. Check the context window.** Run the context-usage helper so you can advise whether to continue here or start the next stage in a fresh session:
+```bash
+R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" context-usage --json
+```
+- `{"available": true, ...}` → note `pct` (e.g. "context ~68% full") and `overThreshold`. Window/threshold come from `contextWindowTokens` / `contextWarnThreshold` in `forge.config.json` (the helper defaults to a 200k window and 0.7 threshold; **on a 1M-context model set `contextWindowTokens: 1000000` so the percentage is accurate**).
+- `{"available": false, ...}` → omit context advice silently (non-Claude host, or a fresh session with no transcript). Never treat this as an error.
+
+**3. Offer the next step via the host's question mechanism.** Output the dashboard + a one-line context note as text, then ask (per the Decision Support protocol in `references/shared-conventions.md`). Options, in this order:
+- **Start `{nextStage}` now** — recommended **when context is healthy** (`overThreshold` false or context unavailable).
+- **Start in a clean session** — recommended-**first** instead **when `overThreshold` is true**. The work survives a clear because all state is on disk: instruct the user to `/clear`, then re-run `/feature-forge:forge {feature}` (or run `{nextCommand}` directly) in the fresh session. Note plainly that you cannot `/clear` for them.
+- **Verify `{stage}` first** — include **only when `verifyPending` is true**; selecting it runs `{verifyCommand}`.
+- **Pick a different stage** — free-form escape to any stage or other action.
+
+**4. Act on the choice.**
+- **Start now** → if `autoInvokeNextStage` is true (default) **and** the `Skill` tool is available, invoke the chosen stage **via the `Skill` tool** in this same session (e.g. `skill: "feature-forge:forge-3-specs"`, `args: "{feature}"`) — no retyping, no paste. If `autoInvokeNextStage` is false, or the `Skill` tool is unavailable (a non-Claude host), fall back to printing `{nextCommand}` prominently for the user to run.
+- **Clean session** → give the exact next command and the `/clear`-then-re-run instruction; do not invoke anything.
+- **Verify** → invoke `feature-forge:forge-verify` via the `Skill` tool (or print `{verifyCommand}` on a non-Claude host).
+- **Different stage** → honor the free-form request.
+
+This applies whether the feature was named explicitly (`/feature-forge:forge {feature}`) or resolved from the recency default.
 
 ### Epic Dashboard
 
@@ -142,6 +178,12 @@ Support these sub-commands for pipeline lifecycle management:
 - `/feature-forge:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
 - `/feature-forge:forge resume {feature}` — Set `pipelineStatus` back to `"active"`. Calculate how long the feature was paused (from `updatedAt` to now). If paused for more than 24 hours, show a hint: "This feature was paused for {duration}. Session context may have been lost — consider re-running `/feature-forge:forge-{currentStage} {feature}` to rebuild context."
 - `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Use the host's question mechanism to confirm first, and state what's reversible: abandoning does not delete artifacts and can be undone with `/feature-forge:forge resume {feature}`, so the cost is low — but if the user really means "stop and discard," point out that `pause` is the better choice when they're only setting it aside. Offer **Abandon** · **Pause instead** · **Cancel**.
+- `/feature-forge:forge run [{feature}]` — **Opt-in auto-advance.** Drive the feature through consecutive stages in one session instead of confirming each boundary. This is a convenience wrapper over **3b. Drive to the Next Stage** — same stage order, same context gate — just looped:
+  1. Resolve the feature (if omitted, use the recency default from `rank-features`; if multiple are equally plausible, ask once via the host's question mechanism).
+  2. **Before each stage,** run `forge-session.py context-usage`. If `overThreshold` is true, **stop** and recommend a clean session (give the exact `{nextCommand}` and the `/clear`-then-re-run instruction) — never auto-`/clear`.
+  3. Otherwise invoke the next stage's skill via the `Skill` tool, let it run to its natural stopping point, then re-read state and continue from step 2.
+  4. **Stop conditions:** the next stage is an interview/decision point that calls the host's question mechanism (PRD and tech inherently pause for input — let them); `nextStage` is `null` (pipeline complete); context over threshold; or a stage signals it needs human input / is blocked. Always report where the loop stopped and why.
+  Per-stage confirmation (3b) remains the default — `run` is only used when the user explicitly asks to "run" / "drive" / "auto-advance" the pipeline. On a non-Claude host where the `Skill` tool is unavailable, fall back to printing the ordered list of commands to run.
 
 **Epic lifecycle.** When the argument names an **epic** (`{specsDir}/{name}/epic-manifest.json` exists), `pause` / `resume` / `abandon` operate on the epic manifest, not a `.pipeline-state.json`:
 

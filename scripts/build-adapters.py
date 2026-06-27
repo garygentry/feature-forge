@@ -309,6 +309,7 @@ RUNTIME_HELPERS: tuple[str, ...] = (
     "forge-root.sh",
     "forge-init.sh",
     "epic-manifest.py",
+    "forge-session.py",
     "validate-traceability.py",
     "forge-bootstrap.py",
 )
