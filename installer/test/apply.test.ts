@@ -62,7 +62,7 @@ function ctxFor(
     destination: d.destination,
     manifestPath: d.manifestPath,
     source: src,
-    raufPin: "@garygentry/rauf@0.8.0",
+    raufPin: "@garygentry/rauf@0.8.1",
     now: NOW,
     priorManifest: null,
     ...extra,

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **rauf pin advanced to `@garygentry/rauf@0.8.1`.** rauf released 0.8.1 (current
+  `codex exec` automation flags — `--sandbox workspace-write --ask-for-approval never`),
+  so `RAUF_PIN` advances `0.8.0 → 0.8.1` — the version a fresh install provisions as the
+  default loop runner. Canonical `installHint` (`references/forge-config-schema.json`),
+  regenerated adapters, and `COMPATIBILITY.md` updated. `minRunnerVersion` stays `0.6.0`
+  (a patch doesn't raise the floor); rauf and feature-forge remain independently versioned.
+  Installer published as `@garygentry/feature-forge@0.2.1` to carry the new pin.
+
 ## [0.11.0] — 2026-06-26
 
 This release completes the agent-agnostic remediation: a non-Claude user can now
