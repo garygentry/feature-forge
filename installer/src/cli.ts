@@ -38,6 +38,7 @@ import {
   ok,
 } from "./types.js";
 import { detectAgent, detectAgents, agentRootFor } from "./agent-targets.js"; // 02
+import { resolvePlacements } from "./placements.js"; // 02 (A4b second-root placements)
 import { locateSource } from "./source.js"; // 03
 import { plan, resolveMode, type PlanContext } from "./plan.js"; // 04
 import { apply, type ApplyContext } from "./apply.js"; // 04
@@ -441,6 +442,9 @@ async function runOneAgent(
     priorManifest: prior.value,
     force: flags.force,
     raufPin,
+    // A4b: resolve any second-root placements for this agent under the active scope (codex
+    // `.codex/agents`, copilot `.github/copilot-instructions.md`); empty for the rest.
+    placements: resolvePlacements(AGENT_TARGETS[agent], scope, { home: env.home, cwd: env.cwd }),
   };
   const planned = plan(subcommand, planCtx);
   if (!planned.ok) return failed(agent, detection.detected, planned.error);

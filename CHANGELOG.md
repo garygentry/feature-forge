@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Installer second-root placements (manifest v2).** The cross-agent installer now
+  writes the two per-agent placements that the single-`destination` model could not
+  express: Codex custom agents are mirrored flat into `.codex/agents/*.toml` (where
+  Codex loads them) alongside the primary `.agents/skills/feature-forge` bundle, and
+  Copilot — which has no skills loader — gets a sentinel-delimited managed block in
+  `.github/copilot-instructions.md` pointing at the staged `.github/feature-forge`
+  bundle. The managed block is merged idempotently, preserving any existing user
+  content; `update` leaves a user-edited block alone unless `--force`, and `uninstall`
+  strips only the block (removing the file only if nothing else remains). The install
+  manifest is bumped to `schemaVersion: 2` with an additive `placements[]` array; v1
+  manifests (no placements) are still read and reconciled on the next update.
+
 ### Changed
 
 - **Codex adapter uses current Codex skill/agent shapes.** Codex skills are now

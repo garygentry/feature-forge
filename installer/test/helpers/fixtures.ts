@@ -32,6 +32,8 @@ export async function makeFixtureBundle(
   sb: Sandbox,
   agent: AgentId,
   skills: string[] = ["forge-1-prd"],
+  /** Custom-agent ids to materialize as `agents/<id>.toml` (A4b codex mirror source). Default: none. */
+  agents: string[] = [],
 ): Promise<FixtureBundle> {
   const dir = join(sb.source, agent);
   await mkdir(join(dir, "scripts"), { recursive: true });
@@ -58,6 +60,10 @@ export async function makeFixtureBundle(
   if (agent === "gemini") {
     const ext = { name: "feature-forge", version: "0.0.0", skills: skills.map((name) => ({ name })) };
     await writeFile(join(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + "\n");
+  }
+  for (const id of agents) {
+    await mkdir(join(dir, "agents"), { recursive: true });
+    await writeFile(join(dir, "agents", `${id}.toml`), `name = "${id}"\n# fixture custom agent\n`);
   }
   return { dir, skills };
 }
