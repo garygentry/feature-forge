@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default loop runner. Canonical `installHint` (`references/forge-config-schema.json`),
   regenerated adapters, and `COMPATIBILITY.md` updated. `minRunnerVersion` stays `0.6.0`
   (a patch doesn't raise the floor); rauf and feature-forge remain independently versioned.
+  Installer published as `@garygentry/feature-forge@0.2.1` to carry the new pin.
 
 ## [0.11.0] — 2026-06-26
 
