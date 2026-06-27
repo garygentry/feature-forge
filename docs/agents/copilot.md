@@ -30,10 +30,12 @@ see the note below.)
 > **Note (install path — best-known):** Copilot has no native skills loader; its documented
 > customization surface is repository instructions (`.github/copilot-instructions.md` /
 > `AGENTS.md`). The installer stages the bundle under `.github/feature-forge/` so the workflow
-> files are available, and a follow-up change writes a managed block into
-> `.github/copilot-instructions.md` pointing Copilot at them. This path is **best-known**, not
-> vendor-confirmed for skill auto-discovery — the install report labels it as such. Use the
-> `--dry-run --json` plan for the exact resolved path.
+> files are available, and writes a managed block (delimited by
+> `<!-- feature-forge:managed:start -->` / `<!-- feature-forge:managed:end -->`) into
+> `.github/copilot-instructions.md` pointing Copilot at them — merged without disturbing any
+> existing content in that file. This path is **best-known**, not vendor-confirmed for skill
+> auto-discovery — the install report labels it as such. Use the `--dry-run --json` plan for
+> the exact resolved path.
 
 ## First-use check
 

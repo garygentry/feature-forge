@@ -17,11 +17,14 @@ import {
   SCHEMA_VERSION,
   ok,
   err,
+  READABLE_SCHEMA_VERSIONS,
   type AgentId,
   type InstallManifest,
   type ManifestFile,
   type Mode,
+  type Placement,
   type PlannedAction,
+  type PlannedPlacement,
   type ResolveOpts,
   type Result,
   type Scope,
@@ -55,6 +58,8 @@ export interface BuildManifestArgs {
   readonly raufPin: string | null;
   /** Symlink mode only: the source bundle the namespace dir links to (REQ-SAFE-02). */
   readonly link?: { readonly target: string };
+  /** Secondary placement inventory written this run (A4b); omit/empty when the agent has none. */
+  readonly placements?: readonly Placement[];
   /** Prior manifest, if any. When present, its `installedAt` is preserved (this is an update). */
   readonly previous?: InstallManifest | null;
   /** Injectable clock for deterministic tests. Default: `() => new Date()`. */
@@ -92,7 +97,18 @@ export function buildManifest(args: BuildManifestArgs): InstallManifest {
     skills,
     files,
     ...(args.link !== undefined ? { link: args.link } : {}),
+    ...(args.placements && args.placements.length > 0
+      ? { placements: args.placements.map(normalizePlacement) }
+      : {}),
   };
+}
+
+/** Canonicalize a placement for persistence: sort its file inventory by path (byte-wise). */
+function normalizePlacement(p: Placement): Placement {
+  const files: ManifestFile[] = [...p.files]
+    .map((f) => ({ path: f.path, ...(f.sha256 !== undefined ? { sha256: f.sha256 } : {}) }))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return { kind: p.kind, root: p.root, destination: p.destination, files };
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +226,7 @@ function validateManifest(x: unknown): ValidateResult {
   if (typeof x !== "object" || x === null) return { ok: false, reason: "not an object" };
   const o = x as Record<string, unknown>;
 
-  if (o.schemaVersion !== SCHEMA_VERSION) {
+  if (!(READABLE_SCHEMA_VERSIONS as readonly number[]).includes(o.schemaVersion as number)) {
     return { ok: false, reason: `unsupported schemaVersion ${String(o.schemaVersion)}` };
   }
   if (typeof o.agent !== "string" || !AGENT_IDS_SET.has(o.agent)) {
@@ -260,7 +276,38 @@ function validateManifest(x: unknown): ValidateResult {
   if (o.mode === "copy" && o.link !== undefined) {
     return { ok: false, reason: "copy mode manifest must not carry link" };
   }
+  // Optional secondary placements (manifest v2, A4b). Absent on v1 and on agents without a rule.
+  if (o.placements !== undefined) {
+    if (!Array.isArray(o.placements)) return { ok: false, reason: "invalid placements[]" };
+    for (const p of o.placements) {
+      const reason = validatePlacement(p);
+      if (reason !== null) return { ok: false, reason };
+    }
+  }
   return { ok: true, value: x as InstallManifest };
+}
+
+/** Structural validation of one placement record; returns a reason string, or null if valid. */
+function validatePlacement(p: unknown): string | null {
+  if (typeof p !== "object" || p === null) return "placements[] entry not an object";
+  const o = p as Record<string, unknown>;
+  if (o.kind !== "mirror" && o.kind !== "managed-block") {
+    return `invalid placement kind ${String(o.kind)}`;
+  }
+  if (typeof o.root !== "string" || o.root.length === 0) return "placement missing root";
+  if (typeof o.destination !== "string" || o.destination.length === 0) {
+    return "placement missing destination";
+  }
+  if (!Array.isArray(o.files)) return "invalid placement files[]";
+  for (const f of o.files) {
+    if (typeof f !== "object" || f === null) return "invalid placement files[] entry";
+    const ff = f as Record<string, unknown>;
+    if (typeof ff.path !== "string") return "placement files[].path not a string";
+    if (ff.sha256 !== undefined && typeof ff.sha256 !== "string") {
+      return "placement files[].sha256 not a string";
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,11 +325,22 @@ export function planUninstall(manifest: InstallManifest): Result<PlannedAction> 
   const files = isSymlink
     ? [{ relpath: ".", action: "remove" as const }]
     : manifest.files.map((f) => ({ relpath: f.path, action: "remove" as const }));
+
+  // Secondary placements (A4b) are removed too: a "mirror" deletes each recorded file; a
+  // "managed-block" strips only the sentinel region (apply interprets a "remove" action per kind).
+  const placements: PlannedPlacement[] = (manifest.placements ?? []).map((p) => ({
+    kind: p.kind,
+    root: p.root,
+    destination: p.destination,
+    files: p.files.map((f) => ({ relpath: f.path, action: "remove" as const })),
+  }));
+
   return ok({
     agent: manifest.agent,
     scope: manifest.scope,
     mode: manifest.mode,
     destination: manifest.destination,
     files,
+    ...(placements.length > 0 ? { placements } : {}),
   });
 }

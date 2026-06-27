@@ -40,6 +40,24 @@ npx @garygentry/feature-forge install --dry-run --json
 | `--json`            | Emit the run report as JSON.                                          |
 | `--skip-rauf`       | Skip the rauf resolvability preflight (records `raufPin: null`).      |
 
+## Per-agent install layout
+
+Each agent's bundle is installed where that agent actually loads it (project scope shown;
+`--global` resolves the same paths under `~`):
+
+| Agent   | Primary bundle                       | Second-root placement                                   |
+| ------- | ------------------------------------ | ------------------------------------------------------- |
+| claude  | `.claude/skills/feature-forge/`      | —                                                       |
+| codex   | `.agents/skills/feature-forge/`      | `.codex/agents/*.toml` (custom agents, mirrored flat)   |
+| copilot | `.github/feature-forge/`             | managed block in `.github/copilot-instructions.md`      |
+| cursor  | `.cursor/rules/feature-forge/`       | —                                                       |
+| gemini  | `.gemini/extensions/feature-forge/`  | —                                                       |
+
+The Copilot block is delimited by `<!-- feature-forge:managed:start -->` /
+`<!-- feature-forge:managed:end -->` sentinels and merged without disturbing the rest of the
+file. `update` refreshes it (a hand-edited block is left alone unless `--force`); `uninstall`
+strips only the block, deleting the file only if nothing else remains.
+
 ## Claude
 
 Claude Code users can alternatively install via the plugin marketplace:

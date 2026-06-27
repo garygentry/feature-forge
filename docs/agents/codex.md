@@ -34,8 +34,9 @@ see the note below.)
 > `--dry-run --json` plan for the exact resolved path on your machine.
 >
 > Codex custom agents (`forge-researcher` / `forge-spec-writer` / `forge-verifier`) are emitted
-> as `.codex/agents/<name>.toml`; the installer placing them into `.codex/agents/` lands in a
-> follow-up change (until then, copy them from the installed bundle's `agents/` dir).
+> as `.codex/agents/<name>.toml`, and the installer mirrors them flat into `.codex/agents/`
+> (the location Codex loads custom agents from) alongside the primary bundle — no manual copy
+> needed. `update`/`uninstall` reconcile the mirror together with the bundle.
 
 > **Runtime helpers:** installed bundles are self-contained — every runtime helper
 > (`forge-root.sh`, `forge-init.sh`, `epic-manifest.py`, `validate-traceability.py`,

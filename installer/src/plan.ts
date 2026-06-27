@@ -16,14 +16,24 @@ import type {
   FileActionKind,
   ManifestFile,
   Mode,
+  Placement,
+  PlacementFileAction,
   PlannedAction,
+  PlannedPlacement,
   Result,
   Scope,
   InstallManifest,
 } from "./types.js";
 import { ok, err } from "./types.js";
-import { sha256File } from "./hash.js";
+import { sha256File, sha256String } from "./hash.js";
 import { type LocatedSource } from "./source.js";
+import {
+  type ResolvedPlacement,
+  selectMirrorFiles,
+  renderCopilotBlock,
+  wrapBlock,
+  extractManagedRegion,
+} from "./placements.js";
 import { planUninstall } from "./manifest.js";
 import { isWindows } from "./fsutil.js";
 
@@ -48,6 +58,12 @@ export interface PlanContext {
   readonly force: boolean;
   /** The pinned rauf coordinate to surface on the plan (06); the planner only echoes it. */
   readonly raufPin?: string | null;
+  /**
+   * Resolved secondary placements for this agent (A4b), or absent/empty when it has none. Supplied by
+   * cli.ts (which holds the scope roots); the planner diffs each against its destination and the prior
+   * manifest's matching placement inventory.
+   */
+  readonly placements?: ResolvedPlacement[];
 }
 
 /**
@@ -150,14 +166,117 @@ function buildPlan(ctx: PlanContext, withOrphans: boolean): Result<PlannedAction
       ? planSymlink(ctx)
       : planCopy(ctx, withOrphans);
 
+  // Secondary placements (A4b) are always copy-style regardless of the primary mode: a mirror is a
+  // few flat files and a managed-block is a merge, neither of which a whole-dir symlink expresses.
+  const placements = planPlacements(ctx, withOrphans);
+
   const action: PlannedAction = {
     agent: ctx.agent,
     scope: ctx.scope,
     mode: ctx.mode,
     files,
     ...(ctx.raufPin !== undefined ? { raufPin: ctx.raufPin } : {}),
+    ...(placements.length > 0 ? { placements } : {}),
   };
   return ok(action);
+}
+
+// ---------------------------------------------------------------------------
+// Secondary placements (A4b)
+// ---------------------------------------------------------------------------
+
+/** Plan every resolved secondary placement (A4b). `ctx.source` is non-null here. */
+function planPlacements(ctx: PlanContext, withOrphans: boolean): PlannedPlacement[] {
+  const resolved = ctx.placements ?? [];
+  if (resolved.length === 0) return [];
+  const source = ctx.source as LocatedSource;
+  const priorByDest = priorPlacementIndex(ctx.priorManifest);
+  return resolved.map((rp) =>
+    rp.kind === "mirror"
+      ? planMirror(ctx, rp, source, priorByDest.get(rp.destination) ?? null, withOrphans)
+      : planManagedBlock(ctx, rp, source, priorByDest.get(rp.destination) ?? null),
+  );
+}
+
+/** Index prior-manifest placements by their absolute destination, for clean/orphan reconciliation. */
+function priorPlacementIndex(prior: InstallManifest | null): Map<string, Placement> {
+  const m = new Map<string, Placement>();
+  for (const p of prior?.placements ?? []) m.set(p.destination, p);
+  return m;
+}
+
+/** Diff a "mirror" placement: each selected bundle file vs its flat destination + recorded hash. */
+function planMirror(
+  ctx: PlanContext,
+  rp: ResolvedPlacement,
+  source: LocatedSource,
+  prior: Placement | null,
+  withOrphans: boolean,
+): PlannedPlacement {
+  const recorded = new Map<string, ManifestFile>();
+  for (const f of prior?.files ?? []) recorded.set(f.path, f);
+
+  const mirror = selectMirrorFiles(source, rp.spec);
+  const files: PlacementFileAction[] = mirror.map((mf) => {
+    const destAbs = path.join(rp.destination, mf.destRelpath);
+    const destHash = hashIfExists(destAbs);
+    const manifestHash = recorded.get(mf.destRelpath)?.sha256;
+    const action = classifyFile(mf.destRelpath, mf.srcHash, destHash, manifestHash, ctx.force);
+    return { relpath: mf.destRelpath, action, srcRelpath: mf.srcRelpath };
+  });
+
+  if (withOrphans && prior !== null) {
+    const live = new Set(mirror.map((mf) => mf.destRelpath));
+    for (const f of prior.files) {
+      if (!live.has(f.path)) files.push({ relpath: f.path, action: "remove" });
+    }
+  }
+  return { kind: "mirror", root: rp.root, destination: rp.destination, files };
+}
+
+/** Diff a "managed-block" placement: render the block, compare its region to the on-disk region. */
+function planManagedBlock(
+  ctx: PlanContext,
+  rp: ResolvedPlacement,
+  source: LocatedSource,
+  prior: Placement | null,
+): PlannedPlacement {
+  const blockContent = renderCopilotBlock(source.skills);
+  const newHash = sha256String(wrapBlock(blockContent));
+  const basename = path.basename(rp.destination);
+
+  const current = readManagedRegionHash(rp.destination);
+  const recordedHash = prior?.files.find((f) => f.path === basename)?.sha256;
+
+  let action: FileActionKind;
+  if (current === undefined) {
+    action = "create"; // no managed region present yet
+  } else if (current === newHash) {
+    action = "unchanged";
+  } else {
+    const clean = recordedHash !== undefined && current === recordedHash;
+    action = clean ? "overwrite" : ctx.force ? "overwrite" : "skip-modified";
+  }
+
+  return {
+    kind: "managed-block",
+    root: rp.root,
+    destination: rp.destination,
+    files: [{ relpath: basename, action }],
+    blockContent,
+  };
+}
+
+/** Hash of the managed region currently in the target file, or undefined if absent/unreadable. */
+function readManagedRegionHash(file: string): string | undefined {
+  let content: string;
+  try {
+    content = fs.readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
+  const region = extractManagedRegion(content);
+  return region === null ? undefined : sha256String(region);
 }
 
 /** Copy-mode per-file diff (spec 04 §6). `ctx.source` is non-null here. */

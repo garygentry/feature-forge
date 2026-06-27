@@ -39,8 +39,19 @@ export type Subcommand = "install" | "update" | "uninstall" | "list";
 export const EXIT = { SUCCESS: 0, FAILURE: 1, USAGE: 2 } as const;
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT];
 
-/** Manifest schema version; bumped only on a breaking manifest-shape change. */
-export const SCHEMA_VERSION = 1 as const;
+/**
+ * Manifest schema version. v2 (A4b) adds the optional `placements[]` array for agents whose
+ * install spans a second filesystem root (codex `.codex/agents`, copilot `.github/copilot-
+ * instructions.md`). A v1 manifest (no `placements`) is still read verbatim by the back-compat
+ * reader — bumped only on a breaking manifest-shape change.
+ */
+export const SCHEMA_VERSION = 2 as const;
+
+/** Versions of the manifest this installer can READ (write is always SCHEMA_VERSION). */
+export const READABLE_SCHEMA_VERSIONS = [1, 2] as const;
+
+/** A manifest schemaVersion this installer accepts on read (back-compat v1 + current v2). */
+export type ReadableSchemaVersion = (typeof READABLE_SCHEMA_VERSIONS)[number];
 
 /** The single namespace directory name written inside each agent's install location [D5]. */
 export const FEATURE_FORGE_NS = "feature-forge" as const;
@@ -64,6 +75,42 @@ export type Confidence = "confirmed" | "verified-current" | "best-known" | "unsu
 
 /** How an agent consumes the bundle (documentation + future per-kind apply behavior). */
 export type InstallKind = "skills" | "extension" | "rules" | "instructions";
+
+/**
+ * Kind of a SECONDARY install placement (A4b). The primary bundle (the `feature-forge/` namespace
+ * dir) is always present and is never a placement; placements describe extra writes under a
+ * DIFFERENT filesystem root than the primary bundle:
+ * - "mirror"        — copy a subset of bundle files flat into a second dir (codex `.codex/agents/`,
+ *                     where Codex loads custom agents — it does not read them from `.agents/skills`).
+ * - "managed-block" — write/merge a sentinel-delimited block into a (possibly user-owned) instructions
+ *                     file (copilot `.github/copilot-instructions.md`), preserving the rest of the file.
+ */
+export type PlacementKind = "mirror" | "managed-block";
+
+/** HTML-comment sentinels delimiting a `managed-block` placement (mirrors rauf's convention). */
+export const MANAGED_BLOCK_START = "<!-- feature-forge:managed:start -->" as const;
+export const MANAGED_BLOCK_END = "<!-- feature-forge:managed:end -->" as const;
+
+/**
+ * Declarative descriptor of one secondary placement on an {@link AgentTarget} (A4b). Pure data, so a
+ * new agent (or a new second-root rule) stays one table edit (REQ-SCALE-01). The absolute root and
+ * destination are derived under a scope by {@link resolvePlacements}; nothing here is stored.
+ */
+export interface PlacementSpec {
+  readonly kind: PlacementKind;
+  /** Second-root dir under the scope root, e.g. ".codex" (mirror) or ".github" (managed-block). */
+  readonly baseDir: string;
+  /**
+   * Path under `baseDir`. For "mirror" this is the destination DIR (e.g. "agents"); for
+   * "managed-block" this is the target FILE (e.g. "copilot-instructions.md").
+   */
+  readonly subpath: string;
+  /**
+   * "mirror" only: bundle-relative prefix selecting which source files to copy (e.g. "agents/").
+   * Files matching the prefix are copied FLAT (basename only) into the placement destination.
+   */
+  readonly sourcePrefix?: string;
+}
 
 /**
  * One row of the static per-agent detection map (REQ-DET-01, REQ-DET-05). Adding a new
@@ -110,6 +157,12 @@ export interface AgentTarget {
   readonly projectConfidence?: Confidence;
   /** Current vendor/docs URL for this target's install convention (surfaced in reports). */
   readonly docsUrl: string;
+  /**
+   * Secondary install placements under a DIFFERENT root than the primary bundle (A4b). Absent for
+   * agents whose whole install is the single namespace dir (claude/cursor/gemini). Declarative data
+   * only — resolved to absolute roots by {@link resolvePlacements}; a new rule is one table edit.
+   */
+  readonly placements?: readonly PlacementSpec[];
 }
 
 /** Options for path resolution, injectable so tests never touch the real `~` (spec 02, spec 08). */
@@ -155,12 +208,30 @@ export interface ManifestFile {
 }
 
 /**
+ * One persisted SECONDARY placement (manifest v2, A4b). Records the absolute second root + dest and
+ * an inventory of what we wrote there, so `update`/`uninstall` reconcile it exactly like the primary
+ * bundle but under its own containment boundary (`root`). For "managed-block", `files` holds a single
+ * entry whose `path` is the file basename and whose `sha256` fingerprints the block region we wrote
+ * (drift/clean detection); the rest of that file is user-owned and never recorded.
+ */
+export interface Placement {
+  readonly kind: PlacementKind;
+  /** Absolute containment boundary every write for this placement is checked against (REQ-SEC-02). */
+  readonly root: string;
+  /** Absolute destination: a DIR ("mirror") or a FILE ("managed-block"). */
+  readonly destination: string;
+  /** Per-file inventory written under this placement (paths relative to `destination`'s dir). */
+  readonly files: ManifestFile[];
+}
+
+/**
  * The persisted per-install manifest (REQ-SAFE-01/03), written as the hidden parent-sibling
  * `<installSubdir>/.feature-forge.<scope>.json` (spec 05). It is the sole record `list`/`update`/
  * `uninstall` use to tell installer-written content from user content and to detect drift.
  */
 export interface InstallManifest {
-  readonly schemaVersion: typeof SCHEMA_VERSION;
+  /** Always {@link SCHEMA_VERSION} when written; v1 is still accepted on read (back-compat). */
+  readonly schemaVersion: ReadableSchemaVersion;
   readonly agent: AgentId;
   readonly scope: Scope;
   readonly mode: Mode;
@@ -186,6 +257,11 @@ export interface InstallManifest {
   readonly files: ManifestFile[];
   /** Symlink mode only: the source bundle the namespace dir links to (REQ-SAFE-02). */
   readonly link?: { readonly target: string };
+  /**
+   * Secondary placements written under a different root than the primary bundle (manifest v2, A4b).
+   * Absent on agents without a second-root rule (claude/cursor/gemini) and on legacy v1 manifests.
+   */
+  readonly placements?: Placement[];
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +302,38 @@ export interface PlannedAction {
   readonly files: FileAction[];
   /** Surfaced in the plan/report for visibility (spec 06); not a file action. */
   readonly raufPin?: string | null;
+  /**
+   * Resolved secondary-placement plans (A4b). Each carries its own absolute root + destination, the
+   * per-file diff actions, and (for "managed-block") the exact block content a real run will write —
+   * so dry-run shows, and `apply` performs, identical work. Absent when the agent has no placements.
+   */
+  readonly placements?: PlannedPlacement[];
+}
+
+/**
+ * One secondary placement's resolved plan (A4b): the dry-run = real-run unit for a second root. The
+ * planner fills `files` by diffing source ⇆ destination (same classifier as the primary bundle) and,
+ * for "managed-block", attaches the rendered `blockContent` the apply step writes between sentinels.
+ */
+export interface PlannedPlacement {
+  readonly kind: PlacementKind;
+  /** Absolute containment boundary (REQ-SEC-02). */
+  readonly root: string;
+  /** Absolute destination dir ("mirror") or file ("managed-block"). */
+  readonly destination: string;
+  /**
+   * Per-file diff actions. "mirror" entries carry `srcRelpath` (the bundle-relative source to copy);
+   * "managed-block" has a single entry whose `relpath` is the file basename (no `srcRelpath`).
+   */
+  readonly files: PlacementFileAction[];
+  /** "managed-block" only: the rendered block body (without sentinels) a create/overwrite writes. */
+  readonly blockContent?: string;
+}
+
+/** A placement file action: a {@link FileAction} plus the bundle-relative source for "mirror" copies. */
+export interface PlacementFileAction extends FileAction {
+  /** "mirror" only: bundle-relative source path to copy into `<destination>/<relpath>`. */
+  readonly srcRelpath?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,8 +404,8 @@ export interface RunReport {
  */
 export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
   claude: { id: "claude", configDirName: ".claude", installBaseDir: ".claude", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "confirmed", docsUrl: "https://docs.claude.com/en/docs/claude-code/skills" },
-  codex: { id: "codex", configDirName: ".codex", installBaseDir: ".agents", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://developers.openai.com/codex/skills" },
-  copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "<name>.md", confidence: "best-known", docsUrl: "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions" },
+  codex: { id: "codex", configDirName: ".codex", installBaseDir: ".agents", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://developers.openai.com/codex/skills", placements: [{ kind: "mirror", baseDir: ".codex", subpath: "agents", sourcePrefix: "agents/" }] },
+  copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "<name>.md", confidence: "best-known", docsUrl: "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions", placements: [{ kind: "managed-block", baseDir: ".github", subpath: "copilot-instructions.md" }] },
   cursor: { id: "cursor", configDirName: ".cursor", installBaseDir: ".cursor", installSubpath: "rules", installKind: "rules", skillFileForm: "<name>.mdc", confidence: "verified-current", docsUrl: "https://cursor.com/docs/context/rules" },
   gemini: { id: "gemini", configDirName: ".gemini", installBaseDir: ".gemini", installSubpath: "extensions", installKind: "extension", skillFileForm: "<name>.md", confidence: "verified-current", projectConfidence: "best-known", docsUrl: "https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/index.md" },
 } as const;

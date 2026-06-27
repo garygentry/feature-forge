@@ -25,6 +25,14 @@ export function sha256File(filePath: string): string {
 }
 
 /**
+ * SHA-256 of a UTF-8 string, hex-encoded. Used to fingerprint a managed-block region (A4b) so the
+ * planner can tell a clean prior block (recorded hash matches) from a user-edited one. Pure.
+ */
+export function sha256String(s: string): string {
+  return createHash("sha256").update(Buffer.from(s, "utf8")).digest("hex");
+}
+
+/**
  * Deterministic SHA-256 over a directory tree's file set (OQ-4). The digest is a function of the
  * set of `{ relativePosixPath, fileContentHash }` pairs ONLY — never of mtime, inode, or
  * traversal order.

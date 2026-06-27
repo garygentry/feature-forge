@@ -96,7 +96,7 @@ test("readManifest: MANIFEST_CORRUPT on schemaVersion mismatch", async () => {
   await withSandbox(async (sb) => {
     const p = path.join(sb.home, ".feature-forge.global.json");
     fs.mkdirSync(sb.home, { recursive: true });
-    fs.writeFileSync(p, JSON.stringify({ ...copyManifest(), schemaVersion: 2 }), "utf8");
+    fs.writeFileSync(p, JSON.stringify({ ...copyManifest(), schemaVersion: 99 }), "utf8");
     const r = readManifest(p);
     assert.ok(!r.ok);
     assert.equal(r.error.code, "MANIFEST_CORRUPT");
