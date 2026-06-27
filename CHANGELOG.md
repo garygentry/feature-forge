@@ -9,13 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **rauf pin advanced to `@garygentry/rauf@0.8.1`.** rauf released 0.8.1 (current
-  `codex exec` automation flags — `--sandbox workspace-write --ask-for-approval never`),
-  so `RAUF_PIN` advances `0.8.0 → 0.8.1` — the version a fresh install provisions as the
-  default loop runner. Canonical `installHint` (`references/forge-config-schema.json`),
-  regenerated adapters, and `COMPATIBILITY.md` updated. `minRunnerVersion` stays `0.6.0`
-  (a patch doesn't raise the floor); rauf and feature-forge remain independently versioned.
-  Installer published as `@garygentry/feature-forge@0.2.1` to carry the new pin.
+- **rauf pin advanced to `@garygentry/rauf@0.10.1`.** rauf shipped 0.9.0 (Effort B2),
+  0.10.0 (Codex packaging + a dedicated, telemetry-capable `CodexCliProvider` that
+  fixes the broken codex loop — `--ask-for-approval` is a top-level flag current Codex
+  rejects after `exec`), and 0.10.1 (cursor preset `--print` headless fix + real-CLI
+  preset argv validation), so `RAUF_PIN` advances `0.8.1 → 0.10.1` (superseding the
+  still-unreleased 0.8.1 bump) — the version a fresh install provisions as the default
+  loop runner. Canonical `installHint` (`references/forge-config-schema.json`),
+  regenerated adapters, `COMPATIBILITY.md`, installer docs, and the installer pin tests
+  updated. `minRunnerVersion` stays `0.6.0` (no compatibility floor change across B2/C);
+  rauf and feature-forge remain independently versioned. The install-time check is a
+  read-only `npm view` resolvability probe — existing installs are unaffected.
 
 ## [0.11.0] — 2026-06-26
 
