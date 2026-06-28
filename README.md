@@ -263,6 +263,12 @@ Applies fixes from the most recent verification findings document. Parses the Fi
 
 Displays a status dashboard showing pipeline progress with stage indicators. Supports lifecycle commands to pause, resume, or abandon features. Maintains free-form notes that persist across sessions.
 
+Beyond a passive status view, the navigator is built to **drive** a feature from one stage to the next:
+
+- **Recency prediction** — with no feature named, the navigator lists active features most-recently-touched first and recommends the top one. If exactly one active standalone pipeline exists, it opens straight to that feature's dashboard — no typing needed.
+- **Driving to the next stage** — after the dashboard, the navigator offers the next stage. When `autoInvokeNextStage` is true (default), it launches that stage in the same session via the `Skill` tool — no copy-paste. On a non-Claude host, or when `autoInvokeNextStage` is `false`, it prints the command for you to run instead.
+- **Context-window awareness** — the navigator checks live session token usage and, once past `contextWarnThreshold` (default `0.7`), recommends clearing context (`/clear`) and re-running before the next stage, so each heavy stage starts with headroom. Usage is inferred from the session model and falls back to a 200k window, auto-bumping to 1M once observed usage exceeds 200k. On a 1M-context model, set `contextWindowTokens` to `1000000` for accurate readings below 200k. See the [dashboard guide](https://garygentry.github.io/feature-forge/pipeline/dashboard/) and [Sessions & monitoring](https://garygentry.github.io/feature-forge/pipeline/sessions-and-monitoring/).
+
 ## Specialized Agents
 
 feature-forge delegates specific workloads to specialized subagents that operate in isolated contexts, reducing pressure on the main session's context window.
@@ -308,7 +314,10 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
   "commitPrefix": "forge",
   "stack": null,
   "typeCheckCommand": null,
-  "testCommand": null
+  "testCommand": null,
+  "autoInvokeNextStage": true,
+  "contextWindowTokens": null,
+  "contextWarnThreshold": 0.7
 }
 ```
 
@@ -323,6 +332,9 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
 | `typeCheckCommand`    | string  | `null`                  | Type-check command used in acceptance criteria and verification. Set during Stage 2                                                                                                                          |
 | `testCommand`         | string  | `null`                  | Test command used in acceptance criteria and verification. Set during Stage 2                                                                                                                                |
 | `loopRunner`          | object  | rauf defaults           | Loop-runner binding for `forge-5-loop` (`bin`, command templates, `defaultAgent`, `minRunnerVersion` — floor **rauf ≥ 0.6.0**). See [docs/agents/claude.md](docs/agents/claude.md) "The default loop runner" |
+| `autoInvokeNextStage` | boolean | `true`                  | When true, the `/feature-forge:forge` navigator auto-invokes the next pipeline stage via the `Skill` tool after you confirm it, instead of only printing the command. Set `false` to keep copy-paste behavior. Ignored on non-Claude hosts (which always print).                                              |
+| `contextWindowTokens` | integer | `null`                  | Context window (tokens) the navigator uses to gauge how full the current session is. `null` infers from the session model, falls back to 200000, and auto-bumps to 1000000 once observed usage exceeds 200000. Set explicitly (e.g. `1000000`) for accurate readings below 200k on a 1M-context model.       |
+| `contextWarnThreshold`| number  | `0.7`                   | Fraction of the context window (0–1) past which the navigator recommends starting the next stage in a clean session.                                                                                                                                                                                          |
 
 ## Pipeline State
 

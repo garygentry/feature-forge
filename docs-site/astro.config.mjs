@@ -56,6 +56,7 @@ export default defineConfig({
             { label: "Stage 6 · Docs", slug: "pipeline/stage-6-docs" },
             { label: "Verify & Fix", slug: "pipeline/verify-and-fix" },
             { label: "Dashboard", slug: "pipeline/dashboard" },
+            { label: "Sessions & Monitoring", slug: "pipeline/sessions-and-monitoring" },
           ],
         },
         {

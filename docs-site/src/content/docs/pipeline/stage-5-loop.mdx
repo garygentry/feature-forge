@@ -55,6 +55,25 @@ background and is supervised live; you don't need to babysit it.
 - Optionally run the [Verify & Fix](/pipeline/verify-and-fix/) gate on the implementation.
 - Generate documentation with [Stage 6](/pipeline/stage-6-docs/).
 
+## Session management & monitoring
+
+The loop runs in the **background** and survives the session that launched it. Each
+backlog item gets its **own fresh agent session** (no memory of prior items), which is
+why items must be self-contained. State for each feature is isolated under the runner's
+state dir — `{backlogDir}/{loopRunner.stateDir}` (rauf default `.rauf/`) — so concurrent
+features never collide.
+
+While the loop runs, Feature Forge supervises it live by reading rauf's **native**
+`events.ndjson` event stream (it does not redirect the loop's output). As items finish,
+`item_completed` events tally progress; `item_blocked` and `loop_error` are surfaced
+immediately. When an item emits `needs_human`, the session pushes you a notification and
+collects your answer for a post-run retry — **the loop does not pause**, it keeps working
+the rest of the backlog. You don't need to babysit a terminal, though you still can with
+the `rauf` commands below.
+
+See [Sessions & monitoring](/pipeline/sessions-and-monitoring/) for how loop sessions fit
+alongside pipeline state and the navigator's context checks.
+
 ## Watching and controlling the loop (rauf)
 
 You can observe and steer the rauf loop directly from a terminal:
