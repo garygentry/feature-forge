@@ -37,7 +37,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final, TypedDict
 
@@ -207,9 +207,12 @@ def _parse_ts(value: str | None) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def build_rows(specs_dir: Path) -> list[FeatureRow]:
@@ -242,7 +245,7 @@ def build_rows(specs_dir: Path) -> list[FeatureRow]:
         })
     # Sort by updatedAt desc; rows without a parseable timestamp sort last.
     rows.sort(
-        key=lambda r: (_parse_ts(r["updatedAt"]) or datetime.min.replace(tzinfo=None)),
+        key=lambda r: (_parse_ts(r["updatedAt"]) or datetime.min.replace(tzinfo=timezone.utc)),
         reverse=True,
     )
     return rows
