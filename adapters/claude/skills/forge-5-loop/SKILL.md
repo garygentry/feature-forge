@@ -197,7 +197,7 @@ Then commit this state write before launching (mandatory). The runner refuses to
 
 ### 3b. Launch Background Process
 
-Launch the loop **backgrounded** (`run_in_background: true`) so it survives session end and does not block the session, and prefer the machine-readable event stream (`loopRunner.eventStreamCommand`, default for rauf) redirected to a stable `events.ndjson` so the session can supervise it live; fall back to the plain `runCommand` (tailing the human log) when no `eventStreamCommand` is configured. The background task's exit notification is the single authoritative terminal signal (Step 4). Loop runs can take significant time (minutes to hours depending on backlog size). For the exact launch commands (incl. the `mkdir -p` state-dir guard) and the event-stream vs. log-fallback detail, read `references/runner-contract.md`.
+Launch the loop **backgrounded** (`run_in_background: true`) so it survives session end and does not block the session. For a runner that **persists its own structured event file** (the default — rauf writes `{stateDir}/events.ndjson` natively and rotates it per run), launch the **plain `runCommand`** with **no stdout redirect** and supervise the runner's **native** `events.ndjson` directly; do **not** redirect `--ndjson` into `{stateDir}` (it is redundant and collides with the runner's own writer — see `references/runner-contract.md`). Only a stdout-only runner (no native event file) uses `eventStreamCommand`, redirected to a file **outside** `{stateDir}`. The background task's exit notification is the single authoritative terminal signal (Step 4). Loop runs can take significant time (minutes to hours depending on backlog size). For the exact launch commands (incl. the `mkdir -p` state-dir guard) and the self-persisting vs. stdout-only detail, read `references/runner-contract.md`.
 
 ### 3c. Inform User
 
@@ -295,6 +295,7 @@ Update `{resolvedFeatureDir}/.pipeline-state.json`:
 
 ## Gotchas
 
+- **Plugin-root discovery (1b-epic helper) covers installed paths, not workspace-dev checkouts.** The `forge-root.sh` search in 1b-epic probes `~/.claude/skills/feature-forge`, `~/.claude/plugins/*/feature-forge`, and `./.agents/skills/feature-forge` — the locations of an **installed** plugin. A feature-forge **source checkout** (e.g. `~/workspace/feature-forge`) is not on that list, so the helper exits "cannot locate plugin root." That is expected in a dev environment, not a bug; run the epic-manifest script from the checkout directly (`python3 <checkout>/scripts/epic-manifest.py …`). Note the `~/.claude/plugins/*/feature-forge` glob can also print a zsh "no matches found" line when that dir is empty — harmless.
 - `{backlogDir}` is a **directory path**, not a file path. Pass `specs/auth`, not `specs/auth/backlog.json`.
 - rauf resolves `RAUF.md` with fallback: checks `{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`. As long as the runner is installed in the project, the prompt template will be found.
 - State files (state.json, {loopRunner.logFile}, etc.) are created at `{backlogDir}/{loopRunner.stateDir}/` — this is within the feature's spec directory and is expected. State is isolated per backlog dir, so concurrent features don't collide.
