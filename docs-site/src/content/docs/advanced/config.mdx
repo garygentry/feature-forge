@@ -18,6 +18,9 @@ description: Every key in forge.config.json, its type, default, and meaning, plu
 | `typeCheckCommand` | string or null | `null` | Type-check command (e.g. `bun run typecheck`, `mypy .`); resolved in Stage 2. |
 | `testCommand` | string or null | `null` | Test command (e.g. `bun test`, `pytest`); resolved in Stage 2. |
 | `loopIterationMultiplier` | number | `1.5` | Multiplier applied to the pending-item count to compute loop iterations (e.g. 10 items × 1.5 = 15). |
+| `autoInvokeNextStage` | boolean | `true` | Navigator auto-invokes the next stage via the `Skill` tool after you confirm; `false` keeps copy-paste. Ignored on non-Claude hosts (always print). Navigator-only. |
+| `contextWindowTokens` | integer or null | `null` | Context window used by the navigator's context-usage check. `null` infers from the session model, falls back to 200000, and auto-bumps to 1000000 once usage exceeds 200000. Set explicitly (e.g. `1000000`) for accurate readings below 200k. Navigator-only. |
+| `contextWarnThreshold` | number | `0.7` | Fraction of the window (0–1) past which the navigator recommends a clean session before the next stage. Navigator-only. |
 | `workspaces` | array | (absent) | Monorepo members; each has `name`, `path`, `stack`, and optional `typeCheckCommand`/`testCommand`. |
 | `loopRunner` | object | (absent → rauf defaults) | Configures the Stage-5 loop runner. See below. |
 
@@ -36,6 +39,22 @@ The Stage-5 loop runner is configured, not hardcoded. When the `loopRunner` bloc
 | `preconditionFile` | `.rauf.json` | Precondition / config file checked before the loop runs. |
 
 All of the runner command keys are templates with `{bin}`, `{backlogDir}`, `{specsDir}`, and `{iterations}` substituted at call time; most users never need to set these. See [Stage 5](/pipeline/stage-5-loop/) for usage.
+
+## Session & usage monitoring
+
+`autoInvokeNextStage`, `contextWindowTokens`, and `contextWarnThreshold` configure how
+the [`forge` navigator](/pipeline/dashboard/) drives you between stages and warns you
+about a filling context window:
+
+- The navigator measures the **current session's** token usage against the context
+  window. Past `contextWarnThreshold` (default 70%), it recommends `/clear` and a
+  re-run before the next stage.
+- The window is inferred from the session model, falling back to 200k, and **auto-bumps
+  to 1M once usage exceeds 200k** (usage above 200k proves a 1M-beta window is active).
+- A 1M window can't be detected until usage crosses 200k, so on a 1M-context model set
+  `contextWindowTokens` to `1000000` for accurate readings below 200k too.
+
+See [Sessions & monitoring](/pipeline/sessions-and-monitoring/) for the full picture.
 
 ## Example
 

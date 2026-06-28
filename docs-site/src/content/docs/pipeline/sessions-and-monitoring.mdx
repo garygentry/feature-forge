@@ -1,0 +1,78 @@
+---
+title: "Sessions & Monitoring"
+description: "How Feature Forge persists progress across sessions, when to hand off to a clean session, and how loop and context-usage monitoring are configured."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Feature Forge is built to be driven across many sessions — a long pipeline rarely fits in
+one. This page ties together how progress persists, when to start a clean session, and
+how the navigator and loop monitor what's happening.
+
+## What persists across sessions
+
+Each feature's progress lives in `{specsDir}/{feature}/.pipeline-state.json`, which
+persists across sessions and machines (it's committed with your artifacts). It records
+per-stage status, verification status, the artifact inventory, version tracking for
+[staleness detection](/pipeline/overview/), commit SHAs, and timestamps.
+
+Because state is on disk, you can close a session and resume later: re-run
+[`/feature-forge:forge`](/pipeline/dashboard/) and it reads the state file to tell you
+exactly where the feature stands and what to run next.
+
+**Crash recovery.** If a stage is interrupted mid-execution, the pipeline inventories the
+artifacts already on disk, compares them to the state file, and offers to resume from the
+last completed artifact or restart the stage.
+
+## Clean-session handoffs between stages
+
+Stages are heavy — each reads specs, dispatches subagents, and writes artifacts — so a
+single session that runs several stages back-to-back fills its context window. When that
+happens, quality degrades.
+
+The [`forge` navigator](/pipeline/dashboard/) guards against this. Before advancing, it
+checks how full the current session is and, past a threshold, recommends clearing context
+(`/clear`) and re-running before the next stage. The state file makes the handoff
+seamless: the fresh session reads `.pipeline-state.json` and picks up exactly where you
+left off.
+
+## Configuring usage monitoring
+
+The navigator's context check is configured by three keys in
+[`forge.config.json`](/advanced/config/):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `contextWindowTokens` | `null` | The window the check measures against. `null` infers from the session model, falls back to 200000, and auto-bumps to 1000000 once usage exceeds 200000. |
+| `contextWarnThreshold` | `0.7` | Fraction of the window (0–1) past which a clean session is recommended. |
+| `autoInvokeNextStage` | `true` | Whether the navigator launches the next stage in-session (vs. printing the command). |
+
+How the window is resolved:
+
+1. An explicit `contextWindowTokens` wins.
+2. Otherwise it's inferred from the session model id, falling back to **200k**.
+3. If observed usage exceeds 200k, the window **auto-bumps to 1M** — usage above 200k
+   proves a 1M-beta window is active, so reporting against 200k would give a nonsensical
+   >100%.
+
+<Aside type="tip" title="1M-context models">
+A 1M window can't be detected from the transcript until usage actually crosses 200k. On a
+1M-context model, set `contextWindowTokens` to `1000000` so percentages are accurate
+**below** 200k too. On a non-Claude host (no readable session transcript), the context
+check is skipped silently — everything else works the same.
+</Aside>
+
+## The loop's session model
+
+[Stage 5](/pipeline/stage-5-loop/) is where session isolation matters most. The
+autonomous loop:
+
+- Runs in the **background** and survives the launching session.
+- Spawns a **fresh agent session per backlog item**, so items must be self-contained.
+- Keeps each feature's state isolated under the runner's state dir
+  (`{backlogDir}/{loopRunner.stateDir}`, rauf default `.rauf/`).
+
+Feature Forge supervises the run live by reading rauf's native `events.ndjson` stream —
+tallying completions, surfacing blocked items and errors, and notifying you (without
+pausing the loop) when an item needs a human decision. See
+[Stage 5 · Loop](/pipeline/stage-5-loop/) for the full monitoring and control surface.
