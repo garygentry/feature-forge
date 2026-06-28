@@ -121,8 +121,7 @@ user requests additional flags, append them to the rendered run command.
 ## Launch detail (Step 3b — background process)
 
 Launch the loop **backgrounded** so it survives session end and does not block the
-session, and prefer the machine-readable event stream so the session can supervise
-it live.
+session, then supervise it live via the runner's structured event file.
 
 > **Clean-tree precondition.** rauf refuses to run with uncommitted changes
 > (*"Refusing to run the loop with uncommitted changes… pass --force"*). Step 3a's
@@ -132,22 +131,41 @@ it live.
 > changes after that commit, surface it and let the user commit/stash or pass
 > `--force`; never auto-pass `--force`.
 
-- **If `loopRunner.eventStreamCommand` is configured (default for rauf):** render it
-  (it appends `--ndjson` to the run) and launch via the Bash tool with
-  `run_in_background: true`, redirecting stdout to a stable events file:
+**Do NOT redirect the run's stdout into `{loopRunner.stateDir}`.** rauf **persists
+its own** `{stateDir}/events.ndjson` (structured) and `{stateDir}/{logFile}` (human)
+natively, and **rotates** them at the start of every run (the prior run's files are
+renamed into `{stateDir}/archive/`). A redirect like `… --ndjson >
+{stateDir}/events.ndjson` therefore (a) is **redundant** — the runner writes that
+file regardless — and (b) **collides** with the runner's own writer: the shell holds
+a descriptor on the file the runner immediately rotates away, so the redirected
+`--ndjson` stdout is orphaned into a bogus `archive/` file while the live
+`events.ndjson` is the runner's native stream. It only *looks* clean by accident of
+rotation timing. So:
+
+- **Self-persisting runner (default — rauf writes `{stateDir}/events.ndjson`):**
+  launch the **plain `runCommand`** with `run_in_background: true` and **no
+  redirect** — the Bash tool already captures the run's stdout/stderr to the
+  background task's output file (use it to diagnose a launch refusal). Supervise by
+  arming the Monitor on the runner's **native** `{backlogDir}/{stateDir}/events.ndjson`
+  (Step 3d). Guard the very first run with the state dir:
 
   ```
-  mkdir -p {backlogDir}/{loopRunner.stateDir} && {rendered eventStreamCommand} > {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>&1
+  mkdir -p {backlogDir}/{loopRunner.stateDir} && {rendered runCommand}
   ```
 
-  (The `mkdir -p` guards the very first run, before the runner has created its
-  state dir.) This emits one JSON event per line **and** keeps the loop detached. The background
-  task's exit notification remains the single authoritative terminal signal (Step 4).
-- **Fallback (runner has no `eventStreamCommand`):** launch the plain `runCommand`
-  with `run_in_background: true`. The session will then supervise by tailing the
-  human log (3d fallback) instead of the NDJSON file.
+  (Note: the `--ndjson` stdout stream and `loopRunner.eventStreamCommand` are **not**
+  used on this path — the native file already carries the same structured records.)
+- **Stdout-only runner (no native event file):** render `eventStreamCommand` (it adds
+  `--ndjson`) and redirect its stdout to a file **outside `{stateDir}`** so it cannot
+  collide with any native file or be swept into `archive/`, then Monitor that file:
 
-Loop runs can take significant time (minutes to hours depending on backlog size).
+  ```
+  mkdir -p {backlogDir}/{loopRunner.stateDir} && {rendered eventStreamCommand} > {backlogDir}/forge-events.ndjson 2>&1
+  ```
+
+The background task's exit notification remains the single authoritative terminal
+signal (Step 4). Loop runs can take significant time (minutes to hours depending on
+backlog size).
 
 ## Arm a Monitor on the event stream (Step 3d)
 
@@ -161,16 +179,24 @@ terminal and exception state, not just the happy path — otherwise a crash or h
 looks identical to "still running." Monitor command (NDJSON path):
 
 ```
-tail -n +1 -f {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>&1 \
+tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>/dev/null \
   | jq -rc --unbuffered 'select(.type | test("item_completed|item_blocked|needs_human|signal_parsed|loop_completed|loop_error|loop_cancelled|llm_stuck_warning"))'
 ```
+
+> **Use `tail -F` (follow by name), not `-f` (follow by descriptor).** The runner
+> **rotates** `events.ndjson` at the start of each run (renames the prior file into
+> `archive/`, creates a fresh one). A Monitor that attaches with `-f` during that
+> brief rotation window would follow the **archived** inode and then see silence —
+> indistinguishable from a healthy quiet loop. `-F` re-opens the live file by name,
+> so it always tracks the runner's current native stream. (Send `tail`'s own
+> rotation chatter to `/dev/null` so it can't reach the `jq` filter.)
 
 - **Fallback (log tail, no NDJSON):** match the runner's **structured prose
   prefixes**, never the `RAUF_*` tokens (those leak inside agent output and
   false-match). For rauf:
 
   ```
-  tail -n +1 -f {backlogDir}/{loopRunner.stateDir}/{loopRunner.logFile} \
+  tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/{loopRunner.logFile} 2>/dev/null \
     | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:'
   ```
 
