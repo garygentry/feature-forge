@@ -80,7 +80,7 @@
         "completedAt": { "type": ["string", "null"], "format": "date-time" },
         "commitHash": {
           "type": ["string", "null"],
-          "description": "Git commit SHA after this stage completed"
+          "description": "Git commit SHA of this stage's artifact commit (Commit 1 of the two-commit Git Commit Protocol in shared-conventions.md). Written by a small follow-up commit so it points at the artifact commit itself, never at an orphaned amend or the hash-recording commit. null until recorded (or when there was no new artifact commit)."
         },
         "basedOnVersions": {
           "type": "object",
@@ -107,7 +107,7 @@
         },
         "verifiedAt": { "type": ["string", "null"], "format": "date-time" },
         "fixedAt": { "type": ["string", "null"], "format": "date-time" },
-        "commitHash": { "type": ["string", "null"] }
+        "commitHash": { "type": ["string", "null"], "description": "Git commit SHA of the verify/fix artifact commit. Recorded via the two-commit Git Commit Protocol (shared-conventions.md) so it points at the artifact commit, never an orphaned amend." }
       }
     }
   }

@@ -142,7 +142,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
    - Set `stages.forge-3-specs.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>}`
    - Check downstream stages (forge-4-backlog, forge-5-loop, forge-6-docs). If any have `basedOnVersions` referencing older versions, set their status to `stale`
 2. Use `AskUserQuestion` to ask about notes to persist
-3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete implementation specs v{n}"`, then set `stages.forge-3-specs.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
+3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete implementation specs v{n}"` (marking `stages.forge-3-specs.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
 5. Tell the user: "Implementation specs complete. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the specs (strongly recommended)\n  - `/feature-forge:forge-4-backlog {feature}` to generate the backlog\n  - `/feature-forge:forge {feature}` to see full pipeline status"
 
 ## Gotchas

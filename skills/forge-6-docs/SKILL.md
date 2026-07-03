@@ -176,7 +176,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
    - Set `currentStage` to `complete`
    - Record `artifacts`
    - Set `stages.forge-6-docs.basedOnVersions` to include versions for all completed upstream stages. Always include forge-1-prd, forge-2-tech, forge-3-specs. Include forge-4-backlog and forge-5-loop ONLY if they have status `complete`.
-2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (`git add {docsDir}/{feature}/ {resolvedFeatureDir}/` — and **also** `{docsDir}/{epic}/` when an epic-level doc was written in Step 1), attempt commit with message `"{commitPrefix}({feature}): complete architecture docs"`, then set `stages.forge-6-docs.status` to `complete` with commit hash only on success. If commit fails, leave status as `in-progress`.
+2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (`git add {docsDir}/{feature}/ {resolvedFeatureDir}/` — and **also** `{docsDir}/{epic}/` when an epic-level doc was written in Step 1), attempt commit with message `"{commitPrefix}({feature}): complete architecture docs"` (marking `stages.forge-6-docs.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
 4. Tell user: "Documentation complete. Feature pipeline for '{feature}' is finished!\n  `/feature-forge:forge {feature}` to see the final pipeline status."
 
 ## Gotchas

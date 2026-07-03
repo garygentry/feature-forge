@@ -160,8 +160,10 @@ follow the Git Commit Protocol in shared-conventions:
    `"forge({epic}): create epic with 4 features"`, `"forge({epic}): add feature api-gateway"`,
    `"forge({epic}): remove feature legacy-session"`, `"forge({epic}): reorder features"`,
    `"forge({epic}): set dependency on token-service"`, or `"forge({epic}): set status paused"`.
-3. On success, capture the commit hash. On failure (pre-commit hook, conflict), report and do
-   **not** mark complete; never use `--no-verify`/`--force`.
+3. On success, capture the commit hash for reporting only — the epic manifest has no `commitHash`
+   field, so nothing is written back into a committed file and the two-commit step of the Git Commit
+   Protocol does not apply here. On failure (pre-commit hook, conflict), report and do **not** mark
+   complete; never use `--amend`/`--no-verify`/`--force`.
 
 Because every mutation is committed, the git history of `epic-manifest.json` is the audit trail; no
 separate in-manifest audit log is kept.
