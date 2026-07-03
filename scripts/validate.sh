@@ -223,6 +223,10 @@ fi
 echo ""
 echo "Building + testing the cross-agent installer..."
 if command -v npm >/dev/null 2>&1; then
+  # Remove the gitignored prepack bundle artifact so its scaffold template
+  # fixtures (vitest-based, not installer deps) can't be discovered by
+  # `node --test` and produce a spurious failure. CI never has this dir.
+  rm -rf "$REPO_ROOT/installer/adapters"
   if ( cd "$REPO_ROOT/installer" && npm ci --silent && npm run build --silent && npm test ); then
     echo "PASS: installer build + node:test suite"
   else
