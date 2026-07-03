@@ -24,3 +24,5 @@ installer/dist/
 installer/adapters/
 installer/LICENSE
 **/.rauf/archive/
+__pycache__/
+*.pyc
