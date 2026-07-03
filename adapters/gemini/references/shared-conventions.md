@@ -180,16 +180,18 @@ Invoke this block at the **very start** of a pipeline entry point — `forge-1-p
 
 ## Git Commit Protocol
 
-When `gitCommitAfterStage` is true, follow this exact order to avoid state inconsistency:
+When `gitCommitAfterStage` is true, follow this exact order to avoid state inconsistency.
+
+**Why two commits.** The stage's `.pipeline-state.json` is itself part of the staged commit, but the stage's `commitHash` cannot be known until *after* that commit is made. Recording it *inside* the same commit is a chicken-and-egg with no single-commit solution. Resolve it with a **deterministic two-commit sequence**, and **never** with `git commit --amend`: amending rewrites HEAD, so a hash captured before the amend points at an orphaned commit that is not in the final history (the exact defect this protocol exists to prevent).
 
 1. **Stage specific files only:** `git add {specsDir}/{feature}/` — never use `git add -A` or `git add .`
-2. **Attempt commit:** `git commit -m "{commitPrefix}({feature}): <action>"`
-3. **If commit succeeds:** capture the commit hash, then update pipeline state with `status: "complete"` and the `commitHash`
-4. **If commit fails:** do NOT update pipeline state to complete. Report the error to the user and leave state as `in-progress` so the stage can be resumed. Common failure causes:
+2. **Commit 1 — artifacts + state, hash not yet known:** In `.pipeline-state.json`, set this stage's `status: "complete"` and `commitHash: null`, then `git commit -m "{commitPrefix}({feature}): <action>"`. This is the stage's **artifact commit**; its hash is the provenance hash callers rely on.
+3. **If Commit 1 succeeds — Commit 2 records the hash:** Capture the hash of Commit 1 (`git rev-parse HEAD`). Write it into this stage's `commitHash` in `.pipeline-state.json`, then commit only that one-line change: `git add {specsDir}/{feature}/.pipeline-state.json && git commit -m "{commitPrefix}({feature}): record stage commit hash"`. The stored `commitHash` now points at the artifact commit (Commit 1) — never at Commit 2, and never at an orphaned amend. The working tree is clean afterward, so the next stage's dirty-tree check passes.
+4. **If Commit 1 fails:** do NOT update pipeline state to complete. Report the error to the user and leave state as `in-progress` so the stage can be resumed. Common failure causes:
    - **Pre-commit hook failure:** Report the hook output. Never use `--no-verify` to bypass. Help the user fix the underlying issue.
    - **Merge conflicts:** Report conflicting files. Suggest resolution steps appropriate to the conflict.
-   - **Nothing to commit:** If all artifacts were already committed, this is fine — proceed with state update but note the absence of a new commit hash.
-5. **Never** use `git add -A`, `--no-verify`, or `--force` flags
+   - **Nothing to commit:** If all artifacts were already committed, this is fine — mark the stage `complete`, leave `commitHash` at its existing value (or `null` if there was never an artifact commit), and skip Commit 2. There is no new artifact commit to record.
+5. **Never** use `git add -A`, `--amend`, `--no-verify`, or `--force` flags
 
 ## Crash Recovery
 

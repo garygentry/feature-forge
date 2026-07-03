@@ -247,8 +247,10 @@ now self-contained: manifest + EPIC.md + one subdirectory per member.
      captures `epic-manifest.json`, `EPIC.md`, and all member `.pipeline-state.json` files
      atomically.
    - Commit with message `"{commitPrefix}({epic}): create epic with {N} features"`.
-   - On success, capture the commit hash. On failure (pre-commit hook, conflict), report and do
-     not mark complete; never use `--no-verify`/`--force`.
+   - On success, capture the commit hash for the closing message only — the epic manifest has no
+     `commitHash` field, so nothing is written back into a committed file and the two-commit step of
+     the Git Commit Protocol does not apply here. On failure (pre-commit hook, conflict), report and
+     do not mark complete; never use `--amend`/`--no-verify`/`--force`.
 
 3. **Closing message.** After a successful creation, tell the user the next steps:
 

@@ -55,7 +55,7 @@ Follow the Git Commit Protocol in `references/shared-conventions.md`.
 1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
    - Set the relevant `forge-verify-*` entry status to `findings-applied`
    - Record `fixedAt` timestamp
-2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files (`git add {resolvedFeatureDir}/` — or `{specsDir}/{epic}/` for an epic member so the member-state change commits atomically with the epic subtree), attempt commit with message `"{commitPrefix}({feature}): apply {mode} verification fixes"`, then record commit hash only on success.
+2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files (`git add {resolvedFeatureDir}/` — or `{specsDir}/{epic}/` for an epic member so the member-state change commits atomically with the epic subtree), attempt commit with message `"{commitPrefix}({feature}): apply {mode} verification fixes"` (writing `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success.
 
 ## Step 6: Next Steps
 
