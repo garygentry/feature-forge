@@ -102,6 +102,10 @@ class FeatureRow(TypedDict):
     nextCommand: str | None
     verifyPending: bool
     verifyCommand: str | None
+    verifyStage: str | None
+    verifyState: str
+    autoVerify: bool
+    autoFix: bool
 
 
 class UsageError(Exception):
@@ -181,13 +185,52 @@ def next_stage(state: dict) -> str | None:
     return None
 
 
-def pending_verify(state: dict) -> str | None:
-    """Return the production stage whose verify is outstanding, if any.
+def _stage_version(state: dict, stage: str) -> int | None:
+    """Return the recorded ``version`` of a stage entry, or None if absent."""
+    stages = state.get("stages")
+    if not isinstance(stages, dict):
+        return None
+    entry = stages.get(stage)
+    if not isinstance(entry, dict):
+        return None
+    version = entry.get("version")
+    return version if isinstance(version, int) else None
 
-    The most recently completed production stage whose corresponding
-    ``forge-verify-*`` is neither resolved (passed/findings-applied/skipped) nor
-    already run. Surfaced so the navigator can offer "verify before continuing"
-    as an alternative to advancing. Returns ``None`` when nothing needs verify.
+
+def _verify_entry(state: dict, verify_key: str) -> dict:
+    """Return the ``forge-verify-*`` entry dict, or ``{}`` if absent."""
+    stages = state.get("stages")
+    if not isinstance(stages, dict):
+        return {}
+    entry = stages.get(verify_key)
+    return entry if isinstance(entry, dict) else {}
+
+
+def verify_state(state: dict) -> tuple[str | None, str]:
+    """Classify verify freshness for the most-recently-completed stage.
+
+    Returns ``(stage, state_label)`` where ``state_label`` is one of:
+
+    - ``fresh``   — verify is resolved AND its ``verifiedStageVersion`` matches the
+      stage's current ``version`` (so no re-verify is needed).
+    - ``stale``   — verify was resolved once, but the stage version has since moved
+      (artifact revised) OR the entry predates the freshness ledger (no
+      ``verifiedStageVersion``). A revised artifact must be re-verified.
+    - ``failing`` — verify ran and reported findings that are not yet applied
+      (``findings-reported``).
+    - ``never``   — the stage completed but verify has not run at all.
+    - ``skipped`` — the user explicitly chose to proceed without verifying. A
+      resolved, non-pending state: it is deliberately NOT re-offered or
+      auto-verified, and (unlike a genuine verification result) it does not go
+      stale on an artifact revision — skip writers record no version to compare
+      against, and re-surfacing would override an explicit human decision.
+    - ``none``    — no completed verify-capable stage (nothing to verify), stage
+      is ``None``.
+
+    Only the most-recent completed production stage is considered, matching the
+    navigator's "verify before continuing" gate. Absent ``verifiedStageVersion``
+    on a ``passed``/``findings-applied`` entry (legacy state) is deliberately
+    treated as ``stale`` — verify rather than skip.
     """
     for stage in reversed(PRODUCTION_STAGES):
         if _stage_status(state, stage) != _DONE_STATUS:
@@ -195,11 +238,41 @@ def pending_verify(state: dict) -> str | None:
         token = VERIFY_TOKEN_BY_STAGE.get(stage)
         if token is None:
             continue  # forge-6-docs has no verify step
-        verify_status = _stage_status(state, f"forge-verify-{token}")
-        if verify_status not in _VERIFY_RESOLVED:
-            return stage
-        return None  # most-recent complete stage is already verified
-    return None
+        entry = _verify_entry(state, f"forge-verify-{token}")
+        status = entry.get("status")
+        if status == "skipped":
+            # An explicit skip is resolved and non-pending — preserve the user's
+            # decision. It never goes stale (no recorded version to compare), so
+            # the freshness check below deliberately does not apply.
+            return stage, "skipped"
+        if status not in _VERIFY_RESOLVED:
+            if status == "findings-reported":
+                return stage, "failing"
+            return stage, "never"
+        verified_version = entry.get("verifiedStageVersion")
+        stage_version = _stage_version(state, stage)
+        if (
+            isinstance(verified_version, int)
+            and stage_version is not None
+            and verified_version == stage_version
+        ):
+            return stage, "fresh"
+        return stage, "stale"
+    return None, "none"
+
+
+def pending_verify(state: dict) -> str | None:
+    """Return the production stage whose verify is outstanding, if any.
+
+    Outstanding means the most-recently-completed production stage's verify is not
+    ``fresh`` (never run, reported findings, or gone stale after an artifact
+    revision). An explicit ``skipped`` is treated as resolved (never outstanding).
+    Surfaced so the navigator can offer "verify before continuing" as an
+    alternative to advancing. Returns ``None`` when the latest stage is fresh,
+    skipped, or there is nothing to verify.
+    """
+    stage, label = verify_state(state)
+    return stage if label not in ("fresh", "none", "skipped") else None
 
 
 def _parse_ts(value: str | None) -> datetime | None:
@@ -215,20 +288,29 @@ def _parse_ts(value: str | None) -> datetime | None:
     return dt
 
 
-def build_rows(specs_dir: Path) -> list[FeatureRow]:
+def build_rows(specs_dir: Path, config: dict | None = None) -> list[FeatureRow]:
     """Build the recency-ranked active-feature rows (the rank-features payload).
 
     Active features (``pipelineStatus == "active"``, the default when absent) are
     sorted by ``updatedAt`` descending — most recently touched first — so the
     navigator's recency default is row 0.
+
+    ``config`` is the loaded forge.config.json (or ``{}``); it drives the effective
+    ``autoVerify``/``autoFix`` per stage so the navigator can branch without
+    re-reading config.
     """
+    config = config or {}
+    # Fail closed: only a literal JSON ``true`` enables artifact-mutating autoFix.
+    global_auto_fix = config.get("autoFix") is True
     rows: list[FeatureRow] = []
     for name, epic, state in _scan_features(specs_dir):
         status = state.get("pipelineStatus", "active")
         if status != "active":
             continue
         nxt = next_stage(state)
-        verify_stage = pending_verify(state)
+        vstage, vlabel = verify_state(state)
+        verify_pending = vstage is not None and vlabel not in ("fresh", "none", "skipped")
+        effective_auto_verify = auto_verify_for(config, vstage) if vstage else False
         branch = state.get("branch")
         updated = state.get("updatedAt")
         rows.append({
@@ -240,8 +322,12 @@ def build_rows(specs_dir: Path) -> list[FeatureRow]:
             "complete": nxt is None,
             "nextStage": nxt,
             "nextCommand": f"/feature-forge:{nxt} {name}" if nxt else None,
-            "verifyPending": verify_stage is not None,
-            "verifyCommand": f"/feature-forge:forge-verify {name}" if verify_stage else None,
+            "verifyPending": verify_pending,
+            "verifyCommand": f"/feature-forge:forge-verify {name}" if verify_pending else None,
+            "verifyStage": vstage,
+            "verifyState": vlabel,
+            "autoVerify": effective_auto_verify,
+            "autoFix": global_auto_fix and effective_auto_verify,
         })
     # Sort by updatedAt desc; rows without a parseable timestamp sort last.
     rows.sort(
@@ -331,13 +417,53 @@ def _infer_window(model: str | None) -> int:
     return _DEFAULT_WINDOW
 
 
-def _config_value(config_path: Path, key: str):
-    """Read a single key from forge.config.json, or None if absent/unreadable."""
+def _load_config(config_path: Path) -> dict:
+    """Read forge.config.json into a dict, tolerating missing/corrupt files.
+
+    A missing, unreadable, or non-object config downgrades to ``{}`` so callers
+    read every key through absent-safe ``.get`` defaults.
+    """
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
-    return config.get(key) if isinstance(config, dict) else None
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
+def _config_value(config_path: Path, key: str):
+    """Read a single key from forge.config.json, or None if absent/unreadable."""
+    return _load_config(config_path).get(key)
+
+
+def auto_verify_for(config: dict, stage: str) -> bool:
+    """Return the effective auto-verify setting for ``stage``.
+
+    Per-stage override in ``autoVerifyStages`` wins over the global ``autoVerify``;
+    both default to off, so a config with neither key means "no auto-verify".
+
+    Parsing is strict and **fails closed**: only a literal JSON ``true`` enables
+    auto-verify. A non-boolean value (e.g. the string ``"false"``, which is truthy
+    in Python) is treated as off, not on. The schema already rejects non-booleans
+    at author time; this guards a hand-edited config from silently enabling
+    automation.
+    """
+    stages = config.get("autoVerifyStages")
+    if isinstance(stages, dict) and stage in stages:
+        return stages[stage] is True
+    return config.get("autoVerify") is True
+
+
+def invalid_auto_verify_keys(config: dict) -> list[str]:
+    """Return ``autoVerifyStages`` keys outside the verify-capable stage ids.
+
+    An unknown/typo key (e.g. ``forge-1-prod``) would silently never take effect,
+    turning an intended off-switch into a no-op. Surfacing it lets the navigator
+    warn instead of failing quietly. Mirrors the schema's ``propertyNames.enum``.
+    """
+    stages = config.get("autoVerifyStages")
+    if not isinstance(stages, dict):
+        return []
+    return [key for key in stages if key not in VERIFY_TOKEN_BY_STAGE]
 
 
 def context_usage(
@@ -452,6 +578,7 @@ def main() -> int:
 
     p_rank = sub.add_parser("rank-features", help="Rank active features by recency")
     p_rank.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_rank.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
     p_rank.add_argument("--json", action="store_true", dest="json_output")
 
     p_ctx = sub.add_parser("context-usage", help="Report live context-window usage")
@@ -465,12 +592,22 @@ def main() -> int:
     try:
         if args.cmd == "rank-features":
             specs_dir = Path(args.specs_dir)
-            rows = build_rows(specs_dir)
+            config = _load_config(Path(args.config))
+            rows = build_rows(specs_dir, config)
             counts = _counts(specs_dir)
+            invalid_keys = invalid_auto_verify_keys(config)
             if args.json_output:
-                print(json.dumps({"active": rows, "counts": counts}, indent=2, ensure_ascii=False))
+                payload = {"active": rows, "counts": counts}
+                if invalid_keys:
+                    payload["invalidAutoVerifyKeys"] = invalid_keys
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
             else:
                 _print_rank_table(rows, counts)
+                if invalid_keys:
+                    print(
+                        "  ! invalid autoVerifyStages keys (ignored): "
+                        + ", ".join(invalid_keys)
+                    )
             return 0
 
         if args.cmd == "context-usage":

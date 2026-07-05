@@ -51,6 +51,11 @@ At Stage 5, if a member has unmet direct dependencies the loop warns you and req
 - `/feature-forge:forge <epic>` shows the epic [dashboard](/pipeline/dashboard/) — the members and their states.
 - `/feature-forge:forge-verify <epic>` verifies the epic: manifest validity, member-state coherence, and contract drift.
 
+[`autoVerify`](/pipeline/verify-and-fix/#auto-verify) applies to each member's per-stage
+verification (PRD through implementation), so members are auto-verified as they progress just
+like standalone features. Epic-level verification (`forge-verify <epic> epic`) is a separate,
+manual gate — run it after adding or reordering members, or when member contracts change.
+
 ## Reference
 
 For internals and the CLI, see the maintainer reference pages: [epic overview](/epic-orchestration/overview/), [epic architecture](/epic-orchestration/architecture/), and [epic CLI reference](/epic-orchestration/cli-reference/).

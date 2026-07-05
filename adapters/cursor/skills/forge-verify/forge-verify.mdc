@@ -73,6 +73,28 @@ without subagents), fall back to running verification inline in the current sess
 
 **Inline execution guidance:** If running inline (not as subagent), process verification checklists one category at a time to manage context pressure. Load only the artifacts needed for each category, verify, summarize findings, then move to the next category.
 
+### Require-clean (`auto`) mode — unattended auto-verify
+
+When the navigator auto-invokes this skill (its `autoVerify` path), it passes a
+**require-clean** signal (e.g. args include `--require-clean`, or the invocation is
+described as auto-verify). In this mode the clean-room guarantee is load-bearing: the
+whole reason auto-verify is safe to run without a `/clear` is that the `forge-verifier`
+subagent inherits none of the dispatching session's context. Running inline would break
+that — it would consume the dispatching session's context and invalidate the no-clear
+justification.
+
+So in require-clean mode, **do NOT fall back to inline execution**. If the `Agent` tool
+or `forge-verifier` subagent is not dispatchable, return a **sentinel** instead of doing
+any work:
+
+> `CLEAN_ROOM_UNAVAILABLE: forge-verifier subagent not dispatchable — verify not run.`
+
+Do not analyze artifacts, do not write a findings document, and do not touch pipeline
+state. The navigator detects this sentinel and degrades to its manual verify gate (Tier
+2/3), so verify state stays outstanding and the stage is never marked verified on false
+assurance. **Manual / interactive invocation** (the normal `/feature-forge:forge-verify`
+path, no require-clean signal) keeps the inline fallback above unchanged.
+
 ## Prerequisites
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
@@ -188,8 +210,15 @@ Do NOT embed this question in your text output.
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 Update `{specsDir}/{feature}/.pipeline-state.json`:
-- Set the relevant verify entry status to `findings-reported`
+- Set the relevant verify entry status to `findings-reported` (or `passed` when there
+  are zero findings)
 - Record `findingsFile`, `findingsCount`, `verifiedAt`
+- Record `verifiedStageVersion` = the current `version` of the production stage entry
+  this verify covers (e.g. verifying `tech` → `stages["forge-2-tech"].version`). This
+  feeds the navigator's freshness ledger: a later revision to that artifact bumps its
+  `version`, so the recorded value no longer matches and auto-verify re-fires. Omitting
+  this leaves the verify looking stale (safe: the navigator re-verifies rather than
+  skips).
 
 Do NOT mark as `findings-applied` — that happens after the fix pass.
 

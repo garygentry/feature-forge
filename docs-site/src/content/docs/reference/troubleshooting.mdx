@@ -52,6 +52,8 @@ When [`forge-verify`](/pipeline/verify-and-fix/) finds issues, it writes a findi
 
 Then re-verify to confirm the findings are resolved.
 
+This verify → fix → re-verify loop can be automated with [`autoFix: true`](/pipeline/verify-and-fix/#auto-verify), but only when it's safe to do so — the findings document must have no unresolved decision points, the working tree must be clean, and the mandatory re-verify must pass. If any precondition fails, the navigator falls back to surfacing the findings digest and asking you before running `forge-fix`. Because `autoFix` mutates artifacts without a human read, it stays off by default; leaving it off keeps you in the loop on every fix.
+
 ## Installed-bundle self-location (non-Claude agents)
 
 A known limitation: an installed non-Claude adapter bundle does not currently carry `epic-manifest.py` or `.claude-plugin/plugin.json`, so the portable resolver cannot self-locate from an installed bundle. This does not block normal use.

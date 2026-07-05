@@ -41,7 +41,7 @@ R="$(for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/fea
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" rank-features --specs-dir "{specsDir}" --json
      ```
-     This returns `{active: [...], counts: {...}}` with active features sorted by `updatedAt` **descending** (row 0 is the most recent). Each row carries `currentStage`, `nextStage`, `nextCommand`, `verifyPending`, and `verifyCommand` (the single source of stage order). The `active` list excludes nested epic members surfaced in Tier 1 — but the ranker scans them too, so ignore rows whose `epic` is non-null here (they belong to the epic rollup).
+     This returns `{active: [...], counts: {...}}` with active features sorted by `updatedAt` **descending** (row 0 is the most recent). Each row carries `currentStage`, `nextStage`, `nextCommand`, `verifyPending`, `verifyCommand`, `verifyStage`, `verifyState` (`fresh`/`stale`/`failing`/`never`/`none`), `autoVerify` (the effective per-stage setting), and `autoFix` (the single source of stage order). A top-level `invalidAutoVerifyKeys` array appears when `forge.config.json` has `autoVerifyStages` keys outside the five verify-capable stages — surface it as a one-line warning. The `active` list excludes nested epic members surfaced in Tier 1 — but the ranker scans them too, so ignore rows whose `epic` is non-null here (they belong to the epic rollup).
    - **Pick the feature:** if exactly one active standalone pipeline exists, show its dashboard. If multiple exist, use `AskUserQuestion` — **list the most-recently-updated first, labeled `(recommended)`**, each option's description showing its `currentStage` and a relative age ("updated 2h ago"). Always include a free-form escape ("A different feature / something else") so the user is never boxed in. Then render the chosen feature's dashboard.
 
 If no epics and no standalone features exist, say: "No active feature pipelines found. Start one with `/feature-forge:forge-1-prd <feature-name>` or group several with `/feature-forge:forge-0-epic <epic-name>`."
@@ -89,7 +89,7 @@ Use these status indicators:
 
 After rendering a **per-feature** dashboard for an **active** pipeline (skip this for paused/abandoned pipelines and for the Epic Dashboard), don't stop at a text suggestion — actively offer to start the next stage. This removes the copy-paste-after-`/clear` chore that makes long, multi-stage runs painful (especially on mobile).
 
-**1. Read the next step.** From the `rank-features --json` output (above), find this feature's row and read its `nextStage`, `nextCommand`, `verifyPending`, and `verifyCommand`. If the feature is not in the `active` list (paused/abandoned), or `nextStage` is `null` (every production stage complete), skip the drive prompt — instead congratulate the user and, if `forge-6-docs` has not run, offer it; otherwise note the pipeline is complete.
+**1. Read the next step.** From the `rank-features --json` output (above), find this feature's row and read its `nextStage`, `nextCommand`, `verifyPending`, `verifyCommand`, `verifyStage`, `verifyState`, `autoVerify`, and `autoFix`. If the feature is not in the `active` list (paused/abandoned), or `nextStage` is `null` (every production stage complete), skip the drive prompt — instead congratulate the user and, if `forge-6-docs` has not run, offer it; otherwise note the pipeline is complete. If the payload has a non-empty `invalidAutoVerifyKeys`, print a one-line warning first (e.g. "⚠️ forge.config.json `autoVerifyStages` has unknown keys: … — they are ignored; fix the typo").
 
 **2. Check the context window.** Run the context-usage helper so you can advise whether to continue here or start the next stage in a fresh session:
 ```bash
@@ -100,17 +100,30 @@ python3 "$R/scripts/forge-session.py" context-usage --json
 - `{"available": true, ...}` → note `pct` (e.g. "context ~68% full") and `overThreshold`. Window/threshold come from `contextWindowTokens` / `contextWarnThreshold` in `forge.config.json` (the helper defaults to a 200k window and 0.7 threshold, and auto-bumps the assumed window to 1M once observed usage exceeds 200k; **on a 1M-context model set `contextWindowTokens: 1000000` so the percentage is accurate below 200k too** — 1M can't be detected from the transcript until usage crosses 200k).
 - `{"available": false, ...}` → omit context advice silently (non-Claude host, or a fresh session with no transcript). Never treat this as an error.
 
-**3. Offer the next step via `AskUserQuestion`.** Output the dashboard + a one-line context note as text, then ask (per the Decision Support protocol in `references/shared-conventions.md`). Options, in this order:
+**2b. Auto-verify branch (when `verifyPending` is true).** Before offering the advance gate, decide whether verify runs automatically:
+
+- **`autoVerify` is true for the just-completed `verifyStage`** → **skip the verify question entirely** and run verify now, *provided it can run clean-room*. Auto-verify is safe to run unattended only because verify executes in a fresh `forge-verifier` subagent that inherits none of this session's context (so no `/clear` is needed and only a compact digest returns). Guard the clean-room assumption: proceed unattended **only when the `Agent` tool + `forge-verifier` subagent are available**. Invoke `feature-forge:forge-verify` via the `Skill` tool in **require-clean (`auto`) mode** — in that mode forge-verify refuses to run inline and returns a sentinel if the subagent is not dispatchable (see `skills/forge-verify/SKILL.md`). Then:
+  - **Sentinel returned (clean-room unavailable)** → do **not** run verify inline. Degrade to the manual gate: fall through to step 3 with the **"Verify `{stage}` first"** option included, and if `overThreshold`, recommend "/clear, then verify in a clean session." Verify state stays outstanding; the stage is never advanced on false assurance.
+  - **Verify passed / no findings** → proceed to the normal advance gate (step 3), no verify option.
+  - **Verify found findings** →
+    - **`autoFix` is true AND preconditions hold** — the findings document has **zero unresolved decision points** and the **working tree is clean** → invoke `feature-forge:forge-fix` via the `Skill` tool, then run a **mandatory re-verify** (require-clean mode). Advance only if the re-verify passes. On **any** precondition miss (decisions required, dirty tree), a forge-fix early stop, or a red re-verify → fall back to the digest + prompt below (never a silent partial mutation).
+    - **`autoFix` is false (default), or preconditions failed** → present a **compact findings digest** as text, then `AskUserQuestion`: *Apply fixes now (forge-fix)* / *Review findings* / *Skip & advance*.
+- **`autoVerify` is false/unconfigured** → do not auto-run; use the advance gate in step 3, which gains the opt-in "Auto-verify now" option.
+
+**3. Offer the next step via `AskUserQuestion`.** (Reached when auto-verify did not fully resolve the step, or `verifyPending` is false.) Output the dashboard + a one-line context note as text, then ask (per the Decision Support protocol in `references/shared-conventions.md`). Options, in this order:
 - **Start `{nextStage}` now** — recommended **when context is healthy** (`overThreshold` false or context unavailable).
 - **Start in a clean session** — recommended-**first** instead **when `overThreshold` is true**. The work survives a clear because all state is on disk: instruct the user to `/clear`, then re-run `/feature-forge:forge {feature}` (or run `{nextCommand}` directly) in the fresh session. Note plainly that you cannot `/clear` for them.
-- **Verify `{stage}` first** — include **only when `verifyPending` is true**; selecting it runs `{verifyCommand}`.
+- **Auto-verify `{stage}` now** — include **only when `verifyPending` is true and `autoVerify` is false** (the unconfigured opt-in). **Recommended**, since verify is clean-room and rarely worth skipping. Selecting it runs verify now (require-clean mode); afterward ask **once**: *"Make auto-verify the default? (writes `autoVerify: true` to forge.config.json)"* — on yes, patch the config JSON in place (preserve formatting and other keys); on no, leave config untouched. No silent config writes.
+- **Verify `{stage}` first** — include **only when `verifyPending` is true** and the clean-room path is unavailable (the Tier-2 degradation above), or the host lacks the `Skill`/`Agent` tools; selecting it runs `{verifyCommand}` (inline / manual).
 - **Pick a different stage** — free-form escape to any stage or other action.
 
 **4. Act on the choice.**
 - **Start now** → if `autoInvokeNextStage` is true (default) **and** the `Skill` tool is available, invoke the chosen stage **via the `Skill` tool** in this same session (e.g. `skill: "feature-forge:forge-3-specs"`, `args: "{feature}"`) — no retyping, no paste. If `autoInvokeNextStage` is false, or the `Skill` tool is unavailable (a non-Claude host), fall back to printing `{nextCommand}` prominently for the user to run.
 - **Clean session** → give the exact next command and the `/clear`-then-re-run instruction; do not invoke anything.
-- **Verify** → invoke `feature-forge:forge-verify` via the `Skill` tool (or print `{verifyCommand}` on a non-Claude host).
+- **Auto-verify now / Verify** → invoke `feature-forge:forge-verify` via the `Skill` tool (require-clean mode for the auto-verify path; or print `{verifyCommand}` on a non-Claude host or when degrading to the manual/inline gate).
 - **Different stage** → honor the free-form request.
+
+**Host fallback.** On a non-Claude host or when the `Skill`/`Agent` tools are unavailable, auto-verify never runs unattended — fall back to printing `{verifyCommand}` exactly as today, mirroring `autoInvokeNextStage`.
 
 This applies whether the feature was named explicitly (`/feature-forge:forge {feature}`) or resolved from the recency default.
 

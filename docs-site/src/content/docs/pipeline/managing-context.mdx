@@ -63,6 +63,14 @@ fresh subagent regardless of your session's state — it's clean-room by constru
 artifacts on disk with no inherited context. Verify whenever you want; it neither needs nor
 benefits from a manual clear.
 
+Because verification is clean-room and rarely worth skipping, you can automate it. Setting
+`autoVerify: true` in `forge.config.json` makes the navigator run verify automatically after each
+stage completes — it dispatches the fresh subagent, which costs your session only a compact
+findings digest, and returns. There is nothing to clear: the verifier never sees your context in
+the first place. If the fresh subagent can't be dispatched, auto-verify degrades to the manual
+gate rather than running inline and burning your context. Fixing stays human-gated unless you also
+set `autoFix: true`. See [Verify & Fix → Auto-verify](/pipeline/verify-and-fix/#auto-verify).
+
 ## Decision cheat-sheet
 
 | Transition | Recommended | Why |

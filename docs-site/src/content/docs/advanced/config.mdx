@@ -21,6 +21,9 @@ description: Every key in forge.config.json, its type, default, and meaning, plu
 | `autoInvokeNextStage` | boolean | `true` | Navigator auto-invokes the next stage via the `Skill` tool after you confirm; `false` keeps copy-paste. Ignored on non-Claude hosts (always print). Navigator-only. |
 | `contextWindowTokens` | integer or null | `null` | Context window used by the navigator's context-usage check. `null` infers from the session model, falls back to 200000, and auto-bumps to 1000000 once usage exceeds 200000. Set explicitly (e.g. `1000000`) for accurate readings below 200k. Navigator-only. |
 | `contextWarnThreshold` | number | `0.7` | Fraction of the window (0–1) past which the navigator recommends a clean session before the next stage. Navigator-only. |
+| `autoVerify` | boolean | `false` | Auto-run `forge-verify` after a stage completes, with no prompt. Runs in a fresh clean-room subagent, so it never needs a `/clear` and costs the session only a digest. See [Auto-verify](#auto-verify) below. Navigator-only. |
+| `autoVerifyStages` | object | `{}` | Per-stage overrides for `autoVerify`, e.g. `{"forge-1-prd": false}`. Effective value = `autoVerifyStages[stage]` if present, else `autoVerify`. Keys are limited to the five verify-capable stages (`forge-1-prd`…`forge-5-loop`); an unknown key is a config error, not a silent no-op. Navigator-only. |
+| `autoFix` | boolean | `false` | Chain `forge-fix` after an auto-verify that finds issues — honored only when `autoVerify` is on for the stage **and** preconditions hold. Mutates artifacts, so it stays off by default. See [Auto-verify](#auto-verify). Navigator-only. |
 | `workspaces` | array | (absent) | Monorepo members; each has `name`, `path`, `stack`, and optional `typeCheckCommand`/`testCommand`. |
 | `loopRunner` | object | (absent → rauf defaults) | Configures the Stage-5 loop runner. See below. |
 
@@ -55,6 +58,33 @@ about a filling context window:
   `contextWindowTokens` to `1000000` for accurate readings below 200k too.
 
 See [Sessions & monitoring](/pipeline/sessions-and-monitoring/) for the full picture.
+
+## Auto-verify
+
+`autoVerify`, `autoVerifyStages`, and `autoFix` let the [`forge` navigator](/pipeline/dashboard/)
+run the verification gate for you. Verification is uniquely safe to automate: `forge-verify`
+delegates to the read-only `forge-verifier` subagent, which runs in a **fresh window that inherits
+none of your session's context**. A `/clear` before it is pointless, and it is rarely a step worth
+skipping — so **enabling `autoVerify` is the recommended default** for hands-off runs.
+
+- **`autoVerify: true`** — after each stage completes, the navigator dispatches the fresh subagent,
+  which returns only a compact findings digest to your session. No prompt, no paste.
+- **`autoVerifyStages`** — opt individual stages in or out, e.g. `{"forge-3-specs": true, "forge-1-prd": false}`.
+  The effective value for a stage is its override if present, otherwise the global `autoVerify`.
+- **Freshness** — a verify is considered fresh only while the stage artifact's `version` matches
+  what was verified. Revise an artifact and it is re-verified; leave it unchanged and it is not
+  re-run. An explicitly **skipped** verify is respected and never auto-run.
+- **Clean-room guarantee** — auto-verify runs unattended **only when the fresh subagent can be
+  dispatched**. If it can't (partial install, or a non-Claude host), it never runs inline in your
+  session — it degrades to the manual verify gate, so a stage is never marked verified on false
+  assurance.
+- **`autoFix: true`** — chains `forge-fix` after an auto-verify that finds issues, but only when
+  `autoVerify` is on for that stage **and** the findings have zero unresolved decisions, the working
+  tree is clean, and a mandatory re-verify passes. Any miss falls back to a digest + prompt. Because
+  it mutates artifacts without a human read, it's a power-user opt-in; leaving it off keeps fixing
+  human-gated.
+
+See [Verify & Fix → Auto-verify](/pipeline/verify-and-fix/#auto-verify) for the operator's view.
 
 ## Example
 

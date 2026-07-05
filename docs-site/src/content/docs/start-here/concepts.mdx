@@ -45,8 +45,14 @@ complete.
 
 **Verify & Fix gate** — after any stage you can run `forge-verify` to analyze the
 artifacts for gaps, inconsistencies, and errors; it writes a findings document.
-`forge-fix` then applies those fixes. See
-[Verify & Fix](/pipeline/verify-and-fix/).
+`forge-fix` then applies those fixes. Because verify runs in a fresh, read-only
+subagent (clean-room by construction), it's safe to run unattended: set
+`autoVerify: true` and the navigator verifies each stage for you. See
+[Verify & Fix](/pipeline/verify-and-fix/#auto-verify).
+
+**Auto-verify** — the recommended default for hands-off runs: config-driven
+verification that fires automatically after a stage completes, costing your session
+only a compact digest. Fixing stays human-gated unless you also opt into `autoFix`.
 
 ## The autonomous loop
 

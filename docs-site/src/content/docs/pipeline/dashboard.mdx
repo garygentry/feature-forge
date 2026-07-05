@@ -46,7 +46,12 @@ it hands you off depends on `autoInvokeNextStage` (see
   command (e.g. `/feature-forge:forge-3-specs <feature>`) for you to run yourself.
 
 When a verification gate is pending for the current stage, the navigator offers to
-[verify](/pipeline/verify-and-fix/) first.
+[verify](/pipeline/verify-and-fix/) first. With
+[`autoVerify` enabled](/pipeline/verify-and-fix/#auto-verify) for that stage, it skips
+the prompt and runs verify automatically (in a fresh subagent), surfacing only the
+findings digest. An explicitly **skipped** verify is respected — the navigator does not
+re-offer or auto-run it — and a verified stage is re-checked only if its artifact is
+later revised.
 
 ## Context-window awareness
 

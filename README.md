@@ -335,6 +335,28 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
 | `autoInvokeNextStage` | boolean | `true`                  | When true, the `/feature-forge:forge` navigator auto-invokes the next pipeline stage via the `Skill` tool after you confirm it, instead of only printing the command. Set `false` to keep copy-paste behavior. Ignored on non-Claude hosts (which always print).                                              |
 | `contextWindowTokens` | integer | `null`                  | Context window (tokens) the navigator uses to gauge how full the current session is. `null` infers from the session model, falls back to 200000, and auto-bumps to 1000000 once observed usage exceeds 200000. Set explicitly (e.g. `1000000`) for accurate readings below 200k on a 1M-context model.       |
 | `contextWarnThreshold`| number  | `0.7`                   | Fraction of the context window (0–1) past which the navigator recommends starting the next stage in a clean session.                                                                                                                                                                                          |
+| `autoVerify`          | boolean | `false`                 | When true, the navigator runs `forge-verify` automatically after a stage completes — no prompt. Verify runs in a fresh clean-room subagent, so it never needs a `/clear` and costs the current session only a compact findings digest. See [Auto-verify](#auto-verify) below.                                  |
+| `autoVerifyStages`    | object  | `{}`                    | Per-stage overrides for `autoVerify`, e.g. `{"forge-1-prd": false}`. Effective value = `autoVerifyStages[stage]` if present, else `autoVerify`. Keys are constrained to the five verify-capable stages (`forge-1-prd`…`forge-5-loop`); an unknown key is a config error, surfaced by the navigator, not a silent no-op. |
+| `autoFix`             | boolean | `false`                 | When true, the navigator chains `forge-fix` after an auto-verify that finds issues — but only when auto-verify is on for that stage **and** preconditions hold (zero unresolved decisions, clean working tree, and a mandatory re-verify passes); otherwise it falls back to a findings digest + prompt. Power-user opt-in: it mutates artifacts without a human read. |
+
+### Auto-verify
+
+By default, after each authoring stage the navigator offers to run `forge-verify` and you
+choose. Verification is uniquely safe to automate: `forge-verify` delegates to the read-only
+`forge-verifier` subagent, which runs in a **fresh window that inherits none of your session's
+context**. A `/clear` before it is therefore pointless, and it is rarely a step worth skipping.
+
+Set `"autoVerify": true` and the navigator runs verify automatically after a stage completes —
+no prompt, no paste — and returns only a compact digest to your session. Use `autoVerifyStages`
+to opt individual stages in or out. If the fresh subagent can't be dispatched (partial install
+or a non-Claude host), auto-verify **never runs inline in your session** — it degrades to the
+normal manual verify gate, so verification never silently burns your context or marks a stage
+verified on false assurance.
+
+Fixing stays human-gated by default: on findings, the navigator surfaces a digest and asks
+before running `forge-fix`. Setting `"autoFix": true` lets verify→fix chain unattended, but only
+under strict preconditions (no unresolved decisions in the findings, a clean tree, and a passing
+re-verify) — any miss falls back to the prompt.
 
 ## Pipeline State
 
