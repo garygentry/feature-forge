@@ -36,6 +36,16 @@ The pipeline compiles a fuzzy feature idea into a machine-executable `backlog.js
 **Output:** `{specsDir}/{feature}/.verification/VERIFY-<stage>-<timestamp>.md` (includes both findings and a Fix Execution Plan)
 **Method:** Clean-context analysis producing actionable findings with an ordered fix plan.
 
+**Manual or automatic.** By default the navigator offers verification after each stage. Because
+it runs in a fresh, read-only subagent (clean-room by construction, never needs a `/clear`), it is
+safe to automate: set `autoVerify: true` (or per-stage via `autoVerifyStages`) in
+`forge.config.json` and the navigator runs `forge-verify` automatically once a stage completes,
+returning only a compact digest to the session. The freshness ledger (verify entries record the
+artifact `version` they ran against) means a stage is re-verified only when its artifact changes,
+and an explicitly `skipped` verify is respected. Fixing stays human-gated unless `autoFix: true` is
+also set, which chains `forge-fix` only when preconditions hold (zero unresolved decisions, clean
+tree, passing re-verify). See `references/shared-conventions.md` for the config keys.
+
 After verification, fixes can be applied via:
 - `/feature-forge:forge-fix <feature>` — reads the Fix Execution Plan from the findings document and applies changes (works in any session)
 - Plan mode workflow — enter plan mode, run verify, review plan, exit and execute

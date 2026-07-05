@@ -61,6 +61,27 @@
       "default": true,
       "description": "When true (default), the /feature-forge:forge navigator auto-invokes the next pipeline stage via the Skill tool after the user confirms it, instead of only printing the command to copy. Set false to keep the old copy-paste behavior (the navigator suggests the command but never launches it). Ignored on non-Claude hosts, which always fall back to printing the command."
     },
+    "autoVerify": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, the /feature-forge:forge navigator automatically runs forge-verify after a stage completes, with no prompt. forge-verify runs in a fresh forge-verifier subagent (clean-room), so it never needs a context clear and costs the current session only a compact findings digest. Default false preserves today's manual-gate behavior. Ignored on non-Claude hosts, which always fall back to printing the verify command. Per-stage overrides in autoVerifyStages take precedence."
+    },
+    "autoVerifyStages": {
+      "type": "object",
+      "default": {},
+      "description": "Per-stage overrides for autoVerify. Maps a production stage id to a boolean; the effective value for a stage is autoVerifyStages[stage] if present, else autoVerify. Keys are constrained to the five verify-capable stages so a typo (e.g. 'forge-1-prod') is a schema error, not a silent no-op. forge-6-docs has no verify step and is not a valid key.",
+      "propertyNames": {
+        "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop"]
+      },
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "autoFix": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, the navigator chains forge-fix automatically after an auto-verify that finds issues. Honored ONLY when auto-verify is effectively on for the stage, and ONLY when preconditions hold (findings doc has zero unresolved decision points, working tree is clean, and a mandatory re-verify passes) — otherwise it falls back to surfacing the findings digest and prompting. Default false keeps fixing human-gated."
+    },
     "contextWindowTokens": {
       "type": ["integer", "null"],
       "default": null,

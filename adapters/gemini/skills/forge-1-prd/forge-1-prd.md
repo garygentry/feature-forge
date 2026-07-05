@@ -112,7 +112,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 2. Use the host's question mechanism to ask: "Anything you want to note before we wrap? (preserved across sessions)"
    - If yes, store in the `notes` field
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (including `{specsDir}/AGENTS.md` / `{specsDir}/CLAUDE.md` if the Specs Directory Hygiene step just wrote them), attempt commit with message `"{commitPrefix}({feature}): complete PRD v{n}"` (marking `stages.forge-1-prd.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
-5. Tell the user: "PRD complete. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the PRD\n  - `/feature-forge:forge-2-tech {feature}` to start the tech spec\n  - `/feature-forge:forge {feature}` to see full pipeline status"
+5. Tell the user: "PRD complete. Next steps:\n  - `/feature-forge:forge-verify {feature}` to verify the PRD (runs automatically if `autoVerify` is set in forge.config.json)\n  - `/feature-forge:forge-2-tech {feature}` to start the tech spec\n  - `/feature-forge:forge {feature}` to see full pipeline status"
 
 ## Gotchas
 
