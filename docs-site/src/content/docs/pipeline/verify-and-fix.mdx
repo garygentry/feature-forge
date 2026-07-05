@@ -3,6 +3,8 @@ title: Verify & Fix
 description: The Feature Forge quality gate — forge-verify analyzes a stage's artifacts and writes an actionable findings document, and forge-fix applies the fixes.
 ---
 
+import { Aside } from "@astrojs/starlight/components";
+
 The verification gate is available after **every** stage. `forge-verify` analyzes
 the current stage's artifacts for completeness, consistency, and quality, then
 writes a findings document. `forge-fix` applies those findings. It's optional but
@@ -46,6 +48,42 @@ Plan step by step. It:
 - tracks progress in the findings document, so an interrupted run can resume without
   redoing applied steps;
 - stops on the first failed step rather than continuing blindly.
+
+## Auto-verify
+
+By default you invoke `forge-verify` yourself, or accept the navigator's offer to run it.
+Because verification is [clean-room by construction](/pipeline/managing-context/#verification-never-needs-a-clear) —
+it runs in a fresh subagent that inherits none of your session's context — and is rarely worth
+skipping, you can make it automatic.
+
+Three `forge.config.json` keys control it (all default off, fully backwards-compatible):
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `autoVerify` | `false` | When true, the navigator runs `forge-verify` automatically after a stage completes — no prompt. It dispatches the fresh subagent and returns only a compact findings digest to your session. |
+| `autoVerifyStages` | `{}` | Per-stage overrides, e.g. `{"forge-1-prd": false}`. The effective value for a stage is `autoVerifyStages[stage]` if present, otherwise `autoVerify`. Keys must be one of the five verify-capable stages (`forge-1-prd`, `forge-2-tech`, `forge-3-specs`, `forge-4-backlog`, `forge-5-loop`); a typo is reported, not silently ignored. |
+| `autoFix` | `false` | When true, chains `forge-fix` after an auto-verify that finds issues — but only when auto-verify is on for that stage **and** preconditions hold. |
+
+**Unconfigured opt-in.** With `autoVerify` unset, the navigator's advance gate adds an
+"Auto-verify now" option (recommended). Choosing it runs verify immediately, then asks once
+whether to persist `autoVerify: true` to your config — no silent config writes.
+
+**Freshness.** Auto-verify keys off a version ledger: a verify is considered fresh only while the
+stage artifact's `version` matches what was verified. Revise or hand-edit an artifact and the
+navigator re-verifies it; leave it unchanged and it won't needlessly re-run.
+
+**Clean-room guarantee.** Auto-verify runs unattended **only when the fresh `forge-verifier`
+subagent can be dispatched**. If it can't (partial install, or a non-Claude host), auto-verify
+never falls back to running inline in your session — it degrades to the manual verify gate. Verify
+state stays outstanding, so a stage is never marked verified or advanced on false assurance.
+
+<Aside type="caution">
+`autoFix` is a power-user opt-in: it mutates artifacts without a human read. It's honored only when
+auto-verify is on for the stage, and even then only when the findings document has **zero unresolved
+decision points**, the **working tree is clean**, and a **mandatory re-verify passes**. Any miss —
+decisions required, a dirty tree, an early stop, or a red re-verify — falls back to the findings
+digest + prompt. It never applies a silent partial fix.
+</Aside>
 
 ## The loop
 

@@ -38,7 +38,11 @@ Each stage runs as `/feature-forge:<command> <feature-name>`.
 
 After **any** stage you can run the [Verify & Fix](/pipeline/verify-and-fix/) gate:
 `forge-verify` analyzes the stage's artifacts and writes a findings document;
-`forge-fix` applies the fixes. It's optional but recommended before Stages 4 and 5.
+`forge-fix` applies the fixes. It's strongly recommended — especially before Stages
+4 and 5 — and since it runs in a fresh, read-only subagent, the recommended way to
+run it is to **let it run automatically**: set
+[`autoVerify: true`](/pipeline/verify-and-fix/#auto-verify) and each stage is verified
+for you with no prompt. Fixing stays human-gated unless you also enable `autoFix`.
 
 ## Tracking progress
 

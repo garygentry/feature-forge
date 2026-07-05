@@ -14,7 +14,10 @@ how the navigator and loop monitor what's happening.
 Each feature's progress lives in `{specsDir}/{feature}/.pipeline-state.json`, which
 persists across sessions and machines (it's committed with your artifacts). It records
 per-stage status, verification status, the artifact inventory, version tracking for
-[staleness detection](/pipeline/overview/), commit SHAs, and timestamps.
+[staleness detection](/pipeline/overview/), commit SHAs, and timestamps. The verify
+entries also record the artifact version they were run against — the freshness ledger
+that lets [auto-verify](/pipeline/verify-and-fix/#auto-verify) re-check only stages whose
+artifacts actually changed, and leave verified (or explicitly skipped) stages alone.
 
 Because state is on disk, you can close a session and resume later: re-run
 [`/feature-forge:forge`](/pipeline/dashboard/) and it reads the state file to tell you

@@ -5,7 +5,7 @@ description: "Follow one small feature, api-key-auth, through all six forge stag
 
 This walkthrough takes a single small feature — `api-key-auth` (authenticate API requests with an `X-API-Key` header) — through all six stages of the pipeline. Each section shows the command you run, what you approve, and a short illustrative artifact.
 
-Before you start, make sure the project is initialized — run [`/feature-forge:forge-init`](/pipeline/init/) once if you haven't. You can check status at any point with [`/feature-forge:forge api-key-auth`](/pipeline/dashboard/), and the [verify gate](/pipeline/verify-and-fix/) is available after any stage.
+Before you start, make sure the project is initialized — run [`/feature-forge:forge-init`](/pipeline/init/) once if you haven't. You can check status at any point with [`/feature-forge:forge api-key-auth`](/pipeline/dashboard/), and the [verify gate](/pipeline/verify-and-fix/) is available after any stage. This walkthrough invokes verify by hand to show it; for real work, consider setting [`autoVerify: true`](/pipeline/verify-and-fix/#auto-verify) so each stage is verified for you automatically.
 
 ## Stage 1 — PRD
 

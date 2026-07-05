@@ -38,5 +38,6 @@ The pipeline is complete for this feature. View final status with `/feature-forg
 ## Notes & gotchas
 
 - PRD, tech spec, and specs must be complete before this runs.
+- Before generating docs, this stage checks that the implementation was verified — if impl-verify was skipped or is stale, it offers to run it first. With [`autoVerify` enabled](/pipeline/verify-and-fix/#auto-verify) for `forge-5-loop`, that impl-verify has typically already run automatically when the loop finished.
 - If implementation is under 80% done, it warns and marks the docs PRE-IMPLEMENTATION.
 - Docs are self-contained and describe the real implementation. If the code diverged from the spec, the implementation wins.

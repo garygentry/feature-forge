@@ -36,7 +36,7 @@ You review the document plan (the titles and descriptions of the planned docs) a
 
 ## What comes next
 
-- `/feature-forge:forge-verify <feature>` — strongly recommended before moving on. See [Verify & Fix](/pipeline/verify-and-fix/).
+- `/feature-forge:forge-verify <feature>` — strongly recommended before moving on. Specs feed every downstream stage, so this is a prime candidate for [`autoVerify: true`](/pipeline/verify-and-fix/#auto-verify), which runs it for you automatically. See [Verify & Fix](/pipeline/verify-and-fix/).
 - `/feature-forge:forge-4-backlog <feature>` — see [Stage 4 · Backlog](/pipeline/stage-4-backlog/).
 
 ## Notes & gotchas

@@ -33,7 +33,9 @@ You write a **PRD** (what to build); Feature Forge turns it into a **tech spec**
 (how), then granular **implementation specs**, then a **backlog** of self-contained
 work items. An **autonomous loop** implements the backlog item by item — running
 your tests and committing as it goes — and finally generates **docs**. A
-**verify & fix** gate is available after every stage.
+**verify & fix** gate runs after every stage — and because it runs in a fresh,
+read-only subagent, it's safe to automate: set [`autoVerify: true`](/pipeline/verify-and-fix/#auto-verify)
+and each stage is checked for you, hands-off.
 
 <CardGrid stagger>
   <Card title="Install" icon="download">

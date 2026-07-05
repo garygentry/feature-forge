@@ -45,16 +45,31 @@ What each stage does, in one line:
 | 5 | [Loop](/pipeline/stage-5-loop/) | Implemented, tested, committed code |
 | 6 | [Docs](/pipeline/stage-6-docs/) | Architecture docs from the real code |
 
-## 3. Verify when you want a gate
+## 3. Verify — automatically, or on demand
 
-After any stage you can check the artifacts and apply fixes:
+Verification catches gaps and contradictions before they reach downstream stages.
+It runs in a fresh, read-only subagent, so it never needs a `/clear` and rarely
+warrants skipping — which makes it the one step worth **automating**.
+
+**Recommended — turn it on once.** Add `autoVerify: true` to `forge.config.json`
+and the navigator runs `forge-verify` automatically after each stage completes, no
+prompt, returning only a compact findings digest to your session:
+
+```json
+{
+  "autoVerify": true
+}
+```
+
+**On demand.** Prefer to drive it yourself? Run it after any stage:
 
 ```bash
 /feature-forge:forge-verify <feature-name>   # writes a findings document
 /feature-forge:forge-fix    <feature-name>   # applies the fixes
 ```
 
-See [Verify & Fix](/pipeline/verify-and-fix/).
+Either way, see [Verify & Fix](/pipeline/verify-and-fix/#auto-verify) for the full
+picture, including per-stage overrides and the `autoFix` power-user opt-in.
 
 ## 4. Check status anytime
 
