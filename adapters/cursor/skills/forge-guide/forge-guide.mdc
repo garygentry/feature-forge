@@ -27,9 +27,14 @@ run pipeline stages; when the user is ready to act, point them at the right skil
 | Cross-stage conventions (naming, state, git, branch, epic injection) | `references/shared-conventions.md` |
 | Config keys + defaults | `references/forge-config-schema.json` |
 | Stack detection / language profiles | `references/stack-resolution.md`, `references/stacks/*.md` |
-| Loop runner interface & signals | `references/ralph-loop-contract.md` |
-| Version compatibility (forge ↔ rauf) | `COMPATIBILITY.md` |
-| Deep dives, glossary, troubleshooting | `README.md`, `docs-site/src/content/docs/**` |
+| Loop runner interface, signals & version gate | `references/ralph-loop-contract.md` |
+| Deep dives, glossary, troubleshooting | `references/process-overview.md`, `references/shared-conventions.md` |
+
+Those `references/` files are the guaranteed grounding path — they ship in every install.
+The project's `README.md`, `COMPATIBILITY.md`, and the hosted docs site are richer but are
+**not** part of an installed bundle, so treat them as optional enrichment (offer the docs-site
+URL to a human) and never block an answer on opening them — fall back to the `references/`
+files and your own knowledge.
 
 Do NOT actually invoke stage skills or write files — this skill only explains and directs.
 
@@ -147,7 +152,7 @@ must be truly **self-contained**; context bleed breaks the model. Per-item signa
 
 The loop doesn't pause on blocked items. Supply what's missing, then `rauf resume <path>` to
 retry set-aside items. The runner refuses to start with a **dirty working tree** and enforces
-a minimum runner version (see `COMPATIBILITY.md`).
+a minimum runner version (the version gate is described in `references/ralph-loop-contract.md`).
 
 ## Best practices & gotchas
 
@@ -163,14 +168,15 @@ a minimum runner version (see `COMPATIBILITY.md`).
 ## Troubleshooting starters
 
 - **Stage 5 won't start:** backlog exists and is verified? runner installed and ≥ min version?
-  working tree clean? See `COMPATIBILITY.md` and `references/ralph-loop-contract.md`.
+  working tree clean? See `references/ralph-loop-contract.md` for the runner contract and version gate.
 - **Loop stopped mid-run:** check the signal — `BLOCKED`/`NEEDS_HUMAN` items are set aside, not
   failures; the loop keeps going.
 - **Downstream flagged stale:** an upstream stage was revised; re-run the downstream stage.
 - **Where am I?** `/feature-forge:forge <feature>` renders the full pipeline status.
 
-For anything deeper, point the user to `README.md`, `references/process-overview.md`, or the
-relevant page under `docs-site/src/content/docs/`.
+For anything deeper, ground yourself in `references/process-overview.md` and
+`references/shared-conventions.md`, and point the *user* at the hosted docs site —
+<https://garygentry.github.io/feature-forge/> — for the full guides and glossary.
 
 ---
 
