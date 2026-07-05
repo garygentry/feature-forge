@@ -1,0 +1,88 @@
+---
+title: "Managing Context & When to Clear"
+description: "When to keep your session warm and when to /clear between Feature Forge stages — the factors to weigh, a decision cheat-sheet, and why verification never forces a clear."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Every Feature Forge stage runs best in a lean context window — one holding just what that
+stage needs. As you advance through the pipeline you face a recurring choice: **keep the
+current session (warm)** and carry its accumulated context forward, or **`/clear` and start
+fresh (cold)** for the next stage. This page is about *when* to make each choice. For the
+mechanics of what persists and how monitoring is configured, see
+[Sessions & Monitoring](/pipeline/sessions-and-monitoring/).
+
+## Why this matters
+
+A warm session is free to enter — the next stage already has the upstream work in view — but
+it accumulates. Everything from the previous stage stays in the window, and a fuller window
+means less headroom and gradually degrading quality.
+
+A cold session is the opposite: it costs a little to enter, because the fresh window has to
+re-read the upstream artifact to re-orient, but it starts lean and unbiased. Each stage gets a
+clean window sized to its own work.
+
+The pipeline is designed around the cold default — stages are meant to be independent, reading
+the artifact on disk rather than relying on conversation memory.
+
+## Default guidance
+
+**Clear between the authoring stages.** For the PRD → tech spec → specs → backlog chain, the
+recommended default is to `/clear` between stages. A fresh window:
+
+- reads the upstream artifact as a **contract** — exactly what a later reader (or another
+  contributor) would see, rather than the messier conversation that produced it;
+- avoids carrying forward context the next stage doesn't need;
+- gives an **independent perspective** on the upstream artifact, so gaps and ambiguities
+  surface instead of being silently filled in from memory.
+
+If the upstream artifact isn't a faithful, standalone contract, that's a signal to fix the
+artifact — not to paper over it with carried conversation.
+
+## Factors to weigh
+
+The default isn't a rule. Stay warm when it clearly helps; clear when these point that way:
+
+- **How full the current session is.** The [`forge` navigator](/pipeline/dashboard/) checks
+  context usage before advancing and, past `contextWarnThreshold`, recommends a clean session.
+  A nearly-full window is the strongest reason to clear now.
+- **How heavy the next stage's re-read is.** A stage that re-reads a large spec suite pays more
+  to enter cold — a modest reason to consider staying warm if the window still has room.
+- **Interview vs. mechanical stage.** The [PRD](/pipeline/stage-1-prd/) and
+  [tech spec](/pipeline/stage-2-tech/) stages are interviews — they're inherently warm *through*
+  the interview and shouldn't be cleared mid-conversation. Mechanical stages
+  ([specs](/pipeline/stage-3-specs/), [backlog](/pipeline/stage-4-backlog/)) are the natural
+  clear points.
+- **Whether you want a fresh perspective.** If you want the next stage to judge the upstream
+  artifact on its own merits, clear — independence is the whole point.
+
+## Verification never needs a clear
+
+You never `/clear` just to verify. [`forge-verify`](/pipeline/verify-and-fix/) runs in its own
+fresh subagent regardless of your session's state — it's clean-room by construction, reading the
+artifacts on disk with no inherited context. Verify whenever you want; it neither needs nor
+benefits from a manual clear.
+
+## Decision cheat-sheet
+
+| Transition | Recommended | Why |
+| --- | --- | --- |
+| PRD → Tech Spec | Cold | Read the PRD as a contract; fresh eyes on requirements. |
+| Tech Spec → Specs | Cold | Independent read before fanning out spec writers. |
+| Specs → Backlog | Cold | Backlog derives from specs on disk; lean mechanical stage. |
+| Backlog → Loop | Cold | The [loop](/pipeline/stage-5-loop/) spawns its own fresh sessions anyway. |
+| Mid-interview (within PRD or Tech Spec) | Warm | Never clear mid-conversation; the interview needs its own thread. |
+| Any stage → Verify | No clear needed | Verification runs in a fresh subagent by construction. |
+
+## What survives a clear
+
+Clearing loses nothing durable: per-feature progress lives in `.pipeline-state.json` on disk,
+so re-running the [`forge` navigator](/pipeline/dashboard/) after a `/clear` reads the state and
+resumes you exactly where you left off. See
+[Sessions & Monitoring](/pipeline/sessions-and-monitoring/) for the full list of what persists.
+
+<Aside type="note">
+The navigator only ever **recommends** clearing — it never clears for you. The `/clear` is
+always the operator's call, so you can override the recommendation whenever staying warm is the
+better trade.
+</Aside>

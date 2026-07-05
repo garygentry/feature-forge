@@ -20,6 +20,7 @@
     { "slug": "pipeline/stage-6-docs", "source": "native" },
     { "slug": "pipeline/verify-and-fix", "source": "native" },
     { "slug": "pipeline/dashboard", "source": "native" },
+    { "slug": "pipeline/managing-context", "source": "native" },
     { "slug": "pipeline/sessions-and-monitoring", "source": "native" },
 
     { "slug": "example/walkthrough", "source": "native" },
