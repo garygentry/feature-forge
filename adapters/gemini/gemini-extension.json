@@ -43,6 +43,10 @@
       "description": "Apply fixes from the most recent forge-verify findings document. Use when user runs /feature-forge:forge-fix or asks to apply verification fixes for a forge feature. Do NOT trigger for general code fixes, bug fixes, or repairs outside the forge verification workflow."
     },
     {
+      "name": "forge-guide",
+      "description": "Explain what feature-forge is, when to use it, how to configure it, and its best practices — advisory guidance, not stage execution. Use when the user or another agent asks what feature-forge is, whether/when to adopt it, how the pipeline works conceptually, how to set up or configure forge.config.json, or for usage tips and best practices. Do NOT trigger to RUN a pipeline stage (use forge-1-prd … forge-6-docs), to show a specific feature's status (use forge), or for general software questions unrelated to feature-forge."
+    },
+    {
       "name": "forge-init",
       "description": "Initialize feature-forge configuration in the current project. Use when user runs /feature-forge:forge-init or asks to set up forge for the first time. Creates forge.config.json with defaults. Do NOT trigger for general project initialization or setup tasks outside the forge pipeline."
     },

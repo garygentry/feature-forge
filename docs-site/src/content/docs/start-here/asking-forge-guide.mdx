@@ -1,0 +1,64 @@
+---
+title: "Ask forge-guide"
+description: "forge-guide is the advisory helper for the pipeline — it explains what feature-forge is, when to use it, how to configure it, and its best practices, without running any stage."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Every other forge skill *does* something — writes a PRD, generates specs, runs the loop.
+**`forge-guide` is the exception: it explains.** Reach for it when you have a question
+about the pipeline rather than a stage to run.
+
+```
+/feature-forge:forge-guide
+/feature-forge:forge-guide <topic>
+```
+
+<Aside type="tip">
+  Not sure whether forge even fits your task, or how to set it up? Start here. When you're
+  ready to act, `forge-guide` points you at the exact stage command to run next.
+</Aside>
+
+## When to reach for it
+
+Ask `forge-guide` when you want to understand rather than execute:
+
+- **What is feature-forge, and should I use it for this?** — the mental model, and when
+  the pipeline is worth its overhead versus when to skip it.
+- **How do I set it up?** — `forge-init` vs `forge-bootstrap`, and the `forge.config.json`
+  knobs that matter.
+- **How does the pipeline actually work?** — the stage-by-stage flow and what each produces.
+- **What are the best practices?** — verifying before the loop, keeping backlog items
+  self-contained, when to `/clear`, and the common gotchas to avoid.
+- **Something's stuck — where do I look?** — troubleshooting starters for the loop, stale
+  stages, and dirty working trees.
+
+An optional topic argument focuses the answer:
+`overview`, `when`, `setup`, `config`, `stages`, `verify`, `context`, `epics`, `loop`,
+or `troubleshoot`.
+
+## How it differs from the navigator
+
+Both orient you, but at different altitudes:
+
+- **`forge`** (the [navigator](/pipeline/dashboard/)) is feature-specific: it reads a
+  feature's state and tells you *where that feature stands* and *what to run next*.
+- **`forge-guide`** is pipeline-general: it explains *how forge works* and *how to use it
+  well* — no feature required.
+
+Use the navigator to drive a feature; use `forge-guide` to learn the pipeline.
+
+## Grounded, not guessed
+
+`forge-guide` answers from the project's own canonical docs — the process overview, shared
+conventions, config schema, and these pages — rather than from memory, so its guidance
+stays current as the pipeline evolves. It never edits files or runs a stage; at most it
+tells you the command to run yourself.
+
+## Where to go next
+
+- New here? Read [Key Concepts & Glossary](/start-here/concepts/), then
+  [Quick Start](/start-here/quick-start/).
+- Ready to configure? See [Setup: init vs bootstrap](/pipeline/init/) and
+  [forge.config.json](/advanced/config/).
+- Stuck? See [Troubleshooting & FAQ](/reference/troubleshooting/).

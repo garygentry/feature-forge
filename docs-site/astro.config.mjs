@@ -41,6 +41,7 @@ export default defineConfig({
             { label: "Install", slug: "start-here/install" },
             { label: "Quick Start", slug: "start-here/quick-start" },
             { label: "Key Concepts & Glossary", slug: "start-here/concepts" },
+            { label: "Ask forge-guide", slug: "start-here/asking-forge-guide" },
           ],
         },
         {

@@ -41,8 +41,9 @@ It is tuned for Claude but stays agent-agnostic, and runs on any of the supporte
 | 5               | `forge-5-loop`    | Implement the backlog autonomously, a fresh agent session per item, committed atomically                                                                       |
 | 6               | `forge-6-docs`    | Document the architecture from the _actual_ implementation, for onboarding and maintenance                                                                     |
 | ⟳ _(any stage)_ | `forge-verify`    | Catch gaps and contradictions before they reach later stages — **available after any stage** (PRD, tech spec, specs, backlog, or implementation), not just one |
+| ? _(anytime)_   | `forge-guide`     | Advisory helper: explains what forge is, when to use it, how to configure it, and best practices — ask it instead of running a stage when you just have a question |
 
-Run `/feature-forge:forge <feature>` at any point to see what's complete, what's next, and what needs attention.
+Run `/feature-forge:forge <feature>` at any point to see what's complete, what's next, and what needs attention. New to the pipeline or just have a question? Ask `/feature-forge:forge-guide` — it explains concepts, setup, and best practices without running anything.
 
 ### Epics (optional)
 

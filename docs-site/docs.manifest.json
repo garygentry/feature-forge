@@ -9,6 +9,7 @@
     { "slug": "start-here/install", "source": "native" },
     { "slug": "start-here/quick-start", "source": "native" },
     { "slug": "start-here/concepts", "source": "native" },
+    { "slug": "start-here/asking-forge-guide", "source": "native" },
 
     { "slug": "pipeline/overview", "source": "native" },
     { "slug": "pipeline/init", "source": "native" },
