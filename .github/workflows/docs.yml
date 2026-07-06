@@ -64,10 +64,28 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # Safety net: the deploy is a single API round-trip; if it wedges, fail fast
+    # rather than burn the 6h default and hold the `pages` concurrency group.
+    timeout-minutes: 10
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      # Coalesce: whichever attempt (first or retry) produced the deployment.
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
+      # The Pages backend intermittently rejects the create-deployment call with
+      # "Deployment failed, try again later." (a GitHub-side transient, not a
+      # content/config error). Don't fail the run on the first such flake — retry
+      # once. First attempt is non-fatal; the retry only runs if it failed.
       - name: Deploy to GitHub Pages
         id: deployment
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+
+      - name: Wait before retry
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 15
+
+      - name: Deploy to GitHub Pages (retry)
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5
