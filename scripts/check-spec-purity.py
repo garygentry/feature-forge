@@ -129,10 +129,10 @@ RESIDUAL_VAR_EXEMPT: tuple[str, ...] = (
 # §3 — the canonical bootstrap prelude (REQ-RES-05). Byte-identical to the
 # fenced block in references/portable-root.md and BOOTSTRAP_PRELUDE in 00 §3.
 BOOTSTRAP_PRELUDE: str = (
-    'R="$(for d in "$HOME"/.claude/skills/feature-forge '
+    'R="$(bash -c \'for d in "$HOME"/.claude/skills/feature-forge '
     '"$HOME"/.claude/plugins/*/feature-forge '
     '"$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do '
-    '[ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done)"\n'
+    '[ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done\')"\n'
     '[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }'
 )
 
