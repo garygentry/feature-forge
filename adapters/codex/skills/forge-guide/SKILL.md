@@ -102,7 +102,7 @@ green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge
 - **Branch** — `branchPerFeature` (true), `branchPrefix` (`forge/`): isolate each feature.
 - **Stack** — `stack`, `typeCheckCommand`, `testCommand`: null until Stage 2 auto-detects them.
 - **Context** — `contextWindowTokens`, `contextWarnThreshold` (0.7): the navigator warns to
-  `/clear` past this fullness. On 1M-context models set `contextWindowTokens` explicitly.
+  clear your session / start a fresh session past this fullness. On 1M-context models set `contextWindowTokens` explicitly.
 - **Verification** — `autoVerify` (false), `autoVerifyStages`, `autoFix` (false).
 - **Stage flow** — `autoInvokeNextStage` (true on Claude, print-only elsewhere).
 - **Loop** — `loopRunner` block (binary, command templates, version gate, agent selection);
@@ -113,7 +113,7 @@ green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge
 `forge-verify <feature>` dispatches the read-only `forge-verifier` subagent to find gaps,
 inconsistencies, and quality issues; it writes a findings doc, and `forge-fix` applies them.
 Because verification runs in a **fresh subagent**, it's clean-room by construction — it never
-needs a `/clear`, and it's safe to automate with `autoVerify: true` (fixing stays human-gated
+needs a clear your session / start a fresh session, and it's safe to automate with `autoVerify: true` (fixing stays human-gated
 unless `autoFix: true`). **Always verify before Stage 5 (the loop)** — catching errors in
 specs/backlog is far cheaper than mid-loop. Verifying after PRD and after backlog is also
 recommended. A findings pass is fresh only while the artifact `version` matches what was
@@ -122,7 +122,7 @@ verified; revise upstream and downstream re-verifies.
 ## Context management
 
 Each stage reads upstream artifacts as standalone contracts, so you can (and usually should)
-`/clear` between them:
+clear your session / start a fresh session between them:
 
 - **Clear** between PRD → tech, tech → specs, specs → backlog, backlog → loop.
 - **Stay warm** mid-interview (PRD, tech spec) — the interview needs a continuous thread.

@@ -506,6 +506,39 @@ def test_codex_agent_toml_has_no_claude_model_aliases():
         assert not leaked, f"{path.name} leaks Claude model alias(es): {sorted(leaked)}"
 
 
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+def test_clear_slash_command_survives_on_claude():
+    """The Claude adapter keeps the literal `/clear` the Stage Exit Protocol stamps."""
+    bodies = "\n".join(p.read_text("utf-8") for p in _skill_body_files("claude"))
+    assert "/clear" in bodies  # REQ: Claude path is not degraded
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+@pytest.mark.parametrize("agent", ("codex", "copilot", "cursor", "gemini"))
+def test_clear_slash_command_degrades_on_non_claude(agent):
+    """No non-Claude skill body carries a literal `/clear`; it degrades host-neutrally.
+
+    The Stage Exit Protocol (references/stage-exit-protocol.md) stamps a literal
+    `/clear` into every stage closing. On a non-Claude host that is not a real command,
+    so the adapter build rewrites it to a plain instruction (build-adapters.py
+    _HOST_TERM_REPLACEMENTS). At least one stage body carries the degraded phrasing.
+    """
+    bodies = _skill_body_files(agent)
+    blob = "\n".join(p.read_text("utf-8") for p in bodies)
+    assert "/clear" not in blob, f"{agent} skill body still carries a literal /clear"
+    assert "clear your session / start a fresh session" in blob, (
+        f"{agent} skill bodies never carry the degraded /clear phrasing — was the "
+        f"Stage Exit Protocol stamped and rebuilt?"
+    )
+    # Longest-match ordering: the stamped block backticks its `/clear` tokens, so a
+    # reversed replacement order would leave "`clear your session …`". Assert no such
+    # orphaned backtick survives (guards the ordering contract at the artifact level).
+    assert "`clear your session" not in blob, (
+        f"{agent} skill body has an orphaned backtick before the degraded phrase — "
+        f"the `/clear` replacement order regressed (bare must not precede backticked)"
+    )
+
+
 def _load_generator_module():
     """Import the hyphenated generator in-process for unit-testing pure helpers."""
     pytest.importorskip("yaml")
@@ -525,13 +558,19 @@ def test_translate_host_terms_is_deterministic_and_idempotent():
     src = (
         'Use the `AskUserQuestion` tool. Dispatch via the Agent tool with '
         'subagent_type="forge-verifier". Launch `run_in_background: true` and arm '
-        "the `Monitor` tool. Use multiple Agent calls."
+        "the `Monitor` tool. Use multiple Agent calls. Then `/clear` and re-run."
     )
     once = mod.translate_host_terms(src)
-    for token in ("AskUserQuestion", "subagent_type=", "Agent tool", "run_in_background", "`Monitor`"):
+    for token in ("AskUserQuestion", "subagent_type=", "Agent tool", "run_in_background", "`Monitor`", "/clear"):
         assert token not in once
     assert "the forge-verifier custom agent" in once
     assert "subagent calls" in once
+    # Longest-match ordering: the backticked `` `/clear` `` must collapse to the bare
+    # phrase with NO surrounding backticks left. If the order were reversed (bare
+    # "/clear" fired first), the output would be "`clear your session / …`" — so assert
+    # the exact rendered span, which only holds when the backticked form matches first.
+    assert "Then clear your session / start a fresh session and re-run." in once
+    assert "`clear your session" not in once  # no orphaned opening backtick
     assert mod.translate_host_terms(once) == once  # idempotent
 
 

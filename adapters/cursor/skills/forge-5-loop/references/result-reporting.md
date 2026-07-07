@@ -4,14 +4,25 @@ These are the five verbatim result-report output templates for **Step 4b** of
 `forge-5-loop/SKILL.md`. Pick **every** branch that applies (a run can be both
 blocked and needs-human) and render its report.
 
-**All items done:**
+**All items done.** Print the completion summary, then close with the **warm-acceptable
+variant** of the Stage Exit Protocol (single-sourced in
+`references/stage-exit-protocol.md`) — the `forge-5-loop → forge-6-docs` boundary is the
+one place a `/clear` is optional:
 ```
 Loop completed for {feature}. All {N} items implemented successfully.
-
-Next steps:
-  - /feature-forge:forge-verify {feature} impl   Verify the implementation
-  - /feature-forge:forge-6-docs {feature}         Generate architecture docs
 ```
+
+**The loop is complete — this is the one boundary where a `/clear` is optional.**
+
+1. **Verify is already offered above.** Impl-verify is offered interactively right
+   after this report (Step 5b for a standalone feature, Step 6.1 for an epic member) —
+   run it there rather than as a second gate. It runs clean-room, so it never needs a
+   `/clear`.
+2. **`/clear` is optional here — warm is fine.** `forge-6-docs` benefits from the
+   still-warm context of what the loop actually did, so continuing in this same session
+   is the easy default. A cold start also works — every artifact is on disk — but there
+   is no need to force it. (I can't `/clear` for you regardless.)
+3. **Then run `/feature-forge:forge-6-docs {feature}`** — in this warm session, or a fresh one if you prefer.
 
 **Runner review pass.** A review flag (e.g. rauf's `--review`) makes the runner run
 a post-loop review that **auto-creates and implements fix items** rather than handing
