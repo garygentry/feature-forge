@@ -196,7 +196,7 @@ Generates a structured `backlog.json` from implementation specs, producing work 
 
 The output is validated by the loop runner's `validate` verb (rauf: `rauf backlog validate . --backlog {dir} --specs-dir {dir} --json`, exit 0/1/2), not a bundled script — the same swappable seam as execution.
 
-**Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/backlog.json` if configured)
+**Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/{feature}/backlog.json` if configured)
 
 ### Stage 5: Loop (forge-5-loop)
 
