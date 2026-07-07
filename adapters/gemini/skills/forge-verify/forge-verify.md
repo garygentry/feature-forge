@@ -82,7 +82,7 @@ subagent inherits none of the dispatching session's context. Running inline woul
 that — it would consume the dispatching session's context and invalidate the no-clear
 justification.
 
-So in require-clean mode, **do NOT fall back to inline execution**. If the `Agent` tool
+So in require-clean mode, **do NOT fall back to inline execution**. If the host's subagent mechanism
 or `forge-verifier` subagent is not dispatchable, return a **sentinel** instead of doing
 any work:
 
