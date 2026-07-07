@@ -48,7 +48,7 @@ Pick based on how many checks the mode carries (see the per-mode totals in Step 
 
 The verifier(s) are read-only — they return findings as their response; **you** (the
 parent) assemble and write the single document to
-`{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`. When you fanned out:
+`{resolvedFeatureDir}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`. When you fanned out:
 1. Concatenate all instances' findings and **renumber `V-NNN` IDs uniquely** across the
    merged set.
 2. **Dedup** overlaps — when two instances flag the same file+location+issue (e.g. a
@@ -99,11 +99,13 @@ path, no require-clean signal) keeps the inline fallback above unchanged.
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
+Resolve the feature directory via the **Feature Directory Resolution** block in `references/shared-conventions.md` (so a standalone feature resolves to its flat `{specsDir}/{feature}/` path exactly as today, and an epic member resolves to its nested `{specsDir}/{epic}/{feature}/` path). Use the resulting `{resolvedFeatureDir}` everywhere this skill reads or writes a per-feature artifact or state file — the `{specsDir}/{feature}/…` forms below are shorthand for the resolved path, not a literal flat layout. This does not apply to **epic mode**, whose paths are epic-scoped (`{specsDir}/{epic}/…`) by design.
+
 **Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
 
 ## Step 1: Read Configuration and Determine Mode
 
-Read `{specsDir}/{feature}/.pipeline-state.json` to understand current pipeline state.
+Read `{resolvedFeatureDir}/.pipeline-state.json` to understand current pipeline state.
 
 ### Mode Selection
 
@@ -123,16 +125,16 @@ If ambiguous, use `AskUserQuestion` to ask which stage to verify.
 Load into context ALL artifacts for this feature based on mode:
 
 **For prd mode:**
-- `{specsDir}/{feature}/PRD.md`
+- `{resolvedFeatureDir}/PRD.md`
 
 **For tech mode:**
-- `{specsDir}/{feature}/PRD.md`
-- `{specsDir}/{feature}/tech-spec.md`
+- `{resolvedFeatureDir}/PRD.md`
+- `{resolvedFeatureDir}/tech-spec.md`
 
 **For specs mode:**
-- `{specsDir}/{feature}/PRD.md`
-- `{specsDir}/{feature}/tech-spec.md`
-- `{specsDir}/{feature}/##-*.md` (all implementation specs)
+- `{resolvedFeatureDir}/PRD.md`
+- `{resolvedFeatureDir}/tech-spec.md`
+- `{resolvedFeatureDir}/##-*.md` (all implementation specs)
 
 **For backlog mode:**
 - All of the above, PLUS
@@ -173,7 +175,7 @@ Every finding must include:
 
 ## Step 4: Write Findings Document
 
-Ensure the `.verification/` subdirectory exists, then write findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`.
+Ensure the `.verification/` subdirectory exists, then write findings to `{resolvedFeatureDir}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`.
 
 **For epic mode**, the target is `{specsDir}/{epic}/.verification/VERIFY-epic-{YYYY-MM-DD}.md` (the same format, with `{mode}=epic`).
 
@@ -209,7 +211,7 @@ Do NOT embed this question in your text output.
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
-Update `{specsDir}/{feature}/.pipeline-state.json`:
+Update `{resolvedFeatureDir}/.pipeline-state.json`:
 - Set the relevant verify entry status to `findings-reported` (or `passed` when there
   are zero findings)
 - Record `findingsFile`, `findingsCount`, `verifiedAt`
@@ -243,11 +245,11 @@ Do NOT mark as `findings-applied` — that happens after the fix pass.
 - Don't verify things that are intentionally left open (check the PRD's "Open Questions" section).
 - If you find zero issues, say so honestly. Don't manufacture findings to seem thorough. But zero findings on a complex feature is suspicious — double-check.
 - The findings document must be self-contained. A fresh agent reading it should be able to apply every fix without needing conversational context from this session.
-- For backlog verification, also run the loop runner's validate command (resolve `loopRunner` from `forge.config.json`, default rauf: `rauf backlog validate . --backlog {backlogDir} --specs-dir {specsDir}/{feature} --json`). Include any findings it reports (exit 1) as verification findings; if the runner isn't installed yet (command missing), note that backlog validation was skipped rather than failing.
+- For backlog verification, also run the loop runner's validate command (resolve `loopRunner` from `forge.config.json`, default rauf: `rauf backlog validate . --backlog {backlogDir} --specs-dir {resolvedFeatureDir} --json`). Include any findings it reports (exit 1) as verification findings; if the runner isn't installed yet (command missing), note that backlog validation was skipped rather than failing.
 - For specs verification, also run the deterministic traceability validator to supplement agent-driven traceability checks. Include any uncovered requirements or orphaned references as findings:
 
 ```bash
 R="$(bash -c 'for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/validate-traceability.py" {specsDir}/{feature}/PRD.md {specsDir}/{feature}/ --json
+python3 "$R/scripts/validate-traceability.py" {resolvedFeatureDir}/PRD.md {resolvedFeatureDir}/ --json
 ```

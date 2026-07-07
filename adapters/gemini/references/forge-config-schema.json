@@ -16,7 +16,8 @@
     },
     "backlogDir": {
       "type": ["string", "null"],
-      "description": "Optional override for backlog location. If set, backlog.json is written here instead of with the feature specs. Default behavior (null): backlog.json is written to {specsDir}/{feature}/backlog.json."
+      "default": null,
+      "description": "Optional override for the backlog root. If set, the backlog is written to {backlogDir}/{feature}/backlog.json — the {feature} subdirectory is always composed in so multi-feature epics never collide. Default behavior (null): backlog.json is written to {specsDir}/{feature}/backlog.json with the feature specs."
     },
     "gitCommitAfterStage": {
       "type": "boolean",
