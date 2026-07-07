@@ -268,7 +268,7 @@ Beyond a passive status view, the navigator is built to **drive** a feature from
 
 - **Recency prediction** — with no feature named, the navigator lists active features most-recently-touched first and recommends the top one. If exactly one active standalone pipeline exists, it opens straight to that feature's dashboard — no typing needed.
 - **Driving to the next stage** — after the dashboard, the navigator offers the next stage. When `autoInvokeNextStage` is true (default), it launches that stage in the same session via the `Skill` tool — no copy-paste. On a non-Claude host, or when `autoInvokeNextStage` is `false`, it prints the command for you to run instead.
-- **Context-window awareness** — the navigator checks live session token usage and, once past `contextWarnThreshold` (default `0.7`), recommends clearing context (`/clear`) and re-running before the next stage, so each heavy stage starts with headroom. Usage is inferred from the session model and falls back to a 200k window, auto-bumping to 1M once observed usage exceeds 200k. On a 1M-context model, set `contextWindowTokens` to `1000000` for accurate readings below 200k. See the [dashboard guide](https://garygentry.github.io/feature-forge/pipeline/dashboard/) and [Sessions & monitoring](https://garygentry.github.io/feature-forge/pipeline/sessions-and-monitoring/).
+- **Context-window awareness** — the navigator recommends clearing context (`/clear`) and re-running before the next stage at *every* stage boundary, on its own merits, so each heavy stage starts fresh. It also checks live session token usage: once past `contextWarnThreshold` (default `0.7`) it *strengthens* that recommendation and adds mid-stage compaction advice — the threshold is a secondary signal that modulates how emphatically, never whether. Usage is inferred from the session model and falls back to a 200k window, auto-bumping to 1M once observed usage exceeds 200k. On a 1M-context model, set `contextWindowTokens` to `1000000` for accurate readings below 200k. See the [dashboard guide](https://garygentry.github.io/feature-forge/pipeline/dashboard/) and [Sessions & monitoring](https://garygentry.github.io/feature-forge/pipeline/sessions-and-monitoring/).
 
 ## Specialized Agents
 
@@ -335,15 +335,20 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
 | `loopRunner`          | object  | rauf defaults           | Loop-runner binding for `forge-5-loop` (`bin`, command templates, `defaultAgent`, `minRunnerVersion` — floor **rauf ≥ 0.6.0**). See [docs/agents/claude.md](docs/agents/claude.md) "The default loop runner" |
 | `autoInvokeNextStage` | boolean | `true`                  | When true, the `/feature-forge:forge` navigator auto-invokes the next pipeline stage via the `Skill` tool after you confirm it, instead of only printing the command. Set `false` to keep copy-paste behavior. Ignored on non-Claude hosts (which always print).                                              |
 | `contextWindowTokens` | integer | `null`                  | Context window (tokens) the navigator uses to gauge how full the current session is. `null` infers from the session model, falls back to 200000, and auto-bumps to 1000000 once observed usage exceeds 200000. Set explicitly (e.g. `1000000`) for accurate readings below 200k on a 1M-context model.       |
-| `contextWarnThreshold`| number  | `0.7`                   | Fraction of the context window (0–1) past which the navigator recommends starting the next stage in a clean session.                                                                                                                                                                                          |
+| `contextWarnThreshold`| number  | `0.7`                   | Fraction of the context window (0–1) past which the navigator **strengthens** its clean-session recommendation and adds mid-stage compaction advice. Secondary signal only: a clean session is recommended at *every* stage boundary on its own merits — this threshold modulates how emphatically, not whether. |
 | `autoVerify`          | boolean | `false`                 | When true, the navigator runs `forge-verify` automatically after a stage completes — no prompt. Verify runs in a fresh clean-room subagent, so it never needs a `/clear` and costs the current session only a compact findings digest. See [Auto-verify](#auto-verify) below.                                  |
 | `autoVerifyStages`    | object  | `{}`                    | Per-stage overrides for `autoVerify`, e.g. `{"forge-1-prd": false}`. Effective value = `autoVerifyStages[stage]` if present, else `autoVerify`. Keys are constrained to the five verify-capable stages (`forge-1-prd`…`forge-5-loop`); an unknown key is a config error, surfaced by the navigator, not a silent no-op. |
 | `autoFix`             | boolean | `false`                 | When true, the navigator chains `forge-fix` after an auto-verify that finds issues — but only when auto-verify is on for that stage **and** preconditions hold (zero unresolved decisions, clean working tree, and a mandatory re-verify passes); otherwise it falls back to a findings digest + prompt. Power-user opt-in: it mutates artifacts without a human read. |
 
 ### Auto-verify
 
-By default, after each authoring stage the navigator offers to run `forge-verify` and you
-choose. Verification is uniquely safe to automate: `forge-verify` delegates to the read-only
+By default, after each authoring stage the navigator — and the stage skill's own closing —
+offers to run `forge-verify` and you choose. The offer is **staleness-driven**: it appears
+whenever a stage's verification is *missing or stale* (an unverified stage, or an upstream
+revision that invalidated an earlier verify) and disappears once verification is fresh. (After
+`forge-fix` applies fixes the stage reads fresh again, so `forge-fix` offers its own one-shot
+re-verify to confirm the fixes rather than relying on the navigator to re-prompt.) Verification
+is uniquely safe to automate: `forge-verify` delegates to the read-only
 `forge-verifier` subagent, which runs in a **fresh window that inherits none of your session's
 context**. A `/clear` before it is therefore pointless, and it is rarely a step worth skipping.
 

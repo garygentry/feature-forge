@@ -1337,8 +1337,8 @@ def _render_verbatim_copies_section() -> list[str]:
         "",
         "- `scripts/forge-root.sh` → `adapters/<agent>/scripts/forge-root.sh` "
         "(mode 0755, byte-identical — REQ-GEN-05).",
-        "- the whole repo-root `references/` tree (16 files: 9 root + `stacks/`×5 "
-        "+ `templates/specs-hygiene/`×2) "
+        "- the whole repo-root `references/` tree (all root files plus the "
+        "`stacks/` and `templates/specs-hygiene/` subtrees) "
         "→ `adapters/<agent>/references/` (verbatim — REQ-GEN-04 / D5).",
         "- each skill's own `references/` subdir → "
         "`adapters/<agent>/skills/<name>/references/` (verbatim, where present).",

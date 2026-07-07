@@ -27,14 +27,20 @@ the artifact on disk rather than relying on conversation memory.
 
 ## Default guidance
 
-**Clear between the authoring stages.** For the PRD → tech spec → specs → backlog chain, the
-recommended default is to `/clear` between stages. A fresh window:
+**Clear at every stage boundary.** The recommended default is to `/clear` when you finish a stage
+and before you start the next — unconditionally, on its own merits, independent of how full the
+window is. Each pipeline skill now closes with this **Stage Exit Protocol**: verify (if
+outstanding) → `/clear` → run the next command. A fresh window:
 
 - reads the upstream artifact as a **contract** — exactly what a later reader (or another
   contributor) would see, rather than the messier conversation that produced it;
 - avoids carrying forward context the next stage doesn't need;
 - gives an **independent perspective** on the upstream artifact, so gaps and ambiguities
   surface instead of being silently filled in from memory.
+
+Window fullness is a *secondary* signal: a nearly-full window makes the clear more urgent, but it
+never decides *whether* to clear — the boundary itself is the reason. The one exception is the
+loop → docs boundary, where staying warm is fine (see the cheat-sheet below).
 
 If the upstream artifact isn't a faithful, standalone contract, that's a signal to fix the
 artifact — not to paper over it with carried conversation.
@@ -43,9 +49,10 @@ artifact — not to paper over it with carried conversation.
 
 The default isn't a rule. Stay warm when it clearly helps; clear when these point that way:
 
-- **How full the current session is.** The [`forge` navigator](/pipeline/dashboard/) checks
-  context usage before advancing and, past `contextWarnThreshold`, recommends a clean session.
-  A nearly-full window is the strongest reason to clear now.
+- **How full the current session is.** The [`forge` navigator](/pipeline/dashboard/) recommends a
+  clean session at every boundary regardless; past `contextWarnThreshold` it *strengthens* that
+  recommendation and adds mid-stage compaction advice. A nearly-full window makes clearing more
+  urgent, but it's a secondary signal — the boundary is the reason to clear, not the gauge.
 - **How heavy the next stage's re-read is.** A stage that re-reads a large spec suite pays more
   to enter cold — a modest reason to consider staying warm if the window still has room.
 - **Interview vs. mechanical stage.** The [PRD](/pipeline/stage-1-prd/) and
@@ -75,10 +82,13 @@ set `autoFix: true`. See [Verify & Fix → Auto-verify](/pipeline/verify-and-fix
 
 | Transition | Recommended | Why |
 | --- | --- | --- |
+| Epic → first PRD | Cold | Start the first member feature's PRD in a clean window; the epic decomposition is on disk. |
 | PRD → Tech Spec | Cold | Read the PRD as a contract; fresh eyes on requirements. |
 | Tech Spec → Specs | Cold | Independent read before fanning out spec writers. |
 | Specs → Backlog | Cold | Backlog derives from specs on disk; lean mechanical stage. |
 | Backlog → Loop | Cold | The [loop](/pipeline/stage-5-loop/) spawns its own fresh sessions anyway. |
+| Loop → Docs | Warm OK | Docs benefit from the still-warm context of what the loop actually did; a cold start also works. |
+| Epic member handoff (feature A done → feature B's PRD) | Cold | Starting a new member feature is a full stage boundary; clear before its PRD. |
 | Mid-interview (within PRD or Tech Spec) | Warm | Never clear mid-conversation; the interview needs its own thread. |
 | Any stage → Verify | No clear needed | Verification runs in a fresh subagent by construction. |
 

@@ -51,11 +51,11 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
 
 If `render-status` fails, skip the epic-level offer and proceed with the per-feature docs only; surface the error per the exit-1/exit-2 split in the **Feature Directory Resolution** block of `references/shared-conventions.md` (exit 1 → parse `{findings[]}` from stdout; exit 2 → surface the plain `Error:` stderr line verbatim).
 
-**Only if `rollup.total > 0 AND rollup.complete == rollup.total`** (every member is complete-for-orchestration; the `total > 0` guard excludes an empty epic), use `AskUserQuestion` to offer:
+**Only if `rollup.total > 0 AND rollup.complete == rollup.total`** (every member is complete-for-orchestration; the `total > 0` guard excludes an empty epic), offer the extra doc as a statement the user can take or leave — not a forced question:
 
-"All {total} features in the '{epic}' epic are complete. Generate an **epic-level architecture document** spanning the features, in addition to {feature}'s per-feature docs?"
+"All {total} features in the '{epic}' epic are complete. I can also generate an **epic-level architecture document** spanning the features, alongside {feature}'s per-feature docs — say the word and I'll add it."
 
-On yes, synthesize a doc at **`{docsDir}/{epic}/`** sourced from: the `EPIC.md` narrative, each member's per-feature docs, and the manifest contracts (each feature's `exposes`/`consumes`). When the epic-level doc is written, the Step 5 commit also stages `{docsDir}/{epic}/`.
+If the user asks for it, synthesize a doc at **`{docsDir}/{epic}/`** sourced from: the `EPIC.md` narrative, each member's per-feature docs, and the manifest contracts (each feature's `exposes`/`consumes`). When the epic-level doc is written, the Step 5 commit also stages `{docsDir}/{epic}/`.
 
 If not all members are complete (or the feature has no `epic` back-pointer), **do not offer** — the per-feature doc flow proceeds unchanged.
 
@@ -97,7 +97,7 @@ Based on feature complexity and existing doc conventions, propose a doc plan:
     └── adr-001-*.md   — Architecture decision records (if significant decisions were made)
 ```
 
-Present the plan and use `AskUserQuestion` to get the user's confirmation.
+Present the plan as a statement and invite edits before writing — not a forced confirmation gate: "Here's the doc plan I'll generate. Tell me if you want to add, remove, or restructure any documents; otherwise I'll proceed." Write the docs unless the user asks for changes.
 
 ## Step 3: Write Documentation
 

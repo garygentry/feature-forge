@@ -79,7 +79,7 @@ python3 "$R/scripts/epic-manifest.py" check-name "{epic}" --specs-dir "{specsDir
 
    - Exit `0` → the name is free; proceed to C1.
    - Exit `1` (`duplicate-name`) → STOP and surface the helper's finding **verbatim**; ask
-     (via the host's question mechanism) for a different epic name, then re-run check-name.
+     for a different epic name, then re-run check-name.
    - Exit `2` (unsafe name) → STOP and surface the finding; ask for a corrected name.
 
 ---
@@ -123,7 +123,7 @@ python3 "$R/scripts/epic-manifest.py" check-name "{feature}" --specs-dir "{specs
 
 - Exit `0` → accept the name.
 - Exit `1` (`duplicate-name`) → reject that name; surface the finding verbatim and re-prompt
-  (via the host's question mechanism) for a different name.
+  for a different name.
 - Exit `2` (`unsafe-name`) → reject; surface the finding and re-prompt.
 
 Never accept a feature name that has not passed `check-name` exit 0.

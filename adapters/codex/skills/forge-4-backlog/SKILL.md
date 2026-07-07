@@ -38,7 +38,7 @@ Resolve the **loop runner** from the `loopRunner` block in `forge.config.json`, 
 
 **Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, stages `forge-1-prd`, `forge-2-tech`, and `forge-3-specs` must all be `complete`. If not, STOP and tell the user which prerequisites are missing.
 
-**Strongly recommended:** Check if specs have been verified. If not, use the host's question mechanism to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
+**Verification check.** Check whether the specs have been verified. If not, use the host's question mechanism to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
 
 ## Step 2: Load All Specs
 
@@ -122,7 +122,7 @@ Interpret the result:
 
 Present a summary: total items N, dependency-chain depth, estimated loop iterations (`ceil(pendingItems * loopIterationMultiplier)`). Note whether validation passed or was skipped (runner not yet available).
 
-Use the host's question mechanism to ask: "Ready to proceed, or any adjustments needed?"
+State that the backlog is ready and invite adjustments before committing — a statement, not a forced gate: "Backlog is ready. Tell me if you want any items split, merged, or reordered; otherwise I'll record state and commit." Proceed to Step 7 unless the user asks for changes.
 
 ## Step 7: Update Pipeline State and Commit
 
@@ -133,7 +133,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`. Foll
    - Set `stages.forge-4-backlog.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>, "forge-3-specs": <current version>}`
    - Set `currentStage` to `forge-5-loop`
    - Check downstream stages (`forge-5-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-4-backlog`, set their status to `stale`.
-2. Use the host's question mechanism to ask about notes to persist
+2. **Offer a note — don't force one.** As a statement (not a blocking question), let the user know they can jot anything worth preserving across sessions and you'll store it in the `notes` field. If they volunteer something, store it; otherwise proceed.
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files, attempt commit (marking `stages.forge-4-backlog.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
 4. If verification was available but the user chose to skip it, record `stages.forge-verify-backlog.status` as `"skipped"` in pipeline state.
 5. **Close with the Stage Exit Protocol** (single-sourced in `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Lead with the item count ("Backlog complete with {N} items."), then:

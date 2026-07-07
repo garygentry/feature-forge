@@ -140,7 +140,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
    - Record all created files in `artifacts`, including `TRACEABILITY.md`
    - Set `stages.forge-3-specs.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>}`
    - Check downstream stages (forge-4-backlog, forge-5-loop, forge-6-docs). If any have `basedOnVersions` referencing older versions, set their status to `stale`
-2. Use the host's question mechanism to ask about notes to persist
+2. **Offer a note — don't force one.** As a statement (not a blocking question), let the user know they can jot anything worth preserving across sessions and you'll store it in the `notes` field. If they volunteer something, store it; otherwise proceed.
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete implementation specs v{n}"` (marking `stages.forge-3-specs.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
 4. **Close with the Stage Exit Protocol** (single-sourced in `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Specs feed every downstream stage, so the verify gate matters here:
 
