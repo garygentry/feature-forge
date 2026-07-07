@@ -15,6 +15,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HELPER = REPO_ROOT / "scripts" / "forge-session.py"
+FORGE_INIT = REPO_ROOT / "scripts" / "forge-init.sh"
 
 
 def _load_module():
@@ -42,6 +43,28 @@ def _rank(specs_dir: Path, config_path: Path | None = None) -> dict:
     result = subprocess.run(argv, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
+
+
+# --------------------------------------------------------------------------- #
+# forge-init.sh template
+# --------------------------------------------------------------------------- #
+
+
+def test_forge_init_template_carries_auto_verify_keys(tmp_path: Path) -> None:
+    """A freshly ``forge-init``'d config carries the auto-verify keys explicitly.
+
+    The template must ship ``autoVerify``/``autoVerifyStages``/``autoFix`` with
+    off-by-default values so the setup-time opt-in (skills/forge-init) has a key
+    to flip, and so ``rank-features`` reads a real value, not an implicit default.
+    """
+    result = subprocess.run(
+        ["bash", str(FORGE_INIT)], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    config = json.loads((tmp_path / "forge.config.json").read_text())
+    assert config["autoVerify"] is False
+    assert config["autoVerifyStages"] == {}
+    assert config["autoFix"] is False
 
 
 # --------------------------------------------------------------------------- #

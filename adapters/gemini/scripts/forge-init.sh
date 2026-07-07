@@ -24,7 +24,10 @@ cat > "$CONFIG_FILE" << 'EOF'
   "loopIterationMultiplier": 1.5,
   "autoInvokeNextStage": true,
   "contextWindowTokens": null,
-  "contextWarnThreshold": 0.7
+  "contextWarnThreshold": 0.7,
+  "autoVerify": false,
+  "autoVerifyStages": {},
+  "autoFix": false
 }
 EOF
 
@@ -43,6 +46,9 @@ echo "  loopIterationMultiplier: 1.5 (multiplier for loop iterations)"
 echo "  autoInvokeNextStage: true (navigator auto-starts the next stage after you confirm)"
 echo "  contextWindowTokens: null (infer; set to 1000000 on a 1M-context model)"
 echo "  contextWarnThreshold: 0.7 (suggest a clean session past this fraction of the window)"
+echo "  autoVerify:          false (set true to run forge-verify automatically after each stage)"
+echo "  autoVerifyStages:    {} (per-stage overrides for autoVerify)"
+echo "  autoFix:             false (set true to chain forge-fix after an auto-verify finds issues)"
 echo ""
 echo "The loop runner defaults to rauf. To target a different ralph-style runner,"
 echo "add a \"loopRunner\" block (see references/forge-config-schema.json)."

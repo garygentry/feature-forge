@@ -26,7 +26,34 @@ After initialization, the config file will contain defaults for:
 - `autoInvokeNextStage`: `true` (the navigator auto-starts the next stage after you confirm; set `false` to only print the command)
 - `contextWindowTokens`: `null` (the navigator infers the context window; set to your model's window, e.g. `1000000` for a 1M-context model, for accurate context-usage advice)
 - `contextWarnThreshold`: `0.7` (fraction of the window past which the navigator suggests a clean session)
+- `autoVerify`: `false` (set `true` to run `forge-verify` automatically after each stage completes)
+- `autoVerifyStages`: `{}` (per-stage overrides for `autoVerify`)
+- `autoFix`: `false` (set `true` to chain `forge-fix` after an auto-verify finds issues)
 
 If `forge.config.json` already exists, the script will not overwrite it.
+
+## Offer auto-verify
+
+The template writes `autoVerify: false`. After the config is created (and only when the script
+actually created it — skip this if it reported the file already exists), offer to turn
+auto-verify on, then write the choice back into `forge.config.json`.
+
+If the `AskUserQuestion` tool is available, ask exactly one question:
+
+> **Enable auto-verify?** Verification runs in a clean-room subagent after each stage
+> completes — it never needs a `/clear` and only returns a compact digest to your session.
+> **Recommended: on.** (Change later by editing `autoVerify` in `forge.config.json`.)
+
+Options: **Enable (recommended)** / **Leave off**.
+
+- On **Enable**: patch `"autoVerify": false` → `"autoVerify": true` in the generated
+  `forge.config.json` in place, preserving formatting and every other key.
+- On **Leave off**: leave the config as written (`autoVerify: false`).
+
+If the host lacks a structured question tool but can still prompt the user (e.g. Codex asks in
+plain text), use that — ask the one question directly and wait for the reply; it is the same
+choice, just rendered differently. Only when the host has **no** way to ask at all (a fully
+non-interactive / headless run) do you skip the prompt: leave `autoVerify: false` and print the
+one-line note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.`
 
 After initialization, start the pipeline with `/feature-forge:forge-1-prd <feature-name>`.

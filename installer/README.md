@@ -78,6 +78,11 @@ read-only resolvability preflight on the pin (`@garygentry/rauf@0.11.0`) and rec
 [feature-forge README](https://github.com/garygentry/feature-forge#readme) for the full
 pipeline documentation and per-agent setup guides.
 
+The installer never writes a `forge.config.json` — it deploys only the bundled skills and
+runtime helpers. Configuration authorship belongs to `/feature-forge:forge-init`, which creates
+the config and surfaces the auto-verify opt-in (whether to run `forge-verify` automatically after
+each stage) at setup time.
+
 ## License
 
 MIT
