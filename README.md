@@ -347,9 +347,11 @@ choose. Verification is uniquely safe to automate: `forge-verify` delegates to t
 `forge-verifier` subagent, which runs in a **fresh window that inherits none of your session's
 context**. A `/clear` before it is therefore pointless, and it is rarely a step worth skipping.
 
-Set `"autoVerify": true` and the navigator runs verify automatically after a stage completes —
-no prompt, no paste — and returns only a compact digest to your session. Use `autoVerifyStages`
-to opt individual stages in or out. If the fresh subagent can't be dispatched (partial install
+`forge-init` asks whether to enable auto-verify when it creates your config (recommended: on);
+you can also set `autoVerify: true` manually at any time. Set `"autoVerify": true` and the
+navigator runs verify automatically after a stage completes — no prompt, no paste — and returns
+only a compact digest to your session. Use `autoVerifyStages` to opt individual stages in or out.
+If the fresh subagent can't be dispatched (partial install
 or a non-Claude host), auto-verify **never runs inline in your session** — it degrades to the
 normal manual verify gate, so verification never silently burns your context or marks a stage
 verified on false assurance.
