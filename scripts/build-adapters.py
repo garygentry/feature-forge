@@ -732,6 +732,13 @@ _HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("`Monitor` tool", "the host's monitoring mechanism"),
     ("`Monitor`", "the host's monitoring mechanism"),
     ("Monitor tool", "host's monitoring mechanism"),
+    # Claude slash-command surface → host-neutral phrasing. The Stage Exit Protocol
+    # (references/stage-exit-protocol.md) stamps a literal `/clear` into every stage
+    # closing; on a non-Claude host that is not a real command, so degrade it to a
+    # plain instruction. Backticked form precedes the bare token (longest-match-first)
+    # so `` `/clear` `` collapses cleanly without leaving stray backticks.
+    ("`/clear`", "clear your session / start a fresh session"),
+    ("/clear", "clear your session / start a fresh session"),
 )
 
 # subagent_type="forge-verifier" → "the forge-verifier custom agent"

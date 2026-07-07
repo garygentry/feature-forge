@@ -42,7 +42,7 @@ auto-verify on, then write the choice back into `forge.config.json`.
 If the host's question mechanism is available, ask exactly one question:
 
 > **Enable auto-verify?** Verification runs in a clean-room subagent after each stage
-> completes — it never needs a `/clear` and only returns a compact digest to your session.
+> completes — it never needs a clear your session / start a fresh session and only returns a compact digest to your session.
 > **Recommended: on.** (Change later by editing `autoVerify` in `forge.config.json`.)
 
 Options: **Enable (recommended)** / **Leave off**.

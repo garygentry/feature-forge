@@ -77,7 +77,7 @@ without subagents), fall back to running verification inline in the current sess
 When the navigator auto-invokes this skill (its `autoVerify` path), it passes a
 **require-clean** signal (e.g. args include `--require-clean`, or the invocation is
 described as auto-verify). In this mode the clean-room guarantee is load-bearing: the
-whole reason auto-verify is safe to run without a `/clear` is that the `forge-verifier`
+whole reason auto-verify is safe to run without a clear your session / start a fresh session is that the `forge-verifier`
 subagent inherits none of the dispatching session's context. Running inline would break
 that — it would consume the dispatching session's context and invalidate the no-clear
 justification.

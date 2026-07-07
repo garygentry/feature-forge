@@ -252,15 +252,17 @@ now self-contained: manifest + EPIC.md + one subdirectory per member.
      the Git Commit Protocol does not apply here. On failure (pre-commit hook, conflict), report and
      do not mark complete; never use `--amend`/`--no-verify`/`--force`.
 
-3. **Closing message.** After a successful creation, tell the user the next steps:
+3. **Closing message — the Stage Exit Protocol.** Congratulate the user ("Epic `{epic}` created with {N} features."), then close with the Stage Exit Protocol below (single-sourced in `references/stage-exit-protocol.md`; the epic → first-PRD boundary is a full stage boundary — do not improvise a "Next steps" list). `{first-actionable-feature}` = any feature with empty `dependsOn` (or the first entry of `render-status`'s `actionable` set):
 
-   > Epic `{epic}` created with {N} features. Next steps:
-   >  - `/feature-forge:forge {epic}` to see the epic dashboard
-   >  - `/feature-forge:forge-verify {epic}` to verify the epic
-   >  - `/feature-forge:forge-1-prd {first-actionable-feature}` to start the first feature
+**This stage is done — walk the user through the Stage Exit Protocol** before moving on. The order is fixed, and step 2 is something only the user can do:
 
-   The first-actionable feature is any feature with empty `dependsOn` (or the first entry of
-   `render-status`'s `actionable` set).
+1. **Verify the epic decomposition first — if it isn't already verified.** When this stage has no fresh verification on record (`verifyState` is **missing or stale**, staleness including the post-`forge-fix` state) **and** `autoVerify` is off for it, verify **now, before clearing**. If verify already ran, is pending under auto-verify, or the stage was explicitly skipped, say so and go straight to step 2. Present the **Standard Verify Gate** as an the host's question mechanism with exactly these three options — but only when the host has a question mechanism **and** the clean-room path is available (the `Agent` tool plus a dispatchable `forge-verifier` subagent):
+   - **Verify the epic decomposition now** *(recommended)* — dispatch the clean-room `forge-verifier` subagent from this session in require-clean mode; the digest returns here so any fix decision keeps its context. One-time — it does **not** change config.
+   - **Verify now + enable auto-verify going forward** — verify now **and** patch `"autoVerify": true` into `forge.config.json` in place (preserve formatting and every other key) so future stages verify automatically, no prompt. This complements the `forge-init` opt-in. **Do not auto-commit this config change** — treat it like `notes`: a user-facing edit the user commits on their own cadence, never folded into a stage's artifact commit.
+   - **Skip for now** — go straight to clear your session / start a fresh session and the next command without verifying. Record this stage's verify status as `"skipped"` in pipeline state (mirroring the existing skip handling) **only** on an explicit skip — a skip does not go stale.
+   - **Host / clean-room fallback:** if the question mechanism, the `Agent` tool, or the `forge-verifier` subagent is unavailable, do **not** run clean-room — degrade to printing `/feature-forge:forge-verify {epic}` for the user to run inline/manually (mirroring `autoInvokeNextStage`), and offer the auto-verify enable as plain text only if a config write is possible.
+2. **Then clear your session / start a fresh session.** Recommended **unconditionally** at this boundary for a clean start — independent of how full the context window is. Every artifact is on disk, so the work survives the clear. **I can't clear your session / start a fresh session for you — you have to run it yourself.**
+3. **Then run `/feature-forge:forge-1-prd {first-actionable-feature}`** in the fresh session — or re-run `/feature-forge:forge` to let the navigator resume from disk.
 
 ---
 
