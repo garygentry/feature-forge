@@ -191,45 +191,15 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete tech-spec v{n}"` (marking `stages.forge-2-tech.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
 4. **Close with the Stage Exit Protocol** (single-sourced in `references/stage-exit-protocol.md`; do not improvise a "Next steps" list):
 
-**This stage is done — walk the user through the Stage Exit Protocol** before moving
-on. The order is fixed, and step 2 is something only the user can do:
+**This stage is done — walk the user through the Stage Exit Protocol** before moving on. The order is fixed, and step 2 is something only the user can do:
 
-1. **Verify the tech spec first — if it isn't already verified.** When this stage has no
-   fresh verification on record (`verifyState` is **missing or stale** — staleness
-   includes the post-`forge-fix` state) **and** `autoVerify` is off for it, verify
-   **now, before clearing**. If verify already ran, is pending under auto-verify, or
-   the stage was explicitly skipped, say so and go straight to step 2.
-
-   Present the **Standard Verify Gate** as an `AskUserQuestion` with exactly these
-   three options — but only when the host has a question mechanism **and** the
-   clean-room path is available (the `Agent` tool plus a dispatchable `forge-verifier`
-   subagent):
-   - **Verify the tech spec now** *(recommended)* — dispatch the clean-room `forge-verifier`
-     subagent from this session in require-clean mode; the digest returns here so any
-     fix decision keeps its context. One-time — it does **not** change config.
-   - **Verify now + enable auto-verify going forward** — verify now **and** patch
-     `"autoVerify": true` into `forge.config.json` in place (preserve formatting and
-     every other key) so future stages verify automatically, no prompt. This
-     complements the `forge-init` opt-in. **Do not auto-commit this config change** —
-     treat it like `notes`: a user-facing edit the user commits on their own cadence,
-     never folded into a stage's artifact commit.
-   - **Skip for now** — go straight to `/clear` and the next command without verifying.
-     Record this stage's verify status as `"skipped"` in pipeline state (mirroring the
-     existing skip handling) **only** on an explicit skip — a skip does not go stale.
-
-   **Host / clean-room fallback:** if the question mechanism, the `Agent` tool, or the
-   `forge-verifier` subagent is unavailable, do **not** run clean-room — degrade to
-   printing `/feature-forge:forge-verify {feature}` for the user to run inline/manually (mirroring
-   `autoInvokeNextStage`), and offer the auto-verify enable as plain text only if a
-   config write is possible.
-
-2. **Then `/clear`.** Recommended **unconditionally** at this boundary for a clean
-   start — independent of how full the context window is. Every artifact is on disk,
-   so the work survives the clear. **I can't `/clear` for you — you have to run it
-   yourself.**
-
-3. **Then run `/feature-forge:forge-3-specs {feature}`** in the fresh session — or re-run `/feature-forge:forge`
-   to let the navigator resume from disk.
+1. **Verify the tech spec first — if it isn't already verified.** When this stage has no fresh verification on record (`verifyState` is **missing or stale**, staleness including the post-`forge-fix` state) **and** `autoVerify` is off for it, verify **now, before clearing**. If verify already ran, is pending under auto-verify, or the stage was explicitly skipped, say so and go straight to step 2. Present the **Standard Verify Gate** as an `AskUserQuestion` with exactly these three options — but only when the host has a question mechanism **and** the clean-room path is available (the `Agent` tool plus a dispatchable `forge-verifier` subagent):
+   - **Verify the tech spec now** *(recommended)* — dispatch the clean-room `forge-verifier` subagent from this session in require-clean mode; the digest returns here so any fix decision keeps its context. One-time — it does **not** change config.
+   - **Verify now + enable auto-verify going forward** — verify now **and** patch `"autoVerify": true` into `forge.config.json` in place (preserve formatting and every other key) so future stages verify automatically, no prompt. This complements the `forge-init` opt-in. **Do not auto-commit this config change** — treat it like `notes`: a user-facing edit the user commits on their own cadence, never folded into a stage's artifact commit.
+   - **Skip for now** — go straight to `/clear` and the next command without verifying. Record this stage's verify status as `"skipped"` in pipeline state (mirroring the existing skip handling) **only** on an explicit skip — a skip does not go stale.
+   - **Host / clean-room fallback:** if the question mechanism, the `Agent` tool, or the `forge-verifier` subagent is unavailable, do **not** run clean-room — degrade to printing `/feature-forge:forge-verify {feature}` for the user to run inline/manually (mirroring `autoInvokeNextStage`), and offer the auto-verify enable as plain text only if a config write is possible.
+2. **Then `/clear`.** Recommended **unconditionally** at this boundary for a clean start — independent of how full the context window is. Every artifact is on disk, so the work survives the clear. **I can't `/clear` for you — you have to run it yourself.**
+3. **Then run `/feature-forge:forge-3-specs {feature}`** in the fresh session — or re-run `/feature-forge:forge` to let the navigator resume from disk.
 
 ## Gotchas
 

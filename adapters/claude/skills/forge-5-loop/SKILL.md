@@ -259,11 +259,7 @@ output templates — **all-done**, **needs-human**, **blocked**, **deferred**, a
 
 Update `{resolvedFeatureDir}/.pipeline-state.json`:
 
-1. Set `stages.forge-5-loop`:
-   - `status`: `"complete"` if all backlog items are `done`, otherwise `"in-progress"`
-   - `completedAt`: current ISO timestamp (only if complete)
-   - `basedOnVersions`: `{"forge-4-backlog": <current version from pipeline state>}`
-   - `artifacts`: `["{backlogDir}/{loopRunner.stateDir}/state.json"]`
+1. Set `stages.forge-5-loop`: `status` = `"complete"` if all backlog items are `done`, else `"in-progress"`; `completedAt` = current ISO timestamp (only if complete); `basedOnVersions` = `{"forge-4-backlog": <current version from pipeline state>}`; `artifacts` = `["{backlogDir}/{loopRunner.stateDir}/state.json"]`.
 2. If all items complete: set `currentStage` to `"forge-6-docs"`
 3. Update `updatedAt`
 
@@ -277,62 +273,22 @@ Update `{resolvedFeatureDir}/.pipeline-state.json`:
 
 **Gate:** only run this step if (a) the resolved feature's `.pipeline-state.json` has an `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete` (all backlog items done). If either is false, **skip** — standalone completed features are handled by Step 5b, and partial runs end as today (REQ-COMPAT-01).
 
-1. **Offer impl-verify first (recommended, skippable).** Per the completion rule (`00-core-definitions.md §7`), a feature whose `forge-verify-impl.status == findings-reported` does **not** unblock dependents. Use `AskUserQuestion` (NOT inline prose) to offer:
-
-   > "{feature}'s loop is done. Recommended: run `/feature-forge:forge-verify {feature} impl` before unblocking dependents. Run it now, or skip and continue the handoff?"
-
-   The user may skip (then completion is judged on the §7 rule with impl-verify absent).
+1. **Offer impl-verify first (recommended, skippable).** Per the completion rule (`00-core-definitions.md §7`), a feature whose `forge-verify-impl.status == findings-reported` does **not** unblock dependents. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is done. Recommended: run `/feature-forge:forge-verify {feature} impl` before unblocking dependents. Run it now, or skip and continue the handoff?"* The user may skip (then completion is judged on the §7 rule with impl-verify absent).
 2. **Recompute and announce.** Run `render-status "{epic}" --specs-dir "{specsDir}" --json`. Announce the feature's completion and the epic rollup (e.g. "2/4 features complete") — derived live from disk, never re-computed in prose.
-3. **Identify the next actionable feature(s).** Read `render-status`'s `actionable` set (features whose every dependency is now complete and that are not themselves complete) and `nextCommand`.
-   - **None actionable** (everything done, or remaining features still blocked): say so.
-     - If `rollup.total > 0` **AND** `rollup.complete == rollup.total`, suggest `/feature-forge:forge-6-docs {feature}` and note the epic-level documentation offer (§10). The `rollup.total > 0` guard prevents an **empty epic** (`0 == 0`) from being reported complete.
-     - Otherwise, list what is still blocked and on which dependencies. End — do not prompt to start a feature that cannot start.
-   - **One or more actionable:** use `AskUserQuestion` presenting **each actionable feature** as an option (plus "stop here"). Execution is **serial** — the user picks exactly one (REQ-ORCH-03). Do **not** autonomously chain into the next pipeline.
-4. **Begin the chosen feature.** For the picked feature:
-   - **PRD absent** (no `PRD.md`, or `stages.forge-1-prd` not complete): offer to author it now — "Start `/feature-forge:forge-1-prd {chosen}`?" (REQ-ORCH-02). On yes, hand off to forge-1-prd (which injects epic context per §5.1).
-   - **PRD present:** point the user at the chosen feature's `nextCommand` from render-status.
+3. **Identify the next actionable feature(s).** Read `render-status`'s `actionable` set (every dependency now complete, not itself complete) and `nextCommand`. **None actionable:** say so — if `rollup.total > 0` **AND** `rollup.complete == rollup.total`, suggest `/feature-forge:forge-6-docs {feature}` and note the epic-level documentation offer (§10) (the `rollup.total > 0` guard prevents an **empty epic** `0 == 0` from reading as complete); otherwise list what is still blocked and on which dependencies, then end (do not prompt to start a feature that cannot start). **One or more actionable:** use `AskUserQuestion` presenting **each actionable feature** as an option (plus "stop here"). Execution is **serial** — the user picks exactly one (REQ-ORCH-03); do **not** autonomously chain into the next pipeline.
+4. **Begin the chosen feature.** **PRD absent** (no `PRD.md`, or `stages.forge-1-prd` not complete): offer to author it now — "Start `/feature-forge:forge-1-prd {chosen}`?" (REQ-ORCH-02); on yes, hand off to forge-1-prd (which injects epic context per §5.1). **PRD present:** point the user at the chosen feature's `nextCommand` from render-status.
 5. **Commit (REQ-OBS-01).** When `gitCommitAfterStage` is true, commit the Step 5 completion write (and any manifest `updatedAt` bump) via the shared-conventions **Git Commit Protocol**, staging the epic subtree so the member state change commits atomically: `git add {specsDir}/{epic}/` then `{commitPrefix}({feature}): complete loop`. If `gitCommitAfterStage` is false, skip the commit.
-6. **Close the handoff with the Stage Exit Protocol.** Finishing feature `{feature}` → starting the picked feature `{chosen}`'s PRD is a **cold** stage boundary (single-sourced in `references/stage-exit-protocol.md`). Feature `{feature}`'s impl-verify was already offered in Step 6.1, so step 1's gate self-suppresses when it ran or was skipped — the block then collapses to the `/clear` → next-command steps. Present it only when the chosen feature's PRD is absent (a PRD-present pick just runs its `nextCommand`):
+6. **Close the handoff with the Stage Exit Protocol.** Finishing feature `{feature}` → starting the picked feature `{chosen}`'s PRD is a **cold** stage boundary (single-sourced in `references/stage-exit-protocol.md`). Feature `{feature}`'s impl-verify was already offered in Step 6.1, so step 1's gate self-suppresses when it ran or was skipped — the block collapses to `/clear` → next-command. Present it only when the chosen feature's PRD is absent (a PRD-present pick just runs its `nextCommand`):
 
-**This stage is done — walk the user through the Stage Exit Protocol** before moving
-on. The order is fixed, and step 2 is something only the user can do:
+**This stage is done — walk the user through the Stage Exit Protocol** before moving on. The order is fixed, and step 2 is something only the user can do:
 
-1. **Verify feature {feature}'s loop first — if it isn't already verified.** When this stage has no
-   fresh verification on record (`verifyState` is **missing or stale** — staleness
-   includes the post-`forge-fix` state) **and** `autoVerify` is off for it, verify
-   **now, before clearing**. If verify already ran, is pending under auto-verify, or
-   the stage was explicitly skipped, say so and go straight to step 2.
-
-   Present the **Standard Verify Gate** as an `AskUserQuestion` with exactly these
-   three options — but only when the host has a question mechanism **and** the
-   clean-room path is available (the `Agent` tool plus a dispatchable `forge-verifier`
-   subagent):
-   - **Verify feature {feature}'s loop now** *(recommended)* — dispatch the clean-room `forge-verifier`
-     subagent from this session in require-clean mode; the digest returns here so any
-     fix decision keeps its context. One-time — it does **not** change config.
-   - **Verify now + enable auto-verify going forward** — verify now **and** patch
-     `"autoVerify": true` into `forge.config.json` in place (preserve formatting and
-     every other key) so future stages verify automatically, no prompt. This
-     complements the `forge-init` opt-in. **Do not auto-commit this config change** —
-     treat it like `notes`: a user-facing edit the user commits on their own cadence,
-     never folded into a stage's artifact commit.
-   - **Skip for now** — go straight to `/clear` and the next command without verifying.
-     Record this stage's verify status as `"skipped"` in pipeline state (mirroring the
-     existing skip handling) **only** on an explicit skip — a skip does not go stale.
-
-   **Host / clean-room fallback:** if the question mechanism, the `Agent` tool, or the
-   `forge-verifier` subagent is unavailable, do **not** run clean-room — degrade to
-   printing `/feature-forge:forge-verify {feature} impl` for the user to run inline/manually (mirroring
-   `autoInvokeNextStage`), and offer the auto-verify enable as plain text only if a
-   config write is possible.
-
-2. **Then `/clear`.** Recommended **unconditionally** at this boundary for a clean
-   start — independent of how full the context window is. Every artifact is on disk,
-   so the work survives the clear. **I can't `/clear` for you — you have to run it
-   yourself.**
-
-3. **Then run `/feature-forge:forge-1-prd {chosen}`** in the fresh session — or re-run `/feature-forge:forge`
-   to let the navigator resume from disk.
+1. **Verify feature {feature}'s loop first — if it isn't already verified.** When this stage has no fresh verification on record (`verifyState` is **missing or stale**, staleness including the post-`forge-fix` state) **and** `autoVerify` is off for it, verify **now, before clearing**. If verify already ran, is pending under auto-verify, or the stage was explicitly skipped, say so and go straight to step 2. Present the **Standard Verify Gate** as an `AskUserQuestion` with exactly these three options — but only when the host has a question mechanism **and** the clean-room path is available (the `Agent` tool plus a dispatchable `forge-verifier` subagent):
+   - **Verify feature {feature}'s loop now** *(recommended)* — dispatch the clean-room `forge-verifier` subagent from this session in require-clean mode; the digest returns here so any fix decision keeps its context. One-time — it does **not** change config.
+   - **Verify now + enable auto-verify going forward** — verify now **and** patch `"autoVerify": true` into `forge.config.json` in place (preserve formatting and every other key) so future stages verify automatically, no prompt. This complements the `forge-init` opt-in. **Do not auto-commit this config change** — treat it like `notes`: a user-facing edit the user commits on their own cadence, never folded into a stage's artifact commit.
+   - **Skip for now** — go straight to `/clear` and the next command without verifying. Record this stage's verify status as `"skipped"` in pipeline state (mirroring the existing skip handling) **only** on an explicit skip — a skip does not go stale.
+   - **Host / clean-room fallback:** if the question mechanism, the `Agent` tool, or the `forge-verifier` subagent is unavailable, do **not** run clean-room — degrade to printing `/feature-forge:forge-verify {feature} impl` for the user to run inline/manually (mirroring `autoInvokeNextStage`), and offer the auto-verify enable as plain text only if a config write is possible.
+2. **Then `/clear`.** Recommended **unconditionally** at this boundary for a clean start — independent of how full the context window is. Every artifact is on disk, so the work survives the clear. **I can't `/clear` for you — you have to run it yourself.**
+3. **Then run `/feature-forge:forge-1-prd {chosen}`** in the fresh session — or re-run `/feature-forge:forge` to let the navigator resume from disk.
 
 ## Gotchas
 
