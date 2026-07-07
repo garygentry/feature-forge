@@ -50,7 +50,7 @@ Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, `stages.
 
 ### 1b. Verification Check
 
-Check if `stages.forge-verify-backlog` exists and has status `passed` or `findings-applied`. If not, use the host's question mechanism to warn:
+Check if `stages.forge-verify-backlog` exists and has status `passed` or `findings-applied`. If not, use the host's question mechanism to warn with the cost of skipping:
 
 "Backlog hasn't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — the loop implements items autonomously and commits as it goes, so a bad item (wrong scope, missing dependency, untestable acceptance criteria) is far cheaper to catch now than after several commits build on it. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
 

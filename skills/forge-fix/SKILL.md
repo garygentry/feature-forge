@@ -12,8 +12,11 @@ Apply fixes from the most recent forge-verify findings document, with step-level
 Usually invoked by the user, but the `/feature-forge:forge` navigator may also invoke this skill
 automatically when `autoFix: true` is configured **and** its preconditions hold (the findings
 document has zero unresolved decision points, the working tree is clean, and a mandatory re-verify
-passes afterward). Either way the behavior below is identical — this skill is not "auto-aware," it
-always applies the latest findings document; the navigator owns the gating decision.
+passes afterward). The **fix application** below is identical either way — this skill is not
+"auto-aware" about *applying* findings; it always applies the latest findings document. The
+navigator owns the gating decisions, including the closing re-verify: the Step 6 gate is
+presented **only on a direct invocation**, because under an `autoFix` chain the navigator runs the
+mandatory re-verify itself.
 
 ## Prerequisites
 
@@ -69,9 +72,15 @@ Follow the Git Commit Protocol in `references/shared-conventions.md`.
      value so the ledger reflects what was actually verified/fixed.)
 2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files (`git add {resolvedFeatureDir}/` — or `{specsDir}/{epic}/` for an epic member so the member-state change commits atomically with the epic subtree), attempt commit with message `"{commitPrefix}({feature}): apply {mode} verification fixes"` (writing `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success.
 
-## Step 6: Next Steps
+## Step 6: Re-verify Gate
 
-Tell the user:
-"Fixes applied. Next steps:
-  - Run `/feature-forge:forge-verify {feature}` again to confirm all issues are resolved
-  - Or `/feature-forge:forge {feature}` to see pipeline status"
+Fixes are applied and recorded (`findings-applied`), so the stage reads **fresh** in the navigator's ledger (Step 5 set `verifiedStageVersion` to the current version). A re-verify is nonetheless the only thing that *confirms* the fixes actually resolved the findings, so on a **direct/manual** `forge-fix` invocation, **prompt** it rather than leaving it as a passive suggestion — this is the same **Standard Verify Gate** the stage skills stamp (`references/stage-exit-protocol.md`).
+
+**Skip this gate when the navigator invoked you as part of an `autoFix` chain** (`skills/forge/SKILL.md` §3b step 2b): there the navigator owns the mandatory re-verify, so a second gate here would block the unattended flow or double the re-verify. Just return and let the navigator proceed.
+
+On a direct invocation, present an `AskUserQuestion` with these three options — but only when the host has a question mechanism **and** the clean-room path is available (the `Agent` tool plus a dispatchable `forge-verifier` subagent):
+- **Re-verify {feature} now** *(recommended)* — dispatch the clean-room `forge-verifier` subagent from this session in require-clean mode to confirm every finding is resolved; the digest returns here so any remaining issue keeps its context. One-time — it does **not** change config.
+- **Re-verify now + enable auto-verify going forward** — re-verify now **and** patch `"autoVerify": true` into `forge.config.json` in place (preserve formatting and every other key) so future stages verify automatically, no prompt. This complements the `forge-init` opt-in. **Do not auto-commit this config change** — treat it like `notes`: a user-facing edit the user commits on their own cadence, never folded into a stage's artifact commit.
+- **Skip for now** — proceed without re-verifying; the fixes are already recorded, so the stage stays `findings-applied` (fresh in the ledger). Run `/feature-forge:forge {feature}` when you want pipeline status.
+
+**Host / clean-room fallback (not a user-selectable option):** if the question mechanism, the `Agent` tool, or the `forge-verifier` subagent is unavailable, do **not** run clean-room — degrade to printing `/feature-forge:forge-verify {feature}` for the user to run inline/manually (mirroring `autoInvokeNextStage`), and offer the auto-verify enable as plain text only if a config write is possible.
