@@ -14,13 +14,15 @@ description: Every key in forge.config.json, its type, default, and meaning, plu
 | `backlogDir` | string or null | `null` | If null, backlog lives at `<specsDir>/<feature>/backlog.json`; when set, at `<backlogDir>/<feature>/backlog.json`. |
 | `gitCommitAfterStage` | boolean | `true` | Auto-commit after each stage completes. |
 | `commitPrefix` | string | `forge` | Conventional-commit prefix; commits look like `forge(<feature>): <action>`. |
+| `branchPerFeature` | boolean | `true` | Offer an isolated git branch when a feature/epic starts on the default branch. Gated only on the project using git (independent of `gitCommitAfterStage`); when `false`, forge never prompts and works on the current branch. |
+| `branchPrefix` | string | `forge/` | Prefix for the Branch Setup name — `forge/` yields `forge/{feature}` or `forge/{epic}`. Ignored when `branchPerFeature` is `false`. |
 | `stack` | string or null | `null` | Project stack id; set during Stage 2 (tech spec). |
 | `typeCheckCommand` | string or null | `null` | Type-check command (e.g. `bun run typecheck`, `mypy .`); resolved in Stage 2. |
 | `testCommand` | string or null | `null` | Test command (e.g. `bun test`, `pytest`); resolved in Stage 2. |
 | `loopIterationMultiplier` | number | `1.5` | Multiplier applied to the pending-item count to compute loop iterations (e.g. 10 items × 1.5 = 15). |
 | `autoInvokeNextStage` | boolean | `true` | Navigator auto-invokes the next stage via the `Skill` tool after you confirm; `false` keeps copy-paste. Ignored on non-Claude hosts (always print). Navigator-only. |
 | `contextWindowTokens` | integer or null | `null` | Context window used by the navigator's context-usage check. `null` infers from the session model, falls back to 200000, and auto-bumps to 1000000 once usage exceeds 200000. Set explicitly (e.g. `1000000`) for accurate readings below 200k. Navigator-only. |
-| `contextWarnThreshold` | number | `0.7` | Fraction of the window (0–1) past which the navigator recommends a clean session before the next stage. Navigator-only. |
+| `contextWarnThreshold` | number | `0.7` | Fraction of the window (0–1) past which the navigator *strengthens* its clean-session recommendation and adds mid-stage compaction advice. Secondary signal only: a clean session is recommended at every stage boundary on its own merits — this modulates how emphatically, not whether. Navigator-only. |
 | `autoVerify` | boolean | `false` | Auto-run `forge-verify` after a stage completes, with no prompt. Runs in a fresh clean-room subagent, so it never needs a `/clear` and costs the session only a digest. See [Auto-verify](#auto-verify) below. Navigator-only. |
 | `autoVerifyStages` | object | `{}` | Per-stage overrides for `autoVerify`, e.g. `{"forge-1-prd": false}`. Effective value = `autoVerifyStages[stage]` if present, else `autoVerify`. Keys are limited to the five verify-capable stages (`forge-1-prd`…`forge-5-loop`); an unknown key is a config error, not a silent no-op. Navigator-only. |
 | `autoFix` | boolean | `false` | Chain `forge-fix` after an auto-verify that finds issues — honored only when `autoVerify` is on for the stage **and** preconditions hold. Mutates artifacts, so it stays off by default. See [Auto-verify](#auto-verify). Navigator-only. |
@@ -49,9 +51,10 @@ All of the runner command keys are templates with `{bin}`, `{backlogDir}`, `{spe
 the [`forge` navigator](/pipeline/dashboard/) drives you between stages and warns you
 about a filling context window:
 
-- The navigator measures the **current session's** token usage against the context
-  window. Past `contextWarnThreshold` (default 70%), it recommends `/clear` and a
-  re-run before the next stage.
+- The navigator recommends `/clear` and a re-run before the next stage at **every** stage
+  boundary on its own merits. It also measures the **current session's** token usage against
+  the context window; past `contextWarnThreshold` (default 70%) that measurement *strengthens*
+  the recommendation — a secondary signal, never the gate.
 - The window is inferred from the session model, falling back to 200k, and **auto-bumps
   to 1M once usage exceeds 200k** (usage above 200k proves a 1M-beta window is active).
 - A 1M window can't be detected until usage crosses 200k, so on a 1M-context model set

@@ -1545,12 +1545,40 @@ def generate(root: Path) -> int:
     # Atomic swap: replace adapters/ wholesale (REQ-DET-02 — no orphan survives).
     final = root / ADAPTERS_DIRNAME
     backup = root / f"{ADAPTERS_DIRNAME}.tmp-{os.getpid()}.prev"
+    moved = False
     if final.exists():
         os.replace(final, backup)  # move old out of the way (same filesystem)
-    os.replace(staging, final)  # publish the new tree atomically
+        moved = True
+    try:
+        os.replace(staging, final)  # publish the new tree atomically
+    except BaseException:
+        # Publish failed after the old tree was moved aside: restore it so
+        # adapters/ is never left missing (REQ-ROB-01 — no partial/absent tree).
+        if moved and not final.exists():
+            os.replace(backup, final)
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     if backup.exists():
         shutil.rmtree(backup, ignore_errors=True)
+    _fsync_dir(root)  # best-effort: durably record the rename in the parent dir
     return 0
+
+
+def _fsync_dir(path: Path) -> None:
+    """Best-effort fsync of a directory so a rename into it is durable on crash.
+
+    Silently no-ops where directory fsync is unsupported (some platforms/filesystems
+    reject ``O_RDONLY`` fsync) — durability is a hardening bonus, never a hard
+    requirement of the build.
+    """
+    try:
+        dir_fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass
 
 
 def check(root: Path) -> int:

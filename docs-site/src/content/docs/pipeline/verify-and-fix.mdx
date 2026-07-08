@@ -93,6 +93,10 @@ A typical gate cycle:
 2. `forge-fix <feature>` → apply the fixes.
 3. `forge-verify <feature>` again → confirm the issues are resolved.
 
+After applying fixes, `forge-fix` offers its own one-shot re-verify gate — so step 3 is
+usually a prompt you accept in place, not a command you retype. The manual re-run above is
+the fallback when you decline that gate or come back to it later.
+
 Then continue the pipeline. Check overall status anytime with the
 [dashboard](/pipeline/dashboard/).
 

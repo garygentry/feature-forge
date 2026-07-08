@@ -55,14 +55,16 @@ later revised.
 
 ## Context-window awareness
 
-Long pipelines accumulate context. Before sending you into the next stage, the navigator
-checks how full the **current session** is and, when it's getting full, recommends
-starting the next stage in a clean session instead of continuing.
+Long pipelines accumulate context. The navigator recommends starting each stage in a
+clean session — `/clear`, then re-run the navigator — at **every** stage boundary on its
+own merits, so each heavy stage starts fresh. Before sending you into the next stage it
+also checks how full the **current session** is, but that fullness only modulates *how
+emphatically* it recommends the clear, never *whether*.
 
 - It reads the live session's token usage and compares it to the context window.
-- Past `contextWarnThreshold` (default `0.7`, i.e. 70% full), it recommends
-  `/clear` followed by re-running the navigator before the next stage — so each heavy
-  stage starts with headroom.
+- Past `contextWarnThreshold` (default `0.7`, i.e. 70% full), it *strengthens* that
+  recommendation and adds mid-stage compaction advice — the threshold is a secondary
+  signal, not the reason to clear.
 - The window is inferred from the session model and falls back to **200k**. Once observed
   usage exceeds 200k, the navigator **auto-bumps the assumed window to 1M** (usage above
   200k proves a 1M-beta window is active), avoiding a nonsensical >100% reading.

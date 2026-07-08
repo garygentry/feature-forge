@@ -1086,3 +1086,98 @@ def test_integration_outcome_partial_state_resume(run_bootstrap, tmp_path: Path)
     second = _scaffold(run_bootstrap, tmp_path, answers)
     assert second.returncode == 0
     assert second.json()["artifactsWritten"] == first.json()["artifactsWritten"]
+
+
+# --------------------------------------------------------------------------- #
+# Input-hardening — allow-list validation + path containment (Chunk B/D QA
+# remediation). Mirrors epic-manifest.py's assert_safe_name / contained_path
+# rigor: a malformed --answers payload must exit 2 with a stderr diagnostic,
+# never a KeyError traceback or a path escape.
+# --------------------------------------------------------------------------- #
+
+FORGE_INIT = REPO_ROOT / "scripts" / "forge-init.sh"
+
+
+def _forge_init_config_keys() -> set[str]:
+    """Extract forge-init.sh's emitted forge.config.json key set from its heredoc.
+
+    Parses the ``<< 'EOF' … EOF`` JSON block so the parity assertion tracks
+    forge-init.sh automatically — if a key is added there, this set follows.
+    """
+    text = FORGE_INIT.read_text(encoding="utf-8")
+    marker = "<< 'EOF'\n"
+    start = text.index(marker) + len(marker)
+    end = text.index("\nEOF", start)
+    return set(json.loads(text[start:end]))
+
+
+def _assert_clean_exit_2(result: CliResult) -> None:
+    """A hardening rejection: exit 2, a stderr ``Error:`` diagnostic, no traceback."""
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert result.stderr.startswith("Error:"), result.stderr
+    assert "Traceback" not in result.stderr, result.stderr
+
+
+def test_scaffold_member_path_traversal_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
+    """A member path escaping the target (`../x`) is rejected before any write (02 §8.1)."""
+    answers = _answers(
+        layout="monorepo", members=[_member("evil", "../escape", "generic", None)]
+    )
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    _assert_clean_exit_2(result)
+    assert "path" in result.stderr.lower()
+    # nothing was written outside (or inside) the target repo.
+    assert not (tmp_path.parent / "escape").exists()
+
+
+def test_scaffold_absolute_member_path_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
+    """An absolute member path is rejected (no write outside the target)."""
+    answers = _answers(
+        layout="monorepo", members=[_member("abs", "/tmp/pwn", "generic", None)]
+    )
+    _assert_clean_exit_2(_scaffold(run_bootstrap, tmp_path, answers))
+
+
+def test_scaffold_bad_package_manager_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
+    """A packageManager not in PACKAGE_MANAGERS[stack] is rejected before {pm} use."""
+    answers = _answers(members=[_member("demo", ".", "typescript", "conda")])
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    _assert_clean_exit_2(result)
+    assert "packagemanager" in result.stderr.lower()
+
+
+def test_scaffold_bad_stack_is_exit_2(run_bootstrap, tmp_path: Path) -> None:
+    """A stack outside the Stack enum is rejected before any STACK_COMMANDS subscript."""
+    answers = _answers(members=[_member("demo", ".", "haskell", None)])
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    _assert_clean_exit_2(result)
+    assert "stack" in result.stderr.lower()
+
+
+def test_scaffolded_config_matches_forge_init_field_set(
+    run_bootstrap, tmp_path: Path
+) -> None:
+    """A bootstrapped forge.config.json carries forge-init.sh's full field set (REQ-CFG-02).
+
+    Every key forge-init.sh emits must appear in the bootstrapped config; the only
+    permitted extras are the documented bootstrap additions (``loopRunner``, and
+    ``workspaces`` for a monorepo — 01 §4). This is the D4 parity gate that the old
+    spot-check missed.
+    """
+    init_keys = _forge_init_config_keys()
+
+    _scaffold(run_bootstrap, tmp_path, _answers(members=[_member("demo", ".", "generic")]))
+    single_keys = set(_config(tmp_path))
+    assert init_keys <= single_keys, f"missing: {init_keys - single_keys}"
+    assert single_keys - init_keys <= {"loopRunner"}, single_keys - init_keys
+
+    mono = tmp_path / "mono"
+    mono.mkdir()
+    _scaffold(
+        run_bootstrap,
+        mono,
+        _answers(layout="monorepo", members=[_member("api", "packages/api", "generic")]),
+    )
+    mono_keys = set(_config(mono))
+    assert init_keys <= mono_keys, f"missing: {init_keys - mono_keys}"
+    assert mono_keys - init_keys <= {"loopRunner", "workspaces"}, mono_keys - init_keys
