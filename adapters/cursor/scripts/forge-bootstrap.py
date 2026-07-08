@@ -26,6 +26,8 @@ import argparse
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -281,6 +283,32 @@ def _json_text(obj: object) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
 
 
+def contained_path(base: Path, *parts: str) -> Path:
+    """Join ``parts`` onto ``base`` and assert the result stays within ``base``.
+
+    Ports epic-manifest.py's ``contained_path`` guard: canonicalizes (symlink-
+    resolves) both ends and verifies containment so no scaffold write or verify
+    cwd can escape the target repo — defense in depth behind ``_validate_answers``
+    should a crafted member path slip through. Containment violations surface only
+    as exit-2 usage errors.
+
+    Args:
+        base: The containing directory (the target repo root), already known to exist.
+        *parts: Repo-relative segments to append (member path, artifact rel path).
+
+    Returns:
+        The resolved, contained absolute path.
+
+    Raises:
+        UsageError: If the resolved path escapes ``base`` (exit 2).
+    """
+    base_real = base.resolve()
+    resolved = (base_real / Path(*parts)).resolve()
+    if resolved != base_real and base_real not in resolved.parents:
+        raise UsageError(f"path escapes target dir: {os.path.join(*parts)}")
+    return resolved
+
+
 def _atomic_write_text(path: Path, text: str) -> None:
     """Write ``text`` to ``path`` atomically via a same-dir temp file + os.replace.
 
@@ -381,7 +409,7 @@ def run(
 
 
 # --------------------------------------------------------------------------- #
-# Subcommand stubs (filled by later backlog items 003/006/008/009/010)
+# Subcommands: check / scaffold / verify / commit / status (02 §8.2)
 # --------------------------------------------------------------------------- #
 
 
@@ -476,6 +504,7 @@ def _write_artifact(
     """
     if rel_path in sentinel["artifactsWritten"]:
         return
+    contained_path(target, rel_path)  # never write outside the target repo (exit 2)
     dest = target / rel_path
     if dest.exists():
         return
@@ -529,7 +558,7 @@ def _resolve_commands(member: Member) -> tuple[str, str]:
 
 
 def write_config(answers: Answers, target: Path, sentinel: Sentinel) -> None:
-    """Write forge.config.json equivalent to forge-init's output (02 §4.3, 00 §7)."""
+    """Write forge.config.json == forge-init's field set + loopRunner (02 §4.3, 00 §7)."""
     config: dict = {
         "specsDir": "./specs",
         "docsDir": "./docs/architecture",
@@ -540,6 +569,14 @@ def write_config(answers: Answers, target: Path, sentinel: Sentinel) -> None:
         "typeCheckCommand": None,
         "testCommand": None,
         "loopIterationMultiplier": 1.5,
+        # Navigator keys — kept in lockstep with forge-init.sh's emitted field set
+        # (00 §7, REQ-CFG-02) so a bootstrapped config == forge-init's + loopRunner.
+        "autoInvokeNextStage": True,
+        "contextWindowTokens": None,
+        "contextWarnThreshold": 0.7,
+        "autoVerify": False,
+        "autoVerifyStages": {},
+        "autoFix": False,
         "loopRunner": {"name": "rauf", "bin": "rauf"},
     }
     if answers["layout"] == "single":
@@ -697,9 +734,9 @@ def scaffold(target: Path, answers: Answers) -> list[str]:
 def toolchain_present(required: list[str]) -> bool:
     """Return True iff every required tool is on PATH (REQ-LIFE-03).
 
-    Probes each binary with ``command -v`` via the run wrapper (a shell builtin,
-    invoked through ``sh -c``). A single missing tool yields False, driving the
-    distinct missing-toolchain outcome (exit 2, 00 §9): the skill then offers
+    Probes each binary with :func:`shutil.which` (a pure PATH lookup, no shell
+    spawned). A single missing tool yields False, driving the distinct
+    missing-toolchain outcome (exit 2, 00 §9): the skill then offers
     scaffold-anyway-unverified vs abort and marks the baseline unverified
     (REQ-LIFE-04). Bootstrap NEVER installs a toolchain (tech-spec §9).
 
@@ -708,17 +745,10 @@ def toolchain_present(required: list[str]) -> bool:
             already {pm}-substituted.
 
     Returns:
-        True iff ``command -v`` succeeds for every entry.
+        True iff every entry resolves on PATH.
     """
     for tool in required:
-        try:
-            proc = run(["sh", "-c", f"command -v {tool}"], cwd=Path.cwd(), check=False)
-        except UsageError:
-            # The probe itself could not be launched (e.g. an empty PATH leaves no
-            # `sh`): treat that as the tool being absent, the missing-toolchain
-            # outcome, never an internal error (REQ-LIFE-03/04).
-            return False
-        if proc.returncode != 0:
+        if shutil.which(tool) is None:
             return False
     return True
 
@@ -763,9 +793,11 @@ def verify(target: Path, answers: Answers) -> VerifyResult:
     test: list[CommandOutcome] = []
     for member in answers["members"]:
         lint_cmd, test_cmd = _resolve_commands(member)
-        cwd = target / member["path"]
+        cwd = contained_path(target, member["path"])  # never run outside the target
         for bucket, cmd in ((lint, lint_cmd), (test, test_cmd)):
-            proc = run(["sh", "-c", cmd], cwd=cwd, check=False)
+            # STACK_COMMANDS templates with an allow-listed {pm} (see _validate_answers)
+            # — split into an argv token list and run without a shell (no `sh -c`).
+            proc = run(shlex.split(cmd), cwd=cwd, check=False)
             bucket.append(
                 {"command": cmd, "ok": proc.returncode == 0, "member": member["path"]}
             )
@@ -867,7 +899,53 @@ def _parse_answers(raw: str) -> Answers:
         raise UsageError(f"malformed --answers JSON: {exc}")
     if not isinstance(parsed, dict):
         raise UsageError("--answers must be a JSON object")
+    _validate_answers(parsed)
     return parsed
+
+
+def _validate_answers(answers: Answers) -> None:
+    """Reject non-allowlisted stack/packageManager and unsafe member paths (exit 2).
+
+    Runs before any ``{pm}`` substitution, ``STACK_COMMANDS[...]`` subscript, or
+    artifact write so a malformed ``--answers`` payload fails with a stderr
+    diagnostic, never a KeyError traceback or a path escape. Mirrors the
+    input-validation rigor epic-manifest.py applies via ``assert_safe_name`` /
+    ``contained_path``:
+
+    - ``stack`` must be a known :data:`Stack` (a ``STACK_COMMANDS`` key).
+    - ``packageManager`` must be in ``PACKAGE_MANAGERS[stack]`` for a stack that
+      has a choice; stacks with no choice (go/rust/generic) must leave it ``None``.
+    - ``path`` must be a repo-relative string — no absolute path, no ``..``
+      component, no backslash — so it can never resolve outside the target.
+    """
+    members = answers.get("members")
+    if not isinstance(members, list) or not members:
+        raise UsageError("--answers must include a non-empty members[] array")
+    for member in members:
+        stack = member.get("stack")
+        if stack not in STACK_COMMANDS:
+            raise UsageError(
+                f"unknown stack {stack!r}: expected one of {sorted(STACK_COMMANDS)}"
+            )
+        pm = member.get("packageManager")
+        choices = PACKAGE_MANAGERS.get(stack)
+        if choices is not None:
+            if pm not in choices:
+                raise UsageError(
+                    f"invalid packageManager {pm!r} for stack {stack!r}: "
+                    f"expected one of {choices}"
+                )
+        elif pm is not None:
+            raise UsageError(
+                f"stack {stack!r} takes no packageManager, got {pm!r}"
+            )
+        path = member.get("path")
+        if not isinstance(path, str) or not path:
+            raise UsageError(f"member path must be a non-empty string, got {path!r}")
+        if os.path.isabs(path) or "\\" in path or ".." in Path(path).parts:
+            raise UsageError(
+                f"unsafe member path {path!r}: must be repo-relative with no '..'"
+            )
 
 
 def _dispatch(args: argparse.Namespace, target: Path) -> int:
