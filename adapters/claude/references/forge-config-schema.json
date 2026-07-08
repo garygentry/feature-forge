@@ -212,8 +212,8 @@
         },
         "installHint": {
           "type": "string",
-          "default": "Provision rauf for a multi-agent setup with the cross-agent installer: `npx @garygentry/feature-forge install` (records the pinned @garygentry/rauf@0.11.0 default). Or install/upgrade just the rauf CLI: `npx @garygentry/rauf@0.11.0 --version`, or `curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`.",
-          "description": "Shown when the runner BINARY is missing or too old (version gate fails, minRunnerVersion floor) — how to obtain/upgrade the CLI itself. Names two distinct binary-provisioning paths: (1) the cross-agent installer (`npx @garygentry/feature-forge install`, the multi-agent provisioning path that pins @garygentry/rauf@0.11.0), and (2) the direct rauf-CLI install/upgrade one-liner. Distinct from setupHint (which installs per-project artifacts); a version-gate failure is ALWAYS this hint, never setupHint."
+          "default": "Provision rauf for a multi-agent setup with the cross-agent installer: `npx @garygentry/feature-forge install` (records the pinned @garygentry/rauf@0.12.0 default). Or install/upgrade just the rauf CLI: `npx @garygentry/rauf@0.12.0 --version`, or `curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`.",
+          "description": "Shown when the runner BINARY is missing or too old (version gate fails, minRunnerVersion floor) — how to obtain/upgrade the CLI itself. Names two distinct binary-provisioning paths: (1) the cross-agent installer (`npx @garygentry/feature-forge install`, the multi-agent provisioning path that pins @garygentry/rauf@0.12.0), and (2) the direct rauf-CLI install/upgrade one-liner. Distinct from setupHint (which installs per-project artifacts); a version-gate failure is ALWAYS this hint, never setupHint."
         },
         "schemaVersion": {
           "type": "string",

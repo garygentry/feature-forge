@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **rauf pin advanced to `@garygentry/rauf@0.12.0`.** rauf shipped 0.12.0 (file-driven
+  loop supervision — a health/status derivation over `state.json` + `events.ndjson`
+  with robust backlog-root resolution and event-altitude filtering in `follow` /
+  `log --follow`; `scanBacklogRoots` now skips `artifacts/`; and `author-backlog`
+  reset-before-repopulate guidance), so `RAUF_PIN` advances `0.11.0 → 0.12.0` — the
+  version a fresh install provisions as the default loop runner. Canonical
+  `installHint` (`references/forge-config-schema.json`), regenerated adapters,
+  `COMPATIBILITY.md`, installer docs, and the installer pin tests updated.
+  `minRunnerVersion` stays `0.6.0` (no compatibility floor change); rauf and
+  feature-forge remain independently versioned. The install-time check is a read-only
+  `npm view` resolvability probe — existing installs are unaffected. Installer
+  published as `@garygentry/feature-forge@0.2.4` to carry the new pin and the
+  accumulated Chunk A–G hardening (#80–#87) re-bundled into `adapters/` for
+  `npx` users (supersedes the `0.2.3`/`0.11.0` entry).
 - **rauf pin advanced to `@garygentry/rauf@0.11.0`.** rauf shipped 0.11.0 (rich live
   event rendering in `follow`/`log --follow`, and a distinct `ITERATIONS_COMPLETE`
   state so an exhausted iteration budget no longer masquerades as a usage limit —
