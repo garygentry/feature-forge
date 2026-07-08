@@ -219,10 +219,43 @@ test("planInstall symlink mode: live link to same target → unchanged", async (
     await makeFixtureBundle(sb, "claude");
     const source = locate(sb);
     const destination = path.join(sb.cwd, ".claude", "skills", "feature-forge");
+    // The manifest AND a real on-disk symlink must both be live for "unchanged" (F2): the
+    // planner now lstat-verifies the link, not just the manifest record.
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.symlinkSync(source.root, destination);
     const prior = symlinkManifest(destination, source.root);
     const r = planInstall(ctxFor(source, destination, { mode: "symlink", priorManifest: prior }));
     assert.ok(r.ok);
     assert.deepEqual(r.value.files, [{ relpath: ".", action: "unchanged" }]);
+  });
+});
+
+test("planInstall symlink mode: manifest says live but link is deleted → create (F2 relink)", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "claude");
+    const source = locate(sb);
+    const destination = path.join(sb.cwd, ".claude", "skills", "feature-forge");
+    // Manifest records a live symlink to the same target, but nothing exists on disk (the link was
+    // deleted out from under us). The old pure-manifest planner returned "unchanged" and never
+    // healed; the F2 planner lstat-checks and forces a relink.
+    const prior = symlinkManifest(destination, source.root);
+    const r = planInstall(ctxFor(source, destination, { mode: "symlink", priorManifest: prior }));
+    assert.ok(r.ok);
+    assert.deepEqual(r.value.files, [{ relpath: ".", action: "create" }]);
+  });
+});
+
+test("planInstall symlink mode: manifest says live but path is a regular dir → create (F2 relink)", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "claude");
+    const source = locate(sb);
+    const destination = path.join(sb.cwd, ".claude", "skills", "feature-forge");
+    // A non-symlink (a real dir) sits where the link should be → not live → relink.
+    fs.mkdirSync(destination, { recursive: true });
+    const prior = symlinkManifest(destination, source.root);
+    const r = planInstall(ctxFor(source, destination, { mode: "symlink", priorManifest: prior }));
+    assert.ok(r.ok);
+    assert.deepEqual(r.value.files, [{ relpath: ".", action: "create" }]);
   });
 });
 
