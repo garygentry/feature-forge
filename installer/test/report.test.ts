@@ -26,7 +26,7 @@ function sampleReport(): RunReport {
       { relpath: "skills/forge-1-prd/SKILL.md", action: "create" },
       { relpath: "skills/forge-2-tech/SKILL.md", action: "unchanged" },
     ],
-    raufPin: "@garygentry/rauf@0.11.0",
+    raufPin: "@garygentry/rauf@0.12.0",
   };
   const bad: AgentReport = {
     agent: "codex",
@@ -66,7 +66,7 @@ test("human form has header, per-agent ok/FAILED blocks, action verbs, and summa
   assert.ok(text.includes("claude: ok"));
   assert.ok(text.includes(`  ${actionVerb("create")} skills/forge-1-prd/SKILL.md`));
   assert.ok(text.includes(`  ${actionVerb("unchanged")} skills/forge-2-tech/SKILL.md`));
-  assert.ok(text.includes("rauf default runner pinned: @garygentry/rauf@0.11.0"));
+  assert.ok(text.includes("rauf default runner pinned: @garygentry/rauf@0.12.0"));
   assert.ok(text.includes("codex: FAILED — WRITE_DENIED"));
   assert.ok(text.includes("Summary: 1 ok, 1 failed (exit 1)"));
 });
@@ -122,7 +122,7 @@ test("list subcommand decodes the synthetic status rows into one line", () => {
           { relpath: "installed:true", action: "unchanged" },
           { relpath: "up-to-date:false", action: "unchanged" },
         ],
-        raufPin: "@garygentry/rauf@0.11.0",
+        raufPin: "@garygentry/rauf@0.12.0",
       },
       {
         agent: "cursor",
