@@ -33,11 +33,13 @@ Stages are heavy — each reads specs, dispatches subagents, and writes artifact
 single session that runs several stages back-to-back fills its context window. When that
 happens, quality degrades.
 
-The [`forge` navigator](/pipeline/dashboard/) guards against this. Before advancing, it
-checks how full the current session is and, past a threshold, recommends clearing context
-(`/clear`) and re-running before the next stage. The state file makes the handoff
-seamless: the fresh session reads `.pipeline-state.json` and picks up exactly where you
-left off.
+The [`forge` navigator](/pipeline/dashboard/) guards against this. It recommends clearing
+context (`/clear`) and re-running before the next stage at **every** stage boundary on its
+own merits — not only when the window fills. Before advancing it also checks how full the
+current session is; past a threshold that check *strengthens* the recommendation (a
+secondary signal), but the boundary itself is always the reason to clear. The state file
+makes the handoff seamless: the fresh session reads `.pipeline-state.json` and picks up
+exactly where you left off.
 
 For *when* to clear vs. stay warm between stages — and the factors to weigh — see
 [Managing Context](/pipeline/managing-context/).
@@ -50,7 +52,7 @@ The navigator's context check is configured by three keys in
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `contextWindowTokens` | `null` | The window the check measures against. `null` infers from the session model, falls back to 200000, and auto-bumps to 1000000 once usage exceeds 200000. |
-| `contextWarnThreshold` | `0.7` | Fraction of the window (0–1) past which a clean session is recommended. |
+| `contextWarnThreshold` | `0.7` | Fraction of the window (0–1) past which the navigator *strengthens* its clean-session recommendation. Secondary signal only — a clean session is recommended at every stage boundary regardless. |
 | `autoInvokeNextStage` | `true` | Whether the navigator launches the next stage in-session (vs. printing the command). |
 
 How the window is resolved:
