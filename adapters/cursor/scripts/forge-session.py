@@ -397,12 +397,17 @@ def _last_usage(transcript: Path) -> tuple[int, str | None] | None:
         usage = message.get("usage") if isinstance(message, dict) else record.get("usage")
         if not isinstance(usage, dict):
             continue
-        total = (
-            int(usage.get("input_tokens", 0) or 0)
-            + int(usage.get("cache_creation_input_tokens", 0) or 0)
-            + int(usage.get("cache_read_input_tokens", 0) or 0)
-            + int(usage.get("output_tokens", 0) or 0)
-        )
+        # A malformed transcript may carry a non-numeric usage field; skip that
+        # record rather than crash the whole context-usage read (ValueError/TypeError).
+        try:
+            total = (
+                int(usage.get("input_tokens", 0) or 0)
+                + int(usage.get("cache_creation_input_tokens", 0) or 0)
+                + int(usage.get("cache_read_input_tokens", 0) or 0)
+                + int(usage.get("output_tokens", 0) or 0)
+            )
+        except (TypeError, ValueError):
+            continue
         if total <= 0:
             continue
         model = message.get("model") if isinstance(message, dict) else record.get("model")
