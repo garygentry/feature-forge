@@ -308,10 +308,18 @@ function planSymlink(ctx: PlanContext): FileAction[] {
   const source = ctx.source as LocatedSource;
   const prior = ctx.priorManifest;
   const priorExists = prior !== null;
-  const priorIsLiveSymlinkToSameTarget =
-    priorExists && prior.link?.target === source.root;
+  const manifestSaysLive = priorExists && prior.link?.target === source.root;
 
-  const action: FileActionKind = priorIsLiveSymlinkToSameTarget
+  // The manifest can claim a live symlink that no longer exists on disk (deleted, or clobbered by a
+  // regular file/dir). Copy mode self-heals via per-file hashing; symlink mode had no on-disk check
+  // and would classify a broken link "unchanged" forever. lstat the link and force a relink when the
+  // manifest says live but the link is absent/not-a-symlink (F2) — never "skip-modified", which apply
+  // treats as untouched and would leave the install broken.
+  if (manifestSaysLive && !isLiveSymlink(ctx.destination)) {
+    return [{ relpath: ".", action: "create" }];
+  }
+
+  const action: FileActionKind = manifestSaysLive
     ? "unchanged"
     : priorExists
       ? ctx.force
@@ -320,6 +328,18 @@ function planSymlink(ctx: PlanContext): FileAction[] {
       : "create";
 
   return [{ relpath: ".", action }];
+}
+
+/**
+ * True iff `absPath` exists and is currently a symbolic link. `lstat`, not `readlink` — we only need
+ * the node type to decide whether a manifest-recorded symlink is still live (F2). Absent ⇒ false.
+ */
+function isLiveSymlink(absPath: string): boolean {
+  try {
+    return fs.lstatSync(absPath).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /** Paths in the prior manifest that the current source no longer contains → `remove` (row 6). */

@@ -19,7 +19,7 @@ import { planInstall, planUpdate, resolveMode } from "../dist/plan.js";
 import { locateSource, type LocatedSource } from "../dist/source.js";
 import { readManifest, manifestPath } from "../dist/manifest.js";
 import { planUninstall } from "../dist/manifest.js";
-import type { AgentId, InstallManifest, Result } from "../dist/types.js";
+import type { AgentId, InstallManifest, PlannedAction, Result } from "../dist/types.js";
 import { isWindows } from "../dist/fsutil.js";
 import { withSandbox, type Sandbox } from "./helpers/sandbox.ts";
 import { makeFixtureBundle } from "./helpers/fixtures.ts";
@@ -328,5 +328,87 @@ test("update orphan removal: a dropped source file is removed on disk", async ()
     assert.equal(report.ok, true);
     assert.ok(!fs.existsSync(path.join(ctx.destination, "skills", "forge-2-tech", "SKILL.md")), "orphan removed");
     assert.ok(fs.existsSync(path.join(ctx.destination, "skills", "forge-1-prd", "SKILL.md")), "kept file remains");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F1 — a metadata-only (raufPin) change rewrites the manifest even when every
+// file action is unchanged (the old allUnchanged short-circuit dropped it).
+// ---------------------------------------------------------------------------
+
+test("copy: an all-unchanged re-run with a CHANGED raufPin rewrites the manifest (F1)", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "claude");
+    const src = located(sb, "claude");
+    const ctx = ctxFor(sb, "claude", src, "copy");
+
+    const first = planInstall({
+      agent: "claude", scope: "project", mode: "copy", destination: ctx.destination,
+      source: src, priorManifest: null, force: false, raufPin: "@garygentry/rauf@0.11.0",
+    });
+    assert.ok(first.ok);
+    await apply(first.value, ctxFor(sb, "claude", src, "copy", { raufPin: "@garygentry/rauf@0.11.0" }));
+
+    const m1 = readManifest(ctx.manifestPath);
+    assert.ok(m1.ok && m1.value !== null);
+    assert.equal(m1.value.raufPin, "@garygentry/rauf@0.11.0");
+
+    // Re-plan: files all unchanged, but the pin was bumped.
+    const second = planInstall({
+      agent: "claude", scope: "project", mode: "copy", destination: ctx.destination,
+      source: src, priorManifest: m1.value, force: false, raufPin: "@garygentry/rauf@0.12.0",
+    });
+    assert.ok(second.ok);
+    assert.ok(second.value.files.every((f) => f.action === "unchanged"), "all files unchanged");
+
+    const report = await apply(
+      second.value,
+      ctxFor(sb, "claude", src, "copy", { priorManifest: m1.value, raufPin: "@garygentry/rauf@0.12.0" }),
+    );
+    assert.equal(report.ok, true);
+
+    const m2 = readManifest(ctx.manifestPath);
+    assert.ok(m2.ok && m2.value !== null);
+    assert.equal(m2.value.raufPin, "@garygentry/rauf@0.12.0", "pin change persisted despite all-unchanged files");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F3 — a TOCTOU vanish on the mirror unchanged-reconstruct path returns an err
+// Result, never throws ENOENT out of apply (would abort every sibling agent).
+// ---------------------------------------------------------------------------
+
+test("copy: a vanished mirror file on the reconstruct path → err Result, not a throw (F3)", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "codex");
+    const src = located(sb, "codex");
+    const ctx = ctxFor(sb, "codex", src, "copy");
+    const mirrorRoot = path.join(sb.cwd, ".codex");
+    const mirrorDest = path.join(mirrorRoot, "agents");
+
+    // Prior manifest records the mirror placement but WITHOUT this file, so apply takes the
+    // reconstruct-by-hash branch (priorByPath miss) — and the file is absent on disk (TOCTOU vanish).
+    const prior: InstallManifest = {
+      schemaVersion: 2, agent: "codex", scope: "project", mode: "copy",
+      destination: ctx.destination, featureForgeVersion: null, sourceHash: "deadbeef",
+      raufPin: ctx.raufPin, installedAt: NOW, updatedAt: NOW, skills: [], files: [],
+      placements: [{ kind: "mirror", root: mirrorRoot, destination: mirrorDest, files: [] }],
+    };
+    // One unchanged primary action keeps apply past its empty-plan no-op short-circuit (carried
+    // forward, no disk read) so the crafted mirror placement below is the only thing that can fail.
+    const planned: PlannedAction = {
+      agent: "codex", scope: "project", mode: "copy", destination: ctx.destination,
+      raufPin: ctx.raufPin,
+      files: [{ relpath: src.files[0].relpath, action: "unchanged" }],
+      placements: [{
+        kind: "mirror", root: mirrorRoot, destination: mirrorDest,
+        files: [{ relpath: "vanished.toml", action: "unchanged", srcRelpath: "vanished.toml" }],
+      }],
+    };
+
+    // Must resolve to an err Result — never reject/throw.
+    const report = await apply(planned, ctxFor(sb, "codex", src, "copy", { priorManifest: prior }));
+    assert.equal(report.ok, false);
+    assert.equal(report.error?.code, "UNEXPECTED");
   });
 });

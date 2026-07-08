@@ -44,7 +44,8 @@ import { plan, resolveMode, type PlanContext } from "./plan.js"; // 04
 import { apply, type ApplyContext } from "./apply.js"; // 04
 import { manifestPath, readManifest, planUninstall } from "./manifest.js"; // 05
 import { preflightRauf, RAUF_PIN, type RegistryQuery } from "./rauf.js"; // 06
-import { sha256File } from "./hash.js"; // 03 (list destination-drift hashing)
+import { sha256File, sha256String } from "./hash.js"; // 03 (list destination-drift hashing)
+import { extractManagedRegion } from "./placements.js"; // A4b managed-block drift
 import { renderReport } from "./report.js"; // 09
 
 // ---------------------------------------------------------------------------
@@ -568,12 +569,17 @@ function listOneAgent(
 /**
  * Return `"true"` if any manifest-recorded file's on-disk bytes differ from its recorded sha256
  * (a locally-modified destination, REQ-SAFE-03), `"false"` if every recorded file matches, or
- * `"n/a(symlink)"` for a symlink-mode install (no per-file sha256 to compare). A missing recorded
- * file also counts as drift. Pure read of the manifest's per-file sha256 against a fresh local
- * hash — no network, no source bundle needed (REQ-PERF-01). Hash errors are swallowed as drift
+ * `"n/a(symlink)"` for a symlink-mode primary install (no per-file sha256 to compare). A missing
+ * recorded file also counts as drift. Pure read of the manifest's per-file sha256 against a fresh
+ * local hash — no network, no source bundle needed (REQ-PERF-01). Hash errors are swallowed as drift
  * (an unreadable recorded file is itself a deviation from the clean install).
+ *
+ * Secondary placements (A4b) are checked in EVERY mode — they are always copy-written with a recorded
+ * hash even when the primary namespace is a symlink, so ignoring them (the prior behavior) left codex
+ * `.toml` mirrors and copilot managed blocks unwatched for drift.
  */
 function detectDestinationDrift(manifest: InstallManifest): "true" | "false" | "n/a(symlink)" {
+  if (detectPlacementDrift(manifest)) return "true";
   if (manifest.mode === "symlink") return "n/a(symlink)";
   for (const f of manifest.files) {
     if (f.sha256 === undefined) continue; // no recorded hash to compare against
@@ -584,6 +590,32 @@ function detectDestinationDrift(manifest: InstallManifest): "true" | "false" | "
     }
   }
   return "false";
+}
+
+/**
+ * True iff any secondary placement diverges from its recorded hash. A "mirror" file drifts when its
+ * on-disk bytes differ from the recorded sha256 (destination is a DIR, paths relative to it). A
+ * "managed-block" drifts when the sentinel region extracted from the (user-owned) target FILE no
+ * longer hashes to the recorded region hash — or the region is gone entirely. Read errors count as
+ * drift, matching the primary check.
+ */
+function detectPlacementDrift(manifest: InstallManifest): boolean {
+  for (const p of manifest.placements ?? []) {
+    for (const f of p.files) {
+      if (f.sha256 === undefined) continue;
+      try {
+        if (p.kind === "managed-block") {
+          const region = extractManagedRegion(readFileSync(p.destination, "utf8"));
+          if (region === null || sha256String(region) !== f.sha256) return true;
+        } else if (sha256File(path.join(p.destination, f.path)) !== f.sha256) {
+          return true;
+        }
+      } catch {
+        return true; // unreadable/absent recorded placement ⇒ drift
+      }
+    }
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
