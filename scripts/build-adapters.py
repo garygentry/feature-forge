@@ -711,25 +711,49 @@ def drop_all_claude_keys(
 # (literal_old, replacement) — applied in order; longest/most-specific first so a
 # wrapper phrase is consumed before its bare token. Backticked forms precede bare.
 _HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
-    # user-input surface → host question mechanism
+    # user-input surface → host question mechanism. Article-aware pairs come first
+    # (longest-match) so a canon "the" preceding the token is consumed rather than
+    # doubled ("the the host's …" — the #79 `an the` class, now for the article).
+    # Backticked forms precede bare tokens.
     ("the `AskUserQuestion` tool", "the host's question mechanism"),
+    ("the `AskUserQuestion`", "the host's question mechanism"),
+    ("the AskUserQuestion", "the host's question mechanism"),
     ("`AskUserQuestion` tool", "the host's question mechanism"),
     ("`AskUserQuestion`", "the host's question mechanism"),
     ("AskUserQuestion", "the host's question mechanism"),
-    # sub-agent dispatch surface → host subagent mechanism
+    # The compound "the `Skill`/`Agent` tools" must be consumed BEFORE either the
+    # single `Skill` or `Agent` forms below — otherwise the bare `Agent` tools pair
+    # eats "`Agent` tools" from inside it and strands a literal `Skill` token.
+    ("the `Skill`/`Agent` tools", "the host's skill-invocation and subagent mechanisms"),
+    ("`Skill`/`Agent` tools", "host's skill-invocation and subagent mechanisms"),
+    # sub-agent dispatch surface → host subagent mechanism. Backticked `Agent`
+    # forms (article-aware first, then plural, then bare) precede the un-backticked
+    # `Agent`/`Task` tokens so a non-Claude reader never sees a literal `Agent` tool.
+    ("the `Agent` tool", "the host's subagent mechanism"),
+    ("`Agent` tools", "host's subagent mechanisms"),
+    ("`Agent` tool", "host's subagent mechanism"),
     ("the Agent tool", "the host's subagent mechanism"),
     ("the Task tool", "the host's subagent mechanism"),
     ("Agent tool", "host's subagent mechanism"),
     ("Task tool", "host's subagent mechanism"),
+    # skill-invocation surface → host skill-invocation mechanism (single-tool forms;
+    # the compound above already handled the "`Skill`/`Agent` tools" construct).
+    ("the `Skill` tool", "the host's skill-invocation mechanism"),
+    ("`Skill` tool", "host's skill-invocation mechanism"),
     # background-execution surface → host background mechanism
     ("`run_in_background: true`", "the host's background-execution mechanism"),
     ("run_in_background: true", "the host's background-execution mechanism"),
     ("`run_in_background`", "the host's background-execution mechanism"),
     ("run_in_background", "the host's background-execution mechanism"),
     # monitoring surface → host monitoring mechanism (backtick-scoped so the bare
-    # verb "Monitor the stream" is never rewritten — only the tool reference is)
+    # verb "Monitor the stream" is never rewritten — only the tool reference is).
+    # Bold- and article-aware variants first so a preceding "the **" / "The " is not
+    # doubled into "the **the …" / "The the …".
+    ("the **`Monitor` tool**", "the **host's monitoring mechanism**"),
     ("the `Monitor` tool", "the host's monitoring mechanism"),
     ("`Monitor` tool", "the host's monitoring mechanism"),
+    ("The `Monitor`", "The host's monitoring mechanism"),
+    ("the `Monitor`", "the host's monitoring mechanism"),
     ("`Monitor`", "the host's monitoring mechanism"),
     ("Monitor tool", "host's monitoring mechanism"),
     # Claude slash-command surface → host-neutral phrasing. The Stage Exit Protocol
