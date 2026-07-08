@@ -21,6 +21,13 @@ import { ok, err } from "./types.js";
  * @param segs - path segments to join under root (destination, then a bundle-relative path)
  * @returns ok(absolutePath) if inside; err(PATH_ESCAPE) otherwise.
  */
+/** True iff `child` is strictly within `parent` (path.relative + `..`-prefix test, never a bare
+ *  `startsWith`). Shares the boundary logic of {@link resolveWithin} for a plain boolean check. */
+function isWithin(parent: string, child: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
 export function resolveWithin(root: string, ...segs: string[]): Result<string> {
   const base = path.resolve(root);
   const target = path.resolve(base, ...segs);
@@ -129,7 +136,10 @@ export async function removeEmptyDirsWithin(
   if (!contained.ok) return contained;
   const stop = path.resolve(stopRoot);
   let cur = contained.value;
-  while (cur !== stop && cur.startsWith(stop)) {
+  // Robust boundary test (path.relative + `..` prefix), not a bare `cur.startsWith(stop)` — the
+  // exact anti-pattern this module warns against at the top: `startsWith` false-passes a sibling
+  // like `<stop>-evil`. Safe here by the ancestor invariant today, but don't rely on it.
+  while (cur !== stop && isWithin(stop, cur)) {
     let entries: string[];
     try {
       entries = await fsp.readdir(cur);

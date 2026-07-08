@@ -151,8 +151,9 @@ async function applyCopyInstall(
   if (!placementResult.ok) return fail(ctx, planned, placementResult.error);
 
   // No-op short-circuit (REQ-IDEM-01): every action — primary AND placement — unchanged ⇒ zero
-  // writes, manifest untouched.
-  if (allUnchanged(planned)) {
+  // writes, manifest untouched — UNLESS manifest metadata (raufPin) drifted, which must persist
+  // even with no file change (F1) so report / on-disk manifest / a later `list` agree.
+  if (allUnchanged(planned) && !manifestNeedsRewrite(ctx)) {
     return success(ctx, planned);
   }
 
@@ -172,6 +173,18 @@ async function applyCopyInstall(
   const wrote = writeManifest(ctx.manifestPath, manifest);
   if (!wrote.ok) return fail(ctx, planned, wrote.error);
   return success(ctx, planned);
+}
+
+/**
+ * True when manifest metadata diverges from the prior manifest, so the manifest must be rewritten
+ * even when every file action is "unchanged" (F1). Today the only such field is `raufPin`; a null
+ * prior manifest also counts (there is nothing recorded yet). `updatedAt` is deliberately NOT a
+ * trigger — it is a consequence of writing, so keying on it would defeat the idempotency short-circuit.
+ */
+function manifestNeedsRewrite(ctx: ApplyContext): boolean {
+  const prior = ctx.priorManifest;
+  if (prior === null) return true;
+  return prior.raufPin !== ctx.raufPin;
 }
 
 /** True iff every planned action — primary files and all placement files — is "unchanged". */
@@ -237,8 +250,8 @@ async function applySymlinkInstall(
     primary.every((f) => f.action === "unchanged") ||
     primary.every((f) => f.action === "skip-modified");
 
-  // Nothing changed anywhere ⇒ zero writes, manifest untouched.
-  if (allUnchanged(planned)) {
+  // Nothing changed anywhere ⇒ zero writes, manifest untouched — unless raufPin drifted (F1).
+  if (allUnchanged(planned) && !manifestNeedsRewrite(ctx)) {
     return success(ctx, planned);
   }
 
@@ -374,10 +387,23 @@ async function applyMirror(
       case "skip-modified": {
         // Carry the prior record forward; if none exists (e.g. a v1→v2 manifest migration where the
         // file is already on disk), reconstruct it by hashing the destination so the inventory stays
-        // faithful rather than silently dropping an unrecorded-but-present file.
+        // faithful rather than silently dropping an unrecorded-but-present file. Guard the hash: a
+        // TOCTOU vanish (file removed after planning) must yield an err Result, never throw ENOENT
+        // out of apply (REQ-OBS-03 — a throw would abort every sibling agent at the CLI boundary).
         const p = priorByPath.get(fa.relpath);
-        if (p !== undefined) inventory.push(p);
-        else inventory.push({ path: fa.relpath, sha256: sha256File(destAbs) });
+        if (p !== undefined) {
+          inventory.push(p);
+        } else {
+          try {
+            inventory.push({ path: fa.relpath, sha256: sha256File(destAbs) });
+          } catch {
+            return err<InstallerError>({
+              code: "UNEXPECTED",
+              agent: ctx.agent,
+              message: `mirror file "${fa.relpath}" vanished before it could be recorded (${destAbs})`,
+            });
+          }
+        }
         break;
       }
     }

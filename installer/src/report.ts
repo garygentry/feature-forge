@@ -149,6 +149,6 @@ const DEFAULT_REMEDY: Partial<Record<ErrorCode, string>> = {
   WRITE_DENIED: "check write permission to the path, or choose --global vs project scope",
   PATH_ESCAPE: "report this — a destination resolved outside the agent config dir",
   RAUF_UNRESOLVABLE:
-    "the default loop will be unavailable until rauf publishes (see packaging-docs-ci); skills were still installed",
+    "could not resolve the rauf loop runner (a network/registry hiccup or an unmet version pin) — skills were still installed; retry, or install rauf manually",
   MANIFEST_CORRUPT: "remove the corrupt .feature-forge.<scope>.json and re-run install",
 };

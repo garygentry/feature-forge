@@ -51,13 +51,15 @@ if [ -f "$MARKETPLACE" ]; then
       echo "FAIL: marketplace entry '$PNAME' (source: $PSOURCE) has no plugin.json at $PSOURCE/.claude-plugin/plugin.json"
       ERRORS=$((ERRORS + 1))
     fi
+    # Pass the path as argv (sys.argv[1]), never interpolated into the Python
+    # source — a path with a quote or newline can't break out of the program.
   done < <(python3 -c "
-import json
-with open('$MARKETPLACE') as f:
+import json, sys
+with open(sys.argv[1]) as f:
     data = json.load(f)
 for p in data.get('plugins', []):
     print(p['name'] + '\t' + p.get('source', '.'))
-" 2>/dev/null || true)
+" "$MARKETPLACE" 2>/dev/null || true)
 fi
 
 # 3a. claude plugin validate --strict (REQ-CI-01).
@@ -78,7 +80,8 @@ if command -v claude >/dev/null 2>&1; then
 else
   echo "INFO: claude CLI not available — using documented-equivalent validation"
   echo "      (marketplace/plugin JSON checks above + SKILL.md schema gate below)."
-  echo "PASS: claude plugin validate (documented equivalent; REQ-CI-01 fallback)"
+  echo "SKIP: claude plugin validate --strict (claude CLI absent; documented-equivalent checks ran, REQ-CI-01 fallback)"
+  WARNINGS=$((WARNINGS + 1))
 fi
 
 # 4. Validate skill frontmatter (name + description required)
@@ -277,7 +280,10 @@ if [ -f "$TRACE" ] && [ -d "$TRACE_PRD" ]; then
     [ -e "$prd" ] || continue                    # no suite present -> SKIP, not a bogus glob-string failure
     TRACE_RAN=1
     specs_dir="$(dirname "$prd")"
-    python3 "$TRACE" "$prd" "$specs_dir"; rc=$?   # NO 2>/dev/null — surface the validator's diagnostic (REQ-OBS-01)
+    # Capture rc via `if` so `set -e` does NOT abort the whole gate on a non-zero
+    # exit — a traceability failure must print FAIL and continue, not die mid-step.
+    # NO 2>/dev/null — surface the validator's diagnostic (REQ-OBS-01).
+    if python3 "$TRACE" "$prd" "$specs_dir"; then rc=0; else rc=$?; fi
     case "$rc" in
       0) echo "PASS: requirement traceability ($specs_dir)" ;;
       1) echo "FAIL: requirement traceability gaps/orphans in $specs_dir (see above)"; ERRORS=$((ERRORS + 1)) ;;
@@ -290,6 +296,25 @@ if [ -f "$TRACE" ] && [ -d "$TRACE_PRD" ]; then
   fi
 else
   echo "SKIP: no specs tree present; traceability check not applicable here"
+  WARNINGS=$((WARNINGS + 1))
+fi
+
+# 9. Version-sync (REQ-CI-05). CI's Quality Gate runs check-version-sync.py; run it
+#    here too so `bash scripts/validate.sh` locally covers what CI covers (no drift).
+#    Blocking: a mismatch (exit 1) or config error (exit 2) fails the gate. The `if`
+#    form keeps `set -e` from aborting on a non-zero exit.
+echo ""
+echo "Checking version sync..."
+VERSION_SYNC="$REPO_ROOT/scripts/check-version-sync.py"
+if [ -f "$VERSION_SYNC" ]; then
+  if python3 "$VERSION_SYNC" --root "$REPO_ROOT"; then
+    echo "PASS: version sync"
+  else
+    echo "FAIL: version sync (see above)"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "SKIP: check-version-sync.py not present"
   WARNINGS=$((WARNINGS + 1))
 fi
 
