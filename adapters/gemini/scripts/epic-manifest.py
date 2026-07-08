@@ -312,6 +312,16 @@ def atomic_write(path: Path, data: dict) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp_path, path)
+        # fsync the parent dir so the rename itself is durable on crash, not just
+        # the file bytes (best-effort — some filesystems reject O_RDONLY dir fsync).
+        try:
+            dir_fd = os.open(parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
     except OSError as exc:
         tmp_path.unlink(missing_ok=True)
         raise UsageError(f"atomic write to {path} failed: {exc}")
