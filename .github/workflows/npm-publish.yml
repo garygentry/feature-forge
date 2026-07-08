@@ -42,7 +42,10 @@ jobs:
           .venv-adapters/bin/python3 scripts/build-adapters.py --check
           python3 scripts/check-version-sync.py
       # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x.
-      - run: npm install -g npm@latest
+      # Pin to the 11.x line, NOT @latest: npm 12.0.0's global install breaks
+      # `--provenance` (MODULE_NOT_FOUND: 'sigstore'), so @latest is not safe here.
+      # 11.x is >= 11.5.1 (OIDC-capable) and bundles sigstore for provenance.
+      - run: npm install -g npm@11
       - run: npm ci
       # OIDC: no token env — npm detects the trusted-publisher OIDC context in Actions.
       # `npm publish` runs the `prepack` hook (build + bundle adapters) automatically.
