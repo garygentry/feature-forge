@@ -10,6 +10,10 @@ on:
     paths:
       - "docs-site/**"
       - "docs/**"
+      # Canon the docs reference (config tables mirror the schema; guides cite skills)
+      # — a canon change should rebuild + drift-check the site, not silently skip it (G2).
+      - "skills/**"
+      - "references/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 

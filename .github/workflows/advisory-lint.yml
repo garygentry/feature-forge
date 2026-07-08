@@ -1,0 +1,47 @@
+name: advisory-lint
+
+# Advisory ONLY (Chunk G5, mirrors eval.yml's cadence): on demand + weekly.
+# NEVER on pull_request — these are informational signals (markdown style, dead
+# links), not a merge gate. A finding here never blocks a PR; it surfaces drift for
+# a maintainer to triage. Each job is best-effort and continues on error.
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 6 * * 2" # Tuesdays 06:00 UTC — offset a day from eval.yml
+
+# Least privilege: read the tree only.
+permissions:
+  contents: read
+
+jobs:
+  markdownlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      # Advisory: report style findings but never fail the run. adapters/ is
+      # generated (DO-NOT-EDIT) and node_modules/dist are vendored/built output.
+      - name: markdownlint (advisory)
+        continue-on-error: true
+        run: |
+          npx --yes markdownlint-cli "**/*.md" \
+            --ignore node_modules \
+            --ignore adapters \
+            --ignore docs-site/node_modules \
+            --ignore installer/node_modules \
+            --ignore installer/dist
+
+  lychee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # Advisory link check across docs + top-level markdown. Never fails the run;
+      # dead-link findings are surfaced in the job summary for triage.
+      - name: lychee link check (advisory)
+        continue-on-error: true
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --no-progress --exclude-mail "docs-site/src/content/**/*.md" "docs-site/src/content/**/*.mdx" "README.md" "docs/**/*.md"
+          fail: false

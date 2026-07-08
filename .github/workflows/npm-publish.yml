@@ -30,6 +30,17 @@ jobs:
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
+      # Pre-publish gate (G1): the package bundles the repo-root adapters/ via the
+      # installer's `prepack`, so a canon↔adapters drift or a version desync would
+      # publish stale content under a fresh version. Fail before publishing. Runs
+      # from the repo root (this job otherwise defaults to installer/).
+      - name: Pre-publish gate (adapters not drifted + versions synced)
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 -m venv .venv-adapters
+          .venv-adapters/bin/python3 -m pip install -q -r scripts/requirements-adapters.txt
+          .venv-adapters/bin/python3 scripts/build-adapters.py --check
+          python3 scripts/check-version-sync.py
       # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x.
       - run: npm install -g npm@latest
       - run: npm ci
