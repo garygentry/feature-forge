@@ -77,8 +77,8 @@ runs:
         fi
 
     # 5. Version-sync over the three feature-forge fields (REQ-CI-05). Prints the
-    #    conflicting files+values on mismatch (REQ-OBS-01). Currently FAILS on the
-    #    live desync until 06 reconciles it.
+    #    conflicting files+values on mismatch (REQ-OBS-01). Enforces the reconciled
+    #    steady-state equality; fails only on a genuine future drift.
     - name: version-sync
       shell: bash
       run: python3 scripts/check-version-sync.py

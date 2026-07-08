@@ -4,9 +4,9 @@
 Within-repo version-sync gate. The three fields are the version-sync contract from
 00-core-definitions.md §5; installer/package.json is EXCLUDED (independent line).
 The gate prints every field and its value, flags conflicts, and exits non-zero on
-any mismatch (REQ-OBS-01 — no silent failure). It MUST currently FAIL on the live
-desync (plugin 0.10.0 / marketplace 0.9.0 / gemini 0.0.0) until reconciliation
-lands (06-packaging-versioning-hygiene.md), then PASS (SC-03).
+any mismatch (REQ-OBS-01 — no silent failure). The three fields were reconciled
+under 06-packaging-versioning-hygiene.md; the gate now enforces that steady-state
+equality and fails only on a genuine future drift.
 
 Stdlib only (json) — no third-party deps, matching the repo's other gate scripts.
 
@@ -102,10 +102,10 @@ def main(argv: list[str] | None = None) -> int:
     for label, value in versions.items():
         print(f"  CONFLICT  {label} = {value}")
     print(
-        "version-sync: reconcile to a single version (00 §5: 0.10.0). marketplace.json "
-        "is hand-edited; gemini-extension.json is REGENERATED via "
-        "scripts/build-adapters.py (bump GEMINI_EXTENSION_VERSION). See "
-        "06-packaging-versioning-hygiene.md."
+        "version-sync: reconcile all three fields to a single version (the conflicting "
+        "values are printed above). marketplace.json is hand-edited; "
+        "gemini-extension.json is REGENERATED via scripts/build-adapters.py "
+        "(bump GEMINI_EXTENSION_VERSION). See 06-packaging-versioning-hygiene.md."
     )
     return 1
 

@@ -108,8 +108,7 @@
         "verifiedAt": { "type": ["string", "null"], "format": "date-time" },
         "fixedAt": { "type": ["string", "null"], "format": "date-time" },
         "commitHash": { "type": ["string", "null"], "description": "Git commit SHA of the verify/fix artifact commit. Recorded via the two-commit Git Commit Protocol (shared-conventions.md) so it points at the artifact commit, never an orphaned amend." },
-        "verifiedStageVersion": { "type": ["integer", "null"], "description": "The production stage's `version` at the moment this verify was resolved. The navigator's freshness ledger compares it to the stage's current `version`: equal means the verify is fresh; a mismatch (artifact revised since) or an absent field (legacy state) means stale, so auto-verify re-fires. Recorded by forge-verify/forge-fix when writing a passed/findings-applied status." },
-        "verifiedCommitHash": { "type": ["string", "null"], "description": "Optional: the production stage's commit SHA at verify time, for richer future staleness signals. The version equality check is authoritative today." }
+        "verifiedStageVersion": { "type": ["integer", "null"], "description": "The production stage's `version` at the moment this verify was resolved. The navigator's freshness ledger compares it to the stage's current `version`: equal means the verify is fresh; a mismatch (artifact revised since) or an absent field (legacy state) means stale, so auto-verify re-fires. Recorded by forge-verify/forge-fix when writing a passed/findings-applied status." }
       }
     }
   }
