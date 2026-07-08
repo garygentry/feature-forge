@@ -313,9 +313,12 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
   "backlogDir": null,
   "gitCommitAfterStage": true,
   "commitPrefix": "forge",
+  "branchPerFeature": true,
+  "branchPrefix": "forge/",
   "stack": null,
   "typeCheckCommand": null,
   "testCommand": null,
+  "loopIterationMultiplier": 1.5,
   "autoInvokeNextStage": true,
   "contextWindowTokens": null,
   "contextWarnThreshold": 0.7
@@ -329,9 +332,12 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
 | `backlogDir`          | string  | `null`                  | Override location for `backlog.json`. When null, backlog is placed alongside specs                                                                                                                           |
 | `gitCommitAfterStage` | boolean | `true`                  | Automatically commit artifacts after each stage completes                                                                                                                                                    |
 | `commitPrefix`        | string  | `"forge"`               | Prefix for conventional commit messages (e.g., `forge(auth): complete PRD v1`)                                                                                                                               |
+| `branchPerFeature`    | boolean | `true`                  | Offer to create an isolated git branch when a feature/epic starts on the default branch (main/master). Gated only on the project using git — independent of `gitCommitAfterStage`. When `false`, forge never prompts for a branch and works on whatever branch is checked out.                                 |
+| `branchPrefix`        | string  | `"forge/"`              | Prefix for the branch name suggested by Branch Setup — e.g. `forge/` yields `forge/{feature}` or `forge/{epic}`. Ignored when `branchPerFeature` is `false`                                                    |
 | `stack`               | string  | `null`                  | Stack identifier (e.g., `"typescript"`, `"python"`, `"go"`, `"rust"`). Auto-detected in Stage 2                                                                                                              |
 | `typeCheckCommand`    | string  | `null`                  | Type-check command used in acceptance criteria and verification. Set during Stage 2                                                                                                                          |
 | `testCommand`         | string  | `null`                  | Test command used in acceptance criteria and verification. Set during Stage 2                                                                                                                                |
+| `loopIterationMultiplier` | number | `1.5`               | Multiplier applied to the pending backlog-item count to compute Stage-5 loop iterations (e.g. 10 items × 1.5 = 15). Higher values allow more retries                                                          |
 | `loopRunner`          | object  | rauf defaults           | Loop-runner binding for `forge-5-loop` (`bin`, command templates, `defaultAgent`, `minRunnerVersion` — floor **rauf ≥ 0.6.0**). See [docs/agents/claude.md](docs/agents/claude.md) "The default loop runner" |
 | `autoInvokeNextStage` | boolean | `true`                  | When true, the `/feature-forge:forge` navigator auto-invokes the next pipeline stage via the `Skill` tool after you confirm it, instead of only printing the command. Set `false` to keep copy-paste behavior. Ignored on non-Claude hosts (which always print).                                              |
 | `contextWindowTokens` | integer | `null`                  | Context window (tokens) the navigator uses to gauge how full the current session is. `null` infers from the session model, falls back to 200000, and auto-bumps to 1000000 once observed usage exceeds 200000. Set explicitly (e.g. `1000000`) for accurate readings below 200k on a 1M-context model.       |
@@ -339,6 +345,7 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
 | `autoVerify`          | boolean | `false`                 | When true, the navigator runs `forge-verify` automatically after a stage completes — no prompt. Verify runs in a fresh clean-room subagent, so it never needs a `/clear` and costs the current session only a compact findings digest. See [Auto-verify](#auto-verify) below.                                  |
 | `autoVerifyStages`    | object  | `{}`                    | Per-stage overrides for `autoVerify`, e.g. `{"forge-1-prd": false}`. Effective value = `autoVerifyStages[stage]` if present, else `autoVerify`. Keys are constrained to the five verify-capable stages (`forge-1-prd`…`forge-5-loop`); an unknown key is a config error, surfaced by the navigator, not a silent no-op. |
 | `autoFix`             | boolean | `false`                 | When true, the navigator chains `forge-fix` after an auto-verify that finds issues — but only when auto-verify is on for that stage **and** preconditions hold (zero unresolved decisions, clean working tree, and a mandatory re-verify passes); otherwise it falls back to a findings digest + prompt. Power-user opt-in: it mutates artifacts without a human read. |
+| `workspaces`          | array   | (absent)                | Monorepo members; each has `name`, `path`, `stack`, and optional `typeCheckCommand`/`testCommand`. Absent for single-package projects.                                                                        |
 
 ### Auto-verify
 
