@@ -61,7 +61,7 @@ Read the resolved feature's `.pipeline-state.json`. **If it has no `epic` key, s
 1. Run `render-status "{epic}" --specs-dir "{specsDir}" --json` via the helper:
 
    ```bash
-R="$(bash -c 'for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" \
   render-status "{epic}" --specs-dir "{specsDir}" --json
@@ -293,7 +293,7 @@ Update `{resolvedFeatureDir}/.pipeline-state.json`:
 
 ## Gotchas
 
-- **Plugin-root discovery (1b-epic helper) covers installed paths, not workspace-dev checkouts.** The `forge-root.sh` search in 1b-epic probes `~/.claude/skills/feature-forge`, `~/.claude/plugins/*/feature-forge`, and `./.agents/skills/feature-forge` — the locations of an **installed** plugin. A feature-forge **source checkout** (e.g. `~/workspace/feature-forge`) is not on that list, so the helper exits "cannot locate plugin root." That is expected in a dev environment, not a bug; run the epic-manifest script from the checkout directly (`python3 <checkout>/scripts/epic-manifest.py …`). The bootstrap prelude wraps its candidate loop in `bash -c` so the `~/.claude/plugins/*/feature-forge` glob is zsh-safe: an empty expansion no longer aborts the loop under zsh's `nomatch`.
+- **Plugin-root discovery (1b-epic helper) covers installed paths, not workspace-dev checkouts.** The `forge-root.sh` search in 1b-epic probes `~/.claude/skills/feature-forge`, `~/.claude/plugins/cache/*/feature-forge/*` (marketplace-cache installs), `~/.claude/plugins/*/feature-forge`, and `./.agents/skills/feature-forge` — the locations of an **installed** plugin. A feature-forge **source checkout** (e.g. `~/workspace/feature-forge`) is not on that list, so the helper exits "cannot locate plugin root." That is expected in a dev environment, not a bug; run the epic-manifest script from the checkout directly (`python3 <checkout>/scripts/epic-manifest.py …`). The bootstrap prelude wraps its candidate loop in `bash -c` so the `~/.claude/plugins/*/feature-forge` glob is zsh-safe: an empty expansion no longer aborts the loop under zsh's `nomatch`.
 - `{backlogDir}` is a **directory path**, not a file path. Pass `specs/auth`, not `specs/auth/backlog.json`.
 - rauf resolves `RAUF.md` with fallback: checks `{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`. As long as the runner is installed in the project, the prompt template will be found.
 - State files (state.json, {loopRunner.logFile}, etc.) are created at `{backlogDir}/{loopRunner.stateDir}/` — this is within the feature's spec directory and is expected. State is isolated per backlog dir, so concurrent features don't collide.

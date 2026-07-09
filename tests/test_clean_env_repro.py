@@ -1,13 +1,14 @@
 """Regression anchors for the clean-environment failures (docs/clean-env-repro.md).
 
-Two ``xfail(strict=True)`` tests that pin the smoking guns diagnosed after the
-remote-environment pipeline test. Each encodes the *desired* behavior, so it
-fails today and flips to passing when its fix lands:
+Regression tests pinning the smoking guns diagnosed after the remote-environment
+pipeline test. Each starts life as an ``xfail(strict=True)`` encoding the
+*desired* behavior; the PR that fixes a case removes its marker:
 
 1. ``test_prelude_resolves_marketplace_cache_install`` — the canonical
    bootstrap prelude must resolve a real Claude marketplace install at
-   ``~/.claude/plugins/cache/<marketplace>/feature-forge/<version>/``. Flips
-   with the root-resolution fix (prelude + forge-root.sh cache glob).
+   ``~/.claude/plugins/cache/<marketplace>/feature-forge/<version>/``.
+   FIXED (marker removed) by the root-resolution chunk: cache glob in the
+   prelude + newest-plugin.json-first cache probe in forge-root.sh.
 2. ``test_discover_feature_finds_state_on_other_branch`` — pipeline state that
    lives only on a topic branch must be discoverable from the default branch
    via ``forge-session.py discover-feature``. Flips when that subcommand lands.
@@ -44,6 +45,9 @@ def _bootstrap_prelude() -> str:
     spec = importlib.util.spec_from_file_location("check_spec_purity", PURITY_CHECKER)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    # Register before exec: 3.10 dataclasses resolve annotations through
+    # sys.modules[cls.__module__], which is None for an unregistered module.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module.BOOTSTRAP_PRELUDE
 
@@ -67,12 +71,6 @@ def _make_cache_install(home: Path, version: str = "9.9.9") -> Path:
     return root
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="root cause A (clean-env-repro): prelude candidate globs miss "
-    "~/.claude/plugins/cache/<mp>/feature-forge/<version>/ — fixed by the "
-    "root-resolution chunk",
-)
 def test_prelude_resolves_marketplace_cache_install(tmp_path: Path) -> None:
     """The canonical prelude resolves a marketplace-cache install.
 
