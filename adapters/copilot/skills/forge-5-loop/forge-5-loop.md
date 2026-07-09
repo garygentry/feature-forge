@@ -113,7 +113,7 @@ Verify the file exists on disk. If not, STOP and tell the user: "No backlog.json
 
 ### 1f. Branch Pre-flight (if using git)
 
-The runner commits each completed item straight onto the current branch, so guard against committing onto the default branch. Skip if not a git repo or `branchPerFeature` is false. Read the current branch (`git rev-parse --abbrev-ref HEAD`) and default branch (`git symbolic-ref --quiet refs/remotes/origin/HEAD`, else `main`/`master`). If `.pipeline-state.json` records a `branch` that differs from the current one, warn via the host's question mechanism (offer **switch back** or **proceed here**). Otherwise, if the current branch **is** the default, strongly recommend via the host's question mechanism creating/switching to `{branchPrefix}{feature}` (`git switch -c`, then record it to the state `branch` field) before the loop commits — still allowing **proceed on `{defaultBranch}`**. Never hard-stop.
+The runner commits each item onto the current branch. Skip if not a git repo or `branchPerFeature` is false. Otherwise run the **Branch Reconciliation** block in `references/shared-conventions.md` (it runs `reconcile-branch` and, on `warn-drift` — you are on the default branch — strongly recommends creating `{branchPrefix}{feature}` via the host's question mechanism before the loop commits; on `adopt-current` it updates the recorded branch to the current one, never pushing you back to a stale/imposed branch). Never hard-stop.
 
 ## Step 2: Construct the Loop Command
 

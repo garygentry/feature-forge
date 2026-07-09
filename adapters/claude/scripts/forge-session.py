@@ -8,7 +8,9 @@ root navigator:
     python3 forge-session.py context-usage [--config FILE] [--window N] \
         [--threshold F] [--json]
     python3 forge-session.py doctor [--specs-dir DIR] [--config FILE] [--json]
-    python3 forge-session.py discover-feature NAME [--specs-dir DIR] [--json]
+    python3 forge-session.py discover-feature [NAME | --all] [--specs-dir DIR] [--json]
+    python3 forge-session.py reconcile-branch --feature F [--specs-dir DIR] \
+        [--config FILE] [--epic E] [--json]
     python3 forge-session.py stage-exit --feature F --stage S [--specs-dir DIR] \
         [--config FILE] [--epic E] [--next-feature N] [--host claude|generic] [--json]
 
@@ -659,11 +661,18 @@ def doctor_report(specs_dir: Path, config_path: Path) -> dict:
     # --show-current (not rev-parse HEAD) so an unborn branch (fresh repo,
     # no commits yet) still reports its name instead of failing.
     current_branch = _git_output(["branch", "--show-current"])
+    default_branch = _default_branch()
     rows = build_rows(specs_dir, config)
     features = []
     for row in rows:
         backlog = _backlog_path(config, row["name"], row["epic"], specs_dir)
         state_branch = row["branch"]
+        mismatch = bool(state_branch and current_branch and state_branch != current_branch)
+        # Classify a mismatch: on a topic branch it is adoptable (imposed/session-branch
+        # drift, Chunk 6); on the default branch it is real drift-back, only a warning.
+        branch_reconcile = None
+        if mismatch:
+            branch_reconcile = "warn-drift" if current_branch == default_branch else "adopt-current"
         features.append({
             "name": row["name"],
             "epic": row["epic"],
@@ -676,6 +685,7 @@ def doctor_report(specs_dir: Path, config_path: Path) -> dict:
                 if state_branch and current_branch
                 else None
             ),
+            "branchReconcile": branch_reconcile,
             "backlogPath": str(backlog),
             "backlogExists": backlog.is_file(),
         })
@@ -720,7 +730,12 @@ def _print_doctor(report: dict) -> None:
         label = feat["name"] + (f" [{feat['epic']}]" if feat["epic"] else "")
         branch = feat["stateBranch"] or "?"
         if feat["branchMatchesState"] is False:
-            branch += " (MISMATCH vs current)"
+            if feat.get("branchReconcile") == "adopt-current":
+                branch += " (MISMATCH — reconcile: adopt current branch)"
+            elif feat.get("branchReconcile") == "warn-drift":
+                branch += " (MISMATCH — on default branch; create a topic branch)"
+            else:
+                branch += " (MISMATCH vs current)"
         backlog = "exists" if feat["backlogExists"] else "MISSING"
         print(
             f"  - {label}: stage={feat['currentStage']} "
@@ -935,6 +950,190 @@ def _print_discover(payload: dict) -> None:
         )
         print(f"      fetch:  {cand['fetchCommand']}")
         print(f"      switch: {cand['switchCommand']}")
+
+
+def _all_state_paths_in_ref(ref: str, specs_rel: str) -> list[tuple[str, str]]:
+    """Every feature-shaped ``.pipeline-state.json`` in one ref as ``(path, feature)``.
+
+    The ``--all`` counterpart to ``_state_paths_in_ref``: same flat/nested bound
+    (``{specsDir}/{name}/…`` or ``{specsDir}/{epic}/{name}/…``) but for every
+    feature, not one named one.
+    """
+    listing = _git_output(["ls-tree", "-r", "--name-only", ref, "--", specs_rel])
+    if not listing:
+        return []
+    hits: list[tuple[str, str]] = []
+    prefix = specs_rel + "/"
+    for path in listing.splitlines():
+        if not path.startswith(prefix) or not path.endswith("/" + PIPELINE_STATE_FILENAME):
+            continue
+        segments = path[len(prefix):].split("/")
+        if len(segments) == 2:          # [name, state-file] (flat)
+            hits.append((path, segments[0]))
+        elif len(segments) == 3:        # [epic, name, state-file] (nested)
+            hits.append((path, segments[1]))
+    return hits
+
+
+def discover_all(specs_dir: str) -> dict:
+    """Discover EVERY feature's pipeline state across all branches (read-only, Chunk 5c).
+
+    The empty-dashboard counterpart to ``discover-feature <name>``: enumerates every
+    feature-shaped state across local heads + remote-tracking refs and groups the
+    candidates by feature, so a fresh clone / default-branch session can see the whole
+    branch-scattered pipeline set instead of nothing. Never mutates anything.
+    """
+    if _git_output(["rev-parse", "--git-dir"]) is None:
+        return {"gitRepo": False, "currentBranch": None, "features": []}
+    current_branch = _git_output(["branch", "--show-current"])
+    specs_rel = _specs_rel(specs_dir)
+    refs = [(ref, date, False) for ref, date in _list_refs("refs/heads")]
+    refs += [(ref, date, True) for ref, date in _list_refs("refs/remotes")]
+
+    by_feature: dict[str, list[dict]] = {}
+    for ref, commit_date, is_remote in refs:
+        branch = ref.split("/", 1)[1] if is_remote else ref
+        if is_remote and (not branch or branch == "HEAD"):
+            continue
+        for path, feature in _all_state_paths_in_ref(ref, specs_rel):
+            seen = by_feature.setdefault(feature, [])
+            if any(c["branch"] == branch for c in seen):
+                continue  # a local head already yielded this branch's state
+            state = _read_state_at_ref(ref, path)
+            state_branch = state.get("branch")
+            state_branch = state_branch if isinstance(state_branch, str) else None
+            seen.append({
+                "branch": branch,
+                "remoteTracking": is_remote,
+                "path": path,
+                "stateBranch": state_branch,
+                "stateBranchMatches": state_branch == branch,
+                "currentStage": state.get("currentStage"),
+                "pipelineStatus": state.get("pipelineStatus", "active"),
+                "commitDate": commit_date or None,
+                "isCurrentBranch": branch == current_branch,
+                "switchCommand": f"git switch {branch}",
+            })
+
+    def _rank(cand: dict) -> tuple:
+        ts = _parse_ts(cand["commitDate"]) or datetime.min.replace(tzinfo=timezone.utc)
+        return (not cand["stateBranchMatches"], cand["remoteTracking"], -ts.timestamp())
+
+    features = []
+    for feature in sorted(by_feature):
+        cands = sorted(by_feature[feature], key=_rank)
+        features.append({"feature": feature, "candidates": cands})
+    return {"gitRepo": True, "currentBranch": current_branch, "features": features}
+
+
+def _print_discover_all(payload: dict) -> None:
+    """Human-readable ``discover-feature --all`` report."""
+    if not payload["gitRepo"]:
+        print("discover-feature --all: not a git repository — nothing to scan")
+        return
+    if not payload["features"]:
+        print("discover-feature --all: no pipeline state found on any local or remote-tracking branch")
+        return
+    for feat in payload["features"]:
+        print(f"{feat['feature']}:")
+        for cand in feat["candidates"]:
+            marks = []
+            if cand["isCurrentBranch"]:
+                marks.append("current branch")
+            if cand["remoteTracking"]:
+                marks.append("remote-tracking")
+            if not cand["stateBranchMatches"] and cand["stateBranch"]:
+                marks.append(f"state records branch {cand['stateBranch']}")
+            suffix = f"  ({'; '.join(marks)})" if marks else ""
+            print(f"  {cand['branch']}: stage={cand['currentStage'] or '?'} "
+                  f"status={cand['pipelineStatus']}{suffix}")
+            if not cand["isCurrentBranch"]:
+                print(f"      switch: {cand['switchCommand']}")
+
+
+# --------------------------------------------------------------------------- #
+# Branch reconciliation (Chunk 6) — imposed/session-branch drift
+# --------------------------------------------------------------------------- #
+
+
+def _default_branch() -> str | None:
+    """The repo's default branch: origin/HEAD target, else `main`/`master` if present."""
+    ref = _git_output(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])
+    if ref:
+        return ref.rsplit("/", 1)[-1]
+    for cand in ("main", "master"):
+        if _git_output(["rev-parse", "--verify", "--quiet", f"refs/heads/{cand}"]) is not None:
+            return cand
+    return None
+
+
+def reconcile_branch(name: str, specs_dir: Path, config_path: Path, epic: str | None = None) -> dict:
+    """Decide whether a feature's recorded ``branch`` should adopt the current branch.
+
+    Read-only: it emits a decision; the caller performs any state write. A hosted
+    environment (Claude.ai remote, cloud agents) imposes an arbitrary session branch
+    that Branch Setup silently records; when the user moves to the intended branch the
+    recorded ``branch`` goes stale and every branch-aware mechanism keys off it. This
+    reconciler treats *where the state actually resolves* as the source of truth, with a
+    default-branch guardrail so genuine drift-back-to-default is still surfaced, not
+    silently adopted.
+    """
+    if _git_output(["rev-parse", "--git-dir"]) is None:
+        return {"feature": name, "gitRepo": False, "reconcile": False,
+                "action": "none", "reason": "not a git repository"}
+    current = _git_output(["branch", "--show-current"])
+    default = _default_branch()
+    config = _load_config(config_path)
+    row = next(
+        (r for r in build_rows(specs_dir, config)
+         if r["name"] == name and (epic is None or r["epic"] == epic)),
+        None,
+    )
+    state_path = None
+    if row is not None:
+        parent = specs_dir / row["epic"] / name if row["epic"] else specs_dir / name
+        state_path = str(parent / PIPELINE_STATE_FILENAME)
+    base = {
+        "feature": name,
+        "gitRepo": True,
+        "currentBranch": current,
+        "defaultBranch": default,
+        "stateBranch": row["branch"] if row else None,
+        "resolvesOnCurrentBranch": row is not None,
+        "statePath": state_path,
+        "newBranch": None,
+    }
+    if current is None:
+        return {**base, "reconcile": False, "action": "none",
+                "reason": "no current branch (detached HEAD or unborn branch)"}
+    if row is None:
+        return {**base, "reconcile": False, "action": "not-resolved",
+                "reason": "feature state does not resolve on the current branch — "
+                          "use discover-feature to locate it"}
+    state_branch = base["stateBranch"]
+    if state_branch == current:
+        return {**base, "reconcile": False, "action": "none",
+                "reason": "recorded branch already matches the current branch"}
+    if current == default:
+        return {**base, "reconcile": False, "action": "warn-drift",
+                "reason": f"on the default branch ({default}); recording it would commit "
+                          "here — create/switch to a topic branch instead of reconciling"}
+    detail = (f"recorded branch {state_branch!r} differs from the current topic branch"
+              if state_branch else "no branch recorded")
+    return {**base, "reconcile": True, "action": "adopt-current", "newBranch": current,
+            "reason": f"{detail}; the feature state resolves here, so adopt the current branch"}
+
+
+def _print_reconcile(payload: dict) -> None:
+    """Human-readable reconcile-branch report."""
+    if not payload["gitRepo"]:
+        print(f"reconcile-branch {payload['feature']}: not a git repository")
+        return
+    print(f"reconcile-branch {payload['feature']}: {payload['action']} — {payload['reason']}")
+    print(f"  current={payload['currentBranch']} recorded={payload['stateBranch'] or '(none)'} "
+          f"default={payload['defaultBranch']}")
+    if payload["reconcile"]:
+        print(f"  → write state branch := {payload['newBranch']}  ({payload['statePath']})")
 
 
 # --------------------------------------------------------------------------- #
@@ -1230,9 +1429,22 @@ def main() -> int:
     p_disc = sub.add_parser(
         "discover-feature", help="Find a feature's pipeline state across all branches"
     )
-    p_disc.add_argument("name", help="Feature name to discover")
+    p_disc.add_argument("name", nargs="?", default=None,
+                        help="Feature name to discover (omit with --all)")
+    p_disc.add_argument("--all", action="store_true", dest="discover_all",
+                        help="Discover every feature across all branches (empty-dashboard)")
     p_disc.add_argument("--specs-dir", default="./specs", help="Specs directory")
     p_disc.add_argument("--json", action="store_true", dest="json_output")
+
+    p_recon = sub.add_parser(
+        "reconcile-branch",
+        help="Decide whether a feature's recorded branch should adopt the current branch",
+    )
+    p_recon.add_argument("--feature", required=True, help="Feature name")
+    p_recon.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_recon.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
+    p_recon.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_recon.add_argument("--json", action="store_true", dest="json_output")
 
     p_exit = sub.add_parser(
         "stage-exit", help="Emit the Scripted Stage Exit directives + NEXT-STEPS block"
@@ -1290,11 +1502,28 @@ def main() -> int:
             return 0
 
         if args.cmd == "discover-feature":
-            payload = discover_feature(args.name, args.specs_dir)
+            if args.discover_all:
+                payload = discover_all(args.specs_dir)
+                printer = _print_discover_all
+            elif args.name:
+                payload = discover_feature(args.name, args.specs_dir)
+                printer = _print_discover
+            else:
+                parser.error("discover-feature requires a NAME or --all")
             if args.json_output:
                 print(json.dumps(payload, indent=2, ensure_ascii=False))
             else:
-                _print_discover(payload)
+                printer(payload)
+            return 0
+
+        if args.cmd == "reconcile-branch":
+            payload = reconcile_branch(
+                args.feature, Path(args.specs_dir), Path(args.config), args.epic
+            )
+            if args.json_output:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                _print_reconcile(payload)
             return 0
 
         if args.cmd == "stage-exit":

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Cross-branch resolution: `discover-feature --all` + branch reconciliation (chunks 5c
+  + 6).** Two additions to the cross-branch subsystem that hardens the hosted/remote flow:
+  - **`discover-feature --all`** enumerates *every* feature's pipeline state across all
+    local + remote-tracking branches (grouped by feature), so the navigator's
+    empty-dashboard case (fresh clone / default-branch session with state on topic
+    branches) surfaces the whole branch-scattered pipeline set instead of concluding
+    nothing exists. Wired into `skills/forge/SKILL.md`'s no-features-on-current-branch path.
+  - **Branch reconciliation** (`forge-session.py reconcile-branch`) treats the recorded
+    `branch` field as a self-healing hint, not gospel. A hosted environment (Claude.ai
+    remote, cloud agents) imposes an arbitrary session branch (e.g. `claude/<slug>`) that
+    Branch Setup silently records; when the user moves to the intended topic branch the
+    stale field made `forge-5-loop` offer to switch *back* to the imposed branch. The
+    reconciler classifies deterministically with a **default-branch guardrail**:
+    `adopt-current` (on a non-default topic branch where the state resolves → update the
+    record to the current branch, visibly, never pushing back), `warn-drift` (on the
+    default branch → recommend a topic branch), or `none`. Wired into the `forge-5-loop`
+    pre-flight (new **Branch Reconciliation** block in `references/shared-conventions.md`)
+    and surfaced in `doctor` (`branchReconcile` classification). New tests:
+    `tests/test_reconcile_branch.py`, plus `--all` cases in `tests/test_discover_feature.py`.
+
 ### Changed
 
 - **Bootstrap prelude leads with `${CLAUDE_PLUGIN_ROOT:-}` (stabilization chunk 2b).** The

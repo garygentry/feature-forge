@@ -209,3 +209,44 @@ def test_custom_specs_dir_and_dot_slash_normalization(tmp_path: Path) -> None:
 
     (cand,) = payload["candidates"]
     assert cand["path"] == "docs/specs/widget/.pipeline-state.json"
+
+
+# ── --all: whole-pipeline discovery for the empty-dashboard case (Chunk 5c) ──
+
+
+def _discover_all(repo: Path, *extra: str) -> dict:
+    proc = subprocess.run(
+        [sys.executable, str(HELPER), "discover-feature", "--all", "--json", *extra],
+        capture_output=True, text=True, cwd=str(repo),
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
+
+def test_discover_all_lists_features_across_branches(tmp_path: Path) -> None:
+    """--all enumerates every feature whose state lives on any branch."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)  # default branch: main, no state
+    _git(repo, "checkout", "-b", "forge/alpha")
+    _commit_state(repo, "alpha", {"feature": "alpha", "branch": "forge/alpha",
+                                  "currentStage": "forge-2-tech", "pipelineStatus": "active"})
+    _git(repo, "checkout", "main")
+    _git(repo, "checkout", "-b", "forge/beta")
+    _commit_state(repo, "beta", {"feature": "beta", "branch": "forge/beta",
+                                 "currentStage": "forge-1-prd", "pipelineStatus": "active"})
+    _git(repo, "checkout", "main")  # a fresh default-branch session sees nothing on disk
+
+    payload = _discover_all(repo)
+    features = {f["feature"] for f in payload["features"]}
+    assert features == {"alpha", "beta"}
+    alpha = next(f for f in payload["features"] if f["feature"] == "alpha")
+    assert alpha["candidates"][0]["branch"] == "forge/alpha"
+
+
+def test_discover_all_empty_when_no_state(tmp_path: Path) -> None:
+    """--all on a repo with no pipeline state reports an empty feature list, exit 0."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    payload = _discover_all(repo)
+    assert payload["gitRepo"] is True
+    assert payload["features"] == []
