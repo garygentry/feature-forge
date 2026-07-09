@@ -194,6 +194,23 @@ Invoke this block at the **very start** of a pipeline entry point — `forge-1-p
 
 **Record the branch.** After this block resolves, write the resulting branch name to the feature's `.pipeline-state.json` top-level `branch` field (create/update it when the state file is first written for this stage). Downstream stages and `forge-5-loop` read it to detect drift back onto the default branch.
 
+## Branch Reconciliation
+
+The recorded `branch` is a **self-healing hint, not gospel.** A hosted environment (Claude.ai remote, cloud agents) can impose an arbitrary session branch (e.g. `claude/<slug>`) that Branch Setup silently records; the user may then move the work to the intended topic branch, leaving the recorded field stale. Every branch-aware mechanism (the `forge-5-loop` guard, `discover-feature`) keys off that field, so a stale value actively misleads — the loop would offer to switch you *back* to the imposed branch. Invoke this block from `forge-5-loop`'s pre-flight (and any stage that acts on the recorded branch) to reconcile deterministically. Skip if not a git repo or `branchPerFeature` is false.
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" reconcile-branch --feature "{feature}" --specs-dir "{specsDir}" --json
+```
+
+Act on the emitted `action` (source of truth is where the state actually resolves, not the recorded field):
+- **`adopt-current`** — you are on a non-default topic branch where the state resolves, and the recorded `branch` differs (a stale/imposed value). Write `newBranch` into the state `branch` field with a **visible one-line note** ("recorded branch was `{stateBranch}`; work is on `{currentBranch}` — updating to match") — never silently, and **never push the user back** to the recorded branch (offer that only as a plain alternative).
+- **`warn-drift`** — you are on the **default** branch and the state records a topic branch. Via `AskUserQuestion`, strongly recommend creating/switching to `{branchPrefix}{feature}` (then record it), still allowing **proceed on the default branch**. Never hard-stop.
+- **`none`** / **`not-resolved`** — nothing to do; proceed.
+
+If the helper is unavailable (non-Claude host without the resolver), fall back to the manual check: current branch differs from recorded → adopt the current branch unless it is the default, in which case recommend creating `{branchPrefix}{feature}`.
+
 ## Git Commit Protocol
 
 When `gitCommitAfterStage` is true, follow this exact order to avoid state inconsistency.
