@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-07-09
+
+Patch: fixes a self-referential dispatch defect in the verifier that could make
+in-stage auto-verify (and any `forge-verifier` dispatch) return a non-answer with no
+findings artifact. Installer republished as `@garygentry/feature-forge@0.2.6`.
+
+### Fixed
+
+- **`forge-verifier` no longer self-dispatches.** The `forge-verifier` agent pre-loads
+  the `forge-verify` skill, which is written from the *parent orchestrator's* point of
+  view ("dispatch the `forge-verifier` subagent via the Agent tool", "Synthesize (parent
+  session)"). With no role guard, a dispatched verifier read that as an instruction to
+  *itself*, tried to delegate further — it has no Agent tool, so it couldn't — and
+  returned a placeholder ("verification is still running…") with **no findings block and
+  no artifact on disk**, leaving the tree clean and the stage's auto-verify silently
+  empty. Three guards close it: (1) a **role-disambiguation preamble** at the top of
+  `skills/forge-verify/SKILL.md` routes a dispatched verifier straight to the checks and
+  tells it to SKIP the parent-only sections (now headed *"Subagent Delegation (parent
+  orchestrator only)"*); (2) the `agents/forge-verifier.md` system prompt reinforces
+  *you ARE the verifier, you never dispatch one*; (3) `references/stage-exit-protocol.md`
+  now dispatches the in-stage verify **synchronously** (await the digest inline, never
+  background) and treats a non-answer as clean-room-unavailable (verify left **pending**,
+  never silently passed). New `tests/test_verifier_role_guard.py` locks the invariants
+  (including the verifier's tool allowlist excluding `Agent`/`Task`).
+
 ## [0.12.0] — 2026-07-09
 
 This release folds the accumulated post-`0.11.0` work into a single plugin version and
