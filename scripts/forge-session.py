@@ -1032,7 +1032,8 @@ def _print_discover_all(payload: dict) -> None:
         print("discover-feature --all: not a git repository — nothing to scan")
         return
     if not payload["features"]:
-        print("discover-feature --all: no pipeline state found on any local or remote-tracking branch")
+        print("discover-feature --all: no pipeline state found on any local or "
+              "remote-tracking branch")
         return
     for feat in payload["features"]:
         print(f"{feat['feature']}:")
@@ -1067,7 +1068,9 @@ def _default_branch() -> str | None:
     return None
 
 
-def reconcile_branch(name: str, specs_dir: Path, config_path: Path, epic: str | None = None) -> dict:
+def reconcile_branch(
+    name: str, specs_dir: Path, config_path: Path, epic: str | None = None
+) -> dict:
     """Decide whether a feature's recorded ``branch`` should adopt the current branch.
 
     Read-only: it emits a decision; the caller performs any state write. A hosted
