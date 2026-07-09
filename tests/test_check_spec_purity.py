@@ -138,6 +138,37 @@ def test_inventory_residual_var_is_exempt(fixture_copy):
     assert result.returncode == 0, result.stdout
 
 
+# ── Rule 3 scoping: the prelude first-hint is the ONLY sanctioned use (Chunk 2b) ──
+# The bootstrap prelude carries `${CLAUDE_PLUGIN_ROOT:-}`; rule 3 allows it by
+# stripping the byte-pinned prelude before scanning. Every OTHER occurrence — bare
+# `}` or the default `:-}` form — must still trip, so the `:-}` form is not an
+# escape hatch. Driven directly against check_no_residual_var over a tmp tree.
+
+
+def test_prelude_hint_allowed_but_stray_var_still_caught(tmp_path: Path):
+    m = _load_checker_module()
+
+    # (a) a file containing ONLY the sanctioned prelude passes.
+    ok = tmp_path / "ok"
+    (ok / "references").mkdir(parents=True)
+    (ok / "references" / "clean.md").write_text(m.BOOTSTRAP_PRELUDE + "\n")
+    assert m.check_no_residual_var(ok) == []
+
+    # (b) a stray default-form `:-}` OUTSIDE the prelude trips (no escape hatch).
+    bad_default = tmp_path / "bad_default"
+    (bad_default / "references").mkdir(parents=True)
+    (bad_default / "references" / "leak.md").write_text(
+        "Prose referencing ${CLAUDE_PLUGIN_ROOT:-} outside the prelude.\n"
+    )
+    assert m.check_no_residual_var(bad_default), "the :-} form must not be an escape hatch"
+
+    # (c) a stray bare `}` form still trips (unchanged behavior).
+    bad_bare = tmp_path / "bad_bare"
+    (bad_bare / "references").mkdir(parents=True)
+    (bad_bare / "references" / "leak.md").write_text("A bare ${CLAUDE_PLUGIN_ROOT} literal.\n")
+    assert m.check_no_residual_var(bad_bare)
+
+
 # ── Determinism: sorted, byte-identical repeated runs (spec 05 §3.4, §7) ────
 
 

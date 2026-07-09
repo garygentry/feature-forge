@@ -12,7 +12,7 @@ against the fenced block here, byte-for-byte.
 ## Canonical bootstrap prelude
 
 ```bash
-R="$(bash -c 'for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 ```
 
@@ -24,25 +24,34 @@ makes several calls, add the prelude once and reuse `$R` for each. A fresh block
 prelude (per-block re-resolution). Worked example:
 
 ```bash
-R="$(bash -c 'for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
 
 ## Invariants (do NOT "fix" these)
 
-1. **Probes paths, not the env var.** The prelude's `for d in …` enumerates directory paths to
-   locate an executable `forge-root.sh`; it contains no plugin-root environment variable. That is what lets
-   a prelude occurrence satisfy the "zero residual var in canonical surfaces" rule while staying
-   portable.
+1. **First hint is the Claude plugin-root env var; the rest are paths.** The prelude's
+   `for d in …` list leads with the `CLAUDE_PLUGIN_ROOT` env var (in default-empty `:-` form)
+   — the exact bundle dir Claude exports in every marketplace/plugin session — followed by the
+   directory-path candidates. The hint gives exact, glob-free resolution on any current/future
+   Claude layout (no version-skew window); when unset it expands to empty and is harmlessly
+   skipped, so other hosts fall through to the path candidates unchanged. This is the **one
+   sanctioned** appearance of that variable in canonical surfaces: spec-purity rule 3 allows it
+   by stripping the byte-pinned prelude before its residual-var scan (so a stray var anywhere
+   else — including the default-empty form — still fails), and `forge-agent-adapters-build`
+   translates it to `FEATURE_FORGE_ROOT` for non-Claude bundles (which `forge-root.sh` already
+   prefers). The exact literal is shown only in the fenced prelude above and audited in
+   `vendor-construct-inventory.md`.
 2. **First-discoverable-resolver-wins.** The `exec` inside the `$(…)` command substitution means
    the loop stops at the first directory holding an executable `forge-root.sh` and delegates ALL
    final root resolution to that script. The `for` list is a discovery order for `forge-root.sh`
    itself, not a fallback chain for the plugin root. Removing the `exec` to "keep looping" is a
    regression — once `exec`'d, the loop is replaced by the resolver process and never advances.
-3. **Prelude candidate set is an agent-neutral bootstrap subset.** The prelude's `for d` list
-   exists only to bootstrap-discover `forge-root.sh`; the authoritative multi-root probe lives in
-   `forge-root.sh` step 2. The list enumerates install roots across agents — the Claude
+3. **Prelude candidate set is an agent-neutral bootstrap subset (after the env hint).** The
+   prelude's `for d` list exists only to bootstrap-discover `forge-root.sh`; the authoritative
+   multi-root probe lives in `forge-root.sh` step 2. After the leading env-var hint (invariant 1),
+   the list enumerates install roots across agents — the Claude
    skill/plugin dirs — including the marketplace-cache layout
    `~/.claude/plugins/cache/<marketplace>/feature-forge/<version>/`, listed before the
    single-star plugins glob so a versioned cache install always beats the marketplace clone —

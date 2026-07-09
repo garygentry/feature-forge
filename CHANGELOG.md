@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bootstrap prelude leads with `${CLAUDE_PLUGIN_ROOT:-}` (stabilization chunk 2b).** The
+  byte-pinned bootstrap prelude now probes Claude's plugin-root env var as its first
+  resolver candidate, giving exact, glob-free root resolution on any current/future Claude
+  layout (no version-skew window) — when unset it expands to empty and is harmlessly
+  skipped, so path-based resolution is unchanged. Landed as an atomic sweep (the
+  `BOOTSTRAP_PRELUDE` constant + all canonical stamp sites + prelude-pinning fixtures, one
+  commit, `VR_PRELUDE_DRIFT`-guarded). Spec-purity **rule 3 is hardened**: it now detects
+  the `${CLAUDE_PLUGIN_ROOT` prefix (so the `:-}` default form is not an escape hatch) and
+  allows the sanctioned use only by stripping the byte-pinned prelude before scanning.
+  `forge-agent-adapters-build` translates the hint to `${FEATURE_FORGE_ROOT:-}` for
+  non-Claude bundles (which `forge-root.sh` already prefers). Docs updated
+  (`references/portable-root.md`, `references/vendor-construct-inventory.md`); new
+  resolution tests (hint-wins / stale-hint-skipped) and a rule-3 scoping test.
+
 ## [0.12.1] — 2026-07-09
 
 Patch: fixes a self-referential dispatch defect in the verifier that could make

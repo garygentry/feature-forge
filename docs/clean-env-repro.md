@@ -51,7 +51,7 @@ cp scripts/forge-root.sh "$INSTALL/scripts/" && chmod +x "$INSTALL/scripts/forge
 
 # The PRE-FIX prelude (as stamped before the cache glob landed):
 HOME="$FAKE_HOME" CLAUDE_PLUGIN_ROOT= FEATURE_FORGE_ROOT= bash -c '
-R="$(bash -c '\''for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done'\'')"
+R="$(bash -c '\''for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done'\'')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 echo "resolved: $R"'
 ```
