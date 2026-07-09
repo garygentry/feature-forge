@@ -31,14 +31,33 @@ if is_root "$root"; then
   exit 0
 fi
 
+# ── Step 2a: Claude marketplace-cache installs — ~/.claude/plugins/cache/<mp>/<plugin>/<ver>/.
+# This is where Claude Code actually installs marketplace plugins (three segments below
+# plugins/, so the single-star plugins/*/feature-forge glob below can never match it). Version
+# dirs can coexist after upgrades, so probe newest plugin.json first — a stale version must
+# never shadow the current install. Deliberately ordered BEFORE the plugins/* glob: that glob
+# can match the marketplace *clone* (~/.claude/plugins/marketplaces/<mp>/ when the marketplace
+# repo root is itself a plugin root), which may sit at a different commit than the installed
+# skills — the versioned cache install must always win to prevent that version skew.
+while IFS= read -r manifest; do
+  candidate="${manifest%/.claude-plugin/plugin.json}"
+  if is_root "$candidate"; then
+    printf '%s\n' "$candidate"
+    exit 0
+  fi
+done < <(ls -t "$HOME"/.claude/plugins/cache/*/feature-forge/*/.claude-plugin/plugin.json 2>/dev/null || true)
+
 # ── Step 2: candidate-root probe (authoritative multi-agent root list; extend here first). ─
 # Globs that match nothing expand to themselves; the is_root test rejects such literals. Covers
 # every supported agent's install destination under BOTH global ($HOME) and project ($PWD) scope,
 # matching the installer's per-agent layout: claude .claude/skills, codex .agents/skills, copilot
-# .github/feature-forge, cursor .cursor/rules, gemini .gemini/extensions.
+# .github/feature-forge, cursor .cursor/rules, gemini .gemini/extensions. The cache glob repeats
+# step 2a's path for a cache install that carries only the neutral bundle sentinel (no
+# plugin.json for ls -t to key on).
 for candidate in \
   "$HOME/.claude/skills/feature-forge" \
   "$PWD/.claude/skills/feature-forge" \
+  "$HOME"/.claude/plugins/cache/*/feature-forge/* \
   "$HOME"/.claude/plugins/*/feature-forge \
   "$HOME/.agents/skills/feature-forge" \
   "$PWD/.agents/skills/feature-forge" \

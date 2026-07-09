@@ -49,16 +49,18 @@ mkdir -p "$INSTALL/scripts" "$INSTALL/.claude-plugin"
 printf '{"name":"feature-forge","version":"9.9.9"}\n' > "$INSTALL/.claude-plugin/plugin.json"
 cp scripts/forge-root.sh "$INSTALL/scripts/" && chmod +x "$INSTALL/scripts/forge-root.sh"
 
-# The canonical prelude, verbatim (references/shared-conventions.md "Locating plugin scripts"):
+# The PRE-FIX prelude (as stamped before the cache glob landed):
 HOME="$FAKE_HOME" CLAUDE_PLUGIN_ROOT= FEATURE_FORGE_ROOT= bash -c '
 R="$(bash -c '\''for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done'\'')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 echo "resolved: $R"'
 ```
 
-**Today:** `feature-forge: cannot locate plugin root` (exit 1), despite a complete, valid
-install. **After the fix:** prints `resolved: $INSTALL`. Anchor:
-`test_prelude_resolves_marketplace_cache_install`.
+**Pre-fix:** `feature-forge: cannot locate plugin root` (exit 1), despite a complete, valid
+install. **Fixed** by adding `"$HOME"/.claude/plugins/cache/*/feature-forge/*` ahead of the
+single-star plugins glob in the canonical prelude (and a newest-`plugin.json`-first cache probe
+in `forge-root.sh` step 2a) — the current prelude prints `resolved: $INSTALL`. Anchor:
+`test_prelude_resolves_marketplace_cache_install` (xfail removed with the fix).
 
 Once the prelude fails, *every* deterministic helper is unreachable — feature resolution,
 `forge-session.py rank-features` (the navigator's entire status model), `epic-manifest.py` —

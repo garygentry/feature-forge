@@ -176,6 +176,101 @@ def test_forge_root_project_scope_candidate_probe(tmp_path, rel):
     assert result.stdout.strip() == str(candidate)
 
 
+def _make_cache_install(home: Path, version: str) -> Path:
+    """Create a marketplace-cache install: plugins/cache/<mp>/feature-forge/<version>/."""
+    root = home / ".claude" / "plugins" / "cache" / "test-mp" / "feature-forge" / version
+    return _make_fake_install(root)
+
+
+def _lone_resolver(tmp_path: Path) -> Path:
+    """Copy the resolver somewhere outside any root so step 1 cannot succeed."""
+    lone_dir = tmp_path / "lone" / "scripts"
+    lone_dir.mkdir(parents=True, exist_ok=True)
+    lone = lone_dir / "forge-root.sh"
+    lone.write_text(RESOLVER.read_text())
+    return lone
+
+
+def test_forge_root_marketplace_cache_probe(tmp_path):
+    """Step 2a resolves a real marketplace-cache install (clean-env root cause A).
+
+    Claude Code installs marketplace plugins at
+    ``~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`` — three path
+    segments below ``plugins/``, unreachable by the single-star
+    ``plugins/*/feature-forge`` glob.
+    """
+    home = tmp_path / "home"
+    install = _make_cache_install(home, "1.2.3")
+    result = _run(
+        _lone_resolver(tmp_path),
+        {"HOME": str(home), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(install)
+
+
+def test_forge_root_cache_install_beats_marketplace_clone(tmp_path):
+    """The versioned cache install wins over the marketplace clone (version skew).
+
+    A marketplace whose repo root is itself a plugin root gets cloned to
+    ``~/.claude/plugins/marketplaces/<mp>/`` — which the single-star glob CAN
+    match — but the clone may sit at a different commit than the installed
+    skills. The cache install must be probed first.
+    """
+    home = tmp_path / "home"
+    install = _make_cache_install(home, "1.2.3")
+    clone = home / ".claude" / "plugins" / "marketplaces" / "feature-forge"
+    _make_fake_install(clone)
+    result = _run(
+        _lone_resolver(tmp_path),
+        {"HOME": str(home), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(install)
+
+
+def test_forge_root_cache_version_tiebreak_newest_manifest_wins(tmp_path):
+    """Coexisting version dirs resolve to the newest plugin.json by mtime.
+
+    After an upgrade, old version dirs can linger. Lexicographic glob order
+    would pick ``10.0.0`` over ``9.0.0`` wrongly (or vice versa); the probe
+    must key on plugin.json mtime — the newest write is the current install.
+    """
+    home = tmp_path / "home"
+    old_install = _make_cache_install(home, "10.0.0")
+    new_install = _make_cache_install(home, "9.0.0")  # lexicographically LATER dir
+    old_manifest = old_install / ".claude-plugin" / "plugin.json"
+    new_manifest = new_install / ".claude-plugin" / "plugin.json"
+    past = 1_600_000_000  # fixed epoch seconds, comfortably in the past
+    os.utime(old_manifest, (past, past))
+    os.utime(new_manifest, (past + 1000, past + 1000))
+    result = _run(
+        _lone_resolver(tmp_path),
+        {"HOME": str(home), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(new_install)
+
+
+def test_forge_root_sentinel_only_cache_install_resolves(tmp_path):
+    """A cache install carrying only the neutral bundle sentinel still resolves.
+
+    Step 2a keys on plugin.json for mtime ordering; the step 2 glob repeat
+    covers a cache-layout bundle that only has .feature-forge-bundle.json.
+    """
+    home = tmp_path / "home"
+    root = home / ".claude" / "plugins" / "cache" / "test-mp" / "feature-forge" / "2.0.0"
+    (root / "scripts").mkdir(parents=True)
+    (root / ".feature-forge-bundle.json").write_text('{"name":"feature-forge"}\n')
+    (root / "scripts" / "forge-root.sh").write_text(RESOLVER.read_text())
+    result = _run(
+        _lone_resolver(tmp_path),
+        {"HOME": str(home), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(root)
+
+
 def test_forge_root_neutral_env_fallback(tmp_path):
     """FEATURE_FORGE_ROOT names a valid root when self/candidate probes fail → step 3 (neutral)."""
     valid_root = _make_fake_install(tmp_path / "valid")
