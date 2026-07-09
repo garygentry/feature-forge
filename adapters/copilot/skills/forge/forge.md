@@ -21,7 +21,7 @@ For pipeline architecture details, read `references/process-overview.md`.
 **If a feature name is provided** (e.g., `/feature-forge:forge auth`):
 - **First test whether the name is an epic:** if `{specsDir}/{name}/epic-manifest.json` exists, render the **Epic Dashboard** (see format below) and stop — do not treat it as a feature.
 - Otherwise, resolve the name via the **Feature Directory Resolution** block in `references/shared-conventions.md` (so a nested epic-member name finds its dashboard too). On a resolution failure (`not-found` / `ambiguous` at exit 1; `unsafe-name` or a path-containment escape at exit 2), surface it verbatim.
-  - On `not-found` for a never-started feature, ask: "No pipeline exists for '{feature}'. Want to start one? Run `/feature-forge:forge-1-prd {feature}` to begin."
+  - On `not-found`, first run the cross-branch discovery step from that same Feature Directory Resolution block (`forge-session.py discover-feature` — the state may live on a topic branch or an unfetched remote branch). Candidates → offer switch / fetch+switch per that block (explicit accept + clean tree only), then re-resolve and render the dashboard. Only when discovery also returns nothing, ask: "No pipeline exists for '{feature}' on any branch. Want to start one? Run `/feature-forge:forge-1-prd {feature}` to begin." Never render a dashboard from memory of earlier sessions (anti-fabrication guard).
 - If resolution succeeds, display the per-feature pipeline status dashboard (see format below) from `{resolvedFeatureDir}/`.
 
 **If no feature name is provided:** list in two tiers.
