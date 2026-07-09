@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] — 2026-07-09
+
+Pipeline-stabilization batch: the bootstrap prelude resolves the plugin root exactly on
+any Claude layout (chunk 2b), the cross-branch subsystem gains whole-pipeline discovery
+and self-healing **branch reconciliation** for hosted/imposed session branches (chunks 5c
++ 6), and the navigator's exit computation is consolidated onto a single resolved
+verify-gate with a present-once discipline (chunk 5b). Installer republished as
+`@garygentry/feature-forge@0.2.7` to carry it to `npx` users.
+
 ### Changed
 
 - **Navigator exit convergence: one resolved verify-gate + present-once discipline
