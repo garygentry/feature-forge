@@ -93,6 +93,19 @@ resolvedFeatureDir=$(python3 "$R/scripts/epic-manifest.py" \
 
 In both failure cases, do not fall back to a guessed path.
 
+**On `not-found`, check other branches before stopping.** With `branchPerFeature`, the feature's directory (and its `.pipeline-state.json`) may exist only on its topic branch — invisible from the default branch of a fresh clone. Before concluding the pipeline does not exist, run the read-only cross-branch discovery:
+
+```bash
+R="$(bash -c 'for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" discover-feature "<feature>" --specs-dir "<specsDir>" --json
+```
+
+- **Candidates found** (`candidates` and/or `remoteCandidates` non-empty): summarize them as text (branch, recorded stage, whether the state's own `branch` field matches), then use `AskUserQuestion`: **Switch to `{branch}` (recommended)** — run the candidate's `switchCommand` · **Fetch + switch** — for a `needsFetch` remote candidate, run its `fetchCommand` then `switchCommand` (note its contents were matched by name only, not inspected) · **Treat `{feature}` as new on this branch** · **Stop**. A checkout is a mutation inside an otherwise read-only flow: perform it ONLY on the user's explicit accept AND with a clean working tree (`git status --porcelain` prints nothing) — never auto-switch, never with uncommitted changes. After a successful switch, re-run this Feature Directory Resolution block from the top.
+- **Nothing found** (both lists empty): the pipeline genuinely does not exist anywhere discoverable — STOP and surface the original `not-found` stderr line verbatim (or, where the caller offers to start a new pipeline, offer that).
+
+**Anti-fabrication guard.** Never describe pipeline state that resolution or discovery did not return: if both come back empty, the pipeline does not exist — say exactly that, and never reconstruct stages, backlogs, or history from conversational memory.
+
 **Resolution algorithm (summary; full spec in `02-manifest-helper-cli.md §4`):**
 1. Reject the name if unsafe (path separator, `..`, absolute, or failing `SAFE_NAME_RE`) — before any filesystem access.
 2. If `{specsDir}/{name}/.pipeline-state.json` exists → return that flat path.

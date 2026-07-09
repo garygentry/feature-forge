@@ -11,7 +11,8 @@ pipeline test. Each starts life as an ``xfail(strict=True)`` encoding the
    prelude + newest-plugin.json-first cache probe in forge-root.sh.
 2. ``test_discover_feature_finds_state_on_other_branch`` — pipeline state that
    lives only on a topic branch must be discoverable from the default branch
-   via ``forge-session.py discover-feature``. Flips when that subcommand lands.
+   via ``forge-session.py discover-feature``. FIXED (marker removed) by the
+   discover-feature chunk; full coverage in ``test_discover_feature.py``.
 
 The prelude is imported from ``scripts/check-spec-purity.py`` (the byte-pinned
 canon), so the fix to the constant is automatically what these tests exercise —
@@ -31,8 +32,6 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
-
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESOLVER = REPO_ROOT / "scripts" / "forge-root.sh"
@@ -110,12 +109,6 @@ def _git(repo: Path, *args: str) -> None:
     assert proc.returncode == 0, proc.stderr
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="root cause B (clean-env-repro): pipeline state on a topic branch "
-    "is invisible from the default branch — fixed by the discover-feature "
-    "chunk",
-)
 def test_discover_feature_finds_state_on_other_branch(tmp_path: Path) -> None:
     """State committed only on a topic branch is discoverable from default.
 

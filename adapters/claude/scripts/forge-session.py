@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Session-aware navigation helpers for the feature-forge pipeline navigator.
 
-Three read-only subcommands that drive the usability features of the `/forge`
+Read-only subcommands that drive the usability features of the `/forge`
 root navigator:
 
     python3 forge-session.py rank-features [--specs-dir DIR] [--json]
     python3 forge-session.py context-usage [--config FILE] [--window N] \
         [--threshold F] [--json]
     python3 forge-session.py doctor [--specs-dir DIR] [--config FILE] [--json]
+    python3 forge-session.py discover-feature NAME [--specs-dir DIR] [--json]
 
 `rank-features` scans the specs tree for feature-shaped directories (those that
 directly contain a `.pipeline-state.json`, in both the flat
@@ -32,6 +33,15 @@ each feature's recorded state branch, the recency-ranked feature summary, and
 whether each feature's composed backlog path exists on disk. Every probe is
 best-effort — a failure is reported as data, never as a crash — and the
 command always exits 0 so it can run in any half-broken environment.
+
+`discover-feature` looks for a feature's `.pipeline-state.json` across ALL
+git branches (local heads and remote-tracking refs), so a session on the
+default branch can learn that a pipeline exists on a topic branch instead of
+concluding it was never started. When nothing is found locally it also asks
+`git ls-remote --heads origin` about branches a single-branch clone never
+fetched, and emits the exact `git fetch`/`git switch` commands a caller could
+run. It is strictly read-only — it never checks anything out itself — and
+like `doctor` it always exits 0 and degrades to data.
 
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
 matching the conventions of `scripts/epic-manifest.py`.
@@ -714,6 +724,211 @@ def _print_doctor(report: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Cross-branch feature discovery
+# --------------------------------------------------------------------------- #
+
+
+def _specs_rel(specs_dir: str) -> str:
+    """Normalize a specs dir to the repo-relative POSIX form git ls-tree uses."""
+    rel = specs_dir.replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel.rstrip("/")
+
+
+def _state_paths_in_ref(ref: str, specs_rel: str, name: str) -> list[str]:
+    """Feature-shaped ``.pipeline-state.json`` paths for ``name`` in one ref.
+
+    Mirrors the ``_scan_features`` flat/nested bound: exactly
+    ``{specsDir}/{name}/.pipeline-state.json`` or
+    ``{specsDir}/{epic}/{name}/.pipeline-state.json`` — never deeper.
+    """
+    listing = _git_output(["ls-tree", "-r", "--name-only", ref, "--", specs_rel])
+    if not listing:
+        return []
+    hits: list[str] = []
+    prefix = specs_rel + "/"
+    for path in listing.splitlines():
+        if not path.startswith(prefix) or not path.endswith("/" + PIPELINE_STATE_FILENAME):
+            continue
+        segments = path[len(prefix):].split("/")
+        # [name, state-file] (flat) or [epic, name, state-file] (nested).
+        if len(segments) == 2 and segments[0] == name:
+            hits.append(path)
+        elif len(segments) == 3 and segments[1] == name:
+            hits.append(path)
+    return hits
+
+
+def _read_state_at_ref(ref: str, path: str) -> dict:
+    """Parse ``git show ref:path`` as pipeline state, downgrading failures to {}."""
+    raw = _git_output(["show", f"{ref}:{path}"])
+    if raw is None:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _list_refs(pattern: str) -> list[tuple[str, str]]:
+    """Return ``(short_ref, committer_date)`` pairs under a ref namespace."""
+    raw = _git_output([
+        "for-each-ref",
+        "--format=%(refname:short)\t%(committerdate:iso-strict)",
+        pattern,
+    ])
+    if not raw:
+        return []
+    out: list[tuple[str, str]] = []
+    for line in raw.splitlines():
+        ref, _, date = line.partition("\t")
+        if ref:
+            out.append((ref, date))
+    return out
+
+
+def discover_feature(name: str, specs_dir: str) -> dict:
+    """Find a feature's pipeline state across all branches (strictly read-only).
+
+    Scans every local head and remote-tracking ref for a feature-shaped
+    ``.pipeline-state.json``, parses each hit via ``git show``, and ranks
+    candidates by (state's own ``branch`` field matches the ref) first, then
+    local-before-remote-tracking, then newest commit. When no candidate exists
+    locally, ``git ls-remote --heads origin`` surfaces plausibly-named
+    branches a single-branch clone never fetched, as ``needsFetch`` entries
+    with the exact fetch/switch commands.
+
+    Never mutates anything: checkout is the caller's decision (and requires
+    the user's explicit accept plus a clean tree — see shared-conventions).
+    """
+    if _git_output(["rev-parse", "--git-dir"]) is None:
+        return {
+            "feature": name,
+            "gitRepo": False,
+            "currentBranch": None,
+            "candidates": [],
+            "remoteCandidates": [],
+        }
+    current_branch = _git_output(["branch", "--show-current"])
+    specs_rel = _specs_rel(specs_dir)
+
+    refs = [(ref, date, False) for ref, date in _list_refs("refs/heads")]
+    refs += [(ref, date, True) for ref, date in _list_refs("refs/remotes")]
+
+    candidates: list[dict] = []
+    matched_branches: set[str] = set()
+    known_branches: set[str] = set()
+    for ref, commit_date, is_remote in refs:
+        branch = ref.split("/", 1)[1] if is_remote else ref
+        if is_remote and (not branch or branch == "HEAD"):
+            continue
+        known_branches.add(branch)
+        if branch in matched_branches:
+            continue  # the local head already yielded this branch's state
+        for path in _state_paths_in_ref(ref, specs_rel, name):
+            state = _read_state_at_ref(ref, path)
+            state_branch = state.get("branch")
+            state_branch = state_branch if isinstance(state_branch, str) else None
+            updated = state.get("updatedAt")
+            matched_branches.add(branch)
+            candidates.append({
+                "branch": branch,
+                "ref": ref,
+                "remoteTracking": is_remote,
+                "path": path,
+                "stateBranch": state_branch,
+                "stateBranchMatches": state_branch == branch,
+                "currentStage": state.get("currentStage"),
+                "pipelineStatus": state.get("pipelineStatus", "active"),
+                "updatedAt": updated if isinstance(updated, str) else None,
+                "commitDate": commit_date or None,
+                "isCurrentBranch": branch == current_branch,
+                "switchCommand": f"git switch {branch}",
+            })
+
+    def _rank(cand: dict) -> tuple:
+        ts = _parse_ts(cand["commitDate"]) or datetime.min.replace(tzinfo=timezone.utc)
+        return (
+            not cand["stateBranchMatches"],
+            cand["remoteTracking"],
+            -ts.timestamp(),
+        )
+
+    candidates.sort(key=_rank)
+
+    # Single-branch clones: the branch holding the state may never have been
+    # fetched. Only when nothing was found locally, ask the remote for heads we
+    # do not know and surface the plausibly-named ones (the feature name appears
+    # in the branch name — e.g. forge/<feature>). These are name-based hints
+    # only; their contents were NOT inspected.
+    remote_candidates: list[dict] = []
+    if not candidates:
+        ls_remote = _git_output(["ls-remote", "--heads", "origin"])
+        for line in (ls_remote or "").splitlines():
+            _, _, refname = line.partition("\t")
+            if not refname.startswith("refs/heads/"):
+                continue
+            branch = refname[len("refs/heads/"):]
+            if branch in known_branches or name not in branch:
+                continue
+            remote_candidates.append({
+                "branch": branch,
+                "needsFetch": True,
+                "fetchCommand": f"git fetch origin {branch}:refs/remotes/origin/{branch}",
+                "switchCommand": f"git switch {branch}",
+            })
+
+    return {
+        "feature": name,
+        "gitRepo": True,
+        "currentBranch": current_branch,
+        "specsDir": specs_rel,
+        "candidates": candidates,
+        "remoteCandidates": remote_candidates,
+    }
+
+
+def _print_discover(payload: dict) -> None:
+    """Print the human-readable discovery report."""
+    name = payload["feature"]
+    if not payload["gitRepo"]:
+        print(f"discover-feature {name}: not a git repository — nothing to scan")
+        return
+    candidates = payload["candidates"]
+    remote = payload["remoteCandidates"]
+    if not candidates and not remote:
+        print(
+            f"discover-feature {name}: no pipeline state found on any local or "
+            "remote-tracking branch"
+        )
+        return
+    for cand in candidates:
+        marks = []
+        if cand["isCurrentBranch"]:
+            marks.append("current branch")
+        if cand["remoteTracking"]:
+            marks.append("remote-tracking")
+        if not cand["stateBranchMatches"] and cand["stateBranch"]:
+            marks.append(f"state records branch {cand['stateBranch']}")
+        suffix = f"  ({'; '.join(marks)})" if marks else ""
+        print(
+            f"  {cand['branch']}: stage={cand['currentStage'] or '?'} "
+            f"status={cand['pipelineStatus']} path={cand['path']}{suffix}"
+        )
+        if not cand["isCurrentBranch"]:
+            print(f"      switch: {cand['switchCommand']}")
+    for cand in remote:
+        print(
+            f"  {cand['branch']}: on origin only (never fetched; contents not "
+            "inspected — name matches)"
+        )
+        print(f"      fetch:  {cand['fetchCommand']}")
+        print(f"      switch: {cand['switchCommand']}")
+
+
+# --------------------------------------------------------------------------- #
 # CLI dispatch
 # --------------------------------------------------------------------------- #
 
@@ -769,6 +984,13 @@ def main() -> int:
     p_doc.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
     p_doc.add_argument("--json", action="store_true", dest="json_output")
 
+    p_disc = sub.add_parser(
+        "discover-feature", help="Find a feature's pipeline state across all branches"
+    )
+    p_disc.add_argument("name", help="Feature name to discover")
+    p_disc.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_disc.add_argument("--json", action="store_true", dest="json_output")
+
     args = parser.parse_args()
 
     try:
@@ -806,6 +1028,14 @@ def main() -> int:
                 print(json.dumps(report, indent=2, ensure_ascii=False))
             else:
                 _print_doctor(report)
+            return 0
+
+        if args.cmd == "discover-feature":
+            payload = discover_feature(args.name, args.specs_dir)
+            if args.json_output:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                _print_discover(payload)
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")
