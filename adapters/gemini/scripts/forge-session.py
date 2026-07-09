@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Session-aware navigation helpers for the feature-forge pipeline navigator.
 
-Two read-only subcommands that drive the usability features of the `/forge`
+Three read-only subcommands that drive the usability features of the `/forge`
 root navigator:
 
     python3 forge-session.py rank-features [--specs-dir DIR] [--json]
     python3 forge-session.py context-usage [--config FILE] [--window N] \
         [--threshold F] [--json]
+    python3 forge-session.py doctor [--specs-dir DIR] [--config FILE] [--json]
 
 `rank-features` scans the specs tree for feature-shaped directories (those that
 directly contain a `.pipeline-state.json`, in both the flat
@@ -24,6 +25,14 @@ and degrades gracefully: when no transcript or usage is found (a non-Claude host
 or a fresh session) it reports `{"available": false}` and still exits 0, so the
 caller simply omits the context advice.
 
+`doctor` captures pipeline ground truth in one shot for debugging a confused
+session or a broken install: the plugin root the sibling `forge-root.sh`
+actually resolves (plus its version and commit), the current git branch vs.
+each feature's recorded state branch, the recency-ranked feature summary, and
+whether each feature's composed backlog path exists on disk. Every probe is
+best-effort — a failure is reported as data, never as a crash — and the
+command always exits 0 so it can run in any half-broken environment.
+
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
 matching the conventions of `scripts/epic-manifest.py`.
 
@@ -36,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -542,6 +552,168 @@ def context_usage(
 
 
 # --------------------------------------------------------------------------- #
+# Doctor
+# --------------------------------------------------------------------------- #
+
+
+def _git_output(args: list[str]) -> str | None:
+    """Run a read-only git command and return stripped stdout, or None.
+
+    Any failure (git missing, not a repo, nonzero exit, timeout) degrades to
+    ``None`` — doctor reports absence rather than crashing.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", *args], capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    out = proc.stdout.strip()
+    return out or None
+
+
+def _resolve_plugin_root() -> dict:
+    """Resolve the plugin root by running the sibling ``forge-root.sh``.
+
+    Uses the resolver that ships next to this script, so the answer reflects
+    the install this helper actually belongs to — exactly what a skill's
+    bootstrap prelude would find (or fail to find). On success the dict also
+    carries the root's ``version`` (from ``.claude-plugin/plugin.json`` or the
+    neutral ``.feature-forge-bundle.json``) and, when the root is a git
+    checkout, its short ``commit`` — enough to spot version skew between the
+    resolved root and the skills a session loaded.
+    """
+    resolver = Path(__file__).resolve().parent / "forge-root.sh"
+    if not resolver.is_file():
+        return {"resolved": False, "error": f"resolver not found: {resolver}"}
+    try:
+        proc = subprocess.run(
+            ["bash", str(resolver)], capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"resolved": False, "error": str(exc)}
+    if proc.returncode != 0:
+        return {
+            "resolved": False,
+            "error": proc.stderr.strip() or f"resolver exited {proc.returncode}",
+        }
+    root = proc.stdout.strip()
+    info: dict = {"resolved": True, "root": root}
+    for rel in (".claude-plugin/plugin.json", ".feature-forge-bundle.json"):
+        manifest = Path(root) / rel
+        if manifest.is_file():
+            version = _load_config(manifest).get("version")
+            if isinstance(version, str):
+                info["version"] = version
+            info["manifest"] = rel
+            break
+    commit = _git_output(["-C", root, "rev-parse", "--short", "HEAD"])
+    if commit:
+        info["commit"] = commit
+    return info
+
+
+def _backlog_path(config: dict, name: str, epic: str | None, specs_dir: Path) -> Path:
+    """Compose a feature's backlog.json path per the forge-4-backlog rule.
+
+    ``{backlogDir}/{feature}/backlog.json`` when ``backlogDir`` is configured,
+    else ``{resolvedFeatureDir}/backlog.json`` (flat or nested under the epic).
+    """
+    backlog_dir = config.get("backlogDir")
+    if isinstance(backlog_dir, str) and backlog_dir:
+        return Path(backlog_dir) / name / "backlog.json"
+    feature_dir = specs_dir / epic / name if epic else specs_dir / name
+    return feature_dir / "backlog.json"
+
+
+def doctor_report(specs_dir: Path, config_path: Path) -> dict:
+    """Assemble the ground-truth diagnostic payload (always succeeds).
+
+    One snapshot of everything a confused session needs checked: resolved
+    plugin root + version/commit, current git branch vs. each feature's
+    recorded state branch, the recency-ranked feature summary, and whether
+    each feature's composed backlog path exists on disk.
+    """
+    config = _load_config(config_path)
+    # --show-current (not rev-parse HEAD) so an unborn branch (fresh repo,
+    # no commits yet) still reports its name instead of failing.
+    current_branch = _git_output(["branch", "--show-current"])
+    rows = build_rows(specs_dir, config)
+    features = []
+    for row in rows:
+        backlog = _backlog_path(config, row["name"], row["epic"], specs_dir)
+        state_branch = row["branch"]
+        features.append({
+            "name": row["name"],
+            "epic": row["epic"],
+            "currentStage": row["currentStage"],
+            "nextStage": row["nextStage"],
+            "verifyState": row["verifyState"],
+            "stateBranch": state_branch,
+            "branchMatchesState": (
+                state_branch == current_branch
+                if state_branch and current_branch
+                else None
+            ),
+            "backlogPath": str(backlog),
+            "backlogExists": backlog.is_file(),
+        })
+    return {
+        "pluginRoot": _resolve_plugin_root(),
+        "currentBranch": current_branch,
+        "specsDir": str(specs_dir),
+        "specsDirExists": specs_dir.is_dir(),
+        "configPath": str(config_path),
+        "configExists": config_path.is_file(),
+        "counts": _counts(specs_dir),
+        "features": features,
+        "invalidAutoVerifyKeys": invalid_auto_verify_keys(config),
+    }
+
+
+def _print_doctor(report: dict) -> None:
+    """Print the human-readable doctor report."""
+    root = report["pluginRoot"]
+    if root.get("resolved"):
+        detail = " ".join(
+            f"{key}={root[key]}" for key in ("version", "commit") if key in root
+        )
+        print(f"plugin root: {root['root']}" + (f"  ({detail})" if detail else ""))
+    else:
+        print(f"plugin root: UNRESOLVED — {root.get('error', 'unknown')}")
+    print(f"current branch: {report['currentBranch'] or '(not a git repo)'}")
+    print(
+        f"specs dir: {report['specsDir']}"
+        + ("" if report["specsDirExists"] else "  (MISSING)")
+    )
+    print(
+        f"config: {report['configPath']}"
+        + ("" if report["configExists"] else "  (MISSING)")
+    )
+    counts = report["counts"]
+    print(
+        f"features: {counts['active']} active "
+        f"(paused: {counts['paused']}, abandoned: {counts['abandoned']})"
+    )
+    for feat in report["features"]:
+        label = feat["name"] + (f" [{feat['epic']}]" if feat["epic"] else "")
+        branch = feat["stateBranch"] or "?"
+        if feat["branchMatchesState"] is False:
+            branch += " (MISMATCH vs current)"
+        backlog = "exists" if feat["backlogExists"] else "MISSING"
+        print(
+            f"  - {label}: stage={feat['currentStage']} "
+            f"verify={feat['verifyState']} branch={branch} "
+            f"backlog={backlog} ({feat['backlogPath']})"
+        )
+    invalid = report.get("invalidAutoVerifyKeys") or []
+    if invalid:
+        print("  ! invalid autoVerifyStages keys (ignored): " + ", ".join(invalid))
+
+
+# --------------------------------------------------------------------------- #
 # CLI dispatch
 # --------------------------------------------------------------------------- #
 
@@ -592,6 +764,11 @@ def main() -> int:
     p_ctx.add_argument("--threshold", type=float, default=None, help="Override warn fraction (0-1)")
     p_ctx.add_argument("--json", action="store_true", dest="json_output")
 
+    p_doc = sub.add_parser("doctor", help="Capture pipeline ground truth for debugging")
+    p_doc.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_doc.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
+    p_doc.add_argument("--json", action="store_true", dest="json_output")
+
     args = parser.parse_args()
 
     try:
@@ -621,6 +798,14 @@ def main() -> int:
                 print(json.dumps(usage, indent=2, ensure_ascii=False))
             else:
                 _print_context(usage)
+            return 0
+
+        if args.cmd == "doctor":
+            report = doctor_report(Path(args.specs_dir), Path(args.config))
+            if args.json_output:
+                print(json.dumps(report, indent=2, ensure_ascii=False))
+            else:
+                _print_doctor(report)
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")
