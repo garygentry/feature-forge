@@ -8,7 +8,14 @@ description: Verify forge pipeline artifacts for completeness, consistency, and 
 
 Analyze feature artifacts for completeness, consistency, and quality. Produce structured, actionable findings designed for a fresh-context agent to apply.
 
-## Subagent Delegation
+## Which role are you? (read this first)
+
+This skill is loaded in two different roles. Determine yours before proceeding:
+
+- **You ARE the `forge-verifier` subagent** — you were dispatched via the host's subagent mechanism, you have read-only tools (Read, Glob, Grep, Bash) and **no** Agent/host's subagent mechanism, and this skill is pre-loaded in your context. **SKIP "Subagent Delegation (parent orchestrator only)" and "Synthesize" below — those describe how a *parent* dispatches *you*, not work for you to do.** Do **not** dispatch anything, do **not** try to spawn a verifier. Go straight to **Prerequisites → Steps 1–6**, execute the checks yourself, and **return your findings as your response** (the parent writes the document to disk). Dispatching a subagent from here is the classic self-referential loop — never do it.
+- **You are the parent orchestrator** — a navigator (`/feature-forge:forge`), a stage skill's in-stage auto-verify, or a direct `/feature-forge:forge-verify` invocation, and you have the host's subagent mechanism. Use "Subagent Delegation" to dispatch the `forge-verifier` subagent, then "Synthesize" to assemble and write the document.
+
+## Subagent Delegation (parent orchestrator only)
 
 This skill is delegated to the `forge-verifier` subagent via the host's subagent mechanism. The verifier subagent has:
 - **Read-only tools** (Read, Glob, Grep, Bash) — it cannot accidentally modify specs

@@ -85,12 +85,16 @@ navigator):
 
 1. **Clean-room verify (require-clean).** Dispatch the clean-room `forge-verifier`
    subagent from this session in require-clean mode — the same path the navigator uses
-   (`skills/forge-verify/SKILL.md`). It inherits none of this session's context, so no
-   `/clear` is needed and only a compact digest returns. **Clean-room unavailable** (no
-   `Agent` tool, `forge-verifier` not dispatchable, or a sentinel returned): do **not**
-   run inline — leave verify **pending** so the navigator catch-up fires on a later
-   Claude-host `/feature-forge:forge`, print the `verifyCommand` for the user to run,
-   and continue to the NEXT-STEPS block.
+   (`skills/forge-verify/SKILL.md`). Dispatch it **synchronously and await its digest
+   inline** — do **not** run it in the background or announce it as "still running";
+   the digest and any fix decision must land in this session. It inherits none of this
+   session's context, so no `/clear` is needed and only a compact digest returns.
+   **Clean-room unavailable** (no `Agent` tool, `forge-verifier` not dispatchable) **or
+   a non-answer returned** (the verifier returned a placeholder / "still running" /
+   delegation message instead of a findings block): do **not** run inline and do **not**
+   silently accept the non-answer as a pass — leave verify **pending** so the navigator
+   catch-up fires on a later Claude-host `/feature-forge:forge`, print the
+   `verifyCommand` for the user to run, and continue to the NEXT-STEPS block.
 2. **Verify passed / no findings** → the fresh verify state is recorded by the
    clean-room run; continue to the NEXT-STEPS block.
 3. **Verify found findings** →
