@@ -84,6 +84,21 @@ _STANDARD_SITES = [
 _WARM_SITE = ("skills/forge-5-loop/references/result-reporting.md", dict(
     nxt="/feature-forge:forge-6-docs {feature}"))
 
+# The in-stage verify(+fix) block is stamped into the five authoring stages ONLY — not the
+# loop, which keeps its bespoke interactive impl-verify offer. Slots: {stage}, {verify-command}.
+_IN_STAGE_SITES = [
+    ("skills/forge-0-epic/SKILL.md", dict(
+        stage="the epic decomposition", verify="/feature-forge:forge-verify {epic}")),
+    ("skills/forge-1-prd/SKILL.md", dict(
+        stage="the PRD", verify="/feature-forge:forge-verify {feature}")),
+    ("skills/forge-2-tech/SKILL.md", dict(
+        stage="the tech spec", verify="/feature-forge:forge-verify {feature}")),
+    ("skills/forge-3-specs/SKILL.md", dict(
+        stage="the implementation specs", verify="/feature-forge:forge-verify {feature}")),
+    ("skills/forge-4-backlog/SKILL.md", dict(
+        stage="the backlog", verify="/feature-forge:forge-verify {feature}")),
+]
+
 
 @pytest.mark.parametrize("relpath,slots", _STANDARD_SITES, ids=[s[0] for s in _STANDARD_SITES])
 def test_standard_block_stamped_verbatim(relpath, slots):
@@ -93,6 +108,27 @@ def test_standard_block_stamped_verbatim(relpath, slots):
     assert block in body, (
         f"{relpath} is out of sync with references/stage-exit-protocol.md "
         f"(standard block). Re-stamp the block or update the reference."
+    )
+
+
+@pytest.mark.parametrize("relpath,slots", _IN_STAGE_SITES, ids=[s[0] for s in _IN_STAGE_SITES])
+def test_in_stage_block_stamped_verbatim(relpath, slots):
+    """Each authoring stage contains the rendered canonical in-stage verify block verbatim."""
+    block = _render(_extract_block("in-stage-verify-block"),
+                    stage=slots["stage"], verify=slots["verify"])
+    body = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+    assert block in body, (
+        f"{relpath} is out of sync with references/stage-exit-protocol.md "
+        f"(in-stage verify block). Re-stamp the block or update the reference."
+    )
+
+
+def test_loop_has_no_in_stage_block():
+    """forge-5-loop re-stamps the standard exit block but NOT the in-stage verify block."""
+    body = (REPO_ROOT / "skills/forge-5-loop/SKILL.md").read_text(encoding="utf-8")
+    assert "In-stage auto-verify" not in body, (
+        "forge-5-loop must not stamp the in-stage verify block — it keeps its bespoke "
+        "interactive impl-verify offer (C4: leave loop as-is)."
     )
 
 

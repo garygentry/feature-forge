@@ -9,14 +9,16 @@ alwaysApply: false
 
 Apply fixes from the most recent forge-verify findings document, with step-level tracking for crash recovery.
 
-Usually invoked by the user, but the `/feature-forge:forge` navigator may also invoke this skill
-automatically when `autoFix: true` is configured **and** its preconditions hold (the findings
-document has zero unresolved decision points, the working tree is clean, and a mandatory re-verify
-passes afterward). The **fix application** below is identical either way — this skill is not
-"auto-aware" about *applying* findings; it always applies the latest findings document. The
-navigator owns the gating decisions, including the closing re-verify: the Step 6 gate is
-presented **only on a direct invocation**, because under an `autoFix` chain the navigator runs the
-mandatory re-verify itself.
+Usually invoked by the user, but an **`autoFix` caller** may also invoke this skill automatically
+when `autoFix: true` is configured **and** its preconditions hold (the findings document has zero
+unresolved decision points, the working tree is clean, and a mandatory re-verify passes afterward).
+Two callers drive that chain: an **authoring stage's in-stage auto-verify** (the primary path — see
+`references/stage-exit-protocol.md`, the in-stage verify block) and the **`/feature-forge:forge`
+navigator's catch-up** (§3b). The **fix application** below is identical either way — this skill is
+not "auto-aware" about *applying* findings; it always applies the latest findings document. The
+**caller** owns the gating decisions, including the closing re-verify: the Step 6 gate is presented
+**only on a direct invocation**, because under an `autoFix` chain the caller (stage skill or
+navigator) runs the mandatory re-verify itself.
 
 ## Prerequisites
 
@@ -76,7 +78,7 @@ Follow the Git Commit Protocol in `references/shared-conventions.md`.
 
 Fixes are applied and recorded (`findings-applied`), so the stage reads **fresh** in the navigator's ledger (Step 5 set `verifiedStageVersion` to the current version). A re-verify is nonetheless the only thing that *confirms* the fixes actually resolved the findings, so on a **direct/manual** `forge-fix` invocation, **prompt** it rather than leaving it as a passive suggestion — this is the same **Standard Verify Gate** the stage skills stamp (`references/stage-exit-protocol.md`).
 
-**Skip this gate when the navigator invoked you as part of an `autoFix` chain** (`skills/forge/SKILL.md` §3b step 2b): there the navigator owns the mandatory re-verify, so a second gate here would block the unattended flow or double the re-verify. Just return and let the navigator proceed.
+**Skip this gate when an `autoFix` caller invoked you as part of a chain** — the authoring stage's in-stage auto-verify (`references/stage-exit-protocol.md`, in-stage verify block) or the navigator's catch-up (`skills/forge/SKILL.md` §3b step 2b): there the caller owns the mandatory re-verify, so a second gate here would block the unattended flow or double the re-verify. Just return and let the caller proceed.
 
 On a direct invocation, present the gate using the host's question mechanism with these three options — but only when the host has a question mechanism **and** the clean-room path is available (the host's subagent mechanism plus a dispatchable `forge-verifier` subagent):
 - **Re-verify {feature} now** *(recommended)* — dispatch the clean-room `forge-verifier` subagent from this session in require-clean mode to confirm every finding is resolved; the digest returns here so any remaining issue keeps its context. One-time — it does **not** change config.
