@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-07-09
+
+This release folds the accumulated post-`0.11.0` work into a single plugin version and
+carries it to `npx` users via installer `0.2.5`. The headline is the **pipeline
+stabilization** series (#93–#97): the clean-environment failures surfaced by remote
+end-to-end testing are root-caused and fixed, and the deterministic computations the
+model previously performed in prose at stage exit move into read-only
+`forge-session.py` subcommands. Also included: in-stage auto-verify (#93) and the
+navigator / rauf-pin work previously carried only by the `0.2.3`/`0.2.4` installer
+publishes — `0.12.0` is the first plugin version to include all of it.
+
 ### Changed
 
 - **rauf pin advanced to `@garygentry/rauf@0.12.0`.** rauf shipped 0.12.0 (file-driven
@@ -38,6 +49,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pipeline stabilization series (#93–#97)** — the clean-environment reproduction and
+  the three fixes it drove:
+  - **Clean-env repro runbook, regression anchors, and a `doctor` subcommand** (#94).
+    `docs/clean-env-repro.md` gives executable repros of the two clean-environment
+    smoking guns (marketplace-cache installs the bootstrap prelude missed; topic-branch
+    pipeline state invisible from the default branch); `forge-session.py doctor` is a
+    one-shot ground-truth capture (resolved plugin root + version/commit, current vs.
+    recorded state branch, recency-ranked feature summary, backlog-path existence).
+  - **Marketplace-cache install resolution in root discovery** (#95, root cause A).
+    `forge-root.sh` now probes `~/.claude/plugins/cache/<mp>/<plugin>/<version>/`
+    (newest-`plugin.json`-first) ahead of the `plugins/*` glob, so a versioned cache
+    install always beats the marketplace clone instead of silently running scripts from
+    a different commit than the installed skills.
+  - **Cross-branch feature discovery + anti-fabrication guard** (#96, root cause B). New
+    read-only `forge-session.py discover-feature` scans local heads and remote-tracking
+    refs (surfacing unfetched branches with exact fetch/switch commands) so a session on
+    the default branch finds a feature whose state lives only on its topic branch; the
+    guard forbids narrating pipeline state that resolution/discovery did not establish.
+  - **Script-emitted stage exit + skill diet** (#97, root cause C). New read-only
+    `forge-session.py stage-exit` emits deterministic DIRECTIVES (effective auto-verify,
+    verify gate, freshness, next stage/command) and the exact NEXT-STEPS text terminated
+    by a fixed sentinel, replacing ~19-line stamped prose blocks the model had to
+    compute by hand in every stage skill.
+- **In-stage auto-verify** (#93) — when `autoVerify` is on, the authoring stage now
+  dispatches the clean-room `forge-verifier` at stage end (in-session, after the artifact
+  commit and before the exit block), chaining `forge-fix` + mandatory re-verify under
+  `autoFix`, instead of deferring to the navigator after a `/clear`. Honors the
+  verify-before-clear principle and closes the gap where a direct next-stage invocation
+  silently skipped a pending verify.
 - **Forge navigator predictions and context-window awareness** (#59) — recency-based
   feature prediction, next-stage auto-invoke, and context-window awareness in the forge
   pipeline skills.
@@ -48,8 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--ndjson` into the state dir (rauf self-persists and rotates that file).
 - **Inferred context window auto-bumps to 1M** when usage exceeds 200k (#60).
 
-> These pipeline/skill changes (#59–#62) ship to `npx @garygentry/feature-forge` users
-> via the re-bundled `adapters/` tree carried by the `0.2.3` installer publish.
+> All of the above ships to `npx @garygentry/feature-forge` users via the re-bundled
+> `adapters/` tree carried by the **`0.2.5`** installer publish — which supersedes the
+> `0.2.3`/`0.2.4` publishes and is the first installer to carry the pipeline
+> stabilization series (#93–#97).
 
 ## [0.11.0] — 2026-06-26
 

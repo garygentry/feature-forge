@@ -9,7 +9,7 @@
       "name": "feature-forge",
       "source": ".",
       "description": "End-to-end feature development pipeline: PRD \u2192 tech spec \u2192 implementation specs \u2192 backlog \u2192 documentation, with verification gates, pipeline state tracking, and specialized subagents for verification and codebase research.",
-      "version": "0.11.0"
+      "version": "0.12.0"
     }
   ]
 }
