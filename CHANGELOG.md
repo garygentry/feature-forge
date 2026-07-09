@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Navigator exit convergence: one resolved verify-gate + present-once discipline
+  (chunk 5b).** `rank-features` rows now carry a single `verifyGate` classification
+  (`none` / `auto` / `standard`) computed once by the ranker (mirroring `stage-exit`'s
+  directive), so the navigator reads the resolved gate instead of re-deriving it from
+  `verifyPending` + `autoVerify` in prose. `skills/forge/SKILL.md` §3 now enforces
+  **present the gate exactly once and act only on the chosen option — never also narrate
+  the not-taken branch** (e.g. never print the "start in a clean session" recommendation
+  and *then* auto-invoke the next stage in the same session): the `AskUserQuestion` answer
+  is the single decision. New `verifyGate` matrix tests in `tests/test_auto_verify.py`.
+  (Deferred: migrating `forge-5-loop`'s bespoke post-loop exit block onto `stage-exit` —
+  the loop is at its body-size cap and its exit is loop-specific; tracked as a follow-up.)
+
 ### Added
 
 - **Cross-branch resolution: `discover-feature --all` + branch reconciliation (chunks 5c
