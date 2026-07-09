@@ -274,3 +274,37 @@ def test_rank_features_invalid_keys_surfaced(tmp_path: Path) -> None:
     config.write_text(json.dumps({"autoVerifyStages": {"forge-1-prod": True}}))
     payload = _rank(specs, config)
     assert payload["invalidAutoVerifyKeys"] == ["forge-1-prod"]
+
+
+# ── verifyGate: single resolved gate classification (5b) ────────────────────
+
+
+def test_rank_features_verify_gate_none_when_fresh(tmp_path: Path) -> None:
+    """A fresh verify → gate `none` (nothing outstanding)."""
+    specs = tmp_path / "specs"
+    _write_state(specs, "a", _completed_prd_state({"status": "passed", "verifiedStageVersion": 1}))
+    row = _rank(specs)["active"][0]
+    assert row["verifyPending"] is False
+    assert row["verifyGate"] == "none"
+
+
+def test_rank_features_verify_gate_standard_when_pending_no_autoverify(tmp_path: Path) -> None:
+    """Verify outstanding + auto-verify off → gate `standard` (the §3 gate)."""
+    specs = tmp_path / "specs"
+    _write_state(specs, "a", _completed_prd_state(None))  # prd never verified
+    row = _rank(specs)["active"][0]
+    assert row["verifyPending"] is True
+    assert row["autoVerify"] is False
+    assert row["verifyGate"] == "standard"
+
+
+def test_rank_features_verify_gate_auto_when_pending_and_autoverify(tmp_path: Path) -> None:
+    """Verify outstanding + auto-verify on → gate `auto` (§2b catch-up runs it)."""
+    specs = tmp_path / "specs"
+    _write_state(specs, "a", _completed_prd_state(None))
+    config = tmp_path / "forge.config.json"
+    config.write_text(json.dumps({"autoVerify": True}))
+    row = _rank(specs, config)["active"][0]
+    assert row["verifyPending"] is True
+    assert row["autoVerify"] is True
+    assert row["verifyGate"] == "auto"

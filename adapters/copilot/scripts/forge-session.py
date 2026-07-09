@@ -137,6 +137,7 @@ class FeatureRow(TypedDict):
     verifyState: str
     autoVerify: bool
     autoFix: bool
+    verifyGate: str
 
 
 class UsageError(Exception):
@@ -359,6 +360,16 @@ def build_rows(specs_dir: Path, config: dict | None = None) -> list[FeatureRow]:
             "verifyState": vlabel,
             "autoVerify": effective_auto_verify,
             "autoFix": global_auto_fix and effective_auto_verify,
+            # Single resolved verify-gate classification (5b — one exit computation,
+            # mirroring stage-exit's `verifyGate`): the navigator reads this instead of
+            # re-deriving from verifyPending + autoVerify in prose. `auto` = the §2b
+            # catch-up runs it unattended; `standard` = the §3 gate (degrades to
+            # manual-print on a non-Claude host); `none` = nothing outstanding.
+            "verifyGate": (
+                "none" if not verify_pending
+                else "auto" if effective_auto_verify
+                else "standard"
+            ),
         })
     # Sort by updatedAt desc; rows without a parseable timestamp sort last.
     rows.sort(
