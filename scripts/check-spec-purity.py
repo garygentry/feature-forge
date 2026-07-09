@@ -129,7 +129,8 @@ RESIDUAL_VAR_EXEMPT: tuple[str, ...] = (
 # §3 — the canonical bootstrap prelude (REQ-RES-05). Byte-identical to the
 # fenced block in references/portable-root.md and BOOTSTRAP_PRELUDE in 00 §3.
 BOOTSTRAP_PRELUDE: str = (
-    'R="$(bash -c \'for d in "$HOME"/.claude/skills/feature-forge '
+    'R="$(bash -c \'for d in "${CLAUDE_PLUGIN_ROOT:-}" '
+    '"$HOME"/.claude/skills/feature-forge '
     '"$HOME"/.claude/plugins/cache/*/feature-forge/* '
     '"$HOME"/.claude/plugins/*/feature-forge '
     '"$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do '
@@ -141,6 +142,15 @@ BOOTSTRAP_PRELUDE: str = (
 #: and the documentary occurrences in references/vendor-construct-inventory.md are
 #: skipped via RESIDUAL_VAR_EXEMPT; other exempt loci fall outside the canonical globs.
 _RESIDUAL_VAR: str = "${CLAUDE_PLUGIN_ROOT}"
+
+#: Rule 3 detects the variable by PREFIX so both the bare `${CLAUDE_PLUGIN_ROOT}`
+#: and the default-form `${CLAUDE_PLUGIN_ROOT:-}` are caught — the `:-}` form must
+#: not be an escape hatch. The ONE sanctioned canonical use is the bootstrap
+#: prelude's first-hint (`${CLAUDE_PLUGIN_ROOT:-}`, REQ-RES-05), which the scan
+#: allows by stripping the byte-pinned BOOTSTRAP_PRELUDE before matching (rule 5
+#: pins that prelude byte-identical, so the strip is exact). Any OTHER occurrence
+#: in a canonical surface — including a stray `:-}` form — still trips.
+_RESIDUAL_VAR_PREFIX: str = "${CLAUDE_PLUGIN_ROOT"
 
 #: First-discoverable-resolver inner line — marks a prelude occurrence to verify.
 _PRELUDE_SENTINEL: str = (
@@ -456,7 +466,12 @@ def check_no_residual_var(root: Path) -> list[Violation]:
         text = _read_text(path)
         if text is None:
             continue
-        if _RESIDUAL_VAR in text:
+        # Strip the sanctioned bootstrap-prelude first: its `${CLAUDE_PLUGIN_ROOT:-}`
+        # first-hint (REQ-RES-05) is the one allowed canonical use, and rule 5 pins
+        # the prelude byte-identical so the removal is exact. Any residual after the
+        # strip — bare `}` or default `:-}` form — is unsanctioned and trips.
+        scanned = text.replace("\r\n", "\n").replace(BOOTSTRAP_PRELUDE, "")
+        if _RESIDUAL_VAR_PREFIX in scanned:
             violations.append(Violation(rel, Rule.NO_RESIDUAL_VAR, VR_RESIDUAL_VAR))
     return violations
 

@@ -70,6 +70,70 @@ def _make_cache_install(home: Path, version: str = "9.9.9") -> Path:
     return root
 
 
+def _make_install_at(dirpath: Path) -> Path:
+    """Fabricate a minimal valid bundle (a runnable forge-root.sh + manifest) at ``dirpath``."""
+    (dirpath / "scripts").mkdir(parents=True)
+    (dirpath / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+    (dirpath / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "feature-forge", "version": "9.9.9"}) + "\n"
+    )
+    resolver_copy = dirpath / "scripts" / "forge-root.sh"
+    shutil.copy(RESOLVER, resolver_copy)
+    resolver_copy.chmod(resolver_copy.stat().st_mode | stat.S_IXUSR)
+    return dirpath
+
+
+def _run_prelude(home: Path, workdir: Path, *, hint: str) -> subprocess.CompletedProcess[str]:
+    """Run the byte-pinned bootstrap prelude with ``$HOME``/``CLAUDE_PLUGIN_ROOT`` controlled."""
+    script = _bootstrap_prelude() + '\nprintf \'%s\\n\' "$R"'
+    return subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=str(workdir),
+        env={**os.environ, "HOME": str(home), "CLAUDE_PLUGIN_ROOT": hint, "FEATURE_FORGE_ROOT": ""},
+    )
+
+
+def test_prelude_first_hint_resolves_via_claude_plugin_root(tmp_path: Path) -> None:
+    """The `${CLAUDE_PLUGIN_ROOT:-}` first-hint resolves a bundle NO glob can reach (Chunk 2b).
+
+    The bundle lives outside ``$HOME`` (unreachable by every ``$HOME``/``./`` candidate),
+    and ``$HOME`` holds no install — so the prelude can only find ``forge-root.sh`` via
+    the hint. Proves the hint is honored as the first candidate on any Claude layout.
+    """
+    bundle = _make_install_at(tmp_path / "opt" / "feature-forge")
+    home = tmp_path / "home"
+    home.mkdir()  # deliberately empty — no install reachable by the globs
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+
+    result = _run_prelude(home, workdir, hint=str(bundle))
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(bundle)
+
+
+def test_prelude_stale_hint_is_skipped(tmp_path: Path) -> None:
+    """A hint pointing at a dir without ``forge-root.sh`` is skipped; resolution falls through.
+
+    ``CLAUDE_PLUGIN_ROOT`` names a stale dir (no ``scripts/forge-root.sh``); the only real
+    install is the marketplace cache under ``$HOME``. The prelude must skip the dead hint
+    and resolve the cache install — the additive hint never breaks existing resolution.
+    """
+    home = tmp_path / "home"
+    install_root = _make_cache_install(home)
+    stale = tmp_path / "stale"
+    stale.mkdir()  # exists but carries no scripts/forge-root.sh
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+
+    result = _run_prelude(home, workdir, hint=str(stale))
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(install_root)
+
+
 def test_prelude_resolves_marketplace_cache_install(tmp_path: Path) -> None:
     """The canonical prelude resolves a marketplace-cache install.
 

@@ -768,6 +768,14 @@ _HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     # uses Claude's `/clear` wording. Non-Claude bundles must ask for the
     # host-neutral wording instead — translate the flag value, not just the prose.
     ("--host claude", "--host generic"),
+    # Bootstrap-prelude root hint: canon uses Claude's `${CLAUDE_PLUGIN_ROOT:-}` as
+    # the prelude's first resolver candidate. Non-Claude hosts set the neutral
+    # `${FEATURE_FORGE_ROOT}` instead (forge-root.sh already prefers it), so translate
+    # the hint in emitted bodies — otherwise the host-neutrality suite flags a residual
+    # `CLAUDE_PLUGIN_ROOT` in the non-Claude prelude. The verbatim forge-root.sh copy
+    # keeps its own sanctioned `${CLAUDE_PLUGIN_ROOT}` fallback (it is not body-translated).
+    ("${CLAUDE_PLUGIN_ROOT:-}", "${FEATURE_FORGE_ROOT:-}"),
+    ("${CLAUDE_PLUGIN_ROOT}", "${FEATURE_FORGE_ROOT}"),
 )
 
 # subagent_type="forge-verifier" → "the forge-verifier custom agent"
