@@ -104,7 +104,7 @@ green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge
 - **Stack** — `stack`, `typeCheckCommand`, `testCommand`: null until Stage 2 auto-detects them.
 - **Context** — `contextWindowTokens`, `contextWarnThreshold` (0.7): the navigator warns to
   clear your session / start a fresh session past this fullness. On 1M-context models set `contextWindowTokens` explicitly.
-- **Verification** — `autoVerify` (false), `autoVerifyStages`, `autoFix` (false).
+- **Verification** — `autoVerify` (false; when on, each authoring stage verifies in-stage before its exit block), `autoVerifyStages`, `autoFix` (false).
 - **Stage flow** — `autoInvokeNextStage` (true on Claude, print-only elsewhere).
 - **Loop** — `loopRunner` block (binary, command templates, version gate, agent selection);
   defaults to **rauf** when absent. `workspaces` supports monorepos.
@@ -114,8 +114,11 @@ green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge
 `forge-verify <feature>` dispatches the read-only `forge-verifier` subagent to find gaps,
 inconsistencies, and quality issues; it writes a findings doc, and `forge-fix` applies them.
 Because verification runs in a **fresh subagent**, it's clean-room by construction — it never
-needs a clear your session / start a fresh session, and it's safe to automate with `autoVerify: true` (fixing stays human-gated
-unless `autoFix: true`). **Always verify before Stage 5 (the loop)** — catching errors in
+needs a clear your session / start a fresh session, and it's safe to automate with `autoVerify: true`. When on, the just-completed
+authoring stage runs verify **in-stage** — in the same session, right before its exit block — so
+the digest and any fix land where the context still exists (the navigator only catches up if a
+host couldn't run it clean-room). Fixing stays human-gated unless `autoFix: true`. The cost is one
+extra clean-room verify per stage. **Always verify before Stage 5 (the loop)** — catching errors in
 specs/backlog is far cheaper than mid-loop. Verifying after PRD and after backlog is also
 recommended. A findings pass is fresh only while the artifact `version` matches what was
 verified; revise upstream and downstream re-verifies.
