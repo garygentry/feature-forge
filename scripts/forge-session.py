@@ -9,6 +9,8 @@ root navigator:
         [--threshold F] [--json]
     python3 forge-session.py doctor [--specs-dir DIR] [--config FILE] [--json]
     python3 forge-session.py discover-feature NAME [--specs-dir DIR] [--json]
+    python3 forge-session.py stage-exit --feature F --stage S [--specs-dir DIR] \
+        [--config FILE] [--epic E] [--next-feature N] [--host claude|generic] [--json]
 
 `rank-features` scans the specs tree for feature-shaped directories (those that
 directly contain a `.pipeline-state.json`, in both the flat
@@ -42,6 +44,13 @@ concluding it was never started. When nothing is found locally it also asks
 fetched, and emits the exact `git fetch`/`git switch` commands a caller could
 run. It is strictly read-only — it never checks anything out itself — and
 like `doctor` it always exits 0 and degrades to data.
+
+`stage-exit` computes everything an authoring stage's closing used to derive
+in prose (the Scripted Stage Exit, `references/stage-exit-protocol.md`):
+the DIRECTIVES (whether the in-stage auto-verify runs, which verify gate to
+present, autoFix eligibility, the verify and next-stage commands) plus the
+exact sentinel-terminated NEXT-STEPS block the skill must print verbatim as
+its absolute last output. Deterministic and read-only; always exits 0.
 
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
 matching the conventions of `scripts/epic-manifest.py`.
@@ -929,6 +938,240 @@ def _print_discover(payload: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Scripted Stage Exit
+# --------------------------------------------------------------------------- #
+
+#: Authoring stages whose closing runs stage-exit (the loop keeps bespoke exits).
+EXIT_STAGES: Final[tuple[str, ...]] = (
+    "forge-0-epic",
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+)
+
+#: Stage id -> the noun phrase gate wording uses (the old {stage} stamp slot).
+STAGE_NOUN: Final[dict[str, str]] = {
+    "forge-0-epic": "the epic decomposition",
+    "forge-1-prd": "the PRD",
+    "forge-2-tech": "the tech spec",
+    "forge-3-specs": "the implementation specs",
+    "forge-4-backlog": "the backlog",
+}
+
+#: Verify token per exit stage. Extends the production map with the epic stage,
+#: whose verify entry is recorded under ``forge-verify-epic``.
+_EXIT_VERIFY_TOKEN: Final[dict[str, str]] = {
+    **VERIFY_TOKEN_BY_STAGE,
+    "forge-0-epic": "epic",
+}
+
+#: The stage each exit hands off to when pipeline state cannot say better.
+_EXIT_NEXT_STAGE: Final[dict[str, str]] = {
+    "forge-0-epic": "forge-1-prd",
+    "forge-1-prd": "forge-2-tech",
+    "forge-2-tech": "forge-3-specs",
+    "forge-3-specs": "forge-4-backlog",
+    "forge-4-backlog": "forge-5-loop",
+}
+
+#: The fixed final line of the NEXT-STEPS block. The stamp instructs the skill
+#: to print the block verbatim as its absolute last output — nothing after this.
+NEXT_STEPS_SENTINEL: Final = "─ forge: end of stage ─"
+
+
+def _verify_state_for(state: dict, stage: str) -> str:
+    """Classify THIS stage's verify freshness (stage-scoped ``verify_state``).
+
+    Same labels as ``verify_state`` — fresh / stale / failing / never /
+    skipped / none — but for the given stage rather than the most-recently
+    completed one, because stage-exit runs inside the stage that just closed.
+    """
+    token = _EXIT_VERIFY_TOKEN.get(stage)
+    if token is None:
+        return "none"
+    entry = _verify_entry(state, f"forge-verify-{token}")
+    status = entry.get("status")
+    if status == "skipped":
+        return "skipped"
+    if status == "findings-reported":
+        return "failing"
+    if status not in _VERIFY_RESOLVED:
+        return "never"
+    verified_version = entry.get("verifiedStageVersion")
+    stage_version = _stage_version(state, stage)
+    if (
+        isinstance(verified_version, int)
+        and stage_version is not None
+        and verified_version == stage_version
+    ):
+        return "fresh"
+    return "stale"
+
+
+def _resolve_feature_dir(specs_dir: Path, feature: str, epic: str | None) -> Path:
+    """Best-effort feature dir (flat, else unique nested, else flat literal).
+
+    stage-exit tolerates an unresolvable dir — the state read downgrades to
+    ``{}`` and every directive still computes from defaults.
+    """
+    if epic:
+        return specs_dir / epic / feature
+    flat = specs_dir / feature
+    if (flat / PIPELINE_STATE_FILENAME).is_file():
+        return flat
+    if specs_dir.is_dir():
+        nested = [
+            p for p in specs_dir.glob(f"*/{feature}")
+            if (p / PIPELINE_STATE_FILENAME).is_file()
+        ]
+        if len(nested) == 1:
+            return nested[0]
+    return flat
+
+
+def _next_steps_block(next_command: str, host: str) -> str:
+    """Render the sentinel-terminated NEXT-STEPS block for the given host.
+
+    The Claude wording uses the literal ``/clear`` slash-command; the generic
+    wording is host-neutral (matching the adapter build's host-term table, so
+    a non-Claude bundle invoking ``--host generic`` never instructs a fake
+    slash-command).
+    """
+    if host == "claude":
+        clear_line = (
+            "1. `/clear` — recommended unconditionally at this stage boundary; "
+            "every artifact is on disk, so the work survives the clear. "
+            "I can't `/clear` for you — you have to run it yourself."
+        )
+        next_line = (
+            f"2. Then run `{next_command}` in the fresh session — or re-run "
+            "`/feature-forge:forge` to let the navigator resume from disk."
+        )
+    else:
+        clear_line = (
+            "1. Clear your session / start a fresh session — recommended "
+            "unconditionally at this stage boundary; every artifact is on "
+            "disk, so the work survives it."
+        )
+        next_line = (
+            f"2. Then run `{next_command}` in the fresh session — or re-run "
+            "the forge navigator skill to resume from disk."
+        )
+    return "\n".join(["**Next steps**", clear_line, next_line, NEXT_STEPS_SENTINEL])
+
+
+def stage_exit(
+    feature: str,
+    stage: str,
+    specs_dir: Path,
+    config_path: Path,
+    epic: str | None,
+    host: str,
+    next_feature: str | None,
+) -> dict:
+    """Compute the Scripted Stage Exit payload: DIRECTIVES + NEXT-STEPS block.
+
+    Directive semantics (the contract in ``references/stage-exit-protocol.md``):
+
+    - ``runInStageVerify`` — the effective auto-verify (per-stage override,
+      else global; strict-true) is on AND this stage's verify is not already
+      resolved (fresh/skipped). The skill then dispatches the clean-room
+      verify in-session (principle #2: verify before the clear).
+    - ``autoFixEligible`` — ``autoFix`` is strict-true AND the in-stage verify
+      runs AND the working tree is clean. Findings-level preconditions (zero
+      unresolved decisions) remain the skill's runtime check.
+    - ``verifyGate`` — ``none`` when verify is resolved or the in-stage run
+      covers it; ``standard`` when auto-verify is off and verification is
+      outstanding on a host with a question mechanism + clean-room path
+      (``--host claude``); ``manual-print`` for the same state on a generic
+      host (print ``verifyCommand`` instead of presenting the gate).
+    - ``nextStage``/``nextCommand`` — from pipeline state when it already
+      records this stage complete (first non-complete production stage), else
+      the fixed successor. ``--next-feature`` names the first actionable
+      feature for the epic handoff; without it the runtime placeholder
+      ``{first-actionable-feature}`` passes through for the skill to resolve.
+
+    Read-only, deterministic, exit 0 — errors degrade to defaults, never
+    crash a stage closing.
+    """
+    config = _load_config(config_path)
+    feature_dir = _resolve_feature_dir(specs_dir, feature, epic)
+    state = _read_state(feature_dir / PIPELINE_STATE_FILENAME)
+
+    git_repo = _git_output(["rev-parse", "--git-dir"]) is not None
+    clean_tree: bool | None = None
+    if git_repo:
+        porcelain = _git_output(["status", "--porcelain"])
+        clean_tree = porcelain is None or porcelain == ""
+
+    verify_label = _verify_state_for(state, stage)
+    resolved = verify_label in ("fresh", "skipped")
+    effective_auto_verify = auto_verify_for(config, stage)
+    run_in_stage = effective_auto_verify and not resolved
+    auto_fix_eligible = (
+        config.get("autoFix") is True and run_in_stage and clean_tree is True
+    )
+    if resolved or effective_auto_verify:
+        verify_gate = "none"
+    elif host == "claude":
+        verify_gate = "standard"
+    else:
+        verify_gate = "manual-print"
+
+    next_stage_id = _EXIT_NEXT_STAGE.get(stage)
+    state_next = next_stage(state)
+    if (
+        stage in PRODUCTION_STAGES
+        and state_next is not None
+        and PRODUCTION_STAGES.index(state_next) > PRODUCTION_STAGES.index(stage)
+    ):
+        # State records this stage complete AND its walk lands beyond it —
+        # trust it (it skips stages already completed out of order). A missing
+        # or behind-the-stage walk (state not yet flushed, corrupt file) falls
+        # back to the fixed successor, never to an earlier stage.
+        next_stage_id = state_next
+    next_arg = next_feature or (
+        "{first-actionable-feature}" if stage == "forge-0-epic" else feature
+    )
+    next_command = f"/feature-forge:{next_stage_id} {next_arg}" if next_stage_id else None
+
+    directives = {
+        "stage": stage,
+        "stageNoun": STAGE_NOUN.get(stage, stage),
+        "feature": feature,
+        "runInStageVerify": run_in_stage,
+        "verifyGate": verify_gate,
+        "autoFixEligible": auto_fix_eligible,
+        "verifyState": verify_label,
+        "verifyCommand": f"/feature-forge:forge-verify {feature}",
+        "autoVerifyEffective": effective_auto_verify,
+        "nextStage": next_stage_id,
+        "nextCommand": next_command,
+        "invalidAutoVerifyKeys": invalid_auto_verify_keys(config),
+        "gitRepo": git_repo,
+        "cleanTree": clean_tree,
+        "host": host,
+    }
+    return {
+        "directives": directives,
+        "nextSteps": _next_steps_block(next_command or "/feature-forge:forge", host),
+        "sentinel": NEXT_STEPS_SENTINEL,
+    }
+
+
+def _print_stage_exit(payload: dict) -> None:
+    """Print DIRECTIVES then the NEXT-STEPS block (the skill-facing form)."""
+    print("DIRECTIVES:")
+    print(json.dumps(payload["directives"], indent=2, ensure_ascii=False))
+    print(
+        "NEXT-STEPS (print this block verbatim as your absolute last output — "
+        "nothing after the sentinel):"
+    )
+    print(payload["nextSteps"])
+
+
+# --------------------------------------------------------------------------- #
 # CLI dispatch
 # --------------------------------------------------------------------------- #
 
@@ -991,6 +1234,22 @@ def main() -> int:
     p_disc.add_argument("--specs-dir", default="./specs", help="Specs directory")
     p_disc.add_argument("--json", action="store_true", dest="json_output")
 
+    p_exit = sub.add_parser(
+        "stage-exit", help="Emit the Scripted Stage Exit directives + NEXT-STEPS block"
+    )
+    p_exit.add_argument("--feature", required=True,
+                        help="Feature name (the epic name for forge-0-epic)")
+    p_exit.add_argument("--stage", required=True, choices=EXIT_STAGES,
+                        help="The just-completed authoring stage")
+    p_exit.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_exit.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
+    p_exit.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_exit.add_argument("--next-feature", default=None, dest="next_feature",
+                        help="First actionable feature (epic handoff next-command arg)")
+    p_exit.add_argument("--host", default="claude", choices=("claude", "generic"),
+                        help="Host wording for the NEXT-STEPS block")
+    p_exit.add_argument("--json", action="store_true", dest="json_output")
+
     args = parser.parse_args()
 
     try:
@@ -1036,6 +1295,22 @@ def main() -> int:
                 print(json.dumps(payload, indent=2, ensure_ascii=False))
             else:
                 _print_discover(payload)
+            return 0
+
+        if args.cmd == "stage-exit":
+            payload = stage_exit(
+                args.feature,
+                args.stage,
+                Path(args.specs_dir),
+                Path(args.config),
+                args.epic,
+                args.host,
+                args.next_feature,
+            )
+            if args.json_output:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                _print_stage_exit(payload)
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")

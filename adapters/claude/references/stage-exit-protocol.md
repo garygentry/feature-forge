@@ -4,10 +4,8 @@ The single source of truth for how every forge **authoring** stage closes. It
 replaces the old ad-hoc "Next steps:" bullet lists with one fixed, correctly-ordered
 sequence: **verify (if missing or stale) → `/clear` → run the next command.**
 
-Two principles this block encodes (do not relitigate — they are locked product
-decisions). One narrower *implementation* choice — that auto-verify was navigator-only —
-was **never** a principle and **has been reversed**: auto-verify now runs **in-stage** so
-it finally obeys principle #2 the way manual verify always has.
+Two principles this protocol encodes (do not relitigate — they are locked product
+decisions):
 
 1. **Clearing is recommended on its own merits at every stage boundary** — a clean
    start for the next stage — *not* as a proxy for a full context window. Window
@@ -17,80 +15,157 @@ it finally obeys principle #2 the way manual verify always has.
    manual **or** auto. Verify's clean-room subagent is dispatched from the *current*
    session, so the findings digest and any fix decision land where the context to act on
    them still exists. This holds for auto-verify too: the stage skill dispatches the
-   clean-room verify (and any autoFix) at stage end, in-session, before the exit block —
-   it is **no longer deferred to the navigator**, which runs *after* the `/clear` with
-   none of the authoring context. Clearing first throws that context away.
+   clean-room verify (and any autoFix) at stage end, in-session, before the exit — it is
+   **not** deferred to the navigator, which runs *after* the `/clear` with none of the
+   authoring context. Clearing first throws that context away.
 
 ## How this file is used
 
-The blocks below are **stamped verbatim** into each stage skill's closing (a runtime
-`references/` include would not survive the adapter build, which flattens skills into
-`adapters/<agent>/`). A drift-guard test (`tests/test_stage_exit_protocol.py`) asserts
-each stamp site still contains its block, so an edit here must be mirrored into every
-stamp site (and vice-versa).
+The five authoring stages (`forge-0-epic` … `forge-4-backlog`) close with the
+**Scripted Stage Exit**: a short stamped block (below) that runs
+`forge-session.py stage-exit`, obeys the DIRECTIVES it prints per the **directive
+contract** in this file, and prints the script-emitted NEXT-STEPS block verbatim as the
+absolute last output. All the conditional logic the old prose blocks asked the model to
+compute (effective auto-verify, freshness collapse, gate selection, host wording) now
+lives in the script, deterministically; only genuinely interactive work (clean-room
+subagent dispatch, `AskUserQuestion` gates) remains prose — specified once here, not
+per stage.
 
-Each stamp site fills three slots; everything else is identical across sites:
+The loop (`forge-5-loop`) keeps its bespoke exits: it stamps the **standard block**
+(step-6 epic-member handoff) and the **warm variant** (all-done closing) below,
+verbatim. `forge-6-docs` is **terminal** — it stamps no exit block.
 
-- `{stage}` — the just-completed stage as a lowercase noun phrase (e.g. `the PRD`,
-  `the tech spec`, `the backlog`). Always used mid-sentence, never sentence-initial.
-- `{verify-command}` — the verify command for that stage (e.g.
-  `` `/feature-forge:forge-verify {feature}` ``).
-- `{next-command}` — the command that starts the next stage (e.g.
-  `` `/feature-forge:forge-2-tech {feature}` ``).
-
-`{feature}` / `{epic}` and similar remain runtime placeholders that pass through
-untouched — they are resolved by the skill at run time, not by this template.
+A drift-guard test (`tests/test_stage_exit_protocol.py`) asserts each stamp site still
+contains its block, so an edit here must be mirrored into every stamp site (and
+vice-versa).
 
 ## Stamp sites
 
-| Stamp site | Block | `{stage}` |
-|---|---|---|
-| `forge-0-epic` (epic → first PRD) | standard | the epic decomposition |
-| `forge-1-prd` | standard | the PRD |
-| `forge-2-tech` | standard | the tech spec |
-| `forge-3-specs` | standard | the implementation specs |
-| `forge-4-backlog` | standard | the backlog |
-| `forge-5-loop` (step-6 epic-member handoff) | standard | feature `{feature}`'s loop |
-| `forge-5-loop` (all-done closing → docs) | warm | — |
+| Stamp site | Block |
+|---|---|
+| `forge-0-epic` … `forge-4-backlog` | scripted-stage-exit stamp |
+| `forge-5-loop` (step-6 epic-member handoff) | standard |
+| `forge-5-loop` (all-done closing → docs) | warm |
 
-`forge-6-docs` is **terminal** — it stamps no exit block. It is the *target* of the
-warm variant, not a stamp site.
+The scripted stamp fills one build-time slot, `{stage-exit-args}` — the per-stage
+argument list (e.g. `--feature "{feature}" --stage forge-2-tech`; the epic stage passes
+`--feature "{epic}" --stage forge-0-epic --next-feature "{first-actionable-feature}"`).
+`{feature}` / `{epic}` / `{specsDir}` / `{first-actionable-feature}` remain runtime
+placeholders the skill resolves before running the command, exactly as elsewhere.
 
-## In-stage verify(+fix) run
+<!-- BEGIN: scripted-stage-exit-stamp -->
+**Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 
-Stamp the **in-stage verify block** below into the five authoring stages
-(`forge-0-epic`, `forge-1-prd`, `forge-2-tech`, `forge-3-specs`, `forge-4-backlog`),
-**immediately after the stage's artifact commit and immediately before the standard exit
-block**. It is the machinery that lets auto-verify obey principle #2: when `autoVerify` is
-effective for the stage, the stage skill runs the clean-room verify (and, under `autoFix`,
-the fix chain) *in-session*, so the standard block's step 1 collapses to "already verified
-in this session." It carries the same host / clean-room fallback the navigator has (C7): if
-the clean-room path is unavailable it leaves verify **pending** and prints the command, so
-the navigator catch-up (`skills/forge/SKILL.md` §2b/§3b) can still fire later.
+```bash
+R="$(bash -c 'for d in "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" stage-exit {stage-exit-args} --specs-dir "{specsDir}" --host claude
+```
 
-The loop (`forge-5-loop`) does **not** stamp this block — it keeps its bespoke interactive
-impl-verify offer (Step 5b / 6.1) and only re-stamps the standard exit block. This block
-fills the same two slots as the standard block (`{stage}`, `{verify-command}`).
+Obey the DIRECTIVES it prints, in order, per the directive contract: `runInStageVerify: true` → dispatch the in-stage clean-room verify now (honoring `autoFixEligible`); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user; non-empty `invalidAutoVerifyKeys` → print a one-line warning. Then **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.**
+<!-- END: scripted-stage-exit-stamp -->
 
-<!-- BEGIN: in-stage-verify-block -->
-**In-stage auto-verify {stage} — run this immediately after the artifact commit above and before the Stage Exit Protocol below, but only when `autoVerify` is effective for this stage.** Compute the effective setting exactly as the navigator does: a per-stage override in `autoVerifyStages` wins, else the global `autoVerify` (default off). When it is **off**, skip this whole step — the exit block's manual verify gate covers that path. When it is **on**, verify {stage} **now, in this session** (principle #2 applied to auto-verify: the digest and any fix decision land here, where the authoring context still exists — not deferred to a post-`/clear` navigator):
+## Directive contract
 
-1. **Precondition — clean tree.** The artifact commit above must already have landed so the tree is clean. If `gitCommitAfterStage` is off or the tree is dirty, autoFix's clean-tree precondition cannot hold: still run verify for the digest, but treat any findings as **not** autoFix-eligible and go straight to the digest gate (step 4, second bullet).
-2. **Clean-room verify (require-clean).** Dispatch the clean-room `forge-verifier` subagent from this session in require-clean mode — the same path the navigator uses (`skills/forge-verify/SKILL.md`). It inherits none of this session's context, so no `/clear` is needed and only a compact digest returns. **Clean-room unavailable** (no `Agent` tool, `forge-verifier` not dispatchable, or a sentinel returned): do **not** run inline — leave verify **pending** so the navigator catch-up fires on a later Claude-host `/feature-forge:forge`, print `{verify-command}` for the user to run, and continue to the exit block.
-3. **Verify passed / no findings** → the fresh verify state is recorded by the clean-room run; continue to the exit block (its step 1 now collapses to "already verified in this session").
-4. **Verify found findings** →
-   - **`autoFix` is on AND preconditions hold** (findings document has **zero unresolved decision points** and the tree is clean) → chain `feature-forge:forge-fix` in-session (it owns its own commit + step tracking), then run a **mandatory re-verify** in require-clean mode. Continue to the exit block only if the re-verify passes. On any precondition miss, a forge-fix early stop, or a red re-verify, fall through to the digest gate below — never a silent partial mutation.
-   - **`autoFix` off (default), or preconditions failed** → surface a **compact findings digest** as text, then present the gate via `AskUserQuestion`: **Run `forge-fix` now** *(recommended — you are in-context and the digest is right here)* / **Clear + advance anyway** (leave the findings for later) / **Stop here**. Do **not** hard-stop and do **not** silently walk past. Act on the choice, then continue to the exit block.
-<!-- END: in-stage-verify-block -->
+`stage-exit` emits a DIRECTIVES object and a NEXT-STEPS block. The skill executes the
+directives **in this order**; the script has already computed every conditional, so a
+directive is an instruction, not a question to re-derive.
+
+### `invalidAutoVerifyKeys` (non-empty)
+
+Print a one-line warning first (e.g. "⚠️ forge.config.json `autoVerifyStages` has
+unknown keys: … — they are ignored; fix the typo").
+
+### `runInStageVerify: true` — in-stage auto-verify {stageNoun}
+
+Auto-verify is effective for this stage and verification is outstanding — verify **now,
+in this session** (principle #2 applied to auto-verify: the digest and any fix decision
+land here, where the authoring context still exists — not deferred to a post-`/clear`
+navigator):
+
+1. **Clean-room verify (require-clean).** Dispatch the clean-room `forge-verifier`
+   subagent from this session in require-clean mode — the same path the navigator uses
+   (`skills/forge-verify/SKILL.md`). It inherits none of this session's context, so no
+   `/clear` is needed and only a compact digest returns. **Clean-room unavailable** (no
+   `Agent` tool, `forge-verifier` not dispatchable, or a sentinel returned): do **not**
+   run inline — leave verify **pending** so the navigator catch-up fires on a later
+   Claude-host `/feature-forge:forge`, print the `verifyCommand` for the user to run,
+   and continue to the NEXT-STEPS block.
+2. **Verify passed / no findings** → the fresh verify state is recorded by the
+   clean-room run; continue to the NEXT-STEPS block.
+3. **Verify found findings** →
+   - **`autoFixEligible: true` AND the findings document has zero unresolved decision
+     points** → chain `feature-forge:forge-fix` in-session (it owns its own commit +
+     step tracking), then run a **mandatory re-verify** in require-clean mode. Continue
+     to the NEXT-STEPS block only if the re-verify passes. On any precondition miss, a
+     forge-fix early stop, or a red re-verify, fall through to the digest gate below —
+     never a silent partial mutation. (`autoFixEligible` already folds in the config
+     `autoFix` flag and the clean-tree precondition; a dirty tree or
+     `gitCommitAfterStage: false` arrives here as `false`.)
+   - **`autoFixEligible: false`, or unresolved decision points** → surface a **compact
+     findings digest** as text, then present the gate via `AskUserQuestion`: **Run
+     `forge-fix` now** *(recommended — you are in-context and the digest is right
+     here)* / **Clear + advance anyway** (leave the findings for later) / **Stop
+     here**. Do **not** hard-stop and do **not** silently walk past. Act on the choice,
+     then continue to the NEXT-STEPS block.
+
+### `verifyGate: "standard"` — the Standard Verify Gate
+
+Auto-verify is off for this stage and verification is outstanding (`verifyState` is
+`never`, `stale`, or `failing`). Verify **now, before clearing**, using
+`AskUserQuestion` with exactly these three options — but only when the host has a
+question mechanism **and** the clean-room path is available (the `Agent` tool plus a
+dispatchable `forge-verifier` subagent); otherwise degrade exactly as `manual-print`
+below:
+
+- **Verify {stageNoun} now** *(recommended)* — dispatch the clean-room `forge-verifier`
+  subagent from this session in require-clean mode; the digest returns here so any fix
+  decision keeps its context. One-time — it does **not** change config.
+- **Verify now + enable auto-verify going forward** — verify now **and** patch
+  `"autoVerify": true` into `forge.config.json` in place (preserve formatting and every
+  other key) so future stages verify automatically, no prompt. This complements the
+  `forge-init` opt-in. **Do not auto-commit this config change** — treat it like
+  `notes`: a user-facing edit the user commits on their own cadence, never folded into
+  a stage's artifact commit.
+- **Skip for now** — go straight to the NEXT-STEPS block without verifying. Record this
+  stage's verify status as `"skipped"` in pipeline state (mirroring the existing skip
+  handling) **only** on an explicit skip — a skip does not go stale.
+
+If verify runs and finds findings, handle them exactly as in the in-stage flow above
+(digest + `AskUserQuestion` gate; `autoFixEligible` applies unchanged).
+
+### `verifyGate: "manual-print"`
+
+Verification is outstanding but the host cannot present the gate or dispatch
+clean-room. Do **not** run verify inline — print the `verifyCommand` for the user to
+run (mirroring `autoInvokeNextStage`), offer the auto-verify enable as plain text only
+if a config write is possible, and continue to the NEXT-STEPS block. Verify state stays
+outstanding, so the navigator catch-up can fire later.
+
+### `verifyGate: "none"`
+
+Verification is already resolved (fresh or explicitly skipped) or the in-stage run
+above covers it. Say so in one line and continue to the NEXT-STEPS block.
+
+### The NEXT-STEPS block (always last)
+
+Print the script's NEXT-STEPS block **verbatim as your absolute last output**. Nothing
+follows its final sentinel line (`─ forge: end of stage ─`) — no caveats, no summary,
+no sign-off. The block already carries the `/clear` recommendation (host-aware wording
+via `--host`) and the exact next command, so trailing prose can only push the user's
+next action out of view.
 
 ---
 
 ## Standard block
 
-Stamp this at every authoring-stage boundary. It self-adapts: step 1's verify gate
-only fires when verification is actually outstanding, so at a boundary where verify
-already ran (or was explicitly skipped, or auto-verify is on) it silently collapses to
-just the `/clear` → next-command steps.
+Stamped at the loop's step-6 epic-member handoff (finishing feature A → starting
+feature B's PRD). It self-adapts: step 1's verify gate only fires when verification is
+actually outstanding, so at a boundary where verify already ran (or was explicitly
+skipped, or auto-verify is on) it silently collapses to just the `/clear` →
+next-command steps.
+
+Slots: `{stage}` (a lowercase noun phrase), `{verify-command}`, `{next-command}`.
 
 <!-- BEGIN: standard-exit-block -->
 **This stage is done — walk the user through the Stage Exit Protocol** before moving on. The order is fixed, and step 2 is something only the user can do:

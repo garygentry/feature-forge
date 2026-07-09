@@ -763,6 +763,11 @@ _HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     # so `` `/clear` `` collapses cleanly without leaving stray backticks.
     ("`/clear`", "clear your session / start a fresh session"),
     ("/clear", "clear your session / start a fresh session"),
+    # Scripted Stage Exit host flag: the canon stamp invokes
+    # `forge-session.py stage-exit … --host claude` so the emitted NEXT-STEPS block
+    # uses Claude's `/clear` wording. Non-Claude bundles must ask for the
+    # host-neutral wording instead — translate the flag value, not just the prose.
+    ("--host claude", "--host generic"),
 )
 
 # subagent_type="forge-verifier" → "the forge-verifier custom agent"
