@@ -28,6 +28,48 @@ python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}"
   manifest by hand. **Never auto-repair**, never offer an edit operation, and never proceed past
   this gate. Tell the user what is wrong and STOP.
 
+## Step E0-read — Surface Pending Epic Change Requests (backflow)
+
+Immediately after E1's validate gate passes, and **before** offering the E2 operation menu,
+scan for epic-level change requests that a member stage recorded during the pipeline (the
+backflow path — see `references/pipeline-state-schema.json` `epicChangeRequests[]`, written by
+`forge-1-prd`/`forge-2-tech`). Enumerate the manifest's feature list (already loaded in E1) and
+read each member's `{specsDir}/{epic}/{member}/.pipeline-state.json`, collecting every
+`epicChangeRequests[]` entry with `status: "open"`. If a member state is missing or unreadable,
+report it and continue with the rest — do **not** abort edit mode over one bad member file (mirror
+E1's "report, never silently repair" posture).
+
+If any open requests exist, present them grouped (show `kind`, `target`, `rationale`,
+`blocksCurrent`, `raisedBy`), then for **each** request use `AskUserQuestion` to offer **Apply**,
+**Dismiss**, or **Skip for now**:
+
+- **Apply — simple kinds (`add-feature`, `redep`):** pre-fill the matching E2 operation and flow
+  through E3→E4→E5→E6 unchanged. `add-feature` seeds the new feature's charter from the request's
+  `rationale` (the user still edits `exposes`/`consumes`/`dependsOn` before commit, exactly as
+  C3/C4/C5); `redep` pre-fills `set-dep {epic} {target} --depends-on "…"`. The existing E4 impact
+  warning fires normally — a `blocksCurrent` boundary change naturally trips it, which is correct.
+- **Apply — composite kinds (`move-boundary`, `split`):** there is no single mutator (v1). Walk the
+  user through a **guided-manual** sequence — the relevant `set-dep` and/or direct `exposes`/
+  `consumes` edits on the composed manifest entries (per E3's "Contracts have no mutator" rule),
+  across **both** affected features — re-validating after each step. Confirm each mutation via
+  `AskUserQuestion`; never batch-apply.
+- **Dismiss:** the user decides the epic is fine after all — flip the source request's `status` to
+  `"dismissed"` (no manifest mutation). Explicit only; there is **no auto-expiry**.
+- **Skip for now:** leave the request `open`; it resurfaces on the next edit-mode entry and stays
+  visible in the navigator/verify (once Phase 2 surfacing lands).
+
+**On a successful Apply** (mutator exit 0, or the guided-manual sequence confirmed), flip the
+**source** request's `status` from `"open"` to `"applied"` in its member `.pipeline-state.json`,
+using the same atomic temp-file + `os.replace` write the skill uses for any state edit. The E6 git
+step already stages the whole `{specsDir}/{epic}/` subtree, so the flipped member state is captured
+in the **same commit** as the manifest mutation — no new commit machinery. If a **Dismiss** is the
+only action taken (no manifest mutation follows), still commit the member-state change under the
+standard edit-mode message form, e.g. `forge({epic}): dismiss epic change request`.
+
+E0-read is **read-then-offer** — it never auto-applies. Every apply still passes through E3/E4 with
+explicit human confirmation, preserving the human-approves-every-mutation invariant. If **no** open
+requests exist, say nothing and proceed straight to E2.
+
 ## Step E2 — Choose Operation
 
 Use `AskUserQuestion` to offer the edit operations, each mapping to one helper mutator:

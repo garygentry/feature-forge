@@ -314,3 +314,106 @@ def test_human_output_ends_with_sentinel(tmp_path: Path) -> None:
     lines = proc.stdout.rstrip("\n").splitlines()
     assert lines[-1] == SENTINEL
     assert lines[0] == "DIRECTIVES:"
+
+
+# --------------------------------------------------------------------------- #
+# epic backflow: stage-exit routing on epicChangeRequests[] / blocksCurrent
+# --------------------------------------------------------------------------- #
+
+
+def _request(kind="add-feature", blocks=False, status="open", target="net-new") -> dict:
+    return {
+        "kind": kind,
+        "target": target,
+        "rationale": "surfaced during the interview",
+        "blocksCurrent": blocks,
+        "raisedBy": "forge-2-tech",
+        "raisedAt": "2026-07-10T00:00:00Z",
+        "status": status,
+    }
+
+
+def _state_with_requests(requests: list[dict], epic: str | None = "my-epic") -> dict:
+    state = {
+        "pipelineStatus": "active",
+        "stages": {"forge-2-tech": {"status": "complete", "version": 2}},
+        "epicChangeRequests": requests,
+    }
+    if epic is not None:
+        state["epic"] = epic
+    return state
+
+
+def test_no_epic_requests_is_byte_identical_and_omits_directive(tmp_path: Path) -> None:
+    """The common path: no requests → no epicReconcile key, NEXT-STEPS unchanged."""
+    plain = _project(tmp_path / "a", config={}, state=None)
+    empty = _project(tmp_path / "b", config={},
+                     state=_state_with_requests([]))  # field present but empty
+    p = _exit(plain, "--feature", "widget", "--stage", "forge-2-tech")
+    e = _exit(empty, "--feature", "widget", "--stage", "forge-2-tech")
+    assert "epicReconcile" not in p["directives"]
+    assert "epicReconcile" not in e["directives"]
+    assert p["nextSteps"] == e["nextSteps"]  # empty array routes like no array
+    assert "reconcile the epic" not in p["nextSteps"]
+
+
+def test_blocking_request_interposes_reconcile_first(tmp_path: Path) -> None:
+    state = _state_with_requests([_request(kind="move-boundary", blocks=True)])
+    root = _project(tmp_path, config={}, state=state)
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["epicReconcile"]["required"] is True
+    assert d["epicReconcile"]["command"] == "/feature-forge:forge-0-epic my-epic"
+    assert d["epicReconcile"]["count"] == 1
+    # normal next stage is unchanged in the directives, only demoted in the block
+    assert d["nextCommand"] == "/feature-forge:forge-3-specs widget"
+    # the fenced primary command is the reconcile command
+    assert "```\n/feature-forge:forge-0-epic my-epic\n```" in block
+    assert "After reconciling, continue the pipeline with: " \
+           "`/feature-forge:forge-3-specs widget`" in block
+    assert block.splitlines()[-1] == SENTINEL
+
+
+def test_nonblocking_request_keeps_routing_adds_reminder(tmp_path: Path) -> None:
+    state = _state_with_requests([_request(kind="add-feature", blocks=False)])
+    root = _project(tmp_path, config={}, state=state)
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["epicReconcile"]["required"] is False
+    assert d["epicReconcile"]["reminder"] is True
+    assert d["epicReconcile"]["count"] == 1
+    # fenced primary stays the normal next stage
+    assert "```\n/feature-forge:forge-3-specs widget\n```" in block
+    assert "You also flagged 1 epic change to reconcile when convenient: " \
+           "`/feature-forge:forge-0-epic my-epic`" in block
+    assert block.splitlines()[-1] == SENTINEL
+
+
+def test_applied_and_dismissed_requests_are_ignored(tmp_path: Path) -> None:
+    state = _state_with_requests([
+        _request(blocks=True, status="applied"),
+        _request(blocks=False, status="dismissed"),
+    ])
+    root = _project(tmp_path, config={}, state=state)
+    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert "epicReconcile" not in d  # only `open` requests route
+
+
+def test_open_request_without_resolvable_epic_falls_back(tmp_path: Path) -> None:
+    """A stray request but no epic name (no back-pointer, no --epic) → normal routing."""
+    state = _state_with_requests([_request(blocks=True)], epic=None)
+    root = _project(tmp_path, config={}, state=state)
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+    assert "epicReconcile" not in payload["directives"]
+    assert "reconcile the epic" not in payload["nextSteps"]
+
+
+def test_mixed_requests_blocking_wins(tmp_path: Path) -> None:
+    state = _state_with_requests([
+        _request(kind="add-feature", blocks=False),
+        _request(kind="move-boundary", blocks=True),
+    ])
+    root = _project(tmp_path, config={}, state=state)
+    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert d["epicReconcile"]["required"] is True
+    assert d["epicReconcile"]["count"] == 1  # count of blocking requests

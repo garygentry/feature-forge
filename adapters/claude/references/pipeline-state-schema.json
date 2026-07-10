@@ -39,6 +39,46 @@
       "type": "string",
       "description": "Free-form notes persisted between sessions (user can add context before stepping away)"
     },
+    "epicChangeRequests": {
+      "type": "array",
+      "description": "Epic-level change requests raised by a member stage (forge-1-prd/forge-2-tech) when the epic DECOMPOSITION itself must change — distinct from the same-feature `notes` parking lot. Read by forge-0-epic edit mode (which applies them) and by forge-session stage-exit (which routes the exit on `blocksCurrent`). Absent/empty for standalone features. Additive/optional: legacy states without it validate unchanged.",
+      "items": {
+        "type": "object",
+        "required": ["kind", "target", "rationale", "blocksCurrent", "raisedBy", "raisedAt", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["add-feature", "redep", "move-boundary", "split"],
+            "description": "The decomposition change. add-feature/redep map 1:1 onto edit-mode mutators; move-boundary/split are composite (applied guided-manual in v1)."
+          },
+          "target": {
+            "type": "string",
+            "description": "The sibling feature to add, or the feature/boundary affected."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Why the epic must change; seeds the edit-mode charter/prompt when applied."
+          },
+          "blocksCurrent": {
+            "type": "boolean",
+            "description": "true → the current feature's next stage would build on a soon-to-change decomposition (pause-now: reconcile before proceeding). false → a peer/downstream change (finish-then-edit). Drives stage-exit routing."
+          },
+          "raisedBy": {
+            "type": "string",
+            "enum": ["forge-1-prd", "forge-2-tech"],
+            "description": "The stage that detected the epic-level concern."
+          },
+          "raisedAt": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["open", "applied", "dismissed"],
+            "default": "open",
+            "description": "Lifecycle: open → applied|dismissed. Only forge-0-epic edit mode flips open→applied/dismissed; recording stages only create open entries; navigator/verify only read."
+          }
+        }
+      }
+    },
     "stages": {
       "type": "object",
       "properties": {

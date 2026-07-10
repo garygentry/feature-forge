@@ -151,6 +151,28 @@ outstanding, so the navigator catch-up can fire later.
 Verification is already resolved (fresh or explicitly skipped) or the in-stage run
 above covers it. Say so in one line and continue to the NEXT-STEPS block.
 
+### `epicReconcile` (epic backflow — present only when there are open requests)
+
+Emitted only when the exiting member carries `open` `epicChangeRequests` (recorded by
+`forge-1-prd`/`forge-2-tech` when the epic *decomposition* itself must change — see
+`references/pipeline-state-schema.json`). Absent on the common path and for standalone
+features. The script has already folded the routing into the NEXT-STEPS block, so this
+directive is informational — you do **not** re-derive the wording:
+
+- `required: true` (at least one `blocksCurrent: true` request) — the NEXT-STEPS block's
+  fenced **primary** command is the epic reconcile command
+  (`/feature-forge:forge-0-epic {epic}`), and the normal next stage is demoted to a
+  follow-up line ("After reconciling, continue with …"). This is *reconcile-before-specs*:
+  proceeding would author artifacts against a decomposition that is about to change. It is
+  strongest when exiting `forge-2-tech` (next is `forge-3-specs`, the point of no cheap
+  return).
+- `reminder: true` (only `blocksCurrent: false` requests) — normal next-stage routing is
+  unchanged; the block appends a non-blocking reminder line ("You also flagged N epic
+  change(s) to reconcile when convenient …"). This is *finish-then-edit*.
+
+Either way the added lines are host-neutral (no literal `/clear`) and sit **above** the
+sentinel; just print the NEXT-STEPS block verbatim as always.
+
 ### The NEXT-STEPS block (always last)
 
 Print the script's NEXT-STEPS block **verbatim as your absolute last output**. Nothing
