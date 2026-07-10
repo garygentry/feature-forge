@@ -1,6 +1,6 @@
 {
   "name": "feature-forge",
-  "version": "0.12.2",
+  "version": "0.12.3",
   "description": "End-to-end feature development pipeline: PRD → tech spec → implementation specs → backlog → documentation, with verification gates, pipeline state tracking, and specialized subagents for verification and codebase research.",
   "author": {
     "name": "Gary Gentry"

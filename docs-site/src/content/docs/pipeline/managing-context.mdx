@@ -42,6 +42,11 @@ Window fullness is a *secondary* signal: a nearly-full window makes the clear mo
 never decides *whether* to clear — the boundary itself is the reason. The one exception is the
 loop → docs boundary, where staying warm is fine (see the cheat-sheet below).
 
+Each authoring stage closes by printing the exact next-stage command in a fenced code block, so
+mobile and remote-control hosts get a native tap-to-copy button — paste it into the fresh session
+after you `/clear`. The block always ends on a fixed sentinel line, so the command stays the last
+thing in view.
+
 If the upstream artifact isn't a faithful, standalone contract, that's a signal to fix the
 artifact — not to paper over it with carried conversation.
 

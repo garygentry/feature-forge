@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.12.2] — 2026-07-09
+## [0.12.3] — 2026-07-10
+
+Stage-exit UX polish plus documentation catch-up for the 0.12.x stabilization work.
+Installer republished as `@garygentry/feature-forge@0.2.8` to carry it to `npx` users.
+
+### Changed
+
+- **Copyable next-stage command in the stage-exit block.** The scripted "Next steps"
+  block (`_next_steps_block` in `scripts/forge-session.py`, used by the authoring stages)
+  now renders the next-stage command inside a fenced code block instead of inline code, so
+  mobile and remote-control hosts get a native tap-to-copy button. The
+  `─ forge: end of stage ─` sentinel remains the absolute-last line, so the stage-exit
+  contract is intact. The 5 host adapters were regenerated (`forge-session.py` is bundled
+  verbatim); a test asserts the fenced block and the sentinel-still-last invariant.
+
+### Documentation
+
+- **Docs site brought current with 0.12.x behavior.** Documented **branch reconciliation**
+  (new subsection in the Stage 5 loop page + a troubleshooting FAQ on imposed
+  `claude/<slug>` branches), **cross-branch feature discovery** (the navigator's
+  empty-current-branch fallback, in the dashboard page), and the **copyable next-stage
+  command** (managing-context page).
 
 Pipeline-stabilization batch: the bootstrap prelude resolves the plugin root exactly on
 any Claude layout (chunk 2b), the cross-branch subsystem gains whole-pipeline discovery

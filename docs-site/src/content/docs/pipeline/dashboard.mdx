@@ -33,6 +33,10 @@ the feature you were last working on.
   opens straight to that feature's dashboard.
 - If several are active, it shows them most-recent-first so the recommended pick is
   always at hand.
+- If the **current branch** has no features, the navigator looks **across branches**
+  (local and remote-tracking) and surfaces any features whose pipeline state lives
+  elsewhere — so a fresh clone or a default-branch session finds work scattered on topic
+  branches instead of concluding nothing exists. It never switches branches on its own.
 
 ## Drive to the next stage
 
