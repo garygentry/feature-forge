@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Scaffolded repos now carry a "Tooling feedback" prompt (#90).** Encouraging continuous
+  feedback on feature-forge/rauf used to require hand-editing a project's agent-instruction
+  files (a near-duplicated block across four files, maintained by hand and prone to drift).
+  The prompt is now baked into the scaffold hygiene templates so it lands automatically: the
+  project-root `AGENTS.md` / `CLAUDE.md` (forge-bootstrap hygiene templates) get a full
+  **Tooling feedback** section — when to flag (any confusing/buggy/missing/surprising forge or
+  rauf behavior, papercuts included), where to file (routed to the feature-forge vs. rauf
+  issue tracker by which tool the friction is with), how (capture ran/expected/actual/fix-idea
+  while fresh, propose a titled issue, file with `gh issue create` on the human's go-ahead, not
+  silently), and the autonomous-rauf carve-out (note friction in `progress.md`, don't open
+  issues mid-loop). The `specs/` hygiene templates (`references/templates/specs-hygiene/`) get
+  a short pointer back to the root section. The blocks are static and forge-bootstrap-owned,
+  living outside any rauf-managed region so loop regeneration can't clobber them. Adapters
+  regenerated.
+
 ### Fixed
 
 - **forge-5-loop no longer circuit-breaks on a hosted remote root environment (#99).** On
