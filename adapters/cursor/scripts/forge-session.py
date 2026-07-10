@@ -1258,8 +1258,8 @@ def _next_steps_block(next_command: str, host: str) -> str:
             "I can't `/clear` for you — you have to run it yourself."
         )
         next_line = (
-            f"2. Then run `{next_command}` in the fresh session — or re-run "
-            "`/feature-forge:forge` to let the navigator resume from disk."
+            "2. Then start a fresh session and run the next stage below — or "
+            "re-run `/feature-forge:forge` to let the navigator resume from disk."
         )
     else:
         clear_line = (
@@ -1268,10 +1268,16 @@ def _next_steps_block(next_command: str, host: str) -> str:
             "disk, so the work survives it."
         )
         next_line = (
-            f"2. Then run `{next_command}` in the fresh session — or re-run "
-            "the forge navigator skill to resume from disk."
+            "2. Then start a fresh session and run the next stage below — or "
+            "re-run the forge navigator skill to resume from disk."
         )
-    return "\n".join(["**Next steps**", clear_line, next_line, NEXT_STEPS_SENTINEL])
+    # The next-stage command goes in a fenced block so mobile/remote hosts get a
+    # native copy button (inline code is not tap-to-copy). The fence sits before
+    # the sentinel, so the sentinel remains the absolute last line.
+    command_block = f"```\n{next_command}\n```"
+    return "\n".join(
+        ["**Next steps**", clear_line, next_line, "", command_block, NEXT_STEPS_SENTINEL]
+    )
 
 
 def stage_exit(

@@ -280,6 +280,19 @@ def test_claude_next_steps_wording_and_sentinel_last(tmp_path: Path) -> None:
     assert payload["sentinel"] == SENTINEL
 
 
+def test_next_command_is_in_a_fenced_block_for_mobile_copy(tmp_path: Path) -> None:
+    """The next-stage command is emitted inside a fenced code block (native
+    copy button on mobile/remote hosts) sitting *before* the sentinel."""
+    root = _project(tmp_path, config={})
+    block = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["nextSteps"]
+    lines = block.splitlines()
+    assert "```\n/feature-forge:forge-3-specs widget\n```" in block
+    # Sentinel still absolute-last; closing fence is the line just before it.
+    assert lines[-1] == SENTINEL
+    assert lines[-2] == "```"
+    assert lines[-3] == "/feature-forge:forge-3-specs widget"
+
+
 def test_generic_next_steps_has_no_clear_token(tmp_path: Path) -> None:
     root = _project(tmp_path, config={})
     block = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
