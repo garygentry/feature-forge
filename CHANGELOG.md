@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.5] — 2026-07-10
+
+Issue-closeout batch: three fixes/features (#99 loop root-sandbox, #90 scaffold tooling
+feedback, #92 state-machine hygiene O1+O3) plus a canonical `STATUS.md`. Installer
+republished as `@garygentry/feature-forge@0.2.10` to carry it to `npx` users.
+
 ### Added
 
 - **Scaffolded repos now carry a "Tooling feedback" prompt (#90).** Encouraging continuous

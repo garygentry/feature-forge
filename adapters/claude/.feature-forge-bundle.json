@@ -1,6 +1,6 @@
 {
   "name": "feature-forge",
-  "version": "0.12.4",
+  "version": "0.12.5",
   "agent": "claude",
   "generatedBy": "python3 scripts/build-adapters.py"
 }

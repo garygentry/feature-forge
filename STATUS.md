@@ -10,10 +10,10 @@ _Last updated: 2026-07-10._
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.12.4** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.2.9** | `installer/package.json` (independent version line) |
-| npm | **`@garygentry/feature-forge@0.2.9`** (`latest`) | published via `npm-publish.yml` |
-| Commit | `c489e5d` — `chore(release): feature-forge 0.12.4 + installer 0.2.9 (#109)` | |
+| Plugin | **0.12.5** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.2.10** | `installer/package.json` (independent version line) |
+| npm | **`@garygentry/feature-forge@0.2.10`** (`latest`) | published via `npm-publish.yml` |
+| Commit | `chore(release): feature-forge 0.12.5 + installer 0.2.10` | |
 
 CHANGELOG `[Unreleased]` is **empty**; working tree clean.
 
@@ -29,16 +29,18 @@ CHANGELOG `[Unreleased]` is **empty**; working tree clean.
 - **0.12.4** (#109) — copyable next-command on loop exits (Item 1) + epic-backflow Phase 1
   (record + route epic change requests, #107) and Phase 2 (surface open requests: navigator ⚠️
   + forge-verify CHECK-E09, #108).
+- **0.12.5** — issue-closeout batch: #99 (loop root/sandbox `IS_SANDBOX` fix, #111),
+  #90 (scaffold "Tooling feedback" prompt, #112), #92 O1+O3 (state-machine hygiene:
+  `currentStage` semantics + structured `deferredDecisions[]`, #114). Docs: canonical
+  `STATUS.md` (#110).
 
 ## Open issues
 
 | # | Title (short) | Status / plan |
 |---|---|---|
-| #99 | forge-5-loop circuit-breaks on Claude.ai remote (root env) — rauf's `--dangerously-skip-permissions` refused as root | **Fix planned** — auto-set `IS_SANDBOX=${IS_SANDBOX:-1}` at loop launch when running as root + one-line note + doctor check. Durable rauf-side fix tracked separately (rauf repo). |
-| #92 | Stage-boundary state-machine hygiene: currentStage semantics (O1), stage-entry guard (O2), structured cross-stage notes (O3) | **Dedup-audit then implement delta** — much of the mechanism (`stageEntry.status` enum, `next_stage()`) already exists; confirm the real remaining delta before editing. O2 may split to a follow-up PR. |
-| #91 | forge-1-prd → forge-2-tech served stale prior-stage context (likely host session-isolation) + latent stage-boundary hygiene | **Close with note** — the in-scope hygiene part (O1/O2/O3) is subsumed by #92; the stale-context root cause is host-level session isolation, out of feature-forge's control. |
-| #90 | Emit a "tooling feedback" prompt into scaffolded repos | **Fix planned** — add a static "Tooling feedback" section to forge-bootstrap hygiene templates (outside `rauf:managed` markers). |
-| #69 | Context/session management optimization — analysis & future PRD input | **Close with note** — already delivered as `specs/context-management/CANON.md`; point future auto-verify/orchestrator PRDs at it. |
+| #113 | Stage-entry idempotency guard across the 5 authoring skills (#92 O2 follow-up) | **Open, not scheduled** — the invasive part of #92 (touches all 5 authoring skills' Step 1; `forge-0-epic` at the 300-line cap → needs a shared helper + reference moves). Split out from #92 so it didn't hold the 0.12.5 release. |
+
+_All of #99, #90, #92 (O1+O3) shipped in 0.12.5. #91 and #69 closed with notes (see below)._
 
 ## Deferred / optional (not scheduled)
 
@@ -47,10 +49,13 @@ CHANGELOG `[Unreleased]` is **empty**; working tree clean.
 - **forge-5-loop exit → stage-exit migration (Option B)** — the loop's bespoke post-loop exit
   blocks converged onto scripted `stage-exit`. Low value; loop is at its 300-line body cap.
   (The user-facing win — copyable next-command — was already captured via Option A in 0.12.4.)
+- **#92 O2 — stage-entry idempotency guard** (issue #113). See Open issues above.
 - **Plugin-QA remediation** — findings + remediation on disk (`plans/archive/*-plugin-qa.md`),
   never executed. 1 High + ~16 Med, 7 chunks A–G.
 - **Remote e2e retest** — of the latest publish (`plans/remote-retest-checklist.md`). Needs a
-  Claude.ai remote / root env; still owner's to run.
+  Claude.ai remote / root env; still owner's to run. **Also clears the pending end-to-end
+  verification of the #99 root/sandbox fix** (landed with unit-level proof only — a real remote
+  root loop run would confirm `IS_SANDBOX` resolves the circuit-break).
 
 ## Explicitly won't build
 
