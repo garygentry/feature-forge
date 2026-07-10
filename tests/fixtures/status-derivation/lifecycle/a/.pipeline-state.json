@@ -5,5 +5,34 @@
     "forge-5-loop": {
       "status": "in-progress"
     }
-  }
+  },
+  "epicChangeRequests": [
+    {
+      "kind": "move-boundary",
+      "target": "b",
+      "rationale": "a needs scope frozen in b's exposes[]",
+      "blocksCurrent": true,
+      "raisedBy": "forge-1-prd",
+      "raisedAt": "2026-07-10T00:00:00Z",
+      "status": "open"
+    },
+    {
+      "kind": "add-feature",
+      "target": "net-new-discovery",
+      "rationale": "PRD surfaced a distinct peer concern",
+      "blocksCurrent": false,
+      "raisedBy": "forge-1-prd",
+      "raisedAt": "2026-07-10T00:00:00Z",
+      "status": "open"
+    },
+    {
+      "kind": "add-feature",
+      "target": "already-done",
+      "rationale": "reconciled earlier",
+      "blocksCurrent": false,
+      "raisedBy": "forge-1-prd",
+      "raisedAt": "2026-07-09T00:00:00Z",
+      "status": "applied"
+    }
+  ]
 }

@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   interposes a reconcile-first next-command (`/feature-forge:forge-0-epic {epic}`) before the
   next stage; only non-blocking requests append a reminder. Every mutation still requires human
   approval. Navigator + `forge-verify` surfacing of open requests is deferred to Phase 2.
+- **Epic backflow (Phase 2): surface open epic change requests in the read-only dashboards.**
+  `epic-manifest.py render-status` now derives, per member, `openEpicChangeRequests` and
+  `blockingEpicChangeRequests` (the `blocksCurrent` subset) from each `.pipeline-state.json` —
+  a single deterministic source feeding both surfaces. The `/feature-forge:forge` **Epic
+  Dashboard** marks any member with open requests (⚠️ + a `/feature-forge:forge-0-epic {epic}`
+  reconcile hint), distinguishing blocking (reconcile-before-specs) from non-blocking
+  (finish-then). `forge-verify` epic mode gains a non-fatal **CHECK-E09** that reports each
+  member's open requests as a finding, severity keyed to `blocksCurrent` (blocking →
+  `inconsistency`, non-blocking → `improvement`) — the pre-emptive surface for the divergence
+  class CHECK-E06/E07 otherwise catch only after the fact. The surfaces are strictly read-only;
+  only edit mode mutates a request's status. Additive counts (no schema change); adapters
+  regenerated.
 
 ### Changed
 
