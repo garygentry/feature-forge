@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **forge-5-loop no longer circuit-breaks on a hosted remote root environment (#99).** On
+  Claude.ai remote (and similar cloud agents) the loop runs as **root**, where rauf's default
+  launch `claude -p --dangerously-skip-permissions …` is refused by the Claude CLI unless
+  `IS_SANDBOX` is set — so every spawn exited and rauf reported the opaque *"Circuit breaker:
+  3 consecutive infra failures — halting"* with no hint of the cause. The Step 3b launch now
+  exports `IS_SANDBOX="${IS_SANDBOX:-1}"` **only when the launcher is root**
+  (`[ "$(id -u)" = 0 ]`); non-root/local runs are unaffected (no-op), and an explicitly-set
+  `IS_SANDBOX` is honored. The loop surfaces a one-line note when it sets the flag, and
+  `forge-session.py doctor` now reports the root/sandbox condition as a diagnosable check
+  (`rootSandbox` block). Guard added to both launch variants in
+  `skills/forge-5-loop/references/runner-contract.md`; adapters regenerated. The durable
+  upstream fix (rauf honoring `IS_SANDBOX`/emitting a clear error) is tracked as a rauf-repo
+  follow-up.
+
 ## [0.12.4] — 2026-07-10
 
 ### Added

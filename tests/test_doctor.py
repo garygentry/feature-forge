@@ -8,6 +8,7 @@ therefore "always exits 0, failures are data" — pinned here.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -16,6 +17,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HELPER = REPO_ROOT / "scripts" / "forge-session.py"
+
+
+def _load_helper_module():
+    """Import forge-session.py as a module (hyphenated filename → importlib)."""
+    spec = importlib.util.spec_from_file_location("forge_session", HELPER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _write_state(specs_dir: Path, name: str, state: dict, epic: str | None = None) -> None:
@@ -147,3 +156,50 @@ def test_doctor_human_output_mentions_root_and_features(tmp_path: Path) -> None:
     assert "plugin root:" in result.stdout
     assert "widget" in result.stdout
     assert "backlog=MISSING" in result.stdout
+
+
+def test_doctor_reports_root_sandbox_block(tmp_path: Path) -> None:
+    """The report carries a rootSandbox block with the launch-condition fields (issue #99)."""
+    (tmp_path / "forge.config.json").write_text("{}")
+
+    result = _doctor(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    rs = json.loads(result.stdout)["rootSandbox"]
+    assert set(rs) == {"isRoot", "isSandboxSet", "loopWillSetSandbox"}
+    # loopWillSetSandbox is only ever True when root AND IS_SANDBOX unset.
+    assert rs["loopWillSetSandbox"] == (rs["isRoot"] and not rs["isSandboxSet"])
+
+
+def test_root_sandbox_status_root_without_flag(monkeypatch) -> None:
+    """As root with IS_SANDBOX unset, the loop must supply the sandbox default."""
+    module = _load_helper_module()
+    monkeypatch.setattr(module.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.delenv("IS_SANDBOX", raising=False)
+
+    status = module._root_sandbox_status()
+
+    assert status == {"isRoot": True, "isSandboxSet": False, "loopWillSetSandbox": True}
+
+
+def test_root_sandbox_status_root_with_flag_is_noop(monkeypatch) -> None:
+    """As root with IS_SANDBOX already set, the loop leaves it alone."""
+    module = _load_helper_module()
+    monkeypatch.setattr(module.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setenv("IS_SANDBOX", "1")
+
+    status = module._root_sandbox_status()
+
+    assert status == {"isRoot": True, "isSandboxSet": True, "loopWillSetSandbox": False}
+
+
+def test_root_sandbox_status_non_root_never_sets(monkeypatch) -> None:
+    """Non-root (local) never triggers the sandbox default, flag set or not."""
+    module = _load_helper_module()
+    monkeypatch.setattr(module.os, "geteuid", lambda: 1000, raising=False)
+    monkeypatch.delenv("IS_SANDBOX", raising=False)
+
+    status = module._root_sandbox_status()
+
+    assert status["isRoot"] is False
+    assert status["loopWillSetSandbox"] is False
