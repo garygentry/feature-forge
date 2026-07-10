@@ -375,6 +375,62 @@ def test_status_derive_branches(
     assert (feature_status["status"] == "complete") is expect_complete
 
 
+def _write_member_state(feature_dir: Path, state: dict) -> None:
+    """Create a member dir with a `.pipeline-state.json` for derive_status tests."""
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    (feature_dir / ".pipeline-state.json").write_text(
+        json.dumps(state), encoding="utf-8"
+    )
+
+
+def test_status_derive_epic_change_request_counts(helper_module, tmp_path) -> None:
+    """derive_status counts open epicChangeRequests + the blocking subset (Phase 2)."""
+    d = tmp_path / "feat"
+    _write_member_state(d, {
+        "currentStage": "forge-1-prd",
+        "epicChangeRequests": [
+            {"status": "open", "blocksCurrent": True},
+            {"status": "open", "blocksCurrent": False},
+            {"status": "applied", "blocksCurrent": True},   # not open -> ignored
+            {"status": "dismissed", "blocksCurrent": False},  # not open -> ignored
+        ],
+    })
+    row = helper_module.derive_status(d)
+    assert row["openEpicChangeRequests"] == 2
+    assert row["blockingEpicChangeRequests"] == 1
+
+
+def test_status_derive_no_epic_change_requests_is_zero(helper_module, tmp_path) -> None:
+    """A member with no epicChangeRequests reports both counts as 0."""
+    d = tmp_path / "feat"
+    _write_member_state(d, {"currentStage": "forge-1-prd"})
+    row = helper_module.derive_status(d)
+    assert row["openEpicChangeRequests"] == 0
+    assert row["blockingEpicChangeRequests"] == 0
+
+
+def test_status_derive_malformed_epic_change_requests_tolerated(
+    helper_module, tmp_path
+) -> None:
+    """A non-list value or non-dict items count as 0 without raising (tolerance)."""
+    d_nonlist = tmp_path / "nonlist"
+    _write_member_state(d_nonlist, {
+        "currentStage": "forge-1-prd", "epicChangeRequests": "oops",
+    })
+    row = helper_module.derive_status(d_nonlist)
+    assert row["openEpicChangeRequests"] == 0
+    assert row["blockingEpicChangeRequests"] == 0
+
+    d_junk = tmp_path / "junk"
+    _write_member_state(d_junk, {
+        "currentStage": "forge-1-prd",
+        "epicChangeRequests": ["not-a-dict", {"status": "open", "blocksCurrent": True}],
+    })
+    row = helper_module.derive_status(d_junk)
+    assert row["openEpicChangeRequests"] == 1
+    assert row["blockingEpicChangeRequests"] == 1
+
+
 def test_status_is_complete_for_orchestration_all_branches(helper_module) -> None:
     """The completion predicate (00 §7) is exact across all five inputs."""
     f = helper_module.is_complete_for_orchestration
@@ -475,6 +531,46 @@ def test_render_status_blocked_lists_unmet_deps(run_cli, fixture_copy) -> None:
     b_row = next(f for f in out["features"] if f["name"] == "b")
     assert b_row["status"] == "complete"
     assert not b_row["blocked"] and b_row["unmetDeps"] == []
+
+
+def test_render_status_surfaces_epic_change_request_counts(run_cli, fixture_copy) -> None:
+    """render-status propagates per-member open/blocking epicChangeRequest counts (Phase 2)."""
+    specs = fixture_copy("status-derivation")
+    out = run_cli("render-status", "lifecycle", "--specs-dir", str(specs), "--json").json()
+
+    # Every row carries both keys (additive-shape guard: no row omits them).
+    for row in out["features"]:
+        assert "openEpicChangeRequests" in row
+        assert "blockingEpicChangeRequests" in row
+        assert row["blockingEpicChangeRequests"] <= row["openEpicChangeRequests"]
+
+    # Member 'a' carries two open requests (one blocking) + one applied (ignored).
+    a_row = next(f for f in out["features"] if f["name"] == "a")
+    assert a_row["openEpicChangeRequests"] == 2
+    assert a_row["blockingEpicChangeRequests"] == 1
+
+    # A member with no requests reports 0/0.
+    c_row = next(f for f in out["features"] if f["name"] == "c")
+    assert c_row["openEpicChangeRequests"] == 0
+    assert c_row["blockingEpicChangeRequests"] == 0
+
+
+def test_render_status_text_table_shows_pending_epic_changes(
+    run_cli, fixture_copy
+) -> None:
+    """The human text table appends a ⚠️ pending-epic-change suffix (Phase 2)."""
+    specs = fixture_copy("status-derivation")
+    text = run_cli("render-status", "lifecycle", "--specs-dir", str(specs)).stdout
+
+    # Member 'a' (2 open, 1 blocking) shows the blocking marker + count on its row.
+    a_line = next(ln for ln in text.splitlines() if ln.strip().startswith("- a:"))
+    assert "pending epic change(s)" in a_line
+    assert "BLOCKING" in a_line
+    assert "2 pending epic change(s)" in a_line
+
+    # Member 'c' (no requests) shows no suffix.
+    c_line = next(ln for ln in text.splitlines() if ln.strip().startswith("- c:"))
+    assert "pending epic change(s)" not in c_line
 
 
 # ---------------------------------------------------------------------------

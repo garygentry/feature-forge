@@ -143,6 +143,7 @@ and render from its output:
 - **Epic header:** name + `status` (active | paused | abandoned | complete).
 - **Dependency graph:** each feature with its `dependsOn`, as an arrow list or indented tree (the helper guarantees the graph is acyclic).
 - **Per-feature rows:** reuse the **existing status indicators** below (✅/✅⚠️/🔄/⬜/❌/✅🔍/⏭️/⚠️), driven by each feature's derived `stage`/`status`. Mark `blocked` features and list their `unmetDeps`.
+- **Pending epic changes:** for any feature with `openEpicChangeRequests > 0`, append a ⚠️ marker and a hint: *"N pending epic change(s) — run `/feature-forge:forge-0-epic {epic}` to reconcile."* If `blockingEpicChangeRequests > 0`, use a stronger marker (⚠️ **blocking**) and word it *"reconcile the epic **before** writing specs"* — this mirrors the pause-now vs finish-then split that stage-exit already routes on. Take these counts **only** from `render-status --json` (`features[].openEpicChangeRequests` / `.blockingEpicChangeRequests`); do not read member `.pipeline-state.json` directly for them.
 - **Actionable vs blocked:** list the `actionable` set and the recommended `nextCommand`.
 - **Rollup:** `{complete}/{total} features complete`.
 
@@ -158,12 +159,13 @@ Dependency graph:
   audit-log         (no deps)
 
 ✅ config-store     complete
-🔄 token-service    forge-3-specs (in progress)
+🔄 token-service    forge-3-specs (in progress) — ⚠️ 1 pending epic change
 ⬜ api-gateway      blocked — waiting on token-service
 ✅ audit-log        complete
 
 Actionable now: token-service
 Next: /feature-forge:forge-3-specs token-service
+⚠️ Pending epic changes: token-service (1). Run /feature-forge:forge-0-epic auth-overhaul to reconcile.
 ```
 
 All of this is reconstructed **purely from disk** — the manifest plus each member's `.pipeline-state.json`, with no in-memory state — so a fresh session renders the same dashboard. If `render-status` fails, do not render a partial dashboard; surface per the exit-1/exit-2 split in the **Feature Directory Resolution** block of `references/shared-conventions.md` (exit 1 → parse `{findings[]}` from stdout; exit 2 → surface the plain `Error:` stderr line verbatim).

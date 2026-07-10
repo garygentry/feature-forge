@@ -223,6 +223,18 @@ python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}"
   `.pipeline-state.json` `epic` value names this epic, and every `features[]` entry has a
   matching member directory. On conflict the **manifest wins** (REQ-STATE-01); report, do
   not auto-repair.
+- [ ] **CHECK-E09**: **open epic change requests** — any member whose `.pipeline-state.json`
+  carries `epicChangeRequests[]` entries with `status: "open"` is surfaced as a **non-fatal**
+  finding (one per open request). Severity keys off `blocksCurrent`: a **blocking** request →
+  `inconsistency` (the epic decomposition and an in-flight member disagree; specs written now
+  would build on a soon-invalid premise), a **non-blocking** request → `improvement` (a
+  peer/downstream change to reconcile when convenient). Name the request's `kind`, `target`,
+  and `rationale`, and point at `/feature-forge:forge-0-epic {epic}` to reconcile. **Report, do
+  not repair** (same posture as CHECK-E07). Which members have open requests comes from the
+  same `render-status --json` counts the navigator uses (`features[].openEpicChangeRequests` /
+  `.blockingEpicChangeRequests`); the per-request `kind`/`target`/`rationale` detail is read
+  from the member `.pipeline-state.json` already loaded in Step 2. This is the pre-emptive
+  surface for the divergence class CHECK-E06/E07 otherwise catch only after the fact.
 
 ## Findings Document Template (Step 4)
 

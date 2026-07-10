@@ -99,6 +99,13 @@ class FeatureStatus(TypedDict):
         blocked: True if any entry in unmetDeps is non-empty.
         unmetDeps: Names of this feature's direct dependencies that are not yet
             complete-for-orchestration (00 §7). Empty when actionable or complete.
+        openEpicChangeRequests: Count of this member's ``epicChangeRequests``
+            entries with ``status == "open"`` — epic-level change requests raised
+            by a member stage that forge-0-epic edit mode has not yet reconciled.
+            0 for standalone features or members with no pending requests.
+        blockingEpicChangeRequests: The subset of ``openEpicChangeRequests`` with
+            ``blocksCurrent == true`` (pause-now, reconcile-before-specs). Always
+            ``<= openEpicChangeRequests``.
     """
 
     name: str
@@ -106,6 +113,8 @@ class FeatureStatus(TypedDict):
     status: DerivedStatus
     blocked: bool
     unmetDeps: list[str]
+    openEpicChangeRequests: int
+    blockingEpicChangeRequests: int
 
 
 class Rollup(TypedDict):
@@ -836,12 +845,26 @@ def derive_status(feature_dir: Path) -> FeatureStatus:
         )
         derived = "in-progress" if started else "not-started"
 
+    # Epic-backflow surfacing (Phase 2): count open epicChangeRequests from the
+    # same state dict. A missing/torn state, a non-list value, or non-dict items
+    # count as 0 — a malformed request must never crash the dashboard, mirroring
+    # the torn-state -> not-started tolerance above.
+    requests = state.get("epicChangeRequests", [])
+    open_reqs = [
+        r for r in requests
+        if isinstance(r, dict) and r.get("status") == "open"
+    ] if isinstance(requests, list) else []
+    open_count = len(open_reqs)
+    blocking_count = sum(1 for r in open_reqs if r.get("blocksCurrent") is True)
+
     return {
         "name": name,
         "stage": stage,
         "status": derived,
         "blocked": False,
         "unmetDeps": [],
+        "openEpicChangeRequests": open_count,
+        "blockingEpicChangeRequests": blocking_count,
     }
 
 
@@ -1212,6 +1235,9 @@ def _print_status_table(status: RenderStatus) -> None:
         line = f"  - {row['name']}: {row['status']} (stage {row['stage']})"
         if row["blocked"]:
             line += f" — blocked on {', '.join(row['unmetDeps'])}"
+        if row["openEpicChangeRequests"]:
+            marker = "⚠️ BLOCKING" if row["blockingEpicChangeRequests"] else "⚠️"
+            line += f" — {marker} {row['openEpicChangeRequests']} pending epic change(s)"
         print(line)
     if status["actionable"]:
         print(f"Actionable: {', '.join(status['actionable'])}")
