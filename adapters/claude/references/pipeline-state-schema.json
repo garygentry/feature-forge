@@ -33,7 +33,7 @@
     "currentStage": {
       "type": "string",
       "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop", "forge-6-docs", "complete", "forge-verify-prd", "forge-verify-tech", "forge-verify-specs", "forge-verify-backlog", "forge-verify-impl", "forge-0-epic", "forge-verify-epic"],
-      "description": "The stage currently in progress or next to start"
+      "description": "Where the pipeline IS: the most recently started stage — its `stages[<currentStage>].status` is `in-progress` while that stage is being authored, then `complete` once its artifacts are committed. A stage skill sets this to its own id when it starts. This is deliberately NOT 'the next stage to run': the next stage is DERIVED, never stored — it is the first production stage whose `stages[].status` is not `complete` (see `next_stage()` in forge-session.py, surfaced as the navigator/doctor `nextStage`). Consumers that need 'what runs next' compute it from `stages[].status`, not from this field. `complete` here means the whole pipeline is done. (Legacy/absent value: tools fall back to the derived next stage for display only — `build_rows` in forge-session.py.)"
     },
     "notes": {
       "type": "string",
@@ -75,6 +75,42 @@
             "enum": ["open", "applied", "dismissed"],
             "default": "open",
             "description": "Lifecycle: open → applied|dismissed. Only forge-0-epic edit mode flips open→applied/dismissed; recording stages only create open entries; navigator/verify only read."
+          }
+        }
+      }
+    },
+    "deferredDecisions": {
+      "type": "array",
+      "description": "Same-feature decisions deliberately postponed to a LATER stage of THIS feature — a structured alternative to burying them in the free-text `notes` string. Distinct from `notes` (unstructured scratch) and from `epicChangeRequests[]` (the epic DECOMPOSITION must change). Use this when a stage would otherwise be tempted to solicit a decision that properly belongs to a downstream stage (e.g. forge-1-prd deferring the concrete cache backend to forge-2-tech): record it here instead of asking now (see the deferred-decisions rule in `references/stage-exit-protocol.md`), and the target stage addresses it. Additive/optional: legacy states without it validate unchanged.",
+      "items": {
+        "type": "object",
+        "required": ["question", "raisedBy", "raisedAt", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The decision being deferred, phrased as a concrete question for the target stage to answer."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Why it is deferred rather than decided now (e.g. depends on information the target stage produces)."
+          },
+          "targetStage": {
+            "type": "string",
+            "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop", "forge-6-docs"],
+            "description": "The stage that should resolve this decision. Omit when unknown/any-later-stage."
+          },
+          "raisedBy": {
+            "type": "string",
+            "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog"],
+            "description": "The stage that deferred the decision."
+          },
+          "raisedAt": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["open", "addressed", "dismissed"],
+            "default": "open",
+            "description": "Lifecycle: open → addressed|dismissed. The target stage flips open→addressed when it resolves the decision (or dismissed if it no longer applies); recording stages only create open entries."
           }
         }
       }

@@ -173,6 +173,24 @@ directive is informational — you do **not** re-derive the wording:
 Either way the added lines are host-neutral (no literal `/clear`) and sit **above** the
 sentinel; just print the NEXT-STEPS block verbatim as always.
 
+### Deferred decisions — do not solicit next-stage decisions at this exit
+
+Each stage owns its own decisions. At a stage exit, do **not** pull a *later* stage's
+decision forward — do not ask the user (or decide unilaterally) something that properly
+belongs to the next stage's interview (e.g. at `forge-1-prd` exit, don't settle the
+concrete cache backend that `forge-2-tech` will design). Soliciting it here guesses ahead
+of the stage that owns the context, and the answer has nowhere durable to live.
+
+Instead, when you notice a decision that belongs downstream, **record it structurally** as
+a `deferredDecisions[]` entry on this feature's `.pipeline-state.json` (schema in
+`references/pipeline-state-schema.json`; same direct-edit path as `notes` /
+`epicChangeRequests[]`): `question` (phrased for the target stage), optional `rationale`
+and `targetStage`, `raisedBy` (this stage), `raisedAt` (ISO-8601 UTC), `status: "open"`.
+This keeps the exit focused on *this* stage's next-step routing while carrying the open
+question forward for the owning stage to resolve (it flips `status` to `addressed` when it
+does). Prefer a `deferredDecisions[]` entry over stuffing the same thing into the free-text
+`notes` string. This is a recording affordance, not a gate: never block the exit on it.
+
 ### The NEXT-STEPS block (always last)
 
 Print the script's NEXT-STEPS block **verbatim as your absolute last output**. Nothing

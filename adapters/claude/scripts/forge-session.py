@@ -211,6 +211,12 @@ def next_stage(state: dict) -> str | None:
     status is not ``complete`` (a missing/pending/in-progress/stale stage all
     count as "not done"). Returns ``None`` when every production stage is
     complete (nothing left to run).
+
+    This is the derived "what runs next" value — the single source of truth for
+    the next stage. It is intentionally distinct from the stored
+    ``currentStage`` field ("where the pipeline IS"; see the schema): the next
+    stage is computed from ``stages[].status`` here, never read from
+    ``currentStage``.
     """
     for stage in PRODUCTION_STAGES:
         if _stage_status(state, stage) != _DONE_STATUS:
@@ -349,6 +355,9 @@ def build_rows(specs_dir: Path, config: dict | None = None) -> list[FeatureRow]:
         rows.append({
             "name": name,
             "epic": epic,
+            # currentStage = "where the pipeline IS" (the recorded field). When a
+            # legacy/absent state omits it, fall back to the DERIVED next stage
+            # for display only — never conflate the two elsewhere (schema O1).
             "currentStage": state.get("currentStage") or (nxt or "complete"),
             "branch": branch if isinstance(branch, str) else None,
             "updatedAt": updated if isinstance(updated, str) else None,
