@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Scaffolded repos now carry a "Tooling feedback" prompt (#90).** Encouraging continuous
+  feedback on feature-forge/rauf used to require hand-editing a project's agent-instruction
+  files (a near-duplicated block across four files, maintained by hand and prone to drift).
+  The prompt is now baked into the scaffold hygiene templates so it lands automatically: the
+  project-root `AGENTS.md` / `CLAUDE.md` (forge-bootstrap hygiene templates) get a full
+  **Tooling feedback** section — when to flag (any confusing/buggy/missing/surprising forge or
+  rauf behavior, papercuts included), where to file (routed to the feature-forge vs. rauf
+  issue tracker by which tool the friction is with), how (capture ran/expected/actual/fix-idea
+  while fresh, propose a titled issue, file with `gh issue create` on the human's go-ahead, not
+  silently), and the autonomous-rauf carve-out (note friction in `progress.md`, don't open
+  issues mid-loop). The `specs/` hygiene templates (`references/templates/specs-hygiene/`) get
+  a short pointer back to the root section. The blocks are static and forge-bootstrap-owned,
+  living outside any rauf-managed region so loop regeneration can't clobber them. Adapters
+  regenerated.
 - **Structured `deferredDecisions[]` for same-feature decisions postponed to a later stage
   (#92, O3).** A structured alternative to burying a "decide this at the next stage" note in
   the free-text `notes` string, modeled on `epicChangeRequests[]`. New optional
@@ -30,8 +44,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and with the **derived** next stage (`next_stage()` computes "what runs next" from
   `stages[].status`, never from `currentStage`). Docstring/comment clarifications in
   `scripts/forge-session.py` make the stored-vs-derived split explicit; no behavior change.
-  (O2 — the stage-entry idempotency guard — is deliberately split into a follow-up: it touches
-  all five authoring skills' Step 1 and `forge-0-epic` is at the 300-line body cap.)
+  (O2 — the stage-entry idempotency guard — is deliberately split into follow-up #113: it
+  touches all five authoring skills' Step 1 and `forge-0-epic` is at the 300-line body cap.)
+
+### Fixed
+
+- **forge-5-loop no longer circuit-breaks on a hosted remote root environment (#99).** On
+  Claude.ai remote (and similar cloud agents) the loop runs as **root**, where rauf's default
+  launch `claude -p --dangerously-skip-permissions …` is refused by the Claude CLI unless
+  `IS_SANDBOX` is set — so every spawn exited and rauf reported the opaque *"Circuit breaker:
+  3 consecutive infra failures — halting"* with no hint of the cause. The Step 3b launch now
+  exports `IS_SANDBOX="${IS_SANDBOX:-1}"` **only when the launcher is root**
+  (`[ "$(id -u)" = 0 ]`); non-root/local runs are unaffected (no-op), and an explicitly-set
+  `IS_SANDBOX` is honored. The loop surfaces a one-line note when it sets the flag, and
+  `forge-session.py doctor` now reports the root/sandbox condition as a diagnosable check
+  (`rootSandbox` block). Guard added to both launch variants in
+  `skills/forge-5-loop/references/runner-contract.md`; adapters regenerated. The durable
+  upstream fix (rauf honoring `IS_SANDBOX`/emitting a clear error) is tracked as a rauf-repo
+  follow-up.
 
 ## [0.12.4] — 2026-07-10
 
