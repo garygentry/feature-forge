@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Epic backflow (Phase 1): record and route "the epic decomposition is wrong."** When a
+  member stage (`forge-1-prd`/`forge-2-tech`) surfaces that the *epic* itself must change — a
+  sibling feature must be added, a frozen boundary between features must move, a feature must
+  split, or a dependency edge is wrong — that concern now has a first-class path instead of an
+  improvised open question. New optional `epicChangeRequests[]` array on the member
+  `.pipeline-state.json` (`references/pipeline-state-schema.json`; additive, no schema-version
+  bump) records each request with a `blocksCurrent` flag. `forge-0-epic` edit mode reads pending
+  requests on entry (new step E0-read in `references/edit-mode.md`) and offers to apply each
+  pre-filled — `add-feature`/`redep` through the existing mutators, `move-boundary`/`split`
+  guided-manual in v1 — flipping `status` to `applied` (or `dismissed`) in the same commit.
+  `forge-session.py stage-exit` routes the stage exit on `blocksCurrent`: a blocking request
+  interposes a reconcile-first next-command (`/feature-forge:forge-0-epic {epic}`) before the
+  next stage; only non-blocking requests append a reminder. Every mutation still requires human
+  approval. Navigator + `forge-verify` surfacing of open requests is deferred to Phase 2.
+
 ### Changed
 
 - **Copyable next-stage command on the loop's exit blocks.** The two bespoke

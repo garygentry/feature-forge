@@ -1243,13 +1243,24 @@ def _resolve_feature_dir(specs_dir: Path, feature: str, epic: str | None) -> Pat
     return flat
 
 
-def _next_steps_block(next_command: str, host: str) -> str:
+def _next_steps_block(
+    next_command: str, host: str, reconcile: dict | None = None
+) -> str:
     """Render the sentinel-terminated NEXT-STEPS block for the given host.
 
     The Claude wording uses the literal ``/clear`` slash-command; the generic
     wording is host-neutral (matching the adapter build's host-term table, so
     a non-Claude bundle invoking ``--host generic`` never instructs a fake
     slash-command).
+
+    ``reconcile`` carries the epic-backflow routing (§Epic backflow in
+    ``references/stage-exit-protocol.md``). When it marks a **blocking** request
+    (``required: true``), the fenced primary command becomes the epic reconcile
+    command and the normal next stage is demoted to a follow-up line. When it
+    marks only **non-blocking** requests (``reminder: true``), the fenced command
+    stays the normal next stage and a reminder line is appended. Either way the
+    added prose is host-neutral (no literal ``/clear``) so it survives verbatim
+    into a generic bundle.
     """
     if host == "claude":
         clear_line = (
@@ -1271,13 +1282,40 @@ def _next_steps_block(next_command: str, host: str) -> str:
             "2. Then start a fresh session and run the next stage below — or "
             "re-run the forge navigator skill to resume from disk."
         )
-    # The next-stage command goes in a fenced block so mobile/remote hosts get a
-    # native copy button (inline code is not tap-to-copy). The fence sits before
-    # the sentinel, so the sentinel remains the absolute last line.
-    command_block = f"```\n{next_command}\n```"
-    return "\n".join(
-        ["**Next steps**", clear_line, next_line, "", command_block, NEXT_STEPS_SENTINEL]
-    )
+    blocking = bool(reconcile and reconcile.get("required"))
+    # The primary actionable command goes in a fenced block so mobile/remote hosts
+    # get a native copy button (inline code is not tap-to-copy). For a blocking
+    # epic-change request the primary is the reconcile command; otherwise it is the
+    # normal next-stage command. The fence sits before the sentinel, so the
+    # sentinel remains the absolute last line.
+    fenced_command = reconcile["command"] if blocking else next_command
+    lines = ["**Next steps**", clear_line]
+    if blocking:
+        count = reconcile["count"]
+        plural = "s" if count != 1 else ""
+        lines.append(
+            f"2. Then reconcile the epic **before** the next stage — {count} "
+            f"blocking epic change request{plural} flagged, and proceeding would "
+            "build this feature's artifacts on a decomposition that is about to "
+            "change. Run the reconcile command below first."
+        )
+    else:
+        lines.append(next_line)
+    lines.append("")
+    lines.append(f"```\n{fenced_command}\n```")
+    if blocking and reconcile.get("deferred"):
+        lines.append(
+            f"After reconciling, continue the pipeline with: `{reconcile['deferred']}`"
+        )
+    elif reconcile and reconcile.get("reminder"):
+        count = reconcile["count"]
+        plural = "s" if count != 1 else ""
+        lines.append(
+            f"You also flagged {count} epic change{plural} to reconcile when "
+            f"convenient: `{reconcile['command']}`"
+        )
+    lines.append(NEXT_STEPS_SENTINEL)
+    return "\n".join(lines)
 
 
 def stage_exit(
@@ -1310,6 +1348,13 @@ def stage_exit(
       the fixed successor. ``--next-feature`` names the first actionable
       feature for the epic handoff; without it the runtime placeholder
       ``{first-actionable-feature}`` passes through for the skill to resolve.
+    - ``epicReconcile`` — present only when the exiting member carries
+      ``open`` ``epicChangeRequests`` (epic-backflow). ``required: true`` (any
+      ``blocksCurrent: true`` request) interposes a reconcile-first exit: the
+      NEXT-STEPS primary command becomes ``/feature-forge:forge-0-epic {epic}``
+      and the normal next stage is deferred. Only non-blocking requests set
+      ``reminder: true`` and append a non-blocking reminder line. Absent when
+      there are no open requests (common path) or the epic name is unresolvable.
 
     Read-only, deterministic, exit 0 — errors degrade to defaults, never
     crash a stage closing.
@@ -1355,6 +1400,37 @@ def stage_exit(
     )
     next_command = f"/feature-forge:{next_stage_id} {next_arg}" if next_stage_id else None
 
+    # Epic backflow routing: an exiting member may carry epic-level change requests
+    # (recorded by forge-1-prd/forge-2-tech). A `blocksCurrent: true` request means
+    # the current feature's next stage would build on a soon-to-change decomposition,
+    # so the exit interposes a reconcile-first step; only-`false` requests append a
+    # non-blocking reminder. Read-only; the common path (no open requests) is a no-op.
+    # The epic name comes from the `--epic` arg or the state's `epic` back-pointer.
+    epic_reconcile: dict | None = None
+    epic_name = epic or state.get("epic")
+    open_requests = [
+        r
+        for r in state.get("epicChangeRequests", [])
+        if isinstance(r, dict) and r.get("status") == "open"
+    ]
+    if open_requests and epic_name:
+        reconcile_command = f"/feature-forge:forge-0-epic {epic_name}"
+        blocking = [r for r in open_requests if r.get("blocksCurrent") is True]
+        if blocking:
+            epic_reconcile = {
+                "required": True,
+                "command": reconcile_command,
+                "count": len(blocking),
+                "deferred": next_command,
+            }
+        else:
+            epic_reconcile = {
+                "required": False,
+                "reminder": True,
+                "command": reconcile_command,
+                "count": len(open_requests),
+            }
+
     directives = {
         "stage": stage,
         "stageNoun": STAGE_NOUN.get(stage, stage),
@@ -1372,9 +1448,13 @@ def stage_exit(
         "cleanTree": clean_tree,
         "host": host,
     }
+    if epic_reconcile is not None:
+        directives["epicReconcile"] = epic_reconcile
     return {
         "directives": directives,
-        "nextSteps": _next_steps_block(next_command or "/feature-forge:forge", host),
+        "nextSteps": _next_steps_block(
+            next_command or "/feature-forge:forge", host, epic_reconcile
+        ),
         "sentinel": NEXT_STEPS_SENTINEL,
     }
 
