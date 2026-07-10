@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Copyable next-stage command on the loop's exit blocks.** The two bespoke
+  `forge-5-loop` exits — the step-6 epic-member handoff (standard block) and the all-done
+  closing (warm block) — now render their next command inside a fenced code block instead
+  of inline code, matching the tap-to-copy parity the authoring stages got in 0.12.3. The
+  canonical blocks (`references/stage-exit-protocol.md`) and both stamp sites were updated
+  in lock-step; the drift-guard (`tests/test_stage_exit_protocol.py`) covers it. The warm
+  block stays host-neutral (no literal `/clear`, since it is copied verbatim into the
+  non-Claude adapters). Two `forge-5-loop` Gotchas were merged to keep the SKILL body at
+  the 300-line cap. Adapters regenerated.
+
 ## [0.12.3] — 2026-07-10
 
 Stage-exit UX polish plus documentation catch-up for the 0.12.x stabilization work.

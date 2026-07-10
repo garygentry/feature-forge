@@ -181,7 +181,11 @@ Slots: `{stage}` (a lowercase noun phrase), `{verify-command}`, `{next-command}`
 
    **Host / clean-room fallback (not a user-selectable option):** if the question mechanism, the `Agent` tool, or the `forge-verifier` subagent is unavailable, do **not** run clean-room — degrade to printing `{verify-command}` for the user to run inline/manually (mirroring `autoInvokeNextStage`), and offer the auto-verify enable as plain text only if a config write is possible.
 2. **Then `/clear`.** Recommended **unconditionally** at this boundary for a clean start — independent of how full the context window is. Every artifact is on disk, so the work survives the clear. **I can't `/clear` for you — you have to run it yourself.**
-3. **Then run `{next-command}`** in the fresh session — or re-run `/feature-forge:forge` to let the navigator resume from disk.
+3. **Then run the next command** in the fresh session — or re-run `/feature-forge:forge` to let the navigator resume from disk:
+
+   ```
+   {next-command}
+   ```
 <!-- END: standard-exit-block -->
 
 ---
@@ -206,5 +210,9 @@ by the loop itself, so this block defers rather than re-presenting a gate.
 
 1. **Verify is already offered above.** Impl-verify is offered interactively right after this report (Step 5b for a standalone feature, Step 6.1 for an epic member) — run it there rather than as a second gate. It runs clean-room, so it needs no fresh session.
 2. **Clearing is optional here — warm is fine.** `forge-6-docs` benefits from the still-warm context of what the loop actually did, so continuing in this same session is the easy default. A cold start also works — every artifact is on disk — but there is no need to force it.
-3. **Then run `{next-command}`** — in this warm session, or a fresh one if you prefer.
+3. **Then run the next command** — in this warm session, or a fresh one if you prefer:
+
+   ```
+   {next-command}
+   ```
 <!-- END: warm-exit-block -->

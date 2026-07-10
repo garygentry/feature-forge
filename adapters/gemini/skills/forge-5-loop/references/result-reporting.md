@@ -16,7 +16,11 @@ Loop completed for {feature}. All {N} items implemented successfully.
 
 1. **Verify is already offered above.** Impl-verify is offered interactively right after this report (Step 5b for a standalone feature, Step 6.1 for an epic member) — run it there rather than as a second gate. It runs clean-room, so it needs no fresh session.
 2. **Clearing is optional here — warm is fine.** `forge-6-docs` benefits from the still-warm context of what the loop actually did, so continuing in this same session is the easy default. A cold start also works — every artifact is on disk — but there is no need to force it.
-3. **Then run `/feature-forge:forge-6-docs {feature}`** — in this warm session, or a fresh one if you prefer.
+3. **Then run the next command** — in this warm session, or a fresh one if you prefer:
+
+   ```
+   /feature-forge:forge-6-docs {feature}
+   ```
 
 **Runner review pass.** A review flag (e.g. rauf's `--review`) makes the runner run
 a post-loop review that **auto-creates and implements fix items** rather than handing
