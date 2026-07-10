@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -710,6 +711,27 @@ def doctor_report(specs_dir: Path, config_path: Path) -> dict:
         "counts": _counts(specs_dir),
         "features": features,
         "invalidAutoVerifyKeys": invalid_auto_verify_keys(config),
+        "rootSandbox": _root_sandbox_status(),
+    }
+
+
+def _root_sandbox_status() -> dict:
+    """Report the root/sandbox launch condition for forge-5-loop (issue #99).
+
+    On a hosted remote (e.g. Claude.ai) the loop runs as root, where rauf's
+    ``claude --dangerously-skip-permissions`` is refused unless ``IS_SANDBOX``
+    is set. forge-5-loop exports ``IS_SANDBOX=${IS_SANDBOX:-1}`` at launch when
+    root; this surfaces the same condition as a diagnosable check. ``geteuid``
+    is absent on Windows — treat that as non-root.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    is_root = geteuid() == 0 if geteuid is not None else False
+    is_sandbox_set = os.environ.get("IS_SANDBOX") not in (None, "")
+    return {
+        "isRoot": is_root,
+        "isSandboxSet": is_sandbox_set,
+        # True only when the loop would need to supply the default at launch.
+        "loopWillSetSandbox": is_root and not is_sandbox_set,
     }
 
 
@@ -756,6 +778,16 @@ def _print_doctor(report: dict) -> None:
     invalid = report.get("invalidAutoVerifyKeys") or []
     if invalid:
         print("  ! invalid autoVerifyStages keys (ignored): " + ", ".join(invalid))
+    rs = report.get("rootSandbox") or {}
+    if rs.get("isRoot"):
+        if rs.get("isSandboxSet"):
+            print("root/sandbox: running as root; IS_SANDBOX already set — loop launch OK")
+        else:
+            print(
+                "root/sandbox: running as root; IS_SANDBOX not set — forge-5-loop will "
+                "export IS_SANDBOX=1 at launch so rauf's "
+                "--dangerously-skip-permissions is not refused"
+            )
 
 
 # --------------------------------------------------------------------------- #
