@@ -74,6 +74,27 @@ the `rauf` commands below.
 See [Sessions & monitoring](/pipeline/sessions-and-monitoring/) for how loop sessions fit
 alongside pipeline state and the navigator's context checks.
 
+## Branch reconciliation
+
+The loop records which branch a feature's work lives on, but treats that record as a
+**self-healing hint, not gospel**. This matters on hosted surfaces (Claude.ai remote,
+cloud agents) that impose an arbitrary session branch (e.g. `claude/<slug>`): that imposed
+name can get recorded, and if you later move the work to your intended topic branch, the
+stale record would otherwise make the loop offer to switch you *back*. Before launching,
+the loop's pre-flight reconciles against where your pipeline state actually resolves:
+
+- **Adopt the current branch** — you're on a non-default topic branch where the state
+  resolves and the recorded name differs. The loop updates the record to match your
+  current branch, with a visible one-line note. It never pushes you back to the stale name.
+- **Warn on drift** — you're on the **default** branch while the state records a topic
+  branch. The loop recommends creating/switching to the topic branch, but still lets you
+  proceed on the default branch.
+- **Nothing to do** — the record already matches; the loop proceeds.
+
+The current classification is also captured (as `branchReconcile`) by the `doctor`
+diagnostic — `python3 <plugin-root>/scripts/forge-session.py doctor --json` — if you want
+to inspect it outside a run.
+
 ## Watching and controlling the loop (rauf)
 
 You can observe and steer the rauf loop directly from a terminal:

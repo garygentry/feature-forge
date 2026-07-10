@@ -32,6 +32,19 @@ For each item, the agent emits one signal (see [core concepts](/start-here/conce
 - `RAUF_BLOCKED` — a missing dependency or unclear requirement; the item is set aside.
 - `RAUF_NEEDS_HUMAN` — a decision or secret (such as an API key) is needed; the loop waits for your answer.
 
+## The loop wants to switch me to a `claude/…` branch I didn't create
+
+That's a stale **branch record** from a hosted surface. Claude.ai remote and cloud agents
+run each session on an imposed branch (e.g. `claude/<slug>`), which the pipeline records as
+the feature's branch. If you then move the work to your own topic branch, the record is
+stale — and older builds would offer to switch you *back* to the imposed name.
+
+Current builds reconcile this automatically: the [loop](/pipeline/stage-5-loop/#branch-reconciliation)
+pre-flight adopts the branch your pipeline state actually resolves on (updating the record,
+with a visible note) rather than pushing you back. If you're on the repo's **default**
+branch, it instead recommends creating a topic branch but still lets you proceed. Nothing
+is auto-switched without your consent.
+
 ## How do I see what stage I'm at / read pipeline state?
 
 Run the dashboard:
