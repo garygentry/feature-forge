@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Structured `deferredDecisions[]` for same-feature decisions postponed to a later stage
+  (#92, O3).** A structured alternative to burying a "decide this at the next stage" note in
+  the free-text `notes` string, modeled on `epicChangeRequests[]`. New optional
+  `deferredDecisions[]` array on `.pipeline-state.json`
+  (`references/pipeline-state-schema.json`; additive — legacy states validate unchanged) with
+  `question` / `rationale` / `targetStage` / `raisedBy` / `raisedAt` / `status`
+  (`open`→`addressed`|`dismissed`). Paired with a new **deferred-decisions rule** in
+  `references/stage-exit-protocol.md`: at a stage exit, do not solicit (or unilaterally
+  decide) a decision that belongs to a later stage — record it as a `deferredDecisions[]`
+  entry for the owning stage to resolve. New `tests/test_pipeline_state_schema.py`; adapters
+  regenerated.
+
+### Changed
+
+- **Tightened `currentStage` semantics (#92, O1).** The `currentStage` schema description was
+  ambiguous ("the stage currently in progress **or next to start**"). It now has a single
+  defined meaning — *where the pipeline IS* (the most recently started stage; `in-progress`
+  while authored, then `complete`) — explicitly reconciled with the `stageEntry.status` enum
+  and with the **derived** next stage (`next_stage()` computes "what runs next" from
+  `stages[].status`, never from `currentStage`). Docstring/comment clarifications in
+  `scripts/forge-session.py` make the stored-vs-derived split explicit; no behavior change.
+  (O2 — the stage-entry idempotency guard — is deliberately split into a follow-up: it touches
+  all five authoring skills' Step 1 and `forge-0-epic` is at the 300-line body cap.)
+
 ## [0.12.4] — 2026-07-10
 
 ### Added
