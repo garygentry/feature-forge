@@ -10,13 +10,12 @@ _Last updated: 2026-07-11._
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.12.5** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.2.10** | `installer/package.json` (independent version line) |
-| npm | **`@garygentry/feature-forge@0.2.10`** (`latest`) | published via `npm-publish.yml` |
-| Commit | `chore(release): feature-forge 0.12.5 + installer 0.2.10` | |
+| Plugin | **0.12.6** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.2.11** | `installer/package.json` (independent version line) |
+| npm | **`@garygentry/feature-forge@0.2.11`** (`latest`) | published via `npm-publish.yml` |
+| Commit | `chore(release): feature-forge 0.12.6 + installer 0.2.11` (#118) | |
 
-CHANGELOG `[Unreleased]` carries **#113 (stage-entry idempotency guard, O2)** — merged to
-`main` (PR #116), **awaiting the next batched release** (no version bump yet). Working tree clean.
+CHANGELOG `[Unreleased]` is **empty**; working tree clean.
 
 ## Shipped recently (0.12.x)
 
@@ -34,29 +33,18 @@ CHANGELOG `[Unreleased]` carries **#113 (stage-entry idempotency guard, O2)** �
   #90 (scaffold "Tooling feedback" prompt, #112), #92 O1+O3 (state-machine hygiene:
   `currentStage` semantics + structured `deferredDecisions[]`, #114). Docs: canonical
   `STATUS.md` (#110).
+- **0.12.6** (#118) — #113 (stage-entry idempotency guard O2, deferred from #92):
+  `forge-1-prd`..`forge-4-backlog` classify re-entry (fresh / interrupted / re-authoring) and gate
+  resume-vs-restart instead of blindly re-authoring; entry stamps `status: "in-progress"` +
+  `startedAt` + `currentStage` at Step 1; new `## Stage-Entry Guard` in
+  `references/shared-conventions.md`. Also **formally closed the plugin-QA audit** (doc-only #117):
+  all FINDINGS D1–D8 verified CLOSED across 0.12.x, no code residual — matrix
+  `plans/archive/CLOSEOUT-plugin-qa.md`.
 
 ## Open issues
 
-_None._ The GitHub tracker is empty (`gh issue list --state open` → 0).
-
-_All of #99, #90, #92 (O1+O3) shipped in 0.12.5; #92 O2 (#113) shipped to `main` and sits in
-`[Unreleased]` pending release. #91 and #69 closed with notes (see below)._
-
-## Pending release (on `main`, not yet published)
-
-- **#113 — stage-entry idempotency guard (O2, deferred from #92).** `forge-1-prd`..`forge-4-backlog`
-  classify re-entry (fresh / interrupted / re-authoring) and gate resume-vs-restart instead of
-  blindly re-authoring; entry stamps `status: "in-progress"` + `startedAt` + `currentStage` at
-  Step 1. New `## Stage-Entry Guard` block in `references/shared-conventions.md` (supersedes the
-  dormant Crash Recovery). `forge-0-epic` unchanged (manifest dispatch already gates re-entry).
-  PR #116. No schema change. Adapters regenerated.
-- **Plugin-QA close-out (doc-only).** The whole-repo plugin-QA review (audited @`236725f`) is
-  **formally closed** — every FINDINGS item D1–D8 + coverage §7 walked item-by-item against `main`
-  @ `ff3d7c1` (7 parallel reviewers, one per REMEDIATION chunk A–G), all **CLOSED** with `file:line`
-  evidence. The one **High** (forge-verify epic-member resolution) and every Medium/Low landed
-  across the 0.12.x line; **no code residual**. Matrix: `plans/archive/CLOSEOUT-plugin-qa.md`;
-  FINDINGS + REMEDIATION stamped CLOSED. G5 (advisory linters) → won't build (below). Diff is
-  archive stamps + this file only.
+_None._ The GitHub tracker is empty (`gh issue list --state open` → 0). CHANGELOG `[Unreleased]`
+is empty; everything on `main` is published.
 
 ## Deferred / optional (not scheduled)
 
