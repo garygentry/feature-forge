@@ -20,6 +20,8 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 **Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, both `forge-1-prd` and `forge-2-tech` must be `complete`. If not, STOP and tell the user which prerequisites are missing.
 
+After the prerequisite check, invoke the **Stage-Entry Guard** block in `references/shared-conventions.md` with `{stage}` = `forge-3-specs`. Because this stage writes a suite incrementally, the guard's **interrupted** arm uses the `stages.forge-3-specs.artifacts` array (already updated after each spec file — Step 3) to resume from the first unwritten document rather than regenerating the whole suite.
+
 Read both `{resolvedFeatureDir}/PRD.md` and `{resolvedFeatureDir}/tech-spec.md` into context.
 
 After reading the PRD and tech spec, invoke the **Epic Context Injection** block in `references/shared-conventions.md`. It self-gates on the resolved feature's `epic` back-pointer: for a standalone feature it is a no-op; for an epic member it loads EPIC.md, this feature's charter, and the completed direct dependencies' specs into context before the spec suite is planned.
@@ -55,7 +57,7 @@ Feature-specific:
 
 **Then call the host's question mechanism** following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this plan as the default (it's your evidence-backed read of the feature's complexity) and name the trade-off so the user can push back knowingly — more documents means finer separation of concerns but more to keep in sync; fewer means tighter docs but risks one document carrying multiple concerns. Lead with: "I recommend this plan. Add or remove any documents?" Note the guidance below — resist splitting a concern into a sub-50-line document.
 
-**Incremental artifact tracking:** After each spec document is written (by you or a writer subagent), immediately update the `artifacts` array in `.pipeline-state.json` with the new file path. This enables crash recovery if the session is interrupted mid-suite (see shared-conventions.md "Crash Recovery").
+**Incremental artifact tracking:** After each spec document is written (by you or a writer subagent), immediately update the `artifacts` array in `.pipeline-state.json` with the new file path. This enables crash recovery if the session is interrupted mid-suite (see shared-conventions.md "Stage-Entry Guard").
 
 ## Step 4: Write the Spec Suite
 

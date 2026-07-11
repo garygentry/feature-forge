@@ -18,6 +18,8 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 **Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode and `forge-1-prd` is not `complete`, STOP and tell the user: "The PRD for '{feature}' isn't complete yet. Run `/feature-forge:forge-1-prd {feature}` first."
 
+After the prerequisite check, invoke the **Stage-Entry Guard** block in `references/shared-conventions.md` with `{stage}` = `forge-2-tech` — it detects an interrupted or already-complete tech-spec, runs the resume/restart or new-version gate, and stamps `status: "in-progress"` + `startedAt` + `currentStage` before the research and interview.
+
 Read `{resolvedFeatureDir}/PRD.md` into context. This is your foundation — every technology decision must trace back to a PRD requirement.
 
 After reading the PRD, invoke the **Epic Context Injection** block in `references/shared-conventions.md`. It self-gates on the resolved feature's `epic` back-pointer: for a standalone feature it is a no-op; for an epic member it loads EPIC.md, this feature's charter, and the completed direct dependencies' specs into context before the research and interview.

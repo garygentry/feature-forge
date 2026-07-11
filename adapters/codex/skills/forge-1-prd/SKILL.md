@@ -19,7 +19,7 @@ Invoke the **Branch Setup** block in `references/shared-conventions.md` with `{l
 
 Set the working directory by invoking the **Feature Directory Resolution** block in `references/shared-conventions.md`, which yields `{resolvedFeatureDir}`. Note one PRD-specific caveat: at PRD time a brand-new standalone feature may have NO directory yet, so resolution is expected to fail `not-found` for a never-started standalone feature — in that case forge-1 creates `{specsDir}/{feature}/` as today. For an epic member the directory already exists (created empty by forge-0-epic with an `epic` back-pointer), so resolution succeeds and yields the nested path.
 
-If `.pipeline-state.json` exists for this feature and `forge-1-prd` is already marked complete, use the host's question mechanism to warn: "A PRD already exists for '{feature}'. Continuing will create a new version. Proceed?"
+After resolution, invoke the **Stage-Entry Guard** block in `references/shared-conventions.md` with `{stage}` = `forge-1-prd`. It classifies re-entry (fresh / interrupted / re-authoring), runs the resume-vs-restart gate and the "create a new version?" warning as applicable, and applies the entry stamp on the authoring paths. For a brand-new standalone feature there is no state file yet, so the guard's **fresh** arm applies with nothing to prompt; the entry stamp lands when the state file is first created in Step 6.
 
 ## Step 2: Examine Existing Context
 
