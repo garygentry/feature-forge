@@ -40,7 +40,15 @@ agent-selection rules used by the loop.
 ## Install the loop runner (for Stage 5)
 
 [Stage 5](/pipeline/stage-5-loop/) runs an autonomous coding loop. The
-default runner is **rauf**. Install the rauf CLI:
+default runner is **rauf**, published to npm as
+[`@garygentry/rauf`](https://www.npmjs.com/package/@garygentry/rauf). Install the
+rauf CLI with npx:
+
+```bash
+npx @garygentry/rauf --help          # or install globally: npm i -g @garygentry/rauf
+```
+
+Prefer a standalone binary? Use the install script instead:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash

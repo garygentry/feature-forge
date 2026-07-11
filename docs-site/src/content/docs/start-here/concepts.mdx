@@ -85,6 +85,20 @@ change too large for one feature into several **member features**. Recorded in
 provides) and `consumes` (what it needs from a sibling). With `dependsOn` edges,
 they define the epic's dependency graph.
 
+## Parking decisions & concerns
+
+**Notes** — free-form reminders on a feature's `.pipeline-state.json`, surfaced on the
+[dashboard](/pipeline/dashboard/). The catch-all parking lot.
+
+**Deferred decision** — a decision that legitimately belongs to a *later* stage, recorded as
+a structured `deferredDecisions[]` entry (tagged with the stage that should resolve it) rather
+than buried in a note or decided prematurely. The owning stage picks it up when it runs.
+
+**Epic change request** — a structured signal, raised from a member feature, that the *epic*
+decomposition must change (add or split a feature, move a boundary, fix a dependency). Routed
+back to [Stage 0](/advanced/epics/) to reconcile. See
+[if the epic decomposition looks wrong](/advanced/epics/#if-the-epic-decomposition-looks-wrong).
+
 ## Configuration
 
 **`forge.config.json`** — project-root configuration (specs/docs locations, commit

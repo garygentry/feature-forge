@@ -44,6 +44,15 @@ run it is to **let it run automatically**: set
 [`autoVerify: true`](/pipeline/verify-and-fix/#auto-verify) and each stage is verified
 for you with no prompt. Fixing stays human-gated unless you also enable `autoFix`.
 
+## Resuming and re-running a stage
+
+The pipeline is resumable: state lives in `.pipeline-state.json`, so you can stop, clear
+context, and come back later. If you re-run an authoring stage (Stages 1–4) you already
+started, it detects the re-entry instead of blindly restarting the interview — it inventories
+what's already on disk and offers to **resume** where you left off (after an interrupted run)
+or **start a new version** (when the stage was already complete). Pass `--force` to skip the
+gate and restart from scratch.
+
 ## Tracking progress
 
 Run [`/feature-forge:forge <feature-name>`](/pipeline/dashboard/) anytime to see which
