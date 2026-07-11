@@ -4,7 +4,7 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-07-10._
+_Last updated: 2026-07-11._
 
 ## Current release
 
@@ -15,7 +15,8 @@ _Last updated: 2026-07-10._
 | npm | **`@garygentry/feature-forge@0.2.10`** (`latest`) | published via `npm-publish.yml` |
 | Commit | `chore(release): feature-forge 0.12.5 + installer 0.2.10` | |
 
-CHANGELOG `[Unreleased]` is **empty**; working tree clean.
+CHANGELOG `[Unreleased]` carries **#113 (stage-entry idempotency guard, O2)** — merged to
+`main` (PR #116), **awaiting the next batched release** (no version bump yet). Working tree clean.
 
 ## Shipped recently (0.12.x)
 
@@ -36,11 +37,26 @@ CHANGELOG `[Unreleased]` is **empty**; working tree clean.
 
 ## Open issues
 
-| # | Title (short) | Status / plan |
-|---|---|---|
-| #113 | Stage-entry idempotency guard across the 5 authoring skills (#92 O2 follow-up) | **Open, not scheduled** — the invasive part of #92 (touches all 5 authoring skills' Step 1; `forge-0-epic` at the 300-line cap → needs a shared helper + reference moves). Split out from #92 so it didn't hold the 0.12.5 release. |
+_None._ The GitHub tracker is empty (`gh issue list --state open` → 0).
 
-_All of #99, #90, #92 (O1+O3) shipped in 0.12.5. #91 and #69 closed with notes (see below)._
+_All of #99, #90, #92 (O1+O3) shipped in 0.12.5; #92 O2 (#113) shipped to `main` and sits in
+`[Unreleased]` pending release. #91 and #69 closed with notes (see below)._
+
+## Pending release (on `main`, not yet published)
+
+- **#113 — stage-entry idempotency guard (O2, deferred from #92).** `forge-1-prd`..`forge-4-backlog`
+  classify re-entry (fresh / interrupted / re-authoring) and gate resume-vs-restart instead of
+  blindly re-authoring; entry stamps `status: "in-progress"` + `startedAt` + `currentStage` at
+  Step 1. New `## Stage-Entry Guard` block in `references/shared-conventions.md` (supersedes the
+  dormant Crash Recovery). `forge-0-epic` unchanged (manifest dispatch already gates re-entry).
+  PR #116. No schema change. Adapters regenerated.
+- **Plugin-QA close-out (doc-only).** The whole-repo plugin-QA review (audited @`236725f`) is
+  **formally closed** — every FINDINGS item D1–D8 + coverage §7 walked item-by-item against `main`
+  @ `ff3d7c1` (7 parallel reviewers, one per REMEDIATION chunk A–G), all **CLOSED** with `file:line`
+  evidence. The one **High** (forge-verify epic-member resolution) and every Medium/Low landed
+  across the 0.12.x line; **no code residual**. Matrix: `plans/archive/CLOSEOUT-plugin-qa.md`;
+  FINDINGS + REMEDIATION stamped CLOSED. G5 (advisory linters) → won't build (below). Diff is
+  archive stamps + this file only.
 
 ## Deferred / optional (not scheduled)
 
@@ -49,9 +65,6 @@ _All of #99, #90, #92 (O1+O3) shipped in 0.12.5. #91 and #69 closed with notes (
 - **forge-5-loop exit → stage-exit migration (Option B)** — the loop's bespoke post-loop exit
   blocks converged onto scripted `stage-exit`. Low value; loop is at its 300-line body cap.
   (The user-facing win — copyable next-command — was already captured via Option A in 0.12.4.)
-- **#92 O2 — stage-entry idempotency guard** (issue #113). See Open issues above.
-- **Plugin-QA remediation** — findings + remediation on disk (`plans/archive/*-plugin-qa.md`),
-  never executed. 1 High + ~16 Med, 7 chunks A–G.
 - **Remote e2e retest** — of the latest publish (`plans/remote-retest-checklist.md`). Needs a
   Claude.ai remote / root env; still owner's to run. **Also clears the pending end-to-end
   verification of the #99 root/sandbox fix** (landed with unit-level proof only — a real remote
@@ -63,6 +76,11 @@ _All of #99, #90, #92 (O1+O3) shipped in 0.12.5. #91 and #69 closed with notes (
   a local dogfood of 0.12.2 hit 3/3 HELD on every scripted stage-exit — no post-sentinel drift.
   Only re-open if a future **remote** run shows real post-sentinel drift (that would implicate
   the remote harness, not the skill). Context: `HANDOFF-next-session.md`.
+- **Plugin-QA G5 — extra advisory linters.** Resolved **DO NOT BUILD** (2026-07-11, owner
+  discretion): `advisory-lint.yml` already carries non-blocking markdownlint + lychee. Adding
+  eslint/prettier/tsc/mypy is advisory-only gold-plating that adds green-keeping surface for no
+  correctness gain. Re-open only if style/type/link rot becomes a real problem. Context:
+  `plans/archive/CLOSEOUT-plugin-qa.md`.
 
 ## Release mechanics (reference)
 
