@@ -226,17 +226,31 @@ When `gitCommitAfterStage` is true, follow this exact order to avoid state incon
    - **Nothing to commit:** If all artifacts were already committed, this is fine — mark the stage `complete`, leave `commitHash` at its existing value (or `null` if there was never an artifact commit), and skip Commit 2. There is no new artifact commit to record.
 5. **Never** use `git add -A`, `--amend`, `--no-verify`, or `--force` flags
 
-## Crash Recovery
+## Stage-Entry Guard
 
-When a skill detects that `currentStage` matches itself and the stage status is `in-progress`, a previous run was interrupted. Follow this recovery protocol:
+Invoke this block at the **start of an authoring stage** (`forge-1-prd`..`forge-4-backlog`), **after** Feature Directory Resolution and **before** any interview or (re-)authoring. It prevents a re-entered stage — an injected skill body or a re-invoked `Skill` — from blindly re-running the interview over an in-progress or already-complete draft. `{stage}` is the invoking skill's id (e.g. `forge-2-tech`).
 
-1. **Inventory existing artifacts:** List all files on disk in `{specsDir}/{feature}/` that this stage would produce
-2. **Compare against state:** Check the `artifacts` array in the pipeline state for this stage — it tracks files written incrementally during the previous run
-3. **Present options to user:** "This stage was interrupted. Found {N} artifacts from the previous run: {list}. Would you like to resume from where it left off, or restart the stage from scratch?"
-4. **If resume:** Skip artifact generation for files that already exist and appear complete (non-empty, properly structured). Continue from the next unwritten artifact.
-5. **If restart:** Proceed normally. The version number will increment.
+**Read, then classify** this stage's entry in `{resolvedFeatureDir}/.pipeline-state.json` (`stages.{stage}.status`):
 
-**Incremental artifact tracking:** When a stage writes multiple files (e.g., forge-3-specs writing a suite of spec documents), update the `artifacts` array in `.pipeline-state.json` after writing each file — not just at stage completion. This ensures crash recovery knows exactly which files were successfully written.
+1. **Fresh** — no state file yet, or `stages.{stage}` is absent/`pending`. First run of this stage. Proceed to the **Entry Stamp** below, then author normally. No prompt.
+
+2. **Interrupted** (`status: "in-progress"`) — a previous run of THIS stage was interrupted before it committed (the exit commit is what flips it to `complete`, so `in-progress` on entry always means a crash/abandon). Do **not** silently re-author. Instead:
+   - **Inventory on-disk artifacts:** list the files this stage produces that already exist in `{resolvedFeatureDir}/` (e.g. `PRD.md`; `tech-spec.md`; the `##-*.md` suite + `TRACEABILITY.md`; `backlog.json`), and cross-check against the `stages.{stage}.artifacts` array (written incrementally during the previous run).
+   - **Gate via `AskUserQuestion`** (Decision Support protocol): present the inventory as text, then ask "This {stage} run was interrupted — {N} artifact(s) from the previous run are on disk: {list}. Resume the in-progress draft, or start a new version from scratch?" Options: **Resume (recommended)** — continue from the first artifact not yet written/complete, reusing the existing files; do **not** re-stamp or bump the version. · **Start a new version** — treat it as a fresh authoring pass (proceed to the Entry Stamp; the version increments at exit).
+   - Skip artifact regeneration for files that already exist and are complete (non-empty, properly structured); continue from the next unwritten artifact.
+
+3. **Re-authoring** (`status: "complete"` or `"stale"`) — a finished draft exists. Warn via `AskUserQuestion` before overwriting: "A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?" On confirm, proceed to the Entry Stamp and author a new version (the version increments at exit, per that stage's Update-Pipeline-State step).
+
+**Entry Stamp** (fresh, restart, and re-author paths — NOT the resume path). Before authoring, write to `{resolvedFeatureDir}/.pipeline-state.json` and update `updatedAt`:
+- `stages.{stage}.status` → `"in-progress"`
+- `stages.{stage}.startedAt` → current ISO-8601 UTC timestamp
+- top-level `currentStage` → `"{stage}"` (where the pipeline IS, per O1)
+
+This write is **left uncommitted**: it is staged and committed as part of this stage's existing exit commit (Git Commit Protocol), so no extra commit is needed at entry. If the run is interrupted after the stamp but before the exit commit, the marker survives on disk (uncommitted) and the next entry classifies as **Interrupted** — which is exactly the intent.
+
+**Force Mode.** When `--force` is passed, skip the interactive gate: do not prompt for resume-vs-restart or the re-author warning. Treat entry as a fresh restart — apply the Entry Stamp and author. (`--force` already skips prerequisite checks; here it likewise bypasses the self-stage gate. Existing on-disk artifacts are still loaded per Force Mode.)
+
+**Incremental artifact tracking:** When a stage writes multiple files (e.g. forge-3-specs writing a suite of spec documents), update the `stages.{stage}.artifacts` array in `.pipeline-state.json` after writing each file — not just at stage completion. This is what makes the Interrupted inventory above precise about which files were successfully written.
 
 ## Force Mode
 

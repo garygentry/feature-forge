@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Stage-entry idempotency guard across the authoring stages (#113, O2 — deferred from #92).**
+  On entry, `forge-1-prd`..`forge-4-backlog` now detect a re-entered stage instead of blindly
+  re-running the interview: a new **Stage-Entry Guard** block in
+  `references/shared-conventions.md` (folding in the previously dormant Crash Recovery protocol)
+  classifies entry as fresh / interrupted (`status: "in-progress"`) / re-authoring
+  (`complete`/`stale`), runs a resume-vs-restart gate (with an on-disk artifact inventory) or a
+  "create a new version?" warning, and stamps `status: "in-progress"` + `startedAt` +
+  `currentStage=<stage>` at Step 1. The entry stamp is left uncommitted and folds into the
+  stage's existing exit commit. This closes the gap where authoring stages never wrote
+  `in-progress` at entry, so Crash Recovery could never fire. `--force` bypasses the gate and
+  restarts. `forge-0-epic` is unchanged: its manifest-existence dispatch already gates re-entry
+  into Edit Mode. No schema change (the `stageEntry` fields already exist); additive and
+  backward-compatible. Adapters regenerated.
+
 ## [0.12.5] — 2026-07-10
 
 Issue-closeout batch: three fixes/features (#99 loop root-sandbox, #90 scaffold tooling

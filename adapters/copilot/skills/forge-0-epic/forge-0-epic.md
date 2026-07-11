@@ -68,6 +68,8 @@ Resolve the epic subtree path `{specsDir}/{epic}/` and decide which branch to ru
    - **NEW** (no `epic-manifest.json`) → **Creation branch** (Step C1 onward).
    - **EXISTS** → **Edit branch** (§ Edit Mode below).
 
+   This manifest-existence dispatch **is** forge-0-epic's stage-entry guard: a re-entry on an existing epic lands in Edit Mode (helper-mutated, re-validated) rather than re-running the creation interview, so the **Stage-Entry Guard** block used by `forge-1-prd`..`forge-4-backlog` does not apply here (an epic has no self `.pipeline-state.json` to stamp — it writes member states).
+
 3. **Pre-flight epic-name uniqueness (creation only).** Before composing anything for a NEW
    epic, confirm the epic name itself does not collide with any existing feature or epic:
 

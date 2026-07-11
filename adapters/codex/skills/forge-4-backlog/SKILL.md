@@ -38,6 +38,8 @@ Resolve the **loop runner** from the `loopRunner` block in `forge.config.json`, 
 
 **Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, stages `forge-1-prd`, `forge-2-tech`, and `forge-3-specs` must all be `complete`. If not, STOP and tell the user which prerequisites are missing.
 
+After the prerequisite check, invoke the **Stage-Entry Guard** block in `references/shared-conventions.md` with `{stage}` = `forge-4-backlog` — it detects an interrupted or complete `backlog.json`, runs the resume/restart or new-version gate, and stamps entry before Step 2 loads the specs. (The backlog is a single artifact, so "resume" means: reuse the existing `backlog.json` if the previous run wrote it, rather than re-authoring from scratch.)
+
 **Verification check.** Check whether the specs have been verified. If not, use the host's question mechanism to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
 
 ## Step 2: Load All Specs
