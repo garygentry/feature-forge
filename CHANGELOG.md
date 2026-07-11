@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.6] — 2026-07-11
+
+Installer republished as `@garygentry/feature-forge@0.2.11` to carry this to `npx` users.
+
 ### Added
 
 - **Stage-entry idempotency guard across the authoring stages (#113, O2 — deferred from #92).**

@@ -1,6 +1,6 @@
 {
   "name": "feature-forge",
-  "version": "0.12.5",
+  "version": "0.12.6",
   "agent": "copilot",
   "generatedBy": "python3 scripts/build-adapters.py"
 }

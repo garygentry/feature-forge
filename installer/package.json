@@ -1,6 +1,6 @@
 {
   "name": "@garygentry/feature-forge",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "Cross-agent installer for the feature-forge skill suite — installs the canonical forge pipeline into Claude, Codex, Copilot, Cursor, or Gemini.",
   "license": "MIT",
   "type": "module",
