@@ -47,7 +47,7 @@ Run `/feature-forge:forge <feature>` at any point to see what's complete, what's
 
 ### Epics (optional)
 
-Some changes are too large to be a single feature. An **epic** (`forge-0-epic`) splits such a change into discrete **member features** under one named subtree, recording the dependency edges and the `exposes`/`consumes` contracts between them on disk instead of in your head. Each member then runs the normal Stage 1 through 6 pipeline, with the epic's narrative and its direct dependencies' contracts injected automatically as context. Epic support is purely additive: when no epic is involved, every single-feature flow is byte-for-byte unchanged. See [docs/architecture/epic-orchestration/README.md](docs/architecture/epic-orchestration/README.md).
+Some changes are too large to be a single feature. An **epic** (`forge-0-epic`) splits such a change into discrete **member features** under one named subtree, recording the dependency edges and the `exposes`/`consumes` contracts between them on disk instead of in your head. Each member then runs the normal Stage 1 through 6 pipeline, with the epic's narrative and its direct dependencies' contracts injected automatically as context. If a member stage reveals the decomposition itself is wrong, forge records an **epic change request** and routes it back to Stage 0 to reconcile — surfaced in the epic dashboard and epic verification. Epic support is purely additive: when no epic is involved, every single-feature flow is byte-for-byte unchanged. See [docs/architecture/epic-orchestration/README.md](docs/architecture/epic-orchestration/README.md).
 
 ### The loop runner (rauf)
 
@@ -90,10 +90,11 @@ npx @garygentry/feature-forge install --dry-run --json # preview the plan, chang
 | Cursor  | `npx @garygentry/feature-forge install -a cursor`                                                      | [docs/agents/cursor.md](docs/agents/cursor.md)   |
 | Gemini  | `npx @garygentry/feature-forge install -a gemini`                                                      | [docs/agents/gemini.md](docs/agents/gemini.md)   |
 
-> The default loop runner ([forge-5-loop](#stage-5-loop-forge-5-loop)) is **rauf**. Provisioning it
-> via `npx rauf@…` will be available once rauf is published to npm
-> ([garygentry/rauf#28](https://github.com/garygentry/rauf/issues/28)); today, install rauf via its
-> binary script (`curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`).
+> The default loop runner ([forge-5-loop](#stage-5-loop-forge-5-loop)) is **rauf**, published to npm as
+> [`@garygentry/rauf`](https://www.npmjs.com/package/@garygentry/rauf). Install the rauf CLI with
+> `npx @garygentry/rauf` (or `npm i -g @garygentry/rauf`), or its
+> [binary script](https://github.com/garygentry/rauf#install)
+> (`curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`).
 > See [docs/agents/claude.md#the-default-loop-runner](docs/agents/claude.md#the-default-loop-runner) for
 > the full default loop path and agent-selection precedence.
 
@@ -386,7 +387,7 @@ Each feature's progress is tracked in `{specsDir}/{feature}/.pipeline-state.json
 
 **Staleness detection:** When an upstream stage is revised (e.g., PRD updated after tech spec is written), downstream stages are flagged as potentially stale based on version comparisons.
 
-**Crash recovery:** If a stage is interrupted mid-execution, the pipeline inventories existing artifacts on disk, compares them against the state file, and offers to resume from the last completed artifact or restart the stage.
+**Crash recovery and re-entry:** If a stage is interrupted mid-execution — or you simply re-run an authoring stage (Stages 1–4) you already started — the pipeline inventories existing artifacts on disk, compares them against the state file, and offers to resume from the last completed artifact or start a new version. `--force` skips the gate and restarts the stage.
 
 ## Validation
 

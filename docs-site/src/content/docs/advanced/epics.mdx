@@ -46,6 +46,25 @@ See [Stage 1](/pipeline/stage-1-prd/). When a member's PRD and tech spec are wri
 
 At Stage 5, if a member has unmet direct dependencies the loop warns you and requires you to explicitly proceed (unless forced). Completing a member can unlock its dependents.
 
+## If the epic decomposition looks wrong
+
+While writing a member's PRD or tech spec you may realize the *epic* itself is off — a
+sibling feature is missing, a boundary between features should move, a feature should split,
+or a dependency edge is wrong. Rather than forcing that into the current feature's notes,
+forge records it as an **epic change request** on the member and routes it by whether it
+blocks the current feature:
+
+- **Blocking** — the concern must be settled before this feature continues safely. The stage
+  exit sends you back to `/feature-forge:forge-0-epic <epic>` to reconcile first.
+- **Non-blocking** — the concern is real but downstream. You finish the current feature; the
+  request waits, and the exit just leaves a reminder.
+
+Re-running `/feature-forge:forge-0-epic <epic>` (EDIT mode) reads any open requests and offers
+to apply each — pre-filled for add-feature and dependency changes; boundary moves and splits
+are guided-manual. Every change still needs your approval. Open requests are surfaced so they
+don't get lost: the [dashboard](/pipeline/dashboard/) flags affected members with ⚠️, and
+`/feature-forge:forge-verify <epic> epic` reports them as findings.
+
 ## Dashboard and verification
 
 - `/feature-forge:forge <epic>` shows the epic [dashboard](/pipeline/dashboard/) — the members and their states.
