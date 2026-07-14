@@ -52,6 +52,18 @@ CHANGELOG `[Unreleased]` is **empty**; working tree clean.
 
 ## Open issues
 
+_GitHub tracker: 5 open (`gh issue list --state open`)._
+
+- **#121** — `forge-verify-impl` reports "clean" on a walking skeleton that never bootstraps; no
+  end-to-end runnability check. Not triaged.
+- **#122** — `forge-3-specs` references shared files/scripts reported as missing (shared-conventions,
+  stage-exit-protocol, forge-root.sh, forge-session.py, stacks/typescript). Needs triage — likely a
+  path/resolution or false-alarm question, not necessarily a code gap.
+- **#123** — `forge-6-docs` references a missing `references/shared-conventions.md`. Same triage
+  bucket as #122.
+- **#124** — forge completion dead-ends: no hand-off to the next feature at `forge-6-docs` exit or in
+  the navigator. Partially mitigated by the 0.12.7 navigator detached-epic hint (#125 Fix #4), but
+  the general hand-off is still open. Not started.
 - **#126** — scripted "adopt into epic" recovery command (reconcile a detached standalone into an
   epic member = epic-backflow **Phase 3**, composite manifest+specs mutator). Filed as the #125
   follow-up; 0.12.7 ships the guards + a manual recipe (`docs/recovery-detached-epic-member.md`)
