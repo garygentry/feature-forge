@@ -74,6 +74,17 @@ complete`).
 backlog → loop → docs pipeline; epic membership only *adds* context injection,
 a dependency gate, and a completion handoff.
 
+**Branch model** — an epic and **all** its member features live on **one
+branch**, `{branchPrefix}{epic}` (e.g. `forge/auth-overhaul`), created by
+`forge-0-epic` and *inherited* by every member's `forge-1-prd` (members never
+prompt for a branch of their own). Start members from the epic branch — not the
+default branch, and not a branch cut *before* the epic existed. Doing so would
+mint a member as a detached standalone feature that carries no `epic`
+back-pointer and cannot see the manifest — a **split-brain epic**. Forge now
+guards against this at mint time and refuses to author a member on a branch that
+lacks the epic manifest; see the [Integration Guide](./guides/integration.md#branch-inheritance)
+and the recovery recipe in `docs/recovery-detached-epic-member.md`.
+
 **Manifest (`epic-manifest.json`)** — the single machine-readable source of
 truth for membership, dependency edges (`dependsOn`), per-feature **charters**,
 and structured **`exposes` / `consumes`** contracts. `EPIC.md` mirrors the

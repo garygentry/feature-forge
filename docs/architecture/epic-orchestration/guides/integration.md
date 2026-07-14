@@ -44,6 +44,42 @@ context size and keeps the injected set deterministic. The skill obtains the
 contracts and live completion status of each dependency in one call via
 `render-status`.
 
+### Branch Inheritance
+
+An epic and all its members live on **one** branch. `forge-0-epic` invokes the
+shared **Branch Setup** block with `{scope} = epic` and creates
+`{branchPrefix}{epic}` (e.g. `forge/auth-overhaul`) when you start from the
+default branch. Every member's `forge-1-prd` then hits the same Branch Setup
+block's **epic-member inheritance** arm: because the resolved feature has an
+`epic` back-pointer, the prompt is skipped and the member simply *inherits the
+current branch*. The whole epic — manifest, `EPIC.md`, and every member's specs
+— therefore accumulates on that single branch and is reviewable as one unit.
+
+This makes the branch you are on load-bearing at member-mint time. If you run a
+member's `forge-1-prd` from the **default branch**, or from a branch **cut before
+the epic-manifest commit**, the epic's subtree isn't present, so the member's
+directory doesn't resolve as nested — resolution returns `not-found` and forge
+would otherwise mint it as a flat, detached standalone (`{specsDir}/{feature}/`)
+with no `epic` back-pointer. That disjoint copy is a **split-brain epic**
+(Issue #125). Two guards prevent it:
+
+- **Mint guard (`forge-1-prd`).** On a `not-found` resolution, the skill runs
+  `forge-session.py discover-feature <name>` — which now tags every candidate
+  with `epic` / `isEpicMember` — and *hard-stops* if the name is a known epic
+  member discoverable on another branch, pointing at that member's home branch.
+  An explicit `--force-standalone` flag (distinct from `--force`) forks a
+  standalone anyway when that is genuinely intended.
+- **Base guard (`forge-1-prd`..`forge-4-backlog`).** Even when a member *does*
+  resolve nested, the **Epic-Member Base Guard** block runs
+  `forge-session.py check-epic-base`, which emits `warn-detached-base` when the
+  epic's `epic-manifest.json` is absent on the current branch (a base that
+  predates or lacks the manifest). The stage stops with a home-branch pointer;
+  `--force` overrides. Both guards are a no-op for standalone features.
+
+To recover an epic that already split, see
+`docs/recovery-detached-epic-member.md` (a scripted "adopt into epic" command is
+tracked as a follow-up).
+
 ## Stage-by-Stage
 
 ### `forge-0-epic` — creation & edit (new stage)

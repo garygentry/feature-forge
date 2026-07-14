@@ -11,6 +11,8 @@ root navigator:
     python3 forge-session.py discover-feature [NAME | --all] [--specs-dir DIR] [--json]
     python3 forge-session.py reconcile-branch --feature F [--specs-dir DIR] \
         [--config FILE] [--epic E] [--json]
+    python3 forge-session.py check-epic-base --feature F [--specs-dir DIR] \
+        [--config FILE] [--epic E] [--json]
     python3 forge-session.py stage-exit --feature F --stage S [--specs-dir DIR] \
         [--config FILE] [--epic E] [--next-feature N] [--host claude|generic] [--json]
 
@@ -45,7 +47,17 @@ concluding it was never started. When nothing is found locally it also asks
 `git ls-remote --heads origin` about branches a single-branch clone never
 fetched, and emits the exact `git fetch`/`git switch` commands a caller could
 run. It is strictly read-only — it never checks anything out itself — and
-like `doctor` it always exits 0 and degrades to data.
+like `doctor` it always exits 0 and degrades to data. Each candidate also
+carries `epic`/`isEpicMember`, so a caller minting a new standalone feature can
+refuse when the name is a known epic member discoverable on another branch
+(the split-brain-epic guard, Issue #125).
+
+`check-epic-base` is the defense-in-depth companion: given a feature that
+resolves to a nested epic member on the current branch, it confirms the epic's
+`epic-manifest.json` is actually present on HEAD. When it is absent, the member
+was reached from a branch that predates or lacks the manifest commit (a detached
+base) and the command emits `warn-detached-base` with the member's recorded home
+branch. Read-only; always exits 0.
 
 `stage-exit` computes everything an authoring stage's closing used to derive
 in prose (the Scripted Stage Exit, `references/stage-exit-protocol.md`):
@@ -848,6 +860,26 @@ def _read_state_at_ref(ref: str, path: str) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _epic_membership(path: str, specs_rel: str, state: dict) -> tuple[str | None, bool]:
+    """Derive ``(epic, isEpicMember)`` for a discovered candidate.
+
+    A candidate is an epic member when its state carries an ``epic`` back-pointer
+    **or** its path is nested (``{specsDir}/{epic}/{name}/.pipeline-state.json``).
+    Nested-ness is structurally authoritative; the ``epic`` field is the recorded
+    back-pointer. When the state lacks the field, the nested directory name is used
+    so the signal is never "member of epic None".
+    """
+    prefix = specs_rel + "/"
+    nested_epic: str | None = None
+    if path.startswith(prefix):
+        segments = path[len(prefix):].split("/")
+        if len(segments) == 3:  # [epic, name, state-file]
+            nested_epic = segments[0]
+    epic = state.get("epic")
+    epic = epic if isinstance(epic, str) and epic else nested_epic
+    return epic, bool(nested_epic) or bool(epic)
+
+
 def _list_refs(pattern: str) -> list[tuple[str, str]]:
     """Return ``(short_ref, committer_date)`` pairs under a ref namespace."""
     raw = _git_output([
@@ -908,6 +940,7 @@ def discover_feature(name: str, specs_dir: str) -> dict:
             state_branch = state.get("branch")
             state_branch = state_branch if isinstance(state_branch, str) else None
             updated = state.get("updatedAt")
+            epic, is_epic_member = _epic_membership(path, specs_rel, state)
             matched_branches.add(branch)
             candidates.append({
                 "branch": branch,
@@ -918,6 +951,8 @@ def discover_feature(name: str, specs_dir: str) -> dict:
                 "stateBranchMatches": state_branch == branch,
                 "currentStage": state.get("currentStage"),
                 "pipelineStatus": state.get("pipelineStatus", "active"),
+                "epic": epic,
+                "isEpicMember": is_epic_member,
                 "updatedAt": updated if isinstance(updated, str) else None,
                 "commitDate": commit_date or None,
                 "isCurrentBranch": branch == current_branch,
@@ -988,6 +1023,8 @@ def _print_discover(payload: dict) -> None:
             marks.append("remote-tracking")
         if not cand["stateBranchMatches"] and cand["stateBranch"]:
             marks.append(f"state records branch {cand['stateBranch']}")
+        if cand.get("isEpicMember"):
+            marks.append(f"member of epic {cand.get('epic') or '?'}")
         suffix = f"  ({'; '.join(marks)})" if marks else ""
         print(
             f"  {cand['branch']}: stage={cand['currentStage'] or '?'} "
@@ -1054,6 +1091,7 @@ def discover_all(specs_dir: str) -> dict:
             state = _read_state_at_ref(ref, path)
             state_branch = state.get("branch")
             state_branch = state_branch if isinstance(state_branch, str) else None
+            epic, is_epic_member = _epic_membership(path, specs_rel, state)
             seen.append({
                 "branch": branch,
                 "remoteTracking": is_remote,
@@ -1062,6 +1100,8 @@ def discover_all(specs_dir: str) -> dict:
                 "stateBranchMatches": state_branch == branch,
                 "currentStage": state.get("currentStage"),
                 "pipelineStatus": state.get("pipelineStatus", "active"),
+                "epic": epic,
+                "isEpicMember": is_epic_member,
                 "commitDate": commit_date or None,
                 "isCurrentBranch": branch == current_branch,
                 "switchCommand": f"git switch {branch}",
@@ -1097,6 +1137,8 @@ def _print_discover_all(payload: dict) -> None:
                 marks.append("remote-tracking")
             if not cand["stateBranchMatches"] and cand["stateBranch"]:
                 marks.append(f"state records branch {cand['stateBranch']}")
+            if cand.get("isEpicMember"):
+                marks.append(f"member of epic {cand.get('epic') or '?'}")
             suffix = f"  ({'; '.join(marks)})" if marks else ""
             print(f"  {cand['branch']}: stage={cand['currentStage'] or '?'} "
                   f"status={cand['pipelineStatus']}{suffix}")
@@ -1189,6 +1231,77 @@ def _print_reconcile(payload: dict) -> None:
           f"default={payload['defaultBranch']}")
     if payload["reconcile"]:
         print(f"  → write state branch := {payload['newBranch']}  ({payload['statePath']})")
+
+
+# --------------------------------------------------------------------------- #
+# Epic-member base guard (Issue #125) — detached-base detection
+# --------------------------------------------------------------------------- #
+
+
+def check_epic_base(
+    name: str, specs_dir: Path, config_path: Path, epic: str | None = None
+) -> dict:
+    """Verify the current HEAD actually contains the epic manifest for a nested member.
+
+    Defense-in-depth for the split-brain-epic failure (Issue #125): when a feature
+    resolves to a nested epic-member directory but the epic's ``epic-manifest.json``
+    is absent from the current checkout, the member stub was reached from a branch
+    that predates (or otherwise lacks) the manifest commit — a detached base. This
+    is read-only: it emits a decision; the caller stops or warns.
+
+    Actions:
+    - ``none`` — not a git repo, a standalone feature (no epic to check), or the
+      manifest is present on HEAD. Nothing to do.
+    - ``not-resolved`` — the feature does not resolve on the current branch.
+    - ``warn-detached-base`` — nested member resolves here but the manifest is
+      missing on HEAD; ``homeBranch`` is the member stub's recorded ``branch``.
+    """
+    base = {
+        "feature": name,
+        "gitRepo": True,
+        "epic": epic,
+        "isEpicMember": False,
+        "manifestOnHead": None,
+        "homeBranch": None,
+    }
+    if _git_output(["rev-parse", "--git-dir"]) is None:
+        return {**base, "gitRepo": False, "action": "none",
+                "reason": "not a git repository"}
+    config = _load_config(config_path)
+    row = next(
+        (r for r in build_rows(specs_dir, config)
+         if r["name"] == name and (epic is None or r["epic"] == epic)),
+        None,
+    )
+    if row is None:
+        return {**base, "action": "not-resolved",
+                "reason": "feature state does not resolve on the current branch — "
+                          "use discover-feature to locate it"}
+    member_epic = row["epic"]
+    if not member_epic:
+        return {**base, "action": "none",
+                "reason": "standalone feature — no epic base to check"}
+    base = {**base, "epic": member_epic, "isEpicMember": True,
+            "homeBranch": row["branch"]}
+    manifest = specs_dir / member_epic / MANIFEST_FILENAME
+    if manifest.is_file():
+        return {**base, "manifestOnHead": True, "action": "none",
+                "reason": f"epic manifest present on the current branch "
+                          f"({member_epic}/{MANIFEST_FILENAME})"}
+    return {**base, "manifestOnHead": False, "action": "warn-detached-base",
+            "reason": f"member of epic {member_epic!r} resolves here, but "
+                      f"{member_epic}/{MANIFEST_FILENAME} is absent on the current "
+                      f"branch — this base predates or lacks the epic manifest"}
+
+
+def _print_check_epic_base(payload: dict) -> None:
+    """Human-readable check-epic-base report."""
+    if not payload["gitRepo"]:
+        print(f"check-epic-base {payload['feature']}: not a git repository")
+        return
+    print(f"check-epic-base {payload['feature']}: {payload['action']} — {payload['reason']}")
+    if payload["action"] == "warn-detached-base":
+        print(f"  → switch to the epic's home branch: {payload['homeBranch'] or '(unknown)'}")
 
 
 # --------------------------------------------------------------------------- #
@@ -1587,6 +1700,16 @@ def main() -> int:
     p_recon.add_argument("--epic", default=None, help="Epic name for a nested member")
     p_recon.add_argument("--json", action="store_true", dest="json_output")
 
+    p_base = sub.add_parser(
+        "check-epic-base",
+        help="Verify HEAD contains the epic manifest for a resolved nested member",
+    )
+    p_base.add_argument("--feature", required=True, help="Feature name")
+    p_base.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_base.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
+    p_base.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_base.add_argument("--json", action="store_true", dest="json_output")
+
     p_exit = sub.add_parser(
         "stage-exit", help="Emit the Scripted Stage Exit directives + NEXT-STEPS block"
     )
@@ -1665,6 +1788,16 @@ def main() -> int:
                 print(json.dumps(payload, indent=2, ensure_ascii=False))
             else:
                 _print_reconcile(payload)
+            return 0
+
+        if args.cmd == "check-epic-base":
+            payload = check_epic_base(
+                args.feature, Path(args.specs_dir), Path(args.config), args.epic
+            )
+            if args.json_output:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                _print_check_epic_base(payload)
             return 0
 
         if args.cmd == "stage-exit":
