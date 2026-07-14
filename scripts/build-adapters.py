@@ -1170,6 +1170,16 @@ def run_self_containment_pass(
         dst_own = bundle_root / "skills" / skill.name / "references"
         _copytree_verbatim(skill.own_refs, dst_own, bundle_root)
 
+    # (2b) Fan out each CITED bundle-root SHARED reference into the skill's own
+    #      references/ so a bare `references/X` prose read resolves skill-local on
+    #      EVERY install layout — including the non-plugin npm-installer Claude tree
+    #      (~/.claude/skills/feature-forge/, no ${CLAUDE_PLUGIN_ROOT}), where the
+    #      bundle-root references/ from (1) is unreachable from a skill dir (#122/#132).
+    #      Runs AFTER (2) so a skill's own refs are never shadowed. Bundle-root (1) is
+    #      kept intact (scripts resolve via `$R`; the plugin path still uses it).
+    for skill in skills:
+        _fan_out_shared_references(skill, bundle_root, repo_root)
+
     # (3) Byte-identical runtime-helper copies, NO header (§2.3, REQ-GEN-04/05). forge-root.sh
     #     plus every helper a skill invokes via the bootstrap prelude. `.sh` files are mode 0755
     #     (run via `bash`); `.py` files 0644 (run via `python3 <path>`). Each is asserted
@@ -1225,6 +1235,74 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(entry, target)  # verbatim bytes; no stamp, no reflow
+
+
+# A prose citation of a bundle reference: `references/<subpath>`. The subpath char
+# class allows the `{stack}` placeholder and `*` glob forms skills use for the
+# dynamic stacks/ tree (e.g. `references/stacks/{stack}.md`, `references/stacks/*.md`).
+_REFERENCE_CITATION_RE: re.Pattern[str] = re.compile(
+    r"references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*)"
+)
+
+
+def _fan_out_shared_references(
+    skill: SkillRecord, bundle_root: Path, repo_root: Path
+) -> None:
+    """Copy each bundle-root SHARED reference a skill CITES into its own references/.
+
+    Canon cites shared bundle-root refs (``references/shared-conventions.md``, …) and
+    a skill's OWN refs (``references/prd-template.md``, …) with the same bare
+    ``references/X`` prefix, though they live in different dirs. On the plugin layout
+    the bootstrap prelude resolves the shared refs via ``${CLAUDE_PLUGIN_ROOT}``; on
+    the non-plugin npm-installer Claude layout (``~/.claude/skills/feature-forge/``,
+    no ``${CLAUDE_PLUGIN_ROOT}``) a bare ``references/<shared>`` prose read does NOT
+    resolve from a skill dir, so the agent degrades to manual reconstruction (#122).
+    This fans every CITED bundle-root shared ref into the skill's own ``references/``
+    so the bare path resolves skill-local on every layout — WITHOUT touching any skill
+    body (the bare paths simply start resolving). The bundle-root ``references/`` tree
+    (self-containment step 1) is KEPT; this only ADDS skill-local copies (#132).
+
+    Citation-driven (only what a skill actually reads is fanned) and deterministic
+    (sorted iteration, byte-verbatim copy) so the regenerate-and-diff drift guard
+    stays byte-stable (REQ-DET-01).
+
+    Args:
+        skill: The parsed skill whose body is scanned for ``references/X`` citations.
+        bundle_root: The agent bundle dir (self-containment §1/§2 already ran into it).
+        repo_root: The resolved repo root; bundle-root shared refs live in ``references/``.
+    """
+    src_refs = repo_root / "references"
+    dst_skill_refs = bundle_root / "skills" / skill.name / "references"
+    stacks_fanned = False
+    for subpath in sorted(set(_REFERENCE_CITATION_RE.findall(skill.body))):
+        head = subpath.split("/", 1)[0]
+        # The stacks/ profile is dynamic — the stack is unknown at build time — so a
+        # `references/stacks/{stack}.md` / `stacks/*.md` / `stacks/_generic.md`
+        # citation fans the WHOLE stacks/ tree once (REQ-SCALE-01).
+        if head == "stacks":
+            src_stacks = src_refs / "stacks"
+            if not stacks_fanned and src_stacks.is_dir():
+                _copytree_verbatim(src_stacks, dst_skill_refs / "stacks", bundle_root)
+                stacks_fanned = True
+            continue
+        # Executable-spec modules are test/doc artifacts, never shipped in a bundle
+        # (see _copytree_verbatim); no skill cites one, but stay consistent if one does.
+        if subpath.endswith(".py"):
+            continue
+        # A skill-local ref (self-containment step 2) already resolves from the skill
+        # dir — never shadow it with a bundle-root file of the same name.
+        if skill.own_refs is not None and (skill.own_refs / subpath).is_file():
+            continue
+        src = src_refs / subpath
+        # Only bundle-root SHARED files are fanned. A citation that resolves to
+        # NEITHER skill-local NOR bundle-root (e.g. `references/stack-decisions.md`, a
+        # PROJECT-level path the skill tells the user to create) is left untouched.
+        if not src.is_file():
+            continue
+        dst = dst_skill_refs / subpath
+        _assert_within(dst, bundle_root)  # REQ-SEC-01 — record-derived path guard
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dst)  # verbatim bytes; no stamp, no reflow
 
 
 def _assert_within(path: Path, allowed_root: Path) -> Path:
@@ -1379,6 +1457,11 @@ def _render_verbatim_copies_section() -> list[str]:
         "→ `adapters/<agent>/references/` (verbatim — REQ-GEN-04 / D5).",
         "- each skill's own `references/` subdir → "
         "`adapters/<agent>/skills/<name>/references/` (verbatim, where present).",
+        "- each bundle-root SHARED reference a skill cites (e.g. "
+        "`references/shared-conventions.md`, `references/stacks/`) → that skill's "
+        "`adapters/<agent>/skills/<name>/references/` (verbatim), so a bare "
+        "`references/X` prose read resolves skill-local on every install layout "
+        "— including the non-plugin Claude tree with no `${CLAUDE_PLUGIN_ROOT}` (#132).",
         "",
         "Regenerate all adapter output with `" + REGENERATE_CMD + "`.",
         "",

@@ -194,6 +194,44 @@ def test_bundle_is_self_contained(fixture_copy, agent):
     assert not (bundle / "skills" / "noarg" / "references").exists()
 
 
+@pytest.mark.parametrize("agent", AGENT_TARGETS)
+def test_cited_shared_references_fan_out_skill_local(fixture_copy, agent):
+    """A cited bundle-root SHARED reference resolves skill-local after build (#122/#132).
+
+    Canon cites shared bundle-root refs and a skill's own refs with the same bare
+    ``references/X`` prefix. On the non-plugin npm-installer Claude layout (no
+    ``${CLAUDE_PLUGIN_ROOT}``) the bundle-root ``references/`` is unreachable from a
+    skill dir, so the generator fans every CITED shared ref into the skill's own
+    ``references/``. The fixture's ``with-refs`` cites ``references/shared-conventions.md``
+    (a bundle-root file) and ``references/stacks/{stack}.md`` (the dynamic profile tree).
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    skill_refs = root / "adapters" / agent / "skills" / "with-refs" / "references"
+
+    # Bundle-root SHARED ref, cited by prose → now resolves from the skill dir.
+    fanned = skill_refs / "shared-conventions.md"
+    assert fanned.is_file(), f"{agent}: cited shared ref not fanned skill-local"
+    # Byte-identical to canon (verbatim copy, no header injected).
+    canon = (root / "references" / "shared-conventions.md").read_bytes()
+    assert fanned.read_bytes() == canon, f"{agent}: fanned shared ref not verbatim"
+    # The bundle-root copy is KEPT too (scripts resolve via `$R`; plugin path uses it).
+    assert (root / "adapters" / agent / "references" / "shared-conventions.md").is_file()
+
+    # The dynamic stacks/ tree is fanned whole (stack unknown at build time).
+    assert (skill_refs / "stacks" / "python.md").is_file(), f"{agent}: stacks/ not fanned"
+
+    # A skill's OWN ref is not re-fanned or shadowed — it is still its verbatim copy.
+    assert (skill_refs / "detail.md").is_file()
+    # A citation resolving to NEITHER skill-local nor bundle-root (a project-level
+    # path the skill tells the user to create) is left untouched — never fanned.
+    assert not (skill_refs / "stack-decisions.md").exists(), (
+        f"{agent}: a project-level reference path was wrongly fanned"
+    )
+    # NEGATIVE: `noarg` cites nothing → no references/ dir is created for it.
+    assert not (root / "adapters" / agent / "skills" / "noarg" / "references").exists()
+
+
 # --------------------------------------------------------------------------- #
 # 3.4 Verbatim resolver (REQ-GEN-05)
 # --------------------------------------------------------------------------- #

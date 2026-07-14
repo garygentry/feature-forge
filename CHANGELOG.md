@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Shared references now resolve skill-local on the non-plugin npm-installer Claude layout (#122, #132).**
+  Forge skills cite shared bundle-root references (`references/shared-conventions.md`,
+  `references/stage-exit-protocol.md`, the stack profiles, …) and their own skill-local
+  references with the same bare `references/X` prefix, though the two live in different
+  dirs. On the plugin layout the bootstrap prelude resolves the shared refs via
+  `${CLAUDE_PLUGIN_ROOT}`; on the **non-plugin** npm-installer Claude layout
+  (`~/.claude/skills/feature-forge/`, no `${CLAUDE_PLUGIN_ROOT}`) a bare
+  `references/<shared>` prose read did **not** resolve from a skill dir, so the agent
+  degraded to manual reconstruction (11/13 skills affected). The adapter build
+  (`scripts/build-adapters.py`) now **fans out** every cited bundle-root shared
+  reference into that skill's own `references/` at build time, so the bare path
+  resolves skill-local on **every** install layout — with **no skill-body changes**.
+  The bundle-root `references/` tree is kept (scripts resolve it via `$R`; the plugin
+  path still uses it); this only adds skill-local copies. Adapters regenerated.
+
 ## [0.12.7] — 2026-07-14
 
 Installer republished as `@garygentry/feature-forge@0.2.12` to carry this to `npx` users.
