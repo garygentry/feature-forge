@@ -4,21 +4,19 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-07-14._
+_Last updated: 2026-07-14 (0.12.8 / installer 0.2.13 published)._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.12.7** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.2.12** | `installer/package.json` (independent version line) |
-| npm | **`@garygentry/feature-forge@0.2.12`** (`latest`) | published via `npm-publish.yml` |
-| Commit | `chore(release): feature-forge 0.12.7 + installer 0.2.12` (#129) | |
+| Plugin | **0.12.8** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.2.13** | `installer/package.json` (independent version line) |
+| npm | **`@garygentry/feature-forge@0.2.13`** (`latest`) | published via `npm-publish.yml` |
+| Commit | `chore(release): feature-forge 0.12.8 + installer 0.2.13` (#141) | |
 
-CHANGELOG `[Unreleased]` carries four merged-but-unpublished changes — the **shared-reference fan-out**
-(#122/#132, PR #134), the **impl-verify runnability check** (#135/#121, PR #137), the **completion
-hand-off** (#124, PR #138), and the **scripted adopt-into-epic** command (#126, PR #139). All need a
-publish (**0.12.8 / installer 0.2.13**) to reach npm users — cut one batched release. **Tracker is empty.**
+CHANGELOG `[Unreleased]` is **empty**. **Tracker is empty, no open PRs.** Nothing is queued for a
+next release; deferred/optional items are listed below.
 
 ## Shipped recently (0.12.x)
 
@@ -52,24 +50,18 @@ publish (**0.12.8 / installer 0.2.13**) to reach npm users — cut one batched r
   Epic **branch model** documented positively (README/integration/architecture) +
   `docs/recovery-detached-epic-member.md`. Shipped via #127 (guard suite) + #128 (exit-2 trigger fix,
   found by a two-branch dogfood).
-
-## In flight — merged to main, awaiting the 0.12.8 release
-
-Four changes are in CHANGELOG `[Unreleased]` with no version bump yet — cut one batched
-**0.12.8 / installer 0.2.13** to publish them all (release mechanics below).
-
-- **PR #134** (#122/#132) — build-time **fan-out** of cited bundle-root shared references into each
-  citing skill's local `references/` (`build-adapters.py` only, no skill-body changes; +260 fanned files).
-- **PR #137** (#135, fixes #121) — impl-verify **runnability check**: new `### Runnability` checklist
-  section with `CHECK-I21` (optional `smokeCommand` smoke) + `CHECK-I22` (static non-test-caller
-  heuristic), both degrading gracefully; `smokeCommand` threaded through schema/init/bootstrap/tech/README.
-- **PR #138** (#124) — completion **hand-off**: navigator §3b + forge-6-docs exit route an epic member to
-  the next actionable member and a standalone to a new-feature offer instead of dead-ending.
-- **PR #139** (#126) — scripted **`adopt-feature`** recovery (epic-backflow **Phase 3**):
-  `epic-manifest.py adopt-feature {epic} {feature}` relocates a detached standalone into
-  `specs/{epic}/{feature}/`, merges state preserving the stub's `epic`/`branch` back-pointers, removes
-  the flat dir, manifest-adds if absent. Re-entrant; relocate-then-manifest ordering; recovery doc now
-  leads with it. `tests/test_adopt_feature.py` (8 cases).
+- **0.12.8** (#141) — batched four-change publish:
+  - **PR #134** (#122/#132) — build-time **fan-out** of cited bundle-root shared references into each
+    citing skill's local `references/` (`build-adapters.py` only, no skill-body changes; +260 fanned files).
+  - **PR #137** (#135, fixes #121) — impl-verify **runnability check**: new `### Runnability` checklist
+    section with `CHECK-I21` (optional `smokeCommand` smoke) + `CHECK-I22` (static non-test-caller
+    heuristic), both degrading gracefully; `smokeCommand` threaded through schema/init/bootstrap/tech/README.
+  - **PR #138** (#124) — completion **hand-off**: navigator §3b + forge-6-docs exit route an epic member to
+    the next actionable member and a standalone to a new-feature offer instead of dead-ending.
+  - **PR #139** (#126) — scripted **`adopt-feature`** recovery (epic-backflow **Phase 3**):
+    `epic-manifest.py adopt-feature {epic} {feature}` relocates a detached standalone into
+    `specs/{epic}/{feature}/`, merges state preserving the stub's `epic`/`branch` back-pointers, removes
+    the flat dir, manifest-adds if absent. Re-entrant; relocate-then-manifest ordering.
 
 ## Open issues
 
@@ -87,12 +79,13 @@ the rest auto-closed with PRs #134/#137/#138/#139. Next action is purely the bat
 - **forge-5-loop exit → stage-exit migration (Option B)** — the loop's bespoke post-loop exit
   blocks converged onto scripted `stage-exit`. Low value; loop is at its 300-line body cap.
   (The user-facing win — copyable next-command — was already captured via Option A in 0.12.4.)
-- **Remote e2e retest** — of the latest publish (now `@garygentry/feature-forge@0.2.12`;
+- **Remote e2e retest** — of the latest publish (now `@garygentry/feature-forge@0.2.13`;
   `plans/remote-retest-checklist.md`). Needs a Claude.ai remote / root env; still owner's to run.
   **Also clears the pending end-to-end verification of the #99 root/sandbox fix** (landed with
   unit-level proof only — a real remote root loop run would confirm `IS_SANDBOX` resolves the
-  circuit-break). 0.12.7 is a good candidate to retest against since it touches the `forge-1-prd`
-  mint path (the split-brain guard was dogfooded locally but not on a remote host).
+  circuit-break). 0.12.8 is a good candidate to retest against since it exercises the #124 completion
+  hand-off and the #126 `adopt-feature` recovery on a real host (plus the still-unretested split-brain
+  guard on the `forge-1-prd` mint path).
 
 ## Explicitly won't build
 
