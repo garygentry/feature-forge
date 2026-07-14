@@ -109,6 +109,56 @@ def test_discovers_nested_epic_member(tmp_path: Path) -> None:
     assert cand["path"] == "specs/big-epic/member/.pipeline-state.json"
 
 
+def test_nested_member_is_flagged_as_epic_member(tmp_path: Path) -> None:
+    """A nested member surfaces isEpicMember=true and the epic name (Issue #125)."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _git(repo, "checkout", "-b", "forge/data-enhancement")
+    _commit_state(repo, "program-benchmarks",
+                  {"branch": "forge/data-enhancement", "epic": "data-enhancement",
+                   "currentStage": "forge-1-prd"},
+                  epic="data-enhancement")
+    _git(repo, "checkout", "main")
+
+    payload = _discover(repo, "program-benchmarks")
+
+    (cand,) = payload["candidates"]
+    assert cand["isEpicMember"] is True
+    assert cand["epic"] == "data-enhancement"
+    assert cand["stateBranch"] == "forge/data-enhancement"
+
+
+def test_nested_member_without_epic_field_uses_dir_name(tmp_path: Path) -> None:
+    """Nested-ness alone flags an epic member even when the state omits `epic`."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _git(repo, "checkout", "-b", "forge/big-epic")
+    _commit_state(repo, "member", {"branch": "forge/big-epic"}, epic="big-epic")
+    _git(repo, "checkout", "main")
+
+    payload = _discover(repo, "member")
+
+    (cand,) = payload["candidates"]
+    assert cand["isEpicMember"] is True
+    assert cand["epic"] == "big-epic"  # falls back to the nested dir name
+
+
+def test_flat_standalone_is_not_an_epic_member(tmp_path: Path) -> None:
+    """A flat standalone feature on another branch is isEpicMember=false."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _git(repo, "checkout", "-b", "forge/widget")
+    _commit_state(repo, "widget", {"branch": "forge/widget",
+                                   "currentStage": "forge-2-tech"})
+    _git(repo, "checkout", "main")
+
+    payload = _discover(repo, "widget")
+
+    (cand,) = payload["candidates"]
+    assert cand["isEpicMember"] is False
+    assert cand["epic"] is None
+
+
 def test_single_branch_clone_emits_needs_fetch(tmp_path: Path) -> None:
     """A single-branch clone learns the topic branch exists on origin.
 

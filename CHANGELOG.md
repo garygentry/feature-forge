@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Split-brain epic guard: refuse to forge an epic member as a detached standalone (#125).**
+  `discover-feature` now surfaces `epic`/`isEpicMember` on every candidate, so `forge-1-prd`
+  can consult cross-branch discovery **at mint time**: when Feature Directory Resolution returns
+  `not-found` (about to create a flat standalone) and any discovered candidate is a known epic
+  member on another branch, a new **Mint Guard** hard-stops with a home-branch pointer instead
+  of silently forging a disjoint, back-pointer-less copy. An explicit `--force-standalone` flag
+  (distinct from `--force`, and not implying it) intentionally forks a standalone anyway. As
+  defense in depth, a new `forge-session.py check-epic-base` subcommand + **Epic-Member Base
+  Guard** block (invoked by `forge-1-prd`..`forge-4-backlog`) refuse to author a nested member
+  on a branch that lacks the epic's `epic-manifest.json` (`warn-detached-base`), pointing at the
+  member's recorded home branch; `--force` overrides. Both guards self-gate to a no-op for
+  standalone features. Docs: the epic branch model — an epic and all its members share one
+  `forge/{epic}` branch, inherited by each member's `forge-1-prd` — is now documented positively
+  (README Key Concept, a **Branch Inheritance** integration-guide building block, and an
+  architecture Robustness note), and `docs/recovery-detached-epic-member.md` covers manual recovery
+  of an already-split epic (the scripted "adopt into epic" command is a tracked follow-up, #126).
+  Adapters regenerated.
+
+### Fixed
+
+- **Navigator flags a standalone completion that looks like a detached epic member (#125).**
+  When a *standalone* feature reaches pipeline completion (`nextStage` null) and its name matches
+  a known epic member on another branch, `/feature-forge:forge` now adds a non-blocking heads-up
+  that the pipeline may have been forged detached from that epic, pointing at the recovery doc —
+  instead of a clean standalone congratulation.
+
 ## [0.12.6] — 2026-07-11
 
 Installer republished as `@garygentry/feature-forge@0.2.11` to carry this to `npx` users.

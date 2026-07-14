@@ -239,6 +239,19 @@ collision from *encountering* one:
   history of `epic-manifest.json` already provides a per-commit audit trail
   (each mutation is committed via the git-commit-after-stage protocol), so a
   separate in-manifest log would be redundant.
+- **Split-brain epic (detached member).** Because an epic and its members share
+  one branch (see the [Branch Inheritance](./guides/integration.md#branch-inheritance)
+  building block), minting a member's `forge-1-prd` from a branch that lacks the
+  epic subtree would fork it as a flat, back-pointer-less standalone — a member
+  disjoint from the epic that owns it. Two read-only guards in `forge-session.py`
+  defend against it: `discover-feature` tags candidates with `epic`/`isEpicMember`
+  so the `forge-1-prd` **mint guard** can refuse a known member discoverable on
+  another branch, and `check-epic-base` emits `warn-detached-base` (consumed by
+  the authoring stages) when a resolved nested member sits on a branch missing the
+  `epic-manifest.json`. Both self-gate to a no-op for standalone features; `--force`
+  / `--force-standalone` are the explicit overrides. Recovery of an already-split
+  epic is documented in `docs/recovery-detached-epic-member.md` (the scripted
+  reconciliation command is a tracked follow-up — Issue #125).
 
 ## When to Use Epics — and When Not To
 

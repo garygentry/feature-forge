@@ -2,7 +2,7 @@
 # GENERATED — DO NOT EDIT. Source: skills/forge-1-prd/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-1-prd
 description: Create a requirements PRD for a feature through structured interview. Use when user runs /feature-forge:forge-1-prd or explicitly asks to start the forge pipeline for a new feature. Do NOT trigger for general requirements discussions, project scoping outside forge, or PRD questions unrelated to the forge pipeline.
-argument-hint: <feature-name>
+argument-hint: <feature-name> [--force-standalone]
 ---
 
 # forge-1-prd — Requirements Interviewer
@@ -13,12 +13,30 @@ Create a thorough, requirements-only PRD through relentless structured interview
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
+**`--force-standalone` (forge-1-prd only).** A distinct flag from `--force`: it bypasses only the **Mint Guard** in Step 1 (letting you intentionally fork a name that is a known epic member into a detached standalone feature). It does **not** imply `--force` — prerequisite checks and the Stage-Entry Guard still run. Use it only when you genuinely mean to create a standalone feature that shares a name with an epic member on another branch.
+
 ## Step 1: Read Configuration and Check State
 
 ### Branch Setup (if using git)
 Invoke the **Branch Setup** block in `references/shared-conventions.md` with `{label}` = `{feature}` and `{scope}` = `feature`. It self-gates (skips when not a git repo, when `branchPerFeature` is false, or for an epic member that inherits the epic's branch), detects whether you're on the default branch, and strongly recommends — still optionally — creating `{branchPrefix}{feature}` when you are. Do this before directory resolution.
 
 Set the working directory by invoking the **Feature Directory Resolution** block in `references/shared-conventions.md`, which yields `{resolvedFeatureDir}`. Note one PRD-specific caveat: at PRD time a brand-new standalone feature may have NO directory yet, so resolution is expected to fail `not-found` for a never-started standalone feature — in that case forge-1 creates `{specsDir}/{feature}/` as today. For an epic member the directory already exists (created empty by forge-0-epic with an `epic` back-pointer), so resolution succeeds and yields the nested path.
+
+### Mint Guard: refuse to fork a known epic member into a detached standalone (Issue #125)
+
+Run this sub-step **only when Feature Directory Resolution returned `not-found`** — i.e. you are about to mint a brand-new flat standalone `{specsDir}/{feature}/`. It prevents the split-brain-epic failure where a member of an epic (whose manifest lives on a *different, unmerged* branch) is silently forged as a disjoint standalone feature carrying no `epic` back-pointer. Skip it entirely when resolution succeeded (an epic member's directory already exists — resolution yields the nested path, so this never fires) and when `--force-standalone` was passed (see below).
+
+1. Run cross-branch discovery for this exact name (branch-agnostic — it scans all refs regardless of current HEAD):
+   ```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" discover-feature "{feature}" --specs-dir "{specsDir}" --json
+   ```
+2. **If any candidate has `isEpicMember: true` → HARD STOP.** This is not the soft switch/fetch/treat-as-new menu from the Feature Directory Resolution block — do **not** create any directory and do **not** fall through to the interview. Emit verbatim (filling `{epic}` and `{stateBranch}` from that candidate's `epic` and `stateBranch`):
+   > `{feature}` is a member of epic `{epic}` (recorded on branch `{stateBranch}`). You appear to be on a branch that does not contain that epic. Switch to `{stateBranch}` and run `/feature-forge:forge-1-prd {feature}` there, or pass `--force-standalone` to intentionally fork a detached standalone feature.
+3. **If candidates exist but none are epic members** → keep today's soft behavior: this is the ordinary cross-branch-discovery case already handled by the Feature Directory Resolution block's **Candidates found** menu (switch / fetch+switch / treat-as-new / stop). Defer to it.
+4. **If nothing was found** (no candidates) → proceed to mint the flat standalone feature as today.
+5. **If `--force-standalone` was passed** → skip this guard entirely, log a one-line warning ("Forking `{feature}` as a detached standalone despite epic membership on `{stateBranch}`"), and proceed to create the flat feature. `--force-standalone` is distinct from `--force` and does **not** imply it (see the Force Mode note below).
 
 After resolution, invoke the **Stage-Entry Guard** block in `references/shared-conventions.md` with `{stage}` = `forge-1-prd`. It classifies re-entry (fresh / interrupted / re-authoring), runs the resume-vs-restart gate and the "create a new version?" warning as applicable, and applies the entry stamp on the authoring paths. For a brand-new standalone feature there is no state file yet, so the guard's **fresh** arm applies with nothing to prompt; the entry stamp lands when the state file is first created in Step 6.
 

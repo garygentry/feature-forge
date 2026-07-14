@@ -228,3 +228,50 @@ def test_discover_feature_finds_state_on_other_branch(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     candidates = payload.get("candidates", [])
     assert any(c.get("branch") == "forge/widget" for c in candidates)
+
+
+def test_discover_feature_flags_epic_member_across_branches(tmp_path: Path) -> None:
+    """The split-brain-epic signal (Issue #125): from a branch that lacks the epic
+    manifest, ``discover-feature <member>`` surfaces the member's nested stub on the
+    epic branch as ``isEpicMember: true`` — the exact signal the forge-1-prd mint
+    guard keys off to refuse forging the member as a detached standalone feature.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    _git(repo, "config", "user.name", "Test")
+    (repo / "README.md").write_text("# scratch\n")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "init")
+
+    # The epic branch: nested member stub + epic manifest (the manifest commit).
+    _git(repo, "checkout", "-b", "forge/data-enhancement")
+    member = repo / "specs" / "data-enhancement" / "program-benchmarks"
+    member.mkdir(parents=True)
+    (member / ".pipeline-state.json").write_text(
+        json.dumps({"feature": "program-benchmarks", "epic": "data-enhancement",
+                    "branch": "forge/data-enhancement", "currentStage": "forge-1-prd"})
+    )
+    (repo / "specs" / "data-enhancement" / "epic-manifest.json").write_text(
+        json.dumps({"epic": "data-enhancement", "features": [{"name": "program-benchmarks"}]})
+    )
+    _git(repo, "add", "specs")
+    _git(repo, "commit", "-m", "forge: data-enhancement epic + member stub")
+
+    # A session on the default branch (cut from before the manifest) sees nothing
+    # on disk — yet discovery must reveal the member membership across branches.
+    _git(repo, "checkout", "main")
+    assert not (repo / "specs").exists()
+
+    result = subprocess.run(
+        [sys.executable, str(SESSION_HELPER), "discover-feature",
+         "program-benchmarks", "--specs-dir", "specs", "--json"],
+        capture_output=True, text=True, cwd=str(repo),
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    (cand,) = payload["candidates"]
+    assert cand["isEpicMember"] is True
+    assert cand["epic"] == "data-enhancement"
+    assert cand["stateBranch"] == "forge/data-enhancement"

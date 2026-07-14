@@ -159,6 +159,28 @@ python3 "$R/scripts/epic-manifest.py" \
 
 If `render-status` fails, proceed with **only** EPIC.md + charter (a corrupt manifest must not silently inject stale dep specs — REQ-ROBUST-02): on **exit 1**, parse the `{findings[]}` JSON from stdout and surface each; on **exit 2**, surface the plain `Error:` line from stderr verbatim. Do not attempt to parse findings JSON on an exit-2 failure (stdout is empty).
 
+**After injecting context, invoke the Epic-Member Base Guard block below** (it self-gates to a no-op for standalone features and features that do not resolve as a nested member).
+
+## Epic-Member Base Guard
+
+Defense-in-depth for the split-brain-epic failure (Issue #125). Invoke this block in the authoring stages (`forge-1-prd`..`forge-4-backlog`) once the feature has resolved — right after **Epic Context Injection** for the stages that run it (`forge-1-prd`..`forge-3-specs`), and right after **Feature Directory Resolution** for `forge-4-backlog`. It confirms that a **resolved nested epic member** actually sits on a branch that contains the epic's manifest. Without this, a member reached from a branch cut *before* the epic-manifest commit (or that otherwise lacks it) would author specs against an epic decomposition that is not present — the exact drift that produces a disjoint, split-brain member. **Skip if not a git repo or `branchPerFeature` is false.**
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" check-epic-base --feature "{feature}" --specs-dir "{specsDir}" --json
+```
+
+Act on the emitted `action`:
+- **`none`** — a standalone feature (no epic to check) or the manifest is present on the current branch. Proceed silently. This is the no-op path for standalone features (REQ-COMPAT-01), so standalone behavior is unchanged.
+- **`not-resolved`** — the feature does not resolve on the current branch. Proceed silently (the caller's own resolution already handled that case).
+- **`warn-detached-base`** — a nested member resolves here but the epic's `epic-manifest.json` is **absent on this branch**. **STOP** unless `--force` was passed, and surface verbatim (filling `{epic}` and `{homeBranch}` from the payload's `epic` and `homeBranch`):
+  > `{feature}` is a member of epic `{epic}`, but this branch does not contain the epic manifest (`{specsDir}/{epic}/epic-manifest.json`). This base predates or lacks the epic. Switch to the epic's home branch `{homeBranch}` and re-run, or pass `--force` to author against a detached base anyway.
+
+  With `--force`, log a one-line warning ("Authoring `{feature}` against a detached epic base — manifest not on this branch") and proceed, consistent with the other guards.
+
+If the helper is unavailable (a non-Claude host without the resolver), skip this block — it is best-effort defense in depth, not a hard prerequisite.
+
 ## Pipeline State Protocol
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`. Always update `updatedAt` when modifying pipeline state.
