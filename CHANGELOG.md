@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.7] — 2026-07-14
+
+Installer republished as `@garygentry/feature-forge@0.2.12` to carry this to `npx` users.
+
 ### Added
 
 - **Split-brain epic guard: refuse to forge an epic member as a detached standalone (#125).**
