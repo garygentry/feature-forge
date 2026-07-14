@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Completion no longer dead-ends — the pipeline hands off to the next unit of work (#124).**
+  When a feature reached `complete` (`nextStage` null), both the `forge-6-docs` exit and the
+  `/feature-forge:forge` navigator's completion branch just congratulated and stopped, leaving the
+  user to remember the next step. Both now hand off: an **epic member** routes back to the epic —
+  `render-status`'s next `actionable` member + its `nextCommand` is offered (start it now, honoring
+  `autoInvokeNextStage`), or the whole epic's completion is celebrated with the epic-level doc offer;
+  a **standalone** completion offers to start a new feature (`forge-1-prd`) and, in the navigator,
+  lists other active pipelines from the recency ranker. Coherent with the 0.12.7 detached-epic hint
+  (#125): if that split-brain heads-up fired, the recovery path leads. Navigator + forge-6-docs skill
+  bodies only; adapters regenerated.
+
 - **Shared references now resolve skill-local on the non-plugin npm-installer Claude layout (#122, #132).**
   Forge skills cite shared bundle-root references (`references/shared-conventions.md`,
   `references/stage-exit-protocol.md`, the stack profiles, …) and their own skill-local
