@@ -56,11 +56,12 @@ _GitHub tracker: 5 open (`gh issue list --state open`)._
 
 - **#121** — `forge-verify-impl` reports "clean" on a walking skeleton that never bootstraps; no
   end-to-end runnability check. Not triaged.
-- **#122** — `forge-3-specs` references shared files/scripts reported as missing (shared-conventions,
-  stage-exit-protocol, forge-root.sh, forge-session.py, stacks/typescript). Needs triage — likely a
-  path/resolution or false-alarm question, not necessarily a code gap.
-- **#123** — `forge-6-docs` references a missing `references/shared-conventions.md`. Same triage
-  bucket as #122.
+- **#122** — **TRIAGED** (retitled): shared `references/` don't resolve on **non-plugin (npm-installer)
+  Claude installs** — the shared files ship at the *bundle root*, not each skill's local `references/`
+  subdir, and without `${CLAUDE_PLUGIN_ROOT}` the bare `references/<shared>` prose read misses, so the
+  agent degrades to manual reconstruction. Systemic: 11/13 skills. Medium severity (non-blocking).
+  Scripts are fine (resolve via `$R` prelude). Fix chosen = build-time fan-out → **#132**. #123 folded
+  in as a dup.
 - **#124** — forge completion dead-ends: no hand-off to the next feature at `forge-6-docs` exit or in
   the navigator. Partially mitigated by the 0.12.7 navigator detached-epic hint (#125 Fix #4), but
   the general hand-off is still open. Not started.
@@ -68,6 +69,11 @@ _GitHub tracker: 5 open (`gh issue list --state open`)._
   epic member = epic-backflow **Phase 3**, composite manifest+specs mutator). Filed as the #125
   follow-up; 0.12.7 ships the guards + a manual recipe (`docs/recovery-detached-epic-member.md`)
   instead. Not started.
+- **#132** — **build-time fan-out** of bundle-root shared references into each citing skill's local
+  `references/` (the chosen fix for #122; no skill-body changes, canon stays single-source, drift-guard
+  keeps copies identical). Scoped, not started.
+
+(**#123** closed as a duplicate of #122.)
 
 ## Deferred / optional (not scheduled)
 
