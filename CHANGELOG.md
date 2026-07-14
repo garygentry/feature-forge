@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Scripted "adopt into epic" recovery command (#126, epic-backflow Phase 3).**
+  Split-brain epics (#125) — a feature forged as a flat standalone when it should be an epic
+  member — previously recovered only through manual branch surgery
+  (`docs/recovery-detached-epic-member.md`). A new `epic-manifest.py adopt-feature {epic} {feature}`
+  subcommand now does the on-disk reconciliation in one command: it relocates
+  `specs/{feature}/` → `specs/{epic}/{feature}/`, **merges** the standalone's completed-stage
+  history onto the member stub while **preserving** the stub's `epic`/`branch` back-pointers,
+  removes the flat dir (no residual), and adds the feature to `epic-manifest.json` if absent. It
+  operates on the current tree (bring a cross-branch standalone onto the epic's home branch first)
+  and is **re-entrant** — a refused manifest add (e.g. an unknown `--depends-on`) leaves the
+  relocation done, and re-running finishes it; ordered relocate-then-manifest so the name maps to
+  exactly one dir when `add-feature`'s global-uniqueness re-check runs. After adoption `resolve`
+  returns the single nested member, `validate` is clean, and `check-epic-base` reports `action: none`.
+  EPIC.md prose is regenerated separately via `forge-0-epic`. Documented in the recovery doc (now
+  leads with the scripted path) and the forge-0-epic subcommand reference. Tests + adapters added.
+
 - **impl-verify runnability check: "clean" now means "it runs" (#135, fixes #121).**
   The implementation-mode checklist (`CHECK-I01..I20`) was entirely static reads +
   typecheck/lint + "tests exist" — nothing asserted the assembled application actually

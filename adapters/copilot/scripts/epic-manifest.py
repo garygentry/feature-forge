@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -1195,6 +1196,180 @@ def set_status(epic_dir: Path, specs_dir: Path, status: str) -> list[Finding]:
     return _bump_and_write(epic_dir, specs_dir, manifest)
 
 
+def _load_state_strict(state_path: Path) -> dict:
+    """Read a .pipeline-state.json, raising UsageError on a missing/corrupt file.
+
+    Unlike ``_read_state_safely`` (which downgrades a torn read to ``{}`` for the
+    read-only dashboard), an adopt mutation must NOT silently discard the
+    standalone's stage history — a corrupt source is a hard stop (exit 2) so the
+    human fixes it before the irreversible move.
+    """
+    try:
+        parsed = json.loads(state_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise UsageError(f"cannot read {state_path}: {exc}")
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"{state_path} is not valid JSON: {exc}")
+    if not isinstance(parsed, dict):
+        raise UsageError(f"{state_path} is not a JSON object")
+    return parsed
+
+
+def _merge_member_state(stub: dict, standalone: dict, epic_name: str) -> dict:
+    """Merge a detached standalone's state onto an epic member stub (Issue #126).
+
+    The **stub** is the base — it carries the correct ``epic`` and ``branch``
+    back-pointers that the epic minted. The **standalone** holds the real work, so
+    its stage history / artifacts / currentStage overlay the stub. The ``epic``
+    back-pointer is forced to the target epic; the stub's ``branch`` is preserved
+    (only falling back to the standalone's when the stub has none).
+    """
+    merged = dict(stub)
+    for key in ("currentStage", "artifacts", "notes",
+                "deferredDecisions", "epicChangeRequests"):
+        if key in standalone:
+            merged[key] = standalone[key]
+    stages = dict(stub.get("stages") or {})
+    stages.update(standalone.get("stages") or {})
+    merged["stages"] = stages
+    merged["epic"] = epic_name
+    if not (isinstance(stub.get("branch"), str) and stub["branch"]) and \
+            isinstance(standalone.get("branch"), str) and standalone["branch"]:
+        merged["branch"] = standalone["branch"]
+    return merged
+
+
+def adopt_feature(
+    epic_dir: Path,
+    specs_dir: Path,
+    feature: str,
+    charter: str | None,
+    deps: list[str],
+) -> dict:
+    """Reconcile a detached standalone feature into an epic member (Issue #126).
+
+    The scripted recovery for a **split-brain epic** (#125): a feature that should
+    be an epic member was forged as a flat standalone at ``{specsDir}/{feature}/``.
+    This relocates it into the member slot ``{epicDir}/{feature}/``, merging state
+    so the stub's ``epic``/``branch`` back-pointers survive, removes the flat dir
+    (no residual), and adds the feature to the manifest if absent.
+
+    Operates on the CURRENT tree/branch — both the flat standalone and the epic
+    manifest must already be present (the human brings a cross-branch standalone
+    onto the epic's home branch first, per ``docs/recovery-detached-epic-member.md``;
+    EPIC.md prose is regenerated separately via forge-0-epic). Deliberately ordered
+    **relocate-then-manifest**: after the flat dir is gone the feature name maps to
+    exactly one dir, so ``add_feature``'s global-uniqueness re-validation stays
+    clean. Re-entrant — a half-finished run (files moved, manifest not yet updated)
+    completes on re-run.
+
+    Args:
+        epic_dir: The target epic subtree directory (must hold epic-manifest.json).
+        specs_dir: The configured specs directory.
+        feature: The detached standalone feature name to adopt.
+        charter: Charter for the manifest entry when the feature is not yet a
+            member; a default is used when omitted.
+        deps: dependsOn for the new manifest entry (ignored if already a member).
+
+    Returns:
+        A summary dict (``adopted``/``relocated``/``manifestUpdated``/…) on success.
+
+    Raises:
+        UsageError: Unsafe name, missing manifest, nothing to adopt, or an I/O
+            failure (exit 2).
+        FindingsError: A blocking manifest finding from ``add_feature`` (e.g. an
+            unknown dependency) after relocation — exit 1; re-run after fixing.
+    """
+    assert_safe_name(feature)
+    for dep in deps:
+        assert_safe_name(dep)
+
+    # The epic manifest must exist on this tree (exit 2 if not — nothing to adopt into).
+    load_manifest(epic_dir)
+
+    flat_dir = contained_path(specs_dir, feature)
+    member_dir = contained_path(epic_dir, feature)
+    if flat_dir == member_dir:
+        raise UsageError(f"feature {feature!r} resolves to the epic dir itself")
+
+    flat_state = flat_dir / PIPELINE_STATE_FILENAME
+    member_state = member_dir / PIPELINE_STATE_FILENAME
+    flat_exists = flat_state.is_file()
+    member_exists = member_state.is_file()
+
+    if not flat_exists and not member_exists:
+        raise UsageError(
+            f"nothing to adopt: neither a standalone {flat_dir} nor a member "
+            f"{member_dir} has a {PIPELINE_STATE_FILENAME}"
+        )
+
+    relocated = False
+    if flat_exists:
+        standalone = _load_state_strict(flat_state)
+        if member_exists:
+            merged = _merge_member_state(
+                _read_state_safely(member_state), standalone, epic_dir.name
+            )
+        else:
+            merged = dict(standalone)
+            merged["epic"] = epic_dir.name
+        # Move every artifact except the state file (merged separately) into the
+        # member slot; the standalone (real work) wins on any name collision.
+        member_dir.mkdir(parents=True, exist_ok=True)
+        for child in sorted(flat_dir.iterdir()):
+            if child.name == PIPELINE_STATE_FILENAME:
+                continue
+            dest = member_dir / child.name
+            if dest.is_dir():
+                shutil.rmtree(dest)
+            elif dest.exists():
+                dest.unlink()
+            shutil.move(str(child), str(dest))
+        atomic_write(member_state, merged)
+        shutil.rmtree(flat_dir)
+        relocated = True
+    else:
+        # Already nested (a prior run moved the files) — only ensure the back-pointer.
+        stub = _read_state_safely(member_state)
+        if stub.get("epic") != epic_dir.name:
+            stub["epic"] = epic_dir.name
+            atomic_write(member_state, stub)
+
+    # Ensure the feature is a manifest member (idempotent — the flat dir is gone now,
+    # so add_feature's tree-uniqueness re-check sees exactly one dir for the name).
+    manifest = load_manifest(epic_dir)
+    already_member = any(
+        isinstance(f, dict) and f.get("name") == feature
+        for f in manifest.get("features", [])
+    )
+    manifest_updated = False
+    if not already_member:
+        findings = add_feature(
+            epic_dir, specs_dir, feature,
+            charter or f"Adopted into the {epic_dir.name} epic from a detached standalone.",
+            deps,
+        )
+        if findings:
+            raise FindingsError(findings)
+        manifest_updated = True
+
+    return {
+        "adopted": True,
+        "epic": epic_dir.name,
+        "feature": feature,
+        "memberDir": str(member_dir),
+        "relocated": relocated,
+        "manifestUpdated": manifest_updated,
+        "wasAlreadyMember": already_member,
+        "nextSteps": [
+            f"Regenerate EPIC.md prose via /feature-forge:forge-0-epic {epic_dir.name}",
+            f"Confirm the dashboard via /feature-forge:forge {epic_dir.name}",
+            f"Verify the member via /feature-forge:forge-verify {feature}",
+            "Commit the surgery (stage the epic subtree and the removed flat dir).",
+        ],
+    }
+
+
 # --------------------------------------------------------------------------- #
 # CLI Dispatch (02 §9)
 # --------------------------------------------------------------------------- #
@@ -1285,6 +1460,25 @@ def _dispatch(args: argparse.Namespace, specs_dir: Path) -> int:
             _print_status_table(status)
         return 0
 
+    if cmd == "adopt-feature":
+        epic_dir = contained_path(specs_dir, args.epic)
+        summary = adopt_feature(
+            epic_dir, specs_dir, args.name, args.charter,
+            _split_list(args.depends_on),
+        )
+        if args.json_output:
+            print(json.dumps(summary, indent=2, ensure_ascii=False))
+        else:
+            print(f"Adopted {summary['feature']!r} into epic {summary['epic']!r}.")
+            print(f"  member dir:      {summary['memberDir']}")
+            print(f"  relocated files: {summary['relocated']}")
+            print(f"  manifest added:  {summary['manifestUpdated']}"
+                  f"{' (already a member)' if summary['wasAlreadyMember'] else ''}")
+            print("Next steps:")
+            for step in summary["nextSteps"]:
+                print(f"  - {step}")
+        return 0
+
     # Mutators ---------------------------------------------------------------
     if cmd in {"add-feature", "remove-feature", "reorder", "set-dep", "set-status"}:
         epic_dir = contained_path(specs_dir, args.epic)
@@ -1357,6 +1551,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--depends-on", dest="depends_on", default="", help="Comma list")
     add_specs_dir(p_add)
     add_json(p_add)
+
+    # adopt-feature --------------------------------------------------------- #
+    p_adopt = sub.add_parser(
+        "adopt-feature",
+        help="Reconcile a detached standalone feature into an epic member (#126)",
+    )
+    p_adopt.add_argument("epic")
+    p_adopt.add_argument("name")
+    p_adopt.add_argument(
+        "--charter", default=None,
+        help="Charter for the manifest entry when the feature is not yet a member",
+    )
+    p_adopt.add_argument("--depends-on", dest="depends_on", default="", help="Comma list")
+    add_specs_dir(p_adopt)
+    add_json(p_adopt)
 
     # remove-feature -------------------------------------------------------- #
     p_remove = sub.add_parser("remove-feature", help="Remove a member feature")

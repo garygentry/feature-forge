@@ -22,10 +22,34 @@ refuses to mint a known epic member as a standalone unless you pass
 branch that lacks the epic manifest (`check-epic-base` → `warn-detached-base`).
 This document covers **recovering an epic that already split**.
 
-> There is no automated "adopt into epic" command yet — that is tracked as
-> [Issue #126](https://github.com/garygentry/feature-forge/issues/126) (the deferred
-> epic-backflow **Phase 3**, composite manifest+specs mutators). Until then, use the
-> manual branch surgery below.
+> **A scripted recovery now exists** ([Issue #126](https://github.com/garygentry/feature-forge/issues/126)):
+> `epic-manifest.py adopt-feature {epic} {feature}` does the on-disk reconciliation
+> — relocate, state-merge, remove the flat dir, manifest add — in one command. Use it
+> once both the standalone and the epic manifest are present on the current branch (steps
+> 1–2 below still bring a cross-branch standalone onto the epic's home branch first). The
+> manual surgery in steps 3–6 remains documented as the fallback and to explain exactly
+> what the command does.
+
+## Scripted recovery (recommended)
+
+Once you are on the epic's home branch and the detached standalone's directory is present
+on the working tree (do steps 1–2 of the manual recipe below to get there if it lives on
+another branch), run:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+python3 "$R/scripts/epic-manifest.py" adopt-feature "{epic}" "{feature}" --specs-dir specs --json
+```
+
+It relocates `specs/{feature}/` into `specs/{epic}/{feature}/`, **merges** the standalone's
+completed-stage history onto the member stub while **preserving** the stub's `epic`/`branch`
+back-pointers, removes the flat dir (no residual), and adds `{feature}` to the manifest if it
+is not already a member (pass `--charter`/`--depends-on` for a brand-new member). It does **not**
+regenerate `EPIC.md` prose — re-run `/feature-forge:forge-0-epic {epic}` afterward for that (Step
+C6), then verify and commit per steps 6–7. The command is re-entrant: if the manifest add is
+refused (e.g. an unknown `--depends-on`), the relocation still stands and re-running finishes it.
+
+## Manual recovery (fallback / what the command does)
 
 ## Before you start
 
