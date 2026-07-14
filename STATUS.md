@@ -76,9 +76,11 @@ the rest auto-closed with PRs #134/#137/#138/#139. Next action is purely the bat
   `plans/DESIGN-epic-backflow.md`; Phases 1–2 shipped in 0.12.4. The **`adopt-feature` recovery**
   command (the #126 "Phase 3" split-brain reconciler) shipped in PR #139; these remaining
   composite kinds (moving a frozen contract boundary, splitting a feature) stay guided-manual for now.
-- **forge-5-loop exit → stage-exit migration (Option B)** — the loop's bespoke post-loop exit
-  blocks converged onto scripted `stage-exit`. Low value; loop is at its 300-line body cap.
-  (The user-facing win — copyable next-command — was already captured via Option A in 0.12.4.)
+  _Triaged 2026-07-14: no triggering evidence, remains deferred (trigger: guided-manual
+  `move-boundary`/`split` proven clunky in real epic use, **or** the owner plans an epic needing it).
+  Checked all real epics — `consumption-data-refresh/{data-views,data-refresh}`,
+  `consumption/{data-enhancement,data-views,data-refresh}`, `rauf/agent-agnostic` — none has recorded
+  a single `changeRequest`, so guided-manual has not been exercised at all._
 - **Remote e2e retest** — of the latest publish (now `@garygentry/feature-forge@0.2.13`;
   `plans/remote-retest-checklist.md`). Needs a Claude.ai remote / root env; still owner's to run.
   **Also clears the pending end-to-end verification of the #99 root/sandbox fix** (landed with
@@ -89,6 +91,18 @@ the rest auto-closed with PRs #134/#137/#138/#139. Next action is purely the bat
 
 ## Explicitly won't build
 
+- **forge-5-loop exit → stage-exit migration (Option B).** Resolved **DO NOT BUILD unless drift
+  appears** (2026-07-14, owner-confirmed). Converging the loop's bespoke post-loop exit onto
+  scripted `stage-exit` buys code-path convergence, not user-visible behavior — the copyable
+  next-command win already shipped via Option A in 0.12.4. Triage found **no drift**: the loop's
+  exit is single-sourced against `references/stage-exit-protocol.md`, which owns both the standard
+  block and the warm variant (the `forge-5-loop → forge-6-docs` boundary is the one place clearing
+  is optional; scripted stage-exit models *cold* boundaries, so a migration would have to *extend*
+  it, not just reuse it). No open/closed issue reports a loop-exit inconsistency. Loop is also at
+  its 300-line body cap. Re-open only if (a) the bespoke loop exit drifts from the scripted one and
+  causes a real user-hit inconsistency, or (b) a stage-exit semantics change makes two paths
+  demonstrably costly. Context: `plans/HANDOFF-triage-deferred-composite-and-loop-exit.md`. Distinct
+  from **chunk 5a** below (that is the Stop-hook sentinel guard, not code-path convergence).
 - **Chunk 5a — last-output Stop-hook sentinel guard.** Resolved **DO NOT BUILD** (2026-07-10):
   a local dogfood of 0.12.2 hit 3/3 HELD on every scripted stage-exit — no post-sentinel drift.
   Only re-open if a future **remote** run shows real post-sentinel drift (that would implicate
