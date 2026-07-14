@@ -131,6 +131,7 @@ These files are transported byte-for-byte from canon into every `adapters/<agent
 - `scripts/forge-root.sh` → `adapters/<agent>/scripts/forge-root.sh` (mode 0755, byte-identical — REQ-GEN-05).
 - the whole repo-root `references/` tree (all root files plus the `stacks/` and `templates/specs-hygiene/` subtrees) → `adapters/<agent>/references/` (verbatim — REQ-GEN-04 / D5).
 - each skill's own `references/` subdir → `adapters/<agent>/skills/<name>/references/` (verbatim, where present).
+- each bundle-root SHARED reference a skill cites (e.g. `references/shared-conventions.md`, `references/stacks/`) → that skill's `adapters/<agent>/skills/<name>/references/` (verbatim), so a bare `references/X` prose read resolves skill-local on every install layout — including the non-plugin Claude tree with no `${CLAUDE_PLUGIN_ROOT}` (#132).
 
 Regenerate all adapter output with `python3 scripts/build-adapters.py`.
 
