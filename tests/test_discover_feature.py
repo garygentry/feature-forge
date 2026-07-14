@@ -143,6 +143,30 @@ def test_nested_member_without_epic_field_uses_dir_name(tmp_path: Path) -> None:
     assert cand["epic"] == "big-epic"  # falls back to the nested dir name
 
 
+def test_epic_member_discoverable_when_specs_dir_absent(tmp_path: Path) -> None:
+    """The clean-branch (exit-2) split-brain trigger: even when the current branch
+    has no ``specs/`` tree at all — so ``resolve`` returns ``specs dir not found``
+    (exit 2) rather than ``not-found`` (exit 1) — cross-branch discovery still sees
+    the epic member on the epic branch. This is what lets the forge-1-prd mint guard
+    fire on a default branch that predates the epic (Issue #125 dogfood finding).
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _git(repo, "checkout", "-b", "forge/data-enhancement")
+    _commit_state(repo, "program-benchmarks",
+                  {"branch": "forge/data-enhancement", "epic": "data-enhancement"},
+                  epic="data-enhancement")
+    _git(repo, "checkout", "main")
+    assert not (repo / "specs").exists()  # no specs tree on this branch at all
+
+    payload = _discover(repo, "program-benchmarks")
+
+    (cand,) = payload["candidates"]
+    assert cand["isEpicMember"] is True
+    assert cand["epic"] == "data-enhancement"
+    assert cand["branch"] == "forge/data-enhancement"
+
+
 def test_flat_standalone_is_not_an_epic_member(tmp_path: Path) -> None:
     """A flat standalone feature on another branch is isEpicMember=false."""
     repo = tmp_path / "repo"

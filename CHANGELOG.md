@@ -11,10 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Split-brain epic guard: refuse to forge an epic member as a detached standalone (#125).**
   `discover-feature` now surfaces `epic`/`isEpicMember` on every candidate, so `forge-1-prd`
-  can consult cross-branch discovery **at mint time**: when Feature Directory Resolution returns
-  `not-found` (about to create a flat standalone) and any discovered candidate is a known epic
-  member on another branch, a new **Mint Guard** hard-stops with a home-branch pointer instead
-  of silently forging a disjoint, back-pointer-less copy. An explicit `--force-standalone` flag
+  can consult cross-branch discovery **at mint time**: whenever forge-1 is about to create a flat
+  standalone — Feature Directory Resolution returns `not-found` (exit 1) **or** `specs dir not found`
+  (the exit-2 clean-branch case, e.g. a default branch that predates the epic and has no specs tree
+  yet) — and any discovered candidate is a known epic member on another branch, a new **Mint Guard**
+  hard-stops with a home-branch pointer instead of silently forging a disjoint, back-pointer-less copy. An explicit `--force-standalone` flag
   (distinct from `--force`, and not implying it) intentionally forks a standalone anyway. As
   defense in depth, a new `forge-session.py check-epic-base` subcommand + **Epic-Member Base
   Guard** block (invoked by `forge-1-prd`..`forge-4-backlog`) refuse to author a nested member
