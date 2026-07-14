@@ -33,6 +33,17 @@ python3 "$R/scripts/epic-manifest.py" set-dep "{epic}" "{feature}" \
 # Change epic lifecycle status (active|paused|abandoned|complete).
 python3 "$R/scripts/epic-manifest.py" set-status "{epic}" \
   --status paused --specs-dir "{specsDir}"
+
+# Adopt a detached standalone INTO this epic as a member (split-brain recovery, #126).
+# Relocates specs/{feature}/ → specs/{epic}/{feature}/, MERGES the standalone's stage
+# history onto the member stub while preserving the stub's epic/branch back-pointers,
+# removes the flat dir, and add-features it to the manifest if absent. Both dirs must be
+# on the CURRENT tree (bring a cross-branch standalone onto the epic's home branch first,
+# per docs/recovery-detached-epic-member.md). EPIC.md prose is NOT regenerated — re-run
+# forge-0-epic (Step C6) afterward. Re-entrant; exit 1 (with findings) only if the manifest
+# add is refused (e.g. a bad --depends-on) — the relocation still stands, re-run to finish.
+python3 "$R/scripts/epic-manifest.py" adopt-feature "{epic}" "{feature}" \
+  --specs-dir "{specsDir}" [--charter "…"] [--depends-on a,b] [--json]
 ```
 
 ### Per-Subcommand Exit-Code Disposition (Step E3)
