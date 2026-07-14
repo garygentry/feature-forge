@@ -15,7 +15,8 @@ _Last updated: 2026-07-14._
 | npm | **`@garygentry/feature-forge@0.2.12`** (`latest`) | published via `npm-publish.yml` |
 | Commit | `chore(release): feature-forge 0.12.7 + installer 0.2.12` (#129) | |
 
-CHANGELOG `[Unreleased]` is **empty**; working tree clean.
+CHANGELOG `[Unreleased]` carries the **shared-reference fan-out** (#122/#132, PR #134 — see "In flight");
+needs a publish (0.12.8 / installer 0.2.13) to reach npm users, best batched with other pending work.
 
 ## Shipped recently (0.12.x)
 
@@ -50,18 +51,28 @@ CHANGELOG `[Unreleased]` is **empty**; working tree clean.
   `docs/recovery-detached-epic-member.md`. Shipped via #127 (guard suite) + #128 (exit-2 trigger fix,
   found by a two-branch dogfood).
 
+## In flight (open PRs / just-filed)
+
+- **PR #134** — `fix(adapters)`: **build-time fan-out** of cited bundle-root shared references into each
+  citing skill's local `references/` (fixes **#122**, closes **#132**). `scripts/build-adapters.py` only,
+  **no skill-body changes**; citation-driven + verbatim so the drift guard stays byte-stable; bundle-root
+  `references/` kept. `bash scripts/validate.sh` green; adapters regenerated (+260 fanned files). Left in
+  `[Unreleased]` (batching — no version bump yet). **Awaiting review/merge.**
+- **#135** — scoped fix issue for **#121** (filed from triage): add a **runnability/bootstrap** check to
+  impl-verify (new optional `smokeCommand` → `CHECK-I2x`, degrading gracefully to advisory) + a cheap
+  static "bootstrap has a non-test caller" heuristic. Design/implement there. Not started.
+
 ## Open issues
 
-_GitHub tracker: 5 open (`gh issue list --state open`)._
+_GitHub tracker (`gh issue list --state open`)._
 
-- **#121** — `forge-verify-impl` reports "clean" on a walking skeleton that never bootstraps; no
-  end-to-end runnability check. Not triaged.
-- **#122** — **TRIAGED** (retitled): shared `references/` don't resolve on **non-plugin (npm-installer)
-  Claude installs** — the shared files ship at the *bundle root*, not each skill's local `references/`
-  subdir, and without `${CLAUDE_PLUGIN_ROOT}` the bare `references/<shared>` prose read misses, so the
-  agent degrades to manual reconstruction. Systemic: 11/13 skills. Medium severity (non-blocking).
-  Scripts are fine (resolve via `$R` prelude). Fix chosen = build-time fan-out → **#132**. #123 folded
-  in as a dup.
+- **#121** — `forge-verify-impl` reports "clean" on a walking skeleton that never bootstraps. **TRIAGED**
+  2026-07-14 → root cause confirmed (CHECK-I01..I20 is all static reads + typecheck/lint + "tests exist",
+  no end-to-end runnability check; the skeleton's unit tests self-bootstrap so `CHECK-I16` misses the
+  missing production call site). **High** severity; standalone + epic-member scope; stack-agnostic. Scoped
+  fix filed as **#135** (see "In flight"). Triage comment on #121; no code changed.
+- **#122 / #132** — shared `references/` don't resolve on non-plugin (npm-installer) Claude installs; fix =
+  build-time fan-out. **Fix in flight → PR #134** (see "In flight"). Closes both on merge. (#123 was a dup.)
 - **#124** — forge completion dead-ends: no hand-off to the next feature at `forge-6-docs` exit or in
   the navigator. Partially mitigated by the 0.12.7 navigator detached-epic hint (#125 Fix #4), but
   the general hand-off is still open. Not started.
@@ -69,9 +80,6 @@ _GitHub tracker: 5 open (`gh issue list --state open`)._
   epic member = epic-backflow **Phase 3**, composite manifest+specs mutator). Filed as the #125
   follow-up; 0.12.7 ships the guards + a manual recipe (`docs/recovery-detached-epic-member.md`)
   instead. Not started.
-- **#132** — **build-time fan-out** of bundle-root shared references into each citing skill's local
-  `references/` (the chosen fix for #122; no skill-body changes, canon stays single-source, drift-guard
-  keeps copies identical). Scoped, not started.
 
 (**#123** closed as a duplicate of #122.)
 
