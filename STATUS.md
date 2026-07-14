@@ -15,8 +15,10 @@ _Last updated: 2026-07-14._
 | npm | **`@garygentry/feature-forge@0.2.12`** (`latest`) | published via `npm-publish.yml` |
 | Commit | `chore(release): feature-forge 0.12.7 + installer 0.2.12` (#129) | |
 
-CHANGELOG `[Unreleased]` carries the **shared-reference fan-out** (#122/#132, PR #134 — see "In flight");
-needs a publish (0.12.8 / installer 0.2.13) to reach npm users, best batched with other pending work.
+CHANGELOG `[Unreleased]` carries four merged-but-unpublished changes — the **shared-reference fan-out**
+(#122/#132, PR #134), the **impl-verify runnability check** (#135/#121, PR #137), the **completion
+hand-off** (#124, PR #138), and the **scripted adopt-into-epic** command (#126, PR #139). All need a
+publish (**0.12.8 / installer 0.2.13**) to reach npm users — cut one batched release. **Tracker is empty.**
 
 ## Shipped recently (0.12.x)
 
@@ -51,42 +53,37 @@ needs a publish (0.12.8 / installer 0.2.13) to reach npm users, best batched wit
   `docs/recovery-detached-epic-member.md`. Shipped via #127 (guard suite) + #128 (exit-2 trigger fix,
   found by a two-branch dogfood).
 
-## In flight (open PRs / just-filed)
+## In flight — merged to main, awaiting the 0.12.8 release
 
-- **PR #134** — `fix(adapters)`: **build-time fan-out** of cited bundle-root shared references into each
-  citing skill's local `references/` (fixes **#122**, closes **#132**). `scripts/build-adapters.py` only,
-  **no skill-body changes**; citation-driven + verbatim so the drift guard stays byte-stable; bundle-root
-  `references/` kept. `bash scripts/validate.sh` green; adapters regenerated (+260 fanned files). Left in
-  `[Unreleased]` (batching — no version bump yet). **Awaiting review/merge.**
-- **#135** — scoped fix issue for **#121** (filed from triage): add a **runnability/bootstrap** check to
-  impl-verify (new optional `smokeCommand` → `CHECK-I2x`, degrading gracefully to advisory) + a cheap
-  static "bootstrap has a non-test caller" heuristic. Design/implement there. Not started.
+Four changes are in CHANGELOG `[Unreleased]` with no version bump yet — cut one batched
+**0.12.8 / installer 0.2.13** to publish them all (release mechanics below).
+
+- **PR #134** (#122/#132) — build-time **fan-out** of cited bundle-root shared references into each
+  citing skill's local `references/` (`build-adapters.py` only, no skill-body changes; +260 fanned files).
+- **PR #137** (#135, fixes #121) — impl-verify **runnability check**: new `### Runnability` checklist
+  section with `CHECK-I21` (optional `smokeCommand` smoke) + `CHECK-I22` (static non-test-caller
+  heuristic), both degrading gracefully; `smokeCommand` threaded through schema/init/bootstrap/tech/README.
+- **PR #138** (#124) — completion **hand-off**: navigator §3b + forge-6-docs exit route an epic member to
+  the next actionable member and a standalone to a new-feature offer instead of dead-ending.
+- **PR #139** (#126) — scripted **`adopt-feature`** recovery (epic-backflow **Phase 3**):
+  `epic-manifest.py adopt-feature {epic} {feature}` relocates a detached standalone into
+  `specs/{epic}/{feature}/`, merges state preserving the stub's `epic`/`branch` back-pointers, removes
+  the flat dir, manifest-adds if absent. Re-entrant; relocate-then-manifest ordering; recovery doc now
+  leads with it. `tests/test_adopt_feature.py` (8 cases).
 
 ## Open issues
 
-_GitHub tracker (`gh issue list --state open`)._
+_GitHub tracker (`gh issue list --state open`) is **empty**._
 
-- **#121** — `forge-verify-impl` reports "clean" on a walking skeleton that never bootstraps. **TRIAGED**
-  2026-07-14 → root cause confirmed (CHECK-I01..I20 is all static reads + typecheck/lint + "tests exist",
-  no end-to-end runnability check; the skeleton's unit tests self-bootstrap so `CHECK-I16` misses the
-  missing production call site). **High** severity; standalone + epic-member scope; stack-agnostic. Scoped
-  fix filed as **#135** (see "In flight"). Triage comment on #121; no code changed.
-- **#122 / #132** — shared `references/` don't resolve on non-plugin (npm-installer) Claude installs; fix =
-  build-time fan-out. **Fix in flight → PR #134** (see "In flight"). Closes both on merge. (#123 was a dup.)
-- **#124** — forge completion dead-ends: no hand-off to the next feature at `forge-6-docs` exit or in
-  the navigator. Partially mitigated by the 0.12.7 navigator detached-epic hint (#125 Fix #4), but
-  the general hand-off is still open. Not started.
-- **#126** — scripted "adopt into epic" recovery command (reconcile a detached standalone into an
-  epic member = epic-backflow **Phase 3**, composite manifest+specs mutator). Filed as the #125
-  follow-up; 0.12.7 ships the guards + a manual recipe (`docs/recovery-detached-epic-member.md`)
-  instead. Not started.
-
-(**#123** closed as a duplicate of #122.)
+All of **#121 / #122 / #123 / #124 / #126 / #132 / #135** are closed — #123 was a duplicate of #122;
+the rest auto-closed with PRs #134/#137/#138/#139. Next action is purely the batched 0.12.8 publish.
 
 ## Deferred / optional (not scheduled)
 
-- **Epic-backflow Phase 3** — automated composite `move-boundary`/`split` mutators. Design in
-  `plans/DESIGN-epic-backflow.md`; Phases 1–2 shipped in 0.12.4.
+- **Epic-backflow — automated composite `move-boundary`/`split` mutators.** Design in
+  `plans/DESIGN-epic-backflow.md`; Phases 1–2 shipped in 0.12.4. The **`adopt-feature` recovery**
+  command (the #126 "Phase 3" split-brain reconciler) shipped in PR #139; these remaining
+  composite kinds (moving a frozen contract boundary, splitting a feature) stay guided-manual for now.
 - **forge-5-loop exit → stage-exit migration (Option B)** — the loop's bespoke post-loop exit
   blocks converged onto scripted `stage-exit`. Low value; loop is at its 300-line body cap.
   (The user-facing win — copyable next-command — was already captured via Option A in 0.12.4.)
