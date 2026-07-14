@@ -4,16 +4,16 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-07-11._
+_Last updated: 2026-07-14._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.12.6** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.2.11** | `installer/package.json` (independent version line) |
-| npm | **`@garygentry/feature-forge@0.2.11`** (`latest`) | published via `npm-publish.yml` |
-| Commit | `chore(release): feature-forge 0.12.6 + installer 0.2.11` (#118) | |
+| Plugin | **0.12.7** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.2.12** | `installer/package.json` (independent version line) |
+| npm | **`@garygentry/feature-forge@0.2.12`** (`latest`) | published via `npm-publish.yml` |
+| Commit | `chore(release): feature-forge 0.12.7 + installer 0.2.12` (#129) | |
 
 CHANGELOG `[Unreleased]` is **empty**; working tree clean.
 
@@ -40,11 +40,22 @@ CHANGELOG `[Unreleased]` is **empty**; working tree clean.
   `references/shared-conventions.md`. Also **formally closed the plugin-QA audit** (doc-only #117):
   all FINDINGS D1–D8 verified CLOSED across 0.12.x, no code residual — matrix
   `plans/archive/CLOSEOUT-plugin-qa.md`.
+- **0.12.7** (#129) — **split-brain-epic guard** (#125): `forge-1-prd` **Mint Guard** refuses to
+  forge a known epic member as a detached standalone (fires on both the exit-1 `not-found` and the
+  exit-2 clean-branch `specs dir not found` triggers), with a `--force-standalone` escape;
+  `check-epic-base` + **Epic-Member Base Guard** (`forge-1-prd`..`forge-4-backlog`) refuse to author
+  a nested member on a branch lacking the epic manifest; navigator flags a standalone completion
+  matching an epic member on another branch; `discover-feature` candidates carry `epic`/`isEpicMember`.
+  Epic **branch model** documented positively (README/integration/architecture) +
+  `docs/recovery-detached-epic-member.md`. Shipped via #127 (guard suite) + #128 (exit-2 trigger fix,
+  found by a two-branch dogfood).
 
 ## Open issues
 
-_None._ The GitHub tracker is empty (`gh issue list --state open` → 0). CHANGELOG `[Unreleased]`
-is empty; everything on `main` is published.
+- **#126** — scripted "adopt into epic" recovery command (reconcile a detached standalone into an
+  epic member = epic-backflow **Phase 3**, composite manifest+specs mutator). Filed as the #125
+  follow-up; 0.12.7 ships the guards + a manual recipe (`docs/recovery-detached-epic-member.md`)
+  instead. Not started.
 
 ## Deferred / optional (not scheduled)
 
@@ -53,10 +64,12 @@ is empty; everything on `main` is published.
 - **forge-5-loop exit → stage-exit migration (Option B)** — the loop's bespoke post-loop exit
   blocks converged onto scripted `stage-exit`. Low value; loop is at its 300-line body cap.
   (The user-facing win — copyable next-command — was already captured via Option A in 0.12.4.)
-- **Remote e2e retest** — of the latest publish (`plans/remote-retest-checklist.md`). Needs a
-  Claude.ai remote / root env; still owner's to run. **Also clears the pending end-to-end
-  verification of the #99 root/sandbox fix** (landed with unit-level proof only — a real remote
-  root loop run would confirm `IS_SANDBOX` resolves the circuit-break).
+- **Remote e2e retest** — of the latest publish (now `@garygentry/feature-forge@0.2.12`;
+  `plans/remote-retest-checklist.md`). Needs a Claude.ai remote / root env; still owner's to run.
+  **Also clears the pending end-to-end verification of the #99 root/sandbox fix** (landed with
+  unit-level proof only — a real remote root loop run would confirm `IS_SANDBOX` resolves the
+  circuit-break). 0.12.7 is a good candidate to retest against since it touches the `forge-1-prd`
+  mint path (the split-brain guard was dogfooded locally but not on a remote host).
 
 ## Explicitly won't build
 
