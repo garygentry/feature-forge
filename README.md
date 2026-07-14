@@ -319,6 +319,7 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
   "stack": null,
   "typeCheckCommand": null,
   "testCommand": null,
+  "smokeCommand": null,
   "loopIterationMultiplier": 1.5,
   "autoInvokeNextStage": true,
   "contextWindowTokens": null,
@@ -338,6 +339,7 @@ Create `forge.config.json` in your project root, or run `/feature-forge:forge-in
 | `stack`               | string  | `null`                  | Stack identifier (e.g., `"typescript"`, `"python"`, `"go"`, `"rust"`). Auto-detected in Stage 2                                                                                                              |
 | `typeCheckCommand`    | string  | `null`                  | Type-check command used in acceptance criteria and verification. Set during Stage 2                                                                                                                          |
 | `testCommand`         | string  | `null`                  | Test command used in acceptance criteria and verification. Set during Stage 2                                                                                                                                |
+| `smokeCommand`        | string  | `null`                  | Optional end-to-end smoke that boots the wired entrypoint and drives one happy-path request (exit 0 = pass). Distinct from `testCommand` (unit tests, which may self-bootstrap). When set, impl-verify's runnability check `CHECK-I21` runs it; when `null` that check is advisory only. Catches a walking skeleton that passes unit tests but serves no real request |
 | `loopIterationMultiplier` | number | `1.5`               | Multiplier applied to the pending backlog-item count to compute Stage-5 loop iterations (e.g. 10 items × 1.5 = 15). Higher values allow more retries                                                          |
 | `loopRunner`          | object  | rauf defaults           | Loop-runner binding for `forge-5-loop` (`bin`, command templates, `defaultAgent`, `minRunnerVersion` — floor **rauf ≥ 0.6.0**). See [docs/agents/claude.md](docs/agents/claude.md) "The default loop runner" |
 | `autoInvokeNextStage` | boolean | `true`                  | When true, the `/feature-forge:forge` navigator auto-invokes the next pipeline stage via the `Skill` tool after you confirm it, instead of only printing the command. Set `false` to keep copy-paste behavior. Ignored on non-Claude hosts (which always print).                                              |

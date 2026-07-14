@@ -21,6 +21,7 @@ cat > "$CONFIG_FILE" << 'EOF'
   "stack": null,
   "typeCheckCommand": null,
   "testCommand": null,
+  "smokeCommand": null,
   "loopIterationMultiplier": 1.5,
   "autoInvokeNextStage": true,
   "contextWindowTokens": null,
@@ -42,6 +43,7 @@ echo "  commitPrefix:        forge"
 echo "  stack:               null (auto-detected during forge-2-tech)"
 echo "  typeCheckCommand:    null (auto-detected during forge-2-tech)"
 echo "  testCommand:         null (auto-detected during forge-2-tech)"
+echo "  smokeCommand:        null (optional end-to-end smoke; enables impl-verify runnability check)"
 echo "  loopIterationMultiplier: 1.5 (multiplier for loop iterations)"
 echo "  autoInvokeNextStage: true (navigator auto-starts the next stage after you confirm)"
 echo "  contextWindowTokens: null (infer; set to 1000000 on a 1M-context model)"

@@ -185,6 +185,13 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 - [ ] **CHECK-I19**: Exported functions/classes have documentation comments (JSDoc, docstrings, godoc, etc.)
 - [ ] **CHECK-I20**: Configuration options are documented
 
+### Runnability
+
+> **When these fire:** only at impl-verify **completion** (impl mode runs post-loop), never mid-loop — an early skeleton that only compiles is not punished. **Both degrade gracefully:** a feature with no runnable surface (a pure library with no bootstrap contract) or no configured `smokeCommand` yields an **advisory not-applicable** finding, never a hard fail — the same way a null `{typeCheckCommand}` is handled. These exist because `CHECK-I01..I20` are all static reads + typecheck/lint + "tests exist"; nothing here asserts the assembled application actually **runs**. A bootstrap that is exported and unit-tested (each test calls it manually) but never wired into a runtime entrypoint passes every other check yet serves no real request (#121).
+
+- [ ] **CHECK-I21**: **End-to-end smoke passes.** If `smokeCommand` from forge.config.json is set, execute it — it boots the wired entrypoint and drives one happy-path request end-to-end; **pass iff exit 0**. A non-zero exit is an `error` finding (the assembled app does not run — quote the command's failing output). If `smokeCommand` is `null`, this is **advisory**: emit a `not-applicable` finding recommending the user configure a `smokeCommand` so "clean" means "it runs" (never fabricate or guess a command — run only the user-configured one, exactly as `CHECK-I11` runs only a configured `{typeCheckCommand}`).
+- [ ] **CHECK-I22**: **Runtime-required bootstrap has a non-test caller.** Every exported bootstrap / `init*` / singleton-populator the specs mark as **required for runtime** must have ≥1 **non-test** call site on a runtime path — an entrypoint such as `main` / `instrumentation` / a route / a layout / a worker, NOT only test files. Statically grep for each such symbol's references (use the stack profile `references/stacks/{stack}.md` for what counts as a runtime entrypoint in this language). A symbol that is exported and covered by tests but referenced **only** from test files is a `gap` — the #121 walking-skeleton (bootstrap wired to nothing). Degrades naturally: a feature whose specs mark no bootstrap symbol as runtime-required is `not-applicable`. Weaker than `CHECK-I21` (it proves a call site exists, not that the boot succeeds), so it complements rather than replaces the smoke.
+
 ## Epic Mode Checklist
 
 Run `epic-manifest.py validate "{epic}" --specs-dir "{specsDir}" --json` once; map its

@@ -22,6 +22,7 @@ After initialization, the config file will contain defaults for:
 - `stack`: `null` (detected during `/feature-forge:forge-2-tech`)
 - `typeCheckCommand`: `null` (set during `/feature-forge:forge-2-tech`)
 - `testCommand`: `null` (set during `/feature-forge:forge-2-tech`)
+- `smokeCommand`: `null` (optional end-to-end smoke that boots the wired app and drives one request; set it to enable impl-verify's runnability check `CHECK-I21` — distinct from `testCommand`)
 - `autoInvokeNextStage`: `true` (the navigator auto-starts the next stage after you confirm; set `false` to only print the command)
 - `contextWindowTokens`: `null` (the navigator infers the context window; set to your model's window, e.g. `1000000` for a 1M-context model, for accurate context-usage advice)
 - `contextWarnThreshold`: `0.7` (fraction of the window past which the navigator suggests a clean session)

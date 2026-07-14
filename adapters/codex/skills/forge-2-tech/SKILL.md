@@ -69,7 +69,7 @@ After researching the codebase, identify the primary stack (language, build tool
 
 1. Check if `forge.config.json` already has a `stack` field — if so, use it
 2. Otherwise, detect from project files and use the host's question mechanism to confirm: "I detected this as a {stack} project. Correct?"
-3. Update `forge.config.json` with `stack`, `typeCheckCommand`, and `testCommand`
+3. Update `forge.config.json` with `stack`, `typeCheckCommand`, and `testCommand`. If the feature has a runtime entrypoint (HTTP server, CLI, worker, or a library with a bootstrap contract), also offer to set `smokeCommand` — an end-to-end command that boots the wired app and drives one happy-path request (exit 0 = pass). It is distinct from `testCommand` (unit tests, which may self-bootstrap) and powers impl-verify's runnability check; leave it `null` for a pure library with no runnable surface.
 4. Verify that a matching stack profile exists at `references/stacks/{stack}.md`. If it does, load it for stack-specific guidance during this and all subsequent stages. If no profile exists, inform the user: "No dedicated profile for {stack}. Using generic fallback — spec conventions, verification checks, and examples will be language-neutral. Consider creating a project-level override at `.feature-forge/stack-decisions.md`." Then load `references/stacks/_generic.md`.
 
 ## Step 3: Conduct the Interview
