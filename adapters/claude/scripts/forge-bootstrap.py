@@ -568,6 +568,7 @@ def write_config(answers: Answers, target: Path, sentinel: Sentinel) -> None:
         "stack": None,
         "typeCheckCommand": None,
         "testCommand": None,
+        "smokeCommand": None,
         "loopIterationMultiplier": 1.5,
         # Navigator keys — kept in lockstep with forge-init.sh's emitted field set
         # (00 §7, REQ-CFG-02) so a bootstrapped config == forge-init's + loopRunner.

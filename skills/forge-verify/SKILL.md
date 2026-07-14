@@ -30,7 +30,7 @@ Pick based on how many checks the mode carries (see the per-mode totals in Step 
 - **Small modes (prd ~15, tech ~15): single verifier.** Use the Agent tool once with
   `subagent_type="forge-verifier"`, passing the feature name and mode. It runs all
   checks and returns findings.
-- **Large modes (specs ~38, backlog ~25, impl ~20): parallel dimensioned fan-out.**
+- **Large modes (specs ~38, backlog ~25, impl ~22): parallel dimensioned fan-out.**
   Split the mode's checklist into **dimension groups** and dispatch **one
   `forge-verifier` per group, in parallel — a single message with multiple Agent
   calls** (the `superpowers:dispatching-parallel-agents` pattern). Each instance owns a
@@ -42,7 +42,8 @@ Pick based on how many checks the mode carries (see the per-mode totals in Step 
   - **backlog:** (1) item scoping & acceptance criteria, (2) dependency/ordering sanity,
     (3) spec coverage & traceability, (4) schema/enum correctness.
   - **impl:** (1) requirement coverage vs specs, (2) integration correctness,
-    (3) testing, (4) code-quality/conventions.
+    (3) testing, (4) code-quality/conventions, (5) runnability (owns CHECK-I21/I22 —
+    the smoke command and the non-test-caller heuristic).
 
   In each parallel instance's prompt, pass: the feature, the mode, the **dimension
   label**, the **exact CHECK-IDs it owns**, and a note that **it is one of several
@@ -162,7 +163,7 @@ Load into context ALL artifacts for this feature based on mode:
 
 Read `references/verification-checklists.md` for the detailed checklists per mode. Execute every check. Do not skip checks because things "look fine." That same reference also holds the relocated **Findings Document Template (Step 4)**, the worked **Example Findings (Step 4)**, and the **Epic Mode State Write Detail (Step 6)** sections used later in this skill.
 
-Each check in `verification-checklists.md` has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: ~15 checks, tech: ~15 checks, specs: ~38 checks, backlog: ~25 checks, impl: ~20 checks, epic: ~9 checks), you likely skipped checks — go back and complete them.
+Each check in `verification-checklists.md` has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: ~15 checks, tech: ~15 checks, specs: ~38 checks, backlog: ~25 checks, impl: ~22 checks, epic: ~9 checks), you likely skipped checks — go back and complete them.
 
 **Epic mode dispatch.** Epic mode is a small (~9-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the Agent tool, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E09 from the `## Epic Mode Checklist` in `references/verification-checklists.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07 and E09 are verifier judgment) and returns its findings.
 

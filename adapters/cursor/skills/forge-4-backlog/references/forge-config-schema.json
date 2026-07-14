@@ -51,6 +51,11 @@
       "type": ["string", "null"],
       "description": "Command to run tests. Null until set. Examples: 'bun test', 'pytest', 'go test ./...'. Used in acceptance criteria and verification."
     },
+    "smokeCommand": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional end-to-end smoke command that boots the wired application entrypoint and drives one happy-path request, exiting 0 on success. DISTINCT from testCommand (unit tests, which may self-bootstrap) and loopRunner.runCommand (the loop launcher). Consumed by impl-verify's runnability check (CHECK-I21): when set it is executed (pass iff exit 0); when null the check degrades to an advisory not-applicable finding, never a hard fail (mirrors how a null typeCheckCommand is treated). Examples: 'npm run smoke', './scripts/smoke.sh', 'curl -fsS localhost:3000/health'."
+    },
     "loopIterationMultiplier": {
       "type": "number",
       "default": 1.5,

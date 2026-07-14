@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **impl-verify runnability check: "clean" now means "it runs" (#135, fixes #121).**
+  The implementation-mode checklist (`CHECK-I01..I20`) was entirely static reads +
+  typecheck/lint + "tests exist" — nothing asserted the assembled application actually
+  boots and serves one real request, so a walking skeleton (a bootstrap exported and
+  unit-tested but never wired into a runtime entrypoint) passed clean yet answered no
+  request. A new **Runnability** section adds two checks: **`CHECK-I21`** executes an
+  optional new `smokeCommand` from `forge.config.json` (boots the wired entrypoint and
+  drives one happy-path request; pass iff exit 0), and **`CHECK-I22`** is a static
+  heuristic — every exported bootstrap/`init*` the specs mark runtime-required must have
+  ≥1 **non-test** call site on a runtime path. Both **degrade gracefully**: an unset
+  `smokeCommand` or a feature with no runnable surface yields an advisory not-applicable
+  finding, never a hard fail, and both fire only at impl-verify completion (post-loop),
+  never mid-loop. `smokeCommand` (`string|null`, default `null`, distinct from
+  `testCommand` and `loopRunner.runCommand`) is threaded through the config schema,
+  `forge-init.sh`, `forge-bootstrap.py`, `forge-2-tech`, and the README config table; the
+  `impl` mode total and dimension list in `forge-verify` SKILL.md are bumped (~20 → ~22,
+  new runnability dimension). Adapters regenerated.
+
 ### Fixed
 
 - **Shared references now resolve skill-local on the non-plugin npm-installer Claude layout (#122, #132).**
