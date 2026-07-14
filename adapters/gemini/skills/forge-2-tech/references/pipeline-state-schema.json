@@ -1,0 +1,191 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Feature Forge Pipeline State",
+  "description": "Tracks pipeline progress for a single feature across sessions. Lives at {specsDir}/{feature}/.pipeline-state.json",
+  "type": "object",
+  "required": ["feature", "createdAt", "updatedAt", "currentStage", "stages", "pipelineStatus"],
+  "properties": {
+    "pipelineStatus": {
+      "type": "string",
+      "enum": ["active", "paused", "abandoned"],
+      "default": "active"
+    },
+    "feature": {
+      "type": "string",
+      "description": "Feature name (matches directory name under specsDir)"
+    },
+    "epic": {
+      "type": "string",
+      "description": "Back-pointer to the owning epic's name. Absent for standalone features. The epic-manifest.json is canonical on conflict (REQ-STATE-01)."
+    },
+    "branch": {
+      "type": "string",
+      "description": "Git branch this feature's pipeline work is intended to land on, recorded by the Branch Setup block (shared-conventions.md) at the entry stage. Absent when the project isn't a git repo or branchPerFeature is false. Downstream stages and forge-5-loop compare the current branch against this to detect drift back onto the default branch before committing."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "currentStage": {
+      "type": "string",
+      "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop", "forge-6-docs", "complete", "forge-verify-prd", "forge-verify-tech", "forge-verify-specs", "forge-verify-backlog", "forge-verify-impl", "forge-0-epic", "forge-verify-epic"],
+      "description": "Where the pipeline IS: the most recently started stage — its `stages[<currentStage>].status` is `in-progress` while that stage is being authored, then `complete` once its artifacts are committed. A stage skill sets this to its own id when it starts. This is deliberately NOT 'the next stage to run': the next stage is DERIVED, never stored — it is the first production stage whose `stages[].status` is not `complete` (see `next_stage()` in forge-session.py, surfaced as the navigator/doctor `nextStage`). Consumers that need 'what runs next' compute it from `stages[].status`, not from this field. `complete` here means the whole pipeline is done. (Legacy/absent value: tools fall back to the derived next stage for display only — `build_rows` in forge-session.py.)"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form notes persisted between sessions (user can add context before stepping away)"
+    },
+    "epicChangeRequests": {
+      "type": "array",
+      "description": "Epic-level change requests raised by a member stage (forge-1-prd/forge-2-tech) when the epic DECOMPOSITION itself must change — distinct from the same-feature `notes` parking lot. Read by forge-0-epic edit mode (which applies them) and by forge-session stage-exit (which routes the exit on `blocksCurrent`). Absent/empty for standalone features. Additive/optional: legacy states without it validate unchanged.",
+      "items": {
+        "type": "object",
+        "required": ["kind", "target", "rationale", "blocksCurrent", "raisedBy", "raisedAt", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["add-feature", "redep", "move-boundary", "split"],
+            "description": "The decomposition change. add-feature/redep map 1:1 onto edit-mode mutators; move-boundary/split are composite (applied guided-manual in v1)."
+          },
+          "target": {
+            "type": "string",
+            "description": "The sibling feature to add, or the feature/boundary affected."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Why the epic must change; seeds the edit-mode charter/prompt when applied."
+          },
+          "blocksCurrent": {
+            "type": "boolean",
+            "description": "true → the current feature's next stage would build on a soon-to-change decomposition (pause-now: reconcile before proceeding). false → a peer/downstream change (finish-then-edit). Drives stage-exit routing."
+          },
+          "raisedBy": {
+            "type": "string",
+            "enum": ["forge-1-prd", "forge-2-tech"],
+            "description": "The stage that detected the epic-level concern."
+          },
+          "raisedAt": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["open", "applied", "dismissed"],
+            "default": "open",
+            "description": "Lifecycle: open → applied|dismissed. Only forge-0-epic edit mode flips open→applied/dismissed; recording stages only create open entries; navigator/verify only read."
+          }
+        }
+      }
+    },
+    "deferredDecisions": {
+      "type": "array",
+      "description": "Same-feature decisions deliberately postponed to a LATER stage of THIS feature — a structured alternative to burying them in the free-text `notes` string. Distinct from `notes` (unstructured scratch) and from `epicChangeRequests[]` (the epic DECOMPOSITION must change). Use this when a stage would otherwise be tempted to solicit a decision that properly belongs to a downstream stage (e.g. forge-1-prd deferring the concrete cache backend to forge-2-tech): record it here instead of asking now (see the deferred-decisions rule in `references/stage-exit-protocol.md`), and the target stage addresses it. Additive/optional: legacy states without it validate unchanged.",
+      "items": {
+        "type": "object",
+        "required": ["question", "raisedBy", "raisedAt", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The decision being deferred, phrased as a concrete question for the target stage to answer."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Why it is deferred rather than decided now (e.g. depends on information the target stage produces)."
+          },
+          "targetStage": {
+            "type": "string",
+            "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop", "forge-6-docs"],
+            "description": "The stage that should resolve this decision. Omit when unknown/any-later-stage."
+          },
+          "raisedBy": {
+            "type": "string",
+            "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog"],
+            "description": "The stage that deferred the decision."
+          },
+          "raisedAt": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["open", "addressed", "dismissed"],
+            "default": "open",
+            "description": "Lifecycle: open → addressed|dismissed. The target stage flips open→addressed when it resolves the decision (or dismissed if it no longer applies); recording stages only create open entries."
+          }
+        }
+      }
+    },
+    "stages": {
+      "type": "object",
+      "properties": {
+        "forge-0-epic": { "$ref": "#/definitions/stageEntry" },
+        "forge-verify-epic": { "$ref": "#/definitions/verifyEntry" },
+        "forge-1-prd": { "$ref": "#/definitions/stageEntry" },
+        "forge-2-tech": { "$ref": "#/definitions/stageEntry" },
+        "forge-3-specs": { "$ref": "#/definitions/stageEntry" },
+        "forge-verify-specs": { "$ref": "#/definitions/verifyEntry" },
+        "forge-4-backlog": { "$ref": "#/definitions/stageEntry" },
+        "forge-verify-backlog": { "$ref": "#/definitions/verifyEntry" },
+        "forge-5-loop": { "$ref": "#/definitions/stageEntry" },
+        "forge-6-docs": { "$ref": "#/definitions/stageEntry" },
+        "forge-verify-impl": { "$ref": "#/definitions/verifyEntry" },
+        "forge-verify-prd": { "$ref": "#/definitions/verifyEntry" },
+        "forge-verify-tech": { "$ref": "#/definitions/verifyEntry" }
+      }
+    }
+  },
+  "definitions": {
+    "stageEntry": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "in-progress", "complete", "stale"]
+        },
+        "version": {
+          "type": "integer",
+          "description": "Incremented each time this stage's artifacts are revised"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Relative paths to artifacts produced by this stage"
+        },
+        "startedAt": { "type": ["string", "null"], "format": "date-time" },
+        "completedAt": { "type": ["string", "null"], "format": "date-time" },
+        "commitHash": {
+          "type": ["string", "null"],
+          "description": "Git commit SHA of this stage's artifact commit (Commit 1 of the two-commit Git Commit Protocol in shared-conventions.md). Written by a small follow-up commit so it points at the artifact commit itself, never at an orphaned amend or the hash-recording commit. null until recorded (or when there was no new artifact commit)."
+        },
+        "basedOnVersions": {
+          "type": "object",
+          "description": "Upstream stage versions this artifact was built against",
+          "additionalProperties": { "type": "integer" }
+        }
+      }
+    },
+    "verifyEntry": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "passed", "findings-reported", "findings-applied", "skipped"]
+        },
+        "findingsFile": {
+          "type": ["string", "null"],
+          "description": "Path to the verification findings document"
+        },
+        "findingsCount": {
+          "type": ["integer", "null"],
+          "description": "Number of findings reported"
+        },
+        "verifiedAt": { "type": ["string", "null"], "format": "date-time" },
+        "fixedAt": { "type": ["string", "null"], "format": "date-time" },
+        "commitHash": { "type": ["string", "null"], "description": "Git commit SHA of the verify/fix artifact commit. Recorded via the two-commit Git Commit Protocol (shared-conventions.md) so it points at the artifact commit, never an orphaned amend." },
+        "verifiedStageVersion": { "type": ["integer", "null"], "description": "The production stage's `version` at the moment this verify was resolved. The navigator's freshness ledger compares it to the stage's current `version`: equal means the verify is fresh; a mismatch (artifact revised since) or an absent field (legacy state) means stale, so auto-verify re-fires. Recorded by forge-verify/forge-fix when writing a passed/findings-applied status." }
+      }
+    }
+  }
+}
