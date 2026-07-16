@@ -6,6 +6,7 @@
     "social": { "github": "https://github.com/garygentry/feature-forge" }
   },
   "pages": [
+    { "slug": "start-here/agent-setup", "source": "native" },
     { "slug": "start-here/install", "source": "native" },
     { "slug": "start-here/quick-start", "source": "native" },
     { "slug": "start-here/concepts", "source": "native" },
