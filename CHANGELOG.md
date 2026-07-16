@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **forge-5-loop: `--review` is now the recommended default run mode (rauf only).**
+  Step 2d's launch confirmation previously left the `AskUserQuestion` option set
+  unprescribed — it handed the model a prose block ("Proceed, or would you like to
+  adjust?") and let it improvise the choices, so the rendered options varied
+  run-to-run (sometimes "bare + a specific `--review` option", sometimes "bare +
+  open-ended add-a-flag"), and the bare no-review command was always the default.
+  Step 2d now prescribes a deterministic **"Run mode"** question with a fixed option
+  order: **(1) Run with review pass — recommended/default** (appends `--review`),
+  **(2) Run without review** (bare command), and **(3, only when the backlog has
+  blocked items) Review + retry blocked** (`--review --retry-blocked`).
+  `AskUserQuestion`'s built-in "Other" still covers ad-hoc flags (`--model`,
+  `--timeout`). The run mode surface is **gated on `loopRunner.name == "rauf"`**
+  (`--review` is a rauf-specific flag; the 0.6.0 `minRunnerVersion` floor guarantees
+  it is available once the loop clears gate 1c) — non-rauf runners keep the prior
+  bare-command confirmation byte-for-byte. Verbatim option labels live in
+  `forge-5-loop/references/runner-contract.md` (`## Run mode`). No downstream change:
+  Step 4a already reads the `review_completed` event for review runs.
+
 ## [0.12.8] — 2026-07-14
 
 Installer republished as `@garygentry/feature-forge@0.2.13` (unchanged installer logic; carries the 0.12.8 plugin pin).

@@ -109,6 +109,47 @@ default / `claude-cli` path skips this guard (the aliases are valid there).
 > feature-forge's launch-time export is the mitigation; the upstream fix lives in the
 > rauf plugin/repo. Track as a follow-up.
 
+## Run mode (Step 2d, rauf)
+
+**Applies only when `loopRunner.name == "rauf"`.** rauf's `--review` runs a review
+pass after all iterations complete (an extra agent session that re-examines the
+finished work and can file follow-up backlog items). feature-forge treats **running
+with review as the recommended default** — a review pass is cheap relative to the
+loop it audits, and catches gaps before the pipeline moves on to docs. So Step 2d
+adds a **"Run mode"** question to the confirmation's `AskUserQuestion` surface with a
+**fixed, non-improvised option order** (determinism is the point — the option set
+must not vary run-to-run):
+
+```
+Run mode:
+  1. Run with review pass (recommended)   → append `--review`   [DEFAULT]
+     After all iterations, a review agent re-examines the finished work and may
+     file follow-up items. Recommended for every forge run.
+  2. Run without review                    → bare rendered command
+     Skip the review pass — iterations only, no post-run audit.
+  3. Review + retry blocked                → append `--review --retry-blocked`
+     ONLY offered when Step 2a counted one or more `blocked` items. Runs the
+     review pass and also unblocks/retries the previously blocked items.
+```
+
+Notes:
+
+- **Option 1 is the default** and the confirmation's rendered command line shows
+  `--review` appended. On any pick, append the option's flags to the rendered run
+  command before Step 3 (launch).
+- **`AskUserQuestion`'s built-in "Other"** already lets the user type ad-hoc flags
+  (`--model <model>`, `--timeout <min>`, or any combination) — do **not** add a
+  separate open-ended option for that.
+- **Option 3 is conditional.** Include it only when the Step 2a tally has `blocked
+  > 0`; otherwise present options 1 and 2 only.
+- **Version floor.** rauf's explicit `review` signal ships in 0.5.0, below the
+  `minRunnerVersion` floor (0.6.0) enforced at gate 1c — so `--review` is always
+  available once the loop is cleared to launch. No extra version check is needed.
+- **Non-rauf runners.** When `loopRunner.name != "rauf"`, add **no** Run-mode
+  question — present the bare rendered command and let the user adjust via "Other",
+  byte-identical to the pre-review-default behavior. `--review` is a rauf-specific
+  flag; a swapped-in runner conforming to the contract need not support it.
+
 ## Optional flags catalog (Step 2d, rauf)
 
 These are the optional flags the user may add to the rendered run command. If the
