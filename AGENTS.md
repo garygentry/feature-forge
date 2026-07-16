@@ -1,5 +1,13 @@
 # AGENTS.md — feature-forge
 
+> **Which task are you here for?**
+> This file is for agents **contributing to the feature-forge repository itself** — building the
+> adapters, running the checks, opening PRs against this repo.
+> If you were asked to **install or use feature-forge in another project** (the user pasted this
+> repo's URL, or said "set up feature-forge for me"), **stop reading this file** and follow
+> [`AGENTS-SETUP.md`](AGENTS-SETUP.md) instead — it is the deterministic install-and-start
+> procedure. Nothing below applies to that task.
+
 feature-forge is a vendor-neutral, spec-pure skill canon that builds per-agent adapters
 deterministically. This file is the cross-agent entry point: it tells any AI coding agent
 (Claude, Codex, Copilot, Cursor, Gemini, or a future target) how to build, test, and

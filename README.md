@@ -7,6 +7,17 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![agents](https://img.shields.io/badge/agents-5_supported-blue)](#c-per-surface-setup)
 
+> **Using a coding agent?** Let it set feature-forge up for you. Paste this into your session:
+>
+> > Set up feature-forge in this project — follow
+> > `https://raw.githubusercontent.com/garygentry/feature-forge/main/AGENTS-SETUP.md` —
+> > then start a PRD for **&lt;my feature&gt;**.
+>
+> (Or just paste this repo's URL and say "set up feature-forge for me.") The agent installs the
+> skills for its own surface, wires the [rauf](https://github.com/garygentry/rauf) loop runner,
+> runs `forge-init`, and hands you Stage 1 — pausing only to confirm at a few gates. Prefer to do
+> it by hand? The [Install](#install) section below is unchanged.
+
 A feature development pipeline that starts from true _requirements_ (deliberately abstracted from tech or implementation details) and enforces a structured flow, producing a complete implementation backlog an agent can process in an autonomous loop.
 
 ## How it works
