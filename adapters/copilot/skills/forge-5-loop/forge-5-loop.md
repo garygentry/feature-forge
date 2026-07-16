@@ -151,7 +151,7 @@ Use the host's question mechanism to present the rendered run command and option
 ```
 Ready to run the loop for {feature}:
 
-  {rendered runCommand}
+  {rendered runCommand}   # + " --review" when the recommended Run-mode option (below) is picked
 
 Backlog summary:
   - Pending: {pending}
@@ -160,15 +160,13 @@ Backlog summary:
   - Blocked: {blocked}
   - Iterations: {iterationCount} ({activeItems} items x {loopIterationMultiplier} multiplier)
 
-Optional flags you can add (rauf): --review, --model <model>, --timeout <min>,
---retry-blocked. For the full optional-flags catalog and the model-selection
-precedence (item.model > --model/options > project default > provider default),
-read references/runner-contract.md.
-
-Proceed with this command, or would you like to adjust?
+For the model-selection precedence (item.model > --model/options > project default >
+provider default) and the full optional-flags catalog, read references/runner-contract.md.
 ```
 
-For the full loop-runner contract — event-stream vs. log-fallback launch, the live-supervision/monitor rules, and the model-selection precedence — read `references/runner-contract.md`. If the user requests additional flags, append them to the rendered run command.
+**Run mode (gated on `loopRunner.name == "rauf"`).** When the runner is rauf, add a **"Run mode"** question to this same the host's question mechanism surface with these options **in this exact order** (do NOT improvise — deterministic ordering is the point): **(1) "Run with review pass (recommended)"** — append `--review`, and this is the default; **(2) "Run without review"** — the bare rendered command; **(3, only when 2a counted blocked items) "Review + retry blocked"** — append `--review --retry-blocked`. the host's question mechanism's built-in "Other" covers ad-hoc flags (`--model`/`--timeout`); add no separate open-ended option. The command line shown above renders `--review` (the recommended default). **When the runner is not rauf**, add NO Run-mode question — present the bare rendered command and let the user adjust via "Other" (byte-identical to today). Verbatim option labels: `## Run mode (Step 2d, rauf)` in `references/runner-contract.md`.
+
+For the full loop-runner contract — event-stream vs. log-fallback launch, the live-supervision/monitor rules, and the model-selection precedence — read `references/runner-contract.md`. Whichever Run-mode option (or "Other") the user picks, append its flags to the rendered run command before Step 3.
 
 #### Agent selection (gated on `loopRunner.agentArgument`)
 
@@ -179,7 +177,7 @@ For the full loop-runner contract — event-stream vs. log-fallback launch, the 
 - **(c) Availability listing.** From the **same** parsed `agents[]` (no second probe), list `id` / `displayName` / available (`yes`/`no`, `detail` on unavailable rows).
 - **(d) Verdict** — only for a **non-default** resolved agent (default path `None`/`claude-cli` → no probe, byte-identical to today). Classify by **membership** then `available` (never by exit code): **UNKNOWN** (`∉` set) → **hard-reject BEFORE any loop side-effect**, error lists the **sorted** valid ids, **NO proceed-anyway**; **UNAVAILABLE** (member, `available False`) → warn with `detail`, the host's question mechanism offering **proceed-anyway OR choose-another** (re-presents the same `agents[]`), never silent; **AVAILABLE** → proceed, the validated id fills `{agent}`; **probe failure** (non-zero exit / unparseable / missing or empty `agents[]` / row lacking `id`) → surface it, offer **choose-another OR abort**, **never launch the non-default agent unvalidated** and never silently fall back to the default.
 - **(d-model) Claude-only model-alias guard.** Runs **only** when the resolved agent is **non-default** (not the default / `claude-cli` path). Read the backlog.json (Step 1e path); collect items whose `model` is a **Claude-specific alias** (tier `opus`/`sonnet`/`haiku` or a `claude-*` id). **If none, skip silently.** Otherwise warn before launch via the host's question mechanism (NOT prose): `item.model` outranks `--agent`, so the alias is forwarded verbatim to `{agent}`, which will likely reject it (e.g. codex 400 *"The 'sonnet' model is not supported…"*) — every spawn exits 1 and rauf circuit-breaks (*"3 consecutive infra failures — halting"*) with no hint of the cause. Offer: **(1) Strip `model` for this run (recommended)** — rewrite backlog.json removing the `model` key from each affected item (persistent edit; re-run forge-4-backlog to restore), then proceed; **(2) Proceed as-is** — only safe if `{agent}` understands the pinned ids. forge touches only `model`, never `provider`. Full rationale: `references/runner-contract.md`.
-- **(e) Optional-flags line.** Replace the confirmation's optional-flags line with one that lists `--agent <id>` first plus the agent precedence pointer (`item.provider > --agent > project defaultAgent > runner default`) alongside the model precedence.
+- **(e) Optional-flags line.** Augment the confirmation block's closing flags/precedence pointer to list `--agent <id>` first plus the agent precedence pointer (`item.provider > --agent > project defaultAgent > runner default`) alongside the model precedence.
 - **(f) Resolved-agent line.** Add to the confirmation block: `Agent: {resolved.agent or claude-cli} (source: {sourceLabel})` — `sourceLabel`: `RUN` → `"per-run selection"`, `PROJECT` → `"project default (loopRunner.defaultAgent)"`, `DEFAULT` → `"runner default — claude-cli"`.
 
 ## Step 3: Execute the Loop
