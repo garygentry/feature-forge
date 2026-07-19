@@ -117,8 +117,20 @@ VERIFY_TOKEN_BY_STAGE: Final[dict[str, str]] = {
 
 #: A production stage status that counts as "done" for next-stage selection.
 _DONE_STATUS: Final = "complete"
-#: Verify statuses that count as "resolved" (no outstanding verify needed).
+#: The authoritative forge-verify status vocabulary. SOURCE OF TRUTH:
+#: references/pipeline-state-schema.json (definitions.verifyEntry.properties.status.enum).
+#: A status outside this set is unrecognized and must not be silently interpreted (#148).
+#: NOTE: epic-manifest.py keeps a byte-identical copy — flat, self-contained scripts have
+#: no shared import module (each is copied verbatim into per-agent adapter bundles).
+KNOWN_VERIFY_STATUSES: Final = frozenset(
+    {"pending", "passed", "findings-reported", "findings-applied", "skipped"}
+)
+#: Verify statuses that count as "resolved" (no outstanding verify needed). A STRICT
+#: subset of KNOWN_VERIFY_STATUSES — not collapsible into it (different meaning).
 _VERIFY_RESOLVED: Final = frozenset({"passed", "findings-applied", "skipped"})
+#: Per-process dedupe for the unknown-verify-status diagnostic (#148) so a single
+#: bogus status is flagged once, not once per verify_state() call in a command.
+_UNKNOWN_VERIFY_WARNED: set[str] = set()
 
 #: Default context window when the model can't be inferred and config is silent.
 _DEFAULT_WINDOW: Final = 200_000
@@ -257,6 +269,25 @@ def _verify_entry(state: dict, verify_key: str) -> dict:
     return entry if isinstance(entry, dict) else {}
 
 
+def _warn_unknown_verify_status(stage_name: str, status: object) -> None:
+    """Emit a one-time stderr diagnostic for an out-of-vocabulary verify status (#148).
+
+    The freshness classifier maps an unrecognized status to "never verified" — correct,
+    but silent, so a typo poisons the downstream gate (e.g. forge-5-loop's dependency
+    check) with no clue. Flagging it here makes the bad value visible where it is read.
+    """
+    key = f"{stage_name}={status!r}"
+    if key in _UNKNOWN_VERIFY_WARNED:
+        return
+    _UNKNOWN_VERIFY_WARNED.add(key)
+    known = ", ".join(sorted(KNOWN_VERIFY_STATUSES))
+    print(
+        f"feature-forge: unknown {stage_name} status {status!r} "
+        f"(treated as unverified; expected one of {known})",
+        file=sys.stderr,
+    )
+
+
 def verify_state(state: dict) -> tuple[str | None, str]:
     """Classify verify freshness for the most-recently-completed stage.
 
@@ -299,6 +330,12 @@ def verify_state(state: dict) -> tuple[str | None, str]:
         if status not in _VERIFY_RESOLVED:
             if status == "findings-reported":
                 return stage, "failing"
+            # An unrecognized status (outside KNOWN_VERIFY_STATUSES) is treated as
+            # "never verified" — defensible, but flag it once so a typo (e.g. the
+            # eye-slip 'findings-resolved') doesn't silently poison the gate that
+            # reads this label (#148). ``pending``/``None`` are known/absent → quiet.
+            if status is not None and status not in KNOWN_VERIFY_STATUSES:
+                _warn_unknown_verify_status(f"forge-verify-{token}", status)
             return stage, "never"
         verified_version = entry.get("verifiedStageVersion")
         stage_version = _stage_version(state, stage)
