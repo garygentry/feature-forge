@@ -74,6 +74,11 @@
           "type": "array",
           "items": { "$ref": "#/definitions/consumedContract" },
           "description": "What this feature relies on from its dependencies (REQ-EPIC-03). May be empty."
+        },
+        "mutatesShared": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "OPTIONAL precision hint for cross-member coupling detection (#144): project-root-relative file/glob paths this feature writes or migrates that are shared across the epic (e.g. a corpus a sibling's tests pin). When present, forge-verify CHECK-E10 uses it directly; when absent, CHECK-E10 falls back to grepping specs/backlog for mutated paths. Not a dependency edge — declarative only. May be omitted entirely."
         }
       }
     },
