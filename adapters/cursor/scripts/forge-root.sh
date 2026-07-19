@@ -21,14 +21,56 @@ is_root() {  # $1 = candidate dir
   [ -f "$1/.feature-forge-bundle.json" ] || [ -f "$1/.claude-plugin/plugin.json" ]
 }
 
+# Completeness gate (#152). A dir can carry the sentinel yet be a partial/stale install —
+# a skill-only extraction, or an install predating the shared-reference fan-out — where the
+# scripts/references the skills load at every stage are absent. Such a root looks usable but
+# runs DEGRADED silently (hand-improvised state schema, skipped Mint Guard + scripted exit).
+# These are the assets a complete install MUST carry beyond the sentinel; a resolved root
+# missing any of them is reported as degraded rather than handed back as if it were whole.
+CORE_ASSETS=(
+  "scripts/forge-session.py"
+  "references/pipeline-state-schema.json"
+  "references/stage-exit-protocol.md"
+)
+
+# Echo the first missing core asset (relative path) for $1, or nothing when complete.
+first_missing_asset() {  # $1 = candidate dir
+  local a
+  for a in "${CORE_ASSETS[@]}"; do
+    [ -f "$1/$a" ] || { printf '%s' "$a"; return 0; }
+  done
+}
+
+# A sentinel-bearing candidate that lacks a core asset is remembered here (first one wins)
+# so a COMPLETE root found later in the probe order still takes precedence; only if the probe
+# ends with no complete root do we report this degraded install (step 4).
+partial_root=""
+partial_missing=""
+
+# Given a candidate that already passed is_root: print + exit 0 if it is complete; otherwise
+# record it as the degraded fallback and return so probing continues. Always returns 0 on the
+# fall-through path so `set -e` never aborts the resolver on a partial candidate.
+accept_root() {  # $1 = candidate dir (already is_root)
+  local miss
+  miss="$(first_missing_asset "$1")"
+  if [ -z "$miss" ]; then
+    printf '%s\n' "$1"
+    exit 0
+  fi
+  if [ -z "$partial_root" ]; then
+    partial_root="$1"
+    partial_missing="$miss"
+  fi
+  return 0
+}
+
 # ── Step 1: self-location — parent of this script's dir is the install root. ─────────────
 # This is the PRIMARY path: a bundle ships its own scripts/forge-root.sh, so the parent of
 # this script's dir is that bundle's root under any agent's layout.
 self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 root="$(cd -- "$self_dir/.." && pwd -P)"
 if is_root "$root"; then
-  printf '%s\n' "$root"
-  exit 0
+  accept_root "$root"
 fi
 
 # ── Step 2a: Claude marketplace-cache installs — ~/.claude/plugins/cache/<mp>/<plugin>/<ver>/.
@@ -42,8 +84,7 @@ fi
 while IFS= read -r manifest; do
   candidate="${manifest%/.claude-plugin/plugin.json}"
   if is_root "$candidate"; then
-    printf '%s\n' "$candidate"
-    exit 0
+    accept_root "$candidate"
   fi
 done < <(ls -t "$HOME"/.claude/plugins/cache/*/feature-forge/*/.claude-plugin/plugin.json 2>/dev/null || true)
 
@@ -69,8 +110,7 @@ for candidate in \
   "$PWD/.gemini/extensions/feature-forge" \
 ; do
   if is_root "$candidate"; then
-    printf '%s\n' "$candidate"
-    exit 0
+    accept_root "$candidate"
   fi
 done
 
@@ -78,14 +118,18 @@ done
 # The neutral override works for every agent; CLAUDE_PLUGIN_ROOT is kept only for backwards
 # compatibility with existing Claude installs (C-4).
 if [ -n "${FEATURE_FORGE_ROOT:-}" ] && is_root "$FEATURE_FORGE_ROOT"; then
-  printf '%s\n' "$FEATURE_FORGE_ROOT"
-  exit 0
+  accept_root "$FEATURE_FORGE_ROOT"
 fi
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && is_root "$CLAUDE_PLUGIN_ROOT"; then
-  printf '%s\n' "$CLAUDE_PLUGIN_ROOT"
-  exit 0
+  accept_root "$CLAUDE_PLUGIN_ROOT"
 fi
 
-# ── Step 4: failure — actionable message to stderr, exit 1 (REQ-RES-04). ─────────────────
+# ── Step 4: failure. A sentinel-bearing but asset-incomplete root found along the way is a
+# DEGRADED install (#152) — report it distinctly and actionably rather than the generic
+# cannot-locate message, so the operator knows to reinstall/update rather than reconfigure. ─
+if [ -n "$partial_root" ]; then
+  echo "feature-forge: install incomplete/degraded at $partial_root (missing $partial_missing) — reinstall with 'npx @garygentry/feature-forge' (or 'feature-forge update' for a stale install)." >&2
+  exit 1
+fi
 echo "feature-forge: cannot locate install root. Set FEATURE_FORGE_ROOT to the bundle dir, or run from an installed skill dir." >&2
 exit 1

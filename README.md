@@ -101,6 +101,13 @@ npx @garygentry/feature-forge install --dry-run --json # preview the plan, chang
 | Cursor  | `npx @garygentry/feature-forge install -a cursor`                                                      | [docs/agents/cursor.md](docs/agents/cursor.md)   |
 | Gemini  | `npx @garygentry/feature-forge install -a gemini`                                                      | [docs/agents/gemini.md](docs/agents/gemini.md)   |
 
+> **Stale or partial install?** If a skill starts and reports
+> `feature-forge: install incomplete/degraded … (missing …)`, the bundled
+> `scripts/`/`references/` under your agent's skill dir are out of date or were only
+> partially extracted — the resolver refuses to run degraded rather than silently
+> improvising. Fix it by re-running the installer above (or `feature-forge update`) to
+> restore the full bundle.
+
 > The default loop runner ([forge-5-loop](#stage-5-loop-forge-5-loop)) is **rauf**, published to npm as
 > [`@garygentry/rauf`](https://www.npmjs.com/package/@garygentry/rauf). Install the rauf CLI with
 > `npx @garygentry/rauf` (or `npm i -g @garygentry/rauf`), or its

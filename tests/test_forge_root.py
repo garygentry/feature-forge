@@ -29,12 +29,22 @@ FAILURE_MESSAGE = (
 )
 
 
+# Core assets a COMPLETE install must carry beyond the sentinel — mirrors CORE_ASSETS in
+# forge-root.sh (#152). A resolved root missing any of these is reported as degraded.
+_CORE_ASSETS = (
+    "scripts/forge-session.py",
+    "references/pipeline-state-schema.json",
+    "references/stage-exit-protocol.md",
+)
+
+
 def _make_fake_install(root: Path) -> Path:
-    """Create a sentinel-bearing fake install with forge-root.sh in place.
+    """Create a sentinel-bearing, COMPLETE fake install with forge-root.sh in place.
 
     Writes both SENTINEL_FILES (scripts/epic-manifest.py and
-    .claude-plugin/plugin.json) and copies the real resolver to
-    ``root/scripts/forge-root.sh``.
+    .claude-plugin/plugin.json), the core assets the completeness gate checks
+    (``_CORE_ASSETS``), and copies the real resolver to
+    ``root/scripts/forge-root.sh`` — so the resolver treats it as whole (#152).
 
     Args:
         root: Directory to populate as a valid plugin root.
@@ -47,6 +57,43 @@ def _make_fake_install(root: Path) -> Path:
     (root / "scripts" / "epic-manifest.py").write_text("# sentinel\n")
     (root / ".claude-plugin" / "plugin.json").write_text("{}\n")
     (root / "scripts" / "forge-root.sh").write_text(RESOLVER.read_text())
+    for rel in _CORE_ASSETS:
+        asset = root / rel
+        asset.parent.mkdir(parents=True, exist_ok=True)
+        asset.write_text("# core-asset sentinel\n")
+    return root
+
+
+def _make_partial_install(root: Path, omit: str = "references/pipeline-state-schema.json") -> Path:
+    """Create a sentinel-bearing but ASSET-INCOMPLETE install (a stale/partial extraction).
+
+    Populates a full install, then deletes one core asset so the completeness gate
+    classifies it as degraded (#152).
+
+    Args:
+        root: Directory to populate.
+        omit: The core-asset relative path to leave missing.
+
+    Returns:
+        The populated (partial) root.
+    """
+    _make_fake_install(root)
+    (root / omit).unlink()
+    return root
+
+
+def _make_neutral_install(root: Path) -> Path:
+    """A COMPLETE install carrying ONLY the neutral sentinel (no .claude-plugin/plugin.json).
+
+    Exercises the cross-agent is_root() path while still satisfying the completeness gate.
+    """
+    (root / "scripts").mkdir(parents=True, exist_ok=True)
+    (root / ".feature-forge-bundle.json").write_text('{"name":"feature-forge"}\n')
+    (root / "scripts" / "forge-root.sh").write_text(RESOLVER.read_text())
+    for rel in _CORE_ASSETS:
+        asset = root / rel
+        asset.parent.mkdir(parents=True, exist_ok=True)
+        asset.write_text("# core-asset sentinel\n")
     return root
 
 
@@ -125,10 +172,7 @@ def test_forge_root_neutral_sentinel_self_location(tmp_path):
     This is the cross-agent path: non-Claude bundles have no .claude-plugin/plugin.json, so
     is_root() must accept the neutral sentinel alone (step 1).
     """
-    root = tmp_path / "bundle"
-    (root / "scripts").mkdir(parents=True)
-    (root / ".feature-forge-bundle.json").write_text('{"name":"feature-forge"}\n')
-    (root / "scripts" / "forge-root.sh").write_text(RESOLVER.read_text())
+    root = _make_neutral_install(tmp_path / "bundle")
     result = _run(
         root / "scripts" / "forge-root.sh",
         {"HOME": str(tmp_path / "empty-home"), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
@@ -260,9 +304,7 @@ def test_forge_root_sentinel_only_cache_install_resolves(tmp_path):
     """
     home = tmp_path / "home"
     root = home / ".claude" / "plugins" / "cache" / "test-mp" / "feature-forge" / "2.0.0"
-    (root / "scripts").mkdir(parents=True)
-    (root / ".feature-forge-bundle.json").write_text('{"name":"feature-forge"}\n')
-    (root / "scripts" / "forge-root.sh").write_text(RESOLVER.read_text())
+    _make_neutral_install(root)
     result = _run(
         _lone_resolver(tmp_path),
         {"HOME": str(home), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
@@ -288,3 +330,53 @@ def test_forge_root_neutral_env_fallback(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == str(valid_root)
+
+
+# ---------------------------------------------------------------------------
+# Completeness gate — degraded / partial install detection (#152)
+# ---------------------------------------------------------------------------
+
+
+def test_forge_root_partial_install_reports_degraded(tmp_path):
+    """A sentinel-bearing root missing a core asset fails LOUDLY, not silently degraded (#152).
+
+    Mirrors the reported stale/partial install: the skill dir + sentinel are present but the
+    shared references the skills load are absent. Instead of handing back a usable-looking
+    root that then runs off-script, the resolver reports the degraded install + which asset is
+    missing + how to fix it, and exits 1.
+    """
+    partial = _make_partial_install(
+        tmp_path / "install", omit="references/pipeline-state-schema.json"
+    )
+    result = _run(
+        partial / "scripts" / "forge-root.sh",
+        {"HOME": str(tmp_path / "empty-home"), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 1
+    assert "incomplete/degraded" in result.stderr
+    assert str(partial.resolve()) in result.stderr
+    assert "references/pipeline-state-schema.json" in result.stderr
+    # Not the generic cannot-locate message — this is a distinct, actionable failure.
+    assert "cannot locate install root" not in result.stderr
+    # Nothing is printed to stdout (no root handed back).
+    assert result.stdout.strip() == ""
+
+
+def test_forge_root_complete_root_wins_over_partial(tmp_path):
+    """A partial root earlier in the probe order does not shadow a complete root found later.
+
+    Self-location hits a partial install (remembered, not accepted); the resolver keeps
+    probing and resolves the complete root named by FEATURE_FORGE_ROOT (step 3) → exit 0.
+    """
+    partial = _make_partial_install(tmp_path / "partial")
+    complete = _make_fake_install(tmp_path / "complete")
+    result = _run(
+        partial / "scripts" / "forge-root.sh",
+        {
+            "HOME": str(tmp_path / "empty-home"),
+            "CLAUDE_PLUGIN_ROOT": "",
+            "FEATURE_FORGE_ROOT": str(complete),
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(complete)

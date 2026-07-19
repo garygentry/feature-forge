@@ -38,6 +38,23 @@ RESOLVER = REPO_ROOT / "scripts" / "forge-root.sh"
 SESSION_HELPER = REPO_ROOT / "scripts" / "forge-session.py"
 PURITY_CHECKER = REPO_ROOT / "scripts" / "check-spec-purity.py"
 
+# Core assets a complete install must carry beyond the sentinel — mirrors CORE_ASSETS in
+# forge-root.sh (#152). Fabricated bundles must include them or the completeness gate treats
+# them as degraded and the prelude refuses to resolve.
+_CORE_ASSETS = (
+    "scripts/forge-session.py",
+    "references/pipeline-state-schema.json",
+    "references/stage-exit-protocol.md",
+)
+
+
+def _write_core_assets(root: Path) -> None:
+    """Write placeholder core assets so ``root`` passes forge-root.sh's completeness gate."""
+    for rel in _CORE_ASSETS:
+        asset = root / rel
+        asset.parent.mkdir(parents=True, exist_ok=True)
+        asset.write_text("# core-asset sentinel\n")
+
 
 def _bootstrap_prelude() -> str:
     """Import the canonical BOOTSTRAP_PRELUDE from check-spec-purity.py."""
@@ -67,6 +84,7 @@ def _make_cache_install(home: Path, version: str = "9.9.9") -> Path:
     resolver_copy = root / "scripts" / "forge-root.sh"
     shutil.copy(RESOLVER, resolver_copy)
     resolver_copy.chmod(resolver_copy.stat().st_mode | stat.S_IXUSR)
+    _write_core_assets(root)
     return root
 
 
@@ -80,6 +98,7 @@ def _make_install_at(dirpath: Path) -> Path:
     resolver_copy = dirpath / "scripts" / "forge-root.sh"
     shutil.copy(RESOLVER, resolver_copy)
     resolver_copy.chmod(resolver_copy.stat().st_mode | stat.S_IXUSR)
+    _write_core_assets(dirpath)
     return dirpath
 
 

@@ -60,6 +60,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that stamped the entry; when unconfirmable, it refuses (a false refuse costs one click, a
   false proceed overwrites committed work). Skill bodies gain one citation line each (all stay
   under the 300-line cap); adapters regenerated.
+
+- **Stale/partial install now fails loudly instead of running degraded (#152).** When a
+  skill dir was present but the bundled `scripts/`/shared `references/` were missing (a
+  skill-only extraction, or an install predating the shared-reference fan-out), the skill ran
+  **degraded with no warning** — hand-improvised state schema, skipped Mint Guard + scripted
+  stage-exit. This is not a packaging defect (a fresh install ships everything), so the fix is
+  a preflight self-diagnostic in the single verbatim-copied resolver `scripts/forge-root.sh`:
+  a new completeness gate verifies a resolved root also carries its core assets
+  (`scripts/forge-session.py`, `references/pipeline-state-schema.json`,
+  `references/stage-exit-protocol.md`). A sentinel-bearing but asset-incomplete root is now
+  reported as `install incomplete/degraded at <dir> (missing <asset>) — reinstall …` with exit
+  1, rather than handed back as if whole; a complete root found later in the probe order still
+  wins over an earlier partial one. Because **every** skill's bootstrap prelude execs
+  `forge-root.sh` at stage start, the guard fires on every **cold** stage entry with no reliance
+  on the `/feature-forge:forge` navigator, and with **zero** skill-body changes. README gains a
+  "stale or partial install" note pointing at reinstall / `feature-forge update`. Adapters
+  regenerated (5 resolver mirrors).
 ## [0.12.8] — 2026-07-14
 
 Installer republished as `@garygentry/feature-forge@0.2.13` (unchanged installer logic; carries the 0.12.8 plugin pin).
