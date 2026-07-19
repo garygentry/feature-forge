@@ -131,6 +131,8 @@ State that the backlog is ready and invite adjustments before committing — a s
 
 ## Step 7: Update Pipeline State and Commit
 
+Before writing state or running the stage exit, invoke the **Stage-Completion Re-check** block in `references/shared-conventions.md` with `{stage}` = `forge-4-backlog` — a resumed mid-stage continuation must not overwrite a committed `backlog.json` or re-fire a finished exit.
+
 Write pipeline state conforming to `references/pipeline-state-schema.json`. Follow the Git Commit Protocol in `references/shared-conventions.md`.
 
 1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
