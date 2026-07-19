@@ -106,6 +106,39 @@ def test_validate_unknown_key_is_schema(run_cli, fixture_copy) -> None:
     assert "schema" in codes
 
 
+def test_validate_optional_mutates_shared_accepted(run_cli, fixture_copy) -> None:
+    """The optional `mutatesShared` hint (#144) is schema-legal and validates clean.
+
+    An epic member may declare project-root-relative shared paths it writes/migrates so
+    forge-verify CHECK-E10 can detect cross-member test coupling precisely. It is optional
+    (mirrors epic-manifest-schema.json definitions.feature.properties.mutatesShared) and
+    must not be flagged as an unknown key.
+    """
+    specs = fixture_copy("valid-epic")
+    manifest = specs / "auth-overhaul" / "epic-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["features"][0]["mutatesShared"] = ["data/vendors/partner-program.json"]
+    manifest.write_text(json.dumps(data))
+
+    result = run_cli("validate", "auth-overhaul", "--specs-dir", str(specs), "--json")
+    assert result.returncode == 0
+    assert result.json() == {"valid": True, "findings": []}
+
+
+def test_validate_mutates_shared_wrong_type_is_schema(run_cli, fixture_copy) -> None:
+    """A `mutatesShared` that is not an array of strings fails with a 'schema' finding."""
+    specs = fixture_copy("valid-epic")
+    manifest = specs / "auth-overhaul" / "epic-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["features"][0]["mutatesShared"] = "data/vendors/partner-program.json"  # str, not list
+    manifest.write_text(json.dumps(data))
+
+    result = run_cli("validate", "auth-overhaul", "--specs-dir", str(specs), "--json")
+    assert result.returncode == 1
+    codes = {f["code"] for f in result.json()["findings"]}
+    assert "schema" in codes
+
+
 # ---------------------------------------------------------------------------
 # §3.3 Cyclic graph rejection (REQ-EPIC-05)
 # ---------------------------------------------------------------------------

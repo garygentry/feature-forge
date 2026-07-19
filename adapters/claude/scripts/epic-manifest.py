@@ -562,6 +562,11 @@ _TOP_REQUIRED: Final = (
 )
 #: Required keys on each Feature object (00 §2.2).
 _FEATURE_REQUIRED: Final = ("name", "charter", "dependsOn", "exposes", "consumes")
+#: Optional keys on each Feature object. `mutatesShared` is the #144 precision
+#: hint for cross-member coupling (array of project-root-relative path strings);
+#: schema-legal when present, ignored when absent (mirrors
+#: epic-manifest-schema.json definitions.feature.properties.mutatesShared).
+_FEATURE_OPTIONAL: Final = ("mutatesShared",)
 #: Required keys on each Contract (exposes[]) object (00 §2.3).
 _CONTRACT_REQUIRED: Final = ("name", "kind", "summary")
 #: Required keys on each ConsumedContract (consumes[]) object (00 §2.4).
@@ -637,11 +642,16 @@ def _schema_findings(manifest: dict) -> list[Finding]:
                 findings.append(_schema(f"feature {label!r} missing required key {key!r}", fname))
         for key in feat:
             # 'status' is rejected separately above via the dedicated 'cached-status' code.
-            if key not in _FEATURE_REQUIRED and key != "status":
+            if key not in _FEATURE_REQUIRED and key not in _FEATURE_OPTIONAL and key != "status":
                 findings.append(_schema(f"feature {label!r} has unknown key {key!r}", fname))
         for key in ("name", "charter"):
             if key in feat and not isinstance(feat[key], str):
                 findings.append(_schema(f"feature {label!r} {key} must be a string", fname))
+        if "mutatesShared" in feat and (
+            not isinstance(feat["mutatesShared"], list)
+            or not all(isinstance(p, str) for p in feat["mutatesShared"])
+        ):
+            findings.append(_schema(f"feature {label!r} mutatesShared must be an array of strings", fname))  # noqa: E501
         if "dependsOn" in feat:
             if not isinstance(feat["dependsOn"], list) or not all(isinstance(d, str) for d in feat["dependsOn"]):  # noqa: E501
                 findings.append(_schema(f"feature {label!r} dependsOn must be an array of strings", fname))  # noqa: E501

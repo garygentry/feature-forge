@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Cross-member shared-state test coupling detection (#144).** In an epic, a member that
+  writes or migrates a file a *sibling's* already-shipped tests pin (e.g. a shared corpus a
+  benchmark suite reads at v1) silently breaks that sibling the moment it runs — red-gating
+  every one of the mutating member's own commits — and nothing in the epic contract checks
+  (E04–E09, which cover code symbols, not shared data files) caught it. A new **forge-verify
+  epic-mode check `CHECK-E10`** now detects it heuristically: for each member it collects the
+  shared paths it writes (from a new optional `mutatesShared[]` manifest hint, or by grepping
+  its specs/backlog when the hint is absent) and greps every **completed** sibling's committed
+  tests for reads of those paths; a hit is a non-fatal `inconsistency` finding recommending a
+  **reconciliation backlog item** scheduled before the first mutating item. The optional
+  `mutatesShared` array-of-paths field is added to `epic-manifest-schema.json` (and accepted by
+  `epic-manifest.py validate` — schema-legal when present, ignored when absent); it is declarative
+  only, **not** a dependency edge. `forge-4-backlog` gains matching authoring guidance so the
+  reconciliation item is planned up front rather than discovered mid-loop on a red gate. Degrades
+  to a clean no-op when no member declares or greps a shared write. Adapters regenerated.
+
 ### Changed
 
 - **forge-5-loop: `--review` is now the recommended default run mode (rauf only).**

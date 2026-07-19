@@ -195,8 +195,9 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 ## Epic Mode Checklist
 
 Run `epic-manifest.py validate "{epic}" --specs-dir "{specsDir}" --json` once; map its
-findings to E01/E02/E03/E08. Then perform the judgment checks E04–E07 by reading the
-manifest, EPIC.md, and completed members' specs.
+findings to E01/E02/E03/E08. Then perform the judgment checks E04–E07, E09, and E10 by
+reading the manifest, EPIC.md, completed members' specs, and (for E10) sibling members'
+committed tests.
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -242,6 +243,27 @@ python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}"
   `.blockingEpicChangeRequests`); the per-request `kind`/`target`/`rationale` detail is read
   from the member `.pipeline-state.json` already loaded in Step 2. This is the pre-emptive
   surface for the divergence class CHECK-E06/E07 otherwise catch only after the fact.
+- [ ] **CHECK-E10**: **cross-member shared-state test coupling** (#144). A member that writes or
+  migrates a file a *sibling's* committed tests already pin will break the sibling's suite the
+  moment it runs — blocking every one of its own commits from a green test gate — yet nothing in
+  E04–E09 catches it (contracts cover code symbols, not shared data files). Detect it heuristically,
+  per member `M`:
+  1. **Collect `M`'s mutated paths.** Take `M`'s `mutatesShared[]` from the manifest if present
+     (the authored precision hint). If absent or empty, fall back to grepping `M`'s specs
+     (change-maps / "files this writes") and backlog item `execute` steps for project-root-relative
+     paths it creates, writes, or migrates (data corpora, generated fixtures, migration outputs —
+     not `M`'s own source modules or its own tests).
+  2. **Grep sibling tests for reads of those paths.** For every *other* member `S` that is already
+     **`complete`** (derived status — its regression suite is live and gating), grep `S`'s committed
+     **test** files/globs for a read/import/load of any path in step 1. Use the stack profile
+     (`references/stacks/{stack}.md`) for what a test glob looks like in this language.
+  3. **Emit the finding.** A hit → a non-fatal `inconsistency` finding: name `M`, the shared path,
+     the sibling `S` and the specific test, and **recommend a reconciliation backlog item** on `M`
+     (regenerate/re-pin `S`'s fixture, or update `S`'s test to the new shape) scheduled *before*
+     `M`'s first mutating item — so the coupling is planned, not discovered mid-loop on a red gate.
+     **Report, do not repair** (same posture as CHECK-E07/E09). Degrades to a clean no-op when no
+     member declares or greps a shared write, or when no completed sibling reads it — never a
+     spurious hard-fail.
 
 ## Findings Document Template (Step 4)
 
