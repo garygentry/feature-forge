@@ -25,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reconciliation item is planned up front rather than discovered mid-loop on a red gate. Degrades
   to a clean no-op when no member declares or greps a shared write. Adapters regenerated.
 
+- **Generated-artifact freshness vs. `testCommand` `--check` gates (#145).** When a project's
+  configured `testCommand` gates on staleness of generated artifacts (`<generator> --check`-style
+  sub-commands that fail if a checked-in generated file is out of date with its source), a backlog
+  item that regenerated *one* gated artifact but omitted a sibling would pass locally yet red-gate
+  every commit on the stale-generated check — with no backlog check catching it. New **forge-verify
+  backlog-mode check `CHECK-B26`** string-scans `testCommand` for `--check` freshness gates and flags
+  (a) a gate whose artifact no item regenerates while some item edits its source, and (b) an item that
+  regenerates a proper subset of the artifacts a `--check` set covers — recommending the missing
+  generators be added to the item's execute + commit sequence. Advisory / not-applicable when the
+  command shape has no parseable `--check` tokens. `forge-4-backlog` (and its rauf `author-backlog`
+  delegate) gain matching authoring guidance: enumerate the whole `--check`-gated set up front, not
+  just the artifact an item is "about".
+
 ### Changed
 
 - **forge-5-loop: `--review` is now the recommended default run mode (rauf only).**

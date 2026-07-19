@@ -153,6 +153,28 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 - [ ] **CHECK-B24**: There are items for tests (or testing is included in each feature item's acceptance criteria)
 - [ ] **CHECK-B25**: No large items that try to do too many things (should be broken down)
 
+### Generated-Artifact Freshness
+- [ ] **CHECK-B26**: **Generated-artifact freshness vs. `testCommand` `--check` gates** (#145). When a
+  project's configured `testCommand` (forge.config.json) gates on **staleness of generated artifacts**
+  — sub-commands of the shape `<generator> --check` / `--verify` / `:check` that fail if a checked-in
+  generated file is out of date with its source — every backlog item that regenerates *one* gated
+  artifact must regenerate (and commit) **all** the sibling artifacts those same `--check` gates
+  depend on, or the item will pass locally yet red-gate on the stale-generated check. Verify
+  heuristically:
+  1. **Enumerate the gates.** String-scan `testCommand` for `--check`-style freshness sub-commands and
+     collect the generator/artifact each one guards (e.g. `build-benchmarks --check` guards
+     `partner-program-benchmarks`). If the command shape is unrecognized (no parseable `--check`
+     tokens), this check is **advisory / not-applicable** — never a hard fail.
+  2. **A gate with no regenerator.** If a `--check` gate guards an artifact that **no** backlog item
+     regenerates, and some item edits that artifact's *source*, flag a `gap`: the source change will
+     trip the freshness gate with nothing scheduled to refresh the output.
+  3. **Partial regeneration.** If an item regenerates a proper subset of the artifacts gated by the
+     `--check` set it touches (e.g. runs `build-partner-programs` + `build-analysis` but the gate also
+     covers `build-benchmarks`), flag an `inconsistency` naming the missing generator(s) and
+     recommending they be added to that item's execute + commit sequence. Same posture as the authoring
+     guidance in `forge-4-backlog` / rauf `author-backlog`: enumerate the whole `--check`-gated set, not
+     just the artifact the item is "about".
+
 ## Implementation Mode Checklist
 
 ### Spec Compliance
