@@ -517,6 +517,60 @@ def test_render_status_derived_sets(run_cli, fixture_copy) -> None:
         assert out["nextCommand"].startswith("/feature-forge:")
 
 
+def test_render_status_flags_unknown_verify_status(run_cli, fixture_copy) -> None:
+    """A bogus forge-verify-* status is surfaced as a warning, not silently swallowed (#148).
+
+    Mirrors the reported epic corruption: member ``d`` genuinely finished but its
+    ``forge-verify-impl.status`` is typo'd to ``findings-resolved`` (an eye-slip for the
+    adjacent ``findingsResolved`` count). It must (a) still count as incomplete, but
+    (b) produce a visible warning naming member + stage + value — otherwise its
+    dependent ``c`` gains a phantom unmetDep with no diagnostic.
+    """
+    specs = fixture_copy("status-derivation")
+    epic = "lifecycle"
+    state = specs / epic / "d" / ".pipeline-state.json"
+    data = json.loads(state.read_text())
+    data["stages"]["forge-verify-impl"]["status"] = "findings-resolved"
+    state.write_text(json.dumps(data))
+
+    result = run_cli("render-status", epic, "--specs-dir", str(specs), "--json")
+    assert result.returncode == 0
+    out = result.json()
+
+    # (a) the bogus status is surfaced in warnings[], naming member + stage + value.
+    assert any(
+        "d" in w and "forge-verify-impl" in w and "findings-resolved" in w
+        for w in out["warnings"]
+    ), out["warnings"]
+    # (b) unchanged rollup behavior — unknown counts as incomplete — but now VISIBLE.
+    assert "d" not in _complete_names(out)
+    d_row = next(f for f in out["features"] if f["name"] == "d")
+    assert d_row["status"] != "complete"
+    # …and the dependent reflects the (now-explained) incompleteness.
+    c_row = next(f for f in out["features"] if f["name"] == "c")
+    assert "d" in c_row["unmetDeps"]
+
+    # The text dashboard renders the warning too (not just --json).
+    text = run_cli("render-status", epic, "--specs-dir", str(specs)).stdout
+    assert "Warnings:" in text
+    assert "findings-resolved" in text
+
+
+def test_verify_status_warnings_tolerates_malformed_values(helper_module) -> None:
+    """The warning collector flags non-string / malformed statuses without raising (#148)."""
+    w = helper_module._verify_status_warnings
+    # Known statuses are silent.
+    assert w("m", {"stages": {"forge-verify-impl": {"status": "passed"}}}) == []
+    # A missing status (never run) is silent.
+    assert w("m", {"stages": {"forge-verify-impl": {"status": None}}}) == []
+    # A bogus string is flagged.
+    assert len(w("m", {"stages": {"forge-verify-impl": {"status": "nope"}}})) == 1
+    # A non-string (list) is flagged, not raised — no unhashable membership crash.
+    assert len(w("m", {"stages": {"forge-verify-impl": {"status": ["x"]}}})) == 1
+    # A non-dict stages block is tolerated.
+    assert w("m", {"stages": "oops"}) == []
+
+
 def test_render_status_blocked_lists_unmet_deps(run_cli, fixture_copy) -> None:
     """An incomplete feature with an incomplete dependency is blocked with its unmet deps listed."""
     specs = fixture_copy("status-derivation")

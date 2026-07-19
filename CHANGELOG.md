@@ -27,6 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `forge-5-loop/references/runner-contract.md` (`## Run mode`). No downstream change:
   Step 4a already reads the `review_completed` event for review runs.
 
+### Fixed
+
+- **Unknown `forge-verify-*` status no longer silently poisons the epic rollup +
+  dependency gates (#148).** An unrecognized status string in a member's
+  `.pipeline-state.json` (e.g. the eye-slip `findings-resolved`, conflated with the
+  adjacent `findingsResolved` count) was treated as "not complete-for-orchestration"
+  with **no diagnostic** — so one typo on one member under-reported the whole epic
+  (`rollup 0/6`) and fabricated phantom `unmetDeps` on every dependent, surfacing only
+  as a confusing false dependency warning steps downstream. The accepted vocabulary is
+  now a single labelled constant `KNOWN_VERIFY_STATUSES` (byte-identical in
+  `epic-manifest.py` and `forge-session.py`, sourced from
+  `references/pipeline-state-schema.json`), with the orchestration-complete / resolved
+  sets documented as strict subsets. `epic-manifest.py render-status` now emits a
+  `warnings[]` entry (and a "Warnings:" row in the text dashboard) naming the member,
+  stage, and bad value; `forge-session.py`'s freshness classifier prints a one-time
+  stderr diagnostic when it reads an out-of-vocabulary status. Treating an unknown
+  status as incomplete is unchanged — doing so **silently** was the trap.
+
 ## [0.12.8] — 2026-07-14
 
 Installer republished as `@garygentry/feature-forge@0.2.13` (unchanged installer logic; carries the 0.12.8 plugin pin).

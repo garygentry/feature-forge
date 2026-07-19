@@ -47,6 +47,21 @@ PIPELINE_STATE_FILENAME: Final = ".pipeline-state.json"
 MANIFEST_FILENAME: Final = "epic-manifest.json"
 NARRATIVE_FILENAME: Final = "EPIC.md"
 
+#: The authoritative forge-verify status vocabulary. SOURCE OF TRUTH:
+#: references/pipeline-state-schema.json (definitions.verifyEntry.properties.status.enum).
+#: A member state carrying a forge-verify-*.status outside this set is treated as
+#: incomplete-for-orchestration but SURFACED (never guessed silently) by render_status
+#: — a single typo'd status otherwise poisons the epic rollup + dependency gates (#148).
+#: NOTE: forge-session.py keeps a byte-identical copy of this constant — flat, self-
+#: contained scripts have no shared import module (each is copied verbatim into adapters).
+KNOWN_VERIFY_STATUSES: Final = frozenset(
+    {"pending", "passed", "findings-reported", "findings-applied", "skipped"}
+)
+#: The subset of KNOWN_VERIFY_STATUSES that makes a member's forge-verify-impl count as
+#: complete-for-orchestration (00 §7). A STRICT subset — 'findings-reported' (unfixed),
+#: 'skipped', and 'pending' do NOT unblock dependents. Not collapsible into the set above.
+_VERIFY_ORCH_COMPLETE: Final = frozenset({"passed", "findings-applied"})
+
 
 # --------------------------------------------------------------------------- #
 # Type Definitions (00-core-definitions.md §4, §5; 02 §8.4)
@@ -139,6 +154,10 @@ class RenderStatus(TypedDict):
         rollup: Aggregate {complete, total} counts.
         nextCommand: Recommended next command for the first actionable feature, or
             None when nothing is actionable (all complete, empty epic, or paused).
+        warnings: Human-readable diagnostics that do NOT invalidate the graph but
+            need surfacing — currently, members carrying a ``forge-verify-*.status``
+            outside ``KNOWN_VERIFY_STATUSES`` (treated as incomplete, but silently so
+            would poison the rollup + dependency gates, #148). Empty in the common case.
     """
 
     epic: str
@@ -148,6 +167,7 @@ class RenderStatus(TypedDict):
     parallelEligible: list[str]
     rollup: Rollup
     nextCommand: str | None
+    warnings: list[str]
 
 
 # --------------------------------------------------------------------------- #
@@ -792,7 +812,41 @@ def is_complete_for_orchestration(state: dict) -> bool:
         return True
     if not isinstance(impl, dict):
         return False
-    return impl.get("status") in {"passed", "findings-applied"}
+    return impl.get("status") in _VERIFY_ORCH_COMPLETE
+
+
+def _verify_status_warnings(name: str, state: dict) -> list[str]:
+    """Flag any ``forge-verify-*.status`` outside the known vocabulary (#148).
+
+    An unrecognized status (e.g. the eye-slip ``findings-resolved``, conflated with the
+    adjacent ``findingsResolved`` count) is correctly treated as incomplete by
+    ``is_complete_for_orchestration`` — but *silently*, so one typo on one member
+    under-reports the whole epic rollup and fabricates phantom ``unmetDeps`` on
+    dependents. Surfacing it turns that non-local corruption into a visible diagnostic.
+
+    Non-string / malformed status values (a list, an int) are also flagged, and the
+    membership test is guarded so an unhashable value never raises.
+    """
+    stages = state.get("stages", {})
+    if not isinstance(stages, dict):
+        return []
+    warnings: list[str] = []
+    known = ", ".join(sorted(KNOWN_VERIFY_STATUSES))
+    for stage_name, entry in stages.items():
+        if not (isinstance(stage_name, str) and stage_name.startswith("forge-verify-")):
+            continue
+        if not isinstance(entry, dict):
+            continue
+        status = entry.get("status")
+        if status is None:
+            continue
+        if isinstance(status, str) and status in KNOWN_VERIFY_STATUSES:
+            continue
+        warnings.append(
+            f"{name}: unknown {stage_name} status {status!r} "
+            f"(treated as incomplete; expected one of {known})"
+        )
+    return warnings
 
 
 def _read_state_safely(state_path: Path) -> dict:
@@ -927,14 +981,15 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
     rows: list[FeatureStatus] = []
     feature_dir_by_name: dict[str, Path] = {}
     complete: dict[str, bool] = {}
+    warnings: list[str] = []
     for feat in features:
         name = feat["name"]
         member_dir = contained_path(epic_dir, name)
         feature_dir_by_name[name] = member_dir
         rows.append(derive_status(member_dir))
-        complete[name] = is_complete_for_orchestration(
-            _read_state_safely(member_dir / PIPELINE_STATE_FILENAME)
-        )
+        member_state = _read_state_safely(member_dir / PIPELINE_STATE_FILENAME)
+        complete[name] = is_complete_for_orchestration(member_state)
+        warnings.extend(_verify_status_warnings(name, member_state))
 
     # (4) per-feature unmetDeps + blocked. A feature that is itself complete is
     #     never "blocked" — unmet deps only matter for work not yet finished.
@@ -989,6 +1044,7 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
         "parallelEligible": parallel_eligible,
         "rollup": rollup,
         "nextCommand": next_command,
+        "warnings": warnings,
     }
 
 
@@ -1414,6 +1470,10 @@ def _print_status_table(status: RenderStatus) -> None:
             marker = "⚠️ BLOCKING" if row["blockingEpicChangeRequests"] else "⚠️"
             line += f" — {marker} {row['openEpicChangeRequests']} pending epic change(s)"
         print(line)
+    if status["warnings"]:
+        print("Warnings:")
+        for warning in status["warnings"]:
+            print(f"  ⚠️ {warning}")
     if status["actionable"]:
         print(f"Actionable: {', '.join(status['actionable'])}")
     if status["parallelEligible"]:
