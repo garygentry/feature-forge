@@ -116,6 +116,8 @@ do not reload everything. This keeps quality up under context pressure.
 
 ## Step 5: Cross-Reference Validation
 
+Before writing `TRACEABILITY.md` or running the stage exit, invoke the **Stage-Completion Re-check** block in `references/shared-conventions.md` with `{stage}` = `forge-3-specs` — a resumed mid-stage continuation must not overwrite a committed `TRACEABILITY.md` or re-fire a finished exit.
+
 After writing all documents, verify:
 
 1. Every PRD requirement has coverage in at least one spec document

@@ -45,6 +45,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stderr diagnostic when it reads an out-of-vocabulary status. Treating an unknown
   status as incomplete is unchanged — doing so **silently** was the trap.
 
+- **Authoring stages self-abort a replayed mid-stage continuation instead of overwriting
+  a committed artifact (#151).** The Stage-Entry Guard protects only a top-of-skill re-run;
+  a pasted/resumed mid-stage instruction ("continue forge-3-specs: write `TRACEABILITY.md`,
+  run the stage exit") entered *below* it, and nothing re-checked `stages.<stage>.status`
+  before regenerating — followed literally, it would overwrite a committed spec artifact and
+  re-fire a completed stage exit. A new **Stage-Completion Re-check** block in
+  `references/shared-conventions.md` (sibling to the Stage-Entry Guard) is cited at the head
+  of the write/exit step in `forge-1-prd`..`forge-4-backlog`: before writing an artifact or
+  running the Scripted Stage Exit, it re-reads the stage entry and, when the stage is already
+  `complete`/`stale` with artifacts on disk + a recorded `commitHash` that the current session
+  did **not** author, routes to the entry guard's Re-authoring warning (detect-and-refuse)
+  rather than regenerating. Distinguisher is provenance — a legitimate exit runs in the session
+  that stamped the entry; when unconfirmable, it refuses (a false refuse costs one click, a
+  false proceed overwrites committed work). Skill bodies gain one citation line each (all stay
+  under the 300-line cap); adapters regenerated.
 ## [0.12.8] — 2026-07-14
 
 Installer republished as `@garygentry/feature-forge@0.2.13` (unchanged installer logic; carries the 0.12.8 plugin pin).

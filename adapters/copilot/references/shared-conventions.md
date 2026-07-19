@@ -274,6 +274,18 @@ This write is **left uncommitted**: it is staged and committed as part of this s
 
 **Incremental artifact tracking:** When a stage writes multiple files (e.g. forge-3-specs writing a suite of spec documents), update the `stages.{stage}.artifacts` array in `.pipeline-state.json` after writing each file — not just at stage completion. This is what makes the Interrupted inventory above precise about which files were successfully written.
 
+## Stage-Completion Re-check
+
+Invoke this block **at the head of any post-entry step that writes a stage artifact or runs the Scripted Stage Exit** — the Stage-Entry Guard runs only once, at the top of the skill. A **resumed or pasted mid-stage instruction** (e.g. "continue {stage}: write TRACEABILITY.md, run the stage exit") enters *below* the entry guard, so nothing re-checks completion before it overwrites a committed artifact and re-fires a finished exit — data-destructive if followed literally. This re-check is the idempotency backstop for that path. `{stage}` is the invoking skill's id.
+
+**Re-read** `stages.{stage}` in `{resolvedFeatureDir}/.pipeline-state.json`, then classify by **provenance** — a legitimate completion runs in the same session that applied this stage's Entry Stamp; a replayed continuation finds a finished stage it did not produce:
+
+1. **Proceed** when `stages.{stage}.status` is `"in-progress"` (this session's Entry Stamp — you are finishing the run you started) or absent/`pending`. Run the write / exit normally.
+
+2. **Detect-and-refuse** when ALL of these hold: `stages.{stage}.status ∈ {"complete", "stale"}` **AND** the stage's artifacts (incl. `TRACEABILITY.md` for forge-3-specs) exist on disk **AND** a `commitHash` is recorded for the stage **AND** you did **not** author this stage earlier in the current session. This is a stale/replayed continuation of an already-finished, committed stage. Do **not** overwrite the artifact or re-run the exit. Route instead to the **Stage-Entry Guard**'s *Re-authoring* path: surface the same `AskUserQuestion` warning ("A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?"). Only on explicit confirmation re-enter from the Entry Stamp (the version bumps at exit); otherwise **stop** and report that the stage is already complete — cite the recorded `commitHash` and offer `/feature-forge:forge {feature}` to see true state.
+
+When you cannot confirm you authored the current run, treat it as a replay and refuse: a false refuse costs one confirmation click; a false proceed overwrites a committed artifact and re-churns a stage version. `--force` follows Force Mode (skip the gate, treat as a deliberate re-author).
+
 ## Force Mode
 
 If the user passes `--force` as an argument, skip prerequisite validation with a warning:
