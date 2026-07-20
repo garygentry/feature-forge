@@ -90,6 +90,25 @@ When examining a Rust project, check for:
 - **Formatting**: `cargo fmt --check` (ensures code matches `rustfmt` style)
 - **Unsafe audit**: `cargo geiger` (if security-sensitive — counts unsafe blocks)
 
+### Runtime Entrypoints & Bootstrap-Wiring Sites
+
+Used by `CHECK-I22` (a runtime-required bootstrap needs a **non-test** caller on one of these) and
+`CHECK-I23` (a heavy init wired into a **universal** bootstrap entry should move to a lazier site).
+
+- **Runtime entrypoints (a legitimate non-test call site):** `fn main()` in `main.rs` or a `[[bin]]`
+  target, an async runtime entry (`#[tokio::main]`), an HTTP handler registered on an axum/actix/warp
+  router, or a worker task spawned from `main` — not a `#[cfg(test)]` module or a `tests/` integration
+  file.
+- **Universal bootstrap entries (run on every startup — the `CHECK-I23` risk site):** a `lazy_static!`
+  / `once_cell::sync::Lazy` static that eagerly constructs heavy clients, a single `bootstrap`/`setup`
+  fn `main` calls before serving, or a `#[ctor]`-style pre-`main` initializer. A `Lazy` static is only
+  a risk when it is *forced* at startup rather than on first use.
+- **Heavy server-only import markers (what makes an init "heavy" for `CHECK-I23`):** DB pools
+  (`sqlx::Pool`, `diesel`, `deadpool`, `mongodb`), message/queue clients (`rdkafka`, `lapin`,
+  `redis`), telemetry SDKs (`opentelemetry`, `sentry`), or a broad internal service crate. Constructing
+  any of these eagerly at a universal entry is the CHECK-I23 pattern — recommend a `OnceCell`/`Lazy`
+  forced on **first use** by the handler that needs it, not at process start.
+
 ## Testing
 
 - **Framework**: Built-in test harness (`#[test]`, `#[cfg(test)]`)

@@ -75,6 +75,6 @@ def test_runnability_checks_degrade_gracefully() -> None:
 
 def test_verify_skill_impl_total_and_dimension_updated() -> None:
     text = VERIFY_SKILL.read_text(encoding="utf-8")
-    assert "impl: ~22 checks" in text
-    assert "impl ~22" in text
+    assert "impl: ~23 checks" in text
+    assert "impl ~23" in text
     assert "runnability" in text.lower()

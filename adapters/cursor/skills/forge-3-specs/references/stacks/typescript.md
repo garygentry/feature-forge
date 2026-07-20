@@ -64,6 +64,29 @@ When examining a TypeScript project, check for:
 - **Cross-package type checks**: `bun run typecheck` (or equivalent) passes for both the feature package AND packages that depend on it
 - **Import path validation**: All import paths resolve correctly per the `exports` map in `package.json`
 
+### Runtime Entrypoints & Bootstrap-Wiring Sites
+
+Used by `CHECK-I22` (a runtime-required bootstrap needs a **non-test** caller on one of these) and
+`CHECK-I23` (a heavy init wired into a **universal** bootstrap entry should move to a lazier site).
+
+- **Runtime entrypoints (a legitimate non-test call site):** a `package.json` `bin` / CLI `main`; a
+  server entry that actually starts listening (`src/server.ts`, `src/index.ts` invoking `listen`); a
+  worker/consumer file; and for Next.js — `middleware.ts`, `app/**/route.ts` route handlers,
+  `app/**/{page,layout,template}.tsx`, server actions, and `instrumentation.ts`. Express/Hono/Fastify:
+  the file that constructs the app and calls `.listen()`.
+- **Universal bootstrap entries (run on every startup — the `CHECK-I23` risk site):** Next.js
+  `instrumentation.ts` / `instrumentation.js` (its `register()` runs once per server process before
+  any request), an app-server preload/`register`/`--import` hook, a root `app/layout.tsx` that
+  eagerly imports server singletons, and global test setup (`vitest.setup.ts`, `jest.setup.ts`) if it
+  bootstraps production graphs. Wiring a heavy init here loads it on **every** cold start (and, under
+  the dev server, on every module re-evaluation).
+- **Heavy server-only import markers (what makes an init "heavy" for `CHECK-I23`):** DB/ORM clients
+  (`drizzle-orm`, `@prisma/client`, `pg`, `mongoose`, `kysely`), queue/worker libs (`bullmq`, `bull`,
+  `kafkajs`, `ioredis`), telemetry/observability SDKs (`@opentelemetry/*`, `@sentry/node`), and a
+  whole-service-layer barrel (`import * as services from "@repo/services"`). An init that pulls any of
+  these into a universal bootstrap entry is the CHECK-I23 pattern — recommend lazy init at the first
+  route/handler/worker that needs it.
+
 ## Testing
 
 - **Framework**: Vitest (most common in modern TS), Jest, or testing-library
