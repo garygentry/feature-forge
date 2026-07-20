@@ -38,6 +38,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delegate) gain matching authoring guidance: enumerate the whole `--check`-gated set up front, not
   just the artifact an item is "about".
 
+- **Dev-runtime smoke guidance + heavy-bootstrap heuristic `CHECK-I23` (#149, follow-up to #121).**
+  The impl-verify runnability checks now target the failure modes that a static typecheck and a clean
+  prod smoke both hide. `CHECK-I21`'s prose now recommends the configured `smokeCommand` exercise the
+  **dev runtime** the developer actually uses (dev server / watch loop / HMR) — where
+  module-graph-identity bugs (a "singleton" duplicated across a re-evaluated module graph) and
+  watch-loop bugs (an init that never re-fires, or re-fires and leaks on reload) live — and that a
+  **fix** be re-verified in the same runtime mode the original bug manifested. A new **`CHECK-I23`**
+  (advisory `gap`/`improvement`, **never** a hard fail) flags a runtime-required init wired into a
+  **universal framework bootstrap entry** (a Next.js `instrumentation.ts`, an app-server preload, a
+  global setup module) that pulls a large **server-only import graph** (DB/ORM clients, queue workers,
+  telemetry SDKs), recommending **lazy init** at the first route/handler/worker that needs the graph
+  instead of eager wiring on every cold start. Detection is static, driven by a new **Runtime
+  Entrypoints & Bootstrap-Wiring Sites** section added to every stack profile
+  (`references/stacks/{typescript,python,go,rust,_generic}.md`) — which also retroactively backs the
+  stack-profile reference `CHECK-I22` already made. Guidance + heuristic lint only (no runtime-health
+  monitor). Impl mode total `~22 → ~23`. Adapters regenerated.
+
 ### Changed
 
 - **forge-5-loop: `--review` is now the recommended default run mode (rauf only).**
