@@ -12,7 +12,7 @@
       "artifacts": ["PRD.md"],
       "startedAt": "2026-07-20T02:36:15Z",
       "completedAt": "2026-07-20T02:42:08Z",
-      "commitHash": null,
+      "commitHash": "706c96ecd21ff607c40f084b78d258d5f97de505",
       "basedOnVersions": {}
     },
     "forge-verify-prd": {
