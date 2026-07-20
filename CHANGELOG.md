@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.9] — 2026-07-19
+
 ### Added
 
 - **Cross-member shared-state test coupling detection (#144).** In an epic, a member that
@@ -139,6 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on the `/feature-forge:forge` navigator, and with **zero** skill-body changes. README gains a
   "stale or partial install" note pointing at reinstall / `feature-forge update`. Adapters
   regenerated (5 resolver mirrors).
+
 ## [0.12.8] — 2026-07-14
 
 Installer republished as `@garygentry/feature-forge@0.2.13` (unchanged installer logic; carries the 0.12.8 plugin pin).
