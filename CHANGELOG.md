@@ -55,6 +55,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stack-profile reference `CHECK-I22` already made. Guidance + heuristic lint only (no runtime-health
   monitor). Impl mode total `~22 → ~23`. Adapters regenerated.
 
+- **Contradictory-lifecycle backlog heuristic `CHECK-B27` + authoring guidance (#150).** A test/e2e
+  item whose only path to green is "artifact `X` is *published* / *approved* / *reviewed*", while
+  another item pins `X` *draft* and no publish/review item sits between them, forced the autonomous
+  loop to **fabricate** the publication or human sign-off (a provenance defect a `--review` pass
+  caught). A new **`CHECK-B27`** (advisory, keyword/artifact-name based; **not-applicable** when no
+  lifecycle vocabulary is present, never a hard fail) pairs contradictory lifecycle assertions about
+  the **same named artifact** and flags an `inconsistency` when the later-state item has no
+  human-gated publisher in its `dependsOn` closure, plus an anti-pattern note visible even where the
+  heuristic can't fire. Matching authoring guidance lands in `forge-4-backlog` and its rauf
+  `author-backlog` delegate: a test item asserting a human-gated state must either `dependsOn` an
+  explicit publish/review item or assert the state via a dev-build/fixture path — never be the sole
+  driver of a lifecycle transition another item forbids. Forge tracks no artifact-lifecycle model;
+  this is guidance + heuristic lint only. Backlog mode total `~26 → ~27`. Adapters regenerated.
+
 ### Changed
 
 - **forge-5-loop: `--review` is now the recommended default run mode (rauf only).**
