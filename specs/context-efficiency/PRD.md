@@ -126,7 +126,9 @@ and are **non-binding goals** — the binding bar is in §8.
   fallback. The requirement is the *outcome* in REQ-R4-01 — the specific
   mechanism is finalized in the tech spec.
   - Priority: P0
-  - Notes: This is a constraint on preference, not a mandate; see §5.
+  - Notes: This is a constraint on preference, not a mandate; see §5. The helper
+    mechanism MUST NOT hard-depend on `jsonschema` (absent in CI) and MUST pass
+    `ruff check scripts/ eval/` (CI-only — run locally); see C-2.
 - REQ-R4-03: The schema file MUST remain the source of truth for CI/validation
   even after it is no longer read per stage.
   - Priority: P1
@@ -147,7 +149,9 @@ and are **non-binding goals** — the binding bar is in §8.
   deterministic.
   - Priority: P1
   - Notes: Preferred mechanism is a `forge-session.py effective-config`
-    subcommand (§5); outcome is the requirement.
+    subcommand (§5); outcome is the requirement. Like R4's helper, it MUST NOT
+    hard-depend on `jsonschema` (absent in CI) and MUST pass `ruff check
+    scripts/ eval/` (CI-only — run locally); see C-2.
 
 ### 3.6 Runner-contract split: always vs. conditional (R6)
 
@@ -193,8 +197,13 @@ and are **non-binding goals** — the binding bar is in §8.
   static snapshot).
   - Priority: P0
 - REQ-PERF-02: The changes MUST NOT increase the always-loaded surface (the 13
-  frontmatter descriptions, ~1.2k tokens) or the common-case `SessionStart`
-  hook output (silent today).
+  frontmatter descriptions, ~1.2k tokens at the audit snapshot) or the
+  common-case `SessionStart` hook output (silent today). Non-increase MUST be
+  verified by the same measurement method recorded under REQ-OBS-01 (against the
+  re-measured baseline, not the static audit figure) — concretely, a frontmatter
+  description char/word-count assertion and confirmation the hook's common-path
+  output stays empty, so the guard is a green/red test rather than a review
+  judgment.
   - Priority: P0
 
 ### 4.2 Behavior preservation (correctness)
@@ -231,10 +240,18 @@ and are **non-binding goals** — the binding bar is in §8.
 
 - REQ-MAINT-01: The drift-guard test discipline
   (`tests/test_stage_exit_protocol.py`-style) MUST be extended to cover every
-  split/moved file — not weakened. Specifically: each per-mode checklist file
-  asserts its expected CHECK-IDs and the skill's expected-count table matches;
-  every invoke-point citation names an existing file and every new reference
-  file is cited by ≥1 skill.
+  split/moved file — not weakened. Specifically:
+  - **R1:** each per-mode checklist file asserts its expected CHECK-IDs and the
+    skill's expected-count table matches.
+  - **R6:** a drift guard asserts `agent-selection.md` is cited at the
+    forge-5-loop capability gate and that the always-vs-conditional split of
+    `runner-contract.md` preserves every original section (mirroring the R1
+    CHECK-ID-count assertion pattern).
+  - **R4/R5:** a drift guard asserts the `forge-session.py` helper output
+    validates against `pipeline-state-schema.json` / `forge-config-schema.json`
+    in CI, so REQ-R4-03's "schema remains source of truth" is test-enforced.
+  - **Catch-all:** every invoke-point citation names an existing file and every
+    new reference file is cited by ≥1 skill.
   - Priority: P0
 
 ## 5. Constraints
