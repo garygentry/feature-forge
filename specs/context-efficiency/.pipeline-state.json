@@ -12,7 +12,7 @@
       "artifacts": ["tech-spec.md"],
       "startedAt": "2026-07-20T02:46:48Z",
       "completedAt": "2026-07-20T03:18:18Z",
-      "commitHash": null,
+      "commitHash": "b3ad22de0feec98a93a8e507c2cf3d0a61007295",
       "basedOnVersions": {"forge-1-prd": 2}
     },
     "forge-1-prd": {
