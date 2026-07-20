@@ -2,10 +2,19 @@
   "feature": "context-efficiency",
   "branch": "forge/context-efficiency",
   "createdAt": "2026-07-20T02:36:15Z",
-  "updatedAt": "2026-07-20T03:18:18Z",
-  "currentStage": "forge-3-specs",
+  "updatedAt": "2026-07-20T03:52:00Z",
+  "currentStage": "forge-4-backlog",
   "pipelineStatus": "active",
   "stages": {
+    "forge-3-specs": {
+      "status": "complete",
+      "version": 1,
+      "startedAt": "2026-07-20T03:30:00Z",
+      "completedAt": "2026-07-20T03:52:00Z",
+      "commitHash": null,
+      "artifacts": ["00-core-definitions.md", "01-architecture-layout.md", "02-verify-checklist-split.md", "03-state-verbs.md", "04-effective-config.md", "05-instruction-relocations.md", "06-testing-strategy.md", "TRACEABILITY.md"],
+      "basedOnVersions": {"forge-1-prd": 2, "forge-2-tech": 1}
+    },
     "forge-2-tech": {
       "status": "complete",
       "version": 1,
