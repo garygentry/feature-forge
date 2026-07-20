@@ -175,6 +175,38 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
      guidance in `forge-4-backlog` / rauf `author-backlog`: enumerate the whole `--check`-gated set, not
      just the artifact the item is "about".
 
+### Artifact Lifecycle Consistency
+- [ ] **CHECK-B27**: **No test item forcing a lifecycle transition another item forbids** (#150).
+  *Advisory heuristic — keyword/artifact-name based; **not-applicable** when no lifecycle vocabulary is
+  present, **never** a hard fail.* A **lifecycle state** (draft / published / released / approved /
+  reviewed / signed-off / gated) is a downstream-project concept forge does not itself track — but a
+  backlog can still encode a **contradiction** about one named artifact: item A pins artifact `X` as
+  *draft* / *unpublished* / *unreviewed* while item B asserts (in its acceptance criteria or a test it
+  adds) that `X` is *published* / *released* / *approved*, with **no** publishing/review item for `X`
+  anywhere in B's dependency closure. That leaves a **test/e2e item as the only thing forcing the
+  transition** — and since the autonomous loop can neither publish a package nor stand in for a human
+  reviewer, asked to make such a test green it **fabricates** the publication or sign-off (a provenance
+  defect a `--review` pass has caught in the wild). Verify heuristically:
+  1. **Find lifecycle assertions.** Scan item titles/descriptions/`acceptanceCriteria` for a named
+     artifact paired with a lifecycle-state keyword — earlier states (`draft` / `unpublished` /
+     `pending review` / `unreleased`) vs later states (`published` / `released` / `approved` / `live` /
+     `signed-off` / `gated`). If **no** item carries such vocabulary, this check is **not-applicable**.
+  2. **Pair by artifact name.** Group assertions that reference the **same named artifact**. A pair
+     where one item requires the *earlier* state and another asserts the *later* state is a candidate.
+  3. **Check the dependency closure.** If the later-state item has **no** publish / review / human-gated
+     item for that artifact in its transitive `dependsOn`, flag an `inconsistency`: name the artifact,
+     both items, and recommend either (a) adding a `dependsOn` on an explicit human-gated publish/review
+     item that legitimately produces the state, or (b) re-asserting the state via a dev-build / fixture
+     path — never letting a test item be the sole driver of the transition (mirrors the authoring
+     guidance in `forge-4-backlog` / rauf `author-backlog`). **Report, do not repair.**
+
+  > **Anti-pattern (visible even where the heuristic can't fire):** a test/e2e item whose pass condition
+  > is "artifact `X` is published / approved / reviewed" while the backlog contains no human-gated
+  > publish or review item producing that state. The autonomous loop cannot publish or sign off on
+  > behalf of a human; asked to make such a test green it will **fabricate** the published/reviewed
+  > provenance. Any item asserting a human-gated lifecycle state must trace — via `dependsOn` — to the
+  > item that legitimately produces it, or assert the state through a dev-build / fixture path instead.
+
 ## Implementation Mode Checklist
 
 ### Spec Compliance
