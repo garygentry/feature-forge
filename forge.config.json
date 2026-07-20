@@ -4,9 +4,10 @@
   "backlogDir": null,
   "gitCommitAfterStage": true,
   "commitPrefix": "forge",
-  "stack": null,
-  "typeCheckCommand": null,
-  "testCommand": null,
+  "stack": "python",
+  "typeCheckCommand": "ruff check scripts/ eval/",
+  "testCommand": "python3 -m pytest tests",
+  "smokeCommand": null,
   "loopIterationMultiplier": 1.5,
   "contextWindowTokens": 1000000
 }
