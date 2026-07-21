@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pi adapter generation now translates `/feature-forge:*` command references in Pi skill and role frontmatter descriptions, not just skill bodies, and excludes Python cache byproducts from copied reference trees so installer/package outputs do not ship `__pycache__` or `.pyc` files.
 - Pi adapter generation now also rewrites `/feature-forge:*` slash commands inside copied Pi reference files and runtime helper scripts, so helper-generated next-step text can point Pi users at `/skill:*` commands.
 - The generated Pi `AskUserQuestion` TUI now treats explicit `Other` options as the custom-answer row instead of appending a duplicate, moves directly into inline text entry when that row is selected or typed on, and keeps multi-select Enter behavior from stealing the Other row as a hidden finish action.
+- The generated Pi `AskUserQuestion` extension no longer rejects section headers over 12 visible characters, and it seeds `FEATURE_FORGE_ROOT` from its loaded package root so generated forge shell snippets prefer the active Pi adapter over unrelated local Claude installs.
 
 ## [0.12.9] — 2026-07-19
 

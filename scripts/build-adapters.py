@@ -1320,6 +1320,8 @@ PI_ASK_USER_QUESTION_EXTENSION = r'''// GENERATED — DO NOT EDIT. Source: scrip
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, Text, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 
 interface QuestionOption {
@@ -1376,6 +1378,8 @@ const ParamsSchema = Type.Object({
 });
 
 export default function askUserQuestion(pi: ExtensionAPI) {
+  process.env.FEATURE_FORGE_ROOT ||= dirname(dirname(fileURLToPath(import.meta.url)));
+
   const tool = {
     name: "AskUserQuestion",
     label: "Ask User Question",
@@ -1440,7 +1444,6 @@ function validateInput(params: AskUserQuestionInput): string | undefined {
   if (!Array.isArray(params.questions) || params.questions.length < 1 || params.questions.length > 4) return "AskUserQuestion requires 1-4 questions.";
   for (const [i, q] of params.questions.entries()) {
     if (!q || typeof q.question !== "string" || !q.question.trim()) return `Question ${i + 1} requires question text.`;
-    if (q.header && visibleWidth(q.header) > 12) return `Question ${i + 1} header must be 12 characters or fewer.`;
     if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > 4) return `Question ${i + 1} requires 2-4 options.`;
     for (const [j, opt] of q.options.entries()) {
       if (!opt || typeof opt.label !== "string" || !opt.label.trim()) return `Question ${i + 1}, option ${j + 1} requires a label.`;
@@ -1468,8 +1471,13 @@ function createQuestionnaire(tui: any, theme: any, params: AskUserQuestionInput,
     if (!selected.has(qIndex)) selected.set(qIndex, new Set());
     return selected.get(qIndex)!;
   };
-  const allOptions = (q: QuestionInput) => [...q.options, { label: "Other", description: "Type a custom response" }];
-  const customIndex = (q: QuestionInput) => q.options.length;
+  const explicitCustomIndex = (q: QuestionInput) =>
+    q.options.findIndex((opt) => /^(other|custom)(\b|\s*\/)/i.test(opt.label.trim()) || /custom answer/i.test(opt.label));
+  const customIndex = (q: QuestionInput) => {
+    const explicit = explicitCustomIndex(q);
+    return explicit >= 0 ? explicit : q.options.length;
+  };
+  const allOptions = (q: QuestionInput) => (explicitCustomIndex(q) >= 0 ? q.options : [...q.options, { label: "Other", description: "Type a custom response" }]);
   const isPrintableInput = (value: string) => value.length > 0 && !/[\x00-\x1F\x7F]/.test(value);
   const startCustom = (initial = "") => {
     customMode = true;
