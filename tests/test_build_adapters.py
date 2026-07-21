@@ -194,6 +194,82 @@ def test_bundle_is_self_contained(fixture_copy, agent):
     assert not (bundle / "skills" / "noarg" / "references").exists()
 
 
+def test_verbatim_reference_copy_excludes_python_cache_artifacts(fixture_copy):
+    """Generated bundles do not ship pytest/import byproducts from references trees."""
+    root = fixture_copy("minimal-canon")
+    pycache = root / "references" / "__pycache__"
+    pycache.mkdir()
+    (pycache / "loop-agent-selection.cpython-310.pyc").write_bytes(b"cache")
+    own_cache = root / "skills" / "with-refs" / "references" / "__pycache__"
+    own_cache.mkdir()
+    (own_cache / "detail.cpython-310.pyc").write_bytes(b"cache")
+
+    assert run_build(root).returncode == 0
+
+    for path in (root / "adapters").rglob("*"):
+        rel = path.relative_to(root / "adapters").as_posix()
+        assert "__pycache__" not in rel
+        assert not rel.endswith(".pyc")
+
+
+def test_pi_frontmatter_descriptions_use_skill_command_wording(fixture_copy):
+    """Pi skill/role descriptions are startup context, so translate Claude commands there too."""
+    root = fixture_copy("minimal-canon")
+    skill_path = root / "skills" / "with-refs" / "SKILL.md"
+    skill_path.write_text(
+        skill_path.read_text().replace(
+            "description: \"Build the thing: do it precisely.\"",
+            "description: \"Use when user runs /feature-forge:with-refs.\"",
+        ),
+        encoding="utf-8",
+    )
+    agent_path = root / "agents" / "researcher.md"
+    agent_path.write_text(
+        agent_path.read_text().replace(
+            "description: \"Researches the codebase: thoroughly and concisely.\"",
+            "description: \"Researches before /feature-forge:forge-2-tech.\"",
+        ),
+        encoding="utf-8",
+    )
+
+    assert run_build(root).returncode == 0
+
+    pi_skill = (root / "adapters" / "pi" / "skills" / "with-refs" / "SKILL.md").read_text()
+    pi_agent = (root / "adapters" / "pi" / "agents" / "researcher.md").read_text()
+    assert "/skill:with-refs" in pi_skill
+    assert "/feature-forge:" not in pi_skill.split("---", 2)[1]
+    assert "/skill:forge-2-tech" in pi_agent
+    assert "/feature-forge:" not in pi_agent.split("---", 2)[1]
+
+
+def test_pi_support_files_use_skill_command_wording(fixture_copy):
+    """Pi copied references/helpers can print next-step commands, so translate those too."""
+    root = fixture_copy("minimal-canon")
+    shared = root / "references" / "shared-conventions.md"
+    shared.write_text(
+        shared.read_text() + "\nNext: /feature-forge:forge-2-tech demo\n",
+        encoding="utf-8",
+    )
+    helper = root / "scripts" / "forge-session.py"
+    helper.write_text(
+        helper.read_text() + '\nNEXT = "/feature-forge:forge demo"\n',
+        encoding="utf-8",
+    )
+
+    assert run_build(root).returncode == 0
+
+    pi_shared = root / "adapters" / "pi" / "references" / "shared-conventions.md"
+    pi_fanned = root / "adapters" / "pi" / "skills" / "with-refs" / "references" / "shared-conventions.md"
+    pi_helper = root / "adapters" / "pi" / "scripts" / "forge-session.py"
+    for path in (pi_shared, pi_fanned, pi_helper):
+        text = path.read_text(encoding="utf-8")
+        assert "/skill:" in text
+        assert "/feature-forge:" not in text
+
+    claude_helper = root / "adapters" / "claude" / "scripts" / "forge-session.py"
+    assert "/feature-forge:forge demo" in claude_helper.read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize("agent", AGENT_TARGETS)
 def test_cited_shared_references_fan_out_skill_local(fixture_copy, agent):
     """A cited bundle-root SHARED reference resolves skill-local after build (#122/#132).

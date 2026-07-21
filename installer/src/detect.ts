@@ -20,7 +20,7 @@ import type { AgentId } from "./types.js";
  * instant, REQ-PERF-01) and never creates the dir (REQ-DET-04). Any stat failure
  * (`ENOENT` not present, `EACCES` unreadable, or a non-directory at the path) ⇒ `false`.
  *
- * Synchronous by design: exactly one stat per agent (five total), so async adds no
+ * Synchronous by design: exactly one stat per agent, so async adds no
  * throughput and would complicate the pure-derivation surface.
  */
 export function probeConfigDir(configDir: string): boolean {
@@ -37,6 +37,7 @@ const CLI_NAMES: Partial<Record<AgentId, string>> = {
   codex: "codex",
   copilot: "copilot",
   gemini: "gemini",
+  pi: "pi",
   // cursor: intentionally omitted — IDE/GUI agent, no canonical CLI on PATH (REQ-DET-02).
 };
 

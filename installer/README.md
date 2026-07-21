@@ -2,7 +2,7 @@
 
 Cross-agent installer for the [**feature-forge**](https://github.com/garygentry/feature-forge)
 skill suite — an end-to-end feature-development pipeline that runs on any coding agent
-(Claude, Codex, Copilot, Cursor, or Gemini).
+(Claude, Codex, Copilot, Cursor, Gemini, or Pi).
 
 This package installs the canonical forge skills into the agents detected on your machine.
 It is dependency-free and performs sandboxed, manifest-tracked writes.
@@ -33,7 +33,7 @@ npx @garygentry/feature-forge install --dry-run --json
 
 | Flag                | Description                                                            |
 | ------------------- | --------------------------------------------------------------------- |
-| `-a, --agent <id>`  | Scope to one agent (`claude`/`codex`/`copilot`/`cursor`/`gemini`).    |
+| `-a, --agent <id>`  | Scope to one agent (`claude`/`codex`/`copilot`/`cursor`/`gemini`/`pi`). |
 | `-g, --global`      | Install into the user-level config dir (default: project-local).      |
 | `--symlink`         | Symlink the bundle instead of copying (Windows always copies).        |
 | `--dry-run`         | Print the planned actions without changing anything.                  |
@@ -52,6 +52,9 @@ Each agent's bundle is installed where that agent actually loads it (project sco
 | copilot | `.github/feature-forge/`             | managed block in `.github/copilot-instructions.md`      |
 | cursor  | `.cursor/rules/feature-forge/`       | —                                                       |
 | gemini  | `.gemini/extensions/feature-forge/`  | —                                                       |
+| pi      | `.pi/skills/feature-forge/`          | —                                                       |
+
+For Pi, `--global` installs to `~/.pi/agent/skills/feature-forge/` and project scope installs to `./.pi/skills/feature-forge/`. The Pi bundle includes real `package.json` metadata plus the `AskUserQuestion` compatibility extension; run `/trust` (or use `--approve` in non-interactive tests) before relying on project-local Pi resources.
 
 The Copilot block is delimited by `<!-- feature-forge:managed:start -->` /
 `<!-- feature-forge:managed:end -->` sentinels and merged without disturbing the rest of the

@@ -316,10 +316,16 @@ test("SCALE-01: a synthetic AGENT_TARGETS-shaped row flows through detectAgent +
       for (const scope of ["project", "global"] as Scope[]) {
         const root = scope === "global" ? sb.home : sb.cwd;
         const dest = destinationFor(target, scope, sb.resolve(scope));
-        const sub = target.installSubpath ? [target.installSubpath] : [];
+        const base = scope === "global"
+          ? target.globalInstallBaseDir ?? target.installBaseDir
+          : target.projectInstallBaseDir ?? target.installBaseDir;
+        const subpath = scope === "global"
+          ? target.globalInstallSubpath ?? target.installSubpath
+          : target.projectInstallSubpath ?? target.installSubpath;
+        const sub = subpath ? [subpath] : [];
         assert.equal(
           dest,
-          join(root, target.installBaseDir, ...sub, "feature-forge"),
+          join(root, base, ...sub, "feature-forge"),
         );
       }
     }

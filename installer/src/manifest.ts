@@ -12,6 +12,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
+  AGENT_IDS,
   AGENT_TARGETS,
   MANIFEST_PREFIX,
   SCHEMA_VERSION,
@@ -219,7 +220,7 @@ type ValidateResult =
   | { readonly ok: true; readonly value: InstallManifest }
   | { readonly ok: false; readonly reason: string };
 
-const AGENT_IDS_SET = new Set(["claude", "codex", "copilot", "cursor", "gemini"]);
+const AGENT_IDS_SET = new Set<string>(AGENT_IDS);
 
 /** Structural validation of a parsed manifest (internal to manifest.ts). */
 function validateManifest(x: unknown): ValidateResult {

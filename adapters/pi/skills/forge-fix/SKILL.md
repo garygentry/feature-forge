@@ -1,0 +1,98 @@
+---
+# GENERATED — DO NOT EDIT. Source: skills/forge-fix/SKILL.md. Regenerate: python3 scripts/build-adapters.py
+name: forge-fix
+description: Apply fixes from the most recent forge-verify findings document. Use when user runs /skill:forge-fix or asks to apply verification fixes for a forge feature. Do NOT trigger for general code fixes, bug fixes, or repairs outside the forge verification workflow.
+---
+
+# forge-fix — Apply Verification Fixes
+
+Apply fixes from the most recent forge-verify findings document, with step-level tracking for crash recovery.
+
+Usually invoked by the user, but an **`autoFix` caller** may also invoke this skill automatically
+when `autoFix: true` is configured **and** its preconditions hold (the findings document has zero
+unresolved decision points, the working tree is clean, and a mandatory re-verify passes afterward).
+Two callers drive that chain: an **authoring stage's in-stage auto-verify** (the primary path — see
+`references/stage-exit-protocol.md`, the in-stage verify block) and the **`/skill:forge`
+navigator's catch-up** (§3b). The **fix application** below is identical either way — this skill is
+not "auto-aware" about *applying* findings; it always applies the latest findings document. The
+**caller** owns the gating decisions, including the closing re-verify: the Step 6 gate is presented
+**only on a direct invocation**, because under an `autoFix` chain the caller (stage skill or
+navigator) runs the mandatory re-verify itself.
+
+## Prerequisites
+
+Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
+
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+
+## Step 1: Locate Findings Document
+
+1. Read `forge.config.json` for `specsDir` (default: `./specs`)
+2. Resolve the feature directory via the **Feature Directory Resolution** block in `references/shared-conventions.md` (a standalone feature resolves to its flat `{specsDir}/{feature}/` path exactly as today; an epic member resolves to its nested path). Then find the most recent `VERIFY-*-*.md` file in `{resolvedFeatureDir}/.verification/`.
+3. If no findings document exists, tell the user: "No verification findings found. Run `/skill:forge-verify {feature}` first."
+
+## Step 2: Parse Fix Execution Plan
+
+1. Read the "Fix Execution Plan" section of the findings document
+2. Identify all execution steps and their dependencies
+3. Check for a `## Fix Progress` section at the bottom of the findings document — if present, some steps were already applied in a previous interrupted run
+
+## Step 3: Handle User Decisions
+
+If the "User Decisions Required" section has unresolved items:
+1. Present each decision to the user with the context from the findings, using `AskUserQuestion` for each decision point. Follow the **Decision Support** protocol in `references/shared-conventions.md`: lead with a recommended option and put the trade-off in each option's description. When the findings provide clear evidence, recommend with confidence and cite it. When they don't, still offer a sensible default with the trade-offs, but flag it plainly as a judgment call rather than going neutral — a defaulted recommendation beats an unguided option dump.
+2. Wait for answers before proceeding
+3. Record decisions in the findings document under the "User Decisions Required" section (mark each as resolved)
+
+## Step 4: Execute Fix Steps
+
+For each step in the "Execution Steps" section, in order:
+
+1. **Check if already applied:** If the step appears in the "Fix Progress" section as `[APPLIED]`, skip it
+2. **Check dependencies:** If the step depends on another step, verify that step is marked as applied
+3. **Apply the fix:** Execute the change described in the step's "Action" field
+4. **Verify the change:** Re-read the modified file and check that the change is correct and consistent with the step's rationale
+5. **Record progress:** Append to the `## Fix Progress` section at the bottom of the findings document:
+   ```
+   - Step {N}: [APPLIED] {date} — {short summary of what was done}
+   ```
+6. If a step fails or produces unexpected results, STOP. Report the issue to the user. Do not continue to dependent steps.
+
+## Step 5: Update Pipeline State and Commit
+
+Follow the Git Commit Protocol in `references/shared-conventions.md`.
+
+1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
+   - Set the relevant `forge-verify-*` entry status to `findings-applied`
+   - Record `fixedAt` timestamp
+   - Record `verifiedStageVersion` = the current `version` of the production stage entry
+     this verify covers (e.g. fixing `tech` findings → `stages["forge-2-tech"].version`).
+     This keeps the navigator's freshness ledger accurate after a fix, so the verified
+     stage reads as `fresh` and auto-verify does not needlessly re-fire on an unchanged
+     artifact. (If the fix itself bumped the production stage's `version`, use the new
+     value so the ledger reflects what was actually verified/fixed.)
+2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files (`git add {resolvedFeatureDir}/` — or `{specsDir}/{epic}/` for an epic member so the member-state change commits atomically with the epic subtree), attempt commit with message `"{commitPrefix}({feature}): apply {mode} verification fixes"` (writing `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success.
+
+## Step 6: Re-verify Gate
+
+Fixes are applied and recorded (`findings-applied`), so the stage reads **fresh** in the navigator's ledger (Step 5 set `verifiedStageVersion` to the current version). A re-verify is nonetheless the only thing that *confirms* the fixes actually resolved the findings, so on a **direct/manual** `forge-fix` invocation, **prompt** it rather than leaving it as a passive suggestion — this is the same **Standard Verify Gate** the stage skills stamp (`references/stage-exit-protocol.md`).
+
+**Skip this gate when an `autoFix` caller invoked you as part of a chain** — the authoring stage's in-stage auto-verify (`references/stage-exit-protocol.md`, in-stage verify block) or the navigator's catch-up (`skills/forge/SKILL.md` §3b step 2b): there the caller owns the mandatory re-verify, so a second gate here would block the unattended flow or double the re-verify. Just return and let the caller proceed.
+
+On a direct invocation, present the gate using `AskUserQuestion` with these three options — but only when the host has a question mechanism **and** the clean-room path is available (the host's subagent mechanism plus a dispatchable `forge-verifier` subagent):
+- **Re-verify {feature} now** *(recommended)* — dispatch the clean-room `forge-verifier` subagent from this session in require-clean mode to confirm every finding is resolved; the digest returns here so any remaining issue keeps its context. One-time — it does **not** change config.
+- **Re-verify now + enable auto-verify going forward** — re-verify now **and** patch `"autoVerify": true` into `forge.config.json` in place (preserve formatting and every other key) so future stages verify automatically, no prompt. This complements the `forge-init` opt-in. **Do not auto-commit this config change** — treat it like `notes`: a user-facing edit the user commits on their own cadence, never folded into a stage's artifact commit.
+- **Skip for now** — proceed without re-verifying; the fixes are already recorded, so the stage stays `findings-applied` (fresh in the ledger). Run `/skill:forge {feature}` when you want pipeline status.
+
+**Host / clean-room fallback (not a user-selectable option):** if the question mechanism, the host's subagent mechanism, or the `forge-verifier` subagent is unavailable, do **not** run clean-room — degrade to printing `/skill:forge-verify {feature}` for the user to run inline/manually (mirroring `autoInvokeNextStage`), and offer the auto-verify enable as plain text only if a config write is possible.
+
+---
+
+## Host execution notes (Pi)
+
+This Pi bundle preserves Claude's `AskUserQuestion` references because it ships a Pi compatibility extension registering an `AskUserQuestion` tool. On Pi:
+
+- **User input:** use `AskUserQuestion` for genuine user decisions. It supports multiple questions, option descriptions, recommended ordering, multi-select, previews, and free-form Other/custom answers.
+- **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a skill directly, print the exact `/skill:<name> ...` command for the user to run.
+- **Subagents:** Pi has no Claude-style `Agent` tool; run the work inline or ask the user to start a fresh Pi session with the named role.
+- **Background / monitoring:** run long-lived commands in the foreground and report progress as it arrives.

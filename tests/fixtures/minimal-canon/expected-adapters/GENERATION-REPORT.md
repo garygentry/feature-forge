@@ -68,6 +68,21 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `agents/verifier.md` | `sub-agent key 'tools'` | no Gemini sub-agent construct (TQ-1) |
 | `skills/with-refs/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 
+## pi
+
+| Source | Construct | Reason |
+|--------|-----------|--------|
+| `agents/researcher.md` | `sub-agent key 'effort'` | no Pi sub-agent construct |
+| `agents/researcher.md` | `sub-agent key 'maxTurns'` | no Pi sub-agent construct |
+| `agents/researcher.md` | `sub-agent key 'model'` | no Pi sub-agent construct |
+| `agents/researcher.md` | `sub-agent key 'tools'` | no Pi sub-agent construct |
+| `agents/verifier.md` | `sub-agent key 'maxTurns'` | no Pi sub-agent construct |
+| `agents/verifier.md` | `sub-agent key 'memory'` | no Pi sub-agent construct |
+| `agents/verifier.md` | `sub-agent key 'model'` | no Pi sub-agent construct |
+| `agents/verifier.md` | `sub-agent key 'skills'` | no Pi sub-agent construct |
+| `agents/verifier.md` | `sub-agent key 'tools'` | no Pi sub-agent construct |
+| `skills/with-refs/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+
 ## Copied verbatim (no provenance header)
 
 These files are transported byte-for-byte from canon into every `adapters/<agent>/` bundle and intentionally carry **no** provenance header (a header would break byte-identity / corrupt parsed files):

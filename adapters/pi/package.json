@@ -1,0 +1,21 @@
+{
+  "name": "feature-forge-pi-adapter",
+  "private": true,
+  "version": "0.0.0",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "skills": [
+      "./skills"
+    ],
+    "extensions": [
+      "./extensions/ask-user-question.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}

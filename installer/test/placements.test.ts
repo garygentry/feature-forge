@@ -41,7 +41,7 @@ test("resolvePlacements: copilot managed-block targets .github/copilot-instructi
 });
 
 test("resolvePlacements: agents without a rule return []", () => {
-  for (const id of ["claude", "cursor", "gemini"] as const) {
+  for (const id of ["claude", "cursor", "gemini", "pi"] as const) {
     assert.deepEqual(resolvePlacements(AGENT_TARGETS[id], "project", opts), []);
   }
 });

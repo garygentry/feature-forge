@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
+# ruff: noqa: E501
 """Generate self-contained, per-agent adapter bundles from spec-pure canon.
 
 This is the ``build-adapters`` generator for the ``forge-agent-adapters-build``
 feature. It walks the spec-pure canon (``skills/``, ``agents/``, the
 ``references/`` trees) and emits a provenance-stamped ``adapters/<agent>/`` tree
-for each of the five v1 target agents (claude, codex, copilot, cursor, gemini),
-plus a ``GENERATION-REPORT.md`` drop-with-record report and a regenerate-and-diff
+for each target agent (claude, codex, copilot, cursor, gemini, pi), plus a
+``GENERATION-REPORT.md`` drop-with-record report and a regenerate-and-diff
 drift guard wired into ``scripts/validate.sh``.
 
 This module is built up incrementally across backlog items: this foundation
@@ -43,9 +44,9 @@ import yaml
 # 1. Target Agents (00 §1, REQ-GEN-03, REQ-DET-01)
 # --------------------------------------------------------------------------- #
 
-# The five v1 target agents (REQ-GEN-03). Order is FIXED (alphabetical) and is the
+# The v1 target agents (REQ-GEN-03). Order is FIXED (alphabetical) and is the
 # emit/report iteration order — never sort at runtime, never reorder (REQ-DET-01).
-AGENT_TARGETS: tuple[str, ...] = ("claude", "codex", "copilot", "cursor", "gemini")
+AGENT_TARGETS: tuple[str, ...] = ("claude", "codex", "copilot", "cursor", "gemini", "pi")
 
 
 # --------------------------------------------------------------------------- #
@@ -819,26 +820,49 @@ _HOST_NOTES_NEUTRAL = (
     "- **Background / monitoring:** run long-lived commands in the foreground (or "
     "your host's background facility) and report progress as it arrives.\n"
 )
+_HOST_NOTES_PI = (
+    "## Host execution notes (Pi)\n\n"
+    "This Pi bundle preserves Claude's `AskUserQuestion` references because it ships "
+    "a Pi compatibility extension registering an `AskUserQuestion` tool. On Pi:\n\n"
+    "- **User input:** use `AskUserQuestion` for genuine user decisions. It supports "
+    "multiple questions, option descriptions, recommended ordering, multi-select, "
+    "previews, and free-form Other/custom answers.\n"
+    "- **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a "
+    "skill directly, print the exact `/skill:<name> ...` command for the user to run.\n"
+    "- **Subagents:** Pi has no Claude-style `Agent` tool; run the work inline or ask "
+    "the user to start a fresh Pi session with the named role.\n"
+    "- **Background / monitoring:** run long-lived commands in the foreground and "
+    "report progress as it arrives.\n"
+)
 _HOST_NOTES: dict[str, str] = {
     "codex": _HOST_NOTES_CODEX,
     "gemini": _HOST_NOTES_NEUTRAL,
     "copilot": _HOST_NOTES_NEUTRAL,
     "cursor": _HOST_NOTES_NEUTRAL,
+    "pi": _HOST_NOTES_PI,
 }
 
+_PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
+    pair for pair in _HOST_TERM_REPLACEMENTS if "AskUserQuestion" not in pair[0]
+) + (
+    ("/feature-forge:", "/skill:"),
+    ("feature-forge:", "skill:"),
+)
 
-def translate_host_terms(text: str) -> str:
-    """Rewrite Claude-native tool names to host-neutral phrasing (deterministic).
 
-    Applied to NON-Claude emitter bodies only. Literal substitutions run in the
-    fixed ``_HOST_TERM_REPLACEMENTS`` order (longest/most-specific first); the
-    parameterized ``subagent_type="<name>"`` form is rewritten by regex to
-    ``the <name> custom agent``. Idempotent on already-neutral text.
+def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
+    """Rewrite Claude-native tool names to host-specific safe phrasing.
+
+    Applied to NON-Claude emitter bodies only. Literal substitutions run in a fixed
+    order (longest/most-specific first); the parameterized ``subagent_type="<name>``
+    form is rewritten by regex. Pi uses a specialized table that preserves
+    ``AskUserQuestion`` because the Pi bundle ships a compatibility extension for it.
     """
     text = _SUBAGENT_TYPE_QUOTED.sub(r"the \1 custom agent", text)
     text = _SUBAGENT_TYPE_BARE.sub(r"the \1 custom agent", text)
     text = _AGENT_CALL.sub(r"subagent\1call", text)
-    for old, new in _HOST_TERM_REPLACEMENTS:
+    replacements = _PI_HOST_TERM_REPLACEMENTS if agent_id == "pi" else _HOST_TERM_REPLACEMENTS
+    for old, new in replacements:
         text = text.replace(old, new)
     return text
 
@@ -847,7 +871,7 @@ def skill_body_for(body: str, agent_id: str) -> str:
     """Body for a skill on ``agent_id``: verbatim for Claude; translated + overlay else."""
     if agent_id == "claude":
         return body
-    translated = translate_host_terms(body)
+    translated = translate_host_terms(body, agent_id=agent_id)
     overlay = _HOST_NOTES.get(agent_id, _HOST_NOTES_NEUTRAL)
     # Separate the overlay from the body with a horizontal rule; body already ends
     # in a newline (canon invariant), so one blank line then the rule.
@@ -860,8 +884,7 @@ def agent_body_for(body: str, agent_id: str) -> str:
     No overlay — a sub-agent definition is not an interactive instruction surface;
     the tool-name translation alone keeps its developer_instructions executable.
     """
-    return body if agent_id == "claude" else translate_host_terms(body)
-
+    return body if agent_id == "claude" else translate_host_terms(body, agent_id=agent_id)
 
 # --------------------------------------------------------------------------- #
 # claude emitter (03 §3, REQ-VND-01, REQ-VND-02, REQ-GEN-06) — CONFIRMED
@@ -1078,6 +1101,56 @@ class CopilotEmitter:
 
 
 # --------------------------------------------------------------------------- #
+# pi emitter — Pi package with high-fidelity AskUserQuestion compatibility
+# --------------------------------------------------------------------------- #
+
+
+class PiEmitter:
+    """Emitter for ``pi``: Pi package root with skills plus AskUserQuestion extension.
+
+    Pi loads SKILL.md folders and TypeScript extensions from package manifest paths.
+    Skills preserve ``AskUserQuestion`` and translate Claude-only slash commands to
+    Pi's ``/skill:`` surface; the package-level extension registers a compatible
+    ``AskUserQuestion`` tool.
+    """
+
+    agent_id = "pi"
+
+    def emit_skill(self, skill: SkillRecord) -> EmitResult:
+        """Emit ``skills/<name>/SKILL.md`` with {name, description} + Pi-safe body."""
+        native = order_fields(
+            {
+                "name": skill.name,
+                "description": translate_host_terms(skill.description, agent_id="pi"),
+            }
+        )
+        content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
+            skill.body, "pi"
+        )
+        rel = f"skills/{skill.name}/SKILL.md"
+        drops: tuple[DropRecord, ...] = ()
+        if hint_value(skill) is not None:
+            drops = (DropRecord("pi", skill.source_path, "argument-hint",
+                                "Pi skills have no invocation-hint field"),)
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+    def emit_agent(self, agent: AgentRecord) -> EmitResult:
+        """Emit body-only role notes and drop-record Claude-only sub-agent keys."""
+        rel = f"agents/{agent.name}.md"
+        content = render_frontmatter_block(
+            order_fields(
+                {
+                    "name": agent.name,
+                    "description": translate_host_terms(agent.description, agent_id="pi"),
+                }
+            ),
+            agent.source_path,
+        ) + agent_body_for(agent.body, "pi")
+        drops = drop_all_claude_keys(agent, "pi", "no Pi sub-agent construct")
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+
+# --------------------------------------------------------------------------- #
 # gemini emitter (03 §7, REQ-FMT-01..03, REQ-GEN-06) — TQ-1 (safe defaults)
 # --------------------------------------------------------------------------- #
 #
@@ -1191,7 +1264,11 @@ def run_self_containment_pass(
         _assert_within(dst_helper, bundle_root)
         shutil.copyfile(src_helper, dst_helper)  # bytes only — never copystat/edit
         dst_helper.chmod(0o755 if helper.endswith(".sh") else 0o644)
-        _assert_byte_identical(src_helper, dst_helper)  # REQ-GEN-05 hard assertion
+        if bundle_root.name != "pi":
+            _assert_byte_identical(src_helper, dst_helper)  # REQ-GEN-05 hard assertion
+
+    if bundle_root.name == "pi":
+        _translate_pi_support_command_strings(bundle_root)
 
     # (4) Neutral bundle sentinel `.feature-forge-bundle.json` (REQ-GEN-04): the cross-agent root
     #     marker forge-root.sh keys on, making every bundle self-locatable WITHOUT a Claude
@@ -1207,6 +1284,354 @@ def run_self_containment_pass(
         BUNDLE_SENTINEL_NAME,
         json.dumps(sentinel, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
     )
+
+    if bundle_root.name == "pi":
+        _write_pi_package_assets(bundle_root)
+
+
+
+def _write_pi_package_assets(bundle_root: Path) -> None:
+    """Write Pi package manifest and generated AskUserQuestion extension."""
+    package = {
+        "name": "feature-forge-pi-adapter",
+        "private": True,
+        "version": "0.0.0",
+        "keywords": ["pi-package"],
+        "pi": {
+            "skills": ["./skills"],
+            "extensions": ["./extensions/ask-user-question.ts"],
+        },
+        "peerDependencies": {
+            "@earendil-works/pi-coding-agent": "*",
+            "@earendil-works/pi-tui": "*",
+            "typebox": "*",
+        },
+    }
+    safe_write(
+        bundle_root,
+        "package.json",
+        json.dumps(package, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
+    )
+    safe_write(bundle_root, "extensions/ask-user-question.ts", PI_ASK_USER_QUESTION_EXTENSION)
+
+
+PI_ASK_USER_QUESTION_EXTENSION = r'''// GENERATED — DO NOT EDIT. Source: scripts/build-adapters.py
+// Regenerate with: python3 scripts/build-adapters.py
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey, Text, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
+
+interface QuestionOption {
+  label: string;
+  description?: string;
+  preview?: string;
+}
+
+interface QuestionInput {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: QuestionOption[];
+}
+
+interface AskUserQuestionInput {
+  questions: QuestionInput[];
+  metadata?: Record<string, unknown>;
+}
+
+interface AnswerDetail {
+  question: string;
+  header?: string;
+  selections: string[];
+  selectedOptions: QuestionOption[];
+  customAnswer?: string;
+  cancelled?: boolean;
+}
+
+interface AskUserQuestionResult {
+  questions: QuestionInput[];
+  answers: Record<string, string | string[]>;
+  answerDetails: AnswerDetail[];
+  response?: string;
+  metadata: Record<string, unknown>;
+}
+
+const OptionSchema = Type.Object({
+  label: Type.String({ description: "Option label shown to the user" }),
+  description: Type.Optional(Type.String({ description: "Optional explanation/trade-off shown below the label" })),
+  preview: Type.Optional(Type.String({ description: "Optional preview text shown with the option" })),
+});
+
+const QuestionSchema = Type.Object({
+  question: Type.String({ description: "Question to ask the user" }),
+  header: Type.Optional(Type.String({ description: "Optional short section heading" })),
+  multiSelect: Type.Optional(Type.Boolean({ description: "Allow multiple options" })),
+  options: Type.Array(OptionSchema, { minItems: 2, maxItems: 4, description: "Multiple-choice options; Other/custom is added automatically" }),
+});
+
+const ParamsSchema = Type.Object({
+  questions: Type.Array(QuestionSchema, { minItems: 1, maxItems: 4, description: "Questions to ask" }),
+  metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+});
+
+export default function askUserQuestion(pi: ExtensionAPI) {
+  const tool = {
+    name: "AskUserQuestion",
+    label: "Ask User Question",
+    description:
+      "Ask the user one to four structured multiple-choice questions. Use only for genuine user decisions; supports automatic Other/custom answers, per-question headings, previews, and multi-select.",
+    parameters: ParamsSchema,
+    executionMode: "sequential",
+    async execute(_toolCallId, params: AskUserQuestionInput, _signal, _onUpdate, ctx) {
+      const validationError = validateInput(params);
+      if (validationError) {
+        return { content: [{ type: "text", text: `Error: ${validationError}` }], details: { questions: params.questions ?? [], answers: {}, answerDetails: [] }, isError: true };
+      }
+
+      if (ctx.mode !== "tui") {
+        const answerDetails = params.questions.map((q) => ({ question: q.question, header: q.header, selections: [], selectedOptions: [], cancelled: true }));
+        return {
+          content: [{ type: "text", text: "Error: AskUserQuestion requires interactive Pi TUI mode; UI is unavailable in this run." }],
+          details: { questions: params.questions, answers: {}, answerDetails, metadata: params.metadata ?? {} },
+          isError: true,
+        };
+      }
+
+      const result = await ctx.ui.custom<AskUserQuestionResult | null>((tui: any, theme: any, _kb: any, done: any) =>
+        createQuestionnaire(tui, theme, params, done),
+      );
+
+      if (!result) {
+        const answerDetails = params.questions.map((q) => ({ question: q.question, header: q.header, selections: [], selectedOptions: [], cancelled: true }));
+        return {
+          content: [{ type: "text", text: "User cancelled AskUserQuestion." }],
+          details: { questions: params.questions, answers: {}, answerDetails, metadata: params.metadata ?? {} },
+          isError: true,
+        };
+      }
+
+      const summary = result.answerDetails
+        .map((a, i) => `${i + 1}. ${a.question}: ${Array.isArray(result.answers[a.question]) ? (result.answers[a.question] as string[]).join(", ") : result.answers[a.question]}`)
+        .join("\n");
+      return { content: [{ type: "text", text: `User answered:\n${summary}` }], details: result };
+    },
+    renderCall(args, theme) {
+      const count = Array.isArray(args.questions) ? args.questions.length : 0;
+      return new Text(theme.fg("toolTitle", theme.bold("AskUserQuestion ")) + theme.fg("muted", `${count} question${count === 1 ? "" : "s"}`), 0, 0);
+    },
+    renderResult(result, _options, theme) {
+      const details = result.details as AskUserQuestionResult | undefined;
+      const answerDetails = details?.answerDetails ?? [];
+      const text = answerDetails
+        .map((a) => (a.cancelled ? theme.fg("warning", `✕ ${a.question}: cancelled`) : theme.fg("success", "✓ ") + theme.fg("accent", `${a.question}: ${a.selections.join(", ")}`)))
+        .join("\n");
+      return new Text(text || (result.content[0]?.type === "text" ? result.content[0].text : ""), 0, 0);
+    },
+  };
+
+  pi.on("session_start", async () => {
+    if (pi.getAllTools().some((existing) => existing.name === "AskUserQuestion")) return;
+    pi.registerTool(tool);
+  });
+}
+
+function validateInput(params: AskUserQuestionInput): string | undefined {
+  if (!Array.isArray(params.questions) || params.questions.length < 1 || params.questions.length > 4) return "AskUserQuestion requires 1-4 questions.";
+  for (const [i, q] of params.questions.entries()) {
+    if (!q || typeof q.question !== "string" || !q.question.trim()) return `Question ${i + 1} requires question text.`;
+    if (q.header && visibleWidth(q.header) > 12) return `Question ${i + 1} header must be 12 characters or fewer.`;
+    if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > 4) return `Question ${i + 1} requires 2-4 options.`;
+    for (const [j, opt] of q.options.entries()) {
+      if (!opt || typeof opt.label !== "string" || !opt.label.trim()) return `Question ${i + 1}, option ${j + 1} requires a label.`;
+    }
+  }
+  return undefined;
+}
+
+function createQuestionnaire(tui: any, theme: any, params: AskUserQuestionInput, done: (result: AskUserQuestionResult | null) => void) {
+  const questions = params.questions;
+  const answers = new Map<number, AnswerDetail>();
+  let qIndex = 0;
+  let optIndex = 0;
+  let customMode = false;
+  let customDraft = "";
+  let cachedLines: string[] | undefined;
+  const selected = new Map<number, Set<number>>();
+
+  const refresh = () => {
+    cachedLines = undefined;
+    tui.requestRender();
+  };
+  const current = () => questions[qIndex];
+  const currentSelected = () => {
+    if (!selected.has(qIndex)) selected.set(qIndex, new Set());
+    return selected.get(qIndex)!;
+  };
+  const allOptions = (q: QuestionInput) => [...q.options, { label: "Other", description: "Type a custom response" }];
+  const customIndex = (q: QuestionInput) => q.options.length;
+  const isPrintableInput = (value: string) => value.length > 0 && !/[\x00-\x1F\x7F]/.test(value);
+  const startCustom = (initial = "") => {
+    customMode = true;
+    customDraft = initial;
+    refresh();
+  };
+  const saveAnswer = (detail: AnswerDetail) => {
+    answers.set(qIndex, detail);
+  };
+  const advance = () => {
+    if (qIndex < questions.length - 1) {
+      qIndex += 1;
+      optIndex = 0;
+      customMode = false;
+      customDraft = "";
+      refresh();
+      return;
+    }
+    finish();
+  };
+  const finish = () => {
+    if (answers.size < questions.length) return;
+    const answerDetails = questions.map((_q, i) => answers.get(i)!).filter(Boolean);
+    const answerRecord: Record<string, string | string[]> = {};
+    for (const detail of answerDetails) {
+      answerRecord[detail.question] = detail.selections.length === 1 ? detail.selections[0]! : detail.selections;
+    }
+    done({ questions, answers: answerRecord, answerDetails, metadata: params.metadata ?? {} });
+  };
+  const submitCustom = () => {
+    const q = current();
+    const custom = customDraft.trim();
+    if (!custom) return;
+    saveAnswer({ question: q.question, header: q.header, selections: [custom], selectedOptions: [], customAnswer: custom });
+    advance();
+  };
+  const submitOption = () => {
+    const q = current();
+    const opts = allOptions(q);
+    if (optIndex === customIndex(q)) {
+      startCustom();
+      return;
+    }
+    if (q.multiSelect) {
+      const set = currentSelected();
+      set.has(optIndex) ? set.delete(optIndex) : set.add(optIndex);
+      refresh();
+      return;
+    }
+    const opt = opts[optIndex]!;
+    saveAnswer({ question: q.question, header: q.header, selections: [opt.label], selectedOptions: [opt] });
+    advance();
+  };
+  const submitMultiCurrent = () => {
+    const q = current();
+    const set = currentSelected();
+    if (!set.size) return;
+    const opts = q.options;
+    const selectedOptions = [...set].sort((a, b) => a - b).map((i) => opts[i]).filter(Boolean) as QuestionOption[];
+    saveAnswer({ question: q.question, header: q.header, selections: selectedOptions.map((o) => o.label), selectedOptions });
+    advance();
+  };
+
+  return {
+    invalidate: () => {
+      cachedLines = undefined;
+    },
+    handleInput(data: string) {
+      const q = current();
+      const opts = allOptions(q);
+      if (customMode) {
+        if (matchesKey(data, Key.escape)) {
+          customMode = false;
+          customDraft = "";
+          refresh();
+          return;
+        }
+        if (matchesKey(data, Key.enter)) {
+          submitCustom();
+          return;
+        }
+        if (matchesKey(data, Key.backspace)) {
+          customDraft = customDraft.slice(0, -1);
+          refresh();
+          return;
+        }
+        if (isPrintableInput(data)) {
+          customDraft += data;
+          refresh();
+        }
+        return;
+      }
+      if (matchesKey(data, Key.up)) {
+        optIndex = Math.max(0, optIndex - 1);
+        refresh();
+        return;
+      }
+      if (matchesKey(data, Key.down)) {
+        optIndex = Math.min(opts.length - 1, optIndex + 1);
+        refresh();
+        return;
+      }
+      if (matchesKey(data, Key.left) && qIndex > 0) {
+        qIndex -= 1;
+        optIndex = 0;
+        refresh();
+        return;
+      }
+      if (matchesKey(data, Key.space) && q.multiSelect && optIndex !== customIndex(q)) {
+        submitOption();
+        return;
+      }
+      if (matchesKey(data, Key.enter)) {
+        if (q.multiSelect && optIndex !== customIndex(q) && currentSelected().size > 0) submitMultiCurrent();
+        else submitOption();
+        return;
+      }
+      if (matchesKey(data, Key.escape)) done(null);
+      if (optIndex === customIndex(q) && isPrintableInput(data)) startCustom(data);
+    },
+    render(width: number) {
+      if (cachedLines) return cachedLines;
+      const lines: string[] = [];
+      const w = Math.max(1, width);
+      const add = (text: string) => lines.push(...wrapTextWithAnsi(text, w));
+      const addPref = (prefix: string, text: string) => {
+        const pw = visibleWidth(prefix);
+        const wrapped = wrapTextWithAnsi(text, Math.max(1, w - pw));
+        wrapped.forEach((line, i) => lines.push((i === 0 ? prefix : " ".repeat(pw)) + line));
+      };
+      const q = current();
+      const opts = allOptions(q);
+      const set = currentSelected();
+      lines.push(theme.fg("accent", "─".repeat(w)));
+      add(theme.fg("muted", `Question ${qIndex + 1} of ${questions.length}`));
+      if (q.header) add(theme.fg("accent", theme.bold(q.header)));
+      add(theme.fg("text", q.question));
+      lines.push("");
+      opts.forEach((opt, i) => {
+        const cursor = i === optIndex ? theme.fg("accent", "> ") : "  ";
+        const mark = q.multiSelect && i !== customIndex(q) ? (set.has(i) ? "[x] " : "[ ] ") : "";
+        const suffix = i === customIndex(q) && customMode ? `: ${customDraft}▏` : "";
+        addPref(cursor, theme.fg(i === optIndex ? "accent" : "text", `${i + 1}. ${mark}${opt.label}${suffix}`));
+        if (opt.description) addPref("     ", theme.fg("muted", opt.description));
+        if (opt.preview) addPref("     ", theme.fg("dim", `Preview: ${opt.preview}`));
+      });
+      lines.push("");
+      const canSubmit = q.multiSelect && set.size > 0;
+      addPref(" ", theme.fg(canSubmit ? "success" : "muted", canSubmit ? "Submit selected answers with Enter" : "Submit appears after selecting an option"));
+      const help = customMode
+        ? "Enter submit custom • Backspace edit • Esc back"
+        : q.multiSelect
+          ? "↑↓ navigate • Space toggle • Enter submit/select custom • ← previous • Esc cancel"
+          : "↑↓ navigate • Enter select/custom • type on Other • ← previous • Esc cancel";
+      addPref(" ", theme.fg("dim", help));
+      lines.push(theme.fg("accent", "─".repeat(w)));
+      cachedLines = lines;
+      return lines;
+    },
+  };
+}
+'''
 
 
 def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
@@ -1226,6 +1651,8 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
         # template's own `.py` files (e.g. python/src/{{PKG}}/main.py) MUST ship. Skipping
         # them also left untrackable empty dirs (git cannot track them), so a clean checkout
         # always drifted from a fresh build.
+        if "__pycache__" in rel.parts or entry.suffix == ".pyc":
+            continue
         if entry.suffix == ".py" and "templates" not in rel.parts:
             continue
         target = dst / rel
@@ -1235,6 +1662,26 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(entry, target)  # verbatim bytes; no stamp, no reflow
+
+
+def _translate_pi_support_command_strings(bundle_root: Path) -> None:
+    """Rewrite Claude slash-command strings in Pi support files.
+
+    Skill bodies/frontmatter are translated at emit time, but support files copied for
+    self-containment (reference markdown and helper scripts such as forge-session.py)
+    can also surface next-step commands to the user. Keep helper logic intact and only
+    rewrite the concrete slash-command prefix, leaving diagnostic strings like
+    ``feature-forge: cannot locate install root`` unchanged.
+    """
+    for path in sorted(bundle_root.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix not in {".json", ".md", ".py", ".sh"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        translated = text.replace("/feature-forge:", "/skill:")
+        if translated != text:
+            path.write_text(translated, encoding="utf-8", errors="surrogateescape")
 
 
 # A prose citation of a bundle reference: `references/<subpath>`. The subpath char
@@ -1482,6 +1929,7 @@ AGENT_TARGETS_REGISTRY: dict[str, type] = {
     "copilot": CopilotEmitter,
     "cursor": CursorEmitter,
     "gemini": GeminiEmitter,
+    "pi": PiEmitter,
 }
 
 

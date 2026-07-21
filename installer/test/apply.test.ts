@@ -39,8 +39,8 @@ function dests(sb: Sandbox, agent: AgentId): {
   destination: string;
   manifestPath: string;
 } {
-  const cfg = { claude: ".claude", codex: ".codex", copilot: ".copilot", cursor: ".cursor", gemini: ".gemini" };
-  const sub = { claude: "skills", codex: "skills", copilot: "skills", cursor: "rules", gemini: "extensions" };
+  const cfg = { claude: ".claude", codex: ".agents", copilot: ".github", cursor: ".cursor", gemini: ".gemini", pi: ".pi" };
+  const sub = { claude: "skills", codex: "skills", copilot: "", cursor: "rules", gemini: "extensions", pi: "skills" };
   const agentRoot = path.join(sb.cwd, cfg[agent as keyof typeof cfg]);
   const destination = path.join(agentRoot, sub[agent as keyof typeof sub], "feature-forge");
   return { agentRoot, destination, manifestPath: manifestPath(agent, "project", sb.resolve()) };

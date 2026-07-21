@@ -11,10 +11,10 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The five coding agents this installer targets (REQ-DET-01). Order is the canonical
+ * The coding agents this installer targets (REQ-DET-01). Order is the canonical
  * iteration order used by detection, planning, and reporting so output is deterministic.
  */
-export const AGENT_IDS = ["claude", "codex", "copilot", "cursor", "gemini"] as const;
+export const AGENT_IDS = ["claude", "codex", "copilot", "cursor", "gemini", "pi"] as const;
 
 /** A supported coding-agent identifier. */
 export type AgentId = (typeof AGENT_IDS)[number];
@@ -132,17 +132,29 @@ export interface AgentTarget {
    * e.g. ".claude", ".codex", ".cursor". Detection is `stat` on this dir, never a subprocess.
    */
   readonly configDirName: string;
+  /** Optional scope-specific config dir probe. Pi uses ~/.pi/agent globally but .pi in projects. */
+  readonly globalConfigDirName?: string;
+  /** Optional scope-specific config dir probe. Pi uses ~/.pi/agent globally but .pi in projects. */
+  readonly projectConfigDirName?: string;
   /**
    * Top-level dir under the scope root that holds the install AND is the containment boundary
    * every write is checked against (REQ-SEC-02). Usually equals `configDirName`; decoupled for
    * codex (".agents") and copilot (".github").
    */
   readonly installBaseDir: string;
+  /** Optional global-scope override for agents with asymmetric global/project layouts. */
+  readonly globalInstallBaseDir?: string;
+  /** Optional project-scope override for agents with asymmetric global/project layouts. */
+  readonly projectInstallBaseDir?: string;
   /**
    * Path under `installBaseDir` to the namespace parent, e.g. "skills" (claude/codex),
    * "rules" (cursor), "extensions" (gemini), "" (copilot — directly under `.github`).
    */
   readonly installSubpath: string;
+  /** Optional global-scope override for the namespace parent path. */
+  readonly globalInstallSubpath?: string;
+  /** Optional project-scope override for the namespace parent path. */
+  readonly projectInstallSubpath?: string;
   /** How this agent consumes the bundle (REQ-SCALE-01; per-kind placement extended in A4b). */
   readonly installKind: InstallKind;
   /**
@@ -401,6 +413,8 @@ export interface RunReport {
  *  - cursor  — `.cursor/rules/*.mdc` confirmed current (verified-current).
  *  - gemini  — `~/.gemini/extensions/feature-forge` global confirmed; project scope is
  *              best-known (project extension install is not clearly documented).
+ *  - pi      — globally detects ~/.pi/agent and installs ~/.pi/agent/skills/feature-forge;
+ *              project scope detects .pi and installs .pi/skills/feature-forge.
  */
 export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
   claude: { id: "claude", configDirName: ".claude", installBaseDir: ".claude", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "confirmed", docsUrl: "https://docs.claude.com/en/docs/claude-code/skills" },
@@ -408,6 +422,7 @@ export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
   copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "<name>.md", confidence: "best-known", docsUrl: "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions", placements: [{ kind: "managed-block", baseDir: ".github", subpath: "copilot-instructions.md" }] },
   cursor: { id: "cursor", configDirName: ".cursor", installBaseDir: ".cursor", installSubpath: "rules", installKind: "rules", skillFileForm: "<name>.mdc", confidence: "verified-current", docsUrl: "https://cursor.com/docs/context/rules" },
   gemini: { id: "gemini", configDirName: ".gemini", installBaseDir: ".gemini", installSubpath: "extensions", installKind: "extension", skillFileForm: "<name>.md", confidence: "verified-current", projectConfidence: "best-known", docsUrl: "https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/index.md" },
+  pi: { id: "pi", configDirName: ".pi", globalConfigDirName: ".pi/agent", projectConfigDirName: ".pi", installBaseDir: ".pi", globalInstallBaseDir: ".pi/agent", projectInstallBaseDir: ".pi", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://github.com/earendil-works/pi-coding-agent" },
 } as const;
 
 /**
@@ -429,7 +444,7 @@ export const BUNDLE_REQUIRED_PATHS = {
     "scripts/forge-bootstrap.py",
   ] as const,
   /** Additional per-agent requirements. */
-  perAgent: { gemini: ["gemini-extension.json"] } as Partial<Record<AgentId, readonly string[]>>,
+  perAgent: { gemini: ["gemini-extension.json"], pi: ["package.json", "extensions/ask-user-question.ts"] } as Partial<Record<AgentId, readonly string[]>>,
 } as const;
 
 // ---------------------------------------------------------------------------

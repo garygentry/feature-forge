@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Pi adapter bundle foundation.** `scripts/build-adapters.py` now emits `adapters/pi/` as a Pi package with generated skills, package metadata, and a high-fidelity `AskUserQuestion` compatibility extension that supports multiple questions, option descriptions, preview text, multi-select, and Other/custom answers. Pi skill bodies preserve `AskUserQuestion` while translating forge slash commands to `/skill:*` and adding Pi-specific host notes.
+- **Pi install/root-discovery support.** `forge-root.sh` now discovers Pi installs under `PI_CODING_AGENT_DIR`, `~/.pi/agent/skills`, project `.pi/skills` (including ancestor project roots), and Pi package clone/cache layouts while keeping `FEATURE_FORGE_ROOT` as the escape hatch. The npm installer accepts `-a pi` with scope-correct destinations (`~/.pi/agent/skills/feature-forge` globally, `./.pi/skills/feature-forge` for projects), validates the Pi bundle metadata/extension, and advertises Pi package metadata in the real installer `package.json`.
+
+### Fixed
+
+- Pi adapter generation now translates `/feature-forge:*` command references in Pi skill and role frontmatter descriptions, not just skill bodies, and excludes Python cache byproducts from copied reference trees so installer/package outputs do not ship `__pycache__` or `.pyc` files.
+- Pi adapter generation now also rewrites `/feature-forge:*` slash commands inside copied Pi reference files and runtime helper scripts, so helper-generated next-step text can point Pi users at `/skill:*` commands.
+- The generated Pi `AskUserQuestion` TUI now treats explicit `Other` options as the custom-answer row instead of appending a duplicate, moves directly into inline text entry when that row is selected or typed on, and keeps multi-select Enter behavior from stealing the Other row as a hidden finish action.
+
 ## [0.12.9] — 2026-07-19
 
 ### Added

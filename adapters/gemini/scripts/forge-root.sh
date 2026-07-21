@@ -92,9 +92,24 @@ done < <(ls -t "$HOME"/.claude/plugins/cache/*/feature-forge/*/.claude-plugin/pl
 # Globs that match nothing expand to themselves; the is_root test rejects such literals. Covers
 # every supported agent's install destination under BOTH global ($HOME) and project ($PWD) scope,
 # matching the installer's per-agent layout: claude .claude/skills, codex .agents/skills, copilot
-# .github/feature-forge, cursor .cursor/rules, gemini .gemini/extensions. The cache glob repeats
-# step 2a's path for a cache install that carries only the neutral bundle sentinel (no
-# plugin.json for ls -t to key on).
+# .github/feature-forge, cursor .cursor/rules, gemini .gemini/extensions, pi .pi/skills or
+# $PI_CODING_AGENT_DIR/skills. The cache glob repeats step 2a's path for a cache install that
+# carries only the neutral bundle sentinel (no plugin.json for ls -t to key on).
+if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
+  for candidate in \
+    "$PI_CODING_AGENT_DIR/skills/feature-forge" \
+    "$PI_CODING_AGENT_DIR"/git/*/feature-forge/adapters/pi \
+    "$PI_CODING_AGENT_DIR"/git/*/*/feature-forge/adapters/pi \
+    "$PI_CODING_AGENT_DIR"/packages/*/feature-forge/adapters/pi \
+    "$PI_CODING_AGENT_DIR"/npm/*/@garygentry/feature-forge/adapters/pi \
+    "$PI_CODING_AGENT_DIR"/node_modules/@garygentry/feature-forge/adapters/pi \
+  ; do
+    if is_root "$candidate"; then
+      accept_root "$candidate"
+    fi
+  done
+fi
+
 for candidate in \
   "$HOME/.claude/skills/feature-forge" \
   "$PWD/.claude/skills/feature-forge" \
@@ -108,10 +123,41 @@ for candidate in \
   "$PWD/.cursor/rules/feature-forge" \
   "$HOME/.gemini/extensions/feature-forge" \
   "$PWD/.gemini/extensions/feature-forge" \
+  "$HOME/.pi/agent/skills/feature-forge" \
+  "$PWD/.pi/skills/feature-forge" \
+  "$HOME"/.pi/agent/git/*/feature-forge/adapters/pi \
+  "$HOME"/.pi/agent/git/*/*/feature-forge/adapters/pi \
+  "$HOME"/.pi/agent/packages/*/feature-forge/adapters/pi \
+  "$HOME"/.pi/agent/npm/*/@garygentry/feature-forge/adapters/pi \
+  "$HOME"/.pi/agent/node_modules/@garygentry/feature-forge/adapters/pi \
+  "$PWD"/.pi/git/*/feature-forge/adapters/pi \
+  "$PWD"/.pi/git/*/*/feature-forge/adapters/pi \
+  "$PWD"/.pi/packages/*/feature-forge/adapters/pi \
+  "$PWD"/.pi/npm/*/@garygentry/feature-forge/adapters/pi \
+  "$PWD"/.pi/node_modules/@garygentry/feature-forge/adapters/pi \
 ; do
   if is_root "$candidate"; then
     accept_root "$candidate"
   fi
+done
+
+# Project-scoped installs may be discovered from a subdirectory of the repository. Probe
+# ancestor .pi/.agents roots up to the filesystem root; this is bounded by path depth and avoids
+# recursive globs.
+probe_dir="$PWD"
+while :; do
+  for candidate in \
+    "$probe_dir/.pi/skills/feature-forge" \
+    "$probe_dir/.agents/skills/feature-forge" \
+  ; do
+    if is_root "$candidate"; then
+      accept_root "$candidate"
+    fi
+  done
+  [ "$probe_dir" = "/" ] && break
+  next_probe_dir="$(dirname -- "$probe_dir")"
+  [ "$next_probe_dir" = "$probe_dir" ] && break
+  probe_dir="$next_probe_dir"
 done
 
 # ── Step 3: env fallback — neutral FEATURE_FORGE_ROOT, then the legacy CLAUDE_PLUGIN_ROOT. ─

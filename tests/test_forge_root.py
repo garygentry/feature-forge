@@ -192,6 +192,7 @@ import pytest
         ".github/feature-forge",
         ".cursor/rules/feature-forge",
         ".gemini/extensions/feature-forge",
+        ".pi/skills/feature-forge",
     ],
 )
 def test_forge_root_project_scope_candidate_probe(tmp_path, rel):
@@ -215,6 +216,56 @@ def test_forge_root_project_scope_candidate_probe(tmp_path, rel):
         text=True,
         cwd=str(project),  # sets $PWD for the project-scope probe
         env={**os.environ, "HOME": str(tmp_path / "empty-home"), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_forge_root_pi_coding_agent_dir_candidate_probe(tmp_path):
+    """Step 2 resolves the isolated Pi config root used for dogfood.
+
+    Pi sessions can set PI_CODING_AGENT_DIR instead of using ~/.pi/agent, so the resolver must
+    treat ${PI_CODING_AGENT_DIR}/skills/feature-forge as a first-class install root.
+    """
+    pi_dir = tmp_path / "pi-agent-dogfood"
+    candidate = _make_fake_install(pi_dir / "skills" / "feature-forge")
+    result = _run(
+        _lone_resolver(tmp_path),
+        {
+            "HOME": str(tmp_path / "empty-home"),
+            "CLAUDE_PLUGIN_ROOT": "",
+            "FEATURE_FORGE_ROOT": "",
+            "PI_CODING_AGENT_DIR": str(pi_dir),
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_forge_root_pi_project_ancestor_candidate_probe(tmp_path):
+    """Step 2 resolves project .pi/skills when invoked from a nested project directory."""
+    project = tmp_path / "project"
+    candidate = _make_fake_install(project / ".pi" / "skills" / "feature-forge")
+    nested = project / "src" / "pkg"
+    nested.mkdir(parents=True)
+    result = subprocess.run(
+        ["bash", str(_lone_resolver(tmp_path))],
+        capture_output=True,
+        text=True,
+        cwd=str(nested),
+        env={**os.environ, "HOME": str(tmp_path / "empty-home"), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_forge_root_pi_package_cache_candidate_probe(tmp_path):
+    """Step 2 resolves a Pi package clone/cache root when it contains adapters/pi."""
+    home = tmp_path / "home"
+    candidate = _make_fake_install(home / ".pi" / "agent" / "git" / "github.com" / "feature-forge" / "adapters" / "pi")
+    result = _run(
+        _lone_resolver(tmp_path),
+        {"HOME": str(home), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == str(candidate)

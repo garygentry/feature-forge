@@ -94,6 +94,18 @@ test("checkIntegrity requires gemini-extension.json for gemini only", async () =
   });
 });
 
+test("checkIntegrity requires Pi package metadata and AskUserQuestion extension for pi", async () => {
+  await withSandbox(async (sb) => {
+    const fx = await makeFixtureBundle(sb, "pi");
+    assert.ok(checkIntegrity(fx.dir, "pi").ok);
+    await rm(join(fx.dir, "extensions", "ask-user-question.ts"), { force: true });
+    const r = checkIntegrity(fx.dir, "pi");
+    assert.ok(!r.ok);
+    assert.equal(r.error.code, "SOURCE_INVALID");
+    assert.equal(r.error.path, join(fx.dir, "extensions", "ask-user-question.ts"));
+  });
+});
+
 test("listBundleSkills returns sorted skill dir names only", async () => {
   await withSandbox(async (sb) => {
     const fx = await makeFixtureBundle(sb, "claude", ["forge-2-tech", "forge-1-prd"]);

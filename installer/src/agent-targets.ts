@@ -55,6 +55,24 @@ function scopeRootFor(scope: Scope, roots: { home: string; cwd: string }): strin
   return scope === "global" ? roots.home : roots.cwd;
 }
 
+/** Select a scope-specific config dir name, falling back to the legacy single field. */
+function configDirNameFor(target: AgentTarget, scope: Scope): string {
+  if (scope === "global") return target.globalConfigDirName ?? target.configDirName;
+  return target.projectConfigDirName ?? target.configDirName;
+}
+
+/** Select a scope-specific install base dir, falling back to the legacy single field. */
+function installBaseDirFor(target: AgentTarget, scope: Scope): string {
+  if (scope === "global") return target.globalInstallBaseDir ?? target.installBaseDir;
+  return target.projectInstallBaseDir ?? target.installBaseDir;
+}
+
+/** Select a scope-specific install subpath, falling back to the legacy single field. */
+function installSubpathFor(target: AgentTarget, scope: Scope): string {
+  if (scope === "global") return target.globalInstallSubpath ?? target.installSubpath;
+  return target.projectInstallSubpath ?? target.installSubpath;
+}
+
 /**
  * Derive the absolute install destination for one agent under a given scope (REQ-DET-01,
  * REQ-FLAG-02):
@@ -77,10 +95,12 @@ export function destinationFor(
 ): string {
   const roots = resolveRoots(opts);
   const root = scopeRootFor(scope, roots);
+  const installBaseDir = installBaseDirFor(target, scope);
+  const installSubpath = installSubpathFor(target, scope);
   return path.resolve(
     root,
-    target.installBaseDir,
-    ...(target.installSubpath ? [target.installSubpath] : []),
+    installBaseDir,
+    ...(installSubpath ? [installSubpath] : []),
     FEATURE_FORGE_NS,
   );
 }
@@ -97,7 +117,7 @@ export function agentRootFor(
   opts?: ResolveOpts,
 ): string {
   const roots = resolveRoots(opts);
-  return path.resolve(scopeRootFor(scope, roots), target.installBaseDir);
+  return path.resolve(scopeRootFor(scope, roots), installBaseDirFor(target, scope));
 }
 
 /**
@@ -127,7 +147,7 @@ export function detectAgent(id: AgentId, opts?: ResolveOpts): DetectionResult {
   const root = scopeRootFor(scope, roots);
 
   // Primary signal (REQ-DET-02): presence of the config dir under the active scope root.
-  const configDir = path.resolve(root, target.configDirName);
+  const configDir = path.resolve(root, configDirNameFor(target, scope));
   const detected = probeConfigDir(configDir);
 
   return {
@@ -143,7 +163,7 @@ export function detectAgent(id: AgentId, opts?: ResolveOpts): DetectionResult {
 
 /** Options for {@link detectAgents}: {@link ResolveOpts} plus a single-agent scope (REQ-FLAG-01). */
 export interface DetectAgentsOpts extends ResolveOpts {
-  /** Restrict detection to this one agent (`--agent/-a`). Absent ⇒ all five (REQ-DET-03). */
+  /** Restrict detection to this one agent (`--agent/-a`). Absent ⇒ all agents (REQ-DET-03). */
   readonly only?: AgentId;
 }
 

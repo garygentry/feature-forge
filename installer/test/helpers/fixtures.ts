@@ -61,6 +61,14 @@ export async function makeFixtureBundle(
     const ext = { name: "feature-forge", version: "0.0.0", skills: skills.map((name) => ({ name })) };
     await writeFile(join(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + "\n");
   }
+  if (agent === "pi") {
+    await mkdir(join(dir, "extensions"), { recursive: true });
+    await writeFile(join(dir, "extensions", "ask-user-question.ts"), "export default {};\n");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "feature-forge-pi", keywords: ["pi-package"], pi: { skills: ["./skills"], extensions: ["./extensions/ask-user-question.ts"] } }, null, 2) + "\n",
+    );
+  }
   for (const id of agents) {
     await mkdir(join(dir, "agents"), { recursive: true });
     await writeFile(join(dir, "agents", `${id}.toml`), `name = "${id}"\n# fixture custom agent\n`);

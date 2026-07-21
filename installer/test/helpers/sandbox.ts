@@ -59,7 +59,11 @@ export async function seedConfigDir(
   scope: Scope = "project",
 ): Promise<string> {
   const root = scope === "global" ? sb.home : sb.cwd;
-  const dir = join(root, AGENT_TARGETS[agent].configDirName);
+  const target = AGENT_TARGETS[agent];
+  const configDirName = scope === "global"
+    ? target.globalConfigDirName ?? target.configDirName
+    : target.projectConfigDirName ?? target.configDirName;
+  const dir = join(root, configDirName);
   await mkdir(dir, { recursive: true });
   return dir;
 }

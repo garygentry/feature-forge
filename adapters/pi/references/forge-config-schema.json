@@ -1,0 +1,236 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Feature Forge Configuration",
+  "description": "Project-level configuration for the feature-forge plugin. Place as forge.config.json in your project root.",
+  "type": "object",
+  "properties": {
+    "specsDir": {
+      "type": "string",
+      "default": "./specs",
+      "description": "Root directory for feature spec documents. Each feature gets a subdirectory."
+    },
+    "docsDir": {
+      "type": "string",
+      "default": "./docs/architecture",
+      "description": "Root directory for generated architecture documentation."
+    },
+    "backlogDir": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional override for the backlog root. If set, the backlog is written to {backlogDir}/{feature}/backlog.json — the {feature} subdirectory is always composed in so multi-feature epics never collide. Default behavior (null): backlog.json is written to {specsDir}/{feature}/backlog.json with the feature specs."
+    },
+    "gitCommitAfterStage": {
+      "type": "boolean",
+      "default": true,
+      "description": "Automatically commit after each pipeline stage completes."
+    },
+    "commitPrefix": {
+      "type": "string",
+      "default": "forge",
+      "description": "Prefix for conventional commit messages, e.g., forge(auth): complete PRD"
+    },
+    "branchPerFeature": {
+      "type": "boolean",
+      "default": true,
+      "description": "Offer to create an isolated git branch when a feature/epic starts on the default branch (main/master). Gated only on the project using git — independent of gitCommitAfterStage. When false, forge never prompts for a branch and works on whatever branch is checked out. See the Branch Setup block in references/shared-conventions.md."
+    },
+    "branchPrefix": {
+      "type": "string",
+      "default": "forge/",
+      "description": "Prefix for the branch name suggested by Branch Setup, e.g. 'forge/' yields 'forge/{feature}' or 'forge/{epic}'. Ignored when branchPerFeature is false."
+    },
+    "stack": {
+      "type": ["string", "null"],
+      "description": "Detected or configured project stack identifier. Selects guidance from references/stacks/{stack}.md. Set during forge-2-tech or manually (null until then). Examples: 'typescript', 'python', 'go', 'rust'."
+    },
+    "typeCheckCommand": {
+      "type": ["string", "null"],
+      "description": "Command to verify type correctness or lint. Null until set. Examples: 'bun run typecheck', 'mypy .', 'go vet ./...'. Used in acceptance criteria and verification."
+    },
+    "testCommand": {
+      "type": ["string", "null"],
+      "description": "Command to run tests. Null until set. Examples: 'bun test', 'pytest', 'go test ./...'. Used in acceptance criteria and verification."
+    },
+    "smokeCommand": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional end-to-end smoke command that boots the wired application entrypoint and drives one happy-path request, exiting 0 on success. DISTINCT from testCommand (unit tests, which may self-bootstrap) and loopRunner.runCommand (the loop launcher). Consumed by impl-verify's runnability check (CHECK-I21): when set it is executed (pass iff exit 0); when null the check degrades to an advisory not-applicable finding, never a hard fail (mirrors how a null typeCheckCommand is treated). Examples: 'npm run smoke', './scripts/smoke.sh', 'curl -fsS localhost:3000/health'."
+    },
+    "loopIterationMultiplier": {
+      "type": "number",
+      "default": 1.5,
+      "minimum": 1,
+      "description": "Multiplier applied to pending backlog item count to calculate loop iterations. Higher values allow more retries. Default: 1.5 (e.g., 10 items = 15 iterations)."
+    },
+    "autoInvokeNextStage": {
+      "type": "boolean",
+      "default": true,
+      "description": "When true (default), the /skill:forge navigator auto-invokes the next pipeline stage via the Skill tool after the user confirms it, instead of only printing the command to copy. Set false to keep the old copy-paste behavior (the navigator suggests the command but never launches it). Ignored on non-Claude hosts, which always fall back to printing the command."
+    },
+    "autoVerify": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, the /skill:forge navigator automatically runs forge-verify after a stage completes, with no prompt. forge-verify runs in a fresh forge-verifier subagent (clean-room), so it never needs a context clear and costs the current session only a compact findings digest. Default false preserves today's manual-gate behavior. Ignored on non-Claude hosts, which always fall back to printing the verify command. Per-stage overrides in autoVerifyStages take precedence."
+    },
+    "autoVerifyStages": {
+      "type": "object",
+      "default": {},
+      "description": "Per-stage overrides for autoVerify. Maps a production stage id to a boolean; the effective value for a stage is autoVerifyStages[stage] if present, else autoVerify. Keys are constrained to the five verify-capable stages so a typo (e.g. 'forge-1-prod') is a schema error, not a silent no-op. forge-6-docs has no verify step and is not a valid key.",
+      "propertyNames": {
+        "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop"]
+      },
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "autoFix": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, the navigator chains forge-fix automatically after an auto-verify that finds issues. Honored ONLY when auto-verify is effectively on for the stage, and ONLY when preconditions hold (findings doc has zero unresolved decision points, working tree is clean, and a mandatory re-verify passes) — otherwise it falls back to surfacing the findings digest and prompting. Default false keeps fixing human-gated."
+    },
+    "contextWindowTokens": {
+      "type": ["integer", "null"],
+      "default": null,
+      "description": "Context window size (tokens) used by the navigator's context-usage check to compute how full the current session is. Null (default) lets the helper infer from the session model and fall back to 200000 — and if observed usage already exceeds 200000 it auto-bumps the assumed window to 1000000 (proof a 1M-beta window is active). Set this explicitly to your model's window (e.g. 1000000 for a 1M-context model) for accurate percentages below 200000 too, since 1M cannot be detected from the transcript until usage crosses 200000."
+    },
+    "contextWarnThreshold": {
+      "type": "number",
+      "default": 0.7,
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of the context window (0-1) past which the navigator recommends starting the next stage in a clean session rather than continuing. Default: 0.7."
+    },
+    "workspaces": {
+      "type": "array",
+      "description": "Monorepo members. Absent for single-package projects.",
+      "items": {
+        "type": "object",
+        "required": ["name", "path", "stack"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "path": {"type": "string", "description": "Repo-relative member dir"},
+          "stack": {"type": "string"},
+          "typeCheckCommand": {"type": ["string", "null"]},
+          "testCommand": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "loopRunner": {
+      "type": "object",
+      "description": "The autonomous loop runner feature-forge drives. Defaults to rauf when absent (forge-5 states 'defaulting to rauf loop runner'). Every command is a template — {bin}, {backlogDir}, {specsDir}, {iterations} are substituted at call time — so an alternative ralph-style runner conforming to rauf's SPEC-BACKLOG-TOOL-CONTRACT.md can be swapped in without editing any skill. See references/ralph-loop-contract.md.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "default": "rauf",
+          "description": "Display name of the loop runner."
+        },
+        "bin": {
+          "type": "string",
+          "default": "rauf",
+          "description": "The runner executable. Assumed on PATH; may be an absolute path. Substituted as {bin} in every command."
+        },
+        "runCommand": {
+          "type": "string",
+          "default": "{bin} loop run . --backlog {backlogDir} --iterations {iterations}",
+          "description": "Run the loop. Launched in the background by forge-5. Human-formatted output; used as the fallback launch command when eventStreamCommand is absent."
+        },
+        "eventStreamCommand": {
+          "type": "string",
+          "default": "{bin} loop run . --backlog {backlogDir} --iterations {iterations} --ndjson",
+          "description": "Stdout NDJSON launch command for a runner that does NOT persist its own event file — same as runCommand but emits one machine-readable JSON event per stdout line: item_completed / item_blocked / needs_human / signal_parsed / loop_completed / loop_error / loop_cancelled / llm_stuck_warning, each with {type, timestamp, projectPath} plus payload (a circuit-breaker halt surfaces as loop_error). NOTE: rauf (the default runner) ALREADY persists {stateDir}/events.ndjson natively and rotates it per run, so forge-5 launches the plain runCommand and monitors that native file — it does NOT use this field, and must NOT redirect --ndjson into {stateDir} (redundant, and it collides with the runner's own writer / archive rotation). This field is only for a stdout-only runner with no native event file; forge-5 then redirects its stdout to a file OUTSIDE {stateDir} and monitors that. Omit it entirely for a runner that self-persists or cannot emit NDJSON."
+        },
+        "validateCommand": {
+          "type": "string",
+          "default": "{bin} backlog validate . --backlog {backlogDir} --specs-dir {specsDir} --json",
+          "description": "Validate a backlog. MUST exit 0=valid, 1=findings, 2=usage/IO, and emit { valid, findings[] } with --json. `specReferences` are project-root-relative (resolved against the project root); `--specs-dir` only gates the existence check, so passing the specs root ({specsDir}) is sufficient."
+        },
+        "statusCommand": {
+          "type": "string",
+          "default": "{bin} status . --backlog {backlogDir}",
+          "description": "One-shot loop status, human-formatted. Shown to the user as a monitoring hint."
+        },
+        "statusJsonCommand": {
+          "type": "string",
+          "default": "{bin} status . --backlog {backlogDir} --json",
+          "description": "Machine-readable derived status used by forge-5 for milestone tallies and the final summary. Emits { loopState, iteration, maxIterations, currentItem, lastSignal, backlogSummary{pending,inProgress,blocked,needsHuman,deferred,done,total}, lock{...} }. Distinguishes the three non-done outcomes (genuine blocked vs needsHuman vs runner-deferred 'false blocks')."
+        },
+        "listCommand": {
+          "type": "string",
+          "default": "{bin} backlog list . --backlog {backlogDir} --json",
+          "description": "List backlog items as JSON."
+        },
+        "followCommand": {
+          "type": "string",
+          "default": "{bin} follow . --backlog {backlogDir}",
+          "description": "Stream live loop events, HUMAN-formatted (pretty-printed / log tail) — for a person watching in another terminal, NOT a machine-readable surface. forge-5 supervises via eventStreamCommand (NDJSON) instead."
+        },
+        "logCommand": {
+          "type": "string",
+          "default": "{bin} log . --backlog {backlogDir} --follow",
+          "description": "Tail the runner log, human-formatted. Monitoring hint for the user."
+        },
+        "watchCommand": {
+          "type": "string",
+          "default": "{bin} status . --backlog {backlogDir} --json",
+          "description": "Machine-readable status used by forge-5 for stall detection. rauf's `loop watch` verb was removed in v0.5.0, so this now points at `status --json`; forge-5 keys off the iteration-status `stuckWarning` flag (read from `status --json` / `iteration-status.json`) rather than guessing liveness from state.json timestamps."
+        },
+        "versionCommand": {
+          "type": "string",
+          "default": "{bin} version --json",
+          "description": "Report runner version as { version: <semver> }. Used to enforce minRunnerVersion before running."
+        },
+        "agentArgument": {
+          "type": "string",
+          "default": "--agent {agent}",
+          "description": "Tokenized argument appended to the launch command (eventStreamCommand/runCommand) when forge resolves a non-default coding agent for the run. {agent} is substituted ONLY with a validated, advertised agent id (a member of the set agentsProbeCommand reports). PRESENCE of this field advertises the runner's agent surface: when present and non-empty, forge-5 offers the per-run agent selector, honors defaultAgent, and may run agentsProbeCommand; OMIT it for a runner with no agent dimension and forge skips agent selection entirely — no selector, no probe, no {agent} substitution, no agent argument sent (byte-identical to today). Distinct from the version gate (minRunnerVersion)."
+        },
+        "agentsProbeCommand": {
+          "type": "string",
+          "default": "{bin} agents --json",
+          "description": "Coding-agent availability probe. MUST emit { agents: [{ id, displayName, available, ... }] } and exit 0 (it always exits 0: an unknown id simply never appears; a known-unavailable one appears with available:false). forge-5 runs it ONCE (no retries) before launching a non-default agent to (a) validate the resolved id against the advertised id set and (b) report availability in the pre-launch confirmation. Ignored on the default path and when agentArgument is absent."
+        },
+        "defaultAgent": {
+          "type": "string",
+          "default": "",
+          "description": "Project-default coding agent id, so a project can fix its agent once without specifying it every run. Empty string ⇒ no project default (the runner's own default — claude-cli for rauf — applies, behaving exactly as today). Overridden by the per-run agent selector (run > project precedence, resolved inside forge before the single --agent is emitted). Ignored when agentArgument is absent."
+        },
+        "preconditionFile": {
+          "type": "string",
+          "default": ".rauf.json",
+          "description": "Project-root marker file that must exist (runner installed into the target project)."
+        },
+        "stateDir": {
+          "type": "string",
+          "default": ".rauf",
+          "description": "Per-backlog state directory name created under the backlog dir."
+        },
+        "logFile": {
+          "type": "string",
+          "default": "rauf.log",
+          "description": "Human-readable event log filename written under {stateDir}. Substituted as {loopRunner.logFile} in the log-tail fallback Monitor command when eventStreamCommand (events.ndjson) is unavailable. The structured NDJSON path uses the contract-standard name events.ndjson and is not configurable here."
+        },
+        "setupHint": {
+          "type": "string",
+          "default": "Run `rauf install .` to install rauf's per-project artifacts (.rauf/, RAUF.md, schema), then re-run forge-5.",
+          "description": "Shown when preconditionFile is missing — how to set up the runner IN THIS PROJECT (per-project artifacts)."
+        },
+        "installHint": {
+          "type": "string",
+          "default": "Provision rauf for a multi-agent setup with the cross-agent installer: `npx @garygentry/feature-forge install` (records the pinned @garygentry/rauf@0.12.0 default). Or install/upgrade just the rauf CLI: `npx @garygentry/rauf@0.12.0 --version`, or `curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`.",
+          "description": "Shown when the runner BINARY is missing or too old (version gate fails, minRunnerVersion floor) — how to obtain/upgrade the CLI itself. Names two distinct binary-provisioning paths: (1) the cross-agent installer (`npx @garygentry/feature-forge install`, the multi-agent provisioning path that pins @garygentry/rauf@0.12.0), and (2) the direct rauf-CLI install/upgrade one-liner. Distinct from setupHint (which installs per-project artifacts); a version-gate failure is ALWAYS this hint, never setupHint."
+        },
+        "schemaVersion": {
+          "type": "string",
+          "default": "1",
+          "description": "Backlog schemaVersion this runner config targets."
+        },
+        "minRunnerVersion": {
+          "type": "string",
+          "default": "0.6.0",
+          "description": "Minimum runner version (semver). 0.6.0 is the AGENT-SURFACE FLOOR: the rauf version that ships the coding-agent selection surface (the --agent flag, the `agents` availability probe, and the preset agent registry) that this config's agentArgument/agentsProbeCommand consume. Flooring here guarantees a successful gate implies those surfaces exist. (0.5.0 was the prior grammar/contract-flip floor — unified exit codes, `loop run --detached`, explicit `review` signal, versioned events.ndjson — which predates the agent surface and so could not guarantee it.) forge-5 enforces this via versionCommand before any loop side-effects."
+        }
+      }
+    }
+  }
+}

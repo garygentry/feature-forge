@@ -49,7 +49,7 @@ test("cliOnPath is advisory and never throws; cursor is always false (no CLI)", 
   // cursor has no CLI_NAMES entry → false without spawning.
   assert.equal(cliOnPath("cursor"), false);
   // For other agents the result is a boolean (whatever the host PATH says) — never a throw.
-  for (const id of ["claude", "codex", "copilot", "gemini"] as const) {
+  for (const id of ["claude", "codex", "copilot", "gemini", "pi"] as const) {
     assert.equal(typeof cliOnPath(id), "boolean");
   }
 });
