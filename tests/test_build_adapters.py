@@ -270,6 +270,25 @@ def test_pi_support_files_use_skill_command_wording(fixture_copy):
     assert "/feature-forge:forge demo" in claude_helper.read_text(encoding="utf-8")
 
 
+def test_pi_bundle_includes_ask_user_question_extension(fixture_copy):
+    """The Pi adapter is self-contained and ships the AskUserQuestion fallback extension."""
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+
+    package = json.loads((root / "adapters" / "pi" / "package.json").read_text())
+    assert package["pi"]["extensions"] == ["./extensions/ask-user-question.ts"]
+
+    extension = (root / "adapters" / "pi" / "extensions" / "ask-user-question.ts").read_text()
+    assert 'const TOOL_NAME = "AskUserQuestion"' in extension
+    assert "process.env.FEATURE_FORGE_ROOT ||= dirname(dirname(fileURLToPath(import.meta.url)))" in extension
+    assert 'pi.on("session_start"' in extension
+    assert 'pi.getAllTools().some((existing) => existing.name === TOOL_NAME)' in extension
+    assert "final Submit review" in extension
+    assert "custom/Other row is added automatically unless an explicit Other/custom option is present" in extension
+    assert "function isCustomLabel" in extension
+    assert "custom answer" in extension
+
+
 @pytest.mark.parametrize("agent", AGENT_TARGETS)
 def test_cited_shared_references_fan_out_skill_local(fixture_copy, agent):
     """A cited bundle-root SHARED reference resolves skill-local after build (#122/#132).
