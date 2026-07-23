@@ -59,7 +59,7 @@ helper. Pass `--specs-dir ./specs` (the default) so the gate allow-lists the spe
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-bootstrap.py" check "<target-dir>" --json --specs-dir ./specs
 ```
 
@@ -136,7 +136,7 @@ when running under a Claude host (e.g. `AskUserQuestion` is available), else `"c
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-bootstrap.py" scaffold "<target-dir>" --json --answers '<Answers JSON>'
 ```
 
@@ -144,7 +144,7 @@ python3 "$R/scripts/forge-bootstrap.py" scaffold "<target-dir>" --json --answers
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-bootstrap.py" verify "<target-dir>" --json --answers '<Answers JSON>'
 ```
 
@@ -170,7 +170,7 @@ leave the sentinel in-progress (resumable) — do **not** declare success.
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-bootstrap.py" commit "<target-dir>" --json --answers '<Answers JSON>' [--stage-only]
 ```
 

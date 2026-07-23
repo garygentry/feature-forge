@@ -141,19 +141,17 @@ for candidate in \
   fi
 done
 
-# Project-scoped installs may be discovered from a subdirectory of the repository. Probe
-# ancestor .pi/.agents roots up to the filesystem root; this is bounded by path depth and avoids
-# recursive globs.
+# Project-scoped Pi installs may be discovered from a subdirectory of the repository. Probe
+# ancestor .pi roots up to the filesystem root; this is bounded by path depth and avoids
+# recursive globs. Scoped to .pi ONLY — every other agent's project layout is probed at $PWD
+# in the fixed list above, and widening those to ancestors here would silently change
+# established discovery behaviour for agents this bundle did not introduce.
 probe_dir="$PWD"
 while :; do
-  for candidate in \
-    "$probe_dir/.pi/skills/feature-forge" \
-    "$probe_dir/.agents/skills/feature-forge" \
-  ; do
-    if is_root "$candidate"; then
-      accept_root "$candidate"
-    fi
-  done
+  candidate="$probe_dir/.pi/skills/feature-forge"
+  if is_root "$candidate"; then
+    accept_root "$candidate"
+  fi
   [ "$probe_dir" = "/" ] && break
   next_probe_dir="$(dirname -- "$probe_dir")"
   [ "$next_probe_dir" = "$probe_dir" ] && break

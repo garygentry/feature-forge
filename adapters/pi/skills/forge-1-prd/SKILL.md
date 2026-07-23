@@ -28,7 +28,7 @@ Run this sub-step **whenever forge-1 is about to mint a brand-new flat standalon
 1. Run cross-branch discovery for this exact name (branch-agnostic — it scans all refs regardless of current HEAD):
    ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" discover-feature "{feature}" --specs-dir "{specsDir}" --json
    ```
 2. **If any candidate has `isEpicMember: true` → HARD STOP.** This is not the soft switch/fetch/treat-as-new menu from the Feature Directory Resolution block — do **not** create any directory and do **not** fall through to the interview. Emit verbatim (filling `{epic}` and `{stateBranch}` from that candidate's `epic` and `stateBranch`):
@@ -139,7 +139,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-1-prd --specs-dir "{specsDir}" --host generic
 ```
 

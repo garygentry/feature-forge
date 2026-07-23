@@ -845,8 +845,13 @@ _HOST_NOTES: dict[str, str] = {
 _PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
     pair for pair in _HOST_TERM_REPLACEMENTS if "AskUserQuestion" not in pair[0]
 ) + (
+    # ONLY the slash-command prefix is rewritten. An unanchored `feature-forge:` rule would
+    # also mangle diagnostic prose that is not a command — e.g. the install-root failure
+    # `echo "feature-forge: cannot locate plugin root"` would become `skill: cannot locate
+    # plugin root`, naming a tool that does not exist. Keep this in step with
+    # _translate_pi_support_command_strings(), which applies the same single substitution to
+    # copied support files.
     ("/feature-forge:", "/skill:"),
-    ("feature-forge:", "skill:"),
 )
 
 
@@ -1264,11 +1269,13 @@ def run_self_containment_pass(
         _assert_within(dst_helper, bundle_root)
         shutil.copyfile(src_helper, dst_helper)  # bytes only — never copystat/edit
         dst_helper.chmod(0o755 if helper.endswith(".sh") else 0o644)
-        if bundle_root.name != "pi":
-            _assert_byte_identical(src_helper, dst_helper)  # REQ-GEN-05 hard assertion
+        # Unconditional (REQ-GEN-05): the pi slash-command translation runs AFTER this loop,
+        # so every agent — pi included — is asserted byte-identical at copy time. The pi pass
+        # below then re-verifies that its ONLY divergence is the expected substitution.
+        _assert_byte_identical(src_helper, dst_helper)  # REQ-GEN-05 hard assertion
 
     if bundle_root.name == "pi":
-        _translate_pi_support_command_strings(bundle_root)
+        _translate_pi_support_command_strings(bundle_root, repo_root)
 
     # (4) Neutral bundle sentinel `.feature-forge-bundle.json` (REQ-GEN-04): the cross-agent root
     #     marker forge-root.sh keys on, making every bundle self-locatable WITHOUT a Claude
@@ -1796,7 +1803,7 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
             shutil.copyfile(entry, target)  # verbatim bytes; no stamp, no reflow
 
 
-def _translate_pi_support_command_strings(bundle_root: Path) -> None:
+def _translate_pi_support_command_strings(bundle_root: Path, repo_root: Path) -> None:
     """Rewrite Claude slash-command strings in Pi support files.
 
     Skill bodies/frontmatter are translated at emit time, but support files copied for
@@ -1804,6 +1811,10 @@ def _translate_pi_support_command_strings(bundle_root: Path) -> None:
     can also surface next-step commands to the user. Keep helper logic intact and only
     rewrite the concrete slash-command prefix, leaving diagnostic strings like
     ``feature-forge: cannot locate install root`` unchanged.
+
+    Runtime helpers are re-verified against canon afterwards (REQ-GEN-05): a translated
+    helper must differ from its source by EXACTLY this substitution and nothing else, so
+    silent corruption of a helper is still caught on pi.
     """
     for path in sorted(bundle_root.rglob("*")):
         if not path.is_file():
@@ -1814,6 +1825,19 @@ def _translate_pi_support_command_strings(bundle_root: Path) -> None:
         translated = text.replace("/feature-forge:", "/skill:")
         if translated != text:
             path.write_text(translated, encoding="utf-8", errors="surrogateescape")
+
+    for helper in RUNTIME_HELPERS:
+        src_helper = repo_root / "scripts" / helper
+        dst_helper = bundle_root / "scripts" / helper
+        expected = src_helper.read_text(
+            encoding="utf-8", errors="surrogateescape"
+        ).replace("/feature-forge:", "/skill:")
+        actual = dst_helper.read_text(encoding="utf-8", errors="surrogateescape")
+        if actual != expected:
+            raise SystemExit(
+                f"REQ-GEN-05 violation: pi helper {dst_helper} diverges from canon "
+                f"{src_helper} by more than the '/feature-forge:' → '/skill:' substitution"
+            )
 
 
 # A prose citation of a bundle reference: `references/<subpath>`. The subpath char

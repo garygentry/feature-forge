@@ -151,7 +151,7 @@ Write pipeline state conforming to `references/pipeline-state-schema.json`. Foll
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-4-backlog --specs-dir "{specsDir}" --host generic
 ```
 

@@ -29,7 +29,7 @@ For pipeline architecture details, read `references/process-overview.md`.
 1. **Epics first.** Identify epic directories as any `{specsDir}/*/` that directly contains an `epic-manifest.json` **and no `.pipeline-state.json` of its own** (an epic root is never itself a feature). For each epic, run:
    ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
    ```
    and show one rollup line: `{epic} — {complete}/{total} complete, next: {nextCommand}`.
@@ -37,7 +37,7 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
    - **Rank by recency.** Run the recency ranker so the most-recently-touched active feature is the default — the user rarely has to type a name (especially on mobile after a clear your session / start a fresh session):
      ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" rank-features --specs-dir "{specsDir}" --json
      ```
      This returns `{active: [...], counts: {...}}` with active features sorted by `updatedAt` **descending** (row 0 is the most recent). Each row carries `currentStage`, `nextStage`, `nextCommand`, `verifyPending`, `verifyCommand`, `verifyStage`, `verifyState` (`fresh`/`stale`/`failing`/`never`/`none`), `autoVerify` (the effective per-stage setting), `autoFix` (the single source of stage order), and `verifyGate` (`none`/`auto`/`standard` — the single resolved verify-gate, computed once by the ranker; read it rather than re-deriving from `verifyPending`+`autoVerify`). A top-level `invalidAutoVerifyKeys` array appears when `forge.config.json` has `autoVerifyStages` keys outside the five verify-capable stages — surface it as a one-line warning. The `active` list excludes nested epic members surfaced in Tier 1 — but the ranker scans them too, so ignore rows whose `epic` is non-null here (they belong to the epic rollup).
@@ -103,7 +103,7 @@ After rendering a **per-feature** dashboard for an **active** pipeline (skip thi
 **2. Check the context window.** Run the context-usage helper so you can advise whether to continue here or start the next stage in a fresh session:
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" context-usage --json
 ```
 - `{"available": true, ...}` → note `pct` (e.g. "context ~68% full") and `overThreshold`. Window/threshold come from `contextWindowTokens` / `contextWarnThreshold` in `forge.config.json` (the helper defaults to a 200k window and 0.7 threshold, and auto-bumps the assumed window to 1M once observed usage exceeds 200k; **on a 1M-context model set `contextWindowTokens: 1000000` so the percentage is accurate below 200k too** — 1M can't be detected from the transcript until usage crosses 200k).
@@ -111,11 +111,11 @@ python3 "$R/scripts/forge-session.py" context-usage --json
 
 **2b. Auto-verify catch-up (when `verifyPending` is true).** Under this behavior the just-completed authoring stage runs auto-verify **in-stage** (`references/stage-exit-protocol.md`, in-stage verify block), which clears `verifyPending` — so on the normal path this branch does **nothing**. It fires only as a **catch-up**: `verifyPending` is still true because the producing stage could not dispatch a clean-room subagent (non-Claude host), or ran before this behavior landed. When it does fire, decide whether verify runs automatically (identical logic to the in-stage run, so a stage that already verified is never double-verified):
 
-- **`autoVerify` is true for the just-completed `verifyStage`** → **skip the verify question entirely** and run verify now, *provided it can run clean-room*. Auto-verify is safe to run unattended only because verify executes in a fresh `forge-verifier` subagent that inherits none of this session's context (so no clear your session / start a fresh session is needed and only a compact digest returns). Guard the clean-room assumption: proceed unattended **only when the host's subagent mechanism + `forge-verifier` subagent are available**. Invoke `skill:forge-verify` via the host's skill-invocation mechanism in **require-clean (`auto`) mode** — in that mode forge-verify refuses to run inline and returns a sentinel if the subagent is not dispatchable (see `skills/forge-verify/SKILL.md`). Then:
+- **`autoVerify` is true for the just-completed `verifyStage`** → **skip the verify question entirely** and run verify now, *provided it can run clean-room*. Auto-verify is safe to run unattended only because verify executes in a fresh `forge-verifier` subagent that inherits none of this session's context (so no clear your session / start a fresh session is needed and only a compact digest returns). Guard the clean-room assumption: proceed unattended **only when the host's subagent mechanism + `forge-verifier` subagent are available**. Invoke `feature-forge:forge-verify` via the host's skill-invocation mechanism in **require-clean (`auto`) mode** — in that mode forge-verify refuses to run inline and returns a sentinel if the subagent is not dispatchable (see `skills/forge-verify/SKILL.md`). Then:
   - **Sentinel returned (clean-room unavailable)** → do **not** run verify inline. Degrade to the manual gate: fall through to step 3 with the **"Verify `{stage}` first (manual)"** option included, and if `overThreshold`, recommend "clear your session / start a fresh session, then verify in a clean session." Verify state stays outstanding; the stage is never advanced on false assurance.
   - **Verify passed / no findings** → proceed to the normal advance gate (step 3), no verify option.
   - **Verify found findings** →
-    - **`autoFix` is true AND preconditions hold** — the findings document has **zero unresolved decision points** and the **working tree is clean** → invoke `skill:forge-fix` via the host's skill-invocation mechanism, then run a **mandatory re-verify** (require-clean mode). Advance only if the re-verify passes. On **any** precondition miss (decisions required, dirty tree), a forge-fix early stop, or a red re-verify → fall back to the digest + prompt below (never a silent partial mutation).
+    - **`autoFix` is true AND preconditions hold** — the findings document has **zero unresolved decision points** and the **working tree is clean** → invoke `feature-forge:forge-fix` via the host's skill-invocation mechanism, then run a **mandatory re-verify** (require-clean mode). Advance only if the re-verify passes. On **any** precondition miss (decisions required, dirty tree), a forge-fix early stop, or a red re-verify → fall back to the digest + prompt below (never a silent partial mutation).
     - **`autoFix` is false (default), or preconditions failed** → present a **compact findings digest** as text, then `AskUserQuestion`: *Apply fixes now (forge-fix)* / *Review findings* / *Skip & advance*.
 - **`autoVerify` is false/unconfigured** → do not auto-run; use the advance gate in step 3, which gains the folded opt-in verify options ("Verify `{stage}` now" and "Verify `{stage}` now + enable auto-verify going forward").
 
@@ -129,8 +129,8 @@ python3 "$R/scripts/forge-session.py" context-usage --json
 
 **4. Act on the choice.**
 - **Clean session** (the default) → give the exact next command and the clear your session / start a fresh session-then-re-run instruction; do not invoke anything (you cannot clear your session / start a fresh session for the user).
-- **Continue in this session** → if `autoInvokeNextStage` is true (default) **and** the host's skill-invocation mechanism is available, invoke the chosen stage **via the host's skill-invocation mechanism** in this same session (e.g. `skill: "skill:forge-3-specs"`, `args: "{feature}"`) — no retyping, no paste. If `autoInvokeNextStage` is false, or the host's skill-invocation mechanism is unavailable (a non-Claude host), fall back to printing `{nextCommand}` prominently for the user to run.
-- **Verify now / Verify now + enable auto-verify** → invoke `skill:forge-verify` via the host's skill-invocation mechanism (require-clean mode). For the **enable-auto-verify** variant, additionally patch `autoVerify: true` into `forge.config.json` in place (preserve formatting and other keys) — never a silent write. On a non-Claude host or when degrading to the manual/inline gate, print `{verifyCommand}` instead.
+- **Continue in this session** → if `autoInvokeNextStage` is true (default) **and** the host's skill-invocation mechanism is available, invoke the chosen stage **via the host's skill-invocation mechanism** in this same session (e.g. `skill: "feature-forge:forge-3-specs"`, `args: "{feature}"`) — no retyping, no paste. If `autoInvokeNextStage` is false, or the host's skill-invocation mechanism is unavailable (a non-Claude host), fall back to printing `{nextCommand}` prominently for the user to run.
+- **Verify now / Verify now + enable auto-verify** → invoke `feature-forge:forge-verify` via the host's skill-invocation mechanism (require-clean mode). For the **enable-auto-verify** variant, additionally patch `autoVerify: true` into `forge.config.json` in place (preserve formatting and other keys) — never a silent write. On a non-Claude host or when degrading to the manual/inline gate, print `{verifyCommand}` instead.
 - **Different stage** → honor the free-form request.
 
 **Host fallback.** On a non-Claude host or when the host's skill-invocation and subagent mechanisms are unavailable, auto-verify never runs unattended — fall back to printing `{verifyCommand}` exactly as today, mirroring `autoInvokeNextStage`.
@@ -143,7 +143,7 @@ When the named argument is an epic (`{specsDir}/{name}/epic-manifest.json` exist
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
 
@@ -216,7 +216,7 @@ Support these sub-commands for pipeline lifecycle management:
 - Set the manifest's top-level `status` (`paused` / `active` / `abandoned`) via the helper's `set-status` mutator — an atomic write that also bumps `updatedAt`:
   ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" set-status "{epic}" --status paused --specs-dir "{specsDir}"
   ```
   For `complete`, do **not** set the status directly — completion is *derived* from member states (the rollup), so the manifest `status` is a lifecycle flag, never a completion signal.

@@ -10,7 +10,7 @@ Run the initialization script to create `forge.config.json` with default setting
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "skill: cannot locate plugin root" >&2; exit 1; }
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 bash "$R/scripts/forge-init.sh"
 ```
 
