@@ -1,5 +1,3 @@
-// GENERATED — DO NOT EDIT. Source: adapter-src/pi/ask-user-question.ts
-// Regenerate with: python3 scripts/build-adapters.py
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import {

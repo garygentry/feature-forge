@@ -2,7 +2,7 @@ name: Quality Gate
 description: >-
   The canonical feature-forge gate — `bash scripts/validate.sh` (claude-plugin
   validate, SKILL.md schema purity, adapters regen-diff, traceability, installer
-  build+test) + shellcheck + ruff + version-sync. Single source of truth shared
+  build+test, adapter-src verify) + shellcheck + ruff + version-sync. Single source of truth shared
   by ci.yml and local dev so they can never drift (mirrors rauf's pnpm-gate
   composite-action pattern).
 runs:
@@ -53,7 +53,8 @@ runs:
 
     # 2. The aggregate gate: claude-plugin-validate, SKILL.md schema purity (6a),
     #    adapters regen-diff (6b), agent frontmatter, script perms, traceability,
-    #    epic-manifest, installer build+test (REQ-CI-01,-02,-04,-06).
+    #    epic-manifest, installer build+test, adapter-src/<agent> verify (7a)
+    #    (REQ-CI-01,-02,-04,-06).
     - name: validate.sh (aggregate gate)
       shell: bash
       run: bash scripts/validate.sh

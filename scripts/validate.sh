@@ -241,6 +241,68 @@ else
   ERRORS=$((ERRORS + 1))
 fi
 
+# 7a. Verify every hand-written adapter source under adapter-src/<agent>/.
+#
+#     These are the real-code artifacts the generator emits into adapters/<agent>/
+#     — today just Pi's AskUserQuestion extension, a TUI state machine that is the
+#     most logic-dense thing the generator produces. It previously lived as an
+#     unverified string literal inside build-adapters.py, where no typo, bad import,
+#     or type error could be caught before a Pi user hit it at runtime.
+#
+#     The contract is per-agent and self-declaring: an agent dir opts in by exposing
+#     a `verify` script in its own package.json, and owns whatever toolchain that
+#     needs (Pi's is `tsc --noEmit` against Pi's published .d.ts files). A future
+#     agent's source is therefore enrolled in CI just by existing — the gate is
+#     never a Pi-shaped special case that the next artifact silently escapes.
+#
+#     A dir with NO verifier is reported as a visible SKIP, never a silent pass:
+#     "nobody checks this" must stay legible in the log. HARD-fail on a failing
+#     verifier when npm is present; WARN when npm is absent, mirroring the ruff step.
+#
+#     Note: Pi's devDeps pull in the full pi-coding-agent package (~200MB) because
+#     that is where the ExtensionAPI/ExtensionContext types live. It is cached after
+#     the first run, gitignored, and nothing from it is ever shipped.
+echo ""
+echo "Verifying hand-written adapter sources (adapter-src/)..."
+ADAPTER_SRC="$REPO_ROOT/adapter-src"
+if [ ! -d "$ADAPTER_SRC" ]; then
+  echo "SKIP: no adapter-src/ tree present; nothing to verify here"
+  WARNINGS=$((WARNINGS + 1))
+elif ! command -v npm >/dev/null 2>&1; then
+  echo "SKIP: npm not available; cannot verify adapter sources"
+  WARNINGS=$((WARNINGS + 1))
+else
+  ADAPTER_SRC_RAN=0
+  for AGENT_SRC in "$ADAPTER_SRC"/*/; do
+    [ -d "$AGENT_SRC" ] || continue          # no agent dirs -> SKIP, not a bogus glob-string failure
+    AGENT_ID="$(basename "$AGENT_SRC")"
+    ADAPTER_SRC_RAN=1
+    if [ ! -f "$AGENT_SRC/package.json" ]; then
+      echo "SKIP: adapter-src/$AGENT_ID has no package.json — source ships unverified"
+      WARNINGS=$((WARNINGS + 1))
+      continue
+    fi
+    # Probe for a `verify` script without running it, so a dir that simply has no
+    # verifier is a visible SKIP rather than an npm "missing script" FAIL.
+    if ! node -e "process.exit(require('$AGENT_SRC/package.json').scripts?.verify ? 0 : 1)" 2>/dev/null; then
+      echo "SKIP: adapter-src/$AGENT_ID declares no 'verify' script — source ships unverified"
+      WARNINGS=$((WARNINGS + 1))
+      continue
+    fi
+    if ( cd "$AGENT_SRC" && npm ci --silent && npm run verify --silent ); then
+      echo "PASS: adapter-src/$AGENT_ID verify"
+    else
+      echo "FAIL: adapter-src/$AGENT_ID verify (see above) — fix the source there,"
+      echo "      then re-run 'python3 scripts/build-adapters.py' to regenerate adapters/$AGENT_ID/"
+      ERRORS=$((ERRORS + 1))
+    fi
+  done
+  if [ "$ADAPTER_SRC_RAN" -eq 0 ]; then
+    echo "SKIP: adapter-src/ has no agent directories; nothing to verify"
+    WARNINGS=$((WARNINGS + 1))
+  fi
+fi
+
 # 7b. ruff lint over the bundled Python (REQ-CI-03). CI's Quality Gate runs this,
 #     but historically validate.sh did NOT — so an E501 the local gate missed
 #     could still block a merge (A3). Fold it in so local == CI. HARD-fail when

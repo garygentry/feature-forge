@@ -1,7 +1,7 @@
-// GENERATED — DO NOT EDIT. Source: scripts/build-adapters.py
+// GENERATED — DO NOT EDIT. Source: adapter-src/pi/ask-user-question.ts
 // Regenerate with: python3 scripts/build-adapters.py
 
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
   Editor,
   type EditorTheme,
@@ -101,7 +101,7 @@ export default function askUserQuestion(pi: ExtensionAPI) {
     parameters: ParamsSchema,
     executionMode: "sequential" as const,
 
-    async execute(_toolCallId: string, params: Params, _signal: AbortSignal | undefined, _onUpdate: unknown, ctx: any) {
+    async execute(_toolCallId: string, params: Params, _signal: AbortSignal | undefined, _onUpdate: unknown, ctx: ExtensionContext) {
       const validationError = validateInput(params);
       if (validationError) {
         return {

@@ -1,0 +1,18 @@
+{
+  "name": "feature-forge-adapter-src-pi",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Pi's hand-written adapter source. Not published; scripts/build-adapters.py reads ask-user-question.ts and emits it into adapters/pi/extensions/. The 'verify' script is the contract scripts/validate.sh invokes for every adapter-src/<agent>/ dir.",
+  "scripts": {
+    "verify": "npm run typecheck",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.81.1",
+    "@earendil-works/pi-tui": "^0.81.1",
+    "@types/node": "^20.0.0",
+    "typebox": "^1.1.38",
+    "typescript": "^5.4.0"
+  }
+}

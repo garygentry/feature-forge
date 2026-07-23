@@ -52,14 +52,32 @@ fields. Per-agent output is **generated** into `adapters/` by `scripts/build-ada
 **never hand-edited**. If you need to change what an adapter emits, edit the canonical source
 and regenerate.
 
-### Tooling — stdlib + pinned YAML, no pnpm/TypeScript gate
+### Hand-written adapter sources
+
+Most of what lands in `adapters/` is generated from canon prose. The exception is real code
+that a target agent loads at runtime — today Pi's `AskUserQuestion` TUI extension. Those
+artifacts live at `adapter-src/<agent>/<file>` and are read by `scripts/build-adapters.py` at
+build time, which prepends the `GENERATED — DO NOT EDIT` header naming the `adapter-src` path.
+Edit the file under `adapter-src/`, never the emitted copy, then regenerate.
+
+Each agent directory owns its own toolchain and opts into verification by exposing a `verify`
+script in its `package.json`; `scripts/validate.sh` iterates `adapter-src/*/` and runs each one.
+A directory with no `verify` script is reported as a visible `SKIP` — shipping unverified code
+is allowed, but never silently. Anything here is dev-only: `adapter-src/*/node_modules/` is
+gitignored and nothing from it is published.
+
+### Tooling — Python stdlib + pinned YAML; npm confined to two dirs
 
 The generator is Python 3 (3.10+ baseline) + Bash + Markdown. There is exactly one runtime
 dependency beyond the standard library: a pinned YAML library specified in
 `scripts/requirements-adapters.txt`. `bash scripts/validate.sh` auto-provisions it into the
 gitignored `.venv-adapters` virtual environment on first run; subsequent runs reuse the venv.
-There is no `pnpm`, no `npm`, and no TypeScript build step — `bash scripts/validate.sh` is
-the single verify command.
+There is no `pnpm`.
+
+Node/npm and TypeScript are confined to exactly two places, both gated by `validate.sh` and
+neither part of the generator itself: `installer/` (the published CLI, built with `tsc` and
+tested with `node --test`) and `adapter-src/<agent>/` (hand-written adapter sources, each
+verified by its own toolchain). `bash scripts/validate.sh` remains the single verify command.
 
 ### The resolver/prelude pattern
 
