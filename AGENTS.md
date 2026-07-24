@@ -73,6 +73,14 @@ reformatting or refactoring it is friction at the next upstream refresh, and eve
 has to be re-applied by hand. Files that cannot carry a line-comment header (`LICENSE`,
 `locales/*.json`) are emitted verbatim; the regen-and-diff drift guard is what protects them.
 
+**One emitted manifest key follows a third-party schema.** `adapters/pi/package.json` carries a
+top-level `pi-subagents` block declaring the bundle's `agents/` directory. Pi core does not read
+it; the [`pi-subagents`](https://github.com/nicobailon/pi-subagents) extension does, and that
+schema is not ours. It is kept out of the core-Pi `pi` block precisely so the coupling stays
+visible, and it is emitted unconditionally because an unread key is inert — the bundle must never
+require an extension it does not ship. Unknown keys are tolerated by that loader, so schema drift
+degrades rather than breaks. See `docs/agents/pi.md` for the user-facing behaviour.
+
 Each agent directory owns its own toolchain and opts into verification by exposing a `verify`
 script in its `package.json`; `scripts/validate.sh` iterates `adapter-src/*/` and runs each one.
 A directory with no `verify` script is reported as a visible `SKIP` — shipping unverified code

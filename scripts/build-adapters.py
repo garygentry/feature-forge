@@ -829,8 +829,12 @@ _HOST_NOTES_PI = (
     "previews, and free-form Other/custom answers.\n"
     "- **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a "
     "skill directly, print the exact `/skill:<name> ...` command for the user to run.\n"
-    "- **Subagents:** Pi has no Claude-style `Agent` tool; run the work inline or ask "
-    "the user to start a fresh Pi session with the named role.\n"
+    "- **Subagents:** this bundle declares its custom agents (`forge-researcher`, "
+    "`forge-spec-writer`, `forge-verifier`) as package agents. If a `subagent` tool "
+    "is registered, dispatch one with `{ agent: \"forge-verifier\", task: \"...\" }`, "
+    "or fan several out concurrently with "
+    "`{ tasks: [{ agent: \"forge-spec-writer\", task: \"...\" }, ...] }`. If no "
+    "`subagent` tool is available, run that step inline yourself.\n"
     "- **Background / monitoring:** run long-lived commands in the foreground and "
     "report progress as it arrives.\n"
 )
@@ -1140,7 +1144,15 @@ class PiEmitter:
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
-        """Emit body-only role notes and drop-record Claude-only sub-agent keys."""
+        """Emit an agent file registrable by Pi, drop-recording unmapped Claude keys.
+
+        The emitted files are declared to Pi through the manifest's ``pi-subagents``
+        key (see ``_write_pi_package_assets``), so a Pi host with a subagent
+        extension installed can dispatch them by name. Only ``{name, description}``
+        are mapped today: the Claude→Pi frontmatter translation (tool allowlists,
+        turn budgets, acceptance roles) is not written yet, so every other canon key
+        is still drop-recorded.
+        """
         rel = f"agents/{agent.name}.md"
         content = render_frontmatter_block(
             order_fields(
@@ -1151,7 +1163,7 @@ class PiEmitter:
             ),
             agent.source_path,
         ) + agent_body_for(agent.body, "pi")
-        drops = drop_all_claude_keys(agent, "pi", "no Pi sub-agent construct")
+        drops = drop_all_claude_keys(agent, "pi", "Pi sub-agent frontmatter not yet mapped")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
 
@@ -1315,6 +1327,14 @@ def _write_pi_package_assets(bundle_root: Path) -> None:
             "skills": ["./skills"],
             "extensions": ["./extensions/ask-user-question/index.ts"],
         },
+        # Declares the emitted agents/ dir to a Pi subagent extension (the schema is
+        # pi-subagents 0.35.1's; it also accepts the equivalent `pi.subagents.agents`).
+        # Kept OUT of the `pi` block on purpose: `pi` is core-Pi manifest surface, and
+        # this is a third-party contract we do not own, so it stays visibly namespaced.
+        # Emitted unconditionally — with no such extension installed the key is inert:
+        # nothing reads it, nothing errors. That is what keeps the bundle free of a
+        # runtime dependency that could hard-stall the pipeline when it is missing.
+        "pi-subagents": {"agents": ["./agents"]},
         "peerDependencies": {
             "@earendil-works/pi-coding-agent": "*",
             "@earendil-works/pi-tui": "*",

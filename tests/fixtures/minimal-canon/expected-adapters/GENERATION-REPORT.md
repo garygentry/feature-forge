@@ -72,15 +72,15 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
-| `agents/researcher.md` | `sub-agent key 'effort'` | no Pi sub-agent construct |
-| `agents/researcher.md` | `sub-agent key 'maxTurns'` | no Pi sub-agent construct |
-| `agents/researcher.md` | `sub-agent key 'model'` | no Pi sub-agent construct |
-| `agents/researcher.md` | `sub-agent key 'tools'` | no Pi sub-agent construct |
-| `agents/verifier.md` | `sub-agent key 'maxTurns'` | no Pi sub-agent construct |
-| `agents/verifier.md` | `sub-agent key 'memory'` | no Pi sub-agent construct |
-| `agents/verifier.md` | `sub-agent key 'model'` | no Pi sub-agent construct |
-| `agents/verifier.md` | `sub-agent key 'skills'` | no Pi sub-agent construct |
-| `agents/verifier.md` | `sub-agent key 'tools'` | no Pi sub-agent construct |
+| `agents/researcher.md` | `sub-agent key 'effort'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/researcher.md` | `sub-agent key 'maxTurns'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/researcher.md` | `sub-agent key 'model'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/researcher.md` | `sub-agent key 'tools'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/verifier.md` | `sub-agent key 'maxTurns'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/verifier.md` | `sub-agent key 'memory'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/verifier.md` | `sub-agent key 'model'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/verifier.md` | `sub-agent key 'skills'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/verifier.md` | `sub-agent key 'tools'` | Pi sub-agent frontmatter not yet mapped |
 | `skills/with-refs/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
 
 ## Copied verbatim (no provenance header)

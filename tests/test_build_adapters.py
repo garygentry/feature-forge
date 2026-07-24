@@ -315,6 +315,50 @@ def test_pi_bundle_includes_ask_user_question_extension(fixture_copy):
     )
 
 
+def test_pi_bundle_declares_its_agents_to_the_subagent_registry(fixture_copy):
+    """The Pi manifest declares ``agents/`` so a Pi subagent extension can find it.
+
+    Without this key the emitted agent files are inert bytes: nothing tells any Pi
+    component the directory exists, and the model reports the forge agents as "not
+    installed". The key is third-party (pi-subagents 0.35.1) and so lives at the
+    manifest top level rather than inside the core-Pi ``pi`` block; it is emitted
+    unconditionally because it is inert when no such extension is installed.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+
+    pi_root = root / "adapters" / "pi"
+    package = json.loads((pi_root / "package.json").read_text())
+    assert package["pi-subagents"] == {"agents": ["./agents"]}
+    assert "subagents" not in package["pi"], "third-party key must stay out of the pi block"
+
+    declared = pi_root / package["pi-subagents"]["agents"][0]
+    assert declared.is_dir(), "the declared agents dir must exist in the bundle"
+    assert sorted(p.name for p in declared.glob("*.md")) == ["researcher.md", "verifier.md"]
+
+
+def test_pi_host_notes_name_the_real_subagent_dispatch_shape(fixture_copy):
+    """Pi skill bodies tell the model to dispatch, not to give up (regression).
+
+    The overlay used to state that Pi had no subagent construct at all, so the model
+    obeyed the bundle and improvised substitutes for gates like ``forge-verify``.
+    Inline execution stays as an explicit fallback because the subagent tool is not
+    guaranteed to be present.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+
+    for path in sorted((root / "adapters" / "pi" / "skills").rglob("SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        assert "Pi has no Claude-style" not in text, f"{path.name} still tells the model to give up"
+        assert '{ agent: "forge-verifier", task: "..." }' in text
+        assert '{ tasks: [{ agent: "forge-spec-writer", task: "..." }, ...] }' in text
+        assert "run that step inline yourself" in text
+        # The overlay is subject to the same no-Claude-tokens contract as the body.
+        for token in ("subagent_type=", "Agent tool", "Task tool"):
+            assert token not in text, f"{path.name} names Claude-only {token!r}"
+
+
 @pytest.mark.parametrize("agent", AGENT_TARGETS)
 def test_cited_shared_references_fan_out_skill_local(fixture_copy, agent):
     """A cited bundle-root SHARED reference resolves skill-local after build (#122/#132).

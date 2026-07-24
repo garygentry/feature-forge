@@ -128,18 +128,18 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
-| `agents/forge-researcher.md` | `sub-agent key 'effort'` | no Pi sub-agent construct |
-| `agents/forge-researcher.md` | `sub-agent key 'maxTurns'` | no Pi sub-agent construct |
-| `agents/forge-researcher.md` | `sub-agent key 'model'` | no Pi sub-agent construct |
-| `agents/forge-researcher.md` | `sub-agent key 'tools'` | no Pi sub-agent construct |
-| `agents/forge-spec-writer.md` | `sub-agent key 'maxTurns'` | no Pi sub-agent construct |
-| `agents/forge-spec-writer.md` | `sub-agent key 'model'` | no Pi sub-agent construct |
-| `agents/forge-spec-writer.md` | `sub-agent key 'tools'` | no Pi sub-agent construct |
-| `agents/forge-verifier.md` | `sub-agent key 'maxTurns'` | no Pi sub-agent construct |
-| `agents/forge-verifier.md` | `sub-agent key 'memory'` | no Pi sub-agent construct |
-| `agents/forge-verifier.md` | `sub-agent key 'model'` | no Pi sub-agent construct |
-| `agents/forge-verifier.md` | `sub-agent key 'skills'` | no Pi sub-agent construct |
-| `agents/forge-verifier.md` | `sub-agent key 'tools'` | no Pi sub-agent construct |
+| `agents/forge-researcher.md` | `sub-agent key 'effort'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-researcher.md` | `sub-agent key 'maxTurns'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-researcher.md` | `sub-agent key 'model'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-researcher.md` | `sub-agent key 'tools'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-spec-writer.md` | `sub-agent key 'maxTurns'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-spec-writer.md` | `sub-agent key 'model'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-spec-writer.md` | `sub-agent key 'tools'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-verifier.md` | `sub-agent key 'maxTurns'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-verifier.md` | `sub-agent key 'memory'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-verifier.md` | `sub-agent key 'model'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-verifier.md` | `sub-agent key 'skills'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/forge-verifier.md` | `sub-agent key 'tools'` | Pi sub-agent frontmatter not yet mapped |
 | `skills/forge-0-epic/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
 | `skills/forge-1-prd/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
 | `skills/forge-2-tech/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |

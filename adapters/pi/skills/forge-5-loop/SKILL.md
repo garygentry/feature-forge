@@ -310,5 +310,5 @@ This Pi bundle preserves Claude's `AskUserQuestion` references because it ships 
 
 - **User input:** use `AskUserQuestion` for genuine user decisions. It supports multiple questions, option descriptions, recommended ordering, multi-select, previews, and free-form Other/custom answers.
 - **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a skill directly, print the exact `/skill:<name> ...` command for the user to run.
-- **Subagents:** Pi has no Claude-style `Agent` tool; run the work inline or ask the user to start a fresh Pi session with the named role.
+- **Subagents:** this bundle declares its custom agents (`forge-researcher`, `forge-spec-writer`, `forge-verifier`) as package agents. If a `subagent` tool is registered, dispatch one with `{ agent: "forge-verifier", task: "..." }`, or fan several out concurrently with `{ tasks: [{ agent: "forge-spec-writer", task: "..." }, ...] }`. If no `subagent` tool is available, run that step inline yourself.
 - **Background / monitoring:** run long-lived commands in the foreground and report progress as it arrives.
