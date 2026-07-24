@@ -10,7 +10,7 @@
       "./skills"
     ],
     "extensions": [
-      "./extensions/ask-user-question.ts"
+      "./extensions/ask-user-question/index.ts"
     ]
   },
   "peerDependencies": {

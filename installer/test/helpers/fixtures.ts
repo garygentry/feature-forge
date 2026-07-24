@@ -62,11 +62,12 @@ export async function makeFixtureBundle(
     await writeFile(join(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + "\n");
   }
   if (agent === "pi") {
-    await mkdir(join(dir, "extensions"), { recursive: true });
-    await writeFile(join(dir, "extensions", "ask-user-question.ts"), "export default {};\n");
+    // The real bundle ships the extension as a vendored tree, not one file.
+    await mkdir(join(dir, "extensions", "ask-user-question"), { recursive: true });
+    await writeFile(join(dir, "extensions", "ask-user-question", "index.ts"), "export default {};\n");
     await writeFile(
       join(dir, "package.json"),
-      JSON.stringify({ name: "feature-forge-pi", keywords: ["pi-package"], pi: { skills: ["./skills"], extensions: ["./extensions/ask-user-question.ts"] } }, null, 2) + "\n",
+      JSON.stringify({ name: "feature-forge-pi", keywords: ["pi-package"], pi: { skills: ["./skills"], extensions: ["./extensions/ask-user-question/index.ts"] } }, null, 2) + "\n",
     );
   }
   for (const id of agents) {

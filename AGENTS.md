@@ -56,15 +56,32 @@ and regenerate.
 
 Most of what lands in `adapters/` is generated from canon prose. The exception is real code
 that a target agent loads at runtime — today Pi's `AskUserQuestion` TUI extension. Those
-artifacts live at `adapter-src/<agent>/<file>` and are read by `scripts/build-adapters.py` at
+artifacts live under `adapter-src/<agent>/` and are read by `scripts/build-adapters.py` at
 build time, which prepends the `GENERATED — DO NOT EDIT` header naming the `adapter-src` path.
 Edit the file under `adapter-src/`, never the emitted copy, then regenerate.
+
+**Source layout mirrors emitted layout.** `adapter-src/pi/extensions/…` becomes
+`adapters/pi/extensions/…` at the same relative path. That is a correctness requirement, not
+tidiness: the Pi extension resolves its own bundle root by walking up from `import.meta.url`,
+so a source tree at a different depth would typecheck and test green in-tree while resolving
+the wrong root once emitted.
+
+**Not all of it is ours.** `adapter-src/pi/extensions/ask-user-question/` is a *vendored*
+snapshot of the third-party `@juicesharp/rpiv-ask-user-question` package, carried with a
+four-patch delta. Read `adapter-src/pi/UPSTREAM.md` before touching anything in that tree —
+reformatting or refactoring it is friction at the next upstream refresh, and every local edit
+has to be re-applied by hand. Files that cannot carry a line-comment header (`LICENSE`,
+`locales/*.json`) are emitted verbatim; the regen-and-diff drift guard is what protects them.
 
 Each agent directory owns its own toolchain and opts into verification by exposing a `verify`
 script in its `package.json`; `scripts/validate.sh` iterates `adapter-src/*/` and runs each one.
 A directory with no `verify` script is reported as a visible `SKIP` — shipping unverified code
-is allowed, but never silently. Anything here is dev-only: `adapter-src/*/node_modules/` is
-gitignored and nothing from it is published.
+is allowed, but never silently. Pi's `verify` is `tsc --noEmit` over the whole tree plus
+`node --test`, which drives the real extension through a fake `ExtensionAPI` and a headless
+TUI — registration, the questionnaire state machine, the RPC fallback, and the validation
+guards — so an upstream refresh that breaks a feature-forge contract fails before it ships.
+Anything here is dev-only: `adapter-src/*/node_modules/` is gitignored and nothing from it is
+published.
 
 ### Tooling — Python stdlib + pinned YAML; npm confined to two dirs
 

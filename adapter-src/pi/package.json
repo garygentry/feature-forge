@@ -3,15 +3,18 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Pi's hand-written adapter source. Not published; scripts/build-adapters.py reads ask-user-question.ts and emits it into adapters/pi/extensions/. The 'verify' script is the contract scripts/validate.sh invokes for every adapter-src/<agent>/ dir.",
+  "description": "Pi's hand-written adapter source. Not published; scripts/build-adapters.py reads ask-user-question/ and emits it into adapters/pi/extensions/. ask-user-question/ is a VENDORED third-party snapshot — see UPSTREAM.md before editing it. The 'verify' script is the contract scripts/validate.sh invokes for every adapter-src/<agent>/ dir.",
   "scripts": {
-    "verify": "npm run typecheck",
-    "typecheck": "tsc -p tsconfig.json"
+    "verify": "npm run typecheck && npm run test",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test \"test/**/*.test.mjs\""
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.81.1",
     "@earendil-works/pi-tui": "^0.81.1",
+    "@juicesharp/rpiv-i18n": "*",
     "@types/node": "^20.0.0",
+    "jiti": "^2.7.0",
     "typebox": "^1.1.38",
     "typescript": "^5.4.0"
   }

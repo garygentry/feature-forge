@@ -98,11 +98,13 @@ test("checkIntegrity requires Pi package metadata and AskUserQuestion extension 
   await withSandbox(async (sb) => {
     const fx = await makeFixtureBundle(sb, "pi");
     assert.ok(checkIntegrity(fx.dir, "pi").ok);
-    await rm(join(fx.dir, "extensions", "ask-user-question.ts"), { force: true });
+    // The extension is a vendored tree; its manifest-declared entry point is what
+    // the bundle contract requires, so removing that is what must be detected.
+    await rm(join(fx.dir, "extensions", "ask-user-question", "index.ts"), { force: true });
     const r = checkIntegrity(fx.dir, "pi");
     assert.ok(!r.ok);
     assert.equal(r.error.code, "SOURCE_INVALID");
-    assert.equal(r.error.path, join(fx.dir, "extensions", "ask-user-question.ts"));
+    assert.equal(r.error.path, join(fx.dir, "extensions", "ask-user-question", "index.ts"));
   });
 });
 

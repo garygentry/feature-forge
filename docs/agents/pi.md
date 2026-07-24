@@ -46,7 +46,7 @@ Do not use Claude plugin commands such as `/feature-forge:forge` in Pi.
 
 ## Notes and limitations
 
-- Interactive input uses the bundled `AskUserQuestion` compatibility tool. In non-interactive print/JSON/RPC modes, that tool fails clearly rather than hanging or picking a default.
+- Interactive input uses the bundled `AskUserQuestion` compatibility tool — a vendored snapshot of `@juicesharp/rpiv-ask-user-question` (see `adapter-src/pi/UPSTREAM.md`). In a terminal it renders a tabbed questionnaire with previews, multi-select, per-option notes, and a final review. On RPC/ACP hosts that report a UI but cannot render a custom overlay (the VSCode pendant, Zed, Paseo) it degrades to sequential select/input dialogs rather than failing. In genuinely non-interactive print/JSON runs it still fails clearly rather than hanging or picking a default.
 - Pi does not provide Claude-style subagents or the `Skill` dispatch tool. Where forge asks for researcher/verifier-style review, run the work inline or start a fresh Pi session manually.
 - If `forge-root.sh` cannot find the bundle in a custom package layout, set `FEATURE_FORGE_ROOT` to the generated `adapters/pi` bundle root.
 

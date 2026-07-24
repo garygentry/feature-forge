@@ -1298,7 +1298,14 @@ def run_self_containment_pass(
 
 
 def _write_pi_package_assets(bundle_root: Path) -> None:
-    """Write Pi package manifest and generated AskUserQuestion extension."""
+    """Write Pi package manifest and the vendored AskUserQuestion extension tree.
+
+    The extension is a vendored snapshot of ``@juicesharp/rpiv-ask-user-question``
+    (see ``adapter-src/pi/UPSTREAM.md``) rather than feature-forge-authored code,
+    and ships inside the bundle rather than as a dependency so a Pi install needs
+    no second ``pi install`` — the pipeline's interview stages have no fallback
+    question mechanism on Pi, so a missing dependency would be a hard stall.
+    """
     package = {
         "name": "feature-forge-pi-adapter",
         "private": True,
@@ -1306,7 +1313,7 @@ def _write_pi_package_assets(bundle_root: Path) -> None:
         "keywords": ["pi-package"],
         "pi": {
             "skills": ["./skills"],
-            "extensions": ["./extensions/ask-user-question.ts"],
+            "extensions": ["./extensions/ask-user-question/index.ts"],
         },
         "peerDependencies": {
             "@earendil-works/pi-coding-agent": "*",
@@ -1319,11 +1326,8 @@ def _write_pi_package_assets(bundle_root: Path) -> None:
         "package.json",
         json.dumps(package, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
     )
-    safe_write(
-        bundle_root,
-        "extensions/ask-user-question.ts",
-        adapter_source(agent="pi", relpath="ask-user-question.ts", comment="//"),
-    )
+    for relpath, content in adapter_tree(agent="pi", subdir="extensions"):
+        safe_write(bundle_root, relpath, content)
 
 
 # Hand-written, agent-keyed source that FEEDS the generated bundles. Artifacts
@@ -1372,6 +1376,71 @@ def adapter_source(agent: str, relpath: str, comment: str) -> str:
         f"{comment} Regenerate with: python3 scripts/build-adapters.py\n"
     )
     return header + body
+
+
+# Suffix -> line-comment token for files that CAN carry a provenance header.
+# Anything absent is emitted verbatim: JSON has no comment syntax, and a LICENSE
+# must stay byte-identical to keep its attribution intact. Those files are not
+# left unprotected — adapters/ is covered wholesale by the regen-and-diff drift
+# guard (validate.sh 6b), which is what actually catches a hand-edit.
+_TREE_HEADER_COMMENTS = {".ts": "//"}
+
+
+def adapter_tree(agent: str, subdir: str) -> list[tuple[str, str]]:
+    """Return every file under ``adapter-src/<agent>/<subdir>/`` ready to emit.
+
+    The single-file :func:`adapter_source` covers an artifact that is one module.
+    A vendored third-party package is a tree (Pi's AskUserQuestion extension is
+    39 modules plus locales and a LICENSE), so this walks it whole. Source layout
+    mirrors emitted layout exactly — ``adapter-src/pi/extensions/...`` becomes
+    ``adapters/pi/extensions/...`` — because the extension resolves its own
+    bundle root by walking up from ``import.meta.url``; a source tree at a
+    different depth would typecheck and test green in-tree while resolving the
+    wrong root once emitted.
+
+    Args:
+        agent: Agent id — the ``adapter-src/`` subdirectory to read from.
+        subdir: Path of the tree within that agent's directory (e.g. ``extensions``).
+
+    Returns:
+        ``(relpath, content)`` pairs in sorted POSIX order (REQ-DET-01), relpath
+        being relative to the agent dir and therefore directly usable as the
+        bundle-relative destination. ``.ts`` files carry the generated header;
+        everything else is verbatim.
+
+    Raises:
+        UnreadableFileError: if the tree is missing, or holds a file that is not
+            valid UTF-8 — a broken or binary-polluted checkout must fail loudly
+            (REQ-OBS-02) rather than emit a corrupt bundle.
+    """
+    root = ADAPTER_SRC_ROOT / agent / subdir
+    if not root.is_dir():
+        raise UnreadableFileError(
+            f"adapter-src/{agent}/{subdir}", "adapter source tree is missing or not a directory"
+        )
+    emitted: list[tuple[str, str]] = []
+    for entry in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix()):
+        # Defensive: a stray `npm install` inside a vendored tree must never
+        # balloon the bundle. adapter-src keeps its node_modules one level up.
+        if "node_modules" in entry.parts or not entry.is_file():
+            continue
+        relpath = f"{subdir}/{entry.relative_to(root).as_posix()}"
+        rel = f"adapter-src/{agent}/{relpath}"
+        try:
+            body = entry.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            reason = getattr(exc, "strerror", None) or exc
+            raise UnreadableFileError(
+                rel, f"adapter source is missing or unreadable ({reason})"
+            ) from exc
+        comment = _TREE_HEADER_COMMENTS.get(entry.suffix)
+        if comment:
+            body = (
+                f"{comment} GENERATED — DO NOT EDIT. Source: {rel}\n"
+                f"{comment} Regenerate with: python3 scripts/build-adapters.py\n"
+            ) + body
+        emitted.append((relpath, body))
+    return emitted
 
 
 def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:

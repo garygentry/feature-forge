@@ -271,22 +271,48 @@ def test_pi_support_files_use_skill_command_wording(fixture_copy):
 
 
 def test_pi_bundle_includes_ask_user_question_extension(fixture_copy):
-    """The Pi adapter is self-contained and ships the AskUserQuestion fallback extension."""
+    """The Pi adapter is self-contained and ships the whole AskUserQuestion tree.
+
+    The extension is a vendored third-party package (adapter-src/pi/UPSTREAM.md),
+    so this asserts the *bundle* contract — entry point, tool name, license,
+    header policy — and deliberately not the vendored implementation's internals,
+    which are upstream's to change and are covered behaviourally by
+    ``adapter-src/pi``'s own ``npm run verify``.
+    """
     root = fixture_copy("minimal-canon")
     assert run_build(root).returncode == 0
 
     package = json.loads((root / "adapters" / "pi" / "package.json").read_text())
-    assert package["pi"]["extensions"] == ["./extensions/ask-user-question.ts"]
+    assert package["pi"]["extensions"] == ["./extensions/ask-user-question/index.ts"]
 
-    extension = (root / "adapters" / "pi" / "extensions" / "ask-user-question.ts").read_text()
-    assert 'const TOOL_NAME = "AskUserQuestion"' in extension
-    assert "process.env.FEATURE_FORGE_ROOT ||= dirname(dirname(fileURLToPath(import.meta.url)))" in extension
-    assert 'pi.on("session_start"' in extension
-    assert 'pi.getAllTools().some((existing) => existing.name === TOOL_NAME)' in extension
-    assert "final Submit review" in extension
-    assert "custom/Other row is added automatically unless an explicit Other/custom option is present" in extension
-    assert "function isCustomLabel" in extension
-    assert "custom answer" in extension
+    ext_dir = root / "adapters" / "pi" / "extensions" / "ask-user-question"
+    entry = ext_dir / "index.ts"
+    assert entry.is_file(), "the manifest's declared entry point must exist in the bundle"
+
+    # The whole module graph must ship: an entry point without its imports is a
+    # bundle that typechecks in-tree and dies on first load in a Pi session.
+    assert (ext_dir / "state" / "questionnaire-session.ts").is_file()
+    assert (ext_dir / "tool" / "types.ts").is_file()
+    assert (ext_dir / "view" / "dialog-builder.ts").is_file()
+    assert (ext_dir / "rpc-fallback.ts").is_file()
+
+    # Vendor patches that canon depends on (UPSTREAM.md patches 1 and 3).
+    assert 'ASK_USER_QUESTION_TOOL_NAME = "AskUserQuestion"' in (ext_dir / "ask-user-question.ts").read_text()
+    assert "process.env.FEATURE_FORGE_ROOT ||=" in entry.read_text()
+
+    # MIT attribution ships verbatim — a provenance header would alter the license text.
+    license_text = (ext_dir / "LICENSE").read_text()
+    assert license_text.startswith("MIT License")
+    assert "GENERATED" not in license_text
+
+    # JSON has no comment syntax, so locales must not be headered either.
+    en = (ext_dir / "locales" / "en.json").read_text()
+    assert json.loads(en)["sentinel.other"] == "Type something."
+
+    # TypeScript still carries provenance naming its adapter-src path.
+    assert entry.read_text().startswith(
+        "// GENERATED — DO NOT EDIT. Source: adapter-src/pi/extensions/ask-user-question/index.ts"
+    )
 
 
 @pytest.mark.parametrize("agent", AGENT_TARGETS)
