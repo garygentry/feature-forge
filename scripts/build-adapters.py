@@ -851,8 +851,15 @@ _HOST_NOTES: dict[str, str] = {
     "pi": _HOST_NOTES_PI,
 }
 
+# Base host-term pairs Pi overrides with its own real command names instead of the
+# host-neutral phrasing the generic table uses. Pi has an actual fresh-session command
+# (`/new`, verified against Pi's quickstart.md / extensions.md) and its own stage-exit
+# host value, so these degrade-to-prose rules are dropped for Pi and replaced below.
+_PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({"`/clear`", "/clear", "--host claude"})
+
 _PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
-    pair for pair in _HOST_TERM_REPLACEMENTS if "AskUserQuestion" not in pair[0]
+    pair for pair in _HOST_TERM_REPLACEMENTS
+    if "AskUserQuestion" not in pair[0] and pair[0] not in _PI_OVERRIDDEN_HOST_TERMS
 ) + (
     # ONLY the slash-command prefix is rewritten. An unanchored `feature-forge:` rule would
     # also mangle diagnostic prose that is not a command — e.g. the install-root failure
@@ -861,6 +868,14 @@ _PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
     # _translate_pi_support_command_strings(), which applies the same single substitution to
     # copied support files.
     ("/feature-forge:", "/skill:"),
+    # Pi's fresh-session command is `/new`, not Claude's `/clear`. A bare-token replace
+    # keeps any surrounding backticks, so `` `/clear` `` -> `` `/new` `` and a plain
+    # /clear -> /new both read as a real Pi command.
+    ("/clear", "/new"),
+    # The scripted stage-exit stamp runs forge-session.py with a host flag; Pi gets its own
+    # `--host pi` wording (the `/new` next-steps block, /skill: commands) instead of the
+    # host-neutral `--host generic` output.
+    ("--host claude", "--host pi"),
 )
 
 

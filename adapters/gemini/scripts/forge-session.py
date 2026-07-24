@@ -1434,6 +1434,17 @@ def _resolve_feature_dir(specs_dir: Path, feature: str, epic: str | None) -> Pat
     return flat
 
 
+def _host_command(command: str, host: str) -> str:
+    """Rewrite a `/feature-forge:` slash command to the host's surface.
+
+    Pi's slash-command surface is `/skill:` (matching the adapter body's
+    `/feature-forge:` -> `/skill:` translation). The scripted stage-exit output bypasses
+    that body translation, so it rewrites the commands it emits here. No-op for
+    claude/generic, which keep the canonical `/feature-forge:` form.
+    """
+    return command.replace("/feature-forge:", "/skill:") if host == "pi" else command
+
+
 def _next_steps_block(
     next_command: str, host: str, reconcile: dict | None = None
 ) -> str:
@@ -1463,6 +1474,18 @@ def _next_steps_block(
             "2. Then start a fresh session and run the next stage below — or "
             "re-run `/feature-forge:forge` to let the navigator resume from disk."
         )
+    elif host == "pi":
+        # Pi's fresh-session command is `/new` (not `/clear`); its slash-command
+        # surface is `/skill:` (the fenced command below is rewritten to match).
+        clear_line = (
+            "1. `/new` — recommended unconditionally at this stage boundary; every "
+            "artifact is on disk, so the work survives starting a fresh session. "
+            "I can't run `/new` for you — you have to run it yourself."
+        )
+        next_line = (
+            "2. Then, in the new session, run the next stage below — or re-run "
+            "`/skill:forge` to let the navigator resume from disk."
+        )
     else:
         clear_line = (
             "1. Clear your session / start a fresh session — recommended "
@@ -1479,7 +1502,7 @@ def _next_steps_block(
     # epic-change request the primary is the reconcile command; otherwise it is the
     # normal next-stage command. The fence sits before the sentinel, so the
     # sentinel remains the absolute last line.
-    fenced_command = reconcile["command"] if blocking else next_command
+    fenced_command = _host_command(reconcile["command"] if blocking else next_command, host)
     lines = ["**Next steps**", clear_line]
     if blocking:
         count = reconcile["count"]
@@ -1495,15 +1518,14 @@ def _next_steps_block(
     lines.append("")
     lines.append(f"```\n{fenced_command}\n```")
     if blocking and reconcile.get("deferred"):
-        lines.append(
-            f"After reconciling, continue the pipeline with: `{reconcile['deferred']}`"
-        )
+        deferred_cmd = _host_command(reconcile["deferred"], host)
+        lines.append(f"After reconciling, continue the pipeline with: `{deferred_cmd}`")
     elif reconcile and reconcile.get("reminder"):
         count = reconcile["count"]
         plural = "s" if count != 1 else ""
         lines.append(
             f"You also flagged {count} epic change{plural} to reconcile when "
-            f"convenient: `{reconcile['command']}`"
+            f"convenient: `{_host_command(reconcile['command'], host)}`"
         )
     lines.append(NEXT_STEPS_SENTINEL)
     return "\n".join(lines)
@@ -1630,10 +1652,10 @@ def stage_exit(
         "verifyGate": verify_gate,
         "autoFixEligible": auto_fix_eligible,
         "verifyState": verify_label,
-        "verifyCommand": f"/feature-forge:forge-verify {feature}",
+        "verifyCommand": _host_command(f"/feature-forge:forge-verify {feature}", host),
         "autoVerifyEffective": effective_auto_verify,
         "nextStage": next_stage_id,
-        "nextCommand": next_command,
+        "nextCommand": _host_command(next_command, host) if next_command else next_command,
         "invalidAutoVerifyKeys": invalid_auto_verify_keys(config),
         "gitRepo": git_repo,
         "cleanTree": clean_tree,
@@ -1759,7 +1781,7 @@ def main() -> int:
     p_exit.add_argument("--epic", default=None, help="Epic name for a nested member")
     p_exit.add_argument("--next-feature", default=None, dest="next_feature",
                         help="First actionable feature (epic handoff next-command arg)")
-    p_exit.add_argument("--host", default="claude", choices=("claude", "generic"),
+    p_exit.add_argument("--host", default="claude", choices=("claude", "generic", "pi"),
                         help="Host wording for the NEXT-STEPS block")
     p_exit.add_argument("--json", action="store_true", dest="json_output")
 

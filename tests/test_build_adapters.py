@@ -794,6 +794,25 @@ def test_clear_slash_command_degrades_on_non_claude(agent):
     )
 
 
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+def test_pi_skill_bodies_use_new_not_clear():
+    """Pi skill bodies name Pi's real fresh-session command `/new`, not `/clear` or the
+    host-neutral phrasing the other non-Claude adapters use.
+
+    Pi is excluded from the generic `/clear`-degradation test because it degrades to its
+    own command instead of the neutral prose: `/clear` -> `/new`, and the scripted
+    stage-exit stamp is `--host pi` (not `--host generic`). See `_PI_HOST_TERM_REPLACEMENTS`.
+    """
+    blob = "\n".join(p.read_text("utf-8") for p in _skill_body_files("pi"))
+    assert "/clear" not in blob, "pi skill body still carries a literal /clear"
+    assert "/new" in blob, "pi skill bodies never carry the `/new` Pi command — rebuild?"
+    # The neutral degradation phrase is for the other non-Claude adapters, not Pi.
+    assert "clear your session / start a fresh session" not in blob
+    # The scripted stage-exit stamp routes to the pi host wording.
+    assert "--host pi" in blob
+    assert "--host claude" not in blob and "--host generic" not in blob
+
+
 def _load_generator_module():
     """Import the hyphenated generator in-process for unit-testing pure helpers."""
     pytest.importorskip("yaml")
@@ -827,6 +846,23 @@ def test_translate_host_terms_is_deterministic_and_idempotent():
     assert "Then clear your session / start a fresh session and re-run." in once
     assert "`clear your session" not in once  # no orphaned opening backtick
     assert mod.translate_host_terms(once) == once  # idempotent
+
+
+def test_pi_translation_uses_real_pi_commands_not_neutral_prose():
+    """The Pi table names Pi's real commands where the generic table degrades to prose:
+    `/clear` -> `/new`, `--host claude` -> `--host pi`, `/feature-forge:` -> `/skill:`.
+    Backticks around `` `/clear` `` are preserved as `` `/new` `` (a real command)."""
+    mod = _load_generator_module()
+    src = (
+        "Run `python3 forge-session.py stage-exit --host claude`, then `/clear`, "
+        "then re-run `/feature-forge:forge`."
+    )
+    out = mod.translate_host_terms(src, agent_id="pi")
+    assert "/clear" not in out and "clear your session" not in out
+    assert "`/new`" in out  # backticks preserved → reads as a real Pi command
+    assert "--host pi" in out and "--host claude" not in out
+    assert "/skill:forge" in out and "/feature-forge:" not in out
+    assert mod.translate_host_terms(out, agent_id="pi") == out  # idempotent
 
 
 def test_claude_body_helpers_are_verbatim_passthrough():

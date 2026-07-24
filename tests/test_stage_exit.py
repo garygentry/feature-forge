@@ -302,6 +302,23 @@ def test_generic_next_steps_has_no_clear_token(tmp_path: Path) -> None:
     assert block.splitlines()[-1] == SENTINEL
 
 
+def test_pi_next_steps_uses_new_command_and_skill_prefix(tmp_path: Path) -> None:
+    """`--host pi` names Pi's real commands: `/new` for a fresh session, `/skill:` slash
+    commands — never Claude's `/clear` or the `/feature-forge:` prefix (in the rendered
+    block AND the structured directives the skill reads)."""
+    root = _project(tmp_path, config={})
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech", "--host", "pi")
+    block = payload["nextSteps"]
+    assert "`/new`" in block
+    assert "/clear" not in block
+    assert "```\n/skill:forge-3-specs widget\n```" in block
+    assert "/feature-forge:" not in block
+    assert block.splitlines()[-1] == SENTINEL
+    # Structured directives are Pi-shaped too (the skill may surface these directly).
+    assert payload["directives"]["nextCommand"] == "/skill:forge-3-specs widget"
+    assert payload["directives"]["verifyCommand"] == "/skill:forge-verify widget"
+
+
 def test_human_output_ends_with_sentinel(tmp_path: Path) -> None:
     """The default (non-JSON) form also ends at the sentinel — the skill copies it."""
     root = _project(tmp_path, config={})

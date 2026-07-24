@@ -43,7 +43,7 @@ If the `AskUserQuestion` tool is available, ask exactly one question:
 
 > **Enable auto-verify?** Verification runs in a clean-room subagent in-stage after each
 > authoring stage completes — in the same session, before the exit block, so any fix
-> decision keeps its context. It never needs a clear your session / start a fresh session and only returns a compact digest.
+> decision keeps its context. It never needs a `/new` and only returns a compact digest.
 > **Recommended: on.** (Change later by editing `autoVerify` in `forge.config.json`.)
 
 Options: **Enable (recommended)** / **Leave off**.

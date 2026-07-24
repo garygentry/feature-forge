@@ -44,6 +44,8 @@ Pi invokes forge stages as skills:
 
 Do not use Claude plugin commands such as `/feature-forge:forge` in Pi.
 
+**Between stages, forge recommends starting a fresh session with Pi's `/new`** (Claude's equivalent is `/clear`). Every artifact is on disk, so the work survives it; a clean session is the recommended default at each stage boundary. Both the skill prose and the scripted stage-exit block (`forge-session.py --host pi`) name `/new` and emit `/skill:` next-commands. One residual: the copied `references/` files (e.g. `stage-exit-protocol.md`) are self-contained **verbatim** copies of canon and still show Claude's `/clear`/`/feature-forge:` — they are secondary model-facing guidance; the SKILL body is the primary instruction surface and is fully translated.
+
 ## Notes and limitations
 
 - Interactive input uses the bundled `AskUserQuestion` compatibility tool — a vendored snapshot of `@juicesharp/rpiv-ask-user-question` (see `adapter-src/pi/UPSTREAM.md`). In a terminal it renders a tabbed questionnaire with previews, multi-select, per-option notes, and a final review. On RPC/ACP hosts that report a UI but cannot render a custom overlay (the VSCode pendant, Zed, Paseo) it degrades to sequential select/input dialogs rather than failing. In genuinely non-interactive print/JSON runs it still fails clearly rather than hanging or picking a default.

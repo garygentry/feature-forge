@@ -102,7 +102,7 @@ green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge
 - **Branch** — `branchPerFeature` (true), `branchPrefix` (`forge/`): isolate each feature.
 - **Stack** — `stack`, `typeCheckCommand`, `testCommand`: null until Stage 2 auto-detects them.
 - **Context** — `contextWindowTokens`, `contextWarnThreshold` (0.7): the navigator warns to
-  clear your session / start a fresh session past this fullness. On 1M-context models set `contextWindowTokens` explicitly.
+  `/new` past this fullness. On 1M-context models set `contextWindowTokens` explicitly.
 - **Verification** — `autoVerify` (false; when on, each authoring stage verifies in-stage before its exit block), `autoVerifyStages`, `autoFix` (false).
 - **Stage flow** — `autoInvokeNextStage` (true on Claude, print-only elsewhere).
 - **Loop** — `loopRunner` block (binary, command templates, version gate, agent selection);
@@ -113,7 +113,7 @@ green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge
 `forge-verify <feature>` dispatches the read-only `forge-verifier` subagent to find gaps,
 inconsistencies, and quality issues; it writes a findings doc, and `forge-fix` applies them.
 Because verification runs in a **fresh subagent**, it's clean-room by construction — it never
-needs a clear your session / start a fresh session, and it's safe to automate with `autoVerify: true`. When on, the just-completed
+needs a `/new`, and it's safe to automate with `autoVerify: true`. When on, the just-completed
 authoring stage runs verify **in-stage** — in the same session, right before its exit block — so
 the digest and any fix land where the context still exists (the navigator only catches up if a
 host couldn't run it clean-room). Fixing stays human-gated unless `autoFix: true`. The cost is one
@@ -125,7 +125,7 @@ verified; revise upstream and downstream re-verifies.
 ## Context management
 
 Each stage reads upstream artifacts as standalone contracts, so you can (and usually should)
-clear your session / start a fresh session between them:
+`/new` between them:
 
 - **Clear** between PRD → tech, tech → specs, specs → backlog, backlog → loop.
 - **Stay warm** mid-interview (PRD, tech spec) — the interview needs a continuous thread.
