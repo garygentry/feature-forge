@@ -62,12 +62,32 @@ Pi core does not read that key. A subagent extension does — the key follows [`
 
 `pi-subagents` is **recommended, not required**. With it installed, forge dispatches `{ agent: "forge-verifier", task: "..." }` and fans spec writers out with `{ tasks: [...] }`. Without it, every skill's Host execution notes tell the model to run that step inline instead, so the pipeline completes either way — the verify gate is just weaker.
 
-Two limitations to know:
+Both install paths register the agents, by different routes:
 
-- **Only the package install path registers the agents.** Discovery resolves package roots from the `packages` list in Pi settings, so the agents are found when the bundle directory is listed there (for example `~/workspace/feature-forge-pi/adapters/pi`). The `npx ... install -a pi` paths above copy the bundle under `skills/`, which is not a package root — those installs get the skills but not the agents.
-- **The agents carry no tool allowlist yet.** Only `name` and `description` are translated into Pi frontmatter; canon's `tools`, `maxTurns`, `memory`, and `model` keys are drop-recorded (see `adapters/GENERATION-REPORT.md`). A dispatched `forge-verifier` therefore runs with the host's default tool set, `write`/`edit` included. Its system prompt still declares it read-only, so that guarantee is prose-enforced rather than tool-enforced.
+- **Package install** (the bundle directory listed in the `packages` list in Pi settings, for example `~/workspace/feature-forge-pi/adapters/pi`): discovery resolves package roots from `packages` and reads the `pi-subagents.agents` manifest key above.
+- **`npx ... install -a pi`**: the copied bundle under `skills/` is not a package root, so the manifest key is never read there. Instead the installer *mirrors* `agents/*.md` flat into the scope pi-subagents scans directly — `~/.pi/agent/agents/` with `--global`, `.pi/agents/` for a project install. Same three agents, registered at user/project scope rather than package scope.
 
-Model pins are deliberately not emitted: `opus`/`sonnet` are Claude aliases, not Pi model ids. Unpinned agents inherit the session model or `subagents.defaultModel`. To give one role a stronger model, set an override in Pi settings rather than editing the generated agent file:
+### Translated frontmatter
+
+Canon's Claude agent frontmatter is translated into `pi-subagents`' schema, not dropped. The mapping (in `PiEmitter.emit_agent`) was confirmed by round-tripping each generated file through pi-subagents 0.35.1's real loader:
+
+| canon (Claude) | Pi frontmatter | notes |
+|---|---|---|
+| `tools: Read, Glob, Grep, Bash` | `tools: read, find, ls, grep, bash` | Pi builtin names; `Glob` has no single analogue, so it expands to `find`+`ls` |
+| `+ Write` (spec-writer) | `+ write, edit` | |
+| `maxTurns: N` | `turnBudget: '{"maxTurns": N}'` | a single-line JSON string — pi `JSON.parse`s it |
+| `effort: medium` | `thinking: medium` | |
+| `memory: project` | `memory: { scope: project, path: <agent-name> }` | durable per-role memory |
+| `skills: [forge-verify]` | `skills: forge-verify` | |
+| `model: opus` / `sonnet` | *dropped* | see the model-override note below |
+
+Plus three Pi-only fields canon has no analogue for, each derived from the tool allowlist so a new agent needs no extra wiring:
+
+- **`inheritProjectContext: true`** — non-builtin agents default to `false`, so without this a forge agent would ignore the target repo's `AGENTS.md`/`CLAUDE.md`.
+- **`acceptanceRole`** — `writer` for an agent that carries `Write` (spec-writer), `read-only` otherwise. This makes `forge-verifier`'s read-only contract **tool-enforced**, not just prose-enforced.
+- **`completionGuard: false`** on the read-only agents — they carry `bash`, which pi-subagents classifies as mutation-capable, so a verifier that correctly changes nothing would otherwise be judged a failed implementation agent.
+
+The one canon key still dropped is `model`: `opus`/`sonnet` are Claude aliases, not Pi model ids. Unpinned agents inherit the session model or `subagents.defaultModel`. To give one role a stronger model, set an override in Pi settings rather than editing the generated agent file:
 
 ```json
 { "subagents": { "agentOverrides": { "forge-verifier": { "model": "anthropic/claude-opus-4-8" } } } }

@@ -12,6 +12,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
+| `agents/author.md` | `sub-agent key 'maxTurns'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/author.md` | `sub-agent key 'model'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `agents/author.md` | `sub-agent key 'tools'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
 | `agents/researcher.md` | `sub-agent key 'effort'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
 | `agents/researcher.md` | `sub-agent key 'maxTurns'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
 | `agents/researcher.md` | `sub-agent key 'model'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
@@ -27,6 +30,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
+| `agents/author.md` | `sub-agent key 'maxTurns'` | no Copilot sub-agent construct (TQ-1) |
+| `agents/author.md` | `sub-agent key 'model'` | no Copilot sub-agent construct (TQ-1) |
+| `agents/author.md` | `sub-agent key 'tools'` | no Copilot sub-agent construct (TQ-1) |
 | `agents/researcher.md` | `sub-agent key 'effort'` | no Copilot sub-agent construct (TQ-1) |
 | `agents/researcher.md` | `sub-agent key 'maxTurns'` | no Copilot sub-agent construct (TQ-1) |
 | `agents/researcher.md` | `sub-agent key 'model'` | no Copilot sub-agent construct (TQ-1) |
@@ -42,6 +48,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
+| `agents/author.md` | `sub-agent key 'maxTurns'` | no Cursor sub-agent equivalent |
+| `agents/author.md` | `sub-agent key 'model'` | no Cursor sub-agent equivalent |
+| `agents/author.md` | `sub-agent key 'tools'` | no Cursor sub-agent equivalent |
 | `agents/researcher.md` | `sub-agent key 'effort'` | no Cursor sub-agent equivalent |
 | `agents/researcher.md` | `sub-agent key 'maxTurns'` | no Cursor sub-agent equivalent |
 | `agents/researcher.md` | `sub-agent key 'model'` | no Cursor sub-agent equivalent |
@@ -57,6 +66,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
+| `agents/author.md` | `sub-agent key 'maxTurns'` | no Gemini sub-agent construct (TQ-1) |
+| `agents/author.md` | `sub-agent key 'model'` | no Gemini sub-agent construct (TQ-1) |
+| `agents/author.md` | `sub-agent key 'tools'` | no Gemini sub-agent construct (TQ-1) |
 | `agents/researcher.md` | `sub-agent key 'effort'` | no Gemini sub-agent construct (TQ-1) |
 | `agents/researcher.md` | `sub-agent key 'maxTurns'` | no Gemini sub-agent construct (TQ-1) |
 | `agents/researcher.md` | `sub-agent key 'model'` | no Gemini sub-agent construct (TQ-1) |
@@ -72,15 +84,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
-| `agents/researcher.md` | `sub-agent key 'effort'` | Pi sub-agent frontmatter not yet mapped |
-| `agents/researcher.md` | `sub-agent key 'maxTurns'` | Pi sub-agent frontmatter not yet mapped |
-| `agents/researcher.md` | `sub-agent key 'model'` | Pi sub-agent frontmatter not yet mapped |
-| `agents/researcher.md` | `sub-agent key 'tools'` | Pi sub-agent frontmatter not yet mapped |
-| `agents/verifier.md` | `sub-agent key 'maxTurns'` | Pi sub-agent frontmatter not yet mapped |
-| `agents/verifier.md` | `sub-agent key 'memory'` | Pi sub-agent frontmatter not yet mapped |
-| `agents/verifier.md` | `sub-agent key 'model'` | Pi sub-agent frontmatter not yet mapped |
-| `agents/verifier.md` | `sub-agent key 'skills'` | Pi sub-agent frontmatter not yet mapped |
-| `agents/verifier.md` | `sub-agent key 'tools'` | Pi sub-agent frontmatter not yet mapped |
+| `agents/author.md` | `sub-agent key 'model'` | Claude model aliases (opus/sonnet) are not Pi model ids; pin via subagents.agentOverrides.<name>.model in Pi settings instead (D1) |
+| `agents/researcher.md` | `sub-agent key 'model'` | Claude model aliases (opus/sonnet) are not Pi model ids; pin via subagents.agentOverrides.<name>.model in Pi settings instead (D1) |
+| `agents/verifier.md` | `sub-agent key 'model'` | Claude model aliases (opus/sonnet) are not Pi model ids; pin via subagents.agentOverrides.<name>.model in Pi settings instead (D1) |
 | `skills/with-refs/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
 
 ## Copied verbatim (no provenance header)

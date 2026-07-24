@@ -48,7 +48,11 @@ export function resolvePlacements(
   const roots = resolveRoots(opts);
   const scopeRoot = scope === "global" ? roots.home : roots.cwd;
   return (target.placements ?? []).map((spec) => {
-    const root = path.resolve(scopeRoot, spec.baseDir);
+    // Scope-aware second root: pi mirrors into `~/.pi/agent/agents` (global) but `.pi/agents`
+    // (project), which one `baseDir` string cannot express. Fall back to `baseDir` for the common
+    // case (codex/copilot) where the second root is scope-invariant.
+    const baseDir = (scope === "global" ? spec.globalBaseDir : spec.projectBaseDir) ?? spec.baseDir;
+    const root = path.resolve(scopeRoot, baseDir);
     return { kind: spec.kind, root, destination: path.resolve(root, spec.subpath), spec };
   });
 }

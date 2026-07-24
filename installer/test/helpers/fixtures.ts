@@ -70,9 +70,12 @@ export async function makeFixtureBundle(
       JSON.stringify({ name: "feature-forge-pi", keywords: ["pi-package"], pi: { skills: ["./skills"], extensions: ["./extensions/ask-user-question/index.ts"] } }, null, 2) + "\n",
     );
   }
+  // Custom-agent source files for a "mirror" placement. codex loads `.toml`, pi loads `.md`;
+  // the mirror itself selects by path prefix, agnostic to extension.
+  const agentExt = agent === "pi" ? "md" : "toml";
   for (const id of agents) {
     await mkdir(join(dir, "agents"), { recursive: true });
-    await writeFile(join(dir, "agents", `${id}.toml`), `name = "${id}"\n# fixture custom agent\n`);
+    await writeFile(join(dir, "agents", `${id}.${agentExt}`), `name = "${id}"\n# fixture custom agent\n`);
   }
   return { dir, skills };
 }

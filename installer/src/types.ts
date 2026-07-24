@@ -78,10 +78,13 @@ export type InstallKind = "skills" | "extension" | "rules" | "instructions";
 
 /**
  * Kind of a SECONDARY install placement (A4b). The primary bundle (the `feature-forge/` namespace
- * dir) is always present and is never a placement; placements describe extra writes under a
- * DIFFERENT filesystem root than the primary bundle:
+ * dir) is always present and is never a placement; placements describe extra writes into a DIFFERENT
+ * subtree than the primary bundle (a different top-level root for codex/copilot, or a sibling dir
+ * under the same root for pi):
  * - "mirror"        — copy a subset of bundle files flat into a second dir (codex `.codex/agents/`,
- *                     where Codex loads custom agents — it does not read them from `.agents/skills`).
+ *                     where Codex loads custom agents — it does not read them from `.agents/skills`;
+ *                     pi `~/.pi/agent/agents/` global or `.pi/agents/` project, which pi-subagents
+ *                     scans but does not read from the `skills/feature-forge` bundle).
  * - "managed-block" — write/merge a sentinel-delimited block into a (possibly user-owned) instructions
  *                     file (copilot `.github/copilot-instructions.md`), preserving the rest of the file.
  */
@@ -100,6 +103,14 @@ export interface PlacementSpec {
   readonly kind: PlacementKind;
   /** Second-root dir under the scope root, e.g. ".codex" (mirror) or ".github" (managed-block). */
   readonly baseDir: string;
+  /**
+   * Optional global-scope override for `baseDir`, for placements whose second root differs by scope
+   * (pi: `.pi/agent` global vs `.pi` project). Mirrors {@link AgentTarget.globalInstallBaseDir}.
+   * Falls back to `baseDir` when absent.
+   */
+  readonly globalBaseDir?: string;
+  /** Optional project-scope override for `baseDir` (see {@link globalBaseDir}); falls back to `baseDir`. */
+  readonly projectBaseDir?: string;
   /**
    * Path under `baseDir`. For "mirror" this is the destination DIR (e.g. "agents"); for
    * "managed-block" this is the target FILE (e.g. "copilot-instructions.md").
@@ -422,7 +433,7 @@ export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
   copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "<name>.md", confidence: "best-known", docsUrl: "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions", placements: [{ kind: "managed-block", baseDir: ".github", subpath: "copilot-instructions.md" }] },
   cursor: { id: "cursor", configDirName: ".cursor", installBaseDir: ".cursor", installSubpath: "rules", installKind: "rules", skillFileForm: "<name>.mdc", confidence: "verified-current", docsUrl: "https://cursor.com/docs/context/rules" },
   gemini: { id: "gemini", configDirName: ".gemini", installBaseDir: ".gemini", installSubpath: "extensions", installKind: "extension", skillFileForm: "<name>.md", confidence: "verified-current", projectConfidence: "best-known", docsUrl: "https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/index.md" },
-  pi: { id: "pi", configDirName: ".pi", globalConfigDirName: ".pi/agent", projectConfigDirName: ".pi", installBaseDir: ".pi", globalInstallBaseDir: ".pi/agent", projectInstallBaseDir: ".pi", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://github.com/earendil-works/pi-coding-agent" },
+  pi: { id: "pi", configDirName: ".pi", globalConfigDirName: ".pi/agent", projectConfigDirName: ".pi", installBaseDir: ".pi", globalInstallBaseDir: ".pi/agent", projectInstallBaseDir: ".pi", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://github.com/earendil-works/pi-coding-agent", placements: [{ kind: "mirror", baseDir: ".pi", globalBaseDir: ".pi/agent", projectBaseDir: ".pi", subpath: "agents", sourcePrefix: "agents/" }] },
 } as const;
 
 /**

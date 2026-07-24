@@ -129,9 +129,14 @@ FRONTMATTER_KEY_ORDER: tuple[str, ...] = (
     "tools",           # sub-agents, where representable
     "model",
     "maxTurns",
+    "turnBudget",      # pi (mapped from maxTurns)
     "effort",
+    "thinking",        # pi (mapped from effort)
     "memory",
     "skills",
+    "inheritProjectContext",  # pi-only
+    "acceptanceRole",         # pi-only
+    "completionGuard",        # pi-only
 )
 
 
@@ -1110,6 +1115,123 @@ class CopilotEmitter:
 
 
 # --------------------------------------------------------------------------- #
+# Claude -> Pi sub-agent frontmatter mapping (W2)
+# --------------------------------------------------------------------------- #
+#
+# Canon sub-agents are authored Claude-first. `pi-subagents` (0.35.1) has its own
+# frontmatter schema, read by `loadAgentsFromDir` (src/agents/agents.ts) — NOT ours.
+# Every shape below was confirmed by round-tripping a candidate file through that real
+# loader, not from the README. Two shapes bite:
+#   - `turnBudget` is `JSON.parse`d, so it must serialize as a single-line JSON *string*
+#     (`turnBudget: '{"maxTurns": 40}'`), never a YAML block — a block makes JSON.parse throw.
+#   - `tools`/`skills` go through `parseFrontmatterList`, but Pi's line parser only captures
+#     block-sequence items indented UNDER the key; PyYAML dedents them to column 0, where the
+#     parser drops them. Emit them comma-joined (a single scalar) instead. Block *mappings*
+#     (`memory`) are indented by PyYAML and parse fine.
+
+# Canon (Claude) tool name -> Pi builtin tool name(s). Pi's read-only builtins are
+# read/grep/find/ls; Glob has no single Pi analogue, so it expands to find+ls. Confirmed
+# against pi-subagents' READ_ONLY_BUILTIN_TOOLS (src/runs/shared/completion-guard.ts)
+# and `pi --help`.
+_PI_TOOL_MAP: dict[str, tuple[str, ...]] = {
+    "Read": ("read",),
+    "Glob": ("find", "ls"),
+    "Grep": ("grep",),
+    "Bash": ("bash",),
+    "Write": ("write", "edit"),
+}
+
+# Canon sub-agent keys the Pi emitter TRANSLATES. Any other claude_keys entry (e.g. `model`)
+# is drop-recorded, so a future canon key is auto-covered rather than silently emitted (REQ-GEN-06).
+_PI_MAPPED_AGENT_KEYS: frozenset[str] = frozenset(
+    {"tools", "maxTurns", "effort", "memory", "skills"}
+)
+
+
+def _canon_tool_tokens(raw: object) -> list[str]:
+    """Split a canon ``tools`` value (``"Read, Glob"`` scalar or a YAML list) into tokens."""
+    if raw is None:
+        return []
+    items = raw.split(",") if isinstance(raw, str) else list(raw)  # type: ignore[arg-type]
+    return [str(tok).strip() for tok in items if str(tok).strip()]
+
+
+def _pi_map_tools(tokens: list[str], agent_name: str) -> list[str]:
+    """Map canon tool tokens onto Pi builtin names, deduped in first-seen order.
+
+    Raises on an unmapped token rather than silently dropping it: canon is in-repo and adding
+    an agent tool is deliberate, so an unknown name is a generator defect a human must map.
+    """
+    out: list[str] = []
+    for tok in tokens:
+        mapped = _PI_TOOL_MAP.get(tok)
+        if mapped is None:
+            raise ValueError(
+                f"agent '{agent_name}': canon tool '{tok}' has no Pi builtin mapping "
+                f"(add it to _PI_TOOL_MAP)"
+            )
+        for pi_name in mapped:
+            if pi_name not in out:
+                out.append(pi_name)
+    return out
+
+
+def _pi_drop_reason(key: str) -> str:
+    """Per-key drop reason. `model` is deliberate (D1); anything else is genuinely unmapped."""
+    if key == "model":
+        return (
+            "Claude model aliases (opus/sonnet) are not Pi model ids; pin via "
+            "subagents.agentOverrides.<name>.model in Pi settings instead (D1)"
+        )
+    return "no Pi sub-agent frontmatter equivalent"
+
+
+def _pi_agent_frontmatter(agent: "AgentRecord") -> tuple[dict[str, Any], tuple["DropRecord", ...]]:
+    """Translate one canon sub-agent's frontmatter into Pi's schema (W2).
+
+    Returns the native field map (pre-``order_fields``) and the drops for every canon key that
+    has no Pi analogue. `acceptanceRole`/`completionGuard` are DERIVED from the tool allowlist:
+    an agent with `Write` is a `writer`; a read-only agent carries `bash` (which pi-subagents
+    treats as mutation-capable), so it must set `completionGuard: false` or a correctly
+    no-op verify run is judged a failed implementation.
+    """
+    keys = agent.claude_keys
+    native: dict[str, Any] = {
+        "name": agent.name,
+        "description": translate_host_terms(agent.description, agent_id="pi"),
+    }
+    tokens = _canon_tool_tokens(keys.get("tools"))
+    if tokens:
+        native["tools"] = ", ".join(_pi_map_tools(tokens, agent.name))
+    if "maxTurns" in keys:
+        native["turnBudget"] = json.dumps({"maxTurns": int(keys["maxTurns"])})  # type: ignore[arg-type]
+    if "effort" in keys:
+        native["thinking"] = str(keys["effort"])
+    if "memory" in keys:
+        # canon `memory: project` (a scope scalar) -> Pi {scope, path}; the agent name is the
+        # durable per-role memory path (pi-subagents namespaces it under agent-memory/).
+        native["memory"] = {"scope": str(keys["memory"]), "path": agent.name}
+    if "skills" in keys:
+        skills = keys["skills"]
+        skill_list = list(skills) if isinstance(skills, list) else [str(skills)]
+        native["skills"] = ", ".join(str(s) for s in skill_list)
+    # Pi-only, load-bearing fields canon has no analogue for. Non-builtin agents default
+    # inheritProjectContext=false, so a forge agent would ignore the target repo's AGENTS.md
+    # without this.
+    is_writer = "Write" in tokens
+    native["inheritProjectContext"] = True
+    native["acceptanceRole"] = "writer" if is_writer else "read-only"
+    if not is_writer:
+        native["completionGuard"] = False
+    drops = tuple(
+        DropRecord("pi", agent.source_path, f"sub-agent key '{key}'", _pi_drop_reason(key))
+        for key in keys
+        if key not in _PI_MAPPED_AGENT_KEYS
+    )
+    return native, drops
+
+
+# --------------------------------------------------------------------------- #
 # pi emitter — Pi package with high-fidelity AskUserQuestion compatibility
 # --------------------------------------------------------------------------- #
 
@@ -1144,26 +1266,20 @@ class PiEmitter:
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
-        """Emit an agent file registrable by Pi, drop-recording unmapped Claude keys.
+        """Emit a Pi-dispatchable ``agents/<name>.md`` with translated frontmatter (W2).
 
-        The emitted files are declared to Pi through the manifest's ``pi-subagents``
-        key (see ``_write_pi_package_assets``), so a Pi host with a subagent
-        extension installed can dispatch them by name. Only ``{name, description}``
-        are mapped today: the Claude→Pi frontmatter translation (tool allowlists,
-        turn budgets, acceptance roles) is not written yet, so every other canon key
-        is still drop-recorded.
+        The file is declared to Pi through the manifest's ``pi-subagents`` key (see
+        ``_write_pi_package_assets``), so a Pi host with a subagent extension installed can
+        dispatch it by name. Canon's Claude frontmatter is translated to Pi's schema by
+        ``_pi_agent_frontmatter`` (tool allowlist, turn budget, thinking, memory, skills, plus
+        the Pi-only acceptance/completion-guard/project-context fields); ``model`` is
+        deliberately dropped (D1) along with any other unmapped canon key.
         """
-        rel = f"agents/{agent.name}.md"
+        native, drops = _pi_agent_frontmatter(agent)
         content = render_frontmatter_block(
-            order_fields(
-                {
-                    "name": agent.name,
-                    "description": translate_host_terms(agent.description, agent_id="pi"),
-                }
-            ),
-            agent.source_path,
+            order_fields(native), agent.source_path
         ) + agent_body_for(agent.body, "pi")
-        drops = drop_all_claude_keys(agent, "pi", "Pi sub-agent frontmatter not yet mapped")
+        rel = f"agents/{agent.name}.md"
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
 

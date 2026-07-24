@@ -334,7 +334,7 @@ def test_pi_bundle_declares_its_agents_to_the_subagent_registry(fixture_copy):
 
     declared = pi_root / package["pi-subagents"]["agents"][0]
     assert declared.is_dir(), "the declared agents dir must exist in the bundle"
-    assert sorted(p.name for p in declared.glob("*.md")) == ["researcher.md", "verifier.md"]
+    assert sorted(p.name for p in declared.glob("*.md")) == ["author.md", "researcher.md", "verifier.md"]
 
 
 def test_pi_host_notes_name_the_real_subagent_dispatch_shape(fixture_copy):
@@ -357,6 +357,58 @@ def test_pi_host_notes_name_the_real_subagent_dispatch_shape(fixture_copy):
         # The overlay is subject to the same no-Claude-tokens contract as the body.
         for token in ("subagent_type=", "Agent tool", "Task tool"):
             assert token not in text, f"{path.name} names Claude-only {token!r}"
+
+
+def test_pi_agent_frontmatter_is_translated_to_the_subagent_schema(fixture_copy):
+    """Canon Claude agent frontmatter maps to pi-subagents' schema (W2), not drop-recorded.
+
+    The mapped shapes were confirmed by round-tripping through pi-subagents 0.35.1's real
+    loader; this asserts the emitter keeps producing them. `read-only` vs `writer` and the
+    completion-guard exemption are DERIVED from the tool allowlist: an agent with `Write`
+    is a writer; a read-only agent carries `bash` (which pi-subagents treats as
+    mutation-capable), so it must set `completionGuard: false` or a correctly no-op run is
+    judged a failed implementation. `turnBudget` must be a single-line JSON string (pi
+    ``JSON.parse``s it), never a YAML block.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    agents_dir = root / "adapters" / "pi" / "agents"
+
+    def frontmatter(name: str) -> str:
+        """The ``---`` frontmatter block of one emitted Pi agent (provenance line included)."""
+        return (agents_dir / f"{name}.md").read_text(encoding="utf-8").split("---\n", 2)[1]
+
+    # read-only agent (verifier): Glob → find+ls, no model, memory {scope,path}, guard off.
+    verifier = frontmatter("verifier")
+    assert "tools: read, find, ls, grep, bash\n" in verifier
+    assert 'turnBudget: \'{"maxTurns": 40}\'\n' in verifier  # single-line JSON string, not a mapping
+    assert "memory:\n  scope: project\n  path: verifier\n" in verifier
+    assert "skills: forge-verify\n" in verifier
+    assert "inheritProjectContext: true\n" in verifier
+    assert "acceptanceRole: read-only\n" in verifier
+    assert "completionGuard: false\n" in verifier
+    assert "\nmodel:" not in verifier  # dropped by D1
+
+    # researcher: effort → thinking; no memory/skills.
+    researcher = frontmatter("researcher")
+    assert "thinking: medium\n" in researcher
+    assert 'turnBudget: \'{"maxTurns": 25}\'\n' in researcher
+    assert "memory:" not in researcher and "skills:" not in researcher
+
+    # writer agent (author): +write,edit; acceptanceRole writer; NO completionGuard exemption.
+    author = frontmatter("author")
+    assert "tools: read, find, ls, grep, bash, write, edit\n" in author
+    assert "acceptanceRole: writer\n" in author
+    assert "completionGuard:" not in author
+
+    # model is the ONLY canon key still drop-recorded for pi (with the D1 reason).
+    report = (root / "adapters" / "GENERATION-REPORT.md").read_text(encoding="utf-8")
+    pi_drops = [
+        ln for ln in report.splitlines()
+        if ln.startswith("| `agents/") and "sub-agent key" in ln and "D1" in ln
+    ]
+    assert len(pi_drops) == 3, "exactly one model drop per agent, each carrying the D1 reason"
+    assert all("'model'" in ln for ln in pi_drops)
 
 
 @pytest.mark.parametrize("agent", AGENT_TARGETS)

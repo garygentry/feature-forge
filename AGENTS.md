@@ -73,13 +73,27 @@ reformatting or refactoring it is friction at the next upstream refresh, and eve
 has to be re-applied by hand. Files that cannot carry a line-comment header (`LICENSE`,
 `locales/*.json`) are emitted verbatim; the regen-and-diff drift guard is what protects them.
 
-**One emitted manifest key follows a third-party schema.** `adapters/pi/package.json` carries a
-top-level `pi-subagents` block declaring the bundle's `agents/` directory. Pi core does not read
-it; the [`pi-subagents`](https://github.com/nicobailon/pi-subagents) extension does, and that
-schema is not ours. It is kept out of the core-Pi `pi` block precisely so the coupling stays
-visible, and it is emitted unconditionally because an unread key is inert — the bundle must never
-require an extension it does not ship. Unknown keys are tolerated by that loader, so schema drift
-degrades rather than breaks. See `docs/agents/pi.md` for the user-facing behaviour.
+**The Pi agent output follows a third-party schema, in two places.** `adapters/pi/package.json`
+carries a top-level `pi-subagents` block declaring the bundle's `agents/` directory, and each
+`adapters/pi/agents/<name>.md` carries frontmatter (`tools`, `turnBudget`, `thinking`, `memory`,
+`skills`, `acceptanceRole`, `completionGuard`, `inheritProjectContext`) in the shape
+[`pi-subagents`](https://github.com/nicobailon/pi-subagents) 0.35.1 expects. Pi core reads none of
+it; the extension does, and that schema is not ours. The manifest key is kept out of the core-Pi
+`pi` block precisely so the coupling stays visible, and it is emitted unconditionally because an
+unread key is inert — the bundle must never require an extension it does not ship. Unknown keys are
+tolerated by that loader, so schema drift degrades rather than breaks. **Two frontmatter shapes bite
+silently, so they are verified against pi-subagents' real loader, not its README** (see the mapping
+notes above `PiEmitter` in `scripts/build-adapters.py`): `turnBudget` is `JSON.parse`d and must be a
+single-line JSON string, and Pi's line parser drops block-sequence `tools`/`skills`, so both are
+emitted comma-joined. See `docs/agents/pi.md` for the user-facing behaviour and the full mapping.
+
+The npm installer adds a **second** coupling to the same extension: the manifest key is only read
+where the bundle sits in Pi's `packages` list, which the `-a pi` install (under `skills/`) is not.
+So the Pi target carries a `mirror` placement copying `agents/*.md` into the directories
+`pi-subagents` scans directly — `~/.pi/agent/agents/` (user scope) and `.pi/agents/` (project
+scope). Those paths are a behavioural contract, not a schema, and were confirmed read-only against
+pi-subagents 0.35.1's `discoverAgents` source rather than its README. If a future version renames
+those scan dirs the mirror lands in the wrong place silently, so re-confirm them on an upgrade.
 
 Each agent directory owns its own toolchain and opts into verification by exposing a `verify`
 script in its `package.json`; `scripts/validate.sh` iterates `adapter-src/*/` and runs each one.
