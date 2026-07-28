@@ -337,6 +337,27 @@ def test_pi_bundle_declares_its_agents_to_the_subagent_registry(fixture_copy):
     assert sorted(p.name for p in declared.glob("*.md")) == ["author.md", "researcher.md", "verifier.md"]
 
 
+def test_installer_pi_manifest_paths_resolve_in_the_generated_tree():
+    """The hand-written installer manifest must point at paths the generator emits.
+
+    ``installer/package.json``'s ``pi`` block is what ``pi install
+    npm:@garygentry/feature-forge`` reads, and its ``./adapters/...`` paths are
+    published-tarball-relative — ``prepack`` copies the repo's ``adapters/`` tree
+    to ``installer/adapters/``, so each one resolves against the repo root here.
+    Nothing in ``installer/src/`` reads the block, so only this test couples it to
+    the generated tree; it shipped pointing at a nonexistent
+    ``extensions/ask-user-question.ts`` (the entry point is
+    ``extensions/ask-user-question/index.ts``) precisely because nothing did.
+    """
+    manifest = json.loads((REPO_ROOT / "installer" / "package.json").read_text(encoding="utf-8"))
+    declared = manifest["pi"]["skills"] + manifest["pi"]["extensions"]
+    assert declared, "the pi block must declare something for pi install to find"
+
+    for entry in declared:
+        assert entry.startswith("./adapters/"), f"{entry} must be tarball-relative"
+        assert (REPO_ROOT / entry).exists(), f"{entry} does not exist in the generated tree"
+
+
 def test_pi_host_notes_name_the_real_subagent_dispatch_shape(fixture_copy):
     """Pi skill bodies tell the model to dispatch, not to give up (regression).
 

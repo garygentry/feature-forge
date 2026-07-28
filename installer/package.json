@@ -1,6 +1,6 @@
 {
   "name": "@garygentry/feature-forge",
-  "version": "0.2.14",
+  "version": "0.3.0",
   "description": "Cross-agent installer for the feature-forge skill suite — installs the canonical forge pipeline into Claude, Codex, Copilot, Cursor, Gemini, or Pi.",
   "license": "MIT",
   "type": "module",
@@ -50,7 +50,7 @@
       "./adapters/pi/skills"
     ],
     "extensions": [
-      "./adapters/pi/extensions/ask-user-question.ts"
+      "./adapters/pi/extensions/ask-user-question/index.ts"
     ]
   },
   "scripts": {
