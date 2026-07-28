@@ -8,10 +8,19 @@ description: >-
 runs:
   using: composite
   steps:
-    # 1a. Provision Node >=18 for the installer build+test that validate.sh runs.
+    # 1a. Provision Node for the installer build+test and the adapter-src
+    #     verifiers that validate.sh runs. Must be >=22, matching os-matrix.yml
+    #     and npm-publish.yml, for two independent reasons:
+    #       - adapter-src/pi's verifier loads @earendil-works/pi-coding-agent,
+    #         whose bundled undici calls webidl.util.markAsUncloneable — absent
+    #         on Node 20, so every Pi extension test dies in its before hook.
+    #       - installer/'s tests are .ts run by Node's native type stripping
+    #         (tsconfig `include` is ["src"], so they are never compiled). Node
+    #         20 cannot discover or run them, and `node --test` reports a green
+    #         "0 tests" instead of the 182 that exist.
     - uses: actions/setup-node@v4
       with:
-        node-version: "20"
+        node-version: "22"
 
     # 1b. Provision Python >=3.10 for the stdlib gates (check-spec-purity,
     #     check-version-sync, traceability) and pip-install ruff (NOT added to
