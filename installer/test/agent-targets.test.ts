@@ -20,10 +20,10 @@ import {
 } from "../dist/agent-targets.js";
 import { withSandbox, seedConfigDir } from "./helpers/sandbox.ts";
 
-test("re-exports AGENT_TARGETS with all five rows", () => {
+test("re-exports AGENT_TARGETS with all six rows", () => {
   assert.deepEqual(
     Object.keys(AGENT_TARGETS).sort(),
-    ["claude", "codex", "copilot", "cursor", "gemini"],
+    ["claude", "codex", "copilot", "cursor", "gemini", "pi"],
   );
 });
 
@@ -71,6 +71,13 @@ test("A4: detectAgent surfaces scope-effective confidence + docsUrl", () => {
   assert.ok(p.docsUrl.startsWith("https://"));
 });
 
+test("Pi detection probes scope-specific config roots", () => {
+  const global = detectAgent("pi", { home: "/h", scope: "global" });
+  assert.equal(global.configDirsProbed[0], "/h/.pi/agent");
+  const project = detectAgent("pi", { cwd: "/p", scope: "project" });
+  assert.equal(project.configDirsProbed[0], "/p/.pi");
+});
+
 test("A4: every AGENT_TARGETS row carries a docsUrl and a valid installKind", () => {
   const kinds = new Set(["skills", "extension", "rules", "instructions"]);
   for (const id of Object.keys(AGENT_TARGETS) as Array<keyof typeof AGENT_TARGETS>) {
@@ -97,6 +104,7 @@ test("destinationFor matches the 5-agent x 2-scope table", () => {
     ["copilot", "global", "/home/.github/feature-forge", "/home"],
     ["cursor", "global", "/home/.cursor/rules/feature-forge", "/home"],
     ["gemini", "global", "/home/.gemini/extensions/feature-forge", "/home"],
+    ["pi", "global", "/home/.pi/agent/skills/feature-forge", "/home"],
   ];
   for (const [agent, scope, expected, home] of cases) {
     assert.equal(destinationFor(AGENT_TARGETS[agent], scope, { home }), expected);
@@ -109,6 +117,10 @@ test("destinationFor matches the 5-agent x 2-scope table", () => {
   assert.equal(
     destinationFor(AGENT_TARGETS.claude, "project", { cwd: "/proj" }),
     "/proj/.claude/skills/feature-forge",
+  );
+  assert.equal(
+    destinationFor(AGENT_TARGETS.pi, "project", { cwd: "/proj" }),
+    "/proj/.pi/skills/feature-forge",
   );
 });
 
@@ -125,11 +137,11 @@ test("detection is stat-based: only the seeded agent is detected", async () => {
   });
 });
 
-test("detectAgents returns all five in AGENT_IDS order; only scopes to one", async () => {
+test("detectAgents returns all agents in AGENT_IDS order; only scopes to one", async () => {
   await withSandbox(async (sb) => {
     const all = detectAgents({ ...sb.resolve() });
     assert.deepEqual(all.map((r) => r.agent), [
-      "claude", "codex", "copilot", "cursor", "gemini",
+      "claude", "codex", "copilot", "cursor", "gemini", "pi",
     ]);
     const one = detectAgents({ ...sb.resolve(), only: "codex" });
     assert.equal(one.length, 1);

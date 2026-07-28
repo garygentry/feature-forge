@@ -4,8 +4,8 @@
 This is the ``build-adapters`` generator for the ``forge-agent-adapters-build``
 feature. It walks the spec-pure canon (``skills/``, ``agents/``, the
 ``references/`` trees) and emits a provenance-stamped ``adapters/<agent>/`` tree
-for each of the five v1 target agents (claude, codex, copilot, cursor, gemini),
-plus a ``GENERATION-REPORT.md`` drop-with-record report and a regenerate-and-diff
+for each target agent (claude, codex, copilot, cursor, gemini, pi), plus a
+``GENERATION-REPORT.md`` drop-with-record report and a regenerate-and-diff
 drift guard wired into ``scripts/validate.sh``.
 
 This module is built up incrementally across backlog items: this foundation
@@ -24,6 +24,7 @@ Source of truth: ``specs/agent-agnostic/forge-agent-adapters-build/00-core-defin
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import io
 import json
@@ -43,9 +44,9 @@ import yaml
 # 1. Target Agents (00 §1, REQ-GEN-03, REQ-DET-01)
 # --------------------------------------------------------------------------- #
 
-# The five v1 target agents (REQ-GEN-03). Order is FIXED (alphabetical) and is the
+# The v1 target agents (REQ-GEN-03). Order is FIXED (alphabetical) and is the
 # emit/report iteration order — never sort at runtime, never reorder (REQ-DET-01).
-AGENT_TARGETS: tuple[str, ...] = ("claude", "codex", "copilot", "cursor", "gemini")
+AGENT_TARGETS: tuple[str, ...] = ("claude", "codex", "copilot", "cursor", "gemini", "pi")
 
 
 # --------------------------------------------------------------------------- #
@@ -128,9 +129,14 @@ FRONTMATTER_KEY_ORDER: tuple[str, ...] = (
     "tools",           # sub-agents, where representable
     "model",
     "maxTurns",
+    "turnBudget",      # pi (mapped from maxTurns)
     "effort",
+    "thinking",        # pi (mapped from effort)
     "memory",
     "skills",
+    "inheritProjectContext",  # pi-only
+    "acceptanceRole",         # pi-only
+    "completionGuard",        # pi-only
 )
 
 
@@ -296,7 +302,7 @@ PROVENANCE_JSON_KEY: str = "_generated"
 # the manifest's required `version` key to a determinic value (REQ-DET-01) so two
 # builds are byte-identical. Bump deliberately if the gemini extension schema (TQ-1)
 # requires it; never derive it at runtime. Source of record: this constant.
-GEMINI_EXTENSION_VERSION: str = "0.12.9"
+GEMINI_EXTENSION_VERSION: str = "0.13.0"
 
 # Exempt — `forge-root.sh`: copied BYTE-IDENTICAL (REQ-GEN-05), so NO header is
 # injected. Its provenance is documented in GENERATION-REPORT.md instead.
@@ -819,26 +825,73 @@ _HOST_NOTES_NEUTRAL = (
     "- **Background / monitoring:** run long-lived commands in the foreground (or "
     "your host's background facility) and report progress as it arrives.\n"
 )
+_HOST_NOTES_PI = (
+    "## Host execution notes (Pi)\n\n"
+    "This Pi bundle preserves Claude's `AskUserQuestion` references because it ships "
+    "a Pi compatibility extension registering an `AskUserQuestion` tool. On Pi:\n\n"
+    "- **User input:** use `AskUserQuestion` for genuine user decisions. It supports "
+    "multiple questions, option descriptions, recommended ordering, multi-select, "
+    "previews, and free-form Other/custom answers.\n"
+    "- **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a "
+    "skill directly, print the exact `/skill:<name> ...` command for the user to run.\n"
+    "- **Subagents:** this bundle declares its custom agents (`forge-researcher`, "
+    "`forge-spec-writer`, `forge-verifier`) as package agents. If a `subagent` tool "
+    "is registered, dispatch one with `{ agent: \"forge-verifier\", task: \"...\" }`, "
+    "or fan several out concurrently with "
+    "`{ tasks: [{ agent: \"forge-spec-writer\", task: \"...\" }, ...] }`. If no "
+    "`subagent` tool is available, run that step inline yourself.\n"
+    "- **Background / monitoring:** run long-lived commands in the foreground and "
+    "report progress as it arrives.\n"
+)
 _HOST_NOTES: dict[str, str] = {
     "codex": _HOST_NOTES_CODEX,
     "gemini": _HOST_NOTES_NEUTRAL,
     "copilot": _HOST_NOTES_NEUTRAL,
     "cursor": _HOST_NOTES_NEUTRAL,
+    "pi": _HOST_NOTES_PI,
 }
 
+# Base host-term pairs Pi overrides with its own real command names instead of the
+# host-neutral phrasing the generic table uses. Pi has an actual fresh-session command
+# (`/new`, verified against Pi's quickstart.md / extensions.md) and its own stage-exit
+# host value, so these degrade-to-prose rules are dropped for Pi and replaced below.
+_PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({"`/clear`", "/clear", "--host claude"})
 
-def translate_host_terms(text: str) -> str:
-    """Rewrite Claude-native tool names to host-neutral phrasing (deterministic).
+_PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
+    pair for pair in _HOST_TERM_REPLACEMENTS
+    if "AskUserQuestion" not in pair[0] and pair[0] not in _PI_OVERRIDDEN_HOST_TERMS
+) + (
+    # ONLY the slash-command prefix is rewritten. An unanchored `feature-forge:` rule would
+    # also mangle diagnostic prose that is not a command — e.g. the install-root failure
+    # `echo "feature-forge: cannot locate plugin root"` would become `skill: cannot locate
+    # plugin root`, naming a tool that does not exist. Keep this in step with
+    # _translate_pi_support_command_strings(), which applies the same single substitution to
+    # copied support files.
+    ("/feature-forge:", "/skill:"),
+    # Pi's fresh-session command is `/new`, not Claude's `/clear`. A bare-token replace
+    # keeps any surrounding backticks, so `` `/clear` `` -> `` `/new` `` and a plain
+    # /clear -> /new both read as a real Pi command.
+    ("/clear", "/new"),
+    # The scripted stage-exit stamp runs forge-session.py with a host flag; Pi gets its own
+    # `--host pi` wording (the `/new` next-steps block, /skill: commands) instead of the
+    # host-neutral `--host generic` output.
+    ("--host claude", "--host pi"),
+)
 
-    Applied to NON-Claude emitter bodies only. Literal substitutions run in the
-    fixed ``_HOST_TERM_REPLACEMENTS`` order (longest/most-specific first); the
-    parameterized ``subagent_type="<name>"`` form is rewritten by regex to
-    ``the <name> custom agent``. Idempotent on already-neutral text.
+
+def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
+    """Rewrite Claude-native tool names to host-specific safe phrasing.
+
+    Applied to NON-Claude emitter bodies only. Literal substitutions run in a fixed
+    order (longest/most-specific first); the parameterized ``subagent_type="<name>``
+    form is rewritten by regex. Pi uses a specialized table that preserves
+    ``AskUserQuestion`` because the Pi bundle ships a compatibility extension for it.
     """
     text = _SUBAGENT_TYPE_QUOTED.sub(r"the \1 custom agent", text)
     text = _SUBAGENT_TYPE_BARE.sub(r"the \1 custom agent", text)
     text = _AGENT_CALL.sub(r"subagent\1call", text)
-    for old, new in _HOST_TERM_REPLACEMENTS:
+    replacements = _PI_HOST_TERM_REPLACEMENTS if agent_id == "pi" else _HOST_TERM_REPLACEMENTS
+    for old, new in replacements:
         text = text.replace(old, new)
     return text
 
@@ -847,7 +900,7 @@ def skill_body_for(body: str, agent_id: str) -> str:
     """Body for a skill on ``agent_id``: verbatim for Claude; translated + overlay else."""
     if agent_id == "claude":
         return body
-    translated = translate_host_terms(body)
+    translated = translate_host_terms(body, agent_id=agent_id)
     overlay = _HOST_NOTES.get(agent_id, _HOST_NOTES_NEUTRAL)
     # Separate the overlay from the body with a horizontal rule; body already ends
     # in a newline (canon invariant), so one blank line then the rule.
@@ -860,8 +913,7 @@ def agent_body_for(body: str, agent_id: str) -> str:
     No overlay — a sub-agent definition is not an interactive instruction surface;
     the tool-name translation alone keeps its developer_instructions executable.
     """
-    return body if agent_id == "claude" else translate_host_terms(body)
-
+    return body if agent_id == "claude" else translate_host_terms(body, agent_id=agent_id)
 
 # --------------------------------------------------------------------------- #
 # claude emitter (03 §3, REQ-VND-01, REQ-VND-02, REQ-GEN-06) — CONFIRMED
@@ -1078,6 +1130,175 @@ class CopilotEmitter:
 
 
 # --------------------------------------------------------------------------- #
+# Claude -> Pi sub-agent frontmatter mapping (W2)
+# --------------------------------------------------------------------------- #
+#
+# Canon sub-agents are authored Claude-first. `pi-subagents` (0.35.1) has its own
+# frontmatter schema, read by `loadAgentsFromDir` (src/agents/agents.ts) — NOT ours.
+# Every shape below was confirmed by round-tripping a candidate file through that real
+# loader, not from the README. Two shapes bite:
+#   - `turnBudget` is `JSON.parse`d, so it must serialize as a single-line JSON *string*
+#     (`turnBudget: '{"maxTurns": 40}'`), never a YAML block — a block makes JSON.parse throw.
+#   - `tools`/`skills` go through `parseFrontmatterList`, but Pi's line parser only captures
+#     block-sequence items indented UNDER the key; PyYAML dedents them to column 0, where the
+#     parser drops them. Emit them comma-joined (a single scalar) instead. Block *mappings*
+#     (`memory`) are indented by PyYAML and parse fine.
+
+# Canon (Claude) tool name -> Pi builtin tool name(s). Pi's read-only builtins are
+# read/grep/find/ls; Glob has no single Pi analogue, so it expands to find+ls. Confirmed
+# against pi-subagents' READ_ONLY_BUILTIN_TOOLS (src/runs/shared/completion-guard.ts)
+# and `pi --help`.
+_PI_TOOL_MAP: dict[str, tuple[str, ...]] = {
+    "Read": ("read",),
+    "Glob": ("find", "ls"),
+    "Grep": ("grep",),
+    "Bash": ("bash",),
+    "Write": ("write", "edit"),
+}
+
+# Canon sub-agent keys the Pi emitter TRANSLATES. Any other claude_keys entry (e.g. `model`)
+# is drop-recorded, so a future canon key is auto-covered rather than silently emitted (REQ-GEN-06).
+_PI_MAPPED_AGENT_KEYS: frozenset[str] = frozenset(
+    {"tools", "maxTurns", "effort", "memory", "skills"}
+)
+
+
+def _canon_tool_tokens(raw: object) -> list[str]:
+    """Split a canon ``tools`` value (``"Read, Glob"`` scalar or a YAML list) into tokens."""
+    if raw is None:
+        return []
+    items = raw.split(",") if isinstance(raw, str) else list(raw)  # type: ignore[arg-type]
+    return [str(tok).strip() for tok in items if str(tok).strip()]
+
+
+def _pi_map_tools(tokens: list[str], agent_name: str) -> list[str]:
+    """Map canon tool tokens onto Pi builtin names, deduped in first-seen order.
+
+    Raises on an unmapped token rather than silently dropping it: canon is in-repo and adding
+    an agent tool is deliberate, so an unknown name is a generator defect a human must map.
+    """
+    out: list[str] = []
+    for tok in tokens:
+        mapped = _PI_TOOL_MAP.get(tok)
+        if mapped is None:
+            raise ValueError(
+                f"agent '{agent_name}': canon tool '{tok}' has no Pi builtin mapping "
+                f"(add it to _PI_TOOL_MAP)"
+            )
+        for pi_name in mapped:
+            if pi_name not in out:
+                out.append(pi_name)
+    return out
+
+
+def _pi_drop_reason(key: str) -> str:
+    """Per-key drop reason. `model` is deliberate (D1); anything else is genuinely unmapped."""
+    if key == "model":
+        return (
+            "Claude model aliases (opus/sonnet) are not Pi model ids; pin via "
+            "subagents.agentOverrides.<name>.model in Pi settings instead (D1)"
+        )
+    return "no Pi sub-agent frontmatter equivalent"
+
+
+def _pi_agent_frontmatter(agent: "AgentRecord") -> tuple[dict[str, Any], tuple["DropRecord", ...]]:
+    """Translate one canon sub-agent's frontmatter into Pi's schema (W2).
+
+    Returns the native field map (pre-``order_fields``) and the drops for every canon key that
+    has no Pi analogue. `acceptanceRole`/`completionGuard` are DERIVED from the tool allowlist:
+    an agent with `Write` is a `writer`; a read-only agent carries `bash` (which pi-subagents
+    treats as mutation-capable), so it must set `completionGuard: false` or a correctly
+    no-op verify run is judged a failed implementation.
+    """
+    keys = agent.claude_keys
+    native: dict[str, Any] = {
+        "name": agent.name,
+        "description": translate_host_terms(agent.description, agent_id="pi"),
+    }
+    tokens = _canon_tool_tokens(keys.get("tools"))
+    if tokens:
+        native["tools"] = ", ".join(_pi_map_tools(tokens, agent.name))
+    if "maxTurns" in keys:
+        native["turnBudget"] = json.dumps({"maxTurns": int(keys["maxTurns"])})  # type: ignore[arg-type]
+    if "effort" in keys:
+        native["thinking"] = str(keys["effort"])
+    if "memory" in keys:
+        # canon `memory: project` (a scope scalar) -> Pi {scope, path}; the agent name is the
+        # durable per-role memory path (pi-subagents namespaces it under agent-memory/).
+        native["memory"] = {"scope": str(keys["memory"]), "path": agent.name}
+    if "skills" in keys:
+        skills = keys["skills"]
+        skill_list = list(skills) if isinstance(skills, list) else [str(skills)]
+        native["skills"] = ", ".join(str(s) for s in skill_list)
+    # Pi-only, load-bearing fields canon has no analogue for. Non-builtin agents default
+    # inheritProjectContext=false, so a forge agent would ignore the target repo's AGENTS.md
+    # without this.
+    is_writer = "Write" in tokens
+    native["inheritProjectContext"] = True
+    native["acceptanceRole"] = "writer" if is_writer else "read-only"
+    if not is_writer:
+        native["completionGuard"] = False
+    drops = tuple(
+        DropRecord("pi", agent.source_path, f"sub-agent key '{key}'", _pi_drop_reason(key))
+        for key in keys
+        if key not in _PI_MAPPED_AGENT_KEYS
+    )
+    return native, drops
+
+
+# --------------------------------------------------------------------------- #
+# pi emitter — Pi package with high-fidelity AskUserQuestion compatibility
+# --------------------------------------------------------------------------- #
+
+
+class PiEmitter:
+    """Emitter for ``pi``: Pi package root with skills plus AskUserQuestion extension.
+
+    Pi loads SKILL.md folders and TypeScript extensions from package manifest paths.
+    Skills preserve ``AskUserQuestion`` and translate Claude-only slash commands to
+    Pi's ``/skill:`` surface; the package-level extension registers a compatible
+    ``AskUserQuestion`` tool.
+    """
+
+    agent_id = "pi"
+
+    def emit_skill(self, skill: SkillRecord) -> EmitResult:
+        """Emit ``skills/<name>/SKILL.md`` with {name, description} + Pi-safe body."""
+        native = order_fields(
+            {
+                "name": skill.name,
+                "description": translate_host_terms(skill.description, agent_id="pi"),
+            }
+        )
+        content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
+            skill.body, "pi"
+        )
+        rel = f"skills/{skill.name}/SKILL.md"
+        drops: tuple[DropRecord, ...] = ()
+        if hint_value(skill) is not None:
+            drops = (DropRecord("pi", skill.source_path, "argument-hint",
+                                "Pi skills have no invocation-hint field"),)
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+    def emit_agent(self, agent: AgentRecord) -> EmitResult:
+        """Emit a Pi-dispatchable ``agents/<name>.md`` with translated frontmatter (W2).
+
+        The file is declared to Pi through the manifest's ``pi-subagents`` key (see
+        ``_write_pi_package_assets``), so a Pi host with a subagent extension installed can
+        dispatch it by name. Canon's Claude frontmatter is translated to Pi's schema by
+        ``_pi_agent_frontmatter`` (tool allowlist, turn budget, thinking, memory, skills, plus
+        the Pi-only acceptance/completion-guard/project-context fields); ``model`` is
+        deliberately dropped (D1) along with any other unmapped canon key.
+        """
+        native, drops = _pi_agent_frontmatter(agent)
+        content = render_frontmatter_block(
+            order_fields(native), agent.source_path
+        ) + agent_body_for(agent.body, "pi")
+        rel = f"agents/{agent.name}.md"
+        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+
+
+# --------------------------------------------------------------------------- #
 # gemini emitter (03 §7, REQ-FMT-01..03, REQ-GEN-06) — TQ-1 (safe defaults)
 # --------------------------------------------------------------------------- #
 #
@@ -1191,7 +1412,13 @@ def run_self_containment_pass(
         _assert_within(dst_helper, bundle_root)
         shutil.copyfile(src_helper, dst_helper)  # bytes only — never copystat/edit
         dst_helper.chmod(0o755 if helper.endswith(".sh") else 0o644)
+        # Unconditional (REQ-GEN-05): the pi slash-command translation runs AFTER this loop,
+        # so every agent — pi included — is asserted byte-identical at copy time. The pi pass
+        # below then re-verifies that its ONLY divergence is the expected substitution.
         _assert_byte_identical(src_helper, dst_helper)  # REQ-GEN-05 hard assertion
+
+    if bundle_root.name == "pi":
+        _translate_pi_support_command_strings(bundle_root, repo_root)
 
     # (4) Neutral bundle sentinel `.feature-forge-bundle.json` (REQ-GEN-04): the cross-agent root
     #     marker forge-root.sh keys on, making every bundle self-locatable WITHOUT a Claude
@@ -1207,6 +1434,164 @@ def run_self_containment_pass(
         BUNDLE_SENTINEL_NAME,
         json.dumps(sentinel, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
     )
+
+    if bundle_root.name == "pi":
+        _write_pi_package_assets(bundle_root)
+
+
+
+def _write_pi_package_assets(bundle_root: Path) -> None:
+    """Write Pi package manifest and the vendored AskUserQuestion extension tree.
+
+    The extension is a vendored snapshot of ``@juicesharp/rpiv-ask-user-question``
+    (see ``adapter-src/pi/UPSTREAM.md``) rather than feature-forge-authored code,
+    and ships inside the bundle rather than as a dependency so a Pi install needs
+    no second ``pi install`` — the pipeline's interview stages have no fallback
+    question mechanism on Pi, so a missing dependency would be a hard stall.
+    """
+    package = {
+        "name": "feature-forge-pi-adapter",
+        "private": True,
+        "version": "0.0.0",
+        "keywords": ["pi-package"],
+        "pi": {
+            "skills": ["./skills"],
+            "extensions": ["./extensions/ask-user-question/index.ts"],
+        },
+        # Declares the emitted agents/ dir to a Pi subagent extension (the schema is
+        # pi-subagents 0.35.1's; it also accepts the equivalent `pi.subagents.agents`).
+        # Kept OUT of the `pi` block on purpose: `pi` is core-Pi manifest surface, and
+        # this is a third-party contract we do not own, so it stays visibly namespaced.
+        # Emitted unconditionally — with no such extension installed the key is inert:
+        # nothing reads it, nothing errors. That is what keeps the bundle free of a
+        # runtime dependency that could hard-stall the pipeline when it is missing.
+        "pi-subagents": {"agents": ["./agents"]},
+        "peerDependencies": {
+            "@earendil-works/pi-coding-agent": "*",
+            "@earendil-works/pi-tui": "*",
+            "typebox": "*",
+        },
+    }
+    safe_write(
+        bundle_root,
+        "package.json",
+        json.dumps(package, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
+    )
+    for relpath, content in adapter_tree(agent="pi", subdir="extensions"):
+        safe_write(bundle_root, relpath, content)
+
+
+# Hand-written, agent-keyed source that FEEDS the generated bundles. Artifacts
+# that are real code (rather than canon prose) live at
+# ``adapter-src/<agent>/<file>`` so each one can carry its own toolchain and be
+# verified before it ships — see the adapter-src loop in scripts/validate.sh,
+# which runs every agent dir's ``npm run verify``. Contrast ``adapters/``, which
+# is 100% generated and drift-guarded, and so can never hold source.
+#
+# Resolved from THIS FILE's location, never from ``--root``: this is repo-owned
+# tooling, not canon content, so a scratch build against an alternate canon root
+# (e.g. tests/fixtures/minimal-canon) must still find it.
+ADAPTER_SRC_ROOT = Path(__file__).resolve().parent.parent / "adapter-src"
+
+
+@functools.lru_cache(maxsize=None)
+def adapter_source(agent: str, relpath: str, comment: str) -> str:
+    """Return an ``adapter-src`` file's body behind a generated-file header.
+
+    The header is prepended at emit time rather than stored in the source, so the
+    checked-in file stays directly compilable by its own toolchain while the
+    emitted copy still warns against hand-editing and names its provenance.
+
+    Args:
+        agent: Agent id — the ``adapter-src/`` subdirectory to read from.
+        relpath: Path of the source file within that agent's directory.
+        comment: Line-comment token for the emitted header (e.g. ``"//"``, ``"#"``).
+
+    Returns:
+        Header + verbatim source body.
+
+    Raises:
+        UnreadableFileError: if the source is missing or unreadable — a broken
+            checkout must fail loudly with the standard ``<source_path>: <reason>``
+            diagnostic (REQ-OBS-02), never emit a headless or empty artifact.
+    """
+    rel = f"adapter-src/{agent}/{relpath}"
+    try:
+        body = (ADAPTER_SRC_ROOT / agent / relpath).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise UnreadableFileError(
+            rel, f"adapter source is missing or unreadable ({exc.strerror or exc})"
+        ) from exc
+    header = (
+        f"{comment} GENERATED — DO NOT EDIT. Source: {rel}\n"
+        f"{comment} Regenerate with: python3 scripts/build-adapters.py\n"
+    )
+    return header + body
+
+
+# Suffix -> line-comment token for files that CAN carry a provenance header.
+# Anything absent is emitted verbatim: JSON has no comment syntax, and a LICENSE
+# must stay byte-identical to keep its attribution intact. Those files are not
+# left unprotected — adapters/ is covered wholesale by the regen-and-diff drift
+# guard (validate.sh 6b), which is what actually catches a hand-edit.
+_TREE_HEADER_COMMENTS = {".ts": "//"}
+
+
+def adapter_tree(agent: str, subdir: str) -> list[tuple[str, str]]:
+    """Return every file under ``adapter-src/<agent>/<subdir>/`` ready to emit.
+
+    The single-file :func:`adapter_source` covers an artifact that is one module.
+    A vendored third-party package is a tree (Pi's AskUserQuestion extension is
+    39 modules plus locales and a LICENSE), so this walks it whole. Source layout
+    mirrors emitted layout exactly — ``adapter-src/pi/extensions/...`` becomes
+    ``adapters/pi/extensions/...`` — because the extension resolves its own
+    bundle root by walking up from ``import.meta.url``; a source tree at a
+    different depth would typecheck and test green in-tree while resolving the
+    wrong root once emitted.
+
+    Args:
+        agent: Agent id — the ``adapter-src/`` subdirectory to read from.
+        subdir: Path of the tree within that agent's directory (e.g. ``extensions``).
+
+    Returns:
+        ``(relpath, content)`` pairs in sorted POSIX order (REQ-DET-01), relpath
+        being relative to the agent dir and therefore directly usable as the
+        bundle-relative destination. ``.ts`` files carry the generated header;
+        everything else is verbatim.
+
+    Raises:
+        UnreadableFileError: if the tree is missing, or holds a file that is not
+            valid UTF-8 — a broken or binary-polluted checkout must fail loudly
+            (REQ-OBS-02) rather than emit a corrupt bundle.
+    """
+    root = ADAPTER_SRC_ROOT / agent / subdir
+    if not root.is_dir():
+        raise UnreadableFileError(
+            f"adapter-src/{agent}/{subdir}", "adapter source tree is missing or not a directory"
+        )
+    emitted: list[tuple[str, str]] = []
+    for entry in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix()):
+        # Defensive: a stray `npm install` inside a vendored tree must never
+        # balloon the bundle. adapter-src keeps its node_modules one level up.
+        if "node_modules" in entry.parts or not entry.is_file():
+            continue
+        relpath = f"{subdir}/{entry.relative_to(root).as_posix()}"
+        rel = f"adapter-src/{agent}/{relpath}"
+        try:
+            body = entry.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            reason = getattr(exc, "strerror", None) or exc
+            raise UnreadableFileError(
+                rel, f"adapter source is missing or unreadable ({reason})"
+            ) from exc
+        comment = _TREE_HEADER_COMMENTS.get(entry.suffix)
+        if comment:
+            body = (
+                f"{comment} GENERATED — DO NOT EDIT. Source: {rel}\n"
+                f"{comment} Regenerate with: python3 scripts/build-adapters.py\n"
+            ) + body
+        emitted.append((relpath, body))
+    return emitted
 
 
 def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
@@ -1226,6 +1611,8 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
         # template's own `.py` files (e.g. python/src/{{PKG}}/main.py) MUST ship. Skipping
         # them also left untrackable empty dirs (git cannot track them), so a clean checkout
         # always drifted from a fresh build.
+        if "__pycache__" in rel.parts or entry.suffix == ".pyc":
+            continue
         if entry.suffix == ".py" and "templates" not in rel.parts:
             continue
         target = dst / rel
@@ -1235,6 +1622,43 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(entry, target)  # verbatim bytes; no stamp, no reflow
+
+
+def _translate_pi_support_command_strings(bundle_root: Path, repo_root: Path) -> None:
+    """Rewrite Claude slash-command strings in Pi support files.
+
+    Skill bodies/frontmatter are translated at emit time, but support files copied for
+    self-containment (reference markdown and helper scripts such as forge-session.py)
+    can also surface next-step commands to the user. Keep helper logic intact and only
+    rewrite the concrete slash-command prefix, leaving diagnostic strings like
+    ``feature-forge: cannot locate install root`` unchanged.
+
+    Runtime helpers are re-verified against canon afterwards (REQ-GEN-05): a translated
+    helper must differ from its source by EXACTLY this substitution and nothing else, so
+    silent corruption of a helper is still caught on pi.
+    """
+    for path in sorted(bundle_root.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix not in {".json", ".md", ".py", ".sh"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        translated = text.replace("/feature-forge:", "/skill:")
+        if translated != text:
+            path.write_text(translated, encoding="utf-8", errors="surrogateescape")
+
+    for helper in RUNTIME_HELPERS:
+        src_helper = repo_root / "scripts" / helper
+        dst_helper = bundle_root / "scripts" / helper
+        expected = src_helper.read_text(
+            encoding="utf-8", errors="surrogateescape"
+        ).replace("/feature-forge:", "/skill:")
+        actual = dst_helper.read_text(encoding="utf-8", errors="surrogateescape")
+        if actual != expected:
+            raise SystemExit(
+                f"REQ-GEN-05 violation: pi helper {dst_helper} diverges from canon "
+                f"{src_helper} by more than the '/feature-forge:' → '/skill:' substitution"
+            )
 
 
 # A prose citation of a bundle reference: `references/<subpath>`. The subpath char
@@ -1482,6 +1906,7 @@ AGENT_TARGETS_REGISTRY: dict[str, type] = {
     "copilot": CopilotEmitter,
     "cursor": CursorEmitter,
     "gemini": GeminiEmitter,
+    "pi": PiEmitter,
 }
 
 

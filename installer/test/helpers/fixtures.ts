@@ -61,9 +61,21 @@ export async function makeFixtureBundle(
     const ext = { name: "feature-forge", version: "0.0.0", skills: skills.map((name) => ({ name })) };
     await writeFile(join(dir, "gemini-extension.json"), JSON.stringify(ext, null, 2) + "\n");
   }
+  if (agent === "pi") {
+    // The real bundle ships the extension as a vendored tree, not one file.
+    await mkdir(join(dir, "extensions", "ask-user-question"), { recursive: true });
+    await writeFile(join(dir, "extensions", "ask-user-question", "index.ts"), "export default {};\n");
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "feature-forge-pi", keywords: ["pi-package"], pi: { skills: ["./skills"], extensions: ["./extensions/ask-user-question/index.ts"] } }, null, 2) + "\n",
+    );
+  }
+  // Custom-agent source files for a "mirror" placement. codex loads `.toml`, pi loads `.md`;
+  // the mirror itself selects by path prefix, agnostic to extension.
+  const agentExt = agent === "pi" ? "md" : "toml";
   for (const id of agents) {
     await mkdir(join(dir, "agents"), { recursive: true });
-    await writeFile(join(dir, "agents", `${id}.toml`), `name = "${id}"\n# fixture custom agent\n`);
+    await writeFile(join(dir, "agents", `${id}.${agentExt}`), `name = "${id}"\n# fixture custom agent\n`);
   }
   return { dir, skills };
 }

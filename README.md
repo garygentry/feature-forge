@@ -5,7 +5,7 @@
 [![CI](https://github.com/garygentry/feature-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/garygentry/feature-forge/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@garygentry/feature-forge)](https://www.npmjs.com/package/@garygentry/feature-forge)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![agents](https://img.shields.io/badge/agents-5_supported-blue)](#c-per-surface-setup)
+[![agents](https://img.shields.io/badge/agents-6_supported-blue)](#c-per-surface-setup)
 
 > **Using a coding agent?** Let it set feature-forge up for you. Paste this into your session:
 >
@@ -87,7 +87,7 @@ npx @garygentry/feature-forge install
 Scope to one agent with `-a`, or preview without writing using `--dry-run --json`:
 
 ```bash
-npx @garygentry/feature-forge install -a codex        # one agent
+npx @garygentry/feature-forge install -a pi           # one agent
 npx @garygentry/feature-forge install --dry-run --json # preview the plan, change nothing
 ```
 
@@ -100,6 +100,7 @@ npx @garygentry/feature-forge install --dry-run --json # preview the plan, chang
 | Copilot | `npx @garygentry/feature-forge install -a copilot`                                                     | [docs/agents/copilot.md](docs/agents/copilot.md) |
 | Cursor  | `npx @garygentry/feature-forge install -a cursor`                                                      | [docs/agents/cursor.md](docs/agents/cursor.md)   |
 | Gemini  | `npx @garygentry/feature-forge install -a gemini`                                                      | [docs/agents/gemini.md](docs/agents/gemini.md)   |
+| Pi      | `npx @garygentry/feature-forge install -a pi` _(or `pi install npm:@garygentry/feature-forge` after pack/publish)_ | [docs/agents/pi.md](docs/agents/pi.md)           |
 
 > **Stale or partial install?** If a skill starts and reports
 > `feature-forge: install incomplete/degraded … (missing …)`, the bundled
