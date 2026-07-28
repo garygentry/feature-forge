@@ -4,7 +4,7 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-07-27 (0.13.0 / installer 0.3.0 prepared for publish)._
+_Last updated: 2026-07-27 (0.13.0 / installer 0.3.0 published to npm)._
 
 ## Current release
 
@@ -12,7 +12,7 @@ _Last updated: 2026-07-27 (0.13.0 / installer 0.3.0 prepared for publish)._
 |---|---|---|
 | Plugin | **0.13.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
 | Installer | **0.3.0** | `installer/package.json` (independent version line) |
-| npm | **`@garygentry/feature-forge@0.2.14`** (`latest`) | 0.3.0 pending `npm-publish.yml` dispatch |
+| npm | **`@garygentry/feature-forge@0.3.0`** (`latest`) | published 2026-07-27 via `npm-publish.yml` (run 30324289460) |
 | Commit | `chore(release): v0.13.0 / installer 0.3.0 (Pi support, rauf pin 0.13.0)` | |
 
 CHANGELOG `[Unreleased]` is **empty** — 0.13.0 is the current section.
@@ -45,6 +45,9 @@ before advancing it.
   `verify` script. Also advances `RAUF_PIN` to `@garygentry/rauf@0.13.0` — see the coupling note
   above. A bare `install`/`update` now targets Pi wherever detected; one known issue is documented
   (a *damaged* Claude install alongside a healthy Pi install can resolve to the Pi bundle).
+  CI's installer leg moved **Node 20 → 22** in the same release: on Node 20 the installer suite ran
+  **0 of its 182 tests** (and couldn't load Pi's SDK at all) while still reporting green. Don't
+  lower it back.
 - **0.12.9** / installer 0.2.14 (#161) — epic/backlog verification batch: cross-member shared-state
   test coupling detection `CHECK-E10` (#144), generated-artifact freshness vs. `testCommand`
   `--check` gates (#145), dev-runtime smoke guidance + heavy-bootstrap heuristic `CHECK-I23`
@@ -103,7 +106,17 @@ before advancing it.
 _GitHub tracker (`gh issue list --state open`) is **empty**._
 
 All of **#121 / #122 / #123 / #124 / #126 / #132 / #135** are closed — #123 was a duplicate of #122;
-the rest auto-closed with PRs #134/#137/#138/#139. Next action is purely the batched 0.12.8 publish.
+the rest auto-closed with PRs #134/#137/#138/#139. The 0.13.0 / installer 0.3.0 publish is done;
+no release work is outstanding.
+
+Two known non-blocking follow-ups, untracked (no issue filed):
+
+- **rauf's `release:prepare` doesn't regenerate `adapters/pi/package.json`.** Until it does, every
+  future rauf release PR red-CIs on `pnpm pi:check` and needs a manual regen. Lives in the rauf
+  repo, not here, but it gates the next `RAUF_PIN` advance.
+- **`installer/tsconfig.json` `include` is `["src"]`**, so the installer's `.ts` tests are never
+  type-checked — they only run under Node's native type stripping. A type error in a test file
+  passes CI silently.
 
 ## Deferred / optional (not scheduled)
 
