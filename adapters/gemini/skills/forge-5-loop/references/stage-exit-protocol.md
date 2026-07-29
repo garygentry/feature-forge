@@ -182,10 +182,19 @@ concrete cache backend that `forge-2-tech` will design). Soliciting it here gues
 of the stage that owns the context, and the answer has nowhere durable to live.
 
 Instead, when you notice a decision that belongs downstream, **record it structurally** as
-a `deferredDecisions[]` entry on this feature's `.pipeline-state.json` (schema in
-`references/pipeline-state-schema.json`; same direct-edit path as `notes` /
-`epicChangeRequests[]`): `question` (phrased for the target stage), optional `rationale`
-and `targetStage`, `raisedBy` (this stage), `raisedAt` (ISO-8601 UTC), `status: "open"`.
+a `deferredDecisions[]` entry on this feature's `.pipeline-state.json` by running
+`state-decision` (`--rationale` and `--target-stage` are optional; the verb stamps
+`raisedAt` and `status: "open"` for you):
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-decision \
+  --feature "{feature}" --question "<phrased for the target stage>" \
+  --rationale "<why it belongs downstream>" --target-stage "<owning stage>" \
+  --raised-by "{stage}" --specs-dir "{specsDir}"
+```
+
 This keeps the exit focused on *this* stage's next-step routing while carrying the open
 question forward for the owning stage to resolve (it flips `status` to `addressed` when it
 does). Prefer a `deferredDecisions[]` entry over stuffing the same thing into the free-text

@@ -183,7 +183,9 @@ If the helper is unavailable (a non-Claude host without the resolver), skip this
 
 ## Pipeline State Protocol
 
-Write pipeline state conforming to `references/pipeline-state-schema.json`. Always update `updatedAt` when modifying pipeline state.
+Pipeline state is written by the `state-*` verbs of `scripts/forge-session.py` — never by hand. Each verb writes `{resolvedFeatureDir}/.pipeline-state.json` atomically, conforms to `references/pipeline-state-schema.json` by construction, and refreshes `updatedAt` for you, so no stage needs to read the schema in order to author state.
+
+If a `state-*` verb exits 2, surface the plain `Error:` line from stderr verbatim, do **not** proceed to the next step of the surrounding protocol, and do **not** hand-author the JSON as a workaround. The stage remains resumable because the entry stamp is already on disk — re-run the verb once the cause is fixed.
 
 ### Staleness Detection (Read-Time)
 
@@ -214,7 +216,16 @@ Invoke this block at the **very start** of a pipeline entry point — `forge-1-p
    - **Create** → `git switch -c {branchPrefix}{label}` (or `git checkout -b` if `switch` is unavailable). If the branch already exists, `git switch {branchPrefix}{label}`.
    - **Stay** → proceed on the default branch; note that subsequent commits (and any `forge-5-loop` run) will land directly on `{defaultBranch}`.
 
-**Record the branch.** After this block resolves, write the resulting branch name to the feature's `.pipeline-state.json` top-level `branch` field (create/update it when the state file is first written for this stage). Downstream stages and `forge-5-loop` read it to detect drift back onto the default branch.
+**Record the branch.** After this block resolves, record the resulting branch name in the feature's top-level `branch` field by running `state-branch` (create/update it when the state file is first written for this stage). Emit the call **once the feature directory exists** — i.e. after Feature Directory Resolution and the Entry Stamp, **not** at this block: Branch Setup runs at the very start of the entry point, before any directory resolution, and a brand-new standalone feature may have no directory yet.
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-branch \
+  --feature "{feature}" --branch "<name>" --specs-dir "{specsDir}"
+```
+
+Downstream stages and `forge-5-loop` read it to detect drift back onto the default branch.
 
 ## Branch Reconciliation
 
@@ -227,9 +238,18 @@ python3 "$R/scripts/forge-session.py" reconcile-branch --feature "{feature}" --s
 ```
 
 Act on the emitted `action` (source of truth is where the state actually resolves, not the recorded field):
-- **`adopt-current`** — you are on a non-default topic branch where the state resolves, and the recorded `branch` differs (a stale/imposed value). Write `newBranch` into the state `branch` field with a **visible one-line note** ("recorded branch was `{stateBranch}`; work is on `{currentBranch}` — updating to match") — never silently, and **never push the user back** to the recorded branch (offer that only as a plain alternative).
+- **`adopt-current`** — you are on a non-default topic branch where the state resolves, and the recorded `branch` differs (a stale/imposed value). Run `state-branch` (below) to write `newBranch` into the state `branch` field, with a **visible one-line note** ("recorded branch was `{stateBranch}`; work is on `{currentBranch}` — updating to match") — never silently, and **never push the user back** to the recorded branch (offer that only as a plain alternative).
 - **`warn-drift`** — you are on the **default** branch and the state records a topic branch. Via `AskUserQuestion`, strongly recommend creating/switching to `{branchPrefix}{feature}` (then record it), still allowing **proceed on the default branch**. Never hard-stop.
 - **`none`** / **`not-resolved`** — nothing to do; proceed.
+
+The `adopt-current` write, with the portable plugin-root prelude:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-branch \
+  --feature "{feature}" --branch "{newBranch}" --specs-dir "{specsDir}"
+```
 
 If the helper is unavailable (non-Claude host without the resolver), fall back to the manual check: current branch differs from recorded → adopt the current branch unless it is the default, in which case recommend creating `{branchPrefix}{feature}`.
 
@@ -240,13 +260,28 @@ When `gitCommitAfterStage` is true, follow this exact order to avoid state incon
 **Why two commits.** The stage's `.pipeline-state.json` is itself part of the staged commit, but the stage's `commitHash` cannot be known until *after* that commit is made. Recording it *inside* the same commit is a chicken-and-egg with no single-commit solution. Resolve it with a **deterministic two-commit sequence**, and **never** with `git commit --amend`: amending rewrites HEAD, so a hash captured before the amend points at an orphaned commit that is not in the final history (the exact defect this protocol exists to prevent).
 
 1. **Stage specific files only:** `git add {specsDir}/{feature}/` — never use `git add -A` or `git add .`
-2. **Commit 1 — artifacts + state, hash not yet known:** In `.pipeline-state.json`, set this stage's `status: "complete"` and `commitHash: null`, then `git commit -m "{commitPrefix}({feature}): <action>"`. This is the stage's **artifact commit**; its hash is the provenance hash callers rely on.
-3. **If Commit 1 succeeds — Commit 2 records the hash:** Capture the hash of Commit 1 (`git rev-parse HEAD`). Write it into this stage's `commitHash` in `.pipeline-state.json`, then commit only that one-line change: `git add {specsDir}/{feature}/.pipeline-state.json && git commit -m "{commitPrefix}({feature}): record stage commit hash"`. The stored `commitHash` now points at the artifact commit (Commit 1) — never at Commit 2, and never at an orphaned amend. The working tree is clean afterward, so the next stage's dirty-tree check passes.
-4. **If Commit 1 fails:** do NOT update pipeline state to complete. Report the error to the user and leave state as `in-progress` so the stage can be resumed. Common failure causes:
+2. **Commit 1 — artifacts + state, hash not yet known:** Run `state-complete --feature {feature} --stage {stage} --version N …` (which sets this stage's `status: "complete"`, `completedAt`, `version`, `basedOnVersions`, `artifacts` and `commitHash: null`, and applies the downstream staleness cascade), then `git commit -m "{commitPrefix}({feature}): <action>"`. This is the stage's **artifact commit**; its hash is the provenance hash callers rely on.
+3. **If Commit 1 succeeds — Commit 2 records the hash:** Capture the hash of Commit 1 (`git rev-parse HEAD`) by running `state-complete --feature {feature} --stage {stage} --version N --commit-hash $(git rev-parse HEAD)`, which writes it into this stage's `commitHash` and touches nothing else, then commit only that one-line change: `git add {specsDir}/{feature}/.pipeline-state.json && git commit -m "{commitPrefix}({feature}): record stage commit hash"`. The stored `commitHash` now points at the artifact commit (Commit 1) — never at Commit 2, and never at an orphaned amend. The working tree is clean afterward, so the next stage's dirty-tree check passes.
+4. **If Commit 1 fails:** do NOT update pipeline state to complete. Report the error to the user and leave state as `in-progress` so the stage can be resumed. Do that with `state-complete --feature {feature} --stage {stage} --version N --resumable`, which records **only** `status` — no `completedAt`, no version bump, no `basedOnVersions`/`artifacts`, no `commitHash` reset, and no staleness cascade, so the stage stays resumable. (`--version` is still REQUIRED by argparse and must be passed even though `--resumable` does not write it; omitting it makes the recovery command exit 2 every time.) Common failure causes:
    - **Pre-commit hook failure:** Report the hook output. Never use `--no-verify` to bypass. Help the user fix the underlying issue.
    - **Merge conflicts:** Report conflicting files. Suggest resolution steps appropriate to the conflict.
-   - **Nothing to commit:** If all artifacts were already committed, this is fine — mark the stage `complete`, leave `commitHash` at its existing value (or `null` if there was never an artifact commit), and skip Commit 2. There is no new artifact commit to record.
+   - **Nothing to commit:** If all artifacts were already committed, this is fine — mark the stage `complete`, leave `commitHash` at its existing value (or `null` if there was never an artifact commit), and skip Commit 2. Pass `--preserve-commit-hash` on the Commit-1 `state-complete` call so the recorded hash is left alone instead of being reset to `null`. There is no new artifact commit to record.
 5. **Never** use `git add -A`, `--amend`, `--no-verify`, or `--force` flags
+
+The two `state-complete` calls, with the portable plugin-root prelude:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+# Commit 1 — before `git commit`
+python3 "$R/scripts/forge-session.py" state-complete \
+  --feature "{feature}" --stage "{stage}" --version {n} \
+  --based-on "<upstream>=<n>" --artifact "<file>" --specs-dir "{specsDir}"
+# Commit 2 — after Commit 1 lands, so its hash exists
+python3 "$R/scripts/forge-session.py" state-complete \
+  --feature "{feature}" --stage "{stage}" --version {n} \
+  --commit-hash "$(git rev-parse HEAD)" --specs-dir "{specsDir}"
+```
 
 ## Stage-Entry Guard
 
@@ -263,16 +298,27 @@ Invoke this block at the **start of an authoring stage** (`forge-1-prd`..`forge-
 
 3. **Re-authoring** (`status: "complete"` or `"stale"`) — a finished draft exists. Warn via `AskUserQuestion` before overwriting: "A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?" On confirm, proceed to the Entry Stamp and author a new version (the version increments at exit, per that stage's Update-Pipeline-State step).
 
-**Entry Stamp** (fresh, restart, and re-author paths — NOT the resume path). Before authoring, write to `{resolvedFeatureDir}/.pipeline-state.json` and update `updatedAt`:
-- `stages.{stage}.status` → `"in-progress"`
-- `stages.{stage}.startedAt` → current ISO-8601 UTC timestamp
-- top-level `currentStage` → `"{stage}"` (where the pipeline IS, per O1)
+**Entry Stamp** (fresh, restart, and re-author paths — NOT the resume path). Before authoring, record the entry stamp by running `state-enter` — one atomic write that sets `stages.{stage}.status` → `"in-progress"`, `stages.{stage}.startedAt` → current ISO-8601 UTC timestamp, top-level `currentStage` → `"{stage}"` (where the pipeline IS, per O1), and refreshes `updatedAt`:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-enter \
+  --feature "{feature}" --stage "{stage}" --specs-dir "{specsDir}"
+```
 
 This write is **left uncommitted**: it is staged and committed as part of this stage's existing exit commit (Git Commit Protocol), so no extra commit is needed at entry. If the run is interrupted after the stamp but before the exit commit, the marker survives on disk (uncommitted) and the next entry classifies as **Interrupted** — which is exactly the intent.
 
 **Force Mode.** When `--force` is passed, skip the interactive gate: do not prompt for resume-vs-restart or the re-author warning. Treat entry as a fresh restart — apply the Entry Stamp and author. (`--force` already skips prerequisite checks; here it likewise bypasses the self-stage gate. Existing on-disk artifacts are still loaded per Force Mode.)
 
-**Incremental artifact tracking:** When a stage writes multiple files (e.g. forge-3-specs writing a suite of spec documents), update the `stages.{stage}.artifacts` array in `.pipeline-state.json` after writing each file — not just at stage completion. This is what makes the Interrupted inventory above precise about which files were successfully written.
+**Incremental artifact tracking:** When a stage writes multiple files (e.g. forge-3-specs writing a suite of spec documents), run `state-artifact --feature {feature} --stage {stage} --path <file>` after writing each file — not just at stage completion. This is what makes the Interrupted inventory above precise about which files were successfully written.
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-artifact \
+  --feature "{feature}" --stage "{stage}" --path "<file>" --specs-dir "{specsDir}"
+```
 
 ## Stage-Completion Re-check
 

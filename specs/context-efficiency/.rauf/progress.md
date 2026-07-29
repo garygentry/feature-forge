@@ -424,3 +424,90 @@ would have caught it only by luck of which field the defect happened to drop.
   regeneration was needed (this item's ACs correctly omit the adapters criterion).
   `python3 -m pytest tests` → 638 passed / 2 skipped; `ruff check scripts/ eval/`
   and `bash scripts/validate.sh` green.
+
+## Item 011 — shared-conventions.md's five touch points + the stage-exit deferred-decisions rule
+
+Converted per spec 03 §13.3, following its before/after blocks literally. Six edits
+land in `references/shared-conventions.md` (five touch points + the Pipeline State
+Protocol header, see below) and one in `references/stage-exit-protocol.md`.
+
+### The sixth shared-conventions edit was NOT in the item's list of five
+
+`## Pipeline State Protocol` L186 read *"Write pipeline state conforming to
+`references/pipeline-state-schema.json`. Always update `updatedAt` when modifying
+pipeline state."* Spec 03 §13.3 never mentions it and the item enumerates five touch
+points — but AC 1 is broader than the five ("**no site** in shared-conventions.md
+instructs hand-editing `.pipeline-state.json`, except the ledger exclusions"), and that
+line is not in the R4 exclusion ledger. Leaving it would have contradicted the five
+converted sites *and* the verbs, which refresh `updatedAt` themselves. It is now the
+file's anti-instruction ("written by the `state-*` verbs … never by hand") and carries
+spec 03 §14's verb-failure convention, which the five new call sites need: each is a
+subprocess that can exit 2 where a hand-edit could not fail at all. Recorded here
+because a future reader comparing the item text to the diff will find a sixth hunk.
+
+### Fences cannot go inside a numbered/bulleted list
+
+check-spec-purity Rule 5 pins `BOOTSTRAP_PRELUDE` **byte-identical**, so an indented
+prelude (as a fence nested in a list item requires) is a Rule 5 violation, and a
+column-0 fence mid-list restarts the numbering. Both touch points that live in a list
+therefore keep the invocation **inline in backticks** inside the list item and place
+one column-0 fence **after** the list:
+- Branch Reconciliation `adopt-current` → one `state-branch` fence after the three
+  `action` bullets.
+- Git Commit Protocol steps 2/3 → one fence after step 5, carrying **both**
+  `state-complete` calls behind a single prelude (the sanctioned one-prelude-many-
+  commands form; `epic-manifest-subcommands.md` has the same shape).
+
+### Where each verb call is emitted
+
+`state-branch` is cited twice and fenced twice (Branch Setup + Branch Reconciliation).
+Branch Setup's copy carries the load-bearing timing qualifier: the call is emitted
+**after Feature Directory Resolution and the Entry Stamp**, not at the Branch Setup
+block, which runs before the feature directory may exist. Verified by running
+`state-branch` as the *first* verb against a bare `specs/demo/` — it succeeds thanks to
+item 007's field seeding, so the ordering rule is about the *directory*, not the state
+file.
+
+### L245's `--resumable` needs `--version` anyway
+
+`--version` is `required=True` on the subparser, so the L245 recovery command exits 2
+without it even though `--resumable` never writes it. The prose says so explicitly —
+this is the kind of detail that only shows up when someone actually runs the documented
+recovery.
+
+### §9 behavior-preservation record
+
+`specs/context-efficiency/.verification/BEHAVIOR-PRESERVATION-R4-item-011-2026-07-29.md`.
+Uses §9's sanctioned **reduced substitute for R4** (one authoring stage + a deliberately
+failed Commit 1), named explicitly, plus an exhaustive static surface diff — justified
+because this item edits only shared protocol text and converts no skill body.
+
+Two method notes worth reusing for items 012/013, which owe the same §9 record:
+- **Section-granular diff is the strongest cheap evidence.** Split both files on `##`
+  at the baseline and in the worktree and compare byte-for-byte. Result here: 10 of 15
+  shared-conventions sections and 5 of 6 stage-exit sections are byte-identical,
+  including `User Input Protocol` (surfaces 1+2), `Stage-Completion Re-check` (4b) and
+  `Standard block` (6+7). Then `git diff -U0 | grep '^-'` and read **every** removed
+  line — all 16 here are JSON-authoring mechanics.
+- **The `--resumable` control only discriminates on the right fixture.** Comparing
+  `--resumable` against a bare `--status in-progress` shows no difference if the
+  Commit-1 `state-complete` write already landed with the same values. The
+  discriminating fixture is a stage **complete at v1 with a recorded `commitHash`**,
+  re-entered for v2: `--resumable` leaves version=1/completedAt/commitHash intact while
+  the bare form writes version=2, restamps `completedAt` and resets `commitHash` to
+  null. My first two assertion attempts were wrong about the *fixture*, not the verb.
+
+### Gotcha (re-hit)
+
+The repo's interactive `cp` alias hangs a non-tty tool call on an overwrite prompt —
+it burned a 2-minute timeout here. `command cp -f`, as items 002/003/009 already noted
+for `rm`/`cp`.
+
+### Gates
+
+`python3 -m pytest tests` 638 passed / 2 skipped, with
+`tests/test_stage_exit_protocol.py` green **unchanged** (it asserts the stage-exit
+DIRECTIVES, not the deferred-decisions block). `check-spec-purity` PASS including
+Rule 5 on all five new preludes. Adapters restaged **130** paths — both edited files
+are bundle-root shared references fanned out to ~11 skills × 6 targets, the widest
+blast radius of any canon edit in this feature so far. `bash scripts/validate.sh` PASS.
