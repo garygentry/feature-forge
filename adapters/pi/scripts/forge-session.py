@@ -17,6 +17,18 @@ root navigator:
         [--config FILE] [--epic E] [--next-feature N] [--host claude|generic] [--json]
     python3 forge-session.py effective-config [--config FILE] [--schema PATH] [--json]
 
+Plus the `state-*` write verbs, which author `.pipeline-state.json` so no stage
+has to hand-write the JSON (and therefore no stage has to read the state schema):
+
+    python3 forge-session.py state-enter --feature F --stage S [--specs-dir DIR] \
+        [--epic E] [--json]
+    python3 forge-session.py state-artifact --feature F --stage S --path P \
+        [--path P ...] [--specs-dir DIR] [--epic E] [--json]
+    python3 forge-session.py state-branch --feature F --branch B [--specs-dir DIR] \
+        [--epic E] [--json]
+    python3 forge-session.py state-note --feature F --note TEXT [--specs-dir DIR] \
+        [--epic E] [--json]
+
 `rank-features` scans the specs tree for feature-shaped directories (those that
 directly contain a `.pipeline-state.json`, in both the flat
 `{specsDir}/{feature}/` and nested `{specsDir}/{epic}/{feature}/` layouts) and
@@ -74,6 +86,16 @@ project's `loopRunner` overrides on top. A missing or corrupt
 `forge.config.json` resolves to pure defaults (exit 0); only an unreadable
 schema is fatal (exit 2), because then there are no defaults to resolve.
 
+The `state-*` verbs are the script's only writers. Each follows the same
+resolve -> load -> mutate -> refresh `updatedAt` -> atomic write path, so every
+successful write leaves a schema-conformant state file: `state-enter` stamps a
+stage in-progress and moves `currentStage`, `state-artifact` appends artifact
+paths to a stage (de-duplicating), `state-branch` records the branch resolved by
+Branch Setup / Branch Reconciliation, and `state-note` persists the free-text
+note a user volunteers at a stage exit. They never create a feature directory —
+an unknown `--feature` is a usage error (exit 2) — and they never overwrite a
+state file they could not parse.
+
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
 matching the conventions of `scripts/epic-manifest.py`.
 
@@ -92,7 +114,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Final, TypedDict
+from typing import Callable, Final, TypedDict
 
 
 # --------------------------------------------------------------------------- #
@@ -1978,8 +2000,167 @@ def _stage_entry(state: dict, stage: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# State-write verbs
+# --------------------------------------------------------------------------- #
+
+
+def cmd_state_enter(feature: str, stage: str, specs_dir: Path, epic: str | None) -> dict:
+    """Apply the Entry Stamp: mark ``stage`` in-progress and set ``currentStage``.
+
+    Idempotent on re-entry within the same run: re-stamping an already
+    in-progress stage simply refreshes ``startedAt``/``updatedAt``. The
+    interactive resume-vs-restart decision stays the skill's — the verb never
+    prompts. The write is left uncommitted; the stage's existing exit commit
+    stages it later.
+
+    Args:
+        feature: Feature name.
+        stage: The stage being entered (a ``STATE_VERB_STAGES`` id).
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    entry = _stage_entry(state, stage)
+    entry["status"] = "in-progress"
+    entry["startedAt"] = _now_iso()
+    state["currentStage"] = stage
+    return _commit_state(state_path, state)
+
+
+def cmd_state_artifact(
+    feature: str, stage: str, paths: list[str], specs_dir: Path, epic: str | None
+) -> dict:
+    """Append each path in ``paths`` to ``stages.{stage}.artifacts``, de-duplicating.
+
+    Idempotent: an already-tracked path is a no-op (no duplicate append), so a
+    resumed run that re-records files it wrote earlier does not bloat the array.
+    ``updatedAt`` is refreshed even on the all-duplicates branch, keeping "state
+    was touched" honest. The verb does NOT stat the file — it records the path
+    the skill asserts it wrote.
+
+    Args:
+        feature: Feature name.
+        stage: The producing stage id.
+        paths: Artifact paths relative to the feature dir (repeatable ``--path``).
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    entry = _stage_entry(state, stage)
+    artifacts = entry.setdefault("artifacts", [])
+    for path in paths:
+        if path not in artifacts:
+            artifacts.append(path)
+    return _commit_state(state_path, state)
+
+
+def cmd_state_branch(feature: str, branch: str, specs_dir: Path, epic: str | None) -> dict:
+    """Set the top-level ``branch`` field.
+
+    Records the branch resolved by Branch Setup / Branch Reconciliation. The verb
+    only writes the field; the interactive prompts and the visible one-line
+    reconciliation note stay unchanged skill prose.
+
+    Branch Setup fires before the Entry Stamp, so this verb can legitimately be
+    the FIRST thing to touch a feature's state file — `_load_state_for_write`'s
+    field seeding is what keeps that first write schema-valid.
+
+    Args:
+        feature: Feature name.
+        branch: The branch name to record.
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    state["branch"] = branch
+    return _commit_state(state_path, state)
+
+
+def cmd_state_note(feature: str, note: str, specs_dir: Path, epic: str | None) -> dict:
+    """Set the top-level ``notes`` field to ``note``.
+
+    Overwrites any existing note (the field is a single free-text string, not an
+    append log — matching the schema's ``notes: string``). The skill's "offer a
+    note — don't force one" statement is unchanged; this verb runs only when the
+    user volunteered text.
+
+    Args:
+        feature: Feature name.
+        note: The note text.
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    state["notes"] = note
+    return _commit_state(state_path, state)
+
+
+def _print_state_enter(state: dict) -> None:
+    """Print the one-line human summary for `state-enter`."""
+    print(f"entered {state['currentStage']} (in-progress) for {state['feature']}")
+
+
+def _print_state_artifact(state: dict, stage: str, paths: list[str]) -> None:
+    """Print the one-line human summary for `state-artifact`."""
+    total = len(state.get("stages", {}).get(stage, {}).get("artifacts", []))
+    print(f"tracked {stage} artifact(s): {', '.join(paths)} ({total} total)")
+
+
+def _print_state_branch(state: dict) -> None:
+    """Print the one-line human summary for `state-branch`."""
+    print(f"recorded branch for {state['feature']}: {state['branch']}")
+
+
+def _print_state_note(state: dict) -> None:
+    """Print the one-line human summary for `state-note`."""
+    print(f"note set for {state['feature']} ({len(state['notes'])} chars)")
+
+
+# --------------------------------------------------------------------------- #
 # CLI dispatch
 # --------------------------------------------------------------------------- #
+
+
+def _emit(payload: dict, json_output: bool, printer: Callable[[dict], None]) -> None:
+    """Emit a state-verb result: the full JSON echo on --json, else the printer.
+
+    Args:
+        payload: The verb's resulting state dict.
+        json_output: The ``--json`` flag.
+        printer: The verb's one-line human-readable printer.
+    """
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        printer(payload)
 
 
 def _print_rank_table(rows: list[FeatureRow], counts: dict[str, int]) -> None:
@@ -2090,6 +2271,43 @@ def main() -> int:
     )
     p_eff.add_argument("--json", action="store_true", dest="json_output")
 
+    p_enter = sub.add_parser(
+        "state-enter", help="Stamp a stage as in-progress (Entry Stamp)"
+    )
+    p_enter.add_argument("--feature", required=True, help="Feature name")
+    p_enter.add_argument("--stage", required=True, choices=STATE_VERB_STAGES,
+                         help="The stage being entered")
+    p_enter.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_enter.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_enter.add_argument("--json", action="store_true", dest="json_output")
+
+    p_art = sub.add_parser(
+        "state-artifact", help="Append artifact paths to a stage (de-duplicating)"
+    )
+    p_art.add_argument("--feature", required=True, help="Feature name")
+    p_art.add_argument("--stage", required=True, choices=STATE_VERB_STAGES,
+                       help="The stage producing the artifact")
+    p_art.add_argument("--path", required=True, action="append", dest="paths",
+                       metavar="PATH",
+                       help="Artifact path relative to the feature dir (repeatable)")
+    p_art.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_art.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_art.add_argument("--json", action="store_true", dest="json_output")
+
+    p_br = sub.add_parser("state-branch", help="Set the top-level branch field")
+    p_br.add_argument("--feature", required=True, help="Feature name")
+    p_br.add_argument("--branch", required=True, help="Branch name to record")
+    p_br.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_br.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_br.add_argument("--json", action="store_true", dest="json_output")
+
+    p_note = sub.add_parser("state-note", help="Set the top-level notes field")
+    p_note.add_argument("--feature", required=True, help="Feature name")
+    p_note.add_argument("--note", required=True, help="Note text to persist")
+    p_note.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_note.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_note.add_argument("--json", action="store_true", dest="json_output")
+
     args = parser.parse_args()
 
     try:
@@ -2187,6 +2405,38 @@ def main() -> int:
                 print(json.dumps(resolved, indent=2, ensure_ascii=False))
             else:
                 _print_effective_config(resolved)
+            return 0
+
+        if args.cmd == "state-enter":
+            payload = cmd_state_enter(
+                args.feature, args.stage, Path(args.specs_dir), args.epic
+            )
+            _emit(payload, args.json_output, _print_state_enter)
+            return 0
+
+        if args.cmd == "state-artifact":
+            payload = cmd_state_artifact(
+                args.feature, args.stage, args.paths, Path(args.specs_dir), args.epic
+            )
+            _emit(
+                payload,
+                args.json_output,
+                lambda state: _print_state_artifact(state, args.stage, args.paths),
+            )
+            return 0
+
+        if args.cmd == "state-branch":
+            payload = cmd_state_branch(
+                args.feature, args.branch, Path(args.specs_dir), args.epic
+            )
+            _emit(payload, args.json_output, _print_state_branch)
+            return 0
+
+        if args.cmd == "state-note":
+            payload = cmd_state_note(
+                args.feature, args.note, Path(args.specs_dir), args.epic
+            )
+            _emit(payload, args.json_output, _print_state_note)
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")

@@ -241,3 +241,48 @@ dispatch`. No verbs, no argparse, no docstring usage lines yet (items 008–010)
 - Editing only `scripts/forge-session.py` restages **6** adapter copies (the
   script is copied wholesale into every bundle); `build-adapters.py` is silent on
   success, so check `git status`, not stdout.
+
+## Item 008 — `state-enter` / `state-artifact` / `state-branch` / `state-note`
+
+Added to `scripts/forge-session.py`: four `cmd_state_*` handlers + four
+`_print_state_*` one-liners in a new `# State-write verbs` section (between item
+007's shared machinery and `# CLI dispatch`), the shared `_emit` dispatcher, four
+argparse subparsers, four `main()` dispatch branches, and the module docstring's
+usage lines + a paragraph describing the verbs. `tests/test_state_verbs.py` grew
+from 20 to 37 tests.
+
+### Learnings
+
+- **`--path` is repeatable here, deviating from spec 03 §5.1's code block**
+  (which registers a scalar `required=True` `--path` and appends one). The item's
+  AC pins "repeatable and de-duplicates", so the AC wins: `action="append",
+  required=True, dest="paths"`, and `cmd_state_artifact` takes `paths: list[str]`.
+  Items 011/012 will emit `--path` once per file, which works either way.
+- **`_emit`'s printer signature forced one lambda.** Spec §11.1 fixes
+  `_emit(payload, json_output, printer)` with `printer: Callable[[dict], None]`,
+  but `state-artifact`'s human line needs the stage and the paths, and neither is
+  derivable from the state echo (unlike `state-enter`, which can read
+  `currentStage`). The dispatch therefore passes
+  `lambda state: _print_state_artifact(state, args.stage, args.paths)` rather than
+  inventing an echo-only `_stage` key. `state-complete` (item 009) already has a
+  sanctioned echo-only key (`_cascadedStale`), so it can take the other route.
+- **`Callable` was added to the existing `from typing import …` line**, not a new
+  module import — item 007's "tempfile is the ONE new stdlib import" note still
+  holds. Ruff's floor here is `E`/`F`/`W` only, so `UP035` (prefer
+  `collections.abc.Callable`) is not active and no `# noqa` is needed.
+- **`state-enter` does not need the spec's defensive `setdefault("feature", …)`
+  / `createdAt` / `pipelineStatus` block** (§4.2's note) — item 007 moved that
+  seeding into `_load_state_for_write` for *every* verb, precisely so the
+  first-write `state-branch` case works. Re-adding it in the handler would be
+  dead code.
+- **The cross-verb invariants are table-driven** off a `_VERB_INVOCATIONS` map
+  (one minimal invocation per verb). Four properties — `updatedAt` refresh,
+  exit 2 on an unknown `--feature`, corrupt-file refusal with the bytes intact,
+  and schema validity for a nested epic member — are each asserted once across
+  all four verbs. Items 009/010 should extend that map rather than write four
+  more near-identical tests per verb.
+- `test_the_script_has_no_exit_1_branch` greps the whole script for `return 1` /
+  `sys.exit(1)`, so it guards the 0/2 contract for every future verb too.
+- Adapters: editing only `scripts/forge-session.py` restages the 6 per-target
+  copies again (the script is copied wholesale); `--check` is the only gate that
+  notices, pytest does not.
