@@ -371,3 +371,56 @@ All seven R4 verbs now exist.
 - Adapters: `scripts/forge-session.py` is copied wholesale, so this restaged the
   same 6 per-target copies; `build-adapters.py --check` is the only gate that
   notices. `bash scripts/validate.sh` is green.
+
+## Item 014 — the R4 schema-conformance drift guard
+
+New file `tests/test_state_schema_conformance.py` (21 tests), deliberately kept
+separate from `tests/test_state_verbs.py`: that module asserts each verb's **CLI
+contract** (which fields, which rejections), this one asserts only that whatever a
+verb writes **conforms to the unchanged schema**. Sections: per-verb single calls,
+two realistic sequences, the two first-write edge cases, the corrupt-file refusal,
+the schema-unchanged digest, and a negative control.
+
+### Mutation-test evidence (the guard can go red)
+
+Recorded here as well as in the commit message. Both mutations applied to
+`scripts/forge-session.py`, guard run, then restored with `command cp -f` from a
+`/tmp` backup and confirmed byte-restored via an empty `git diff --stat`.
+
+1. `_stage_entry` seed `{"status": "pending"}` → `{}` (item 007's bootstrap) → 2 red:
+   `test_each_verb_writes_schema_conformant_state[state-artifact]` and
+   `test_state_artifact_against_a_never_entered_stage_conforms`, both reporting
+   `$.stages.forge-6-docs: missing required 'status'`.
+2. `state-complete --commit-hash` branch rewritten to REPLACE the entry
+   (`state["stages"][stage] = {"commitHash": ...}`) — the exact lone-`commitHash`
+   defect spec verification found → `test_the_authoring_sequence_conforms_after_every_step`
+   red at *the fifth step*, on `missing required 'status'`.
+
+Mutation 2 is the argument for validating after **every** step of a sequence rather
+than only at the end: the first four steps stayed green, so an end-only assertion
+would have caught it only by luck of which field the defect happened to drop.
+
+### Learnings
+
+- **`additionalProperties` is absent on `stageEntry`, so the schema cannot catch a
+  *stray* key — only a *missing required* one.** Every mutation worth guarding here
+  therefore has to drop `status`; adding junk to a stage entry validates clean by
+  design (item 005's note). That shapes what this guard can promise: conformance,
+  not completeness. The per-verb field assertions stay `test_state_verbs.py`'s job.
+- **The verb-coverage test parses `add_parser("state-…")` out of the script** and
+  asserts the registered set equals the covered set (plus `== 7`). Without it, an
+  eighth verb could land fully unguarded while every existing test stayed green —
+  the failure mode a hand-maintained parametrize list always has.
+- **The schema-unchanged assertion is a hardcoded sha256, not a `git show`.** The
+  digest `33a8337a…` is the blob at the pre-feature baseline commit
+  `9a29e846ed510c3b245876a9bf4cc73b8cb60951`, verified identical to the working
+  tree. A git-based assertion would go red in any checkout without history (and CI
+  shallow-clones); the constant is git-free and its comment names the baseline.
+- **The negative control matters more than usual here.** Every conformance assertion
+  is `validate_state(...) == []`, which a broken validator satisfies vacuously —
+  `test_the_validator_rejects_the_shapes_this_guard_exists_to_catch` hand-builds the
+  two real defects plus an out-of-enum status and asserts each produces findings.
+- Tests-only item: no canon edit, so `adapters/` was NOT restaged and no
+  regeneration was needed (this item's ACs correctly omit the adapters criterion).
+  `python3 -m pytest tests` → 638 passed / 2 skipped; `ruff check scripts/ eval/`
+  and `bash scripts/validate.sh` green.
