@@ -20,7 +20,12 @@ import re
 import sys
 from pathlib import Path
 
-REQ_PATTERN = re.compile(r"REQ-[A-Z]+-\d+")
+#: The category segment may contain digits after its first letter — `REQ-R1-01`,
+#: `REQ-R6-03`. The original `[A-Z]+` could not match those, so whole requirement
+#: families were invisible to this checker and reported as "all covered" while never
+#: having been looked at (context-efficiency: 12 of 29 requirements seen). The first
+#: character stays `[A-Z]` so a lowercase or digit-led token is still not an ID.
+REQ_PATTERN = re.compile(r"REQ-[A-Z][A-Z0-9]*-\d+")
 
 
 def extract_req_ids(text: str) -> set[str]:

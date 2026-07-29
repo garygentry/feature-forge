@@ -44,8 +44,8 @@ MAX_BODY_WORDS = 5000
 
 #: Sum over all 13 ``skills/*/SKILL.md`` of the **raw** text following ``description: `` on
 #: the frontmatter line, INCLUDING its surrounding double quotes. Measured 2026-07-28 at
-#: 0.13.0 (``specs/context-efficiency/.reference/REMEASURE-0.13.0.md`` §Non-regression
-#: baselines) and re-confirmed on the post-R1..R6 tree.
+#: **4688 chars** on the 0.13.0 release tree (see ``CHANGELOG.md`` § 0.13.0) and
+#: re-confirmed unchanged on the post-R1..R6 tree.
 #:
 #: The quote-INCLUSIVE measurement is deliberate. The quote-stripped sum is 4662; adopting
 #: it would hand 26 chars of growth that no assertion could ever see, which defeats a

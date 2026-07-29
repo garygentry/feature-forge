@@ -209,6 +209,7 @@ R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-
 python3 "$R/scripts/forge-session.py" state-complete \
   --feature "{feature}" --stage forge-2-tech --version {n} \
   --based-on "forge-1-prd=<n>" --artifact tech-spec.md --specs-dir "{specsDir}"
+# ONLY run the next call if the user volunteered a note in item 2 — otherwise stop here.
 python3 "$R/scripts/forge-session.py" state-note \
   --feature "{feature}" --note "<what the user volunteered>" --specs-dir "{specsDir}"
 ```

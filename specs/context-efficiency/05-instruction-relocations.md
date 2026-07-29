@@ -300,6 +300,12 @@ move into a **new** `skills/forge-5-loop/references/agent-selection.md`;
 reworded — this is a cut-and-paste relocation by section boundary
 (`00-core-definitions.md §10`, R6 row: every original section still reachable).
 
+**What this does and does not buy.** The relocation is structural. Under the shipped
+schema default for `loopRunner.agentArgument` the gate is true, so the 60-line
+`## Agent selection` section still loads on every default run — see the callout in §3.2
+for the full adjudication (finding V-003). Read any "R6 saves N lines/tokens" figure in
+`PRD.md` or `tech-spec.md` as applying to sections {3, 5} only.
+
 ## 3.2 Full section partition (every section accounted for — none dropped)
 
 Verified section headings and line boundaries in the current `runner-contract.md`.
@@ -321,6 +327,28 @@ sections have a destination; none is dropped.
 **Result:** `runner-contract.md` retains sections {1, 4, 6, 7, 8, 9} (six
 always-loaded — REQ-R6-01). `agent-selection.md` receives sections {2, 3, 5}
 (three conditional — REQ-R6-02).
+
+> **The "CONDITIONAL" column is a structural claim, not a measured saving**
+> (finding V-003, adjudicated 2026-07-29 — owner chose to record the honest number
+> rather than narrow the gate). The gate is `loopRunner.agentArgument` present and
+> non-empty, and the SKILL body resolves the **effective** config — schema defaults
+> merged. `references/forge-config-schema.json` defaults `agentArgument` to
+> `'--agent {agent}'`, which is **non-empty**, so the gate is **TRUE for every project
+> that does not explicitly blank the field**. Consequences for the rows above:
+>
+> - **Row 2** (`## Agent selection`, 60 lines) — reads CONDITIONAL, loads on **every
+>   default-config run**. Its 60 lines moved file, not load.
+> - **Rows 3 and 5** are additionally gated behind narrower conditions inside the file
+>   (a non-default agent; a user request for optional flags), so their saving is real.
+>
+> **R6's measured instruction-load saving is therefore sections {3, 5} only.** The
+> split is still structurally correct and REQ-R6-01/02/03 are all met as written —
+> §3.7's drift guard asserts that the citation co-occurs with the gate sentinel, which
+> it does. What does not hold is the unstated assumption that the gate is ever false in
+> practice. Narrowing it (e.g. gating on `loopRunner.defaultAgent`, which **is** `''`
+> by default) would deliver the chartered saving but changes which instructions load on
+> a default run; that is deliberately **not** done in this feature, whose charter is
+> behavior preservation.
 
 > **Ordering note.** Section 3 (`### Claude-only model-alias guard`) is nested
 > **under** section 2 (`## Agent selection`) in the source (it is an `###`

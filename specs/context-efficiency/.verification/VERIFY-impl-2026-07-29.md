@@ -238,14 +238,36 @@ Executed 23 of 23 checks. Results: 16 pass, 6 fail, 1 not-applicable (advisory).
 
 ## Fix Execution Plan
 
-### User Decisions Required
+### User Decisions Required — **ALL RESOLVED 2026-07-29**
 
-1. **V-003 (R6 gate)** — choose (a) record the honest saving in the specs, or (b) narrow the gate so it is false by default. Option (b) changes which instructions load on a default run and touches the R6 invariant and its drift guard; it must not be applied without the owner's word.
-2. **V-002 (pre-existing missing prelude)** — fix in this pass (touches `references/shared-conventions.md` + all six adapter bundles + fixtures), or file as a separate issue. The companion `check-spec-purity` rule that closes the class is arguably the higher-value half.
-3. **V-007 (evidence-location ACs)** — record the `progress.md` convention as sanctioned (recommended; the substance already exists and is durable), versus re-opening seven items to satisfy a location that cannot be written. No history rewrite is proposed either way.
-4. **V-013 (smokeCommand)** — configure one, or record "no smoke command by design" so it stops being re-raised.
-5. **V-018 (traceability)** — record the exposure in `TRACEABILITY.md` only (recommended; keeps scope clean), or also fix the upstream validator pattern.
-6. **Spec-reconciliation class (V-008, V-009, V-014, V-015)** — `specs/CLAUDE.md` states specs are not kept in sync with code post-ship. If that rule stands, all four are legitimately WON'T-FIX with no loss of correctness; the code is the better artifact in every case. Confirm before spending a fix pass on them.
+1. **V-003 (R6 gate)** — ✅ **RESOLVED: (a) record the honest saving.** The gate is left as
+   shipped; `05-instruction-relocations.md` §3.1/§3.2, `tech-spec.md` §3.6 and `PRD.md`
+   REQ-R6-02 now state that `agentArgument`'s schema default makes the gate true on any
+   project that has not blanked it, so R6's realized saving is sections {3, 5} only.
+   Narrowing the gate is explicitly out of scope for a behavior-preserving refactor.
+2. **V-002 (pre-existing missing prelude)** — ✅ **RESOLVED: fix now + add the class guard.**
+   Prelude added at `references/shared-conventions.md:135`; new **Rule 6
+   (`prelude-presence`)** in `scripts/check-spec-purity.py` fails any `bash`/`sh` fence that
+   expands `$R` without an in-fence `R=` assignment. Verified red against the pre-fix file.
+3. **V-007 (evidence-location ACs)** — ✅ **RESOLVED: record the `progress.md` convention.**
+   `06-testing-strategy.md` §7.2 now sanctions `progress.md` as the evidence location under a
+   loop run, names the seven items and their line numbers, and changes the AC template for
+   future backlogs. No items reopened, no history rewritten.
+4. **V-013 (smokeCommand)** — ✅ **RESOLVED: record as declined.** Recorded in `AGENTS.md`
+   § "Verification conventions (forge-verify on this repo)": `testCommand`
+   (`bash scripts/validate.sh`) is a strict superset and this repo has no bootable app
+   runtime, so `CHECK-I21` is `not-applicable` here **by design**. Future verifiers must not
+   re-raise it.
+5. **V-018 (traceability)** — ✅ **RESOLVED: note + fix the validator.** `TRACEABILITY.md`
+   carries the exposure note; `scripts/validate-traceability.py`'s pattern widened
+   `REQ-[A-Z]+-\d+` → `REQ-[A-Z][A-Z0-9]*-\d+`. `validate.sh` step 8 now reads **29** of this
+   feature's requirements (was 12), still "All requirements covered"; `epic-orchestration`
+   (32) and `forge-bootstrap` (51) are unchanged and still green.
+6. **Spec-reconciliation class (V-008, V-009, V-014, V-015)** — ✅ **RESOLVED: WON'T-FIX per
+   `specs/CLAUDE.md`.** That file states specs are pre-implementation artifacts, are not kept
+   in sync with the code post-ship, and that spec↔code divergence should not be flagged. All
+   four findings agree the **code is the sounder artifact**, and none carries a correctness
+   loss. Adjudicated closed — a future verify should not re-raise them for this feature.
 
 ### Execution Steps
 
@@ -314,3 +336,19 @@ Executed 23 of 23 checks. Results: 16 pass, 6 fail, 1 not-applicable (advisory).
 - **Addresses:** V-012
 - **Action:** Relocate the Step 2d "Run mode" paragraph at `:170` into `runner-contract.md` under the existing `## Run mode (Step 2d, rauf)` heading, replacing it with a one-line pointer. Re-measure to confirm ≥10 lines of headroom. Regenerate adapters.
 - **Depends on:** Step 5 (to avoid two adapter regenerations)
+
+---
+
+## Fix Progress
+
+- Step 1: [APPLIED] 2026-07-29 — V-001. Three dangling cross-references in `skills/forge-5-loop/references/agent-selection.md` (`:10`, `:91`, `:108`) re-pointed at their headings in `references/runner-contract.md`. `:28`/`:65`/`:74` untouched (semantic "above").
+- Step 2: [APPLIED] 2026-07-29 — V-010. Inline `# ONLY run the next call if the user volunteered a note in item 2 — otherwise stop here.` added inside the existing fence, immediately above `state-note`, in `forge-1-prd`, `forge-2-tech`, `forge-3-specs`, `forge-4-backlog`. No fence split, no duplicated prelude.
+- Step 3: [APPLIED] 2026-07-29 — V-011. Deleted the unconditional schema-read line from `skills/forge/SKILL.md` § 3 (Pipeline Status Dashboard); folded the pointer into the existing "Deliberate R4 exclusion" note in § 6, keeping the literal `references/pipeline-state-schema.json` citation so the fan-out still resolves it.
+- Step 4: [APPLIED] 2026-07-29 — V-002 (decision 2). Canonical two-line bootstrap prelude prepended to the Specs-Directory-Hygiene CLAUDE.md fence at `references/shared-conventions.md:135`. Class guard added: `scripts/check-spec-purity.py` **Rule 6 `prelude-presence`** (`VR_UNBOUND_ROOT`) fails any `bash`/`sh`/`shell`/`zsh` fence expanding `$R` with no in-fence `R=`; non-shell fences exempt (forge-bootstrap's narrative step list). Regression coverage in `tests/test_check_spec_purity.py::test_shell_fence_using_root_without_a_prelude_is_caught` (4 cases incl. the cross-fence carry-over). Verified red against the pre-fix file, green after.
+- Step 5: [APPLIED] 2026-07-29 — `python3 scripts/build-adapters.py` regenerated all six bundles; `--check` exit 0; `bash scripts/validate.sh` exit 0 (all checks passed); `ruff check scripts/ eval/` exit 0.
+- Step 6: [APPLIED] 2026-07-29 — V-004, V-005. New `tests/test_stage_constants_parity.py` (5 tests: `PRODUCTION_STAGES` ↔ `_PRODUCTION_STAGES` ordered equality, both `KNOWN_VERIFY_STATUSES` copies vs the schema enum, unskippability) and `tests/test_state_verb_call_sites.py` (5 tests: `--epic` present within 20 lines of all 21 `state-*` call sites with a non-vacuity floor, the three §14 failure-protocol clauses, the three exit-2 message prefixes still emitted by `forge-session.py`, unskippability). Stdlib only, `_forge_paths.py` imports, no `skipif`/`importorskip`. Each verified red-by-construction (reordered `_PRODUCTION_STAGES`; shortened the status set; stripped one `--epic` mandate; deleted one §14 clause), then restored — `git diff` clean.
+- Step 7: [APPLIED] 2026-07-29 — V-016, V-017. `tests/test_reference_citations.py` docstring: citation count 134 → **140** (re-measured with the module's own `_citations()` on 2026-07-29) and the pointer-to-`.pipeline-state.json` clause dropped in favour of the inline hash; the `MIN_EXPECTED_CITATIONS` comment updated to match. `tests/test_always_loaded_surface.py:47`: the `.reference/REMEASURE-0.13.0.md` path replaced by the inline 4688 figure + a `CHANGELOG.md` § 0.13.0 citation.
+- Step 8: [APPLIED] 2026-07-29 — decisions 1, 3, 4, 5 (decision 6 = WON'T-FIX, nothing applied). V-003(a): re-baseline notes in `05-instruction-relocations.md` §3.1 + §3.2, `tech-spec.md` §3.6, `PRD.md` REQ-R6-02. V-007: evidence-location convention in `06-testing-strategy.md` §7.2. V-018: exposure note in `TRACEABILITY.md` **and** the validator pattern widened in `scripts/validate-traceability.py` (step 8 now reads 29 requirements, was 12). V-013: declined-by-design recorded in `AGENTS.md` § Verification conventions.
+- Step 9: [DEFERRED] 2026-07-29 — V-006 belongs to forge-6-docs, per the plan. `effective-config` docs + the `CHANGELOG.md` `## [Unreleased]` entry for R1/R3/R4/R5/R6 (noting R2 scoped out) are the hand-off.
+- Step 10: [APPLIED] 2026-07-29 — see Step 8; recorded as declined rather than configured.
+- Step 11: [NOT APPLIED] 2026-07-29 — V-012 line-cap headroom is optional and explicitly "before the next edit to `skills/forge-5-loop/SKILL.md`". No fix in this pass touched that body, so it remains at 298/300. Left for whoever edits it next.

@@ -11,12 +11,10 @@ Two directions, both needed, neither sufficient alone:
    forward guard stays perfectly green.
 
 Regex provenance (finding V-030). The pattern below was validated against the
-**pre-feature baseline commit** ``9a29e846ed510c3b245876a9bf4cc73b8cb60951`` (the hash
-recorded in ``specs/context-efficiency/.pipeline-state.json`` under
-``stages['forge-4-backlog'].commitHash``), where it resolves **118 citations with zero
-misses**, and again against the post-R1..R6 tree, where it resolves **134 with zero
-misses**. The count moved because items 002/004/015 changed the citation set — which is
-why nothing here pins a total.
+**pre-feature baseline commit** ``9a29e846ed510c3b245876a9bf4cc73b8cb60951``, where it
+resolves **118 citations with zero misses**, and again against the post-R1..R6 tree
+(measured 2026-07-29), where it resolves **140 with zero misses**. The count moves
+whenever canon adds or drops a citation — which is why nothing here pins a total.
 
 The two refinements over a naive ``references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*)`` are both
 load-bearing; the naive form produces **3 false positives on the baseline** and would ship
@@ -57,7 +55,7 @@ NEW_FILES: tuple[str, ...] = (
 
 #: Non-vacuity floor, NOT a pinned total. A regex that matched nothing would satisfy every
 #: "zero unresolved" assertion below trivially, so the forward guard needs a lower bound —
-#: but the exact count is a moving target (118 at the pre-feature baseline, 134 now), so
+#: but the exact count is a moving target (118 at the pre-feature baseline, 140 now), so
 #: asserting equality would go red on the next legitimate citation change.
 MIN_EXPECTED_CITATIONS = 100
 

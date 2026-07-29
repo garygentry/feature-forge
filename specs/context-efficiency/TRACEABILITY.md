@@ -4,6 +4,15 @@ Maps every PRD requirement to the implementation-spec document(s) and section(s)
 that cover it. Generated at forge-3-specs completion. Primary owner listed first;
 supporting docs in parentheses.
 
+> **Machine verification of the `REQ-R*-NN` rows** (finding V-018, resolved
+> 2026-07-29). `scripts/validate-traceability.py` matched requirement IDs with
+> `REQ-[A-Z]+-\d+`, which cannot match the digit in a category segment like `R1`. Every
+> row in this file with a numbered category — all of R1–R6, 17 of this feature's 29
+> requirements — was therefore invisible to `validate.sh` step 8, which nonetheless
+> reported "All requirements covered" from the 12 it could see. The pattern is now
+> `REQ-[A-Z][A-Z0-9]*-\d+` and step 8 reads all 29. Rows authored before that fix were
+> confirmed by review, not by the gate.
+
 ## Functional Requirements
 
 ### R1 — Verification-checklist mode split

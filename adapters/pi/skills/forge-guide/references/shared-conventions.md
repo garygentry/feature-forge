@@ -133,6 +133,8 @@ mkdir -p "<specsDir>"
 If the host is Claude (the `AskUserQuestion` tool is available), also ensure the Claude-framed variant:
 
 ```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 [ -f "<specsDir>/CLAUDE.md" ] || cp "$R/references/templates/specs-hygiene/CLAUDE.md" "<specsDir>/CLAUDE.md"
 ```
 

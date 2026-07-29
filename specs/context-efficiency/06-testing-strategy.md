@@ -603,6 +603,19 @@ tokenizes denser than prose; where the two disagree, the 1.3 tok/word figure is 
 compared against a claim, because that is how the claims were computed). Body-line
 figures strip frontmatter (§1).
 
+**Evidence location under a loop run** (finding V-007, resolved 2026-07-29). The loop
+runner owns the commit message (`[rauf] NNN: <title>`, no body) and the iteration agent
+is forbidden from committing or staging at all (project `CLAUDE.md` → "Autonomous Loop
+(Rauf)", Completing rule 10), so an iteration agent **cannot** write to it. Any
+acceptance criterion phrased "recorded in the commit message" is satisfied by a per-item
+section in `{resolvedFeatureDir}/.rauf/progress.md` naming the item id. This applies to
+items 002/003/004/006/013/015/016, whose evidence lives at `progress.md` lines 26, 72,
+119, 744+769, 691, 832+838, and 1009 respectively.
+
+For future backlogs, the AC template changes from "recorded in the commit message" to
+"recorded in `progress.md` under a heading naming the item id (and in the commit message
+if the authoring agent owns the commit)".
+
 ### 7.3 Green/red guard on the always-loaded surface (REQ-PERF-02)
 `tests/test_always_loaded_surface.py` — a pass/fail guard, not a judgment:
 

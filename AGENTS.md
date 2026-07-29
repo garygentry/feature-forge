@@ -42,6 +42,18 @@ version); (4) **offer, don't act** — suggest a release, never cut one yourself
 feature-forge are versioned **independently** (no lockstep); the only coupling is the
 `RAUF_PIN` provisioned-default coordinate plus `COMPATIBILITY.md`.
 
+## Verification conventions (forge-verify on this repo)
+
+**`smokeCommand` is `null` by design — do not re-raise it.** `forge.config.json` sets
+`"testCommand": "bash scripts/validate.sh"`, which is a strict superset of the smoke a
+`smokeCommand` would run: it drives spec-purity, the adapter drift gate, the full pytest
+suite, the `adapter-src/pi` verify, ruff, traceability, and version-sync. This repo has
+no long-running server or wired app entrypoint to boot, so there is no runtime that
+`validate.sh` leaves unexercised. `CHECK-I21` therefore degrades to `not-applicable` on
+every impl-verify here **on purpose** (owner decision, 2026-07-29, finding V-013 of the
+`context-efficiency` impl verify). Report it as `not-applicable` and move on; do not
+recommend configuring one, and never fabricate a command.
+
 ## Repository Conventions
 
 ### Spec-pure canon

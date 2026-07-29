@@ -279,6 +279,13 @@ model-selection precedence; its optional-flags-catalog clause is **trimmed**, an
 catalog is referenced from inside the gated block instead (owner decision, 2026-07-29).
 That is what makes "reachable but not loaded by default" literally true.
 
+> **Re-baselined (finding V-003, 2026-07-29).** "Not loaded by default" is true of the
+> *file open*, but the gate condition itself — effective `loopRunner.agentArgument`
+> non-empty — is **satisfied by the schema default** (`'--agent {agent}'`). So on a
+> default-config project the gate is on, the file *is* opened, and only the narrower
+> in-file conditions on sections {3, 5} still bite. R6's realized instruction-load
+> saving is sections {3, 5}, not all three. See `05-instruction-relocations.md` §3.2.
+
 **Cap constraint (REQ-R6-03).** `forge-5-loop` SKILL body is at **298/300 lines and
 4,415/5,000 words** (measured 2026-07-28 @0.13.0 — 2 lines spare; body lines exclude
 frontmatter, the region `check-spec-purity.py` Rule 4 measures, and Rule 4 gates **both**

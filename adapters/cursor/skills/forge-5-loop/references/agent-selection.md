@@ -7,7 +7,8 @@ file is never read.
 
 ## Agent selection (Step 2d)
 
-This section is **parallel** to `## Model selection precedence` above: it governs
+This section is **parallel** to `## Model selection precedence` in
+`references/runner-contract.md`: it governs
 which **coding agent** rauf drives for the run. The entire surface is
 **presence-gated** on `loopRunner.agentArgument` — when that field is absent or
 empty, there is no selector, no probe, and no `{agent}` substitution, and Step 2d /
@@ -88,7 +89,8 @@ default / `claude-cli` path skips this guard (the aliases are valid there).
 > in the separate rauf plugin/repo, not feature-forge; tracked as a follow-up.
 >
 > **Follow-up (out of scope here — rauf repo).** The durable fix for the root/sandbox
-> refusal (see "Root/sandbox env guard" under Step 3b) is for **rauf itself** to honor
+> refusal (see "Root/sandbox env guard" under `## Launch detail (Step 3b —
+> background process)` in `references/runner-contract.md`) is for **rauf itself** to honor
 > `IS_SANDBOX` when it launches `claude --dangerously-skip-permissions` as root (or to
 > detect root+flag-refused and emit a clear error instead of an opaque circuit-break).
 > feature-forge's launch-time export is the mitigation; the upstream fix lives in the
@@ -105,7 +107,8 @@ user requests additional flags, append them to the rendered run command.
                     rejected before launch. Shown only when the runner advertises
                     an agent surface (loopRunner.agentArgument present).
   --review          Run a review pass after all iterations (extra agent session)
-  --model <model>   Override the model (see precedence above)
+  --model <model>   Override the model (see `## Model selection precedence` in
+                    `references/runner-contract.md`)
   --timeout <min>   Per-session timeout in minutes (default: 60)
   --retry-blocked   Unblock and retry previously blocked items
 ```

@@ -49,8 +49,6 @@ The feature name must be a single kebab-case token. If the user provides multipl
 
 ### 3. Pipeline Status Dashboard
 
-Write pipeline state conforming to `references/pipeline-state-schema.json`.
-
 Display a clear, scannable status for the feature:
 
 ```
@@ -206,7 +204,7 @@ Commands:
 
 ### 6. Pipeline Lifecycle Commands
 
-> **Deliberate R4 exclusion.** The `pipelineStatus` writes below (`pause` / `resume` / `abandon`, and the member-pause under **Epic lifecycle**) stay hand-authored on purpose: the `state-*` verbs cover the seven stage and array touch points, and none of them writes `pipelineStatus`. These are the sanctioned exception to the Pipeline State Protocol in `references/shared-conventions.md` — everywhere else, state is written by a verb, never by hand.
+> **Deliberate R4 exclusion.** The `pipelineStatus` writes below (`pause` / `resume` / `abandon`, and the member-pause under **Epic lifecycle**) stay hand-authored on purpose: the `state-*` verbs cover the seven stage and array touch points, and none of them writes `pipelineStatus`. These are the sanctioned exception to the Pipeline State Protocol in `references/shared-conventions.md` — everywhere else, state is written by a verb, never by hand. When authoring one of these `pipelineStatus` writes, conform to `references/pipeline-state-schema.json` — this is the one navigator path that still reads it.
 
 Support these sub-commands for pipeline lifecycle management:
 - `/skill:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.

@@ -169,6 +169,47 @@ def test_prelude_hint_allowed_but_stray_var_still_caught(tmp_path: Path):
     assert m.check_no_residual_var(bad_bare)
 
 
+# ── Rule 6: a shell fence using $R must bind it in-fence (finding V-002) ───
+# Rule 5 pins a prelude that EXISTS; it is structurally blind to a MISSING one.
+# `$R` does not survive across fences — each is its own process — so an unbound
+# `$R` expands to empty and the command silently runs against `/`. That is how the
+# specs-hygiene CLAUDE.md copy was dead from 2026-06-19 with every rule green.
+# Driven directly against check_prelude_presence over a tmp tree.
+
+
+def test_shell_fence_using_root_without_a_prelude_is_caught(tmp_path: Path):
+    m = _load_checker_module()
+
+    def _tree(name: str, body: str) -> Path:
+        root = tmp_path / name
+        (root / "references").mkdir(parents=True)
+        (root / "references" / "hygiene.md").write_text(body)
+        return root
+
+    fence = '[ -f "x" ] || cp "$R/references/templates/t.md" "x"'
+
+    # (a) a shell fence that binds $R in-fence passes.
+    ok = _tree("ok", f"```bash\n{m.BOOTSTRAP_PRELUDE}\n{fence}\n```\n")
+    assert m.check_prelude_presence(ok) == []
+
+    # (b) the same fence WITHOUT the prelude trips — the V-002 shape exactly.
+    bad = _tree("bad", f"```bash\n{fence}\n```\n")
+    violations = m.check_prelude_presence(bad)
+    assert violations, "an unbound $R in a shell fence must trip rule 6"
+    assert violations[0].rule is m.Rule.PRELUDE_PRESENCE
+
+    # (c) a PRECEDING fence's assignment does not carry over — that is the bug.
+    split = _tree(
+        "split",
+        f"```bash\n{m.BOOTSTRAP_PRELUDE}\nmkdir -p x\n```\n\nProse.\n\n```bash\n{fence}\n```\n",
+    )
+    assert m.check_prelude_presence(split), "$R must not be treated as crossing fences"
+
+    # (d) a non-shell fence may name $R narratively (forge-bootstrap's step list).
+    prose = _tree("prose", "```\n1. Portable-root prelude → locate $R\n```\n")
+    assert m.check_prelude_presence(prose) == []
+
+
 # ── Determinism: sorted, byte-identical repeated runs (spec 05 §3.4, §7) ────
 
 
