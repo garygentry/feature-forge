@@ -5,8 +5,8 @@ Covers the pieces every ``state-*`` verb reuses (item 007): the
 ``_write_state``, the corrupt-file-refusing ``_load_state_for_write``,
 ``_commit_state``'s ``updatedAt`` refresh, and the ``_stage_entry`` bootstrap —
 plus the end-to-end CLI contracts of ``state-enter``/``-artifact``/``-branch``/
-``-note`` (item 008). ``state-complete`` (009) and ``state-decision``/``-ecr``
-(010) extend this module further.
+``-note`` (item 008), ``state-complete`` (009) and the two array-appending verbs
+``state-decision``/``state-ecr`` (010) — all seven verbs.
 
 ``scripts/forge-session.py`` is hyphen-named, so it is loaded by path via importlib
 rather than imported — the same trick the script's own flat, dependency-free design
@@ -23,7 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _forge_paths import SCRIPTS, read
+from _forge_paths import REFERENCES, SCRIPTS, read
 from _state_schema import validate_state
 
 FORGE_SESSION = SCRIPTS / "forge-session.py"
@@ -341,14 +341,16 @@ def test_stage_entry_accepts_every_state_verb_stage():
 # Registration (item 008's four verbs)
 # --------------------------------------------------------------------------- #
 
-#: Every state verb registered so far — items 008 (enter/artifact/branch/note)
-#: and 009 (complete). Item 010 (state-decision/-ecr) extends this tuple.
+#: All seven state verbs — items 008 (enter/artifact/branch/note), 009 (complete)
+#: and 010 (decision/ecr).
 REGISTERED_STATE_VERBS = (
     "state-enter",
     "state-artifact",
     "state-complete",
     "state-branch",
     "state-note",
+    "state-decision",
+    "state-ecr",
 )
 
 
@@ -988,6 +990,261 @@ def test_state_note_overwrites_rather_than_appends(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# state-decision
+# --------------------------------------------------------------------------- #
+
+
+def test_state_decision_appends_an_open_item_with_every_field(tmp_path):
+    _feature_dir(tmp_path)
+    result = _run(
+        "state-decision", "--feature", "demo",
+        "--question", "Which cache backend?",
+        "--rationale", "forge-2-tech designs it",
+        "--target-stage", "forge-2-tech",
+        "--raised-by", "forge-1-prd",
+        "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+
+    state = _state_of(tmp_path)
+    assert len(state["deferredDecisions"]) == 1
+    item = state["deferredDecisions"][0]
+    assert item == {
+        "question": "Which cache backend?",
+        "rationale": "forge-2-tech designs it",
+        "targetStage": "forge-2-tech",
+        "raisedBy": "forge-1-prd",
+        "raisedAt": item["raisedAt"],
+        "status": "open",
+    }
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", item["raisedAt"])
+    assert json.loads(result.stdout) == state
+
+
+def test_state_decision_omits_the_optional_keys_when_not_given(tmp_path):
+    """`additionalProperties: false` — an absent optional must be ABSENT, not null."""
+    _feature_dir(tmp_path)
+    result = _run(
+        "state-decision", "--feature", "demo", "--question", "Who owns retries?",
+        "--raised-by", "forge-3-specs", "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+
+    item = _state_of(tmp_path)["deferredDecisions"][0]
+    assert set(item) == {"question", "raisedBy", "raisedAt", "status"}
+
+
+def test_state_decision_always_records_status_open(tmp_path):
+    """The recorder never resolves — only the target stage flips open→addressed."""
+    _feature_dir(tmp_path)
+    assert _run(
+        "state-decision", "--feature", "demo", "--question", "q",
+        "--raised-by", "forge-4-backlog", "--specs-dir", str(tmp_path / "specs"),
+    ).returncode == 0
+    assert _state_of(tmp_path)["deferredDecisions"][0]["status"] == "open"
+
+
+def test_repeated_state_decision_invocations_append(tmp_path):
+    _feature_dir(tmp_path)
+    specs = str(tmp_path / "specs")
+    for question in ("first?", "second?", "third?"):
+        assert _run(
+            "state-decision", "--feature", "demo", "--question", question,
+            "--raised-by", "forge-1-prd", "--specs-dir", specs,
+        ).returncode == 0
+
+    items = _state_of(tmp_path)["deferredDecisions"]
+    assert [item["question"] for item in items] == ["first?", "second?", "third?"]
+
+
+def test_state_decision_rejects_an_out_of_enum_raised_by(tmp_path):
+    """forge-5-loop/forge-6-docs may be a targetStage but can never RAISE one."""
+    _feature_dir(tmp_path)
+    result = _run(
+        "state-decision", "--feature", "demo", "--question", "q",
+        "--raised-by", "forge-5-loop", "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode != 0
+    assert "invalid choice" in result.stderr
+    assert not (tmp_path / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME).exists()
+
+
+def test_state_decision_rejects_an_out_of_enum_target_stage(tmp_path):
+    _feature_dir(tmp_path)
+    result = _run(
+        "state-decision", "--feature", "demo", "--question", "q",
+        "--raised-by", "forge-1-prd", "--target-stage", "forge-0-epic",
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode != 0
+    assert "invalid choice" in result.stderr
+
+
+def test_state_decision_prints_a_one_line_summary_without_json(tmp_path):
+    _feature_dir(tmp_path)
+    specs = str(tmp_path / "specs")
+    result = _run(
+        "state-decision", "--feature", "demo", "--question", "q",
+        "--target-stage", "forge-2-tech", "--raised-by", "forge-1-prd", "--specs-dir", specs,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == (
+        "deferred decision recorded (raisedBy forge-1-prd → forge-2-tech)"
+    )
+
+    untargeted = _run(
+        "state-decision", "--feature", "demo", "--question", "q2",
+        "--raised-by", "forge-1-prd", "--specs-dir", specs,
+    )
+    assert untargeted.returncode == 0, untargeted.stderr
+    assert untargeted.stdout.strip() == (
+        "deferred decision recorded (raisedBy forge-1-prd, no target stage)"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# state-ecr
+# --------------------------------------------------------------------------- #
+
+
+_ECR_ARGS = (
+    "--kind", "add-feature",
+    "--target", "shared-conventions-split",
+    "--rationale", "R7 emerged as a distinct feature",
+    "--raised-by", "forge-2-tech",
+)
+
+
+def test_state_ecr_appends_an_open_item_with_all_seven_fields(tmp_path):
+    _feature_dir(tmp_path)
+    result = _run(
+        "state-ecr", "--feature", "demo", *_ECR_ARGS, "--blocks-current", "false",
+        "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+
+    state = _state_of(tmp_path)
+    assert len(state["epicChangeRequests"]) == 1
+    item = state["epicChangeRequests"][0]
+    assert item == {
+        "kind": "add-feature",
+        "target": "shared-conventions-split",
+        "rationale": "R7 emerged as a distinct feature",
+        "blocksCurrent": False,
+        "raisedBy": "forge-2-tech",
+        "raisedAt": item["raisedAt"],
+        "status": "open",
+    }
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", item["raisedAt"])
+    assert json.loads(result.stdout) == state
+
+
+def test_state_ecr_parses_blocks_current_as_a_real_boolean(tmp_path):
+    """`blocksCurrent` is schema-typed boolean and routes the stage exit — not "true"."""
+    _feature_dir(tmp_path)
+    assert _run(
+        "state-ecr", "--feature", "demo", *_ECR_ARGS, "--blocks-current", "TRUE",
+        "--specs-dir", str(tmp_path / "specs"),
+    ).returncode == 0
+    assert _state_of(tmp_path)["epicChangeRequests"][0]["blocksCurrent"] is True
+
+
+def test_repeated_state_ecr_invocations_append(tmp_path):
+    _feature_dir(tmp_path)
+    specs = str(tmp_path / "specs")
+    for target in ("alpha", "beta"):
+        assert _run(
+            "state-ecr", "--feature", "demo", "--kind", "redep", "--target", target,
+            "--rationale", "why", "--raised-by", "forge-1-prd",
+            "--blocks-current", "true", "--specs-dir", specs,
+        ).returncode == 0
+
+    items = _state_of(tmp_path)["epicChangeRequests"]
+    assert [item["target"] for item in items] == ["alpha", "beta"]
+
+
+def test_blocks_current_rejects_anything_but_true_or_false(tmp_path):
+    _feature_dir(tmp_path)
+    for bad in ("yes", "1", "", "True false", "no"):
+        result = _run(
+            "state-ecr", "--feature", "demo", *_ECR_ARGS, "--blocks-current", bad,
+            "--specs-dir", str(tmp_path / "specs"),
+        )
+        assert result.returncode == 2, f"{bad!r}: expected exit 2, got {result.returncode}"
+        assert result.stderr.strip() == (
+            f"Error: --blocks-current expects true|false, got: {bad!r}"
+        ), result.stderr
+    assert not (tmp_path / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME).exists()
+
+
+def test_state_ecr_rejects_an_out_of_enum_kind_and_raised_by(tmp_path):
+    _feature_dir(tmp_path)
+    specs = str(tmp_path / "specs")
+    bad_kind = _run(
+        "state-ecr", "--feature", "demo", "--kind", "rename", "--target", "t",
+        "--rationale", "why", "--raised-by", "forge-2-tech",
+        "--blocks-current", "false", "--specs-dir", specs,
+    )
+    assert bad_kind.returncode != 0
+    assert "invalid choice" in bad_kind.stderr
+
+    bad_raiser = _run(
+        "state-ecr", "--feature", "demo", *_ECR_ARGS[:6], "--raised-by", "forge-3-specs",
+        "--blocks-current", "false", "--specs-dir", specs,
+    )
+    assert bad_raiser.returncode != 0
+    assert "invalid choice" in bad_raiser.stderr
+
+
+def test_state_ecr_prints_a_one_line_summary_without_json(tmp_path):
+    _feature_dir(tmp_path)
+    result = _run(
+        "state-ecr", "--feature", "demo", *_ECR_ARGS, "--blocks-current", "false",
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == (
+        "epic change request recorded (add-feature → shared-conventions-split, "
+        "blocksCurrent=false)"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Enum parity with the schema (REQ-R4-03 — the schema stays source of truth)
+# --------------------------------------------------------------------------- #
+
+
+def _schema_enum(*path: str) -> list[str]:
+    """Pull an ``enum`` list out of references/pipeline-state-schema.json by key path."""
+    node = json.loads(read(REFERENCES / "pipeline-state-schema.json"))
+    for key in path:
+        node = node[key]
+    return node["enum"]
+
+
+def test_the_verb_enum_choices_match_the_schema_exactly():
+    """No stage reads the schema any more, so the choices must be pinned to it."""
+    decisions = ("properties", "deferredDecisions", "items", "properties")
+    ecrs = ("properties", "epicChangeRequests", "items", "properties")
+    assert list(FS.DECISION_RAISED_BY) == _schema_enum(*decisions, "raisedBy")
+    assert list(FS.DECISION_TARGET_STAGES) == _schema_enum(*decisions, "targetStage")
+    assert list(FS.ECR_KINDS) == _schema_enum(*ecrs, "kind")
+    assert list(FS.ECR_RAISED_BY) == _schema_enum(*ecrs, "raisedBy")
+
+
+def test_the_registered_choices_are_the_constants_not_a_retyped_literal():
+    """A drifting inline tuple would pass the parity test above while the CLI drifts."""
+    source = read(FORGE_SESSION)
+    for flag, constant in (
+        ("--raised-by", "DECISION_RAISED_BY"),
+        ("--target-stage", "DECISION_TARGET_STAGES"),
+        ("--kind", "ECR_KINDS"),
+        ("--raised-by", "ECR_RAISED_BY"),
+    ):
+        assert f"choices={constant}" in source, f"{flag} does not use {constant}"
+
+
+# --------------------------------------------------------------------------- #
 # Cross-verb invariants
 # --------------------------------------------------------------------------- #
 
@@ -999,6 +1256,12 @@ _VERB_INVOCATIONS = {
     "state-complete": ("--stage", "forge-1-prd", "--version", "1"),
     "state-branch": ("--branch", "forge/demo"),
     "state-note": ("--note", "a note"),
+    "state-decision": ("--question", "Which cache backend?", "--raised-by", "forge-1-prd"),
+    "state-ecr": (
+        "--kind", "add-feature", "--target", "sibling-feature",
+        "--rationale", "R7 emerged as a distinct feature",
+        "--raised-by", "forge-2-tech", "--blocks-current", "false",
+    ),
 }
 
 

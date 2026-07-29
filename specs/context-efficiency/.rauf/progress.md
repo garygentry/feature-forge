@@ -332,3 +332,42 @@ paragraph. `tests/test_state_verbs.py` grew from 37 to 57 tests.
   completion leave identical entries.
 - The completion branch writes `basedOnVersions` even when no `--based-on` was
   passed (forge-1-prd records `{}`, not an absent key), matching spec §6.2.
+
+## Item 010 — `state-decision` / `state-ecr` (the two array-appending verbs)
+
+Added to `scripts/forge-session.py`: four enum constants next to
+`STATE_VERB_STAGES`, `cmd_state_decision`, `_parse_bool`, `cmd_state_ecr`, two
+printers, two subparsers, two `main()` dispatch branches, and the docstring's
+usage lines + paragraph. `tests/test_state_verbs.py` grew from 57 to 72 tests.
+All seven R4 verbs now exist.
+
+### Learnings
+
+- **The enum `choices` are module-level `Final` constants** (`DECISION_RAISED_BY`,
+  `DECISION_TARGET_STAGES`, `ECR_KINDS`, `ECR_RAISED_BY`), deviating from spec 03
+  §8.1/§9.1's inline literal tuples. The AC requires the choices to match
+  `references/pipeline-state-schema.json` byte-for-byte, and a named constant lets
+  the parity guard compare `FS.ECR_KINDS` against the parsed schema directly
+  instead of regexing an `add_argument(...)` call. A *second* guard asserts each
+  registration reads `choices=<CONSTANT>` — without it, someone could retype an
+  inline tuple at the call site and the parity test would stay green while the CLI
+  drifted.
+- **`_parse_bool` is called in the DISPATCH, not inside `cmd_state_ecr`**, so a bad
+  `--blocks-current` fails before `_load_state_for_write` runs and the state file is
+  never created. The test asserts that non-existence, not just exit 2.
+- **`additionalProperties: false` bites here and nowhere else.** These are the only
+  two shapes in the state schema that set it (item 005's note), so an absent
+  optional must be **absent, not null**: `state-decision` omits `rationale` /
+  `targetStage` entirely rather than writing `None`, and the test asserts the exact
+  key set `{question, raisedBy, raisedAt, status}` rather than just schema validity.
+- **The enum asymmetry is deliberate and worth not "fixing":** `forge-5-loop` and
+  `forge-6-docs` are legal `targetStage` values but can never be a decision's
+  `raisedBy`; `state-ecr`'s `raisedBy` is narrower still (prd/tech only). Both are
+  schema-driven, and each has a rejection test.
+- **Neither printer needs a dispatch lambda** (unlike `state-artifact`/`state-complete`
+  in items 008/009): the appended item is recoverable from the echoed state as
+  `state["deferredDecisions"][-1]`, so the plain `Callable[[dict], None]` signature
+  works.
+- Adapters: `scripts/forge-session.py` is copied wholesale, so this restaged the
+  same 6 per-target copies; `build-adapters.py --check` is the only gate that
+  notices. `bash scripts/validate.sh` is green.

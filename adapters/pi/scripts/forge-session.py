@@ -32,6 +32,10 @@ has to hand-write the JSON (and therefore no stage has to read the state schema)
         [--epic E] [--json]
     python3 forge-session.py state-note --feature F --note TEXT [--specs-dir DIR] \
         [--epic E] [--json]
+    python3 forge-session.py state-decision --feature F --question Q --raised-by S \
+        [--rationale R] [--target-stage S] [--specs-dir DIR] [--epic E] [--json]
+    python3 forge-session.py state-ecr --feature F --kind K --target T --rationale R \
+        --raised-by S --blocks-current true|false [--specs-dir DIR] [--epic E] [--json]
 
 `rank-features` scans the specs tree for feature-shaped directories (those that
 directly contain a `.pipeline-state.json`, in both the flat
@@ -111,6 +115,16 @@ revert (status-only, no cascade), and `--preserve-commit-hash` is the "nothing t
 commit" branch. A bare `--status in-progress` is something else again —
 forge-5-loop's partial completion, which keeps every completion field.
 
+`state-decision` and `state-ecr` are the two array-appending verbs. The first
+appends a `deferredDecisions[]` item — a same-feature decision deliberately
+postponed to a later stage; the second appends an `epicChangeRequests[]` item —
+a member stage's report that the epic decomposition itself must change, whose
+`blocksCurrent` boolean drives the stage exit's pause-now vs. finish-then-edit
+routing (so it is required and parsed strictly: only `true`/`false`). Both always
+record `status: "open"` — resolving an item is the target stage's job, never the
+recorder's — and both emit exactly the schema keys, because those two array item
+shapes set `additionalProperties: false`.
+
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
 matching the conventions of `scripts/epic-manifest.py`.
 
@@ -156,6 +170,28 @@ PRODUCTION_STAGES: Final[tuple[str, ...]] = (
 #: is NEVER redefined) plus forge-0-epic, which also carries a stageEntry but is
 #: excluded from the next-stage walk.
 STATE_VERB_STAGES: Final[tuple[str, ...]] = ("forge-0-epic", *PRODUCTION_STAGES)
+
+#: The `--raised-by` / `--target-stage` domains for `state-decision`, and the
+#: `--kind` / `--raised-by` domains for `state-ecr`. SOURCE OF TRUTH:
+#: references/pipeline-state-schema.json (the `deferredDecisions` and
+#: `epicChangeRequests` array item enums). Mirrored here so an out-of-enum value is
+#: rejected at parse time; a drift guard asserts they still match the schema.
+DECISION_RAISED_BY: Final[tuple[str, ...]] = (
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+)
+DECISION_TARGET_STAGES: Final[tuple[str, ...]] = (
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+    "forge-5-loop",
+    "forge-6-docs",
+)
+ECR_KINDS: Final[tuple[str, ...]] = ("add-feature", "redep", "move-boundary", "split")
+ECR_RAISED_BY: Final[tuple[str, ...]] = ("forge-1-prd", "forge-2-tech")
 
 #: Production stage -> the verify token its findings file uses, and the
 #: `forge-verify-<token>` key its state lives under. forge-6-docs has no verify.
@@ -2320,6 +2356,127 @@ def cmd_state_note(feature: str, note: str, specs_dir: Path, epic: str | None) -
     return _commit_state(state_path, state)
 
 
+def cmd_state_decision(
+    feature: str,
+    question: str,
+    raised_by: str,
+    rationale: str | None,
+    target_stage: str | None,
+    specs_dir: Path,
+    epic: str | None,
+) -> dict:
+    """Append an open deferred-decision item to ``deferredDecisions[]``.
+
+    Emits exactly the schema keys — the array item sets
+    ``additionalProperties: false``, so a convenience field is a hard validation
+    failure: required ``question``/``raisedBy``/``raisedAt``/``status``, plus
+    ``rationale``/``targetStage`` only when provided. ``status`` is always
+    ``"open"``; the recorder never resolves a decision (the target stage flips it
+    to ``"addressed"``).
+
+    Args:
+        feature: Feature name.
+        question: The deferred decision, phrased for the target stage.
+        raised_by: The deferring stage id.
+        rationale: Optional reason for deferring.
+        target_stage: Optional resolving stage id.
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    item: dict = {
+        "question": question,
+        "raisedBy": raised_by,
+        "raisedAt": _now_iso(),
+        "status": "open",
+    }
+    if rationale is not None:
+        item["rationale"] = rationale
+    if target_stage is not None:
+        item["targetStage"] = target_stage
+    state.setdefault("deferredDecisions", []).append(item)
+    return _commit_state(state_path, state)
+
+
+def _parse_bool(raw: str, flag: str) -> bool:
+    """Parse an explicit boolean CLI value; fail closed on anything else.
+
+    Args:
+        raw: The raw flag value (e.g. from ``--blocks-current``).
+        flag: The flag name, for the error message.
+
+    Returns:
+        ``True`` for ``"true"``, ``False`` for ``"false"`` (case-insensitive,
+        surrounding whitespace ignored).
+
+    Raises:
+        UsageError: For any other value (→ exit 2), so a typo like ``"yes"`` is
+            rejected rather than silently misrouting the stage exit.
+    """
+    normalized = raw.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise UsageError(f"{flag} expects true|false, got: {raw!r}")
+
+
+def cmd_state_ecr(
+    feature: str,
+    kind: str,
+    target: str,
+    rationale: str,
+    raised_by: str,
+    blocks_current: bool,
+    specs_dir: Path,
+    epic: str | None,
+) -> dict:
+    """Append an open epic-change-request item to ``epicChangeRequests[]``.
+
+    Emits exactly the schema keys — the array item sets
+    ``additionalProperties: false``, so a convenience field is a hard validation
+    failure. All six payload fields are required, and ``status`` is always
+    ``"open"`` (only forge-0-epic edit mode flips it). ``blocksCurrent`` drives
+    stage-exit routing, so it is a strictly-parsed boolean.
+
+    Args:
+        feature: Feature name.
+        kind: One of add-feature|redep|move-boundary|split.
+        target: The sibling feature to add, or the affected feature/boundary.
+        rationale: Why the epic must change.
+        raised_by: forge-1-prd or forge-2-tech.
+        blocks_current: True → pause-now; False → finish-then-edit.
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    item = {
+        "kind": kind,
+        "target": target,
+        "rationale": rationale,
+        "blocksCurrent": blocks_current,
+        "raisedBy": raised_by,
+        "raisedAt": _now_iso(),
+        "status": "open",
+    }
+    state.setdefault("epicChangeRequests", []).append(item)
+    return _commit_state(state_path, state)
+
+
 def _print_state_enter(state: dict) -> None:
     """Print the one-line human summary for `state-enter`."""
     print(f"entered {state['currentStage']} (in-progress) for {state['feature']}")
@@ -2364,6 +2521,24 @@ def _print_state_branch(state: dict) -> None:
 def _print_state_note(state: dict) -> None:
     """Print the one-line human summary for `state-note`."""
     print(f"note set for {state['feature']} ({len(state['notes'])} chars)")
+
+
+def _print_state_decision(state: dict) -> None:
+    """Print the one-line human summary for `state-decision` (the item appended)."""
+    item = state["deferredDecisions"][-1]
+    target = item.get("targetStage")
+    routing = f"{item['raisedBy']} → {target}" if target else f"{item['raisedBy']}, no target stage"
+    print(f"deferred decision recorded (raisedBy {routing})")
+
+
+def _print_state_ecr(state: dict) -> None:
+    """Print the one-line human summary for `state-ecr` (the item appended)."""
+    item = state["epicChangeRequests"][-1]
+    blocks = "true" if item["blocksCurrent"] else "false"
+    print(
+        f"epic change request recorded ({item['kind']} → {item['target']}, "
+        f"blocksCurrent={blocks})"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -2565,6 +2740,43 @@ def main() -> int:
     p_note.add_argument("--epic", default=None, help="Epic name for a nested member")
     p_note.add_argument("--json", action="store_true", dest="json_output")
 
+    p_dec = sub.add_parser(
+        "state-decision", help="Append a deferred decision (status: open)"
+    )
+    p_dec.add_argument("--feature", required=True, help="Feature name")
+    p_dec.add_argument("--question", required=True,
+                       help="The deferred decision, phrased for the target stage")
+    p_dec.add_argument("--raised-by", required=True, dest="raised_by",
+                       choices=DECISION_RAISED_BY,
+                       help="The stage deferring the decision")
+    p_dec.add_argument("--rationale", default=None, help="Why it is deferred (optional)")
+    p_dec.add_argument("--target-stage", default=None, dest="target_stage",
+                       choices=DECISION_TARGET_STAGES,
+                       help="The stage that should resolve it (optional)")
+    p_dec.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_dec.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_dec.add_argument("--json", action="store_true", dest="json_output")
+
+    p_ecr = sub.add_parser(
+        "state-ecr", help="Append an epic change request (status: open)"
+    )
+    p_ecr.add_argument("--feature", required=True, help="Feature name")
+    p_ecr.add_argument("--kind", required=True, choices=ECR_KINDS,
+                       help="The decomposition change kind")
+    p_ecr.add_argument("--target", required=True,
+                       help="The sibling feature to add, or the feature/boundary affected")
+    p_ecr.add_argument("--rationale", required=True, help="Why the epic must change")
+    p_ecr.add_argument("--raised-by", required=True, dest="raised_by",
+                       choices=ECR_RAISED_BY,
+                       help="The stage that detected the epic-level concern")
+    p_ecr.add_argument("--blocks-current", required=True, dest="blocks_current",
+                       metavar="true|false",
+                       help="true → pause-now (reconcile before proceeding); "
+                            "false → finish-then-edit")
+    p_ecr.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_ecr.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_ecr.add_argument("--json", action="store_true", dest="json_output")
+
     args = parser.parse_args()
 
     try:
@@ -2717,6 +2929,33 @@ def main() -> int:
                 args.feature, args.note, Path(args.specs_dir), args.epic
             )
             _emit(payload, args.json_output, _print_state_note)
+            return 0
+
+        if args.cmd == "state-decision":
+            payload = cmd_state_decision(
+                args.feature,
+                args.question,
+                args.raised_by,
+                args.rationale,
+                args.target_stage,
+                Path(args.specs_dir),
+                args.epic,
+            )
+            _emit(payload, args.json_output, _print_state_decision)
+            return 0
+
+        if args.cmd == "state-ecr":
+            payload = cmd_state_ecr(
+                args.feature,
+                args.kind,
+                args.target,
+                args.rationale,
+                args.raised_by,
+                _parse_bool(args.blocks_current, "--blocks-current"),
+                Path(args.specs_dir),
+                args.epic,
+            )
+            _emit(payload, args.json_output, _print_state_ecr)
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")
