@@ -280,8 +280,8 @@
         "bash scripts/validate.sh passes - this is the canonical gate that .rauf/RAUF.md instructs each iteration to run and that CI enforces on every PR. It is a strict superset of `python3 -m pytest tests` (it adds check-spec-purity, the adapters --check freshness gate, traceability, version-sync, the installer build+test and ruff). The pytest / check-spec-purity criteria above remain useful as fast inner-loop signals, but THIS is what gates RAUF_DONE",
         "--resumable together with an explicit --status complete exits 2 with a UsageError rather than silently forcing in-progress"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-29T05:52:19.548Z",
       "dependsOn": [
         "007"
       ],

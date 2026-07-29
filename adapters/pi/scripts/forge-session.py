@@ -24,6 +24,10 @@ has to hand-write the JSON (and therefore no stage has to read the state schema)
         [--epic E] [--json]
     python3 forge-session.py state-artifact --feature F --stage S --path P \
         [--path P ...] [--specs-dir DIR] [--epic E] [--json]
+    python3 forge-session.py state-complete --feature F --stage S --version N \
+        [--based-on STAGE=N ...] [--artifact P ...] [--commit-hash H] \
+        [--status complete|in-progress] [--resumable] [--preserve-commit-hash] \
+        [--specs-dir DIR] [--epic E] [--json]
     python3 forge-session.py state-branch --feature F --branch B [--specs-dir DIR] \
         [--epic E] [--json]
     python3 forge-session.py state-note --feature F --note TEXT [--specs-dir DIR] \
@@ -95,6 +99,17 @@ Branch Setup / Branch Reconciliation, and `state-note` persists the free-text
 note a user volunteers at a stage exit. They never create a feature directory —
 an unknown `--feature` is a usage error (exit 2) — and they never overwrite a
 state file they could not parse.
+
+`state-complete` is the largest of them: it records the completion (status,
+`completedAt`, `version`, `basedOnVersions`, `artifacts`), resets `commitHash` to
+null for Commit 1 of the two-commit Git Commit Protocol, and runs the
+deterministic downstream staleness cascade that each stage used to describe in
+prose. `--commit-hash` is the Commit-2 follow-up, setting only that field (and
+refusing a stage that is not yet complete). The protocol's two recovery branches
+stay executable without hand-authored JSON: `--resumable` is the failed-Commit-1
+revert (status-only, no cascade), and `--preserve-commit-hash` is the "nothing to
+commit" branch. A bare `--status in-progress` is something else again —
+forge-5-loop's partial completion, which keeps every completion field.
 
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
 matching the conventions of `scripts/epic-manifest.py`.
@@ -2068,6 +2083,188 @@ def cmd_state_artifact(
     return _commit_state(state_path, state)
 
 
+def _parse_based_on(pairs: list[str]) -> dict[str, int]:
+    """Parse ``--based-on STAGE=N`` tokens into a ``{stageId: int}`` map.
+
+    Args:
+        pairs: Raw ``STAGE=N`` strings from repeated ``--based-on`` flags.
+
+    Returns:
+        A ``{stageId: version}`` dict (empty when no pairs were given — the
+        forge-1-prd case, which records ``basedOnVersions == {}``).
+
+    Raises:
+        UsageError: If a token lacks ``=`` or its value is not an integer
+            (→ exit 2).
+    """
+    out: dict[str, int] = {}
+    for token in pairs:
+        if "=" not in token:
+            raise UsageError(f"--based-on expects STAGE=N, got: {token!r}")
+        stage_id, _, raw = token.partition("=")
+        try:
+            out[stage_id] = int(raw)
+        except ValueError as exc:
+            raise UsageError(f"--based-on version must be an integer: {token!r}") from exc
+    return out
+
+
+#: Stages the staleness cascade may mark stale (downstream authored artifacts).
+#: forge-1-prd/forge-2-tech are never marked stale by a later completion (nothing
+#: downstream feeds back into them); the cascade scope is specs..docs. Keyed off
+#: this map, NOT off PRODUCTION_STAGES ordering — the two are not interchangeable.
+_CASCADE_TARGETS: Final[tuple[str, ...]] = (
+    "forge-3-specs",
+    "forge-4-backlog",
+    "forge-5-loop",
+    "forge-6-docs",
+)
+
+
+def _cascade_staleness(state: dict, completed_stage: str, new_version: int) -> list[str]:
+    """Mark downstream stages ``stale`` when they were built on an OLDER version.
+
+    Deterministic replacement for the model-prose rule in each stage's completion
+    step ("if any downstream stage has basedOnVersions referencing an older
+    version, set its status to stale"). For every downstream target (specs..docs),
+    if its recorded ``basedOnVersions[completed_stage]`` is an integer strictly
+    less than ``new_version`` AND the stage is currently ``complete``, flip it to
+    ``stale``. A downstream stage that never referenced this upstream, or already
+    references the new version, is untouched. A ``pending``/``in-progress``/
+    already-``stale`` downstream stage is not re-flipped — only a ``complete``
+    artifact can go stale.
+
+    Args:
+        state: The full state dict (mutated in place).
+        completed_stage: The stage that just completed (e.g. "forge-1-prd").
+        new_version: That stage's new version.
+
+    Returns:
+        The list of stage ids newly marked stale (for the --json echo / printer).
+    """
+    stages = state.get("stages", {})
+    newly_stale: list[str] = []
+    for target in _CASCADE_TARGETS:
+        if target == completed_stage:
+            continue
+        entry = stages.get(target)
+        if not isinstance(entry, dict) or entry.get("status") != "complete":
+            continue
+        based_on = entry.get("basedOnVersions")
+        if not isinstance(based_on, dict):
+            continue
+        recorded = based_on.get(completed_stage)
+        if isinstance(recorded, int) and not isinstance(recorded, bool) and recorded < new_version:
+            entry["status"] = "stale"
+            newly_stale.append(target)
+    return newly_stale
+
+
+def cmd_state_complete(
+    feature: str,
+    stage: str,
+    version: int,
+    based_on: dict[str, int],
+    artifacts: list[str],
+    commit_hash: str | None,
+    specs_dir: Path,
+    epic: str | None,
+    status: str | None = None,
+    preserve_commit_hash: bool = False,
+    resumable: bool = False,
+) -> dict:
+    """Mark ``stage`` complete, bump version, record provenance, cascade staleness.
+
+    Three branches, in precedence order:
+
+    1. ``commit_hash`` given — Commit 2 of the two-commit Git Commit Protocol.
+       Sets ONLY ``commitHash``, leaving status/version/artifacts intact. Guarded
+       on the stage already being ``complete``, so a typo'd ``--stage`` cannot
+       write a lone ``{"commitHash": …}`` entry (which would violate
+       ``stageEntry``'s ``required: ["status"]``) at exit 0.
+    2. ``resumable`` — the failed-Commit-1 revert (`references/shared-conventions.md`
+       L245). Records ONLY ``status = "in-progress"`` plus the ``updatedAt``
+       refresh: no completedAt, no version bump, no basedOnVersions/artifacts
+       write, no commitHash reset, no cascade. The frozen contract is "leave state
+       as in-progress so the stage can be resumed"; stamping a completion, bumping
+       the version, or cascading staleness off a commit that never landed are all
+       behavioral changes.
+    3. Otherwise — the completion write: status, completedAt, version,
+       basedOnVersions, artifacts, ``commitHash = None`` (Commit 1) unless
+       ``preserve_commit_hash``, then the downstream staleness cascade.
+
+    Branch 2 is gated on ``resumable``, NOT on ``status == "in-progress"``:
+    forge-5-loop's PARTIAL completion also passes ``--status in-progress`` but is a
+    real completion-with-artifacts, so it takes branch 3 and keeps its
+    completedAt/version/basedOnVersions/artifacts. Only ``status`` differs between
+    ``--status complete`` and a bare ``--status in-progress``. Conflating the two
+    would silently discard the ``--based-on`` item 013 passes on that call.
+
+    Args:
+        feature: Feature name.
+        stage: The completing stage id.
+        version: The stage's new version.
+        based_on: Parsed ``{upstreamStage: version}`` provenance map.
+        artifacts: Final canonical artifact path list for this stage.
+        commit_hash: If given, record it as the stage's commitHash (Commit 2);
+            else set commitHash to None (Commit 1).
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+        status: Terminal status to record — "complete" (the default when the flag
+            is absent) or "in-progress" for a partial forge-5-loop run. ``None``
+            means "not passed".
+        preserve_commit_hash: Skip the ``commitHash = None`` reset, for the Git
+            Commit Protocol's "Nothing to commit" branch (L248).
+        resumable: Failed-Commit-1 revert (L245). Record only the status; implies
+            ``--status in-progress``.
+
+    Returns:
+        The mutated state dict, plus a synthetic ``_cascadedStale`` key that is
+        surfaced in the --json echo / printer but NEVER written to disk.
+
+    Raises:
+        UsageError: Contradictory ``--resumable --status complete``, a
+            ``--commit-hash`` follow-up against a stage that is not complete, an
+            unknown feature directory, an unparseable state file, or a failed
+            atomic write (→ exit 2).
+    """
+    if resumable and status == "complete":
+        raise UsageError(
+            "--resumable implies --status in-progress; do not pass --status complete"
+        )
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    entry = _stage_entry(state, stage)
+    cascaded: list[str] = []
+    if commit_hash is not None:
+        # Commit-2 follow-up: record the real hash, leave everything else intact.
+        actual = entry.get("status")
+        if actual != _DONE_STATUS:
+            raise UsageError(
+                f"--commit-hash requires {stage} to be complete (status: {actual!r}); "
+                "run state-complete without --commit-hash first"
+            )
+        entry["commitHash"] = commit_hash
+    elif resumable:
+        # Failed-Commit-1 revert (L245): record ONLY the status. See the note above
+        # on why this is gated on --resumable rather than on the status value.
+        entry["status"] = "in-progress"
+    else:
+        entry["status"] = status or _DONE_STATUS   # "complete" | "in-progress" (partial)
+        entry["completedAt"] = _now_iso()
+        entry["version"] = version
+        entry["basedOnVersions"] = based_on
+        entry["artifacts"] = artifacts
+        if not preserve_commit_hash:
+            entry["commitHash"] = None             # Commit 1 of the Commit Protocol
+        cascaded = _cascade_staleness(state, stage, version)
+    result = _commit_state(state_path, state)
+    # Surface the cascade result for the caller without persisting it in state:
+    # _commit_state already wrote the real dict, and `echo` is a copy.
+    echo = dict(result)
+    echo["_cascadedStale"] = cascaded
+    return echo
+
+
 def cmd_state_branch(feature: str, branch: str, specs_dir: Path, epic: str | None) -> dict:
     """Set the top-level ``branch`` field.
 
@@ -2132,6 +2329,31 @@ def _print_state_artifact(state: dict, stage: str, paths: list[str]) -> None:
     """Print the one-line human summary for `state-artifact`."""
     total = len(state.get("stages", {}).get(stage, {}).get("artifacts", []))
     print(f"tracked {stage} artifact(s): {', '.join(paths)} ({total} total)")
+
+
+def _print_state_complete(
+    state: dict, stage: str, commit_hash: str | None, resumable: bool
+) -> None:
+    """Print the one-line human summary for `state-complete` (one per branch)."""
+    if commit_hash is not None:
+        print(f"recorded {stage} commitHash: {commit_hash}")
+        return
+    if resumable:
+        print(f"left {stage} in-progress (resumable — no completion recorded)")
+        return
+    entry = state.get("stages", {}).get(stage, {})
+    label = (
+        "completed"
+        if entry.get("status") == _DONE_STATUS
+        else f"partially completed ({entry.get('status')})"
+    )
+    recorded = entry.get("commitHash")
+    cascaded = state.get("_cascadedStale") or []
+    suffix = f"; marked stale: {', '.join(cascaded)}" if cascaded else ""
+    print(
+        f"{label} {stage} v{entry.get('version')} "
+        f"(commitHash: {'null' if recorded is None else recorded}){suffix}"
+    )
 
 
 def _print_state_branch(state: dict) -> None:
@@ -2294,6 +2516,41 @@ def main() -> int:
     p_art.add_argument("--epic", default=None, help="Epic name for a nested member")
     p_art.add_argument("--json", action="store_true", dest="json_output")
 
+    p_comp = sub.add_parser(
+        "state-complete", help="Mark a stage complete; bump version; cascade staleness"
+    )
+    p_comp.add_argument("--feature", required=True, help="Feature name")
+    p_comp.add_argument("--stage", required=True, choices=STATE_VERB_STAGES,
+                        help="The stage being completed")
+    p_comp.add_argument("--version", type=int, required=True,
+                        help="This stage's new version (integer)")
+    p_comp.add_argument("--based-on", action="append", default=[], dest="based_on",
+                        metavar="STAGE=N",
+                        help="Upstream version this artifact was built on (repeatable)")
+    p_comp.add_argument("--artifact", action="append", default=[], dest="artifacts",
+                        metavar="PATH",
+                        help="Artifact path produced by this stage (repeatable)")
+    p_comp.add_argument("--commit-hash", default=None, dest="commit_hash",
+                        help="Commit 2 follow-up: record the artifact commit's hash")
+    p_comp.add_argument("--status", default=None,
+                        choices=("complete", "in-progress"),
+                        help="Terminal status to record (default: complete). "
+                             "Use in-progress for a partial forge-5-loop run -- the "
+                             "stage still records completedAt/version/basedOnVersions/"
+                             "artifacts; only the status differs.")
+    p_comp.add_argument("--resumable", action="store_true",
+                        help="Failed-Commit-1 revert (L245): record ONLY status="
+                             "in-progress, leaving completedAt/version/basedOnVersions/"
+                             "artifacts/commitHash untouched and firing no cascade. "
+                             "Implies --status in-progress.")
+    p_comp.add_argument("--preserve-commit-hash", action="store_true",
+                        dest="preserve_commit_hash",
+                        help="Do not reset commitHash to null on completion "
+                             "(the Git Commit Protocol's 'Nothing to commit' branch)")
+    p_comp.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_comp.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_comp.add_argument("--json", action="store_true", dest="json_output")
+
     p_br = sub.add_parser("state-branch", help="Set the top-level branch field")
     p_br.add_argument("--feature", required=True, help="Feature name")
     p_br.add_argument("--branch", required=True, help="Branch name to record")
@@ -2422,6 +2679,29 @@ def main() -> int:
                 payload,
                 args.json_output,
                 lambda state: _print_state_artifact(state, args.stage, args.paths),
+            )
+            return 0
+
+        if args.cmd == "state-complete":
+            payload = cmd_state_complete(
+                args.feature,
+                args.stage,
+                args.version,
+                _parse_based_on(args.based_on),
+                args.artifacts,
+                args.commit_hash,
+                Path(args.specs_dir),
+                args.epic,
+                status=args.status,
+                preserve_commit_hash=args.preserve_commit_hash,
+                resumable=args.resumable,
+            )
+            _emit(
+                payload,
+                args.json_output,
+                lambda state: _print_state_complete(
+                    state, args.stage, args.commit_hash, args.resumable
+                ),
             )
             return 0
 

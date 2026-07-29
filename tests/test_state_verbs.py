@@ -341,20 +341,26 @@ def test_stage_entry_accepts_every_state_verb_stage():
 # Registration (item 008's four verbs)
 # --------------------------------------------------------------------------- #
 
-#: The verbs item 008 adds. 009 (state-complete) and 010 (state-decision/-ecr)
-#: extend this tuple as they land.
-ITEM_008_VERBS = ("state-enter", "state-artifact", "state-branch", "state-note")
+#: Every state verb registered so far — items 008 (enter/artifact/branch/note)
+#: and 009 (complete). Item 010 (state-decision/-ecr) extends this tuple.
+REGISTERED_STATE_VERBS = (
+    "state-enter",
+    "state-artifact",
+    "state-complete",
+    "state-branch",
+    "state-note",
+)
 
 
 def test_every_verb_appears_in_the_module_docstring_usage_lines():
     usage = FS.__doc__ or ""
-    for verb in ITEM_008_VERBS:
+    for verb in REGISTERED_STATE_VERBS:
         assert f"forge-session.py {verb} " in usage, f"{verb} missing from the usage lines"
 
 
 def test_every_verb_is_registered_as_a_subparser_and_dispatched():
     source = read(FORGE_SESSION)
-    for verb in ITEM_008_VERBS:
+    for verb in REGISTERED_STATE_VERBS:
         assert re.search(rf'sub\.add_parser\(\s*"{verb}"', source), f"{verb} has no subparser"
         assert f'if args.cmd == "{verb}":' in source, f"{verb} has no dispatch branch"
         assert _run(verb, "--help").returncode == 0, f"{verb} is not a registered subcommand"
@@ -468,6 +474,459 @@ def test_state_artifact_prints_a_one_line_summary_without_json(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# state-complete
+# --------------------------------------------------------------------------- #
+
+
+def _seed(tmp_path: Path, stages: dict, name: str = "demo") -> Path:
+    """Create a feature dir pre-populated with a schema-valid state file."""
+    feature_dir = _feature_dir(tmp_path, name)
+    state = {
+        "feature": name,
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "currentStage": "forge-1-prd",
+        "pipelineStatus": "active",
+        "stages": stages,
+    }
+    assert validate_state(state) == [], validate_state(state)
+    (feature_dir / FS.PIPELINE_STATE_FILENAME).write_text(json.dumps(state), encoding="utf-8")
+    return feature_dir
+
+
+def test_state_complete_records_the_full_completion_write(tmp_path):
+    _feature_dir(tmp_path)
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-3-specs", "--version", "2",
+        "--based-on", "forge-1-prd=3", "--based-on", "forge-2-tech=1",
+        "--artifact", "00-core.md", "--artifact", "03-state-verbs.md",
+        "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+
+    state = _state_of(tmp_path)  # asserts schema conformance
+    entry = state["stages"]["forge-3-specs"]
+    assert entry["status"] == "complete"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", entry["completedAt"])
+    assert entry["version"] == 2
+    assert entry["basedOnVersions"] == {"forge-1-prd": 3, "forge-2-tech": 1}
+    assert entry["artifacts"] == ["00-core.md", "03-state-verbs.md"]
+    assert entry["commitHash"] is None, "Commit 1 records a null hash"
+
+
+def test_state_complete_with_no_based_on_records_an_empty_map(tmp_path):
+    """forge-1-prd has no upstream — basedOnVersions is {} , not absent."""
+    _feature_dir(tmp_path)
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd", "--version", "1",
+        "--artifact", "PRD.md", "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "completed forge-1-prd v1 (commitHash: null)"
+    assert _state_of(tmp_path)["stages"]["forge-1-prd"]["basedOnVersions"] == {}
+
+
+def test_commit_hash_follow_up_touches_only_commit_hash(tmp_path):
+    """Commit 2 of the Git Commit Protocol: record the hash, disturb nothing else."""
+    _seed(
+        tmp_path,
+        {
+            "forge-1-prd": {
+                "status": "complete",
+                "completedAt": "2026-01-01T00:00:00Z",
+                "version": 2,
+                "basedOnVersions": {},
+                "artifacts": ["PRD.md"],
+                "commitHash": None,
+            }
+        },
+    )
+    before = _state_of(tmp_path)["stages"]["forge-1-prd"]
+
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd", "--version", "2",
+        "--commit-hash", "9a29e846ed510c3b245876a9bf4cc73b8cb60951",
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == (
+        "recorded forge-1-prd commitHash: 9a29e846ed510c3b245876a9bf4cc73b8cb60951"
+    )
+
+    after = _state_of(tmp_path)["stages"]["forge-1-prd"]
+    assert after["commitHash"] == "9a29e846ed510c3b245876a9bf4cc73b8cb60951"
+    assert {k: v for k, v in after.items() if k != "commitHash"} == {
+        k: v for k, v in before.items() if k != "commitHash"
+    }, "the Commit-2 follow-up must leave status/version/artifacts intact"
+
+
+def test_commit_hash_against_an_incomplete_stage_exits_2(tmp_path):
+    """A typo'd --stage would otherwise write a lone {"commitHash": …} at exit 0,
+    violating stageEntry's required: ["status"]."""
+    _seed(tmp_path, {"forge-1-prd": {"status": "complete", "version": 1}})
+    state_path = tmp_path / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
+    before = state_path.read_bytes()
+
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-2-tech", "--version", "1",
+        "--commit-hash", "deadbeef", "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 2, result.stdout
+    assert result.stderr.strip() == (
+        "Error: --commit-hash requires forge-2-tech to be complete (status: 'pending'); "
+        "run state-complete without --commit-hash first"
+    )
+    assert state_path.read_bytes() == before, "the rejected follow-up must not write"
+
+
+def test_commit_hash_against_a_partial_stage_names_its_actual_status(tmp_path):
+    _seed(tmp_path, {"forge-5-loop": {"status": "in-progress"}})
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-5-loop", "--version", "1",
+        "--commit-hash", "deadbeef", "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 2, result.stdout
+    assert "status: 'in-progress'" in result.stderr
+
+
+def test_partial_completion_keeps_every_completion_field(tmp_path):
+    """A bare --status in-progress is forge-5-loop's PARTIAL COMPLETION (spec 03
+    §11.2 row 14) — a real completion-with-artifacts that simply is not finished.
+
+    Only `status` may differ from the complete branch: completedAt, version,
+    basedOnVersions and artifacts are all still written (item 013 passes
+    --based-on forge-4-backlog=N on exactly this call), commitHash is still reset,
+    and the staleness cascade still fires.
+    """
+    _seed(
+        tmp_path,
+        {
+            "forge-5-loop": {"status": "in-progress", "commitHash": "stale-hash"},
+            "forge-6-docs": {
+                "status": "complete",
+                "version": 1,
+                "basedOnVersions": {"forge-5-loop": 1},
+            },
+        },
+    )
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-5-loop", "--version", "2",
+        "--based-on", "forge-4-backlog=3", "--artifact", "src/thing.py",
+        "--status", "in-progress", "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+
+    state = _state_of(tmp_path)
+    entry = state["stages"]["forge-5-loop"]
+    assert entry["status"] == "in-progress"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", entry["completedAt"])
+    assert entry["version"] == 2
+    assert entry["basedOnVersions"] == {"forge-4-backlog": 3}, "--based-on was discarded"
+    assert entry["artifacts"] == ["src/thing.py"]
+    assert entry["commitHash"] is None, "the partial branch still resets commitHash"
+    assert state["stages"]["forge-6-docs"]["status"] == "stale", "the cascade must fire"
+    assert json.loads(result.stdout)["_cascadedStale"] == ["forge-6-docs"]
+
+
+def test_partial_completion_differs_from_complete_only_in_status(tmp_path):
+    """The strongest form of the AC: run both branches over identical inputs and
+    diff the resulting stage entries."""
+    common = [
+        "--stage", "forge-5-loop", "--version", "2",
+        "--based-on", "forge-4-backlog=3", "--artifact", "src/thing.py",
+    ]
+    for name, extra in (("done", []), ("partial", ["--status", "in-progress"])):
+        _feature_dir(tmp_path / name)
+        assert _run(
+            "state-complete", "--feature", "demo", *common, *extra,
+            "--specs-dir", str(tmp_path / name / "specs"),
+        ).returncode == 0
+
+    done = _state_of(tmp_path / "done")["stages"]["forge-5-loop"]
+    partial = _state_of(tmp_path / "partial")["stages"]["forge-5-loop"]
+    assert done["status"] == "complete"
+    assert partial["status"] == "in-progress"
+    assert {k: v for k, v in done.items() if k not in ("status", "completedAt")} == {
+        k: v for k, v in partial.items() if k not in ("status", "completedAt")
+    }
+
+
+def test_resumable_records_only_the_status(tmp_path):
+    """The failed-Commit-1 revert (shared-conventions L245).
+
+    Asserted field-by-field rather than by schema validation: stageEntry declares
+    `status` and `completedAt` as independent optional properties, so a state that
+    wrongly carried a completion stamp would still validate cleanly.
+    """
+    seeded = {
+        "status": "complete",
+        "version": 4,
+        "basedOnVersions": {"forge-1-prd": 2},
+        "artifacts": ["00-core.md"],
+        "commitHash": "abc1234",
+        "startedAt": "2026-01-01T00:00:00Z",
+    }
+    _seed(
+        tmp_path,
+        {
+            "forge-3-specs": dict(seeded),
+            "forge-4-backlog": {
+                "status": "complete",
+                "version": 1,
+                "basedOnVersions": {"forge-3-specs": 4},
+            },
+        },
+    )
+
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-3-specs", "--version", "9",
+        "--based-on", "forge-1-prd=7", "--artifact", "ignored.md", "--resumable",
+        "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["_cascadedStale"] == [], "no cascade off a failed commit"
+
+    state = _state_of(tmp_path)
+    entry = state["stages"]["forge-3-specs"]
+    assert entry["status"] == "in-progress"
+    assert entry.get("completedAt") is None, "a stage that never completed gets no stamp"
+    assert entry["version"] == 4, "--version must not be written on the revert"
+    assert entry["basedOnVersions"] == {"forge-1-prd": 2}, "--based-on must not be written"
+    assert entry["artifacts"] == ["00-core.md"], "--artifact must not be written"
+    assert entry["commitHash"] == "abc1234", "a recoverable hash must survive the revert"
+    assert {k: v for k, v in entry.items() if k != "status"} == {
+        k: v for k, v in seeded.items() if k != "status"
+    }
+    assert state["stages"]["forge-4-backlog"]["status"] == "complete", "no cascade"
+    assert state["updatedAt"] != "2026-01-01T00:00:00Z", "the updatedAt refresh still happens"
+
+
+def test_resumable_prints_a_revert_summary_without_json(tmp_path):
+    _seed(tmp_path, {"forge-3-specs": {"status": "complete", "version": 1}})
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-3-specs", "--version", "1",
+        "--resumable", "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "left forge-3-specs in-progress (resumable — no completion recorded)"
+
+
+def test_resumable_with_an_explicit_status_complete_exits_2(tmp_path):
+    """Reject the contradiction rather than silently forcing in-progress."""
+    _seed(tmp_path, {"forge-3-specs": {"status": "complete", "version": 1}})
+    state_path = tmp_path / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
+    before = state_path.read_bytes()
+
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-3-specs", "--version", "1",
+        "--resumable", "--status", "complete", "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 2, result.stdout
+    assert result.stderr.strip() == (
+        "Error: --resumable implies --status in-progress; do not pass --status complete"
+    )
+    assert state_path.read_bytes() == before
+
+
+def test_resumable_with_an_explicit_status_in_progress_is_accepted(tmp_path):
+    """The flag *implies* in-progress, so restating it is redundant, not a conflict."""
+    _seed(tmp_path, {"forge-3-specs": {"status": "complete", "version": 1}})
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-3-specs", "--version", "1",
+        "--resumable", "--status", "in-progress", "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert _state_of(tmp_path)["stages"]["forge-3-specs"]["status"] == "in-progress"
+
+
+def test_preserve_commit_hash_leaves_an_existing_hash(tmp_path):
+    """The Git Commit Protocol's "nothing to commit" branch (L248)."""
+    _seed(
+        tmp_path,
+        {"forge-1-prd": {"status": "complete", "version": 1, "commitHash": "abc1234"}},
+    )
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd", "--version", "2",
+        "--artifact", "PRD.md", "--preserve-commit-hash",
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "completed forge-1-prd v2 (commitHash: abc1234)"
+
+    entry = _state_of(tmp_path)["stages"]["forge-1-prd"]
+    assert entry["commitHash"] == "abc1234", "the reset must be skipped"
+    assert entry["version"] == 2, "every other completion field is still written"
+
+
+def test_without_preserve_commit_hash_an_existing_hash_is_reset(tmp_path):
+    """The control for the test above — the default really does clear the hash."""
+    _seed(
+        tmp_path,
+        {"forge-1-prd": {"status": "complete", "version": 1, "commitHash": "abc1234"}},
+    )
+    assert _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd", "--version", "2",
+        "--specs-dir", str(tmp_path / "specs"),
+    ).returncode == 0
+    assert _state_of(tmp_path)["stages"]["forge-1-prd"]["commitHash"] is None
+
+
+def test_a_malformed_based_on_token_exits_2_naming_the_token(tmp_path):
+    for token, expected in (
+        ("forge-1-prd", "Error: --based-on expects STAGE=N, got: 'forge-1-prd'"),
+        ("forge-1-prd=two", "Error: --based-on version must be an integer: 'forge-1-prd=two'"),
+        ("forge-1-prd=1.5", "Error: --based-on version must be an integer: 'forge-1-prd=1.5'"),
+    ):
+        _feature_dir(tmp_path / token, "demo")
+        result = _run(
+            "state-complete", "--feature", "demo", "--stage", "forge-2-tech", "--version", "1",
+            "--based-on", token, "--specs-dir", str(tmp_path / token / "specs"),
+        )
+        assert result.returncode == 2, f"{token}: {result.stdout}"
+        assert result.stderr.strip() == expected, token
+        assert not (
+            tmp_path / token / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
+        ).exists(), f"{token}: a parse failure must not write state"
+
+
+# --------------------------------------------------------------------------- #
+# state-complete — the staleness cascade
+# --------------------------------------------------------------------------- #
+
+
+#: A downstream fixture exercising every cascade decision at once, against a
+#: forge-1-prd completing at version 2.
+_CASCADE_FIXTURE = {
+    "forge-1-prd": {"status": "complete", "version": 1, "artifacts": ["PRD.md"]},
+    # complete + built on the OLD version -> goes stale.
+    "forge-3-specs": {
+        "status": "complete", "version": 1, "basedOnVersions": {"forge-1-prd": 1},
+    },
+    # complete but already on the NEW version -> untouched ("older" is strict).
+    "forge-4-backlog": {
+        "status": "complete", "version": 1, "basedOnVersions": {"forge-1-prd": 2},
+    },
+    # built on the old version but NOT complete -> no artifact to stale.
+    "forge-5-loop": {
+        "status": "in-progress", "basedOnVersions": {"forge-1-prd": 1},
+    },
+    # complete but never referenced this upstream -> untouched.
+    "forge-6-docs": {
+        "status": "complete", "version": 1, "basedOnVersions": {"forge-5-loop": 1},
+    },
+}
+
+
+def test_the_cascade_stales_only_downstream_stages_built_on_an_older_version(tmp_path):
+    _seed(tmp_path, {k: dict(v) for k, v in _CASCADE_FIXTURE.items()})
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd", "--version", "2",
+        "--artifact", "PRD.md", "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["_cascadedStale"] == ["forge-3-specs"]
+
+    stages = _state_of(tmp_path)["stages"]
+    assert stages["forge-3-specs"]["status"] == "stale"
+    assert stages["forge-4-backlog"]["status"] == "complete", "an equal version is not older"
+    assert stages["forge-5-loop"]["status"] == "in-progress", "only complete artifacts go stale"
+    assert stages["forge-6-docs"]["status"] == "complete", "an unreferenced upstream is a no-op"
+
+
+def test_the_cascade_prints_the_stale_stages_in_the_human_summary(tmp_path):
+    _seed(tmp_path, {k: dict(v) for k, v in _CASCADE_FIXTURE.items()})
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd", "--version", "2",
+        "--artifact", "PRD.md", "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == (
+        "completed forge-1-prd v2 (commitHash: null); marked stale: forge-3-specs"
+    )
+
+
+def test_the_cascade_is_a_no_op_when_nothing_downstream_is_outdated(tmp_path):
+    """The no-op case: a first completion with no downstream stages at all, and a
+    re-completion at the SAME version with current downstream stages."""
+    _feature_dir(tmp_path, "fresh")
+    result = _run(
+        "state-complete", "--feature", "fresh", "--stage", "forge-1-prd", "--version", "1",
+        "--artifact", "PRD.md", "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["_cascadedStale"] == []
+    assert "marked stale" not in result.stdout
+
+    _seed(
+        tmp_path,
+        {
+            "forge-1-prd": {"status": "complete", "version": 2},
+            "forge-3-specs": {
+                "status": "complete", "version": 1, "basedOnVersions": {"forge-1-prd": 2},
+            },
+        },
+        name="current",
+    )
+    result = _run(
+        "state-complete", "--feature", "current", "--stage", "forge-1-prd", "--version", "2",
+        "--artifact", "PRD.md", "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["_cascadedStale"] == []
+    assert _state_of(tmp_path, "current")["stages"]["forge-3-specs"]["status"] == "complete"
+
+
+def test_the_cascade_never_stales_the_stage_that_just_completed(tmp_path):
+    """forge-3-specs is itself a cascade target; completing it must not self-stale."""
+    _seed(
+        tmp_path,
+        {
+            "forge-3-specs": {
+                "status": "complete", "version": 1, "basedOnVersions": {"forge-3-specs": 1},
+            }
+        },
+    )
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-3-specs", "--version", "2",
+        "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["_cascadedStale"] == []
+    assert _state_of(tmp_path)["stages"]["forge-3-specs"]["status"] == "complete"
+
+
+def test_cascade_targets_is_its_own_map_not_a_production_stages_slice(tmp_path):
+    """Keying off PRODUCTION_STAGES ordering would put forge-2-tech in scope."""
+    assert FS._CASCADE_TARGETS == (
+        "forge-3-specs", "forge-4-backlog", "forge-5-loop", "forge-6-docs"
+    )
+    state = {
+        "stages": {
+            "forge-2-tech": {
+                "status": "complete", "basedOnVersions": {"forge-1-prd": 1},
+            }
+        }
+    }
+    assert FS._cascade_staleness(state, "forge-1-prd", 2) == []
+    assert state["stages"]["forge-2-tech"]["status"] == "complete"
+
+
+def test_cascaded_stale_is_echo_only_and_never_persisted(tmp_path):
+    _seed(tmp_path, {k: dict(v) for k, v in _CASCADE_FIXTURE.items()})
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd", "--version", "2",
+        "--specs-dir", str(tmp_path / "specs"), "--json",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "_cascadedStale" in json.loads(result.stdout)
+
+    on_disk = json.loads(
+        (tmp_path / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME).read_text(encoding="utf-8")
+    )
+    assert "_cascadedStale" not in on_disk
+
+
+# --------------------------------------------------------------------------- #
 # state-branch
 # --------------------------------------------------------------------------- #
 
@@ -537,6 +996,7 @@ def test_state_note_overwrites_rather_than_appends(tmp_path):
 _VERB_INVOCATIONS = {
     "state-enter": ("--stage", "forge-1-prd"),
     "state-artifact": ("--stage", "forge-3-specs", "--path", "00-core.md"),
+    "state-complete": ("--stage", "forge-1-prd", "--version", "1"),
     "state-branch": ("--branch", "forge/demo"),
     "state-note": ("--note", "a note"),
 }

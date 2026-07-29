@@ -286,3 +286,49 @@ from 20 to 37 tests.
 - Adapters: editing only `scripts/forge-session.py` restages the 6 per-target
   copies again (the script is copied wholesale); `--check` is the only gate that
   notices, pytest does not.
+
+## Item 009 — `state-complete` (version bump, two-commit hash, staleness cascade)
+
+Added to `scripts/forge-session.py`: `_parse_based_on`, `_CASCADE_TARGETS` +
+`_cascade_staleness`, `cmd_state_complete`, `_print_state_complete`, the
+subparser, the `main()` dispatch branch, and the docstring usage lines +
+paragraph. `tests/test_state_verbs.py` grew from 37 to 57 tests.
+
+### Learnings
+
+- **`--status` is registered with `default=None`, deviating from spec 03 §6.1's
+  code block** (`default="complete"`). The AC requires `--resumable --status
+  complete` to exit 2, and with an argparse default of `"complete"` an explicit
+  `--status complete` is indistinguishable from the flag being absent — the
+  contradiction could never be detected. The handler resolves `status or
+  "complete"` instead, and `cmd_state_complete`'s signature is
+  `status: str | None = None`. `--resumable --status in-progress` is accepted
+  (redundant, not contradictory).
+- **The three branches were mutation-tested**, because schema validation cannot
+  tell them apart (`stageEntry` declares `status` and `completedAt` as
+  independent optional properties, so a wrongly-stamped revert validates clean):
+  1. gating branch 2 on `resumable or status == "in-progress"` (the conflation
+     the item warns about) → `test_partial_completion_keeps_every_completion_field`
+     and `test_partial_completion_differs_from_complete_only_in_status` go red,
+     reporting the discarded `basedOnVersions`/`artifacts`/`version`/`commitHash`.
+  2. removing the `resumable` branch entirely (revert falls through to the
+     completion write) → `test_resumable_records_only_the_status` goes red on the
+     cascade (`Left contains one more item: 'forge-4-backlog'`).
+  Both restored with `command cp -f` from a backup; `git diff --stat` confirmed
+  the script was byte-restored.
+- **The `--commit-hash` guard requires `status == "complete"`, which by
+  construction excludes forge-5-loop's partial completion.** Checked whether that
+  is a live conflict: `skills/forge-5-loop/SKILL.md` has zero `commitHash` /
+  `rev-parse` references, so the loop stage never runs Commit 2 and the guard
+  cannot strand it. No residual for item 013.
+- **`_cascade_staleness` rejects `bool` explicitly** (`not isinstance(recorded,
+  bool)`) — `bool` subclasses `int`, so a `basedOnVersions: {"forge-1-prd": true}`
+  would otherwise compare `True < 2` and silently stale a downstream stage.
+  (Item 005's progress note flagged the same trap in the validator.)
+- **`_print_state_complete` takes `(state, stage, commit_hash, resumable)` via a
+  dispatch lambda**, following item 008's `_print_state_artifact` precedent. The
+  three branches print materially different things, and the echo alone cannot say
+  which branch ran — a `commitHash`-only follow-up and a `--preserve-commit-hash`
+  completion leave identical entries.
+- The completion branch writes `basedOnVersions` even when no `--based-on` was
+  passed (forge-1-prd records `{}`, not an absent key), matching spec §6.2.
