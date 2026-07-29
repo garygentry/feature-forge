@@ -118,8 +118,8 @@
         ".venv-adapters/bin/python3 scripts/build-adapters.py --check exits 0 (adapters/ matches a fresh generation). This is validate.sh step 6b, a HARD gate that runs on every PR and inside the loop's own verification command - pytest does NOT cover it, and check-spec-purity excludes adapters/**",
         "bash scripts/validate.sh passes - this is the canonical gate that .rauf/RAUF.md instructs each iteration to run and that CI enforces on every PR. It is a strict superset of `python3 -m pytest tests` (it adds check-spec-purity, the adapters --check freshness gate, traceability, version-sync, the installer build+test and ruff). The pytest / check-spec-purity criteria above remain useful as fast inner-loop signals, but THIS is what gates RAUF_DONE"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-29T05:27:05.434Z",
       "dependsOn": [
         "003"
       ],

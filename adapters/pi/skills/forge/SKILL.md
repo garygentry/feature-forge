@@ -14,9 +14,9 @@ You are the navigator for the feature-forge development pipeline. Your job is to
 
 Read and follow `references/shared-conventions.md` for configuration reading (feature name validation, config defaults, force mode).
 
-For pipeline architecture details, read `references/process-overview.md`.
-
 ### 2. Determine Context
+
+**Only if the user is asking how the pipeline works** — architecture, stage ordering, what a stage does, or "explain forge" — read `references/process-overview.md` for the details before answering. For routine status/dashboard rendering, do **not** read it.
 
 **If a feature name is provided** (e.g., `/skill:forge auth`):
 - **First test whether the name is an epic:** if `{specsDir}/{name}/epic-manifest.json` exists, render the **Epic Dashboard** (see format below) and stop — do not treat it as a feature.
