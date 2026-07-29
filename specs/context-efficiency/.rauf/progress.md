@@ -201,3 +201,43 @@ figure. The consumer swap and its measured static delta belong to item 006.
   (the `pnpm dogfood:runner` build), which makes it a live override fixture — the
   in-repo run shows `bin: "rauf-stable"` while the pure-defaults run shows `rauf`.
   Handy end-to-end confirmation that the merge direction is right.
+
+## Item 007 — R4 shared state-write machinery
+
+Added to `scripts/forge-session.py`: `import tempfile`, `STATE_VERB_STAGES`
+(right after the existing L107 `PRODUCTION_STAGES`, derived from it), and a new
+`# State writes (shared machinery for the state-* verbs)` section holding
+`_now_iso`, `_write_state`, `_load_state_for_write`, `_commit_state`,
+`_stage_entry` — placed between the effective-config section and `# CLI
+dispatch`. No verbs, no argparse, no docstring usage lines yet (items 008–010).
+
+### Learnings
+
+- **`_write_state` wraps `OSError` in `UsageError`, deviating from spec 03 §3.3's
+  code block** (which re-raises `OSError` and relies on `main()`'s separate
+  `except OSError` arm). The item's AC pins the wrapped form and the exact
+  message `atomic write to {path} failed: {exc}` (spec §6.8 agrees), so the AC
+  wins. Both `tempfile.mkstemp` and the write/replace block are wrapped, so a
+  failure at either point yields the same message. Exit code is 2 either way.
+- **Loading the script in-process needs importlib**, not `import`: the filename is
+  hyphenated. `importlib.util.spec_from_file_location(...)` at module scope gives
+  `FS`, and the helper tests then run without subprocess overhead (20 tests, 0.13s).
+  Items 008–010 will want the subprocess `_run()` form from spec 06 §3.5 for the
+  verbs themselves — both styles can coexist in this file.
+- **Monkeypatching `FS.os.replace` / `FS.os.fsync` / `FS.tempfile.mkstemp` patches
+  the shared stdlib modules**, not a module-local copy — fine under pytest's
+  `monkeypatch` (auto-restored), but never do it with a bare `setattr`.
+- **The exit-2 / `Error:`-on-stderr half of the `_load_state_for_write` AC is
+  proven through an existing UsageError path** (`effective-config --schema
+  /nonexistent`), since item 007 ships no verb to drive it end-to-end. The handler
+  is a single top-level `try/except` shared by every subcommand, so the verbs
+  inherit it; items 008–010 assert it per verb. The direct
+  `pytest.raises`-style check on `_load_state_for_write` covers the raise itself.
+- **`_read_state` vs `_load_state_for_write` asymmetry is now guarded**
+  (`test_read_state_downgrades_where_the_write_path_refuses`): the reader still
+  downgrades corrupt → `{}` for the navigator's read-only sweep; the writer
+  refuses and leaves the bytes intact. A future "simplification" that merges them
+  goes red.
+- Editing only `scripts/forge-session.py` restages **6** adapter copies (the
+  script is copied wholesale into every bundle); `build-adapters.py` is silent on
+  success, so check `git status`, not stdout.

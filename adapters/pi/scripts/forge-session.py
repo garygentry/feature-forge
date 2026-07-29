@@ -89,6 +89,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final, TypedDict
@@ -112,6 +113,12 @@ PRODUCTION_STAGES: Final[tuple[str, ...]] = (
     "forge-5-loop",
     "forge-6-docs",
 )
+
+#: The --stage domain for the state-write verbs: the six PRODUCTION_STAGES above
+#: (order-sensitive — next_stage/verify_state/stage_exit all walk that tuple, so it
+#: is NEVER redefined) plus forge-0-epic, which also carries a stageEntry but is
+#: excluded from the next-stage walk.
+STATE_VERB_STAGES: Final[tuple[str, ...]] = ("forge-0-epic", *PRODUCTION_STAGES)
 
 #: Production stage -> the verify token its findings file uses, and the
 #: `forge-verify-<token>` key its state lives under. forge-6-docs has no verify.
@@ -1803,6 +1810,171 @@ def _print_effective_config(resolved: dict[str, object]) -> None:
     width = max((len(k) for k in resolved), default=0)
     for key in sorted(resolved):
         print(f"  {key.ljust(width)} : {resolved[key]!r}")
+
+
+# --------------------------------------------------------------------------- #
+# State writes (shared machinery for the state-* verbs)
+# --------------------------------------------------------------------------- #
+
+
+def _now_iso() -> str:
+    """Return the current UTC time as a Z-suffixed, second-precision ISO-8601 string.
+
+    Matches the `.pipeline-state.json` timestamp convention already on disk (the
+    schema's ``format: date-time`` values; the read path normalizes a trailing
+    ``Z``). Second precision keeps `updatedAt`/`startedAt`/`completedAt` visually
+    consistent with the values other pipeline writers produce.
+
+    Returns:
+        A timestamp like ``"2026-07-29T03:30:00Z"``.
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _write_state(state_path: Path, state: dict) -> None:
+    """Atomically write a `.pipeline-state.json` (temp file + os.replace).
+
+    Mirrors epic-manifest.py's ``atomic_write``: write to a sibling temp file in
+    the same directory as the target, flush + fsync the bytes, then os.replace()
+    the temp file onto the target. os.replace is atomic on POSIX within one
+    filesystem, so an interrupted write never leaves a partial or corrupt state
+    file. Concurrent multi-session mutation is out of scope (single writer
+    assumed, matching epic-manifest.py).
+
+    Args:
+        state_path: Destination path, e.g.
+            ``{specsDir}/{feature}/.pipeline-state.json``.
+        state: The fully-formed state dict to serialize.
+
+    Raises:
+        UsageError: If the temp file cannot be created/written or the replace
+            fails (→ exit 2). The temp file is removed first, so a failed write
+            leaves no debris and the original target untouched.
+    """
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{state_path.name}.", suffix=".tmp", dir=state_path.parent
+        )
+    except OSError as exc:
+        raise UsageError(f"atomic write to {state_path} failed: {exc}") from exc
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, state_path)
+    except OSError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise UsageError(f"atomic write to {state_path} failed: {exc}") from exc
+
+
+def _load_state_for_write(
+    specs_dir: Path, feature: str, epic: str | None
+) -> tuple[Path, dict]:
+    """Resolve a feature's state path and load its current state for mutation.
+
+    Reuses the existing resolver (`_resolve_feature_dir`). Deliberately does NOT
+    reuse `_read_state`: that reader downgrades a *corrupt* file to ``{}`` because
+    the navigator's read-only sweep can safely treat it as not-started. A writer
+    that inherited it would atomically replace a corrupt-but-recoverable state
+    file with a near-empty one at exit 0. So: absent -> ``{}``; present but
+    unparseable -> refuse, leaving the file byte-intact.
+
+    The verbs never create a feature directory; an unknown ``--feature`` is a
+    usage error, not a silent create.
+
+    Args:
+        specs_dir: The configured specs directory (``--specs-dir``).
+        feature: The feature name (``--feature``).
+        epic: The owning epic name for a nested member, else None (``--epic``).
+
+    Returns:
+        A ``(state_path, state)`` tuple. ``state`` is a schema-shaped shell when
+        no state file exists yet (see the seeding below).
+
+    Raises:
+        UsageError: The feature directory does not exist, or the state file
+            exists but is not a JSON object (→ exit 2).
+    """
+    state_dir = _resolve_feature_dir(specs_dir, feature, epic)
+    if not state_dir.is_dir():
+        raise UsageError(
+            f"no feature directory at {state_dir} — check --feature "
+            f"(and --epic for a nested epic member)"
+        )
+    state_path = state_dir / PIPELINE_STATE_FILENAME
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise UsageError(
+                f"{state_path} exists but is not valid JSON ({exc}); refusing to "
+                f"overwrite it. Fix or move the file, then re-run."
+            ) from exc
+        if not isinstance(state, dict):
+            raise UsageError(
+                f"{state_path} is not a JSON object; refusing to overwrite it."
+            )
+    else:
+        state = {}
+
+    # Seed the schema-required top-level fields for EVERY verb, not just
+    # state-enter. Branch Setup fires state-branch before the entry stamp
+    # (references/shared-conventions.md), so without this a first-write
+    # state-branch would persist {"branch": ..., "updatedAt": ...} — missing
+    # every required field — at exit 0. setdefault keeps existing state as-is.
+    # (`updatedAt`, the sixth required field, is stamped by _commit_state.)
+    state.setdefault("feature", feature)
+    state.setdefault("createdAt", _now_iso())
+    state.setdefault("pipelineStatus", "active")
+    state.setdefault("stages", {})
+    state.setdefault("currentStage", PRODUCTION_STAGES[0])
+    return state_path, state
+
+
+def _commit_state(state_path: Path, state: dict) -> dict:
+    """Refresh ``updatedAt`` and write ``state`` atomically; return it for echo.
+
+    Every verb calls this exactly once, after its mutation, so ``updatedAt`` is
+    always refreshed on a successful write and the write is atomic.
+
+    Args:
+        state_path: The resolved ``.pipeline-state.json`` path.
+        state: The mutated state dict.
+
+    Returns:
+        The same ``state`` dict (now carrying a fresh ``updatedAt``), so the verb
+        can echo it under ``--json``.
+
+    Raises:
+        UsageError: If the atomic write fails (→ exit 2).
+    """
+    state["updatedAt"] = _now_iso()
+    _write_state(state_path, state)
+    return state
+
+
+def _stage_entry(state: dict, stage: str) -> dict:
+    """Return (creating if absent) the mutable ``stages.{stage}`` sub-object.
+
+    Bootstraps ``state["stages"]`` and ``state["stages"][stage]`` when missing, so
+    a verb can write into a brand-new state (``{}``), and returns the stage dict
+    for in-place mutation. The bootstrap seeds ``{"status": "pending"}`` rather
+    than ``{}`` because ``stageEntry`` declares ``required: ["status"]`` — an entry
+    created by state-artifact (which sets only ``artifacts``) would otherwise be
+    schema-invalid at exit 0.
+
+    Args:
+        state: The full state dict (mutated in place).
+        stage: A stage id from ``STATE_VERB_STAGES`` (e.g. ``"forge-1-prd"``).
+
+    Returns:
+        The mutable ``stages.{stage}`` dict.
+    """
+    stages = state.setdefault("stages", {})
+    return stages.setdefault(stage, {"status": "pending"})
 
 
 # --------------------------------------------------------------------------- #
