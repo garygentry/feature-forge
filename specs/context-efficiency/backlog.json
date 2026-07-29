@@ -554,8 +554,8 @@
         "tests/test_build_adapters.py's local AGENT_TARGETS (L38) is the six-tuple (\"claude\",\"codex\",\"copilot\",\"cursor\",\"gemini\",\"pi\"), and a test asserts it equals scripts/build-adapters.py's AGENT_TARGETS (L49) so the two constants cannot drift again. The equality assertion must be YAML-FREE and UNSKIPPABLE: parse the AGENT_TARGETS = (...) literal out of both source files with a regex and compare the parsed tuples, rather than importing scripts/build-adapters.py (hyphenated module name, imports yaml at module scope). Place it OUTSIDE any skipif/importorskip gate - tests/test_build_adapters.py skips its whole module when yaml is unavailable, which would silently no-op this drift guard in CI",
         "The BATCH behavior-preservation run per spec 06 §9 is executed and recorded under specs/context-efficiency/.verification/, naming the consumption-data-refresh comparison transcripts used, and confirms the seven §9 surfaces are identical (AskUserQuestion option sets/order/'(recommended)' labelling; Decision Support wording; Branch Setup/Reconciliation prompts; Stage-Entry Guard + Stage-Completion Re-check classification; the two-commit Git Commit Protocol including the L245/L248 failure branches; verify-gate routing + stage-exit directive handling; and the NEXT-STEPS block and its sentinel). This run is the SC-3 evidence for R1, R3 and R5, which §9 permits to ride the batch; R4 (items 011/012/013) and R6 (item 015) carry their own. §9's R1 reduced substitute — one real verify fan-out on a large mode, diffing the findings-document shape — is acceptable if named explicitly. A run with no recorded comparison basis does not satisfy SC-3"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-29T07:04:59.979Z",
       "dependsOn": [
         "002",
         "004",

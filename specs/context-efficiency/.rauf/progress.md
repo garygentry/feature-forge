@@ -889,3 +889,111 @@ explicitly emptying the field. That is worth knowing before quoting R6's saving 
 - Adapters: this restaged 12 modified paths and added **6** new ones — `agent-selection.md`
   reaches all six bundles including `adapters/pi/`, which is the #122/#132 failure class
   item 017 re-checks.
+
+## Item 017 — six-target reconciliation, fixture refresh, BATCH §9 record
+
+R1–R6 are all landed, so this item is a **verification** sweep, not a mutation. Net canon
+change: **zero** — `adapters/` was already fresh and `build-adapters.py --check` exited 0
+*before* any work here, because items 001/002/004/005/006/007/008/009/010/011/012/013/015
+each regenerated in their own commit exactly as their ACs required. The only files this
+item writes are `tests/test_agent_targets_parity.py`, a 4-line constant fix in
+`tests/test_build_adapters.py`, and the batch §9 record.
+
+### The five-vs-six drift was real, and the test constant was the only thing hiding it
+
+`scripts/build-adapters.py` L49 has been the six-tuple since the Pi target landed in
+0.13.0; `tests/test_build_adapters.py` L38 was still the **five**-tuple. Three tests
+parametrize over that local copy — `test_bundle_is_self_contained`,
+`test_cited_shared_references_fan_out_skill_local`, `test_forge_root_is_verbatim` — so
+`adapters/pi/` had **zero** per-target coverage from any of them. Fixing the constant added
+3 passing tests with no other edit: pi was correct all along, just unasserted. That is the
+worst shape for a gap (silent, not red), and exactly the #122/#132 failure class.
+
+**The drift guard had to leave `test_build_adapters.py`.** That module carries a
+module-level `pytestmark = pytest.mark.skipif(not _generator_yaml_available(), …)`, so a
+guard placed there no-ops in precisely the bare-`pytest tests` environment CI uses. New
+module `tests/test_agent_targets_parity.py`: regex-parses the `AGENT_TARGETS = (...)`
+literal out of **both** files and `ast.literal_eval`s it — never imports the generator
+(hyphenated name, `import yaml` at module scope) — and carries a
+`test_this_guard_is_not_skippable` that greps its own source for `skipif(` /
+`importorskip(` / `pytest.skip(`, so the gate cannot be reintroduced later.
+
+Mutation-tested: reverting L38 to the five-tuple → 2 red
+(`test_test_module_declares_the_six_targets`, `test_the_two_constants_are_equal`), both
+reporting the tuple diff. Restored with `command cp -f`; `git diff --stat` confirms only
+the intended 4-insert/1-delete hunk.
+
+### The gemini fixture was already fresh — the procedure still matters
+
+Ran the real procedure rather than asserting from the green test: copy
+`tests/fixtures/minimal-canon/` to a scratch dir, delete its `expected-adapters/`, build
+`--root <scratch>`, then `command cp -rf` the scratch output into the fixture.
+`diff -rq` scratch vs committed → **identical across all six targets**, and the post-`cp`
+`git status` is empty.
+
+Why it stays fresh under heavy canon churn: `minimal-canon` is a **self-contained** canon
+tree (its own `noarg`/`with-refs` skills, a 2-line `forge-session.py` stub) with no
+dependency on the real `skills/`. Confirmed by inspection — the fixture's gemini bundle
+ships `noarg`/`with-refs`, the real adapter ships `forge*`. That inspection **is** the
+"not by copying the real adapter" evidence: a real-adapter copy would be visible instantly
+in that listing.
+
+### Host-neutrality: census equality, not test-widening
+
+`tests/test_adapter_host_neutrality.py` passes unchanged, and its two deliberate scope
+limits (skill **bodies** only, `references` excluded; `NON_CLAUDE_TARGETS` excludes `pi`)
+were **not** widened — widening goes red on ~25 pre-existing committed reference files per
+target, and the only way to green it would be rewording frozen text.
+
+The correct assertion is a **census equality** against the source span, and it holds
+exactly as the item predicted:
+
+| Move | source census | destination census | delta |
+|---|---|---|---|
+| R1: `verification-checklists.md` @baseline → 6 mode files + `findings-template.md` | `AskUserQuestion` ×1 | modes ×0, `findings-template.md` ×1 | **0** |
+| R6: `runner-contract.md` @`c532602` → `runner-contract.md` + `agent-selection.md` | `Monitor` ×1, `AskUserQuestion` ×4 | 1+0 / 3+1 | **0** |
+
+Reusable: import `FORBIDDEN_TOKENS` **from the test module** rather than retyping it — a
+hand-copied token list is the one way this census can silently disagree with the gate.
+
+### BATCH §9 record — method notes
+
+`specs/context-efficiency/.verification/BEHAVIOR-PRESERVATION-BATCH-item-017-2026-07-29.md`.
+SC-3 evidence for R1/R3/R5; R4/R6 re-confirmed at the combined end state.
+
+- **Baseline is the pre-feature commit `9a29e846…`**, not the previous commit. The four
+  per-unit records each diffed against their own immediate predecessor, which is right for
+  a *unit* claim and wrong for a *batch* one. Result: **108/139** canon sections
+  byte-identical, and every one of the 31 changed sections differs only in state-write
+  mechanics, a citation target, or the two REQ-BEHAV-02 adaptations accepted at item 002.
+- **The strongest single artifact is the AskUserQuestion line-set diff.** Grep every line
+  in `skills/`+`references/` containing `AskUserQuestion` **or** `(recommended)`, at both
+  revisions, whitespace-normalize, sort, diff. **106 lines at both; 103 byte-identical; 3
+  differ** — and all 3 differ only *outside* the prompt (two epic-backflow JSON clauses →
+  `state-ecr`, one `(d-model)` citation → `agent-selection.md`). Per-file counts also match
+  everywhere, with the two split relocations accounting for themselves exactly. That is a
+  far tighter claim than a section-level diff and takes one command.
+- **Surfaces 6 and 7 reduce to md5 equality** — directive-heading set, verifyGate routing
+  lines, and the sentinel/NEXT-STEPS line set are each byte-identical across the batch.
+- **R1's `§9` substitute was run for real** on a large mode (backlog, 27 checks): 27 of 27
+  executed, 21 pass / 0 fail / 6 n/a, deterministic pre-check
+  `rauf-stable backlog validate … --json` → `{"valid": true, "findings": []}`. Named
+  deviation: a **single inline verifier**, not the 4-way dispatched fan-out the skill
+  prescribes for large modes — item 017 declares no `agentDelegation`, so subagent dispatch
+  is not available to the iteration. Verifier count does not affect what the substitute
+  measures (does a leaf loading only `backlog.md` execute the same 27 checks and render the
+  same document shape). The shape claim is additionally *unfalsifiable-by-construction*:
+  `findings-template.md` L5+ is byte-identical to monolith L325–477.
+- Pre-split comparison artifact for the shape diff: `.verification/VERIFY-backlog-2026-07-29.md`,
+  added at `ed3ab41` — **before** item 001's `ca3da53`, so it is a genuine monolith-era
+  document, not a reconstruction.
+- **`zsh` gotcha:** `git show $rev:path` is mangled by the `:r` history modifier
+  (`$BASE:references/…` → `…60951eferences/…`). Use `"${rev}:path"`.
+
+### Gates
+
+`build-adapters.py` exit 0 · `--check` exit 0 · `pytest tests` **653 passed / 2 skipped**
+(up 15 from the 638 recorded at item 014: +8 from item 015's
+`tests/test_runner_contract_split.py`, +4 this item's parity guard, +3 the pi
+parametrizations the constant fix unlocked) · `check-spec-purity` PASS ·
+`bash scripts/validate.sh` PASS.

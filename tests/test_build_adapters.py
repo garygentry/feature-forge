@@ -35,7 +35,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GENERATOR = REPO_ROOT / "scripts" / "build-adapters.py"
-AGENT_TARGETS = ("claude", "codex", "copilot", "cursor", "gemini")  # 00 §1
+# Mirrors scripts/build-adapters.py's AGENT_TARGETS (00 §1). `pi` landed in 0.13.0.
+# tests/test_agent_targets_parity.py asserts the two constants stay equal — it lives in
+# its own module because this one is skipped wholesale when the YAML dep is unavailable.
+AGENT_TARGETS = ("claude", "codex", "copilot", "cursor", "gemini", "pi")  # 00 §1
 
 
 def _generator_interpreter() -> str:
