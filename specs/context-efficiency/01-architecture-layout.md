@@ -191,10 +191,14 @@ R2 is scoped out, so **no compact prelude form exists**. Every new fenced call s
 separate tool invocation, and shell state does not persist between them on any supported
 host, so a prelude 90 lines and several interactive steps earlier does **not** resolve
 `$R` at a later call site — the command runs as `python3 "/scripts/forge-session.py" …`
-and fails. Live canon agrees without exception: every canonical surface that uses `$R`
-pairs preludes to `$R`-uses 1:1 (forge-0-epic 5:5, forge-1-prd 2:2, forge-bootstrap 4:4,
-shared-conventions 6:5). There are **zero** instances of a fenced command depending on a
-`$R` set in an earlier separate fence. An earlier revision of this table marked
+and fails. Live canon agrees without exception, measured **per fence**: every fenced
+block that uses `$R` carries its own `BOOTSTRAP_PRELUDE` inside that same fence. Across
+all 17 canonical files that use `$R` there are **zero** instances of a fenced command
+depending on a `$R` set in an earlier separate fence. (Counting preludes against `$R`
+occurrences per *file* is the wrong unit and does not hold:
+`skills/forge-0-epic/references/epic-manifest-subcommands.md` has one prelude serving six
+commands inside a single fence, and several files carry prose `$R` mentions outside any
+fence.) An earlier revision of this table marked
 `forge-1-prd` and `forge-6-docs` "reuse — 0"; that was wrong and is corrected below.
 
 A second reason to inline: reusing a prelude that *another backlog item* introduced

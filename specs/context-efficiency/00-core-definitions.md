@@ -340,10 +340,12 @@ file (REQ-R1-02).
 
 > **SCOPED OUT (2026-07-28; PRD §3.2) — the compact form is NOT in use by any shipping
 > unit.** Retained for provenance and for a possible future revival. Because R2 does not
-> ship, **every new fenced call site added by R4 and R5 uses the full `BOOTSTRAP_PRELUDE`
-> verbatim** — either reusing one that already precedes it in the same body, or inlining
-> it (see `01-architecture-layout.md` §2.2.1 for the per-skill position table). Do not
-> author the compact form anywhere.
+> ship, **every new fenced call site added by R4 and R5 INLINES the full
+> `BOOTSTRAP_PRELUDE` verbatim, inside its own fence.** `$R` is a shell variable set
+> inside a fenced block and does not survive to a later fence, so a prelude earlier in
+> the body never resolves a later call site — reuse is never available (see
+> `01-architecture-layout.md` §2.2.1 for the per-skill position table and line budget).
+> Do not author the compact form anywhere.
 
 The full plugin-root resolver prelude (the `R="$(bash -c '…forge-root.sh…')"`
 block ending in the sentinel line

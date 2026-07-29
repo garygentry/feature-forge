@@ -733,8 +733,8 @@ corpus (already the evidence source for §7.4). These surfaces MUST be identical
 - Branch Setup / Branch Reconciliation prompts
 - Stage-Entry Guard and Stage-Completion Re-check classification
 - The two-commit Git Commit Protocol (never `--amend`), including both L245/L248 failure
-  branches — which R4 now routes through `--status in-progress` and
-  `--preserve-commit-hash` (`03-state-verbs.md` §6.5)
+  branches — which R4 now routes through `--resumable` (L245) and
+  `--preserve-commit-hash` (L248) (`03-state-verbs.md` §6.5)
 - Verify gate routing and stage-exit directive handling
 - The NEXT-STEPS block and its sentinel
 
@@ -742,7 +742,9 @@ corpus (already the evidence source for §7.4). These surfaces MUST be identical
 rather than leaving SC-3 unassigned: **R1** → one real verify fan-out on a large mode,
 diffing the findings-document shape; **R6** → one gate-off and one gate-on loop launch,
 confirming `agent-selection.md` is read only in the second; **R4** → one authoring stage
-plus a deliberately failed Commit 1, confirming the `--status in-progress` revert path.
+plus a deliberately failed Commit 1, confirming the `--resumable` revert path
+(status-only: assert `completedAt` is absent and `version` unchanged — a bare
+`--status in-progress` would write both).
 
 **Record.** Write the result to `.verification/` alongside the verify findings, naming the
 comparison transcripts used. A run with no recorded comparison basis does not satisfy SC-3.

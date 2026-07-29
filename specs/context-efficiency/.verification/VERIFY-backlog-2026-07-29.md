@@ -601,3 +601,27 @@ Removing item 012's coupling to 006 changed the realized order so that **012 now
 `001 002 003 004 005 007 008 009 010 014 011 012 013 006 015 017 016`
 
 Zero priority inversions, zero cycles, zero dangling deps, no deadlock. `rauf backlog validate` → `{"valid": true, "findings": []}`. Full `bash scripts/validate.sh` → **All checks passed!** (including the `build-adapters.py --check` drift gate).
+
+---
+
+## Narrow re-verify (round 3) and third fix pass — 2026-07-29
+
+Two `forge-verifier` instances scoped strictly to what round 2 touched (the `--resumable` split + always-inline; the census relocation + `_forge_paths` move + new ACs). **22 findings.** The dominant theme: round 2's two owner decisions landed in their primary locations but were **not fully propagated** to every downstream spec — my omission, not new design questions.
+
+### Genuinely independent defects (all fixed)
+
+- **Item 013's R4 conversion was arithmetically impossible.** `forge-5-loop` is at 298/300 body lines; the two conversions net ~+6 once each fenced call carries its own inlined prelude. Round 2's new same-fence AC turned that from a warning into an un-escapable gate, and R4 has no defer path (REQ-R4-04). **Fixed:** item 013 gained a sanctioned contingency — relocate an existing prose block verbatim into `runner-contract.md` (which item 015 already restructures), cite it from the body, record measured before/after counts. Explicitly forbids dropping the prelude, raising the cap, or deleting unrelated lines.
+- **`--version` is `required=True`,** but item 011's `state-complete --resumable` instruction omitted it — the command authored into `references/shared-conventions.md` (read by ~10 skills) would exit 2 every time. **Fixed:** the full invocation is now spelled out, with a note that `--version` is required-but-unwritten under `--resumable`.
+- **The "1:1 with zero exceptions" evidence claim was false.** It refuted itself in its own parenthesis (`shared-conventions 6:5`), and `epic-manifest-subcommands.md` is 1 prelude : 6 commands. The *doctrine* is correct; the counting unit was wrong. **Fixed:** restated as a **per-fence** invariant across all 17 canonical files that use `$R` — which does hold with zero exceptions — in both `01` §2.2.1 and item 012's binding AC.
+- **Item 013 did not depend on 011**, yet its census AC claimed "it dependsOn 011/012 via the graph". 013-last held only by the selector's lowest-id tie-break. **Fixed:** `011` added to `dependsOn`, so the graph enforces what the AC asserts.
+- **The census still missed four `verifyEntry`-class sites** (`forge-4-backlog` L148, `forge-5-loop` L268/L286, `stage-exit-protocol` L134–136/L219–220), plus the `edit-mode.md` Dismiss flip and a `deferredDecisions[]` flip. **Fixed:** the ledger is now a **class** exclusion ("any instruction to write a `stages.forge-verify-*` entry") rather than a site list, with known sites enumerated; a schema-read carve-out was added for the three citations that serve excluded writes; and items 011/012/013's conversion ACs now defer to the ledger instead of asserting a stricter rule than the census.
+
+### Propagation completed
+
+`--resumable` reached `03` §13.3 (the block item 011 is told to follow *literally*), `06` §9 ×2, item 009's `notes` and branch enumeration (now three branches, with `--resumable --status complete` rejected as a `UsageError` rather than silently overridden), and items 012/013's §9 ACs — one of which round 2 had *introduced* with the pre-split naming. Always-inline reached `00` §8 (the read-first contracts doc), `03` §11 and §13.1 (the worked forge-1-prd template), and `04`'s R5 consumer block (the literal text item 006 transcribes into two skill bodies).
+
+Sub-decisions taken on the verifiers' recommendations, since each follows directly from a decision already made: reject `--resumable --status complete`; relocate prose for headroom; widen the ledger to a class exclusion.
+
+### Final state
+
+Realized order `001 002 003 004 005 007 008 009 010 014 011 012 013 006 015 017 016` — unchanged by this pass, now pinned by the graph rather than by tie-break. Zero inversions, zero cycles, zero dangling deps. No stale "reuse" or pre-split `--status in-progress` text survives anywhere in `specs/context-efficiency/`. `rauf backlog validate` → `{"valid": true, "findings": []}`. `bash scripts/validate.sh` → **All checks passed!**

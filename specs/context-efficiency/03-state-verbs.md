@@ -1485,9 +1485,10 @@ REQ-R4-04). Prose stays verbatim (§13); only the mechanic swaps.
 > fenced verb call), never the *prose* of the surrounding protocol
 > (`00-core-definitions.md §10`; §13 below shows a concrete before/after). The
 > exact edited lines are specified in **§13.3** below. Every new fenced call site uses
-> the full `BOOTSTRAP_PRELUDE` — reused when one already precedes it in the same body,
-> inlined otherwise (`01-architecture-layout.md` §2.2.1); there is no compact form,
-> because R2 is scoped out (PRD §3.2).
+> the full `BOOTSTRAP_PRELUDE`, **inlined inside its own fence** — never reused from an
+> earlier fence, because `$R` does not survive between fences
+> (`01-architecture-layout.md` §2.2.1); there is no compact form, because R2 is scoped
+> out (PRD §3.2).
 
 ---
 
@@ -1540,12 +1541,12 @@ verb call slots in **where the "edit the JSON" step was** — nowhere else.
 the manual "check downstream stages" bullet is *executed by* the call rather than
 re-described as a hand edit).
 
-`forge-1-prd` already carries a full prelude at L31, **above** this call site, so this
-example could reuse it. Most targets cannot: in `forge-5-loop`, `forge-4-backlog`,
-`forge-2-tech`, `forge-3-specs` and `forge-verify` the only prelude sits *below* the R4
-call site, so those sites **inline** the full two-line prelude as shown. The inline form
-is written out here because it is the representative case; see
-`01-architecture-layout.md` §2.2.1 for the per-skill table and line budget.
+`forge-1-prd` carries a full prelude at L31, **above** this call site — but `$R` is set
+*inside that fence* and does not survive to a separate fence at ~L127, so this site
+**inlines** its own prelude like every other R4/R5 target. The inline form below is
+therefore the **universal** case, not merely the representative one: no call site
+anywhere reuses a prelude from an earlier fence (`01-architecture-layout.md` §2.2.1,
+which also carries the per-skill table and line budget).
 
 > 1. Record completion by running the `state-complete` verb (it sets
 >    `status: "complete"`, `completedAt`, the version bump, `basedOnVersions`, the
@@ -1658,7 +1659,8 @@ unchanged.
 
 The two-commit sequence, the "never `--amend`" rule, and the L245/L248 failure branches
 are unchanged in prose; §6.5 specifies how each failure branch stays executable
-(`--status in-progress` and `--preserve-commit-hash`).
+(`--resumable` for L245 — **not** a bare `--status in-progress`, which is forge-5-loop's
+partial completion — and `--preserve-commit-hash` for L248).
 
 ---
 

@@ -402,11 +402,12 @@ schema to learn defaults; after R5 they call `effective-config`.
 
 **After (both SKILL bodies):**
 
-> **Prelude form (R2 is scoped out).** No compact prelude form exists. If a full
-> `BOOTSTRAP_PRELUDE` already precedes this call site in the same body, reuse it and add
-> nothing; otherwise inline the full two-line prelude shown below, verbatim (it is
-> byte-pinned by `check-spec-purity.py` Rule 5). Per-skill positions and the resulting
-> line budget are tabulated in `01-architecture-layout.md` §2.2.1.
+> **Prelude form (R2 is scoped out).** No compact prelude form exists, and a prelude
+> elsewhere in the body is never reusable — `$R` is set inside a fence and does not
+> survive to a later one. **Inline** the full two-line prelude shown below, verbatim,
+> inside this call's own fence (it is byte-pinned by `check-spec-purity.py` Rule 5).
+> Per-skill positions and the resulting line budget are tabulated in
+> `01-architecture-layout.md` §2.2.1.
 >
 > ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
