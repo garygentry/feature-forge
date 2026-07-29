@@ -114,12 +114,13 @@ module docstring → constants → helpers → `main()` with argparse subparsers
 | `_resolve_feature_dir(specs_dir, feature, epic) -> Path` | L1416 | resolve the feature dir |
 | `PIPELINE_STATE_FILENAME` (`".pipeline-state.json"`) | L94 | the state filename |
 | `UsageError(Exception)` | L168 | raised for bad args → exit 2 |
-| `import os`, `import json`, `from datetime import datetime, timezone` | L79–84 | already present; `_write_state` and `_now_iso` need no new imports |
+| `import os`, `import json`, `from datetime import datetime, timezone` | L79–86 | already present; `_now_iso` needs no new import |
+| `PRODUCTION_STAGES` | L99 (6 entries, **order-sensitive**) | `STATE_VERB_STAGES` is derived from it (§3.7); **never redefined** |
 
-The `import os` and `import json` that `_write_state` needs are already imported
-(verified L80–81), and `datetime`/`timezone` are already imported for `_now_iso`
-(verified L84). **No new stdlib import is required** (C-2: stdlib-only, no
-`jsonschema`).
+`os` and `json` are already imported (verified L80–81), and `datetime`/`timezone` are
+already imported for `_now_iso` (verified L84). **`tempfile` is the one new stdlib import
+R4 adds** (§3.3, the canonical `mkstemp`+`fsync` form); everything else the verbs need is
+already present (C-2: stdlib-only, no `jsonschema`).
 
 > **WARNING: could not confirm an existing `_now_iso` helper.** `grep` of
 > `forge-session.py` found **no** `_now_iso`/`now_iso`/`_iso` helper; the script
@@ -127,9 +128,9 @@ The `import os` and `import json` that `_write_state` needs are already imported
 > `datetime.fromisoformat(...replace("Z","+00:00"))` at L371). `epic-manifest.py`
 > writes timestamps as `datetime.now(timezone.utc).isoformat()` (L1093). R4
 > therefore **introduces** a small `_now_iso()` helper (§3.2) rather than reusing
-> one. `00-core-definitions.md §3.3` describes it as "the module's existing …
-> formatter"; that phrasing anticipates the helper — this doc adds it. Verify at
-> implementation time that no equivalent helper was added between spec and build.
+> one. `00-core-definitions.md §3.3` says the same ("the R4 work **introduces**"),
+> so the two documents agree. Re-confirm at implementation time that no equivalent
+> helper landed between spec and build.
 
 ### 3.2 Timestamp helper — `_now_iso()`
 
@@ -225,10 +226,15 @@ def _load_state_for_write(
 ) -> tuple[Path, dict]:
     """Resolve a feature's state path and load its current state for mutation.
 
-    Reuses the existing resolver (_resolve_feature_dir, L1416) and reader
-    (_read_state, L177). A missing/corrupt state downgrades to ``{}`` so a verb
-    can create-or-update. The verb mutates the returned dict in place, then calls
-    _commit_state() to refresh updatedAt and write atomically.
+    Reuses the existing resolver (_resolve_feature_dir, L1416). Deliberately does
+    NOT reuse _read_state (L177): that reader downgrades a *corrupt* file to {}
+    because the navigator's read-only sweep can safely treat it as not-started.
+    A writer that inherited it would atomically replace a corrupt-but-recoverable
+    state file with a near-empty one at exit 0. So: absent -> {}; present but
+    unparseable -> refuse.
+
+    The verbs never create a feature directory; an unknown --feature is a usage
+    error, not a silent create.
 
     Args:
         specs_dir: The configured specs directory (``--specs-dir``).
@@ -236,16 +242,46 @@ def _load_state_for_write(
         epic: The owning epic name for a nested member, else None (``--epic``).
 
     Returns:
-        A ``(state_path, state)`` tuple. ``state`` is ``{}`` when no state file
-        exists yet.
+        A ``(state_path, state)`` tuple. ``state`` is a schema-shaped shell when
+        no state file exists yet (see the seeding below).
 
     Raises:
-        OSError: Propagated from the resolver if the specs tree is unreadable
-            (→ exit 2).
+        UsageError: the feature directory does not exist, or the state file
+            exists but is not a JSON object (→ exit 2).
     """
     state_dir = _resolve_feature_dir(specs_dir, feature, epic)
+    if not state_dir.is_dir():
+        raise UsageError(
+            f"no feature directory at {state_dir} — check --feature "
+            f"(and --epic for a nested epic member)"
+        )
     state_path = state_dir / PIPELINE_STATE_FILENAME
-    return state_path, _read_state(state_path)
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise UsageError(
+                f"{state_path} exists but is not valid JSON ({exc}); refusing to "
+                f"overwrite it. Fix or move the file, then re-run."
+            ) from exc
+        if not isinstance(state, dict):
+            raise UsageError(
+                f"{state_path} is not a JSON object; refusing to overwrite it."
+            )
+    else:
+        state = {}
+
+    # Seed the six schema-required top-level fields for EVERY verb, not just
+    # state-enter. Branch Setup fires state-branch before the entry stamp
+    # (shared-conventions.md L217), so without this a first-write state-branch
+    # would persist {"branch": ..., "updatedAt": ...} -- missing every required
+    # field -- at exit 0. setdefault keeps an existing state untouched.
+    state.setdefault("feature", feature)
+    state.setdefault("createdAt", _now_iso())
+    state.setdefault("pipelineStatus", "active")
+    state.setdefault("stages", {})
+    state.setdefault("currentStage", PRODUCTION_STAGES[0])
+    return state_path, state
 
 
 def _commit_state(state_path: Path, state: dict) -> dict:
@@ -286,9 +322,12 @@ mutator keeps that logic in one place:
 def _stage_entry(state: dict, stage: str) -> dict:
     """Return (creating if absent) the mutable ``stages.{stage}`` sub-object.
 
-    Bootstraps ``state["stages"]`` and ``state["stages"][stage]`` as empty dicts
-    when missing, so a verb can write into a brand-new state ({}), and returns the
-    stage dict for in-place mutation.
+    Bootstraps ``state["stages"]`` and ``state["stages"][stage]`` when missing, so
+    a verb can write into a brand-new state ({}), and returns the stage dict for
+    in-place mutation. The bootstrap seeds ``{"status": "pending"}`` rather than
+    ``{}`` because ``stageEntry`` declares ``required: ["status"]`` -- an entry
+    created by state-artifact (which sets only ``artifacts``) would otherwise be
+    schema-invalid at exit 0.
 
     Args:
         state: The full state dict (mutated in place).
@@ -298,7 +337,7 @@ def _stage_entry(state: dict, stage: str) -> dict:
         The mutable ``stages.{stage}`` dict.
     """
     stages = state.setdefault("stages", {})
-    return stages.setdefault(stage, {})
+    return stages.setdefault(stage, {"status": "pending"})
 ```
 
 ### 3.6 Argument validation & exit-2 conditions common to all verbs
@@ -307,7 +346,7 @@ def _stage_entry(state: dict, stage: str) -> dict:
   own exit) if absent — consistent with existing subcommands (e.g. `stage-exit`,
   L1753).
 - `--stage` on the three `stages`-writing verbs uses
-  `choices=PRODUCTION_STAGES` (see §4) so an unknown stage id is rejected at parse
+  `choices=STATE_VERB_STAGES` (see §4) so an unknown stage id is rejected at parse
   time.
 - Any I/O failure (unreadable specs tree, unwritable state dir) raises `OSError`,
   caught by the top-level handler → **exit 2** with `Error: …` on stderr
@@ -317,32 +356,31 @@ def _stage_entry(state: dict, stage: str) -> dict:
   raises `UsageError` → **exit 2**.
 - There is **no exit 1** (`00-core-definitions.md §3.2`).
 
-### 3.7 Production-stage constant
+### 3.7 The `--stage` domain constant
 
-Add a module constant for the production stage ids the verbs accept (mirrors the
-existing `EXIT_STAGES` tuple style, L1349):
+> **`PRODUCTION_STAGES` ALREADY EXISTS — do NOT redefine it.** `scripts/forge-session.py`
+> L99 defines it as a **6-entry, order-sensitive** tuple with no `forge-0-epic`, and live
+> logic depends on that order: `next_stage()` walks it (L245), `verify_state` walks
+> `reversed(...)` (L317), and `stage_exit` compares
+> `PRODUCTION_STAGES.index(state_next) > PRODUCTION_STAGES.index(stage)` (L1602–1604).
+> A second module-level assignment wins at import time, so redefining it with
+> `forge-0-epic` first would make `next_stage()` return `forge-0-epic` for **every**
+> standalone feature — a stage standalone features never record — breaking the navigator's
+> "what runs next" and the scripted stage-exit's successor comparison. That is a runtime
+> behavior change, forbidden by REQ-BEHAV-01.
+
+The verbs accept a **superset** of that tuple, so they get their own name, derived from
+the existing constant rather than duplicating it:
 
 ```python
-#: Production stage ids that carry a stageEntry (the R4 state verbs' --stage domain).
-#: Superset of EXIT_STAGES: adds forge-5-loop and forge-6-docs, which also complete.
-PRODUCTION_STAGES: Final[tuple[str, ...]] = (
-    "forge-0-epic",
-    "forge-1-prd",
-    "forge-2-tech",
-    "forge-3-specs",
-    "forge-4-backlog",
-    "forge-5-loop",
-    "forge-6-docs",
-)
+#: The --stage domain for the R4 state verbs: the six existing PRODUCTION_STAGES
+#: (L99, order-sensitive — do NOT redefine) plus forge-0-epic, which also carries
+#: a stageEntry but is excluded from the next-stage walk.
+STATE_VERB_STAGES: Final[tuple[str, ...]] = ("forge-0-epic", *PRODUCTION_STAGES)
 ```
 
-> **WARNING: verify the `--stage` domain at implementation time.** The staleness
-> cascade (§6.3) marks `forge-3-specs..forge-6-docs` stale, and the schema's
-> `currentStage` enum (verified) includes all seven production stages plus
-> `complete`. `state-enter`/`state-complete` for `forge-5-loop`/`forge-6-docs` are
-> included for completeness; if the backlog restricts state verbs to the five
-> `EXIT_STAGES`, narrow the `choices` accordingly (the cascade logic in §6.3 is
-> independent of this and stays correct either way).
+Every verb's argparse registration uses `choices=STATE_VERB_STAGES` (§4.1, §5.1, §6.1).
+The staleness cascade (§6.3) keys off its own `_CASCADE_TARGETS` map and is unaffected.
 
 ---
 
@@ -362,7 +400,7 @@ only; committing is the skill's separate Git Commit Protocol step.
         "state-enter", help="Stamp a stage as in-progress (Entry Stamp)"
     )
     p_enter.add_argument("--feature", required=True, help="Feature name")
-    p_enter.add_argument("--stage", required=True, choices=PRODUCTION_STAGES,
+    p_enter.add_argument("--stage", required=True, choices=STATE_VERB_STAGES,
                          help="The authoring stage being entered")
     p_enter.add_argument("--specs-dir", default="./specs", help="Specs directory")
     p_enter.add_argument("--epic", default=None, help="Epic name for a nested member")
@@ -448,8 +486,9 @@ python3 "$R/scripts/forge-session.py" state-enter \
 ### 4.5 Error cases (exit 2)
 
 - Missing `--feature`/`--stage` → argparse usage error.
-- `--stage` not in `PRODUCTION_STAGES` → argparse `choices` error.
-- Unwritable state directory → `OSError` → exit 2.
+- `--stage` not in `STATE_VERB_STAGES` → argparse `choices` error.
+- Unwritable state directory / failed atomic write → `UsageError` (wrapped `OSError`, §3.3) → exit 2.
+- Feature directory does not exist, or state file unparseable → `UsageError` (§3.4).
 
 ---
 
@@ -468,7 +507,7 @@ already-tracked file is a no-op).
         "state-artifact", help="Append an artifact path to a stage (idempotent)"
     )
     p_art.add_argument("--feature", required=True, help="Feature name")
-    p_art.add_argument("--stage", required=True, choices=PRODUCTION_STAGES,
+    p_art.add_argument("--stage", required=True, choices=STATE_VERB_STAGES,
                        help="The stage producing the artifact")
     p_art.add_argument("--path", required=True, help="Artifact path (relative to feature dir)")
     p_art.add_argument("--specs-dir", default="./specs", help="Specs directory")
@@ -532,8 +571,9 @@ python3 "$R/scripts/forge-session.py" state-artifact \
 ### 5.5 Error cases (exit 2)
 
 - Missing `--feature`/`--stage`/`--path` → argparse usage error.
-- `--stage` not in `PRODUCTION_STAGES` → argparse `choices` error.
-- Unwritable state directory → `OSError`.
+- `--stage` not in `STATE_VERB_STAGES` → argparse `choices` error.
+- Unwritable state directory / failed atomic write → `UsageError` (wrapped `OSError`, §3.3) → exit 2.
+- Feature directory does not exist, or state file unparseable → `UsageError` (§3.4).
 
 > The verb does **not** stat the file — it records the path the skill asserts it
 > wrote. Whether the file exists on disk is the skill's concern (the Interrupted
@@ -566,7 +606,7 @@ The largest verb. Replaces the hand-authored completion write (each stage's
         "state-complete", help="Mark a stage complete; bump version; cascade staleness"
     )
     p_comp.add_argument("--feature", required=True, help="Feature name")
-    p_comp.add_argument("--stage", required=True, choices=PRODUCTION_STAGES,
+    p_comp.add_argument("--stage", required=True, choices=STATE_VERB_STAGES,
                         help="The stage being completed")
     p_comp.add_argument("--version", type=int, required=True,
                         help="This stage's new version (integer)")
@@ -578,6 +618,15 @@ The largest verb. Replaces the hand-authored completion write (each stage's
                         help="Artifact path produced by this stage (repeatable)")
     p_comp.add_argument("--commit-hash", default=None, dest="commit_hash",
                         help="Commit 2 follow-up: record the artifact commit's hash")
+    p_comp.add_argument("--status", default="complete",
+                        choices=("complete", "in-progress"),
+                        help="Terminal status to record (default: complete). "
+                             "Use in-progress for a partial forge-5-loop run, or to "
+                             "revert a stage after a failed Commit 1.")
+    p_comp.add_argument("--preserve-commit-hash", action="store_true",
+                        dest="preserve_commit_hash",
+                        help="Do not reset commitHash to null on completion "
+                             "(the Git Commit Protocol's 'Nothing to commit' branch)")
     p_comp.add_argument("--specs-dir", default="./specs", help="Specs directory")
     p_comp.add_argument("--epic", default=None, help="Epic name for a nested member")
     p_comp.add_argument("--json", action="store_true", dest="json_output")
@@ -689,8 +738,8 @@ def cmd_state_complete(
 ) -> dict:
     """Mark ``stage`` complete, bump version, record provenance, cascade staleness.
 
-    Sets status=complete, completedAt, version, basedOnVersions, artifacts, and
-    commitHash. commitHash is set to ``None`` (Commit 1 of the two-commit Git
+    Sets status (default "complete"), completedAt, version, basedOnVersions,
+    artifacts, and commitHash. commitHash is set to ``None`` (Commit 1 of the
     Commit Protocol) UNLESS ``commit_hash`` is provided, in which case this is the
     Commit-2 follow-up recording the real artifact-commit hash (§6.5) and no other
     field is disturbed beyond what a follow-up write should touch. Runs the
@@ -703,7 +752,12 @@ def cmd_state_complete(
         based_on: Parsed ``{upstreamStage: version}`` provenance map.
         artifacts: Final canonical artifact path list for this stage.
         commit_hash: If given, record it as the stage's commitHash (Commit 2);
-            else set commitHash to None (Commit 1).
+            else set commitHash to None (Commit 1). Requires the stage to already
+            be complete -- see §6.8.
+        status: Terminal status to record. "complete" (default) or "in-progress"
+            for a partial forge-5-loop run or a failed-Commit-1 revert (§6.5).
+        preserve_commit_hash: Skip the ``commitHash = None`` reset, for the Git
+            Commit Protocol's "Nothing to commit" branch (L248, §6.5).
         specs_dir: Specs directory.
         epic: Owning epic name, or None.
 
@@ -721,12 +775,13 @@ def cmd_state_complete(
         entry["commitHash"] = commit_hash
         cascaded: list[str] = []
     else:
-        entry["status"] = "complete"
+        entry["status"] = status                      # "complete" (default) | "in-progress"
         entry["completedAt"] = _now_iso()
         entry["version"] = version
         entry["basedOnVersions"] = based_on
         entry["artifacts"] = artifacts
-        entry["commitHash"] = None
+        if not preserve_commit_hash:
+            entry["commitHash"] = None                 # Commit 1; see §6.5
         cascaded = _cascade_staleness(state, stage, version)
     result = _commit_state(state_path, state)
     # Surface the cascade result for the caller without persisting it in state.
@@ -764,6 +819,19 @@ R4 preserves it exactly; only the JSON-authoring mechanic inside it changes:
 verb's split of "set null on completion / set hash on follow-up" is exactly what
 makes the recorded `commitHash` point at the artifact commit (Commit 1), never an
 orphaned amend.
+
+**The protocol's two recovery branches stay executable.** Both are frozen prose that
+R4 must keep working without any site hand-authoring JSON:
+
+- **"If Commit 1 fails … leave state as `in-progress` so the stage can be resumed"**
+  (L245). The sanctioned revert is `state-complete --feature … --stage … --version N
+  --status in-progress`. Use this, **not** `state-enter` — `state-enter` also rewrites
+  `startedAt` and `currentStage`, side effects that are wrong for a failed-commit
+  revert and that nobody has sanctioned for this use (owner decision, 2026-07-29).
+- **"Nothing to commit → mark the stage `complete`, leave `commitHash` at its existing
+  value, skip Commit 2"** (L248). Pass `--preserve-commit-hash` so the completion
+  branch does **not** execute `entry["commitHash"] = None`; without it, re-completing a
+  stage that already carries a hash destroys it before any commit is attempted.
 
 ### 6.6 `--json` payload shape
 
@@ -819,8 +887,17 @@ python3 "$R/scripts/forge-session.py" state-complete \
 - Missing `--feature`/`--stage`/`--version` → argparse usage error.
 - `--version` not an integer → argparse `type=int` error.
 - Malformed `--based-on` token (no `=`, or non-int value) → `UsageError` (§6.2).
-- `--stage` not in `PRODUCTION_STAGES` → argparse `choices` error.
-- Unwritable state directory → `OSError`.
+- `--stage` not in `STATE_VERB_STAGES` → argparse `choices` error.
+- `--commit-hash` against a stage whose `status` is not `complete` → `UsageError`:
+  `--commit-hash requires {stage} to be complete (status: {actual!r}); run
+  state-complete without --commit-hash first`. Without this guard the branch writes a
+  lone `{"commitHash": …}` entry, which violates `stageEntry`'s `required: ["status"]`
+  at exit 0 (§3.5 covers the create path; this covers the typo'd-`--stage` path).
+- Feature directory does not exist → `UsageError` (§3.4).
+- State file present but unparseable → `UsageError`; the original file is left byte-intact
+  (§3.4).
+- Unwritable state directory / failed atomic write → `UsageError` wrapping the `OSError`
+  (§3.3): `atomic write to {state_path} failed: {exc}`.
 
 ---
 
@@ -889,7 +966,8 @@ Non-`--json`: `note set for context-efficiency (48 chars)`.
 ### 7.4 Error cases (exit 2)
 
 - Missing `--feature`/`--note` → argparse usage error.
-- Unwritable state directory → `OSError`.
+- Unwritable state directory / failed atomic write → `UsageError` (wrapped `OSError`, §3.3) → exit 2.
+- Feature directory does not exist, or state file unparseable → `UsageError` (§3.4).
 
 ---
 
@@ -998,7 +1076,8 @@ Non-`--json`: `deferred decision recorded (raisedBy forge-1-prd → forge-2-tech
 
 - Missing `--feature`/`--question`/`--raised-by` → argparse usage error.
 - `--raised-by`/`--target-stage` out of enum → argparse `choices` error.
-- Unwritable state directory → `OSError`.
+- Unwritable state directory / failed atomic write → `UsageError` (wrapped `OSError`, §3.3) → exit 2.
+- Feature directory does not exist, or state file unparseable → `UsageError` (§3.4).
 
 ---
 
@@ -1135,7 +1214,8 @@ Non-`--json`: `epic change request recorded (add-feature → shared-conventions-
 - Missing any required flag → argparse usage error.
 - `--kind`/`--raised-by` out of enum → argparse `choices` error.
 - `--blocks-current` not `true|false` → `UsageError` (§9.2).
-- Unwritable state directory → `OSError`.
+- Unwritable state directory / failed atomic write → `UsageError` (wrapped `OSError`, §3.3) → exit 2.
+- Feature directory does not exist, or state file unparseable → `UsageError` (§3.4).
 
 ---
 
@@ -1204,7 +1284,8 @@ Non-`--json`: `recorded branch for context-efficiency: forge/context-efficiency`
 ### 10.4 Error cases (exit 2)
 
 - Missing `--feature`/`--branch` → argparse usage error.
-- Unwritable state directory → `OSError`.
+- Unwritable state directory / failed atomic write → `UsageError` (wrapped `OSError`, §3.3) → exit 2.
+- Feature directory does not exist, or state file unparseable → `UsageError` (§3.4).
 
 ---
 
@@ -1302,15 +1383,30 @@ REQ-R4-04). Prose stays verbatim (§13); only the mechanic swaps.
 | `skills/forge-3-specs/SKILL.md` — per-spec incremental writes + completion | incremental `artifacts[]` per file; completion | `state-artifact` (per file) then `state-complete …` |
 | `skills/forge-4-backlog/SKILL.md` — completion step | completion + version bump + `basedOnVersions` + cascade | `state-complete --based-on … …` |
 | `skills/forge-verify/SKILL.md` — production-stage entry/exit stamps it authors (NOT the verifyEntry) | any `stageEntry` writes it performs | matching `state-*` verb (verifyEntry path unchanged, `00 §4.2`) |
+| `skills/forge-5-loop/SKILL.md` — pre-launch marker (L188–189) | set `stages.forge-5-loop.status=in-progress`, `.startedAt`, `currentStage` | `state-enter --feature … --stage forge-5-loop` |
+| `skills/forge-5-loop/SKILL.md` — Step 5 completion (L258–263) | completion / partial + `completedAt` + `basedOnVersions` + `artifacts` | `state-complete --stage forge-5-loop --based-on forge-4-backlog=N --status {complete\|in-progress}` |
+| `skills/forge-6-docs/SKILL.md` — Step 5 (L173–182) | completion + `currentStage=complete` + `basedOnVersions` + `artifacts` | `state-complete --stage forge-6-docs --based-on …` |
+| `skills/forge/SKILL.md` — navigator note capture (L185) | set top-level `notes` | `state-note --feature … --note …` |
+
+> **`forge-5-loop`'s conditional completion.** Step 5 records `complete` only when every
+> backlog item is done, and leaves `in-progress` otherwise. That conditional is expressed
+> by `state-complete --status` (§6.1), added for exactly this case (owner decision,
+> 2026-07-29) — the skill evaluates the condition and passes the resulting value.
+>
+> **Explicitly out of scope:** the navigator's `pipelineStatus` writes
+> (`skills/forge/SKILL.md` L215–228 — pause / resume / abandon). REQ-R4-04 enumerates
+> seven touch points and `pipelineStatus` is not among them, so those keep their existing
+> write path and R4 adds no verb for them (owner decision, 2026-07-29). Recorded here so
+> the omission reads as deliberate rather than as a missed site.
 
 > **`shared-conventions.md` prose caveat.** These edits switch the *mechanic*
 > (the fenced "edit the JSON" / "write to `.pipeline-state.json`" step becomes a
 > fenced verb call), never the *prose* of the surrounding protocol
 > (`00-core-definitions.md §10`; §13 below shows a concrete before/after). The
-> exact edited lines and the compact-prelude form the fenced calls use are owned
-> by `04-effective-config.md` (the shared-conventions edits) and
-> `05-instruction-relocations.md` (the R2 prelude form); this doc specifies the
-> verb contracts those calls invoke.
+> exact edited lines are specified in **§13.3** below. Every new fenced call site uses
+> the full `BOOTSTRAP_PRELUDE` — reused when one already precedes it in the same body,
+> inlined otherwise (`01-architecture-layout.md` §2.2.1); there is no compact form,
+> because R2 is scoped out (PRD §3.2).
 
 ---
 
@@ -1361,14 +1457,22 @@ verb call slots in **where the "edit the JSON" step was** — nowhere else.
 
 **After** (mechanic swapped; the deterministic cascade is now the verb's job, so
 the manual "check downstream stages" bullet is *executed by* the call rather than
-re-described as a hand edit):
+re-described as a hand edit).
+
+`forge-1-prd` already carries a full prelude at L31, **above** this call site, so this
+example could reuse it. Most targets cannot: in `forge-5-loop`, `forge-4-backlog`,
+`forge-2-tech`, `forge-3-specs` and `forge-verify` the only prelude sits *below* the R4
+call site, so those sites **inline** the full two-line prelude as shown. The inline form
+is written out here because it is the representative case; see
+`01-architecture-layout.md` §2.2.1 for the per-skill table and line budget.
 
 > 1. Record completion by running the `state-complete` verb (it sets
 >    `status: "complete"`, `completedAt`, the version bump, `basedOnVersions`, the
 >    artifact list, `commitHash: null`, and applies the downstream staleness
 >    cascade deterministically):
 >    ```bash
->    Resolve `$R` via the plugin-root prelude shown at the top of this skill, then run:
+>    R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+>    [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 >    python3 "$R/scripts/forge-session.py" state-complete \
 >      --feature "{feature}" --stage forge-1-prd --version {n} \
 >      --artifact PRD.md --specs-dir "{specsDir}"
@@ -1395,6 +1499,111 @@ If moving any of that text forces a wording change, it MUST be flagged in review
 never silently adapted (REQ-BEHAV-02).
 
 ---
+
+### 13.3 `references/shared-conventions.md` — before/after per touch point
+
+This file is the largest R4 surface outside `forge-session.py`: 295 lines, read
+unconditionally by ~10 skills, and its protocol prose is **frozen** by REQ-BEHAV-02. This
+document owns these edits (an earlier draft misattributed them to
+`04-effective-config.md`, which is the R5 subcommand spec and never mentions this file).
+In every case the *mechanic* swaps and the *prose* does not.
+
+**1. Stage-Entry Guard — Entry Stamp (L266–271).**
+
+> **Before:** "write to `{resolvedFeatureDir}/.pipeline-state.json` and update
+> `updatedAt`: `stages.{stage}.status` → `"in-progress"`; `stages.{stage}.startedAt` →
+> current ISO-8601 UTC timestamp; top-level `currentStage` → `"{stage}"`"
+>
+> **After:** "record the entry stamp by running `state-enter --feature {feature} --stage
+> {stage} --specs-dir {specsDir}` (it sets `status`, `startedAt`, `currentStage` and
+> refreshes `updatedAt` in one atomic write)"
+
+The following sentence — *"This write is **left uncommitted**: it is staged and committed
+as part of this stage's existing exit commit"* — is unchanged and still true; the verb
+writes the file, it does not commit it.
+
+**2. Incremental artifact tracking (L275).**
+
+> **Before:** "update the `stages.{stage}.artifacts` array in `.pipeline-state.json` after
+> writing each file"
+>
+> **After:** "run `state-artifact --feature {feature} --stage {stage} --path <file>` after
+> writing each file"
+
+**3. Branch Setup — "Record the branch" (L217).**
+
+> **Before:** "write the resulting branch name to the feature's `.pipeline-state.json`
+> top-level `branch` field (create/update it when the state file is first written for this
+> stage)"
+>
+> **After:** "run `state-branch --feature {feature} --branch <name> --specs-dir
+> {specsDir}` **once the feature directory exists** — i.e. after Feature Directory
+> Resolution and the Entry Stamp, not at this block"
+
+**The timing qualifier is load-bearing and must survive the swap.** Branch Setup runs
+*before* Feature Directory Resolution and *before* the Stage-Entry Guard
+(`skills/forge-1-prd/SKILL.md` L20–21, L41), and at PRD time a brand-new standalone
+feature may have no directory yet (L23). A `state-branch` call fired at the Branch Setup
+block itself would hit a nonexistent directory and exit 2 at the very start of
+forge-1-prd, where nothing fails today. §3.4's seeding covers the other half (a
+first-write verb can no longer persist a state missing the six required top-level fields),
+but the ordering must still be stated here.
+
+**4. Branch Reconciliation — `adopt-current` (L230).**
+
+> **Before:** "Write `newBranch` into the state `branch` field with a visible one-line
+> note"
+>
+> **After:** "run `state-branch --feature {feature} --branch {newBranch}`, and print the
+> same visible one-line note"
+
+The note's wording, and the "never silently / never push the user back" rules, are
+unchanged.
+
+**5. Git Commit Protocol (L243, L244, L248).**
+
+> **Before (L243):** "In `.pipeline-state.json`, set this stage's `status: "complete"` and
+> `commitHash: null`, then `git commit …`"
+>
+> **After:** "run `state-complete --feature {feature} --stage {stage} --version N …`
+> (which sets `status`, `completedAt`, `version`, `basedOnVersions`, `artifacts`,
+> `commitHash: null` and applies the staleness cascade), then `git commit …`"
+
+> **Before (L244):** "Write it into this stage's `commitHash` in `.pipeline-state.json`,
+> then commit only that one-line change"
+>
+> **After:** "run `state-complete --feature {feature} --stage {stage} --version N
+> --commit-hash $(git rev-parse HEAD)`, then commit only that one-line change"
+
+The two-commit sequence, the "never `--amend`" rule, and the L245/L248 failure branches
+are unchanged in prose; §6.5 specifies how each failure branch stays executable
+(`--status in-progress` and `--preserve-commit-hash`).
+
+---
+
+## 14. Verb-failure handling at the call site
+
+R4 introduces a **new runtime failure surface**: seven protocol touch points that today
+are hand-edits (which cannot fail with an exit code) become subprocess calls that can
+exit 2. The pipeline already has a convention for this — `shared-conventions.md` L160,
+for `render-status`: *"on exit 2, surface the plain `Error:` line from stderr verbatim."*
+The state verbs follow it:
+
+> If a `state-*` verb exits 2, surface the plain `Error:` line from stderr **verbatim**,
+> do **not** proceed to the next step of the surrounding protocol, and do **not**
+> hand-author the JSON as a workaround. The stage remains resumable because the entry
+> stamp is already on disk — re-run the verb once the cause is fixed.
+
+Concretely, the three failures an operator will actually hit and what each means:
+
+| Message | Cause | What the skill does |
+|---|---|---|
+| `no feature directory at …` | typo'd `--feature`, or a nested epic member invoked without `--epic` | surface verbatim; do not create the directory |
+| `… exists but is not valid JSON …; refusing to overwrite it` | a corrupt state file | surface verbatim; the original bytes are intact, so the user can repair or move it |
+| `atomic write to … failed: …` | unwritable directory, disk full | surface verbatim |
+
+Hand-authoring JSON to route around any of these re-introduces exactly the drift R4
+exists to remove (REQ-R4-02), so it is never the fallback.
 
 ## Dependencies
 

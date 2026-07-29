@@ -402,10 +402,15 @@ schema to learn defaults; after R5 they call `effective-config`.
 
 **After (both SKILL bodies):**
 
-> Resolve `$R` via the plugin-root prelude shown at the top of this skill (the R2
-> compact-prelude form, 00-core-definitions §8), then run:
+> **Prelude form (R2 is scoped out).** No compact prelude form exists. If a full
+> `BOOTSTRAP_PRELUDE` already precedes this call site in the same body, reuse it and add
+> nothing; otherwise inline the full two-line prelude shown below, verbatim (it is
+> byte-pinned by `check-spec-purity.py` Rule 5). Per-skill positions and the resulting
+> line budget are tabulated in `01-architecture-layout.md` §2.2.1.
 >
-> ```
+> ```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 > python3 "$R/scripts/forge-session.py" effective-config --config ./forge.config.json --json
 > ```
 >
@@ -414,13 +419,22 @@ schema to learn defaults; after R5 they call `effective-config`.
 
 **Constraints on the consumer edit:**
 
-- **forge-5-loop is at the 300-line cap** (`01-architecture-layout.md §2.2`).
-  The R5 consumer edit MUST be a **1-for-1 swap** — the "read the schema for
-  defaults" instruction is replaced by the one-line call, net **zero** added
-  lines. It must not push schema text back into the body (mirrors REQ-R6-03's
-  cap discipline). If the swap would add net lines, WARNING: flag it and trim in
-  review rather than exceeding the cap.
-- **forge-4-backlog** has headroom; same swap.
+- **forge-5-loop body is at 298/300 lines and 4,415/5,000 words** (measured
+  2026-07-28 @0.13.0 — 2 lines spare; `01-architecture-layout.md §2.2`, and Rule 4
+  gates *both* limits). The R5 consumer edit MUST be a **1-for-1 swap** — the "read
+  the schema for defaults" instruction is replaced by the call — and it must not push
+  schema text back into the body (mirrors REQ-R6-03's cap discipline).
+
+  **Budget the whole body, not just this edit.** `forge-5-loop` also takes R6's citation
+  swap and R4's two state-verb conversions, so the 2 spare lines are a **shared** budget.
+  And the R5 call site (L22–27) sits **above** the file's only full prelude (L64), so it
+  cannot reuse it — this edit inlines the two-line prelude, ~4 lines with the fence
+  (`01-architecture-layout.md §2.2.1). If the net effect cannot be brought to ≤ +2 across
+  all three units, **defer the forge-5-loop R5 consumer edit behind an explicit line
+  audit** rather than forcing it: REQ-DELIV-01 makes R5 independently shippable, so
+  deferring one consumer does not block the unit.
+- **forge-4-backlog** has 141 lines of headroom; same swap, and its call sites (L32, L139)
+  are likewise above its prelude (L154), so they inline too.
 - Both edits are **relocations of a read-for-defaults step into a script call**
   (00-core-definitions §2, script-extraction) — no interactive-protocol prose
   changes (REQ-BEHAV-02).

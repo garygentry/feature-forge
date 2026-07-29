@@ -43,6 +43,12 @@
    expected-count table to the exact per-file totals.
 5. Re-point the `agents/forge-verifier.md` leaf agent's guidance so a dispatched
    verifier reads only `verification-checklists/{mode}.md`.
+6. **Update the three committed tests that pin the pre-split file and the `~`-prefixed
+   count strings** — `tests/test_lifecycle_artifact_check.py`,
+   `tests/test_smoke_command.py`, `tests/test_dev_runtime_smoke.py`. They read
+   `verification-checklists.md` directly and assert `"backlog: ~27 checks"` /
+   `"impl: ~23 checks"`, so R1 lands **red on CI** without them. Exact repoints in
+   `06-testing-strategy.md` §3.0.
 
 **Out of scope:** any rewording of a check's text, any change to the dual-role
 guard's meaning, any change to how findings are written or how state is updated
@@ -188,9 +194,9 @@ To guarantee "no check added, dropped, or renumbered":
    unit; its internal structure is not touched.
 3. **The epic bash recipe** (src L259–263) moves into `epic.md` including its
    plugin-root prelude line verbatim — it is a skill-local recipe that must stay
-   runnable by the leaf (this prelude is **not** subject to R2's dedup; R2 is
-   out of scope here and touches only linear skill *bodies*, not reference files —
-   see `00-core-definitions.md §8`, `05-instruction-relocations.md §1`).
+   runnable by the leaf. (R2 is scoped out entirely, and even in its original scope it
+   touched only linear skill *bodies*, never reference files — see
+   `00-core-definitions.md §8`, `05-instruction-relocations.md §1`.)
 4. **Deletion is total.** `verification-checklists.md` is removed (git delete),
    not left as a stub — leaving a stub would let the leaf keep loading the whole
    thing and defeat REQ-R1-01.
@@ -258,13 +264,14 @@ per REQ-BEHAV-02 / 00-core-definitions.md §2 — call it out in the R1 PR
 description ("agent step-3 file-load instruction reworded to name the per-mode
 file") rather than adapting it silently.
 
-> WARNING: OQ-4 (tech-spec §10) — it is **unconfirmed** whether the adapter
-> build's citation fan-out scans `agents/*.md` bodies. This agent edit is
-> therefore treated as **non-load-bearing for portability**: the six mode paths
-> and `findings-template.md` are cited from the **forge-verify SKILL body** (§8),
-> so shipping does not depend on the agent-body citation. Verify OQ-4 during R1
-> implementation; if fan-out does scan agent bodies, the `{mode}.md` template
-> reference above is a bonus discoverable path, not a requirement.
+> **OQ-4 — RESOLVED: fan-out does NOT scan agent bodies.**
+> `_fan_out_shared_references()` takes a `SkillRecord` and reads `skill.body`; its sole
+> call site is the per-skill loop at `scripts/build-adapters.py` L1402, and the agent
+> emitters (L946 / L1067 / L1122) never call it. So this agent-body path is a
+> **human-readable pointer with no build effect** — the leaf resolves it because the
+> forge-verify skill directory is its resolution context. Citing all six mode paths and
+> `findings-template.md` from the **forge-verify SKILL body** (§8) is therefore
+> **required**, not belt-and-suspenders.
 
 ## 7. `forge-verify/SKILL.md` citation & expected-count changes
 
@@ -373,16 +380,22 @@ agent body — OQ-4, §6 WARNING):
 | `references/verification-checklists/epic.md` | Step 3 epic-dispatch note (SKILL L168) |
 | `references/findings-template.md` | Step 4 (§7.4) + Step 6 (§7.4) |
 
-Because the fan-out regex is
-`references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*)` (00-core-definitions.md §9), the
-`{mode}` template token matches (the class includes `{`, `}`, `/`), and each
-concrete path matches (the class includes `/` and `.`). To remove any dependence
-on template-brace matching, the SKILL body SHOULD **also** name at least the six
-literal paths once — e.g. an inline enumeration in the Step 3 read note:
-"(`references/verification-checklists/{prd,tech,specs,backlog,impl,epic}.md`)".
-These are **skill-local own-refs** (`skills/forge-verify/references/...`) so they
-copy verbatim under the per-skill own-refs step regardless; citing from the body
-is belt-and-suspenders per the OQ-4 mitigation.
+The fan-out regex is `references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*)`
+(`scripts/build-adapters.py` L1667–1669). The `{mode}` template token matches (the class
+includes `{`, `}`, `/`), and each concrete path matches (the class includes `/` and `.`).
+
+> **The SKILL body MUST name all six literal paths, each as its own citation.** Not a
+> SHOULD, and **never** as a brace enumeration. The character class contains **no comma**,
+> so `` `references/verification-checklists/{prd,tech,specs,backlog,impl,epic}.md` ``
+> captures the single bogus token `verification-checklists/{prd` and yields **zero** usable
+> paths — verified against the real regex. A brace list therefore defeats §9 assertion 7
+> and `06-testing-strategy.md` §5's `NEW_FILES` guard, both of which substring-match the
+> literals. Write six separate paths in the Step 3 read note.
+
+These are **skill-local own-refs** (`skills/forge-verify/references/...`), so
+`_copytree_verbatim` (L1597–1624, called unconditionally at L1392) ships the whole
+subdirectory regardless of citation — but the citation is what the spec's own drift guards
+assert, and what makes the dependency legible.
 
 **Host-neutral (REQ-PORT-02).** None of the seven files may contain a literal
 `/clear` or a Claude-only tool name. Verified against the source content that
@@ -455,8 +468,8 @@ REQ-MAINT-01.
   invariant preserved in §3). This split MUST match §7 exactly.
 - **`06-testing-strategy.md`** — owns the actual R1 drift-guard pytest; §9 above
   fixes what it must assert. Implement the guard there, not here.
-- **Ordering:** R1 is a "quick win" and file-disjoint from R2–R6
-  (`01-architecture-layout.md §4`); it may land in any order among R1/R2/R3.
+- **Ordering:** R1 is a "quick win" and file-disjoint from R3–R6
+  (`01-architecture-layout.md §4`); it may land in any order relative to R3.
 
 ## Verification
 
@@ -487,6 +500,6 @@ Confirm an implementation matches this spec:
 - [ ] No moved file contains a literal `/clear` or a Claude-only tool name
       (REQ-PORT-02, §8).
 - [ ] The R1 drift guard in `06-testing-strategy.md` asserts §9.1–9.7 and is green.
-- [ ] All five adapters regenerate; `test_build_adapters.py` snapshot passes after
+- [ ] All six adapter targets regenerate; `test_build_adapters.py` snapshot passes after
       fixture refresh; the old path is gone and the seven new paths present
       (REQ-PORT-03).

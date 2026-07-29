@@ -8,20 +8,27 @@
 
 ## 1. Overview
 
+> **R2 is SCOPED OUT (2026-07-28).** This feature ships **five** units — R1, R3, R4, R5,
+> R6. R2's analysis is retained throughout this document for provenance and is **not** to
+> be implemented: author no backlog items for it, and read its absence from the
+> implementation as intended, not as a coverage gap. Rationale in PRD §3.2; evidence in
+> `docs/claude-5/phase-0-compliance-baseline.md` §4.
+
 This feature is a **behavior-preserving instruction-token optimization** of the
-forge pipeline itself (dogfooded on its own repo). It ships as **six
-independently revertible units** (R1–R6, REQ-DELIV-01), each a *relocation*,
-*dedup*, or *script-extraction* of instruction text — never a rewording of an
-interactive protocol (C-1, REQ-BEHAV-01/02).
+forge pipeline itself (dogfooded on its own repo). It ships as **five
+independently revertible units** (R1, R3–R6, REQ-DELIV-01), each a *relocation*
+or *script-extraction* of instruction text — never a rewording of an
+interactive protocol (C-1, REQ-BEHAV-01/02). R2 is retained for provenance only
+(see the banner above).
 
 Key architectural decisions, all confirmed in the interview:
 
 - **R1** — split the 477-line `verification-checklists.md` into 6 per-mode files
   + 1 orchestrator-only `findings-template.md`, so a verifier subagent loads only
   its mode (~1/6 the content, zero orchestrator material).
-- **R2** — dedup the 3-line plugin-root prelude **within linear skill bodies
+- ~~**R2** — dedup the 3-line plugin-root prelude **within linear skill bodies
   only** (conservative scope), leaving the independently-invoked reference-block
-  recipes verbatim.
+  recipes verbatim.~~ **SCOPED OUT — does not ship (PRD §3.2).**
 - **R3** — gate the navigator's `process-overview.md` read behind
   "how does the pipeline work" questions.
 - **R4** — replace all hand-authored `.pipeline-state.json` writes with a set of
@@ -37,7 +44,7 @@ The two new script capabilities (R4, R5) live in the existing `forge-session.py`
 (a `RUNTIME_HELPER`, so they ship to every adapter automatically), are
 **stdlib-only** (no `jsonschema`, C-2), and follow the script's established
 conventions verbatim. Every moved/split reference file stays
-**citation-discoverable and host-neutral** (REQ-PORT-01/02); all five adapters
+**citation-discoverable and host-neutral** (REQ-PORT-01/02); all six adapter targets
 regenerate and fixtures refresh mechanically (REQ-PORT-03).
 
 ## 2. Module Structure
@@ -48,15 +55,14 @@ fans out from. Files touched, grouped by unit:
 ```
 scripts/
   forge-session.py                 # R4: +7 state verbs; R5: +effective-config
-                                   #     (1,866 lines today; argparse + if-dispatch)
+                                   #     (1,888 lines at 0.13.0; argparse + if-dispatch)
 references/
   pipeline-state-schema.json       # R4: unchanged content; remains CI source of truth
   forge-config-schema.json         # R5: unchanged content; read at runtime for defaults
   process-overview.md              # R3: read-site relocated (file unchanged)
-skills/forge/SKILL.md              # R2 (5→1+4) + R3 (gate the read)
-skills/forge-0-epic/SKILL.md       # R2 (5→1+4); R4 (state verbs)
-skills/forge-bootstrap/SKILL.md    # R2 (4→1+3)
-skills/forge-1-prd/SKILL.md        # R2 (2→1+1); R4 (state verbs)
+skills/forge/SKILL.md              # R3 (gate the read); R4 (state-note)
+skills/forge-0-epic/SKILL.md       # R4 (state verbs)
+skills/forge-1-prd/SKILL.md        # R4 (state verbs)
 skills/forge-2-tech/SKILL.md       # R4 (state verbs)
 skills/forge-3-specs/SKILL.md      # R4 (state verbs)
 skills/forge-4-backlog/SKILL.md    # R4 (state verbs)
@@ -115,7 +121,7 @@ against the reduced, mode-scoped file — more robust, not weaker.
 All six mode paths **and** `findings-template.md` MUST appear as literal
 `references/...` citations **in the forge-verify SKILL body** (not only in the
 `forge-verifier` agent file, whose body may not drive fan-out — see OQ-4), so every
-file ships to all five adapters. Because the paths contain `/`, they match the
+file ships to all six adapter targets. Because the paths contain `/`, they match the
 regex character class (`.` and `/` are included), and they are skill-local own-refs
 (`skills/forge-verify/references/...`) so they copy verbatim under the per-skill
 own-refs step, not the shared-root fan-out — either way, cite them from the body.
@@ -125,6 +131,10 @@ own-refs step, not the shared-root fan-out — either way, cite them from the bo
 (the 477-line file still loads into the subagent — fails REQ-R1-01's intent).
 
 ### 3.2 R2 — Within-file prelude dedup, conservative scope (REQ-R2-01/02, C-5)
+
+> **SCOPED OUT (2026-07-28) — this decision does not ship.** Retained for provenance and
+> for a possible future revival; author no backlog items from this section. See PRD §3.2
+> and `docs/claude-5/phase-0-compliance-baseline.md` §4.
 
 **Decision.** Reduce the 2nd-and-subsequent occurrences of the 3-line `R="$(bash
 -c '…forge-root.sh…')"` resolver **only within linearly-read skill bodies**:
@@ -260,31 +270,39 @@ lines) by moving its three **agent-conditional** sections into a new
 precedence, Run mode (rauf), Launch detail, Arm a Monitor, React to events,
 Inform-user template (REQ-R6-01).
 
-**Load gate (REQ-R6-02).** `agent-selection.md` is cited **only at the
-forge-5-loop capability gate** (SKILL body line ~174, "everything below applies
-only when `loopRunner.agentArgument` is present"), so it loads only then. The
-optional-flags catalog moves with it (reachable-but-not-default), co-located
-because it is surfaced only during the same Step-2d detail.
+**Load gate (REQ-R6-02).** `agent-selection.md` is cited **only from inside the
+forge-5-loop capability gate**, which begins at SKILL body **L172** ("everything below
+applies only when `loopRunner.agentArgument` is present"). Every citation site is at
+L174 or L180 — both inside the gate — so a gate-off run never opens the file. L165 sits
+**above** the gate and therefore keeps pointing **only** at `runner-contract.md` for
+model-selection precedence; its optional-flags-catalog clause is **trimmed**, and the
+catalog is referenced from inside the gated block instead (owner decision, 2026-07-29).
+That is what makes "reachable but not loaded by default" literally true.
 
-**Cap constraint (REQ-R6-03).** `forge-5-loop` SKILL is **at 300/300**. R6's SKILL
+**Cap constraint (REQ-R6-03).** `forge-5-loop` SKILL body is at **298/300 lines and
+4,415/5,000 words** (measured 2026-07-28 @0.13.0 — 2 lines spare; body lines exclude
+frontmatter, the region `check-spec-purity.py` Rule 4 measures, and Rule 4 gates **both**
+limits). R6's SKILL
 edits are a strict **1:1 citation swap** (the existing "read
-`references/runner-contract.md`" pointers at lines 165/174 that reference agent
-material re-point to `references/agent-selection.md`) — **zero net lines added**,
+`references/runner-contract.md`" pointers at lines 165 — optional-flags-catalog half
+only — 174 and **180** re-point / trim to `references/agent-selection.md`; the pointers
+at 168, 170 and below are unchanged. See `05-instruction-relocations.md` §3.4 for the
+verified per-line table) — **zero net lines added**,
 no runner-contract text pushed back into the body. `agent-selection.md` is a
 skill-local own-ref (copied verbatim), so it ships without fan-out ambiguity, but
 the citation still gives fan-out a discoverable path.
 
 ### 3.7 Delivery, sequencing, portability (REQ-DELIV-01, REQ-PORT-01..03, C-7)
 
-Each of R1–R6 lands as its **own PR/change**, revertible without touching the
-others (REQ-DELIV-01, SC-6). Sequence per the audit: **R1 + R2 + R3** (quick
-wins) → **R5** → **R4** (largest surface) → **R6**. R5 precedes R4 because it is
+Each of R1, R3, R4, R5 and R6 lands as its **own PR/change**, revertible without
+touching the others (REQ-DELIV-01, SC-6). Sequence per the audit, with R2 removed:
+**R1 + R3** (quick wins) → **R5** → **R4** (largest surface) → **R6**. R5 precedes R4 because it is
 lower-risk and exercises the "add a forge-session subcommand + stdlib schema
 drift-guard" pattern that R4 then reuses at larger scale.
 
 Every new/moved file is cited by path from ≥1 skill body (REQ-PORT-01), contains
 no Claude-only tokens — no literal `/clear`, no Claude-only tool names
-(REQ-PORT-02) — and all five adapters regenerate with fixtures refreshed via the
+(REQ-PORT-02) — and all six adapter targets regenerate with fixtures refreshed via the
 minimal-canon scratch-build + `command cp -f` procedure (REQ-PORT-03, C-3).
 **Releases are out of scope** (C-7): no backlog release items.
 
@@ -328,13 +346,15 @@ resolved `loopRunner`.
 
 **Depends on (reads/modifies existing code):**
 
-1. **`scripts/forge-session.py`** (1,866 lines) — the host for R4+R5. Verified
+1. **`scripts/forge-session.py`** (1,888 lines at 0.13.0) — the host for R4+R5. Verified
    integration surface: `_load_config(config_path: Path) -> dict` (line 526,
    returns `{}` on error, callers `.get(k, default)`); argparse subparsers +
    `if args.cmd == …` dispatch in `main()`; `--json`→`dest="json_output"`;
    exit **0/2**; top-level `try/except` degrade-to-data. Existing subcommands
    (`rank-features`, `context-usage`, `doctor`, `discover-feature`,
    `reconcile-branch`, `check-epic-base`, `stage-exit`) are the pattern to mirror.
+   Line anchors here are verified at 0.13.0 — re-grep before editing; they shift
+   with any merge.
 2. **`references/pipeline-state-schema.json`** — data contract the R4 verbs must
    satisfy; unchanged; the R4 stdlib drift guard reads it.
 3. **`references/forge-config-schema.json`** — R5 reads `properties.loopRunner`
@@ -345,22 +365,28 @@ resolved `loopRunner`.
 5. **`agents/forge-verifier.md`** — the leaf agent's dispatch prompt must name the
    mode so it reads only `verification-checklists/{mode}.md`. (Read-only agent;
    no tool change.)
-6. **`skills/forge-5-loop/SKILL.md`** — 1:1 citation swap only; **at the 300-line
-   cap**, so verified line-neutrality is mandatory.
+6. **`skills/forge-5-loop/SKILL.md`** — 1:1 citation swap only; body at **298/300
+   lines, 4,415/5,000 words** (2 lines spare), so verified line- *and word-* neutrality
+   is mandatory. It also takes the R5 consumer swap — budget both together.
 7. **`references/shared-conventions.md`** — Stage-Entry Guard (entry stamp +
    incremental artifacts), Branch Setup (`branch` write), and the per-stage
    completion instructions switch to state-verb calls. **Prose/prompts unchanged.**
 8. **State-writing skills** (`forge-0-epic`, `forge-1-prd`, `forge-2-tech`,
-   `forge-3-specs`, `forge-4-backlog`, `forge-verify`) — each stage's
-   "Write pipeline state" step swaps hand-authored JSON for the matching verb(s).
+   `forge-3-specs`, `forge-4-backlog`, `forge-5-loop`, `forge-6-docs`, `forge`, and
+   `forge-verify` — **production `stageEntry` stamps only**; the `verifyEntry` write path
+   is unchanged, and R4 adds no `verifyEntry` verb, see `00-core-definitions.md` §4.2) —
+   each stage's "Write pipeline state" step swaps hand-authored JSON for the matching
+   verb(s). The navigator's `pipelineStatus` writes (`skills/forge/SKILL.md` L215–228)
+   are **out of R4 scope** per REQ-R4-04's enumerated list (owner decision, 2026-07-29).
 9. **`scripts/build-adapters.py`** — **no code change expected.** Its citation
    fan-out + own-refs copy + `RUNTIME_HELPERS` (which already includes
    `forge-session.py`) carry the new subcommands and files automatically —
    *provided* every new reference file is cited by path from a skill body
    (the load-bearing precondition, REQ-PORT-01).
 10. **`scripts/check-spec-purity.py`** — **no change**; it is a *constraint*:
-    Rule 5 (prelude byte-identity) bounds R2's compact form; Rule 4 (≤300 lines)
-    bounds forge-5-loop.
+    Rule 4 (≤300 body lines **and** ≤5,000 body words) bounds forge-5-loop and
+    forge-0-epic. (Rule 5, prelude byte-identity, bounded R2's compact form — moot now
+    that R2 is scoped out; every new fenced call site uses the full `BOOTSTRAP_PRELUDE`.)
 
 **Imported-from by:** nothing outside the pipeline — this is internal
 instruction/script refactoring. "Consumers" are the skills and the adapter build.
@@ -387,8 +413,6 @@ proceeds to Git Commit Protocol (unchanged).
 - **R5 default resolution:** if the schema is unreadable, `effective-config`
   surfaces exit 2 (deterministic failure) rather than silently emitting partial
   defaults — the loop stages then fall back to their existing behavior.
-- **R2:** no runtime error surface — instruction-text change only; the resolver
-  the model executes is unchanged.
 - **R1/R6:** no runtime error surface; a mis-split (missing check / dropped
   section) is caught by the drift guards, not at runtime.
 
@@ -404,10 +428,9 @@ guards (REQ-MAINT-01, SC-4):
   that the forge-verify SKILL's expected-count table matches the per-file totals.
   Also assert `findings-template.md` holds the three orchestrator sections and
   that no mode file contains them.
-- **R2** — assert the compact form is **sentinel-free** (no
-  `check_prelude_identity` trigger) and that each targeted skill body retains
-  **exactly one** full `BOOTSTRAP_PRELUDE`; assert reference files
-  (`shared-conventions.md`, `portable-root.md`, `edit-mode.md`) are untouched.
+- ~~**R2** — compact-form guard (`tests/test_prelude_dedup.py`).~~ **Not authored —
+  R2 is scoped out (PRD §3.2).**
+
 - **R3** — assert `process-overview.md` is cited (still ships) and read only under
   the conditional branch (no unconditional read line remains).
 - **R4/R5** — a **stdlib structural validator** (reusing `epic-manifest.py`'s

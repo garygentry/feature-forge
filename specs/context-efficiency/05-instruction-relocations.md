@@ -45,7 +45,7 @@
 | REQ-R3-01 | Navigator reads `process-overview.md` only for "how does the pipeline work" questions | R3 §2.1, §2.2 |
 | REQ-R6-01 | Always-loaded runner-contract sections load on every run | R6 §3.1, §3.2 (table) |
 | REQ-R6-02 | Agent-selection loads only under the `agentArgument` gate; optional-flags reachable-not-default | R6 §3.2 (table), §3.3 |
-| REQ-R6-03 | Split must not push runner-contract text back into the 300/300 forge-5-loop body | R6 §3.4 |
+| REQ-R6-03 | Split must not push runner-contract text back into the forge-5-loop body (298/300, 2 spare) | R6 §3.4 |
 | REQ-PORT-01 | Every new/moved file cited by ≥1 skill body | R3 §2.3, R6 §3.5 |
 | REQ-PORT-02 | Moved reference files host-neutral (no Claude-only tokens) | R6 §3.6, R3 §2.3 |
 | REQ-MAINT-01 (R2/R3/R6) | Drift guard per moved/split file | R2 §1.6, R3 §2.4, R6 §3.7 |
@@ -177,7 +177,7 @@ The **first** occurrence in `skills/forge/SKILL.md` (L32, inside the epic-rollup
 step) stays byte-verbatim and is what "the top of this skill" refers to.
 
 > **Cap side-benefit (`01-architecture-layout.md §2.2`).** R2 is a net line
-> reduction, easing pressure on `forge-0-epic/SKILL.md` (298/300 today) and
+> reduction, easing pressure on `forge-0-epic/SKILL.md` (292/300 body lines, 8 spare) and
 > `forge-bootstrap/SKILL.md`. R2 must never *raise* a body's line count.
 
 ## 1.6 R2 invariant + drift-guard requirement
@@ -349,25 +349,34 @@ file is never read.
 
 ## 3.3 Load gate (REQ-R6-02)
 
-`agent-selection.md` is cited **only at the forge-5-loop capability gate**
-(`skills/forge-5-loop/SKILL.md`, the "Agent selection (gated on
-`loopRunner.agentArgument`)" block at ~L172–182, whose opening sentence is
+`agent-selection.md` is cited from **exactly two sites, both inside the forge-5-loop
+capability gate**: `skills/forge-5-loop/SKILL.md` **L174** and **L180**. The gate block —
+"Agent selection (gated on `loopRunner.agentArgument`)", whose opening sentence is
 "**Capability gate.** Everything below applies **only when** the effective
-`loopRunner.agentArgument` is present and non-empty …"). Because the citation
-lives inside that gated block, the file is read only when the gate is on
-(REQ-R6-02).
+`loopRunner.agentArgument` is present and non-empty …" — begins at **L172**. Both
+citations are below it, so a gate-off run never opens the file (REQ-R6-02).
 
-The **optional-flags catalog** (section 5) co-locates in `agent-selection.md`:
-it is *reachable* (the model reads it when it opens the file at the gate) but
-*not loaded by default* (a gate-off run never opens the file). This satisfies
-REQ-R6-02's "reachable but not loaded by default." The catalog also documents
-`--agent`, which is meaningful only under the same gate, so co-location is
-semantically correct.
+> **L165 is above the gate and must NOT cite `agent-selection.md`.** An earlier draft had
+> §3.4 *split* that pointer, adding a second citation at L165 — which every gate-off run
+> reads, defeating the very property this section claims. The resolution (owner decision,
+> 2026-07-29) is to **trim** instead: L165 keeps pointing only at `runner-contract.md` for
+> model-selection precedence, and its optional-flags-catalog clause is dropped, because
+> the catalog is referenced from inside the gated block. See §3.4.
+
+The **optional-flags catalog** (section 5) co-locates in `agent-selection.md`: it is
+*reachable* (the model reads it when it opens the file at the gate, and the gated block
+names it) but *not loaded by default* (a gate-off run never opens the file). That is
+REQ-R6-02's "reachable but not loaded by default", satisfied literally rather than by
+assertion. The catalog documents `--agent`, meaningful only under the same gate, so
+co-location is semantically correct too.
 
 ## 3.4 Cap constraint — strict 1:1 citation swap (REQ-R6-03)
 
-`skills/forge-5-loop/SKILL.md` is at the **300-line CI cap** (Rule 4,
-`01-architecture-layout.md §2.2`). R6's SKILL edit is a **strict 1:1 citation
+`skills/forge-5-loop/SKILL.md` body is at **298/300 lines and 4,415/5,000 words**
+(measured 2026-07-28 @0.13.0 — 2 lines spare; Rule 4 gates both, and measures the region
+*after* the frontmatter, so a raw `wc -l` of 304 is the wrong number). See
+`01-architecture-layout.md §2.2`. This body also takes R5's consumer swap and R4's two
+state-verb conversions, so the 2 lines are a **shared** budget, not R6's alone. R6's SKILL edit is a **strict 1:1 citation
 swap** with **zero net lines** — **no** runner-contract text is pushed back into
 the body.
 
@@ -377,7 +386,7 @@ the pointers whose target material **stays** are untouched:
 
 | SKILL body citation (verified) | Refers to | Action |
 |--------------------------------|-----------|--------|
-| L165 "…read `references/runner-contract.md`." (model-selection precedence + **optional-flags catalog**) | §1 (stays) **+** §5 (moves) | **Split the pointer**: keep `runner-contract.md` for model-selection precedence; add/redirect the optional-flags-catalog reference to `references/agent-selection.md` |
+| L165 "…read `references/runner-contract.md`." (model-selection precedence + **optional-flags catalog**) | §1 (stays) **+** §5 (moves) | **Trim the pointer**: keep `references/runner-contract.md` for model-selection precedence and **drop the optional-flags-catalog clause**. Do **not** add an `agent-selection.md` citation here — L165 is above the L172 gate, so a citation here would load on every gate-off run and defeat REQ-R6-02 (§3.3). The catalog is named from inside the gated block instead. A trim is ≤0 net lines. |
 | L168 "…`## Run mode (Step 2d, rauf)` in `references/runner-contract.md`." | §4 (stays) | **Unchanged** |
 | L170 "For the full loop-runner contract … read `references/runner-contract.md`." | §{1,4,6,7,8,9} (stay) | **Unchanged** |
 | L174 "The full algorithm … are in `## Agent selection` of `references/runner-contract.md`; read it." | §2 (**moves**) | **Re-point** to `references/agent-selection.md` |
@@ -388,16 +397,14 @@ the pointers whose target material **stays** are untouched:
 adds **0** net lines. If any edit would add a line, the body would exceed 300 and
 the change is invalid — the drift guard (§3.7) enforces `≤300`.
 
-> **WARNING (verify before implementing):** L165's pointer bundles two concerns —
-> model-selection precedence (stays in `runner-contract.md`) **and** the
-> optional-flags catalog (moves to `agent-selection.md`). Splitting it into two
-> file references without adding a net line requires reusing the existing
-> sentence structure (e.g. "…read `references/runner-contract.md`; the optional-
-> flags catalog is in `references/agent-selection.md`."). Confirm this fits on the
-> existing line budget at implementation time; if it forces a new line, prefer
-> redirecting L165 wholly to the file that holds the majority concern and rely on
-> the L174/L180 agent-selection citations for fan-out discoverability — but do
-> **not** exceed 300 lines.
+> **Resolved (owner decision, 2026-07-29).** L165's pointer bundles two concerns —
+> model-selection precedence (stays in `runner-contract.md`) and the optional-flags
+> catalog (moves to `agent-selection.md`). It is **trimmed, not split**: drop the
+> catalog clause from L165 and let the gated block at L172–182 carry the catalog
+> reference. A trim removes words from an existing line, so it is ≤0 net lines — which
+> matters, because this body has only **2** lines of headroom and also takes the R5
+> consumer swap and R4's two state-verb conversions. Fan-out discoverability is
+> unaffected: the L174/L180 citations are literal `references/agent-selection.md` paths.
 
 ## 3.5 Portability — citation discoverability (REQ-PORT-01)
 
@@ -463,7 +470,8 @@ pattern):
   restated.
 - **`01-architecture-layout.md`** — §1 (file-move manifest: the four R2 skills, the
   R3 read-site relocation, the R6 `agent-selection.md` new file), §2.2 (skill-body
-  line-cap ledger — the 300/300 forge-5-loop constraint and forge-0-epic 298/300
+  line-cap ledger — the 298/300 forge-5-loop constraint (2 spare) and forge-0-epic
+  292/300 (8 spare)
   headroom), §3.1 (required citations table).
 - **No dependency on R1/R4/R5.** R2/R3/R6 are file-disjoint quick wins
   (`01-architecture-layout.md §4`); R6 shares only `forge-5-loop/SKILL.md` with R5

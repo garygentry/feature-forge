@@ -32,6 +32,30 @@
 
 ## 1. Framework & conventions
 
+- **Subprocess helper invocations use `sys.executable`**, matching `tests/conftest.py`'s
+  `run_cli` fixture and 10 of the existing test modules. Reserve a literal `python3` for
+  tests that deliberately assert a *shipped command string* (the only two that do are
+  `test_build_adapters.py` and `test_forge_bootstrap.py`). Under a venv or a CI image
+  where `python3` is not the interpreter running pytest, a hardcoded `python3` tests a
+  different interpreter than the suite runs on — this repo has been bitten by that class
+  before (`jsonschema` absent in CI).
+- **Body-line counts strip frontmatter.** `check-spec-purity.py` Rule 4 measures the
+  region after the closing `---`, and gates **both** `MAX_BODY_LINES = 300` (L89) and
+  `MAX_BODY_WORDS = 5000` (L169). A raw `wc -l` overcounts by the frontmatter length —
+  use the `_body_lines()` helper below.
+
+```python
+def _body_lines(text: str) -> list[str]:
+    """Body = everything after the closing `---` (check-spec-purity Rule 4)."""
+    lines = text.replace("\r\n", "\n").split("\n")
+    assert lines and lines[0].strip() == "---", "no frontmatter block"
+    close = next(i for i, l in enumerate(lines[1:], 1) if l.strip() == "---")
+    body = lines[close + 1:]
+    if body and body[-1] == "":
+        body = body[:-1]
+    return body
+```
+
 - **Runner:** `python3 -m pytest tests` (the project `testCommand`). New tests live
   under `tests/` as `test_*.py`.
 - **Stdlib only (C-2).** No `jsonschema` (absent in CI), no third-party imports.
@@ -73,6 +97,23 @@ break behavior" backstop:
 - `test_build_adapters.py` snapshot (after the fixture refresh in §6)
 
 ## 3. Per-unit drift guards (REQ-MAINT-01)
+
+### 3.0 Existing tests R1 must update (not "stay green unchanged")
+
+R1 deletes `skills/forge-verify/references/verification-checklists.md`
+(`02-verify-checklist-split.md` §4.4: deletion is total, not left as a stub) **and** drops
+the `~` from the Step-2/Step-3 count figures (§7.3). Three committed tests read that exact
+path and assert those exact strings, so **R1 lands red on CI unless they are updated in
+the same PR.** They are not part of §2's untouched baseline — they require a mechanical
+repoint, and doing it inside the R1 PR is what keeps R1 independently revertible
+(REQ-DELIV-01).
+
+| Test | Repoint `CHECKLISTS` to | Also change |
+|---|---|---|
+| `tests/test_lifecycle_artifact_check.py` (L20; reads at L26) | `…/verification-checklists/backlog.md` | drop the `## Implementation Mode Checklist` split terminator in `test_b27_present_and_advisory` (that heading no longer exists in `backlog.md` — slice to end-of-file); L49–50 → `"backlog: 27 checks"` / `"backlog 27"` |
+| `tests/test_dev_runtime_smoke.py` (L23; reads at L30) | `…/verification-checklists/impl.md` | in `_runnability()` drop the `## Epic Mode Checklist` terminator (slice `### Runnability` to end-of-file); L68–69 → `"impl: 23 checks"` / `"impl 23"` |
+| `tests/test_smoke_command.py` (L25; reads at L57, L65) | `…/verification-checklists/impl.md` | L78–79 → `"impl: 23 checks"` / `"impl 23"` |
+
 
 One guard file per revert unit, so a unit's regression fails an isolated test.
 
@@ -140,42 +181,18 @@ def test_skill_expected_count_table_matches_per_file_totals():
 The total (130) and the reconciliation of the SKILL's old "tech ~15 → 17" wording
 are covered by the two count assertions above.
 
-### 3.2 R2 — `tests/test_prelude_dedup.py`
+### 3.2 R2 — not authored (scoped out)
 
-Asserts the compact form is sentinel-free and each edited body keeps exactly one
-full prelude; excluded reference files are untouched (`05-instruction-relocations.md §1`):
-
-```python
-from _forge_paths import SKILLS, REFERENCES, read
-
-SENTINEL = '[ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"'
-EDITED = {  # skill body -> expected full-prelude count after dedup
-    "forge": 1, "forge-0-epic": 1, "forge-bootstrap": 1, "forge-1-prd": 1,
-}
-EXCLUDED = {  # reference files keep their preludes verbatim (recipe blocks)
-    REFERENCES / "shared-conventions.md": 6,
-    REFERENCES / "portable-root.md": 2,
-    SKILLS / "forge-0-epic" / "references" / "edit-mode.md": 2,
-}
-
-
-def test_edited_bodies_keep_exactly_one_full_prelude():
-    for skill, expected in EDITED.items():
-        text = read(SKILLS / skill / "SKILL.md")
-        assert text.count(SENTINEL) == expected, \
-            f"{skill}: {text.count(SENTINEL)} full preludes, expected {expected}"
-
-
-def test_excluded_reference_files_untouched():
-    for path, expected in EXCLUDED.items():
-        assert read(path).count(SENTINEL) == expected, \
-            f"{path.name}: prelude count drifted (expected {expected})"
-```
-
-The **compact form is sentinel-free by construction**: because Rule 5 of
-`check-spec-purity.py` fires `VR_PRELUDE_DRIFT` on any sentinel line lacking the
-full byte-identical prelude, `bash scripts/validate.sh` (which runs purity) is
-the enforcing gate — the pytest above corroborates the full-prelude count.
+> **R2 is SCOPED OUT (2026-07-28; PRD §3.2).** No `tests/test_prelude_dedup.py` is
+> written. A guard authored here would be **red by construction**: it would expect exactly
+> one full prelude in `forge`, `forge-0-epic`, `forge-bootstrap` and `forge-1-prd`, whose
+> on-disk counts are 5 / 5 / 4 / 2 and will not change. The transform is preserved in
+> `05-instruction-relocations.md` §1, and the `r2-prelude` probe in
+> `eval/run-compliance-eval.py` remains the gate if R2 is ever revived (re-run it at a
+> larger n first — 4/5 on n=5 is a wide interval).
+>
+> §3.3–§3.6 keep their existing numbering so cross-references from
+> `01-architecture-layout.md` §6 and the domain docs stay valid.
 
 ### 3.3 R3 — `tests/test_process_overview_read.py`
 
@@ -225,7 +242,7 @@ FS = str(SCRIPTS / "forge-session.py")
 
 def _run(args: list[str], specs: Path) -> dict:
     r = subprocess.run(
-        ["python3", FS, *args, "--specs-dir", str(specs), "--json"],
+        [sys.executable, FS, *args, "--specs-dir", str(specs), "--json"],
         capture_output=True, text=True,
     )
     assert r.returncode == 0, f"exit {r.returncode}: {r.stderr}"
@@ -304,12 +321,12 @@ def test_staleness_cascade_marks_downstream_stale(tmp_path):
     assert out["stages"]["forge-3-specs"]["status"] == "stale"
 
 
-def test_missing_feature_dir_exits_2(tmp_path):
+def test_unknown_feature_is_a_usage_error(tmp_path):
     specs = tmp_path / "specs"; specs.mkdir()
     r = subprocess.run(
-        ["python3", FS, "state-note", "--feature", "nope", "--note", "x",
+        [sys.executable, FS, "state-note", "--feature", "nope", "--note", "x",
          "--specs-dir", str(specs), "--json"], capture_output=True, text=True)
-    assert r.returncode == 2 and r.stdout == ""
+    assert r.returncode == 2 and r.stdout == "" and "Error:" in r.stderr  # mechanism, not just the code (03 §3.4)
 ```
 
 ### 3.6 R6 — `tests/test_runner_contract_split.py`
@@ -353,9 +370,18 @@ def test_agent_selection_cited_at_capability_gate():
         "agent-selection.md not cited at the loopRunner.agentArgument gate"
 
 
-def test_loop_body_within_cap():
-    # Rule 4: body <= 300 lines (R6 is a 1:1 citation swap, net zero)
-    assert len(BODY.splitlines()) <= 300, "forge-5-loop SKILL exceeds 300 lines"
+def test_every_skill_body_within_cap():
+    """Rule 4 is CI-only (check-spec-purity), so surface it in pytest too.
+
+    Green today: the largest body is forge-5-loop at 298/300 lines, 4,415/5,000
+    words. forge-0-epic is 292/300 -- R4 must be strictly in-place there.
+    """
+    for skill in sorted(SKILLS.glob("*/SKILL.md")):
+        body = _body_lines(read(skill))
+        n_lines = len(body)
+        n_words = sum(len(line.split()) for line in body)
+        assert n_lines <= 300, f"{skill.parent.name}: {n_lines} body lines (cap 300)"
+        assert n_words <= 5000, f"{skill.parent.name}: {n_words} body words (cap 5000)"
 ```
 
 ## 4. The stdlib schema validator (REQ-R4-03, C-2)
@@ -447,7 +473,7 @@ FS = str(SCRIPTS / "forge-session.py")
 def test_effective_config_defaults_only_validates(tmp_path):
     cfg = tmp_path / "forge.config.json"
     cfg.write_text(json.dumps({}))  # no loopRunner -> pure defaults
-    r = subprocess.run(["python3", FS, "effective-config", "--config", str(cfg),
+    r = subprocess.run([sys.executable, FS, "effective-config", "--config", str(cfg),
                         "--json"], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     resolved = json.loads(r.stdout)
@@ -458,7 +484,7 @@ def test_effective_config_defaults_only_validates(tmp_path):
 def test_user_override_wins_over_default(tmp_path):
     cfg = tmp_path / "forge.config.json"
     cfg.write_text(json.dumps({"loopRunner": {"bin": "myrunner"}}))
-    r = subprocess.run(["python3", FS, "effective-config", "--config", str(cfg),
+    r = subprocess.run([sys.executable, FS, "effective-config", "--config", str(cfg),
                         "--json"], capture_output=True, text=True)
     resolved = json.loads(r.stdout)
     assert resolved["bin"] == "myrunner"          # override
@@ -467,10 +493,10 @@ def test_user_override_wins_over_default(tmp_path):
 
 def test_unreadable_schema_exits_2(tmp_path):
     cfg = tmp_path / "forge.config.json"; cfg.write_text("{}")
-    r = subprocess.run(["python3", FS, "effective-config", "--config", str(cfg),
+    r = subprocess.run([sys.executable, FS, "effective-config", "--config", str(cfg),
                         "--schema", str(tmp_path / "nope.json"), "--json"],
                        capture_output=True, text=True)
-    assert r.returncode == 2 and r.stdout == ""
+    assert r.returncode == 2 and r.stdout == "" and "Error:" in r.stderr  # mechanism, not just the code (03 §3.4)
 ```
 
 ## 5. Catch-all citation guard — `tests/test_reference_citations.py` (REQ-MAINT-01)
@@ -481,7 +507,20 @@ Two assertions that protect portability regardless of unit:
 import re
 from _forge_paths import SKILLS, REFERENCES, read
 
-CITE_RE = re.compile(r"references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*)")
+# Anchor on a non-path prefix so `.agents/references/...` and
+# `.claude/references/...` (project-level paths in forge-2-tech L61, which
+# intentionally do not exist in the bundle) are skipped, and stop at `.md` so a
+# sentence-final period is not swallowed into the filename (forge-5-loop L165).
+# Verified 2026-07-29 on the unmodified repo: 118 resolvable citations across the
+# 13 skill bodies, ZERO misses. (The pre-fix regex produced 3 false positives:
+# .agents/ and .claude/ project paths in forge-2-tech L61 x2, and the trailing
+# period on forge-5-loop L165.) Green pre-change, so any future red is a real
+# regression -- re-run the check before changing this pattern.
+CITE_RE = re.compile(r"(?<![./\w-])references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*?\.md)\b")
+# Depends on 02-verify-checklist-split.md §8: the six mode paths are cited
+# LITERALLY (one path each), never as a `{mode}` template or a `{prd,tech,...}`
+# brace list -- the fan-out regex has no comma in its character class, so a brace
+# list yields zero usable paths.
 NEW_FILES = [  # every new/moved reference file must be cited by >=1 skill body
     "verification-checklists/prd.md", "verification-checklists/tech.md",
     "verification-checklists/specs.md", "verification-checklists/backlog.md",
@@ -522,39 +561,61 @@ After every moved/split file, refresh adapter fixtures and re-run the snapshot:
   build `--root minimal-canon` scratch, then `command cp -f` the output into the
   fixture — copying the real adapter re-introduces host-translated tokens.)
 - **Snapshot** — `python3 -m pytest tests/test_build_adapters.py` must pass after
-  the refresh, proving all five adapters regenerate cleanly with the new files
-  present and every citation resolved.
+  the refresh, proving all **six** adapter targets regenerate cleanly with the new files
+  present and every citation resolved: `claude`, `codex`, `copilot`, `cursor`, `gemini`,
+  **`pi`** (`scripts/build-adapters.py` `AGENT_TARGETS`, L49).
+- **Pi** resolves references through its own extension (`adapter-src/pi/`). Confirm each
+  moved/split reference path appears under `adapters/pi/` after regeneration, not only
+  under the five agent bundles — a path verified on five hosts and broken on the sixth is
+  the #122/#132 failure class REQ-PORT-01/02 exist to prevent.
+- **Note** `tests/test_build_adapters.py` carries its own local `AGENT_TARGETS`
+  five-tuple (L38); check it when the moved files land.
 
 ## 7. Measurement (REQ-PERF-01/02, REQ-OBS-01/02, SC-1/SC-2)
 
 The token-saving claim is **evidence-gated**, not asserted from the audit
 snapshot. This section is a *procedure*, run at implementation time, not a pytest.
 
-### 7.1 Re-measure the baseline first (REQ-OBS-01)
+### 7.1 Baseline of record (REQ-OBS-01, OQ-3 — RESOLVED)
 
-Before adopting any numeric target, re-measure per-invocation **instruction-token
-load** from real dogfood transcripts (the consumption-data-refresh runs are the
-evidence source). The LOAD-MAP figures have drifted since b9f0871 and are
-**non-binding goals** (OQ-2).
+**The re-measurement is done.** `.reference/REMEASURE-0.13.0.md` (2026-07-28, at
+plugin 0.13.0 after merging `main` @ `e96b754`) declares itself the baseline of record for
+SC-1 and supersedes `LOAD-MAP.md`. Do **not** ask for a fresh measurement before
+implementation; compare against that file.
 
-### 7.2 Record the method (REQ-OBS-01)
+Headline: the canonical surface (`skills/`, `references/`, `agents/`) is byte-identical to
+the audit base apart from a rauf pin version string, so every LOAD-MAP figure reproduces.
+No recommendation fell below the pinned ~50% stop-rule.
 
-The recorded, reproducible method: for a targeted invocation, count the
-instruction tokens loaded *before the first artifact read* by inspecting the
-transcript's system/skill/reference-load spans (the same span the audit measured).
-Record the exact transcript ids, the counting script, and the commit so
-before/after is reproducible by anyone.
+| R | Claim | Re-measured @0.13.0 | % of claim |
+|---|---|---|---|
+| R1 (per verifier instance) | −4.4k | **−4.8k to −5.9k** | 109–134% |
+| R3 | −1.7k | **−1.72k** | 101% |
+| R4 | −1.5k | **−1.49k** | 100% |
+| R5 | −2.7k | **−2.69k** | 100% |
+| R6 | −1.1k | **−1.19k** | 108% |
+
+### 7.2 Method (REQ-OBS-01)
+
+Recorded so before/after comparisons are reproducible: `wc -l` / `wc -w` over the
+canonical surface, prose at ~1.3 tokens/word, cross-checked against `chars ÷ 4` (JSON
+tokenizes denser than prose; where the two disagree, the 1.3 tok/word figure is the one
+compared against a claim, because that is how the claims were computed). Body-line
+figures strip frontmatter (§1).
 
 ### 7.3 Green/red guard on the always-loaded surface (REQ-PERF-02)
-
 `tests/test_always_loaded_surface.py` — a pass/fail guard, not a judgment:
 
 ```python
 import re
 from _forge_paths import SKILLS, read
 
-FRONTMATTER_CHAR_BUDGET = 9000   # ~1.2k tokens across 13 descriptions; set from
-                                 # the re-measured baseline (§7.1), not the audit
+# 13 skill frontmatter descriptions, measured 2026-07-28 @0.13.0
+# (.reference/REMEASURE-0.13.0.md §Non-regression baselines). REQ-PERF-02 is a
+# NON-INCREASE requirement, so this is an exact ceiling, not a budget. If a
+# description must legitimately change, update this constant in the SAME PR with
+# the new measurement recorded, so the bump is reviewable.
+FRONTMATTER_CHAR_BUDGET = 4688
 
 
 def test_frontmatter_description_budget_not_increased():
@@ -567,40 +628,72 @@ def test_frontmatter_description_budget_not_increased():
         f"always-loaded frontmatter grew to {total} chars (budget {FRONTMATTER_CHAR_BUDGET})"
 
 
-def test_session_hook_common_path_stays_silent():
-    # the SessionStart hook must emit nothing on the common path (unchanged)
-    hook = (SKILLS.parent / "hooks" / "session-start.py")
-    if hook.is_file():
-        text = hook.read_text(encoding="utf-8")
-        assert "print(" not in text or "common" in text.lower(), \
-            "SessionStart hook may have gained common-path output — verify"
+# hooks/hooks.json wires SessionStart to `bash ${CLAUDE_PLUGIN_ROOT}/scripts/
+# session-check.sh`. There is no hooks/session-start.py -- an earlier draft
+# guarded that path behind `if hook.is_file()`, which made the whole assertion a
+# permanent no-op and satisfied REQ-PERF-02 vacuously. Execute the real hook, and
+# assert both directions so silence is proven rather than assumed.
+HOOK = REPO_ROOT / "scripts" / "session-check.sh"
+
+
+def test_session_hook_is_silent_on_the_common_path(tmp_path):
+    (tmp_path / "forge.config.json").write_text("{}")
+    r = subprocess.run(["bash", str(HOOK)], cwd=tmp_path,
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and r.stdout == "", r.stdout
+
+
+def test_session_hook_still_warns_when_config_missing(tmp_path):
+    # Control: proves the silence above is real, not a broken invocation.
+    feat = tmp_path / "specs" / "demo"
+    feat.mkdir(parents=True)
+    (feat / ".pipeline-state.json").write_text("{}")
+    r = subprocess.run(["bash", str(HOOK)], cwd=tmp_path,
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and "forge-init" in r.stdout
 ```
 
-> The char budget and the hook assertion are pinned to the **re-measured**
-> baseline (§7.1), not the audit's static ~1.2k figure — set the constant when
-> the baseline is measured. This makes REQ-PERF-02 a green/red test rather than a
-> review call.
+> Both assertions are pinned to the re-measured baseline in
+> `.reference/REMEASURE-0.13.0.md` §Non-regression baselines (4,688 chars; hook silent,
+> exit 0). Neither may degrade to a skip: a `hook.is_file()` guard or a tautological
+> string match turns REQ-PERF-02 back into the review call it explicitly forbids.
 
-### 7.4 R4 read-frequency scaling (REQ-OBS-02)
+### 7.4 R4/R5 read frequency (REQ-OBS-02, OQ-1 — RESOLVED)
 
-Confirm from transcripts how often stages actually performed the per-stage
-`pipeline-state-schema.json` read (OQ-1). Scale the **reported** R4 saving to the
-observed frequency. This affects *reporting only* — R4 ships regardless, because
-the drift-removal benefit (deterministic JSON authoring) justifies it even if the
-read was infrequent.
+**Answered, and it changes what may be claimed.** Across the 188-session
+`consumption-data-refresh` dogfood corpus: `pipeline-state-schema.json` was opened
+**2×** and `forge-config-schema.json` **1×**, against **12** reads of the
+unconditionally-cited `shared-conventions.md` and **103** reads of the state artifact
+itself. **The per-stage schema read is not, in practice, per-stage.**
+
+Two limits bound that evidence and must be stated wherever it is used: subagent
+sidechains are absent from those transcripts (so R1's read frequency is unmeasurable by
+this instrument and stays a static projection), and the denominator is small (4
+`stage-exit` invocations) — it is a direction, not a rate.
+
+**Consequence, carried verbatim from `.reference/REMEASURE-0.13.0.md`: do not write an
+acceptance criterion asserting a ~1.5k or ~2.7k measured per-stage saving for R4/R5.**
+Their realized savings are below the static projection because the read they eliminate
+often was not happening. Ship them on **drift-removal** (REQ-R4-02) and **deterministic
+default resolution** (REQ-R5-02), and let SC-1's "measured net reduction, correctly
+attributed" be satisfied by the static file-load delta on the invocations where the read
+does occur.
 
 ### 7.5 Per-R acceptance (SC-1)
 
 Each shipped R must show a **measured net reduction** on its targeted invocation
-vs the re-measured baseline, correctly attributed:
+vs the baseline of record (§7.1, `.reference/REMEASURE-0.13.0.md`), correctly attributed.
+**R4 and R5 are the exception the evidence forces** — their realized per-stage savings are
+below projection because the read they remove often was not happening (§7.4), so their
+acceptance is the static delta *plus* the drift-removal benefit, never an asserted
+per-stage token figure:
 
 | Unit | Targeted invocation | Measured surface |
 |------|---------------------|------------------|
 | R1 | a `forge-verifier` leaf subagent | one mode file vs the whole 477-line file |
-| R2 | forge / forge-0-epic / forge-bootstrap / forge-1-prd body load | dedup'd body vs original |
 | R3 | navigator status/dashboard render | no process-overview.md load |
-| R4 | any state-writing stage | no schema read; deterministic verb call |
-| R5 | forge-5-loop / forge-4-backlog default resolution | no config-schema read |
+| R4 | any state-writing stage | static file-load delta on invocations where the schema read occurs, **plus** drift-removal (REQ-R4-02) — see §7.4: do **not** claim a ~1.5k per-stage saving |
+| R5 | forge-5-loop / forge-4-backlog default resolution | static file-load delta where the config-schema read occurs, **plus** deterministic default resolution (REQ-R5-02) — see §7.4: do **not** claim a ~2.7k per-stage saving |
 | R6 | forge-5-loop without `agentArgument` | runner-contract.md minus 3 sections |
 
 SC-2 (the ~30–35% aggregate) is **directional, not a gate**.
@@ -612,15 +705,54 @@ SC-2 (the ~30–35% aggregate) is **directional, not a gate**.
 - The staleness cascade has a dedicated test (§3.5).
 - Every split/moved reference file has a drift guard asserting its content
   boundary (§3) and is covered by the catch-all citation guard (§5).
+- **Every skill body edited by any unit is covered by the ≤300-line / ≤5,000-word guard**
+  (§3.6), which surfaces the CI-only `check-spec-purity.py` Rule 4 cap inside pytest
+  (C-2). The binding bodies are `forge-5-loop` (2 lines spare) and `forge-0-epic` (8).
 - No line-coverage percentage target — these are **structural drift guards**;
   correctness is "the boundary held", not "N% of lines executed".
+
+## 9. Behavior-preservation run (SC-3, REQ-BEHAV-01/02)
+
+Every guard above is a **static** drift assertion over file content. Nothing in the suite
+exercises a *running* pipeline — yet SC-3 is the feature's headline criterion ("a full
+dogfooded feature run … exhibits the same prompts, gates, guards, and outputs as before").
+This section owns that gap; `00-core-definitions.md` §10 is a table of invariants, not a
+procedure, and §2 is a list of static guards.
+
+**When.** Once per shipped unit's PR for the units that touch an interactive surface (R4,
+R6); once for the batch before release. R1, R3 and R5 may ride the batch run.
+
+**What.** Drive a small real feature through `forge-1-prd` → `forge-6-docs` on a branch,
+recording the prompt/gate/output surface at each stage.
+
+**Comparison basis.** The pre-change transcripts in the `consumption-data-refresh` dogfood
+corpus (already the evidence source for §7.4). These surfaces MUST be identical:
+
+- `AskUserQuestion` option sets, their order, and the "(recommended)" labelling
+- Decision Support wording
+- Branch Setup / Branch Reconciliation prompts
+- Stage-Entry Guard and Stage-Completion Re-check classification
+- The two-commit Git Commit Protocol (never `--amend`), including both L245/L248 failure
+  branches — which R4 now routes through `--status in-progress` and
+  `--preserve-commit-hash` (`03-state-verbs.md` §6.5)
+- Verify gate routing and stage-exit directive handling
+- The NEXT-STEPS block and its sentinel
+
+**Reduced substitute**, if a full run is too costly for a given unit — name it explicitly
+rather than leaving SC-3 unassigned: **R1** → one real verify fan-out on a large mode,
+diffing the findings-document shape; **R6** → one gate-off and one gate-on loop launch,
+confirming `agent-selection.md` is read only in the second; **R4** → one authoring stage
+plus a deliberately failed Commit 1, confirming the `--status in-progress` revert path.
+
+**Record.** Write the result to `.verification/` alongside the verify findings, naming the
+comparison transcripts used. A run with no recorded comparison basis does not satisfy SC-3.
 
 ## Dependencies
 
 - `00-core-definitions.md` (§4 state shapes, §7 CHECK-ID inventory, §3.4 stdlib rule)
 - `02-verify-checklist-split.md` (R1 boundaries), `03-state-verbs.md` (R4 verbs
   + cascade), `04-effective-config.md` (R5 output), `05-instruction-relocations.md`
-  (R2/R3/R6 boundaries) — this document asserts what those docs promise.
+  (R3/R6 boundaries) — this document asserts what those docs promise.
 - `01-architecture-layout.md §6` (test surface + fixture procedure).
 
 ## Verification
@@ -630,6 +762,10 @@ SC-2 (the ~30–35% aggregate) is **directional, not a gate**.
 - [ ] Each per-unit guard fails if its unit's boundary is violated (mutation-test
       the guards: remove a CHECK-ID, un-move a section, and confirm red).
 - [ ] The stdlib validator flags an intentionally-malformed state/config object.
-- [ ] `test_build_adapters.py` snapshot passes after the gemini fixture refresh.
+- [ ] `test_build_adapters.py` snapshot passes after the gemini fixture refresh, with all
+      **six** adapter targets (incl. `pi`) regenerating cleanly.
+- [ ] `python3 scripts/check-spec-purity.py` passes (CI-only gate pytest does not run).
 - [ ] The measurement procedure (§7) is recorded with transcript ids + commit,
       and each shipped R shows a net reduction on its targeted invocation.
+- [ ] The behavior-preservation run (§9) is recorded for R4 and R6, naming the
+      comparison transcripts used (SC-3).

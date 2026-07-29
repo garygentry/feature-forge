@@ -6,7 +6,7 @@
 > is not a new domain model — it is (a) the `forge-session.py` script
 > conventions the R4/R5 subcommands must follow verbatim, (b) the
 > `.pipeline-state.json` JSON shapes the R4 verbs must emit, (c) the
-> compact-prelude canonical wording R2 introduces, (d) the citation /
+> compact-prelude canonical wording R2 introduced (§8 — **scoped out**), (d) the citation /
 > portability contract every moved file must satisfy, and (e) the CHECK-ID
 > inventory R1 must preserve exactly. Every later doc references these by
 > section rather than re-deriving them.
@@ -24,7 +24,7 @@
 | REQ-R4-04 | All seven state-write touch points covered | §5 (touch-point inventory) |
 | REQ-R5-01 | Resolved loopRunner config without reading full config schema | §6 (effective-config contract) |
 | REQ-R1-05 | Every mode's CHECK-IDs preserved exactly | §7 (CHECK-ID inventory) |
-| REQ-R2-01/02 | Within-file prelude dedup, no cross-file pointer | §8 (compact-prelude wording) |
+| ~~REQ-R2-01/02~~ | ~~Within-file prelude dedup, no cross-file pointer~~ — **scoped out, PRD §3.2** | §8 (retained for provenance only) |
 | REQ-PORT-01/02 | New/moved files citation-discoverable + host-neutral | §9 (portability contract) |
 | REQ-BEHAV-01/02 | Zero behavioral diff; frozen protocols verbatim | §2 (prime directive), §10 (invariants) |
 
@@ -71,7 +71,7 @@ wording change, that MUST be flagged in review, never silently adapted
 ## 3. `forge-session.py` script conventions (R4 + R5 host)
 
 The R4 state verbs and the R5 `effective-config` subcommand are added to the
-existing `scripts/forge-session.py` (1,866 lines today; verified integration
+existing `scripts/forge-session.py` (1,888 lines at 0.13.0; verified integration
 surface, tech-spec §6.1). New handlers MUST mirror the script verbatim:
 
 ### 3.1 Structural conventions
@@ -79,7 +79,7 @@ surface, tech-spec §6.1). New handlers MUST mirror the script verbatim:
 | Convention | Existing precedent (verified) | Requirement |
 |---|---|---|
 | Subcommand registration | `sub.add_parser("stage-exit", …)` in `main()` (L1750) | Register each new verb as an `argparse` subparser in `main()`. |
-| Dispatch | `if args.cmd == "stage-exit":` chain in `main()` (L1840) | Add an `if args.cmd == "<verb>":` branch in the same chain. |
+| Dispatch | `if args.cmd == "stage-exit":` chain in `main()` (L1862) | Add an `if args.cmd == "<verb>":` branch in the same chain. |
 | JSON flag | `add_argument("--json", action="store_true", dest="json_output")` | Every new verb accepts `--json`; the dest is `json_output`. |
 | JSON emission | `print(json.dumps(payload, indent=2, ensure_ascii=False))` | Same call, same kwargs, to stdout. |
 | Human output | dedicated `_print_<verb>(payload)` helper | Provide a readable non-`--json` printer per verb. |
@@ -97,7 +97,7 @@ follow forge-session:
 ```
 
 There is **no exit 1**. All recoverable conditions **degrade to data** and still
-exit 0 under the single top-level handler in `main()` (verified, L1857–1862):
+exit 0 under the single top-level handler in `main()` (verified, L1879–1884):
 
 ```python
     except UsageError as exc:
@@ -123,15 +123,28 @@ that every verb reuses:
 def _write_state(state_path: Path, state: dict) -> None:
     """Atomically write a `.pipeline-state.json` (temp file + os.replace).
 
-    Mirrors epic-manifest.py's atomic_write: write to a sibling temp file in the
+    Mirrors epic-manifest.py's atomic_write (L315): write to a temp file in the
     same directory, flush+fsync, then os.replace() onto the target so a crash
-    can never leave a half-written state file (REQ-ROBUST-03 pattern).
+    can never leave a half-written state file. Like that precedent, an I/O
+    failure is wrapped in UsageError rather than surfaced as a bare errno.
+
+    Raises:
+        UsageError: the atomic write failed (unwritable dir, missing feature
+            directory, disk full). Exit 2.
     """
-    tmp = state_path.with_suffix(state_path.suffix + ".tmp")
-    tmp.write_text(
-        json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    fd, tmp = tempfile.mkstemp(
+        dir=state_path.parent, prefix=state_path.name, suffix=".tmp"
     )
-    os.replace(tmp, state_path)
+    tmp_path = Path(tmp)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, state_path)
+    except OSError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise UsageError(f"atomic write to {state_path} failed: {exc}") from exc
 ```
 
 Every `state-*` verb follows the same **resolve → load → mutate → refresh
@@ -148,11 +161,24 @@ _write_state(state_path, state)
 
 `_now_iso()` is a small UTC-ISO-8601 formatter the R4 work **introduces** — the
 script today inlines `datetime.now(timezone.utc)` rather than exposing a named
-helper (verified: no `_now_iso` exists yet), so R4 adds one for the verbs to
-share (`03-state-verbs.md §3.1`). `_write_state` needs `import tempfile` if it
-uses the `mkstemp`+`fsync` form; the zero-new-import `with_suffix` form shown
-above avoids that. `PIPELINE_STATE_FILENAME` and `_resolve_feature_dir` already
-exist and MUST be reused, not re-implemented.
+helper (verified: `grep -c "_now_iso" scripts/forge-session.py` → 0), so R4 adds
+one for the verbs to share (`03-state-verbs.md §3.2`). The `mkstemp`+`fsync`
+form above is **canonical** (decided in `03-state-verbs.md §3.3`); it requires
+adding **`import tempfile`** to the L79–86 import block — the only new stdlib
+import in this feature. `PIPELINE_STATE_FILENAME` and `_resolve_feature_dir`
+already exist and MUST be reused, not re-implemented.
+
+**Reading for a write is NOT the same as reading for a scan.** `_read_state`
+downgrades a missing *or corrupt* file to `{}`, and its own docstring justifies
+that for the navigator's read-only sweep ("simply treats that feature as
+not-started"). A **writer** must not inherit it: `{}` → mutate → `_write_state`
+would atomically replace a corrupt-but-recoverable file with a near-empty one at
+exit 0, destroying `branch`, `stages`, version history, `deferredDecisions[]` and
+`epicChangeRequests[]`. Today's hand-authored mechanic cannot do this, because
+the model reads the JSON itself and sees the corruption. So the write path
+distinguishes **absent** (legitimately `{}`) from **present-but-unparseable**
+(fatal, exit 2, refuse to overwrite) — full specification in
+`03-state-verbs.md §3.4`.
 
 ### 3.4 stdlib-only (C-2)
 
@@ -252,7 +278,14 @@ their owning verb (full contracts in `03-state-verbs.md`):
 
 The commit-hash follow-up write (Commit 2 of the Git Commit Protocol) reuses
 `state-complete --commit-hash <h>` (tech-spec §3.4 note; finalized in
-`03-state-verbs.md §4`).
+`03-state-verbs.md §6.5`).
+
+**Explicitly out of R4 scope.** REQ-R4-04 enumerates the seven touch points above; the
+navigator's `pipelineStatus` writes (`skills/forge/SKILL.md` L215–228 — pause / resume /
+abandon) are **not** among them, so they keep their existing hand-authored write path and
+R4 adds no verb for them (owner decision, 2026-07-29). Likewise R4 adds **no verb for
+`verifyEntry`** — `forge-verify`/`forge-fix` keep their existing write path; R4 converts
+only the production `stageEntry` stamps those skills author (§4.2).
 
 ## 6. `effective-config` contract (R5)
 
@@ -296,7 +329,7 @@ approximate self-check table):
 > holds **17**; verified). R1 reconciles the SKILL's expected-count table to
 > these exact per-file totals so "Executed N of M" is checked against the
 > reduced, mode-scoped file — more robust, not weaker. See
-> `02-verify-checklist-split.md §4`.
+> `02-verify-checklist-split.md §7.3`.
 
 The three **orchestrator-only** sections (Findings Document Template,
 Example Findings, Epic Mode State Write Detail — source lines 325, 375, 409)
@@ -304,6 +337,13 @@ move to `references/findings-template.md` and MUST NOT appear in any per-mode
 file (REQ-R1-02).
 
 ## 8. Compact-prelude canonical wording (R2 — REQ-R2-01/02, C-5)
+
+> **SCOPED OUT (2026-07-28; PRD §3.2) — the compact form is NOT in use by any shipping
+> unit.** Retained for provenance and for a possible future revival. Because R2 does not
+> ship, **every new fenced call site added by R4 and R5 uses the full `BOOTSTRAP_PRELUDE`
+> verbatim** — either reusing one that already precedes it in the same body, or inlining
+> it (see `01-architecture-layout.md` §2.2.1 for the per-skill position table). Do not
+> author the compact form anywhere.
 
 The full plugin-root resolver prelude (the `R="$(bash -c '…forge-root.sh…')"`
 block ending in the sentinel line
@@ -336,7 +376,7 @@ blocks (see §9 and `05-instruction-relocations.md §1`).
 ## 9. Portability / citation contract (REQ-PORT-01/02/03)
 
 Every new or moved reference file MUST be **citation-discoverable** and
-**host-neutral**, or it will not ship to the four non-Claude adapters.
+**host-neutral**, or it will not ship to the five non-Claude adapter targets.
 
 - **Citation-discoverable (REQ-PORT-01):** `build-adapters.py`'s
   `_fan_out_shared_references()` scans **skill bodies** with the regex
@@ -346,18 +386,27 @@ Every new or moved reference file MUST be **citation-discoverable** and
   a skill body**. Paths containing `/` match because the class includes `.` and
   `/`. Skill-local own-refs (`skills/<skill>/references/...`) copy verbatim
   under the per-skill own-refs step; either way, **cite from the body**.
-  - **OQ-4 mitigation (tech-spec §10):** it is unconfirmed whether fan-out also
-    scans `agents/*.md` bodies. R1 therefore cites all six mode files **and**
-    `findings-template.md` from the **forge-verify SKILL body**, never relying
-    on the `forge-verifier` agent body — so portability does not depend on the
-    answer.
+  - **Citation form is load-bearing.** The character class has **no comma**, so a
+    brace enumeration (`references/verification-checklists/{prd,tech,specs}.md`)
+    captures the single bogus token `verification-checklists/{prd` and yields
+    **zero** usable paths. Cite each mode file as its own literal path; never use
+    a brace list or a `{mode}` template as the *only* citation.
+  - **OQ-4 — RESOLVED: fan-out does NOT scan agent bodies.**
+    `_fan_out_shared_references()` takes a `SkillRecord` and reads `skill.body`;
+    its sole call site is the per-skill loop at `build-adapters.py` L1402, and the
+    agent emitters (L946 / L1067 / L1122) never call it. A citation in
+    `agents/*.md` therefore ships **nothing** — it is a human-readable pointer
+    only. Citing every new reference file from a **skill body** is a hard rule,
+    not belt-and-suspenders.
 - **Host-neutral (REQ-PORT-02):** moved content MUST NOT contain Claude-only
   tokens — no literal `/clear`, no Claude-only tool names. The shared-refs
   resolution gap (#122/#132) is the cautionary tale.
-- **Regenerates cleanly (REQ-PORT-03):** all five adapters (claude, gemini,
-  codex, cursor, copilot) regenerate and fixtures refresh via the minimal-canon
-  scratch-build + `command cp -f` procedure (C-3), never a copy of a real
-  adapter.
+- **Regenerates cleanly (REQ-PORT-03):** all **six** adapter targets (claude, codex,
+  copilot, cursor, gemini, **pi** — `build-adapters.py` `AGENT_TARGETS`, L49) regenerate
+  and fixtures refresh via the minimal-canon scratch-build + `command cp -f` procedure
+  (C-3), never a copy of a real adapter. `pi` resolves references through its own
+  extension (`adapter-src/pi/`); confirm each moved path appears under `adapters/pi/`
+  too, not only under the five agent bundles.
 
 ## 10. Frozen-protocol invariants (per unit)
 
@@ -367,7 +416,6 @@ Each unit MUST preserve, verbatim, the protocols it touches. The drift guards in
 | Unit | Invariant that MUST NOT change |
 |------|--------------------------------|
 | R1 | forge-verify dual-role "which role are you?" guard (v0.12.1); leaf never sees orchestrator material; every CHECK-ID preserved. |
-| R2 | Every call site still resolves the plugin root independently; exactly one full `BOOTSTRAP_PRELUDE` per edited skill body; compact form sentinel-free. |
 | R3 | The navigator's status/dashboard path is byte-identical; only the *read site* of `process-overview.md` moves behind the "how does the pipeline work" branch. |
 | R4 | Stage-Entry Guard classification, Branch Setup/Reconciliation prompts, "offer a note" statement, two-commit Git Commit Protocol (never `--amend`), entry stamp stays uncommitted until the exit commit. Only the "edit the JSON" mechanic changes. |
 | R5 | forge-5-loop / forge-4-backlog default resolution produces the same effective config the model would have merged by hand. |
@@ -386,5 +434,4 @@ depends on it.
       unchanged (no schema edit).
 - [ ] All 22 `loopRunner` fields carry a `default` in `forge-config-schema.json`
       (§6 premise).
-- [ ] The compact-prelude form (§8) contains no `forge-root.sh` sentinel line.
 - [ ] The forge-session exit-code contract (§3.2) is 0/2 with no exit-1 branch.

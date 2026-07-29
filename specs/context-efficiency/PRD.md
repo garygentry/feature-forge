@@ -202,7 +202,7 @@ and are **non-binding goals** — the binding bar is in §8.
   content must stay host-neutral.
   - Priority: P0
   - Notes: The shared-refs resolution gap (#122/#132) is the cautionary tale.
-- REQ-PORT-03: All five adapters (claude, gemini, codex, cursor, copilot) MUST
+- REQ-PORT-03: All six adapter targets (claude, codex, copilot, cursor, gemini, pi) MUST
   regenerate cleanly and fixtures MUST be refreshed for any moved/split path.
   - Priority: P0
 
@@ -356,7 +356,7 @@ The feature is done and working correctly when:
   as before (REQ-BEHAV-01/02).
 - **SC-4 (tests green + drift coverage):** All existing tests pass, and new
   drift-guard coverage exists for every split/moved file (REQ-MAINT-01).
-- **SC-5 (clean portability):** All five adapters regenerate cleanly, fixtures
+- **SC-5 (clean portability):** All six adapter targets regenerate cleanly, fixtures
   are refreshed, and non-Claude hosts resolve every moved/split reference file
   (REQ-PORT-01/02/03).
 - **SC-6 (independently revertible):** Each of R1–R6 landed as its own
