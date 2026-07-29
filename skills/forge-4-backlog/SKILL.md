@@ -29,7 +29,13 @@ This is the **single** place this rule is implemented. forge-5-loop's backlog-fi
 
 **Let `{resolvedBacklogDir}` denote the composed target of this rule** — i.e. `{backlogDir}/{feature}` when a `backlogDir` is configured, else `{resolvedFeatureDir}`. Every downstream step below (authoring, validation) uses `{resolvedBacklogDir}`, never the bare config value, so the per-feature `{feature}` segment is never dropped.
 
-Resolve the **loop runner** from the `loopRunner` block in `forge.config.json`, filling missing fields from the defaults in `references/forge-config-schema.json` (defaults to rauf). You need its `bin`, `validateCommand`, `versionCommand`, `minRunnerVersion`, and `installHint`.
+Resolve the **loop runner** with the command below — it merges this project's `loopRunner` block over the schema defaults deterministically (defaults to rauf), so do not read the config schema for defaults. Use the emitted object as the effective `loopRunner`; you need its `bin`, `validateCommand`, `versionCommand`, `minRunnerVersion`, and `installHint`. If the call exits 2, surface the plain `Error:` line from stderr verbatim and fall back to the documented rauf defaults.
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" effective-config --config ./forge.config.json --json
+```
 
 **Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
 

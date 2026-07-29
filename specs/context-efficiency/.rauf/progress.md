@@ -734,3 +734,89 @@ SC-1's bar — "a measured net reduction, correctly attributed" — is met by R4
 (items 011+012+013 together remove the citation from five bodies: forge-1-prd,
 forge-2-tech, forge-3-specs, forge-4-backlog, forge-6-docs); this item's own contribution
 is the −1,363 on `forge-6-docs` plus the drift-removal benefit on the other three.
+
+## Item 006 — forge-4-backlog + forge-5-loop switch to `effective-config` (R5's consumer half)
+
+**Both consumers converted. NOTHING was deferred** — the item's DEFER clause was not
+needed. Recording that explicitly, because item 015's AC says to retry a deferred
+forge-5-loop edit: **there is nothing for item 015 to retry.**
+
+### Measured line/word figures (frontmatter-stripped body, check-spec-purity Rule 4 region)
+
+| body | before | after | cap |
+|---|---|---|---|
+| `forge-4-backlog/SKILL.md` | 168 L / 2,332 w | **174 L / 2,416 w** | 300 / 5000 |
+| `forge-5-loop/SKILL.md` | 296 L / 4,478 w | **298 L / 4,556 w** | 300 / 5000 |
+
+`forge-5-loop` had **4** spare lines entering this item (item 013's verbatim Step-3c
+relocation bought 2 back on top of the 2 the specs measured), and the edit cost **+2**,
+leaving **2 lines** for item 015 — exactly the headroom item 015's own text assumes.
+
+### How the +2 was achieved (reusable)
+
+The naive shape — lead-in prose, blank, fence, 2-line prelude, command, fence-close,
+blank, trailing prose — is **9 lines replacing 5 = +4**, which would have landed the body
+at 300/300 and left item 015 with zero headroom. Folding the trailing prose **into the
+single lead-in paragraph above the fence** makes it 7 lines = **+2**. The frozen
+`"No loopRunner configured — defaulting to the rauf loop runner."` sentence rides inside
+that one paragraph byte-identical (only its line-wrapping changed — the paragraph is now
+one long unwrapped line, which is also what the CI-only purity gate prefers).
+
+General rule now confirmed three ways (items 011/012/013/006): **one paragraph + one
+fence is the cheapest verb/subcommand call shape.** Anything that needs prose on *both*
+sides of the fence costs 2 extra lines.
+
+### R5 measured net instruction-token delta (spec 06 §7.5 row "R5", §7.2 method)
+
+Baseline of record: `specs/context-efficiency/.reference/REMEASURE-0.13.0.md`
+(§R5 row: `forge-config-schema.json` = 236 L / 2,068 w → **−2.69k tok** word-based,
+−4.40k char/4; re-measured at 100% of the −2.7k PRD claim). Method: `wc -l` / `wc -w`
+over the canonical surface, prose at ~1.3 tok/word.
+
+**Static file-load delta.** Both bodies carried the file's only read-for-defaults
+citation, so removing them **unships `forge-config-schema.json` from both bundles on all
+six adapter targets** — 12 deletions in `adapters/`, the largest single-file unship in
+this feature. An invocation of either stage that would have loaded it no longer does:
+**−2,688 tok** (2,068 w × 1.3).
+
+**Costs, correctly attributed** (always-paid body growth — the lead-in paragraph plus the
+inlined two-line prelude, which neither call site could reuse since `$R` does not survive
+between fences):
+
+| Surface | Δ words | Δ tok | Net on its targeted invocation |
+|---|---|---|---|
+| `forge-4-backlog` body | +84 | +109 | **−2,579** |
+| `forge-5-loop` body | +78 | +101 | **−2,587** |
+
+**Per §7.4, NO per-stage token saving is asserted.** The 188-session corpus shows
+`forge-config-schema.json` was read **1× total** (REMEASURE §Read-frequency table), not
+once per stage, so −2,688 is the static delta on the invocations where the read *does*
+occur, not a recurring per-stage figure. R5's standing justification is **REQ-R5-02
+deterministic resolution / drift removal**, which holds at any read frequency:
+
+- the 22-field default merge is now performed by `resolve_loop_runner` instead of being
+  transcribed and mentally merged by the model — the "model mis-merged the defaults"
+  error class is gone by construction;
+- the schema stays the single source of truth (REQ-R4-03) even though no stage reads it;
+- verified live in this repo, which is its own override fixture: `forge.config.json` pins
+  `loopRunner.bin` to `rauf-stable`, and the call correctly emits `"bin": "rauf-stable"`
+  over the schema's `"rauf"` default while every other field resolves to its default.
+
+### Notes
+
+- The two edits are the **only** remaining read-for-defaults sites. The five surviving
+  `forge-config-schema.json` citations (`forge-guide` ×2, `process-overview.md`,
+  `ralph-loop-contract.md` ×3, `shared-conventions.md` L77) all **document config keys**
+  rather than instructing a defaults read, so they stay — R5 removes the step, not the file.
+- Fan-out is one level deep (item 012's finding, re-confirmed): `forge-5-loop` still cites
+  `references/ralph-loop-contract.md`, which *mentions* the schema, and that mention does
+  **not** re-ship the schema into forge-5-loop's bundle. The 12 deletions are real.
+- No interactive-protocol prose changed in either body. `forge-4-backlog`'s AskUserQuestion
+  gates, `forge-5-loop`'s Run-mode/agent-selection surfaces and the frozen "No loopRunner
+  configured" statement are untouched; `git diff` shows exactly one changed hunk per file.
+
+### Gates
+
+`python3 -m pytest tests` 638 passed / 2 skipped · `check-spec-purity` PASS (Rule 5 green
+on both newly inlined preludes) · `build-adapters.py --check` exit 0 · `bash
+scripts/validate.sh` PASS. Adapters restaged 24 paths (12 body copies + 12 schema deletions).

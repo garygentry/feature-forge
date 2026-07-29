@@ -20,11 +20,13 @@ tokenized as `{loopRunner.logFile}`.
 
 ## Resolve the loop runner
 
-Read `forge.config.json`. Build the effective `loopRunner` by taking its
-`loopRunner` block (if present) and filling any missing field from the defaults
-in `references/forge-config-schema.json`. **If `forge.config.json` has no
-`loopRunner` block at all, state plainly: "No loopRunner configured — defaulting
-to the rauf loop runner."** then proceed with the full default block.
+Resolve the effective `loopRunner` with the command below — it merges this project's `loopRunner` block over the schema defaults deterministically, so do not read the config schema for defaults. **If `forge.config.json` has no `loopRunner` block at all, state plainly: "No loopRunner configured — defaulting to the rauf loop runner."** then proceed with the full default block, which is exactly what the call returns. If the call exits 2, surface the plain `Error:` line from stderr verbatim and fall back to the documented rauf defaults.
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" effective-config --config ./forge.config.json --json
+```
 
 Token substitution applies to every `*Command` string. Substitute:
 
