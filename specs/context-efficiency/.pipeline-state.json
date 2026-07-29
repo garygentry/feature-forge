@@ -2,8 +2,8 @@
   "feature": "context-efficiency",
   "branch": "forge/context-efficiency",
   "createdAt": "2026-07-20T02:36:15Z",
-  "updatedAt": "2026-07-29T08:05:00Z",
-  "currentStage": "forge-5-loop",
+  "updatedAt": "2026-07-29T07:49:12Z",
+  "currentStage": "forge-6-docs",
   "pipelineStatus": "active",
   "stages": {
     "forge-3-specs": {
@@ -96,8 +96,15 @@
       "reverifyRounds": 3
     },
     "forge-5-loop": {
-      "status": "in-progress",
-      "startedAt": "2026-07-29T08:05:00Z"
+      "status": "complete",
+      "startedAt": "2026-07-29T05:07:43Z",
+      "completedAt": "2026-07-29T07:49:12Z",
+      "basedOnVersions": {
+        "forge-4-backlog": 1
+      },
+      "artifacts": [
+        "specs/context-efficiency/.rauf/state.json"
+      ]
     }
   }
 }
