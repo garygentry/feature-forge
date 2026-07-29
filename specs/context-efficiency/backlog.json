@@ -606,8 +606,8 @@
         "tests/test_state_verbs.py::test_cascade_targets_is_its_own_map_not_a_production_stages_slice is updated to match the resolved behavior and passes",
         "python3 -m pytest tests passes and bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-29T07:37:01.671Z",
       "source": "review",
       "reviewBatch": "2026-07-29T07:20:08.081Z"
     },

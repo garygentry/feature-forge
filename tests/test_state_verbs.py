@@ -939,6 +939,10 @@ def test_a_malformed_based_on_token_exits_2_naming_the_token(tmp_path):
 #: forge-1-prd completing at version 2.
 _CASCADE_FIXTURE = {
     "forge-1-prd": {"status": "complete", "version": 1, "artifacts": ["PRD.md"]},
+    # the PRD's most direct dependent: complete + built on the OLD version -> stale.
+    "forge-2-tech": {
+        "status": "complete", "version": 1, "basedOnVersions": {"forge-1-prd": 1},
+    },
     # complete + built on the OLD version -> goes stale.
     "forge-3-specs": {
         "status": "complete", "version": 1, "basedOnVersions": {"forge-1-prd": 1},
@@ -965,9 +969,10 @@ def test_the_cascade_stales_only_downstream_stages_built_on_an_older_version(tmp
         "--artifact", "PRD.md", "--specs-dir", str(tmp_path / "specs"), "--json",
     )
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["_cascadedStale"] == ["forge-3-specs"]
+    assert json.loads(result.stdout)["_cascadedStale"] == ["forge-2-tech", "forge-3-specs"]
 
     stages = _state_of(tmp_path)["stages"]
+    assert stages["forge-2-tech"]["status"] == "stale", "a PRD revision stales the tech spec"
     assert stages["forge-3-specs"]["status"] == "stale"
     assert stages["forge-4-backlog"]["status"] == "complete", "an equal version is not older"
     assert stages["forge-5-loop"]["status"] == "in-progress", "only complete artifacts go stale"
@@ -982,7 +987,8 @@ def test_the_cascade_prints_the_stale_stages_in_the_human_summary(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == (
-        "completed forge-1-prd v2 (commitHash: null); marked stale: forge-3-specs"
+        "completed forge-1-prd v2 (commitHash: null); "
+        "marked stale: forge-2-tech, forge-3-specs"
     )
 
 
@@ -1018,29 +1024,43 @@ def test_the_cascade_is_a_no_op_when_nothing_downstream_is_outdated(tmp_path):
 
 
 def test_the_cascade_never_stales_the_stage_that_just_completed(tmp_path):
-    """forge-3-specs is itself a cascade target; completing it must not self-stale."""
-    _seed(
-        tmp_path,
-        {
-            "forge-3-specs": {
-                "status": "complete", "version": 1, "basedOnVersions": {"forge-3-specs": 1},
-            }
-        },
-    )
-    result = _run(
-        "state-complete", "--feature", "demo", "--stage", "forge-3-specs", "--version", "2",
-        "--specs-dir", str(tmp_path / "specs"), "--json",
-    )
-    assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["_cascadedStale"] == []
-    assert _state_of(tmp_path)["stages"]["forge-3-specs"]["status"] == "complete"
+    """Every cascade target must be self-exempt when it is the completing stage."""
+    for stage in FS._CASCADE_TARGETS:
+        _seed(
+            tmp_path,
+            {stage: {"status": "complete", "version": 1, "basedOnVersions": {stage: 1}}},
+            name=stage,
+        )
+        result = _run(
+            "state-complete", "--feature", stage, "--stage", stage, "--version", "2",
+            "--specs-dir", str(tmp_path / "specs"), "--json",
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["_cascadedStale"] == [], stage
+        assert _state_of(tmp_path, stage)["stages"][stage]["status"] == "complete", stage
 
 
 def test_cascade_targets_is_its_own_map_not_a_production_stages_slice(tmp_path):
-    """Keying off PRODUCTION_STAGES ordering would put forge-2-tech in scope."""
+    """The map is authored, not derived from PRODUCTION_STAGES.
+
+    Its scope is tech..docs — the pre-R4 canon at baseline commit 9a29e846
+    (skills/forge-1-prd/SKILL.md L134) named `forge-2-tech` FIRST among the
+    stages a PRD revision invalidates, so a cascade that omitted it lost the
+    most common revision path's most direct dependent.
+
+    Two things a PRODUCTION_STAGES-derived scope would get wrong, both pinned
+    here: the full tuple would put forge-1-prd in scope (no upstream stage is
+    ever staled by a downstream completion), and a positional slice keyed off
+    the completing stage would raise on forge-0-epic, which is a valid --stage
+    but not a PRODUCTION_STAGES member.
+    """
     assert FS._CASCADE_TARGETS == (
-        "forge-3-specs", "forge-4-backlog", "forge-5-loop", "forge-6-docs"
+        "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop", "forge-6-docs"
     )
+    assert FS._CASCADE_TARGETS != FS.PRODUCTION_STAGES
+    assert "forge-1-prd" not in FS._CASCADE_TARGETS
+
+    # The regression this test now guards: a PRD bump stales the tech spec.
     state = {
         "stages": {
             "forge-2-tech": {
@@ -1048,8 +1068,23 @@ def test_cascade_targets_is_its_own_map_not_a_production_stages_slice(tmp_path):
             }
         }
     }
-    assert FS._cascade_staleness(state, "forge-1-prd", 2) == []
-    assert state["stages"]["forge-2-tech"]["status"] == "complete"
+    assert FS._cascade_staleness(state, "forge-1-prd", 2) == ["forge-2-tech"]
+    assert state["stages"]["forge-2-tech"]["status"] == "stale"
+
+    # No upstream self-invalidation: completing a downstream stage never stales
+    # forge-1-prd, even if it somehow recorded an older downstream version.
+    upstream = {
+        "stages": {
+            "forge-1-prd": {
+                "status": "complete", "basedOnVersions": {"forge-4-backlog": 1},
+            }
+        }
+    }
+    assert FS._cascade_staleness(upstream, "forge-4-backlog", 2) == []
+    assert upstream["stages"]["forge-1-prd"]["status"] == "complete"
+
+    # Not a positional slice: forge-0-epic has no index in PRODUCTION_STAGES.
+    assert FS._cascade_staleness({"stages": {}}, "forge-0-epic", 2) == []
 
 
 def test_cascaded_stale_is_echo_only_and_never_persisted(tmp_path):

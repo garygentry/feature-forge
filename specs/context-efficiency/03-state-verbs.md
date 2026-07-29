@@ -594,7 +594,7 @@ The largest verb. Replaces the hand-authored completion write (each stage's
    list; supersedes incremental tracking).
 5. `stages.{stage}.commitHash → null` (Commit 1 of the two-commit protocol) —
    **unless** `--commit-hash` is given, which is the Commit-2 follow-up (§6.5).
-6. **Downstream staleness cascade** (§6.3): mark `forge-3-specs..forge-6-docs`
+6. **Downstream staleness cascade** (§6.3): mark `forge-2-tech..forge-6-docs`
    `stale` when their `basedOnVersions` reference an **older** version of the
    just-completed stage — logic that is model prose today (forge-1-prd L134) and
    becomes deterministic.
@@ -675,9 +675,12 @@ their status to `stale`."*). It becomes deterministic Python:
 
 ```python
 #: Stages the staleness cascade may mark stale (downstream authored artifacts).
-#: forge-1-prd/forge-2-tech are never marked stale by a later completion (nothing
-#: downstream feeds back into them); the cascade scope is specs..docs.
+#: The scope is tech..docs, matching the pre-R4 canon this cascade replaces —
+#: forge-1-prd L134 named `forge-2-tech` FIRST among the stages a PRD revision
+#: invalidates. forge-1-prd is never marked stale by a later completion (nothing
+#: downstream feeds back into it).
 _CASCADE_TARGETS: Final[tuple[str, ...]] = (
+    "forge-2-tech",
     "forge-3-specs",
     "forge-4-backlog",
     "forge-5-loop",
@@ -689,7 +692,7 @@ def _cascade_staleness(state: dict, completed_stage: str, new_version: int) -> l
     """Mark downstream stages ``stale`` when they were built on an OLDER version.
 
     Deterministic replacement for the model-prose rule in each stage's completion
-    step. For every downstream target (specs..docs), if its recorded
+    step. For every downstream target (tech..docs), if its recorded
     ``basedOnVersions[completed_stage]`` is an integer strictly less than
     ``new_version`` AND the stage is currently ``complete``, flip it to ``stale``.
     A downstream stage that never referenced this upstream, or already references

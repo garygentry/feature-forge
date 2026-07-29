@@ -1169,3 +1169,72 @@ to apply here too, four passages need the same repoint.
 `python3 -m pytest tests` **695 passed / 2 skipped** (up 5 from item 016's 690) ·
 `check-spec-purity` PASS · `build-adapters.py --check` exit 0 (regenerated: the two
 shared references fan out widely again) · `bash scripts/validate.sh` **PASS**.
+
+## Item 019 — the staleness cascade omitted `forge-2-tech`
+
+Resolved by **widening the cascade** (the AC's first branch), not by recording an
+owner decision to narrow it. `_CASCADE_TARGETS` is now the five-tuple
+`("forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop", "forge-6-docs")`
+in `scripts/forge-session.py`, and `specs/context-efficiency/03-state-verbs.md` §6.3
+was fixed in the same change (it had propagated the same four-tuple, plus the
+"specs..docs" scope phrase in §6.2 step 6 and the `_cascade_staleness` docstring).
+
+### Why widening is the behavior-preserving answer
+
+Baseline commit `9a29e846`, `skills/forge-1-prd/SKILL.md` L134 names the PRD's
+downstream set as `forge-2-tech, forge-3-specs, forge-4-backlog, forge-5-loop,
+forge-6-docs` — **`forge-2-tech` first**. Grepping `stale` across all six baseline
+stage bodies shows the canon rule is *per-completing-stage downstream*: prd → tech..docs,
+tech → specs..docs, specs → backlog..docs, backlog → loop..docs. `_CASCADE_TARGETS` is
+the **union** of those sets, which is exactly tech..docs; the four-tuple was the union
+minus its first element. The per-stage narrowing is enforced by data rather than by the
+map: only a stage that actually recorded `basedOnVersions[completed_stage]` can go stale,
+so e.g. completing `forge-4-backlog` cannot touch `forge-2-tech` (a tech spec never
+records a backlog version).
+
+`forge-1-prd` stays out of the map — nothing downstream feeds back into it (AC 3).
+
+### The pinning test's rationale had to be rebuilt, not just re-pinned
+
+`test_cascade_targets_is_its_own_map_not_a_production_stages_slice` justified the
+exclusion with *"keying off PRODUCTION_STAGES ordering would put forge-2-tech in
+scope"* — which was the **defect's own justification**, and is now false: with
+forge-2-tech restored, `_CASCADE_TARGETS == PRODUCTION_STAGES[1:]` exactly. The test
+name is kept (the AC names it by node id) and the claim is still true, but it now
+pins the two things a `PRODUCTION_STAGES`-derived scope would actually get wrong:
+1. the **full** tuple would put `forge-1-prd` in scope (asserted `not in`, plus a
+   downstream-completion fixture where forge-1-prd records `{forge-4-backlog: 1}` and
+   is left `complete`);
+2. a **positional slice** keyed off the completing stage would raise on
+   `forge-0-epic`, a valid `--stage` that is not a `PRODUCTION_STAGES` member —
+   asserted with `_cascade_staleness({"stages": {}}, "forge-0-epic", 2) == []`.
+That second assertion is the load-bearing one: it is the only thing in the suite that
+distinguishes "authored map" from "slice", now that the tuple value alone no longer does.
+
+### Test changes
+
+- `_CASCADE_FIXTURE` gains a `forge-2-tech` entry (complete, `{forge-1-prd: 1}`), so the
+  primary cascade test and the human-summary test now assert
+  `_cascadedStale == ["forge-2-tech", "forge-3-specs"]` and
+  `marked stale: forge-2-tech, forge-3-specs`. AC 2 is covered by the main fixture rather
+  than by a bolt-on test.
+- `test_the_cascade_never_stales_the_stage_that_just_completed` was a single-stage
+  (forge-3-specs) test; it now loops **over `FS._CASCADE_TARGETS`** with one feature dir
+  per stage. Written as a loop, not `@pytest.mark.parametrize`, because this module has
+  no `pytest` import and no other parametrize — and looping over the constant means a
+  future target added to the map is self-exempt-tested automatically.
+
+Mutation-checked by reverting `_CASCADE_TARGETS` to the four-tuple: **3 red**
+(`…stales_only_downstream…`, `…prints_the_stale_stages…`, `…is_its_own_map…`), then
+restored with `command cp -f`. Note the self-stale loop stays **green** under that
+mutation — looping over the constant means a removed target also leaves the loop. That
+is the deliberate tradeoff for future-target coverage; the tuple-value assertion in the
+pinning test is what catches a removal.
+
+### Gates
+
+`python3 -m pytest tests` **695 passed / 2 skipped** (unchanged count — one test was
+widened into a loop rather than added) · `build-adapters.py --check` exit 0 **after
+regenerating** (editing `scripts/forge-session.py` restages the 6 per-target copies, and
+validate.sh step 6b goes red without it — the ACs here don't mention adapters but the
+gate does) · `bash scripts/validate.sh` **PASS**.
