@@ -184,9 +184,10 @@ and are **non-binding goals** — the binding bar is in §8.
   - Priority: P0
   - Notes: Met as written, but `agentArgument` is **configured by schema default**
     (`'--agent {agent}'`), so the gate is true on any project that has not blanked
-    the field. The realized saving is the two narrower-gated sections, not the whole
-    112-line file — re-baselined 2026-07-29 (finding V-003); see
-    `05-instruction-relocations.md` §3.2.
+    the field — the file is opened and all 115 lines load. **There is no realized
+    instruction-load saving on a default-config run**; the chartered saving applies
+    only where `agentArgument` is explicitly blanked. Re-baselined 2026-07-29
+    (finding V-003); see `05-instruction-relocations.md` §3.2.
 - REQ-R6-03: The split MUST NOT push runner-contract text back into the
   forge-5-loop skill body (it is at the 300-line CI cap).
   - Priority: P0

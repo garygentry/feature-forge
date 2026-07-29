@@ -209,6 +209,23 @@ def test_shell_fence_using_root_without_a_prelude_is_caught(tmp_path: Path):
     prose = _tree("prose", "```\n1. Portable-root prelude → locate $R\n```\n")
     assert m.check_prelude_presence(prose) == []
 
+    # (e) the braced form `${R}` is the same bug and must not be an escape hatch.
+    braced = _tree("braced", '```bash\ncp "${R}/references/templates/t.md" "x"\n```\n')
+    assert m.check_prelude_presence(braced), "${R} must not evade rule 6"
+
+    # (f) `$ROOT` is a different variable — word boundary keeps it out.
+    other = _tree("other", '```bash\ncp "$ROOT/t.md" "x"\n```\n')
+    assert m.check_prelude_presence(other) == []
+
+    # (g) an info string with attributes must still be recognised as an OPENER. If it
+    # is not, its closing ``` is read as an opener, fence parity inverts, and every
+    # later fence in the file silently stops being checked.
+    attributed = _tree(
+        "attributed",
+        f'```bash title="setup"\nmkdir -p x\n```\n\nProse.\n\n```bash\n{fence}\n```\n',
+    )
+    assert m.check_prelude_presence(attributed), "fence parity must survive info strings"
+
 
 # ── Determinism: sorted, byte-identical repeated runs (spec 05 §3.4, §7) ────
 

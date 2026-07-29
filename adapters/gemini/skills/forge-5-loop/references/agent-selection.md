@@ -8,8 +8,8 @@ file is never read.
 ## Agent selection (Step 2d)
 
 This section is **parallel** to `## Model selection precedence` in
-`references/runner-contract.md`: it governs
-which **coding agent** rauf drives for the run. The entire surface is
+`references/runner-contract.md`: it governs which **coding agent** rauf drives for the
+run. The entire surface is
 **presence-gated** on `loopRunner.agentArgument` — when that field is absent or
 empty, there is no selector, no probe, and no `{agent}` substitution, and Step 2d /
 Step 3c are byte-identical to today (capability gate;
@@ -89,8 +89,9 @@ default / `claude-cli` path skips this guard (the aliases are valid there).
 > in the separate rauf plugin/repo, not feature-forge; tracked as a follow-up.
 >
 > **Follow-up (out of scope here — rauf repo).** The durable fix for the root/sandbox
-> refusal (see "Root/sandbox env guard" under `## Launch detail (Step 3b —
-> background process)` in `references/runner-contract.md`) is for **rauf itself** to honor
+> refusal (see "Root/sandbox env guard" under
+> `## Launch detail (Step 3b — background process)` in `references/runner-contract.md`)
+> is for **rauf itself** to honor
 > `IS_SANDBOX` when it launches `claude --dangerously-skip-permissions` as root (or to
 > detect root+flag-refused and emit a clear error instead of an opaque circuit-break).
 > feature-forge's launch-time export is the mitigation; the upstream fix lives in the
@@ -102,7 +103,7 @@ These are the optional flags the user may add to the rendered run command. If th
 user requests additional flags, append them to the rendered run command.
 
 ```
-  --agent <id>      Coding agent rauf drives this run (see Agent selection below).
+  --agent <id>      Coding agent rauf drives this run (see `## Agent selection` above).
                     Only the runner's advertised ids are valid; an unknown id is
                     rejected before launch. Shown only when the runner advertises
                     an agent surface (loopRunner.agentArgument present).

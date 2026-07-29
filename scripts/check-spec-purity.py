@@ -560,8 +560,16 @@ def check_prelude_identity(root: Path) -> list[Violation]:
 #: executed, so only these are held to the in-fence-prelude requirement.
 _SHELL_FENCE_LANGS: frozenset[str] = frozenset({"bash", "sh", "shell", "zsh"})
 
-#: Opening fence with an optional info string, e.g. ```` ```bash ````.
-_FENCE_OPEN_RE = re.compile(r"^```(\w*)\s*$")
+#: Opening fence, capturing the info string's FIRST word: ```` ```bash ```` and
+#: ```` ```bash title="x" ```` both yield `bash`. Matching the whole rest of the line
+#: is deliberate — an opener this pattern failed to recognize would have its CLOSING
+#: fence parsed as an opener instead, inverting fence parity and silently switching the
+#: rule off for the remainder of the file.
+_FENCE_OPEN_RE = re.compile(r"^```(\w*)[^`]*$")
+
+#: An expansion of the root variable, in either legal form: `$R/...` and `${R}/...`.
+#: Word-bounded so `$ROOT` or `$RAUF` do not count.
+_ROOT_EXPANSION_RE = re.compile(r"\$(?:R\b|\{R\})")
 
 #: An in-fence assignment that binds `$R`. Anchored to line start (MULTILINE) so a
 #: mention inside a comment or a quoted string does not satisfy the rule.
@@ -623,7 +631,8 @@ def check_prelude_presence(root: Path) -> list[Violation]:
             continue
         normalized = text.replace("\r\n", "\n")
         unbound = any(
-            "$R" in fence and _ROOT_ASSIGN_RE.search(fence) is None
+            _ROOT_EXPANSION_RE.search(fence) is not None
+            and _ROOT_ASSIGN_RE.search(fence) is None
             for fence in _shell_fences(normalized)
         )
         if unbound:

@@ -301,10 +301,11 @@ reworded — this is a cut-and-paste relocation by section boundary
 (`00-core-definitions.md §10`, R6 row: every original section still reachable).
 
 **What this does and does not buy.** The relocation is structural. Under the shipped
-schema default for `loopRunner.agentArgument` the gate is true, so the 60-line
-`## Agent selection` section still loads on every default run — see the callout in §3.2
-for the full adjudication (finding V-003). Read any "R6 saves N lines/tokens" figure in
-`PRD.md` or `tech-spec.md` as applying to sections {3, 5} only.
+schema default for `loopRunner.agentArgument` the gate is true, the file is opened, and
+all 115 lines of `agent-selection.md` load on every default run — see the callout in
+§3.2 for the full adjudication (finding V-003). Read any "R6 saves N lines/tokens"
+figure in `PRD.md`, `tech-spec.md`, or `06-testing-strategy.md` §7.5 as applying **only**
+to a project that has explicitly blanked `loopRunner.agentArgument`.
 
 ## 3.2 Full section partition (every section accounted for — none dropped)
 
@@ -338,10 +339,18 @@ always-loaded — REQ-R6-01). `agent-selection.md` receives sections {2, 3, 5}
 >
 > - **Row 2** (`## Agent selection`, 60 lines) — reads CONDITIONAL, loads on **every
 >   default-config run**. Its 60 lines moved file, not load.
-> - **Rows 3 and 5** are additionally gated behind narrower conditions inside the file
->   (a non-default agent; a user request for optional flags), so their saving is real.
+> - **Rows 3 and 5** are gated on narrower conditions for **application**, not for
+>   **load**. `agent-selection.md` is one 115-line file: row 3 is an `###` nested
+>   *inside* row 2 (see the Ordering note below — they move as a contiguous unit) and
+>   row 5 follows it in the same file, which §3.3 already concedes is read "when it
+>   opens the file at the gate". The gate's own wording is "read it". Opening the file
+>   loads all of it; the narrower conditions decide only whether that text is *acted
+>   on*.
 >
-> **R6's measured instruction-load saving is therefore sections {3, 5} only.** The
+> **R6's realized instruction-load saving on a default-config run is therefore ~zero**
+> — marginally negative, against the 7-line preamble at `agent-selection.md:1-7` that
+> did not exist before the split. The chartered saving is realized **only** on a
+> project that explicitly blanks `loopRunner.agentArgument`. The
 > split is still structurally correct and REQ-R6-01/02/03 are all met as written —
 > §3.7's drift guard asserts that the citation co-occurs with the gate sentinel, which
 > it does. What does not hold is the unstated assumption that the gate is ever false in

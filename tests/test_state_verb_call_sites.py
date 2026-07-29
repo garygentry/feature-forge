@@ -41,11 +41,22 @@ CALL_RE = re.compile(r'forge-session\.py"?\s+(state-[a-z]+)')
 MIN_CALL_SITES = 21
 
 #: How far above a call site the `--epic` instruction may live. Every site today carries
-#: it within 10 lines (it sits in the prose sentence introducing the fence, or inline in
-#: the call itself); 20 is headroom for a reworded lead-in, not a licence to rely on a
-#: neighbouring fence's instruction.
-LOOKBEHIND = 20
+#: it within **10** lines (it sits in the prose sentence introducing the fence, or inline
+#: in the call itself); 12 is that measured maximum plus 2 lines of margin for a reworded
+#: lead-in. It is deliberately NOT wider: at 20 the window reached past a block's own
+#: mandate into the PRECEDING block's, so deleting the `state-artifact` mandate at
+#: `shared-conventions.md:318` left the guard green on the strength of the unrelated
+#: `state-enter` mandate 17 lines up. Widening this re-opens that hole.
+LOOKBEHIND = 12
 LOOKAHEAD = 8
+
+#: The normative sentence the per-call-site mandates restate. Guard 1 checks the
+#: restatements; without this, deleting the RULE ITSELF flags zero call sites — the
+#: invariant would be gone while its echoes kept the guard green.
+EPIC_MANDATE_CLAUSES = (
+    "**Epic members MUST pass `--epic`.**",
+    "in this file and in every skill body",
+)
 
 #: The three clauses of the exit-2 failure protocol. Fragments, not whole sentences, so
 #: the guard survives rewording around them but not deletion of the requirement.
@@ -98,6 +109,20 @@ def test_every_state_verb_call_site_carries_the_epic_instruction():
         "`state-*` call sites with no `--epic` instruction within "
         f"{LOOKBEHIND} lines above — epic members will write the wrong feature's "
         "state:\n  " + "\n  ".join(missing)
+    )
+
+
+def test_the_epic_mandate_itself_is_still_documented():
+    """The normative rule survives, not just its per-call-site echoes.
+
+    Guard 1 walks call sites, so deleting the mandate at its source flags nothing —
+    every call site is still covered by its own nearby restatement. This pins the rule.
+    """
+    body = read(CONVENTIONS)
+    absent = [clause for clause in EPIC_MANDATE_CLAUSES if clause not in body]
+    assert not absent, (
+        "references/shared-conventions.md lost the normative `--epic` mandate — the "
+        "per-call-site restatements now have no rule behind them:\n  " + "\n  ".join(absent)
     )
 
 

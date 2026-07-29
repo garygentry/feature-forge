@@ -707,7 +707,7 @@ per-stage token figure:
 | R3 | navigator status/dashboard render | no process-overview.md load |
 | R4 | any state-writing stage | static file-load delta on invocations where the schema read occurs, **plus** drift-removal (REQ-R4-02) — see §7.4: do **not** claim a ~1.5k per-stage saving |
 | R5 | forge-5-loop / forge-4-backlog default resolution | static file-load delta where the config-schema read occurs, **plus** deterministic default resolution (REQ-R5-02) — see §7.4: do **not** claim a ~2.7k per-stage saving |
-| R6 | forge-5-loop without `agentArgument` | runner-contract.md minus 3 sections |
+| R6 | forge-5-loop without `agentArgument` | runner-contract.md minus 3 sections — **but see `05-instruction-relocations.md` §3.2 (finding V-003): the gate is true under the schema default, so this invocation requires a project that has explicitly blanked `agentArgument`. Do **not** claim a per-run saving for a default-config project — there, the file is opened and all 115 lines load.** |
 
 SC-2 (the ~30–35% aggregate) is **directional, not a gate**.
 

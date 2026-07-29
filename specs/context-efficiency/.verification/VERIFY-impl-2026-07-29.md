@@ -352,3 +352,29 @@ Executed 23 of 23 checks. Results: 16 pass, 6 fail, 1 not-applicable (advisory).
 - Step 9: [DEFERRED] 2026-07-29 — V-006 belongs to forge-6-docs, per the plan. `effective-config` docs + the `CHANGELOG.md` `## [Unreleased]` entry for R1/R3/R4/R5/R6 (noting R2 scoped out) are the hand-off.
 - Step 10: [APPLIED] 2026-07-29 — see Step 8; recorded as declined rather than configured.
 - Step 11: [NOT APPLIED] 2026-07-29 — V-012 line-cap headroom is optional and explicitly "before the next edit to `skills/forge-5-loop/SKILL.md`". No fix in this pass touched that body, so it remains at 298/300. Left for whoever edits it next.
+
+---
+
+## Re-Verification (require-clean, 2026-07-29)
+
+Two clean-room `forge-verifier` instances over disjoint slices, dispatched against `f7146a1`. Both ran the gates independently rather than taking the fix log's word.
+
+**Result: 17 of 18 findings RESOLVED on first pass; V-005 PARTIALLY RESOLVED.** Independent gate runs from both agents: `build-adapters.py --check` exit 0, `validate.sh` exit 0, `check-spec-purity.py` exit 0, pytest 716 passed / 2 skipped, `git status` clean, adapters correct across all six targets, no skill-body cap regression (`forge-5-loop` still 298/300).
+
+Fact-checks that passed: V-003's schema-default claim reproduced (`agentArgument` → `'--agent {agent}'`, `defaultAgent` → `''`); **all 9 of V-007's `progress.md` line pointers land on the correct evidence heading inside the correct item's section**; V-018's 12→29 / 17-invisible arithmetic reproduced; the four WON'T-FIX spec files confirmed byte-unchanged `bc6ceeb..HEAD`; the R6 gate confirmed NOT narrowed.
+
+### Second-round defects found and fixed (commit follows)
+
+- **RV-1 (error — inaccurate record).** The V-003 re-baseline claimed R6's saving survives for sections {3, 5}. False: `agent-selection.md` is a single 115-line file, section 3 is an `###` nested inside section 2, and section 5 follows in the same file — opening the file loads all of it, and the gate's own wording is "read it". `tech-spec.md` §3.6 self-contradicted within two sentences. **Corrected in `05` §3.1/§3.2, `tech-spec.md` §3.6 and `PRD.md` REQ-R6-02 to state the honest number: R6's realized instruction-load saving on a default-config run is ~zero** (marginally negative against the new 7-line preamble); the chartered saving is realized only where `loopRunner.agentArgument` is explicitly blanked.
+- **RV-2 (gap).** The re-baseline never reached `06-testing-strategy.md` §7.5 — the SC-1 acceptance table, the one row that actually adjudicates R6, and the row a future auditor lands on. Caveat added to the R6 row matching the existing R4/R5 "do **not** claim…" pattern; `05` §3.1's scoping sentence widened to name §7.5.
+- **RV-3 (gap).** The V-013 declination was written into `AGENTS.md`, which Claude agents do not auto-load (root `CLAUDE.md` does not point at it; the verifier confirmed from its own injected context). CHECK-I21's text also tells the verifier to *recommend configuring a smokeCommand*, so the next impl-verify would re-raise V-013 verbatim. **Pointer added to root `CLAUDE.md` outside the `rauf:start/end` markers**, mirroring the repo's existing `AGENTS.md`/`CLAUDE.md` dual-write convention.
+- **V-005 window (gap — the fix pass's own defect).** `LOOKBEHIND = 20` admitted neighbour-carry: deleting the `state-artifact` mandate at `shared-conventions.md:318` left the guard green on the strength of the unrelated `state-enter` mandate 17 lines up. Measured max real distance is 10. **`LOOKBEHIND` → 12**, and a new `test_the_epic_mandate_itself_is_still_documented` pins the normative sentence at `:190` (deleting the rule itself previously flagged zero call sites). Re-ran the full adversarial sweep: every `--epic`-bearing line deletion now goes red.
+- **Rule 6 blind spots (improvement).** `${R}` evaded the raw `"$R" in fence` substring test; and an info string with attributes (```` ```bash title="x" ````) was not recognized as an opener, so its closing fence parsed as an opener — inverting fence parity and silently disabling the rule for the rest of the file. Both closed (`_ROOT_EXPANSION_RE`, widened `_FENCE_OPEN_RE`), with three added regression cases.
+- **V-001 citation wrapping (improvement).** Two of the three repaired citations were line-wrapped, so the literal heading string was not greppable — undercutting the fix's own purpose. All three unwrapped and verified contiguous against the real headings. Also corrected a pre-existing same-class defect three lines away: `agent-selection.md:106` said "see Agent selection **below**" for a section that is above.
+
+### Accepted, not actioned
+
+- Rule 6's `^R=` requires column-0 binding, so an indented or `export R=` prelude would false-*positive*. Conservative direction (fails loud), no canonical file affected.
+- `test_stage_constants_parity.py`'s `[^)]*` extraction raises `SyntaxError` rather than a clean assertion if a tuple literal gains an inline comment containing a paren; `EXPECTED_STAGES` is a third copy of the constant. Both are loud-failure trade-offs.
+- `validate.sh` soft-skips pytest when it is absent, so the `AGENTS.md` "strict superset" claim degrades on an unprovisioned machine.
+- V-007's convention pins `progress.md` line numbers; they are correct today and the log is append-only, but heading-name pointers would be more durable.

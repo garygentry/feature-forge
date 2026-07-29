@@ -282,9 +282,13 @@ That is what makes "reachable but not loaded by default" literally true.
 > **Re-baselined (finding V-003, 2026-07-29).** "Not loaded by default" is true of the
 > *file open*, but the gate condition itself — effective `loopRunner.agentArgument`
 > non-empty — is **satisfied by the schema default** (`'--agent {agent}'`). So on a
-> default-config project the gate is on, the file *is* opened, and only the narrower
-> in-file conditions on sections {3, 5} still bite. R6's realized instruction-load
-> saving is sections {3, 5}, not all three. See `05-instruction-relocations.md` §3.2.
+> default-config project the gate is on and the file *is* opened, which loads all 115
+> of its lines; sections {3, 5} are gated for *application*, not for *load* (3 is an
+> `###` nested inside 2; 5 follows it in the same file). **R6's realized
+> instruction-load saving on a default-config run is ~zero**, marginally negative
+> against the new 7-line preamble. The chartered saving is realized only where
+> `loopRunner.agentArgument` is explicitly blanked. See `05-instruction-relocations.md`
+> §3.2.
 
 **Cap constraint (REQ-R6-03).** `forge-5-loop` SKILL body is at **298/300 lines and
 4,415/5,000 words** (measured 2026-07-28 @0.13.0 — 2 lines spare; body lines exclude
