@@ -92,7 +92,26 @@ and are **non-binding goals** — the binding bar is in §8.
   split — no check added, dropped, or renumbered.
   - Priority: P0
 
-### 3.2 Within-file plugin-root prelude dedup (R2)
+### 3.2 Within-file plugin-root prelude dedup (R2) — **SCOPED OUT (2026-07-28)**
+
+> **R2 does not ship in this feature.** REQ-R2-01 and REQ-R2-02 are retained below for
+> provenance and are **not** to be implemented: author no backlog items for them, and
+> read their absence from the implementation as intended, not as a coverage gap.
+>
+> **Why.** R2 was gated on a Phase 0 probe of the Claude 5 adaptation program (see
+> `docs/claude-5/phase-0-compliance-baseline.md` §4). The probe cleared the stated
+> objection — 5/5 runs resolved `$R` correctly and executed clean — but byte-identity
+> came back 4/5, so the charter's "byte-identical to today" claim is not unconditionally
+> true. The deciding argument is the risk/reward that the probe left standing: R2 saves
+> ~2k tokens across 4 files, the smallest payoff of the six, and it is the only R that
+> converts a verbatim copy into a reconstruct-from-memory operation. The same baseline
+> found that the productive direction is *removing* compliance-dependent operations, so
+> adding one for the smallest gain runs against the evidence.
+>
+> **Cost of the drop: none.** SC-6 already requires each R to be independently
+> shippable and revertible. R2's transform is preserved in `05-instruction-relocations.md`
+> §1, and the `r2-prelude` probe stays in `eval/run-compliance-eval.py` as the gate if it
+> is ever revived — re-run it at a larger n first; 4/5 on n=5 is a wide interval.
 
 - REQ-R2-01: Within any single runtime-loaded file that currently repeats the
   3-line `R=` plugin-root resolver block, the first occurrence MUST remain

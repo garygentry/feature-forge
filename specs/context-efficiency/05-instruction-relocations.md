@@ -1,4 +1,25 @@
-# 05 — Instruction Relocations (R2, R3, R6)
+# 05 — Instruction Relocations (~~R2~~, R3, R6)
+
+> ## ⚠️ R2 is SCOPED OUT (2026-07-28) — implement R3 and R6 only
+>
+> **§1.1–§1.6 below are not to be implemented.** Author no backlog items for them.
+> §2 (R3) and §3 (R6) are unaffected and ship as specified.
+>
+> R2 was gated on a Phase 0 probe of the Claude 5 adaptation program
+> (`docs/claude-5/phase-0-compliance-baseline.md` §4). The probe cleared the stated
+> objection — plugin-root resolution never broke, 5/5 — but byte-identity came back 4/5,
+> and the deciding argument is the risk/reward the probe left standing: ~2k tokens across
+> 4 files (the smallest payoff of the six) in exchange for the only R that converts a
+> verbatim copy into a reconstruct-from-memory operation. The same baseline found the
+> productive direction is *removing* compliance-dependent operations.
+>
+> The analysis is retained in full so R2 can be revived without re-deriving it. If it is,
+> re-run `python3 eval/run-compliance-eval.py --probe r2-prelude` at a larger n first
+> (4/5 on n=5 is a wide interval), and note that §1.6's drift guard must assert against
+> the *file*, not against an executed command — an executed-command byte-identity
+> assertion will flag intermittently on Opus 5.
+>
+> Full rationale: PRD §3.2.
 
 > **Markdown surgery, not code.** This document specifies three
 > pure-text-relocation units — **R2** (within-file plugin-root prelude dedup),
@@ -19,8 +40,8 @@
 
 | REQ ID | Requirement | Section |
 |--------|-------------|---------|
-| REQ-R2-01 | 1st prelude verbatim; subsequent occurrences → compact form, execution unchanged | R2 §1.1, §1.3, §1.4 |
-| REQ-R2-02 | Dedup is within-file only; no cross-file prelude pointer in any executable path | R2 §1.2, §1.5 |
+| ~~REQ-R2-01~~ (scoped out) | 1st prelude verbatim; subsequent occurrences → compact form, execution unchanged | R2 §1.1, §1.3, §1.4 |
+| ~~REQ-R2-02~~ (scoped out) | Dedup is within-file only; no cross-file prelude pointer in any executable path | R2 §1.2, §1.5 |
 | REQ-R3-01 | Navigator reads `process-overview.md` only for "how does the pipeline work" questions | R3 §2.1, §2.2 |
 | REQ-R6-01 | Always-loaded runner-contract sections load on every run | R6 §3.1, §3.2 (table) |
 | REQ-R6-02 | Agent-selection loads only under the `agentArgument` gate; optional-flags reachable-not-default | R6 §3.2 (table), §3.3 |

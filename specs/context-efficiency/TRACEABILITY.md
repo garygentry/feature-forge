@@ -16,12 +16,16 @@ supporting docs in parentheses.
 | REQ-R1-04 | Per-mode "N of M" self-check stays correct | `02` §7.3 · `00` §7 · `06` §3.1 |
 | REQ-R1-05 | Every CHECK-ID preserved exactly | `02` §2, §4, §9 · `00` §7 · `06` §3.1 |
 
-### R2 — Within-file prelude dedup
+### R2 — Within-file prelude dedup · **SCOPED OUT (2026-07-28)**
+
+Not implemented in this feature — see PRD §3.2 for the rationale. Spec coverage is
+retained below so the analysis survives if R2 is revived; expect no backlog items and no
+implementation against these rows.
 
 | REQ ID | Requirement | Doc → Section |
 |--------|-------------|---------------|
-| REQ-R2-01 | 1st prelude verbatim, rest compact; behavior unchanged | `05` R2 §1.1/1.3/1.4 · `00` §8 |
-| REQ-R2-02 | Within-file only; no cross-file pointer | `05` R2 §1.2/1.5/1.6 · `00` §8 |
+| ~~REQ-R2-01~~ | 1st prelude verbatim, rest compact; behavior unchanged | `05` R2 §1.1/1.3/1.4 · `00` §8 |
+| ~~REQ-R2-02~~ | Within-file only; no cross-file pointer | `05` R2 §1.2/1.5/1.6 · `00` §8 |
 
 ### R3 — Conditional process-overview read
 

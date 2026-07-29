@@ -6,6 +6,20 @@
 > scripts inventory) and measured word/line counts of everything that loads at
 > each point in the pipeline. Read-only; no changes made.
 
+> ## ⚠️ These figures are stale — re-measure before authoring the backlog
+>
+> They predate **v0.13.0**, which added the Pi adapter target. The charter's rule is
+> "measure first — re-measure, don't trust," so re-take every baseline this document
+> claims a saving against, at the current HEAD, before sizing any backlog item.
+>
+> **Decision rule, set in advance (2026-07-28) so it is not a judgement call made under
+> momentum:** if an R's re-measured saving comes in **below ~50% of the figure claimed
+> here**, stop and surface it as an explicit ship/drop call rather than proceeding. SC-6
+> (REQ-DELIV-01) makes dropping any single R free, so the cost of asking is near zero and
+> the cost of shipping a relocation that no longer pays for its risk is not.
+>
+> R2 has already been dropped on this basis — see PRD §3.2.
+
 ## Verdict
 
 The architecture is fundamentally sound. The big progressive-disclosure moves

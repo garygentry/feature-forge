@@ -140,6 +140,19 @@ respect current headroom (verified figures from tech-spec):
 inlined); R6's `runner-contract.md` text is NOT pushed back into the loop body;
 R2's compact form is a net reduction. No edit may push a body over 300.
 
+> **⚠️ Ledger correction — R2 is scoped out (2026-07-28; PRD §3.2).** The rows above
+> assume R2 runs first and frees lines. It does not. Re-read them as:
+>
+> - `forge-0-epic/SKILL.md` stays at **292 / 300** — R4 swaps in-place, so it still fits,
+>   but on **8 lines of headroom, not 12**. R4 must be strictly in-place there; any net
+>   addition needs a line audit before it lands.
+> - `forge-bootstrap/SKILL.md` is **untouched** by this feature (R2 was its only unit).
+> - `forge/SKILL.md` gets **R3 only**, which is neutral-to-negative — no R2 reduction to
+>   spend.
+>
+> No body relied on an R2 reduction to get *under* the cap, so the drop breaks nothing.
+> It removes slack that R4 was expected to inherit.
+
 ## 3. Citation graph & portability (REQ-PORT-01)
 
 Every new/moved reference file must be cited by path from ≥1 **skill body** so
