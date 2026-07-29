@@ -6,8 +6,11 @@
   "commitPrefix": "forge",
   "stack": "python",
   "typeCheckCommand": "ruff check scripts/ eval/",
-  "testCommand": "python3 -m pytest tests",
+  "testCommand": "bash scripts/validate.sh",
   "smokeCommand": null,
   "loopIterationMultiplier": 1.5,
-  "contextWindowTokens": 1000000
+  "contextWindowTokens": 1000000,
+  "loopRunner": {
+    "bin": "rauf-stable"
+  }
 }
