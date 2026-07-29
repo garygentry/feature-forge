@@ -66,3 +66,50 @@ Costs, correctly attributed: `forge-verify/SKILL.md` body 263→265 L, 2,554→2
   file holding a `${CLAUDE_PLUGIN_ROOT}` occurrence — the epic bash recipe's prelude moved
   with the split, so that row was repointed to `verification-checklists/epic.md`. No test
   pins it; it goes stale silently. Worth re-grepping on any future reference-file move.
+
+## Item 003 — `tests/_forge_paths.py` + the R1 checklist-split drift guard
+
+### Mutation-test evidence (AC 2 / AC 3)
+
+Recorded here as well as in the commit message, since a transient experiment leaves no
+trace. Each mutation was applied to canon, the guard run, then the file restored and
+confirmed byte-identical with `git diff --stat` (empty).
+
+1. **Deleted the `CHECK-S38` line from `verification-checklists/specs.md`** → 3 failures:
+   - `test_mode_checklist_is_complete_and_contiguous[specs]`:
+     `AssertionError: specs.md: expected 38 contiguous CHECK-S IDs, found 37`
+   - `test_split_preserves_the_full_check_inventory`:
+     `AssertionError: split inventory drifted from 130 unique CHECK-IDs: {'prd': 15, 'tech': 17, 'specs': 37, 'backlog': 27, 'impl': 23, 'epic': 10}`
+   - `test_skill_expected_count_table_matches_the_files`:
+     `AssertionError: SKILL expected-count table says specs: 38 checks, but specs.md holds 37`
+   The third failing *for free* is the point of reading the table against the counted
+   values: a deletion is caught by the file guard **and** by the table guard.
+2. **`forge-verify/SKILL.md` table drift, `backlog: 27 checks` → `26`** →
+   `AssertionError: SKILL expected-count table says backlog: 26 checks, but backlog.md holds 27`
+3. **Table re-hedged, `impl: 23 checks` → `impl: ~23 checks`** →
+   `AssertionError: SKILL expected-count table still hedges impl with '~' — the split made the totals exact`
+   (item 002 dropped the `~`; the regex captures an optional `~` so the hedge is caught
+   rather than silently matching the digits.)
+
+A renumber-in-place (`CHECK-S38` → `CHECK-S99`) also goes red, on the contiguity list
+comparison rather than the length one.
+
+### Learnings
+
+- **Contiguity alone is not a removal guard.** Deleting the *highest* ID (S38) leaves
+  `01..37` perfectly contiguous. The guard needs a frozen expected count too — so
+  `EXPECTED` holds one hardcoded count per mode (the REQ-R1-05 inventory) and the SKILL
+  table is compared against counts *read back out of the files*. That is the "no number
+  hardcoded in two places" split: one frozen inventory, one derived comparison.
+- `_ids()` unique-s deliberately. Raw `CHECK-I` occurrences in `impl.md` are 28 (not 23)
+  and `CHECK-E` in `epic.md` are 13 (not 10) because I21/I22 and E06/E07 are
+  cross-referenced in surrounding prose — those cross-references are part of the verbatim
+  moved text, so `sort -u` / `set()` is mandatory, not a convenience.
+- `tests/` has no `__init__.py`, so pytest's default `prepend` import mode puts `tests/`
+  on `sys.path` and a bare `from _forge_paths import …` resolves. The leading underscore
+  also keeps the module out of collection. Items 004/005/007–010/014–016 can import it
+  the same way.
+- `tests/` is **not** in `validate.sh`'s `RUFF_TARGETS` (`scripts/ eval/` only), so ruff
+  does not lint the guards. Keep them tidy by hand.
+- Restoring a mutated canon file: `command cp -f` (the repo's interactive `cp`/`rm`
+  aliases no-op in a non-tty tool call — same gotcha item 002 hit with `rm`).
