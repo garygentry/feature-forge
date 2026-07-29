@@ -6,9 +6,25 @@
 > scripts inventory) and measured word/line counts of everything that loads at
 > each point in the pipeline. Read-only; no changes made.
 
-> ## ⚠️ These figures are stale — re-measure before authoring the backlog
+> ## ✅ Re-measured at v0.13.0 (2026-07-28) — see `REMEASURE-0.13.0.md`
 >
-> They predate **v0.13.0**, which added the Pi adapter target. The charter's rule is
+> **Result: every figure below reproduces. No R falls below the ~50% stop-rule; R1, R3,
+> R4, R5 and R6 all measure at 100–134% of their claims.** The canonical surface
+> (`skills/`, `references/`, `agents/`) is byte-identical to the audit base apart from a
+> rauf pin version string in `forge-config-schema.json` — the Pi adapter work landed in
+> build and host-porting machinery, not in anything a stage session loads.
+>
+> Two results in `REMEASURE-0.13.0.md` change how the backlog should be authored, and are
+> not visible in the numbers below: transcript evidence that the per-stage schema read is
+> **not** in fact per-stage (so R4/R5's *realized* savings are below projection — scale the
+> claim, don't assert it), and the line-cap headroom table (`forge-5-loop` has **2** lines,
+> `forge-0-epic` **8**).
+>
+> ---
+>
+> ## Original staleness warning (retained for provenance)
+>
+> These figures predate **v0.13.0**, which added the Pi adapter target. The charter's rule is
 > "measure first — re-measure, don't trust," so re-take every baseline this document
 > claims a saving against, at the current HEAD, before sizing any backlog item.
 >
