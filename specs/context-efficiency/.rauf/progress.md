@@ -997,3 +997,101 @@ SC-3 evidence for R1/R3/R5; R4/R6 re-confirmed at the combined end state.
 `tests/test_runner_contract_split.py`, +4 this item's parity guard, +3 the pi
 parametrizations the constant fix unlocked) · `check-spec-purity` PASS ·
 `bash scripts/validate.sh` PASS.
+
+## Item 016 — the catch-all citation, body-cap and always-loaded-surface guards
+
+Two new tests-only modules, both importing canon paths from `tests/_forge_paths.py`:
+`tests/test_reference_citations.py` (guards 1+2, 6 tests) and
+`tests/test_always_loaded_surface.py` (guards 3+4, 31 tests). No canon edit, so
+`adapters/` was NOT restaged and no regeneration was needed — same shape as item 014,
+whose ACs likewise omit the adapters criterion.
+
+### Regex validation against the PRE-FEATURE BASELINE (AC 1)
+
+Recorded here as well as in the commit message, since the iteration agent does not commit
+(same convention as items 002/004/006/012/013/015).
+
+Baseline commit **`9a29e846ed510c3b245876a9bf4cc73b8cb60951`** — the hash in
+`specs/context-efficiency/.pipeline-state.json` under `stages['forge-4-backlog'].commitHash`,
+**not** `HEAD~`. Extracted with `git archive <hash> skills references | tar -x -C /tmp/...`
+so the check runs against a real tree rather than a reconstruction.
+
+| tree | resolvable citations | templated (skipped) | misses |
+|---|---|---|---|
+| baseline `9a29e846` | **118** | 4 | **0** |
+| current (post R1–R6) | **134** | 5 | **0** |
+
+118/0 is exactly the figure spec 06 §5 records, so the pattern is green pre-change and any
+future red is a real regression. The count moved 118 → 134 because items 002 (six literal
+mode citations + `findings-template.md`), 004 and 015 (`agent-selection.md`) changed the
+citation set — which is why **nothing in the guard pins a total**.
+
+The naive `references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*)` was run against the same baseline
+and produces its documented **3 false positives**, unchanged on the current tree:
+`forge-2-tech: references/stack-decisions.md` ×2 (the `.agents/` and `.claude/`
+project-level paths) and `forge-5-loop: references/runner-contract.md.` (sentence-final
+period). Both are pinned by **fixture strings**, not live line numbers — L61/L165 will
+drift, the sentences will not.
+
+### Mutation evidence — eight mutations, all red, all restored
+
+Every mutation was applied, the guard run, then the file restored with `command cp -f`
+from a `/tmp` backup and confirmed byte-restored via an empty `git diff --stat`.
+
+1. dangling `references/does-not-exist.md` appended to `forge/SKILL.md` →
+   `test_every_citation_in_every_skill_body_resolves` red, naming the skill and path.
+2. `references/agent-selection.md` citation removed from `forge-5-loop` →
+   `test_every_new_or_moved_reference_file_is_still_cited` red (AC 3).
+3. 3 padding lines appended to `forge-5-loop/SKILL.md` →
+   `test_skill_body_is_within_the_line_cap[forge-5-loop]` red at `301 lines (cap 300)`.
+4. one char added to `forge-verify`'s frontmatter description →
+   `test_frontmatter_description_budget_not_increased` red at `4689 chars (ceiling 4688)`
+   (AC 5 — a one-character increase is detected).
+5. `session-check.sh` made to echo on the common path → silence test red.
+6. `session-check.sh` `find` short-circuited to a no-op → **control** test red
+   (`forge-init` absent). Mutations 5+6 are the bidirectional pair.
+7. an existence check inserted around the common-path hook test →
+   `test_the_hook_guards_cannot_degrade_to_a_skip` red (AC 7).
+8. `CITE_RE` reverted to the naive form → forward guard red with the 3 false positives
+   **and** the project-level fixture test red.
+
+### Learnings
+
+- **A self-scanning "cannot degrade to a skip" guard matches its own banned list.** The
+  first version stored `("is_file(", "exists(", …)` and failed on its own source. Assemble
+  the call form at runtime (`f"{banned}("` over bare names, item 017's precedent), and keep
+  the constructs out of the prose too — the module docstring originally said "behind an
+  `if hook.is_file()` skip" and tripped the same assertion. Prose says "existence check".
+- **The forward citation guard is vacuous without a floor.** Every "zero unresolved"
+  assertion is satisfied by a regex that matches nothing, and mutation 8 would have gone
+  *green* under a pattern that simply stopped matching. `MIN_EXPECTED_CITATIONS = 100` is a
+  non-vacuity floor, deliberately not the measured 134 — the AC forbids pinning a total
+  because items 002/004/015 move it.
+- **Forward and reverse are genuinely independent** (same argument as item 004's
+  presence-vs-conditionality pair): a dangling citation is invisible to the reverse guard,
+  and an unshipped file is invisible to the forward one. Neither alone is coverage.
+- **`EXPECTED_SKILL_COUNT = 13` is pinned so deletion cannot create headroom.** The
+  frontmatter budget is a *sum*; delete a skill and the total drops, silently licensing
+  growth elsewhere. Both the description count and the skill-file count are asserted.
+- **Quote-inclusive is the only defensible frontmatter measurement.** Raw = **4688**,
+  quote-stripped = **4662**; adopting the stripped sum grants 26 chars of undetectable
+  growth against a non-increase requirement. Re-measured on the current tree: 4688 exactly,
+  unchanged from the 0.13.0 baseline (largest description `forge-guide` 528, smallest
+  `forge-fix` 269).
+- **Word counting mirrors `check-spec-purity` exactly** —
+  `sum(len(line.split()) for line in body_lines)`, not `len(text.split())`. Current maxima:
+  `forge-5-loop` **298 L / 4,564 w** (the item's predicted max), then `forge-0-epic` 292 L
+  and `forge` 4,083 w. The line cap is the binding one; the word cap has ~9% headroom.
+- The caps are duplicated (`MAX_BODY_LINES`/`MAX_BODY_WORDS`) rather than imported from
+  `check-spec-purity.py` — hyphenated module name, and a guard that broke on an import
+  error would be indistinguishable from one that passed. The same reasoning item 017 used
+  for the `AGENT_TARGETS` parity guard.
+- **`zsh` gotcha, re-hit:** `git archive $HASH skills references` is fine, but a bare
+  `git show $rev:path` is mangled by the `:r` history modifier — item 017 logged this.
+
+### Gates
+
+`python3 -m pytest tests` **690 passed / 2 skipped** (up 37 from item 017's 653: 6 + 31
+from the two new modules) · `ruff check scripts/ eval/` PASS · `check-spec-purity` PASS ·
+`build-adapters.py --check` exit 0 (untouched — tests-only item) ·
+`bash scripts/validate.sh` **PASS**.
