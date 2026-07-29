@@ -1691,6 +1691,93 @@ Concretely, the three failures an operator will actually hit and what each means
 Hand-authoring JSON to route around any of these re-introduces exactly the drift R4
 exists to remove (REQ-R4-02), so it is never the fallback.
 
+## 15. `currentStage` advancement — owner decision (item 020, 2026-07-29)
+
+Items 012 and 013 removed the `Set currentStage to <next stage>` bullet from every
+completion step, and the `currentStage → complete` write from forge-6-docs Step 5,
+because `state-complete` does not write the field and §13.1's after-block omits it.
+`state-enter` is now the only writer. This section adjudicates the two questions
+that left open; both were flagged "for owner review" in `progress.md` at the time.
+
+### 15.1 Should `currentStage` still advance on completion? **NO — accepted as-is.**
+
+The field keeps its schema meaning: *the most recently **started** stage*. It moves
+only when a stage is entered.
+
+The deciding evidence is that `references/pipeline-state-schema.json` is
+**byte-identical to the pre-feature baseline** (`9a29e846`) and already said so
+before R4 began:
+
+> "Where the pipeline IS: the most recently started stage … A stage skill sets this
+> to its own id when it starts. This is deliberately NOT 'the next stage to run':
+> the next stage is DERIVED, never stored … Consumers that need 'what runs next'
+> compute it from `stages[].status`, not from this field."
+
+The removed bullets set the field to the **next** stage — i.e. baseline canon
+contradicted the baseline schema, in the exact terms the schema had pre-emptively
+ruled out. REQ-R4-03 makes the schema the source of truth, so R4 resolved the
+contradiction in the schema's favour. Restoring the bullets would re-introduce a
+documented contradiction, and no verb can express them anyway (`state-enter` also
+stamps the target stage `in-progress`, which is wrong for a stage that has not
+started).
+
+**This is not free.** One consumer had been written against the contradicting
+behaviour and regressed silently: `_next_command` in `epic-manifest.py` recommended
+`/feature-forge:{currentStage}`, whose docstring asserted `currentStage` *was* "its
+next un-run stage". Post-R4 the epic rollup therefore recommended **re-running the
+stage the member had just finished**, for the whole window between a stage completing
+and its successor being entered — the window in which a user actually consults the
+rollup. It was also self-sustaining: advancing `currentStage` requires entering the
+next stage, which is the command the rollup declined to give.
+
+The fix is the one the schema prescribes for every consumer — derive, don't read.
+`epic-manifest.py` gains `_next_production_stage()`, the epic-side mirror of
+`next_stage()` in `forge-session.py`, and `_next_command` uses it. This restores the
+pre-R4 recommendation and additionally fixes two cases the old code got wrong
+regardless of R4: a legacy state with no `currentStage`, and an all-stages-complete
+member still actionable on unapplied findings (which pre-R4 emitted as the literal
+`/feature-forge:complete`, not a command). Regression tests live in
+`tests/test_epic_manifest.py` and assert the recommendation is **identical** under
+both write conventions — the property that proves the field is no longer consulted.
+
+No other consumer was affected: `build_rows` (forge-session.py) falls back to
+`complete` only when `currentStage` is falsy, so it neither compensates nor breaks;
+`derive_status` uses the field for the member's *displayed* stage but keys
+completeness off `is_complete_for_orchestration`; and no consumer anywhere compares
+`currentStage == "complete"`.
+
+### 15.2 Should the `complete` value still be produced? **NO — accepted as-is.**
+
+`complete` is not a stage that can be "most recently started"; it is a pipeline-level
+fact. Producing it would require a writer that contradicts §15.1, and completeness is
+already derived and available on every surface: `next_stage()` returns `None`,
+surfaced as `nextStage: null` and `complete: true`.
+
+The enum value is **retained** — pre-0.14 state files carry it and must keep
+validating — but it is now documented as legacy and never-written. This is the one
+canon edit item 020 makes: the `currentStage` **description** in
+`references/pipeline-state-schema.json`. The clause "`complete` here means the whole
+pipeline is done" was the sentence that would lead a future consumer to test
+`currentStage == "complete"` and never see a finished pipeline.
+
+The edit is prose-only, and that is asserted rather than claimed:
+`tests/test_state_schema_conformance.py` now pins a digest of the schema with every
+`description` recursively stripped, which is **unchanged from the pre-R4 baseline**.
+(The previous raw-byte digest could only have been re-pinned, which proves nothing.)
+
+### 15.3 Display surfaces — confirmed acceptable
+
+Both surfaces the item names were checked against a fixture with all six stages
+complete:
+
+| Surface | Finished-pipeline display | Verdict |
+|---|---|---|
+| Navigator dashboard | `Stage: forge-6-docs`; the completion branch keys off `nextStage is null`, **not** `currentStage`, so the Completion hand-off still fires | accurate — it *is* the last stage started, and the ✅ ladder plus the hand-off carry "done" |
+| Epic member rollup | `m1: complete (stage forge-6-docs)`; coarse status from `is_complete_for_orchestration`, no next command, rollup `1/1 complete` | correct |
+
+Neither surface ever displayed a bare `currentStage` as the completion signal, which
+is why the change is cosmetic there while being load-bearing in `_next_command`.
+
 ## Dependencies
 
 - **`00-core-definitions.md`** — script conventions (§3, incl. exit-code contract

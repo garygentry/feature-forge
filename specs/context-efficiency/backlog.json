@@ -624,8 +624,8 @@
         "No hand-authored .pipeline-state.json instruction is reintroduced into canon; the R4 exclusion ledger is unchanged",
         "python3 -m pytest tests passes and bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-29T07:49:12.057Z",
       "source": "review",
       "reviewBatch": "2026-07-29T07:20:08.081Z"
     }

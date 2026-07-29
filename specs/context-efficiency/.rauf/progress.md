@@ -1238,3 +1238,135 @@ widened into a loop rather than added) · `build-adapters.py --check` exit 0 **a
 regenerating** (editing `scripts/forge-session.py` restages the 6 per-target copies, and
 validate.sh step 6b goes red without it — the ACs here don't mention adapters but the
 gate does) · `bash scripts/validate.sh` **PASS**.
+
+## Item 020 — `currentStage` no longer advances; the `complete` value is unreachable
+
+**Decision: ACCEPTED AS-IS on both questions** (recorded in full in
+`specs/context-efficiency/03-state-verbs.md §15`). `currentStage` keeps its schema
+meaning — the most recently *started* stage — and `complete` stays in the enum as a
+legacy, never-written value. But the item's premise that the impact is *display-only*
+was **wrong**, and the review that follows from it is the substance of this iteration.
+
+### The deciding evidence: the schema was already right, and canon contradicted it
+
+`references/pipeline-state-schema.json` is **byte-identical to the pre-feature
+baseline** `9a29e846` (verified by diff — R4 never touched it). It has always said
+*"the most recently started stage … deliberately NOT 'the next stage to run' … the
+next stage is DERIVED, never stored … Consumers … compute it from `stages[].status`,
+not from this field."* The bullets items 012/013 removed set it to the **next** stage
+— so pre-R4 canon contradicted the pre-R4 schema in the exact terms the schema had
+pre-emptively ruled out. REQ-R4-03 makes the schema the source of truth, so R4 is a
+**correction**, and restoring the bullets would restore a documented contradiction.
+
+### The regression the item missed: `_next_command` is NOT display-only
+
+The item traced `build_rows` and `derive_status` and concluded display-only. It did
+not trace `epic-manifest.py::_next_command` (L949), which returned
+`/feature-forge:{currentStage}` and whose docstring asserted `currentStage` *was*
+"its next un-run stage" — true only under the write convention R4 removed.
+
+**Reproduced.** One member, `PRD.md` present, `forge-1-prd` complete, `forge-2-tech`
+not yet entered — i.e. the post-R4 state — differing only in the recorded field:
+
+| `currentStage` | epic rollup `Next:` |
+|---|---|
+| `forge-1-prd` (post-R4) | `/feature-forge:forge-1-prd m1` ← **re-runs the finished stage** |
+| `forge-2-tech` (pre-R4) | `/feature-forge:forge-2-tech m1` |
+
+It is also **self-sustaining**: advancing `currentStage` requires *entering* the next
+stage, which is precisely the command the rollup declined to give. And the bad window
+is not an edge case — it is the whole span between a stage completing and its
+successor being entered, which is exactly when a user consults the rollup.
+
+### Fix: derive, don't read — the rule the schema states for every consumer
+
+Added `_next_production_stage()` to `epic-manifest.py`, the epic-side mirror of
+`next_stage()` in `forge-session.py` (whose docstring already says it is
+"intentionally distinct from the stored `currentStage` field"), plus a local
+`_PRODUCTION_STAGES`. `epic-manifest.py` had **no** stage-order constant before this.
+
+Two pre-existing bugs fell out with it, both independent of R4:
+- a legacy/absent `currentStage` produced `/feature-forge:None`-class output;
+- an all-six-complete member still actionable on unapplied findings
+  (`forge-verify-impl: findings-reported`) emitted `/feature-forge:{currentStage}`,
+  which **pre-R4 was the literal `/feature-forge:complete`** — not a command. It now
+  recommends `forge-fix`, which is the thing actually blocking that member.
+
+### Guard design — the assertion that matters is convention-independence
+
+7 tests appended to `tests/test_epic_manifest.py`. The load-bearing one is
+`test_next_command_is_independent_of_the_recorded_current_stage`: same `stages[]`,
+two different recorded `currentStage` values, **identical** `nextCommand`. A test that
+only pinned the post-fix string would stay green if someone re-read the field and the
+fixture happened to agree; this one can only pass if the field is not consulted.
+
+Mutation-tested by reverting `_next_command` to the currentStage-reading form → **4
+red** (advances-past-completed, convention-independence, stale-is-un-run,
+forge-fix-when-only-findings). Restored with `command cp -f`; `git diff --stat`
+confirms 49 insertions / 6 deletions, the intended change only.
+
+### The schema digest guard had to change shape, not just move
+
+`test_the_state_schema_is_byte_identical_to_its_pre_r4_content` pinned raw bytes with
+the rationale "R4 changes no schema". Item 020's AC requires a **description** edit,
+which is not a schema change in any sense that guard cared about — but a raw-byte
+digest can only be **re-pinned**, which proves nothing and quietly retires the claim.
+
+Replaced with a digest over the schema with every `description` key recursively
+stripped, canonicalized (`sort_keys`, no whitespace). That value is
+`52887d60ee50…` at the pre-R4 baseline **and** on the current tree — so the guard now
+proves something strictly stronger than before: no property, type, enum, or required
+list has moved since `9a29e846`, across R4 *and* item 020. Prose accuracy is asserted
+separately (3 new tests: `complete` retained in the enum for backward compat, the old
+"means the whole pipeline is done" clause gone, the description pointing at
+`next_stage()`), plus a negative control proving the digest is blind to prose but
+**not** to structure — without it, an over-eager `_strip_descriptions` would satisfy
+the guard vacuously.
+
+Reusable: when a byte-digest guard blocks a legitimate edit, ask what the guard was
+*claiming*. Re-pinning keeps the test green and drops the claim; narrowing the digest
+to the thing actually claimed keeps the claim and lets the edit through.
+
+### Display surfaces — confirmed acceptable (AC 2)
+
+Fixture with all six stages complete:
+- **Navigator**: `Stage: forge-6-docs`. The completion branch (`skills/forge/SKILL.md`
+  L92/L96) keys off `nextStage` being `null`, **not** `currentStage`, so the
+  Completion hand-off still fires. `rank-features --json` returns
+  `currentStage: "forge-6-docs"` alongside `complete: true, nextStage: null`.
+- **Epic rollup**: `m1: complete (stage forge-6-docs)`, `Progress: 1/1 complete`, no
+  `Next:` line.
+
+Neither surface ever used a bare `currentStage` as the completion signal — which is
+why the change really is cosmetic *there*, and why that observation does not
+generalize to `_next_command`.
+
+### Canon sweep — the other two `currentStage` consumers, both left alone
+
+Swept `skills/` + `references/` for anything else reading the field as "what runs
+next". Two hits, neither actioned, both deliberately:
+
+- **`skills/forge-0-epic/SKILL.md` L227** (C7 member stub, `currentStage:
+  "forge-1-prd"`, glossed "the next actionable stage for the member") — a **ledger
+  exclusion** (3(i)), and the *value* is right regardless: a stub has no stages, so
+  `forge-1-prd` is simultaneously "where it is" and "what's next". Only the gloss is
+  loose. AC 4 freezes the ledger, so it stays.
+- **`skills/forge/SKILL.md` L214** (the >24h resume hint, `re-running
+  /feature-forge:forge-{currentStage}`) — **byte-identical at baseline `9a29e846`**,
+  so it predates R4. Its purpose is "rebuild context", i.e. re-enter the stage you
+  were in, which is *more* accurate under the new meaning, not less.
+
+  **Pre-existing bug noted, not fixed (out of scope):** the template is
+  `forge-{currentStage}` while `currentStage` is already a full stage id, so it
+  interpolates to `/feature-forge:forge-forge-2-tech`. It is a slash-command string
+  typo unrelated to item 020's question, present since before this feature; fixing it
+  is an unrelated canon edit that would restage adapters. Worth a follow-up.
+
+### Gates
+
+`python3 -m pytest tests` **705 passed / 2 skipped** (up 10 from item 019's 695: +7
+epic-manifest, +3 net schema-conformance) · `ruff check scripts/ eval/` PASS ·
+`check-spec-purity` PASS · `build-adapters.py --check` exit 0 after regenerating
+(editing `scripts/epic-manifest.py` **and** `references/pipeline-state-schema.json`
+restages both — the schema is a bundle-root shared reference) · `bash
+scripts/validate.sh` **PASS**.

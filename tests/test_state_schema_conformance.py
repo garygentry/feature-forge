@@ -253,19 +253,103 @@ def test_a_corrupt_state_file_exits_2_and_is_left_byte_identical(tmp_path, verb)
 # 5. The schema itself is unchanged by R4
 # --------------------------------------------------------------------------- #
 
-#: sha256 of `references/pipeline-state-schema.json` at the pre-feature baseline
-#: commit 9a29e846ed510c3b245876a9bf4cc73b8cb60951 ("author backlog v1"), the last
-#: commit before any R4 work. R4 extracts the WRITES into verbs; it changes no
-#: schema, so this digest must never move. A legitimate schema change belongs to a
-#: different feature and updates this constant in the same PR.
-PRE_R4_SCHEMA_SHA256 = "33a8337adaf8cccca4385a7c96c6ae44f768ca93fac41585e3c20cf5c6102a5c"
+#: sha256 of the VALIDATING CONTRACT of `references/pipeline-state-schema.json` at
+#: the pre-feature baseline commit 9a29e846ed510c3b245876a9bf4cc73b8cb60951 ("author
+#: backlog v1"), the last commit before any R4 work — i.e. the schema with every
+#: `description` key recursively stripped, canonicalized (sorted keys, no
+#: whitespace). R4 extracts the WRITES into verbs; it changes no schema, so this
+#: digest must never move. A real schema change (a property, type, enum, or required
+#: list) belongs to a different feature and updates this constant in the same PR.
+#:
+#: Why the contract and not the raw bytes: item 020 rewrote the `currentStage`
+#: description (only `state-enter` writes that field now, so the enum's `complete`
+#: value became unreachable and its prose had to stop claiming otherwise). That is a
+#: documentation fix with no effect on what validates — a raw-byte digest could only
+#: be re-pinned, which proves nothing, while this digest still proves the contract
+#: is untouched. Prose accuracy is asserted separately below.
+PRE_R4_SCHEMA_CONTRACT_SHA256 = (
+    "52887d60ee504d04b8e78a51ab4d454d7810e75ec11321d191bb4e08092c2936"
+)
 
 
-def test_the_state_schema_is_byte_identical_to_its_pre_r4_content():
-    digest = hashlib.sha256(STATE_SCHEMA.read_bytes()).hexdigest()
-    assert digest == PRE_R4_SCHEMA_SHA256, (
-        "references/pipeline-state-schema.json changed — R4 changes no schema "
-        f"(pre-R4 {PRE_R4_SCHEMA_SHA256}, now {digest})"
+def _strip_descriptions(node):
+    """Recursively drop every `description` key — leaving only what validates."""
+    if isinstance(node, dict):
+        return {k: _strip_descriptions(v) for k, v in node.items() if k != "description"}
+    if isinstance(node, list):
+        return [_strip_descriptions(v) for v in node]
+    return node
+
+
+def _schema_contract_digest() -> str:
+    contract = _strip_descriptions(json.loads(STATE_SCHEMA.read_text()))
+    blob = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(blob).hexdigest()
+
+
+def test_the_state_schema_contract_is_unchanged_since_the_pre_r4_baseline():
+    digest = _schema_contract_digest()
+    assert digest == PRE_R4_SCHEMA_CONTRACT_SHA256, (
+        "the validating contract of references/pipeline-state-schema.json changed — "
+        "R4 changes no schema, and item 020's currentStage edit is prose-only "
+        f"(pre-R4 {PRE_R4_SCHEMA_CONTRACT_SHA256}, now {digest})"
+    )
+
+
+def test_the_contract_digest_ignores_prose_but_not_structure():
+    """Negative control: the digest must be blind to descriptions, not to the schema.
+
+    Without this, a `_strip_descriptions` that stripped too much (or a digest over a
+    constant) would satisfy the guard above vacuously.
+    """
+    schema = json.loads(STATE_SCHEMA.read_text())
+
+    # Rewriting a description does not move the digest.
+    prose = json.loads(json.dumps(schema))
+    prose["properties"]["currentStage"]["description"] = "totally different prose"
+    stripped = json.dumps(
+        _strip_descriptions(prose), sort_keys=True, separators=(",", ":")
+    ).encode()
+    assert hashlib.sha256(stripped).hexdigest() == PRE_R4_SCHEMA_CONTRACT_SHA256
+
+    # Dropping an enum value DOES move it.
+    structural = json.loads(json.dumps(schema))
+    structural["properties"]["currentStage"]["enum"].remove("complete")
+    moved = json.dumps(
+        _strip_descriptions(structural), sort_keys=True, separators=(",", ":")
+    ).encode()
+    assert hashlib.sha256(moved).hexdigest() != PRE_R4_SCHEMA_CONTRACT_SHA256
+
+
+def test_complete_is_retained_in_the_enum_for_backward_compatibility():
+    """No writer produces `complete`, but pre-0.14 state files still carry it.
+
+    Item 020 accepted that `currentStage` no longer advances on completion (it is
+    "where the pipeline IS", per the schema's own definition, and only `state-enter`
+    writes it). Removing the now-unreachable value would invalidate state files
+    written before that change, so it stays — as a legacy value.
+    """
+    schema = json.loads(STATE_SCHEMA.read_text())
+    assert "complete" in schema["properties"]["currentStage"]["enum"]
+
+
+def test_the_currentstage_description_does_not_claim_complete_is_written():
+    """The prose must not imply a stage skill still writes `complete` (item 020).
+
+    The pre-item-020 text said "`complete` here means the whole pipeline is done",
+    which read as a value some stage produces. Nothing writes it, and a consumer
+    that believed the old sentence would test `currentStage == "complete"` and never
+    see a finished pipeline.
+    """
+    description = json.loads(STATE_SCHEMA.read_text())[
+        "properties"]["currentStage"]["description"]
+    assert "`complete` here means the whole pipeline is done" not in description
+    assert "LEGACY" in description, (
+        "the currentStage description must mark `complete` as a legacy, "
+        "never-written value"
+    )
+    assert "next_stage()" in description, (
+        "the description must point consumers at the derived completeness signal"
     )
 
 
