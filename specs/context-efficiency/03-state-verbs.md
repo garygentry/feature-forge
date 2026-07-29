@@ -774,8 +774,18 @@ def cmd_state_complete(
         # Commit-2 follow-up: record the real hash, leave everything else intact.
         entry["commitHash"] = commit_hash
         cascaded: list[str] = []
+    elif status == "in-progress":
+        # Failed-Commit-1 revert (L245). The frozen contract is "leave state as
+        # in-progress so the stage can be resumed" -- so record ONLY the status.
+        # Writing completedAt would stamp a completion on a stage that never
+        # completed; bumping version and cascading would mark downstream stages
+        # stale off a commit that did not land; resetting commitHash would
+        # discard a recoverable hash. All four are behavioral changes in a
+        # zero-behavioral-diff feature (owner decision, 2026-07-29).
+        entry["status"] = status
+        cascaded = []
     else:
-        entry["status"] = status                      # "complete" (default) | "in-progress"
+        entry["status"] = status                      # "complete"
         entry["completedAt"] = _now_iso()
         entry["version"] = version
         entry["basedOnVersions"] = based_on
@@ -828,6 +838,13 @@ R4 must keep working without any site hand-authoring JSON:
   --status in-progress`. Use this, **not** `state-enter` — `state-enter` also rewrites
   `startedAt` and `currentStage`, side effects that are wrong for a failed-commit
   revert and that nobody has sanctioned for this use (owner decision, 2026-07-29).
+  This branch records **only** `status` (plus the usual `updatedAt` refresh): it does
+  **not** write `completedAt`, does **not** bump `version`, does **not** reset
+  `commitHash`, and fires **no** staleness cascade (owner decision, 2026-07-29). All
+  four would contradict "leave state as `in-progress` so the stage can be resumed".
+  Note that schema validation **cannot** catch a regression here — `stageEntry`
+  declares `status` and `completedAt` as independent optional properties, so a state
+  carrying both validates cleanly. Assert it with a dedicated test instead.
 - **"Nothing to commit → mark the stage `complete`, leave `commitHash` at its existing
   value, skip Commit 2"** (L248). Pass `--preserve-commit-hash` so the completion
   branch does **not** execute `entry["commitHash"] = None`; without it, re-completing a
@@ -1393,11 +1410,24 @@ REQ-R4-04). Prose stays verbatim (§13); only the mechanic swaps.
 > by `state-complete --status` (§6.1), added for exactly this case (owner decision,
 > 2026-07-29) — the skill evaluates the condition and passes the resulting value.
 >
-> **Explicitly out of scope:** the navigator's `pipelineStatus` writes
-> (`skills/forge/SKILL.md` L215–228 — pause / resume / abandon). REQ-R4-04 enumerates
-> seven touch points and `pipelineStatus` is not among them, so those keep their existing
-> write path and R4 adds no verb for them (owner decision, 2026-07-29). Recorded here so
-> the omission reads as deliberate rather than as a missed site.
+> **Explicitly out of scope (three sites).** Recorded here so each omission reads as
+> deliberate rather than as a missed site, and so item 013's `grep` acceptance criterion
+> is satisfiable:
+>
+> 1. The navigator's `pipelineStatus` writes (`skills/forge/SKILL.md` **L205–207** —
+>    the three pause / resume / abandon bullets). REQ-R4-04 enumerates seven touch points
+>    and `pipelineStatus` is not among them, so these keep their existing write path and
+>    R4 adds no verb for them (owner decision, 2026-07-29). **The previously recorded
+>    L215–228 range was wrong** — that span is the Epic lifecycle block, which mutates the
+>    epic *manifest* via `epic-manifest.py set-status`, not `.pipeline-state.json` at all,
+>    and is out of scope for a different reason.
+> 2. `skills/forge-verify/SKILL.md` Step 6's `verifyEntry` write path — R4 adds no verb
+>    for verify entries, so it stays hand-authored.
+> 3. `skills/forge-0-epic/references/edit-mode.md`'s **Member State Example (creation
+>    C7)** — the member-subdir stub write. None of the seven verbs writes the `epic`
+>    back-pointer a brand-new member stub needs, so conversion is impossible without an
+>    eighth verb; forge-0-epic also has only 8 body lines of headroom. Deliberately
+>    excluded (owner decision, 2026-07-29).
 
 > **`shared-conventions.md` prose caveat.** These edits switch the *mechanic*
 > (the fenced "edit the JSON" / "write to `.pipeline-state.json`" step becomes a
