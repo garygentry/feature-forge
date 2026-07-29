@@ -22,7 +22,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = REPO_ROOT / "references" / "forge-config-schema.json"
 FORGE_INIT = REPO_ROOT / "scripts" / "forge-init.sh"
-CHECKLISTS = REPO_ROOT / "skills" / "forge-verify" / "references" / "verification-checklists.md"
+CHECKLISTS = (
+    REPO_ROOT / "skills" / "forge-verify" / "references" / "verification-checklists" / "impl.md"
+)
 VERIFY_SKILL = REPO_ROOT / "skills" / "forge-verify" / "SKILL.md"
 
 
@@ -63,7 +65,9 @@ def test_checklist_has_runnability_section_with_i21_i22() -> None:
 def test_runnability_checks_degrade_gracefully() -> None:
     """CHECK-I21/I22 must be advisory (not-applicable), never a hard fail, and completion-only."""
     text = CHECKLISTS.read_text(encoding="utf-8")
-    runnability = text.split("### Runnability", 1)[1].split("## Epic Mode Checklist", 1)[0]
+    # `### Runnability` is impl.md's last section, so slice to end-of-file (the old
+    # `## Epic Mode Checklist` terminator now lives in epic.md).
+    runnability = text.split("### Runnability", 1)[1]
     lowered = runnability.lower()
     assert "not-applicable" in lowered
     assert "never a hard fail" in lowered
@@ -75,6 +79,6 @@ def test_runnability_checks_degrade_gracefully() -> None:
 
 def test_verify_skill_impl_total_and_dimension_updated() -> None:
     text = VERIFY_SKILL.read_text(encoding="utf-8")
-    assert "impl: ~23 checks" in text
-    assert "impl ~23" in text
+    assert "impl: 23 checks" in text
+    assert "impl 23" in text
     assert "runnability" in text.lower()
