@@ -511,3 +511,91 @@ DIRECTIVES, not the deferred-decisions block). `check-spec-purity` PASS includin
 Rule 5 on all five new preludes. Adapters restaged **130** paths — both edited files
 are bundle-root shared references fanned out to ~11 skills × 6 targets, the widest
 blast radius of any canon edit in this feature so far. `bash scripts/validate.sh` PASS.
+
+## Item 012 — the five authoring skill bodies
+
+Converted per spec 03 §13.1/§11.2. Body lines before → after (frontmatter stripped):
+forge-0-epic **292 → 292** (cap 300), forge-1-prd 148 → 164, forge-2-tech 209 → 226,
+forge-3-specs 162 → 178, forge-4-backlog 159 → 168. All five well under 5000 words.
+
+### `forge-0-epic` was NOT deferred — its only state write is a ledger EXCLUSION
+
+The item's DEFER clause was **not** needed, because forge-0-epic has nothing convertible:
+
+- Its **only** `.pipeline-state.json` authoring is Step C7's member-stub write (L224–232),
+  which is the ledger's exclusion 3(i) in `03-state-verbs.md §11.2` — *"the Member State
+  Example (creation C7) member-subdir stub write"*. The ledger cites `references/edit-mode.md`
+  (where the *example* lives), but its rationale — *"none of the seven verbs writes the `epic`
+  back-pointer a brand-new member stub needs"* plus *"forge-0-epic also has only 8 body lines
+  of headroom"* — is plainly reasoning about the SKILL.md instruction too. **Item 013's
+  repo-wide census must name `skills/forge-0-epic/SKILL.md` Step C7 alongside the
+  `edit-mode.md` site**, or the census AC goes red on a site nobody could convert.
+- The conversion map's *"member `branch` writes → `state-branch`"* row has **no
+  counterpart in the body**: `grep -n branch` over forge-0-epic finds only the epic-scope
+  Branch Setup invocation (L95–97) and the creation/edit dispatch words. Members inherit the
+  epic branch, and each member's own `forge-1-prd` records it through shared-conventions'
+  Branch Setup — already converted in item 011. Nothing to do.
+- Net edit: **one in-place sentence extension at L234** (0 added lines) marking the C7 write
+  as a sanctioned exception to the Pipeline State Protocol. 292/300 preserved exactly.
+
+### `currentStage` advancement is dropped — the one REQ-BEHAV-02 flag
+
+Every converted completion step carried a `Set currentStage to <next stage>` bullet.
+`state-complete` does **not** write `currentStage`, and spec 03 §13.1's authoritative
+after-block omits it; no verb can set it to an arbitrary value (`state-enter` would also
+stamp the target stage `in-progress`). So it is gone from all four bodies, per spec.
+
+Impact is display-only and arguably a correction: `next_stage()` (L320–336) derives "what
+runs next" from `stages[].status` and its docstring says it is *"intentionally distinct
+from the stored `currentStage` field"*; `render-status` uses `currentStage` for display
+only (L495–498). The field is documented as *"where the pipeline IS"* (schema O1), which
+the old bullet already contradicted by setting it to where the pipeline is **going**.
+Flagged in the §9 record for owner review rather than silently adapted.
+
+### Fence placement — the item-011 list rule bites again, differently
+
+Item 011's finding (a fence cannot sit inside a numbered/bulleted list: an indented prelude
+breaks Rule 5 byte-identity, a column-0 fence mid-list restarts numbering) applies to all
+four Step 6/7 completion blocks. Resolution: items 1–4 name the verb inline
+(*"run `state-complete` (below)"*), and **one** column-0 fence sits between the last list
+item and the existing *"Close this stage with the Scripted Stage Exit"* paragraph, carrying
+the `state-complete` **and** `state-note` calls behind a single prelude — the sanctioned
+one-prelude-many-commands form. The two epic-backflow paragraphs and forge-3-specs'
+incremental-tracking paragraph are **not** lists, so each takes its own fence directly.
+
+Deliberately kept item 2 (*"Offer a note — don't force one …"*) **byte-identical**: spec
+§13.1 says it "is unchanged", and §13.2 lists it as a frozen statement. The `state-note`
+mechanic is named in the fence intro instead of edited into the frozen sentence.
+
+### Removing the schema citation UNSHIPS the schema from four bundles
+
+Dropping `references/pipeline-state-schema.json` from the four authoring bodies removes it
+from their adapter bundles — `git status` shows 24 deletions
+(`adapters/*/skills/forge-{1-prd,2-tech,3-specs,4-backlog}/references/pipeline-state-schema.json`).
+That is correct and is REQ-R4-01's whole point, but note the fan-out is **one level deep**:
+`shared-conventions.md` (bundled into every skill) still *mentions* the schema in its
+Pipeline State Protocol paragraph, and that mention does **not** re-ship the file. It is
+descriptive prose, not a read instruction, so nothing breaks — but item 016's citation
+guard scans skill **bodies** only, so a dangling citation inside a bundled reference would
+not be caught. Worth knowing before any future reference-file move.
+
+### §9 behavior-preservation
+
+`specs/context-efficiency/.verification/BEHAVIOR-PRESERVATION-R4-item-012-2026-07-29.md`.
+§9's named **reduced substitute for R4** (one authoring stage + a deliberately failed
+Commit 1), plus a section-granular static diff: **73 of 81 sections byte-identical**, 8
+changed, and all 29 removed lines are JSON-authoring mechanics. Every call site this item
+introduces was run end-to-end against a temp fixture; both resulting states (standalone and
+nested epic member) validate with zero findings via `tests/_state_schema.py`.
+
+The `--resumable` assertion the AC asks for needs the **entered-but-not-completed** fixture
+(not item 011's complete-at-v1 one): clone that state twice, run `--resumable` on A and a
+bare `--status in-progress` on B — A stays `{status, startedAt}` only, B gains `completedAt`
+**and** `version`. That is the pair that proves the two in-progress callers stay distinct.
+
+### Gates
+
+`python3 -m pytest tests` 638 passed / 2 skipped · `check-spec-purity` PASS (Rule 5 green on
+all 7 new preludes) · `build-adapters.py --check` exit 0 · `bash scripts/validate.sh` PASS.
+Adapters restaged 55 paths (5 bodies × 6 targets × {SKILL.md, .md, .mdc} minus non-emitting
+combinations, plus the 24 schema deletions).

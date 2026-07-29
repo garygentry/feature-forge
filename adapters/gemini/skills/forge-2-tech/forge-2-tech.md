@@ -93,7 +93,16 @@ Interview the user about technology decisions. Unlike the PRD interview, here yo
 
 **Parking lot:** If the user raises a concern that belongs to a different pipeline stage (e.g., backlog granularity, documentation format), acknowledge it and note it in the pipeline state's `notes` field: "Good point — I've noted that for the [specs/backlog/docs stage]. Let's continue with the tech spec."
 
-**Epic-level concern (backflow):** The parking lot above is for concerns about a *later stage of THIS feature*. If instead the design reveals the **epic decomposition itself** is wrong — a **sibling feature must be added**, a **frozen boundary between features must move**, a feature must **split**, or a **dependency edge is wrong** — that is an *epic-level* concern and does **not** go in `notes`. It only applies when this feature is an epic member (its `.pipeline-state.json` has an `epic` back-pointer); for a standalone feature there is no epic to reconcile. To record one, append an entry to the member state's `epicChangeRequests[]` array (same direct-edit path as `notes`; schema in `references/pipeline-state-schema.json`): `kind` (`add-feature`|`redep`|`move-boundary`|`split`), `target`, `rationale`, `raisedBy: "forge-2-tech"`, `raisedAt` (ISO-8601 UTC), `status: "open"`, and `blocksCurrent`. Set `blocksCurrent: true` when the change alters a contract (`exposes`/`consumes`) or dependency edge this feature relies on for its *next* stage — proceeding to specs would build on a soon-to-change decomposition (this is the point of no cheap return, so bias toward `true`); `false` for a peer/downstream change this feature does not consume. When a contract/dep edge is touched and the classification is ambiguous, confirm `blocksCurrent` with a single the host's question mechanism, defaulting to `true`. **Do not** edit `epic-manifest.json` here — recording is not applying; only `/feature-forge:forge-0-epic` edit mode mutates the epic. Then acknowledge without blocking and continue the tech spec.
+**Epic-level concern (backflow):** The parking lot above is for concerns about a *later stage of THIS feature*. If instead the design reveals the **epic decomposition itself** is wrong — a **sibling feature must be added**, a **frozen boundary between features must move**, a feature must **split**, or a **dependency edge is wrong** — that is an *epic-level* concern and does **not** go in `notes`. It only applies when this feature is an epic member (its `.pipeline-state.json` has an `epic` back-pointer); for a standalone feature there is no epic to reconcile. To record one, run `state-ecr` (fenced below) with `--kind` (`add-feature`|`redep`|`move-boundary`|`split`), `--target`, `--rationale`, `--raised-by forge-2-tech` and `--blocks-current` — it appends the entry to the member state's `epicChangeRequests[]` array, filling in `raisedAt` (ISO-8601 UTC) and `status: "open"` for you. Set `blocksCurrent: true` when the change alters a contract (`exposes`/`consumes`) or dependency edge this feature relies on for its *next* stage — proceeding to specs would build on a soon-to-change decomposition (this is the point of no cheap return, so bias toward `true`); `false` for a peer/downstream change this feature does not consume. When a contract/dep edge is touched and the classification is ambiguous, confirm `blocksCurrent` with a single the host's question mechanism, defaulting to `true`. **Do not** edit `epic-manifest.json` here — recording is not applying; only `/feature-forge:forge-0-epic` edit mode mutates the epic. Then acknowledge without blocking and continue the tech spec.
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-ecr \
+  --feature "{feature}" --epic "{epic}" --kind "<kind>" --target "<target>" \
+  --rationale "<why>" --raised-by forge-2-tech --blocks-current "<true|false>" \
+  --specs-dir "{specsDir}"
+```
 
 ### Key Decision Areas to Cover
 
@@ -185,16 +194,24 @@ Use the host's question mechanism to collect this feedback.
 
 Before writing state or running the stage exit, invoke the **Stage-Completion Re-check** block in `references/shared-conventions.md` with `{stage}` = `forge-2-tech` — a resumed mid-stage continuation must not overwrite a committed `tech-spec.md` or re-fire a finished exit.
 
-Write pipeline state conforming to `references/pipeline-state-schema.json`.
+Pipeline state is written by the `state-*` verbs — see the Pipeline State Protocol in `references/shared-conventions.md`.
 
-1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
-   - Set `currentStage` to `forge-3-specs`
-   - Record `artifacts`, `completedAt`, `version`
-   - Set `stages.forge-2-tech.basedOnVersions` to `{"forge-1-prd": <current forge-1-prd version>}`
-   - Check downstream stages (forge-3-specs, forge-4-backlog, forge-5-loop, forge-6-docs). If any have `basedOnVersions` referencing an older version of forge-2-tech, set their status to `stale`
+1. Record completion by running `state-complete` (below) with `--version`, one `--artifact` per file this stage produced, and `--based-on forge-1-prd=<current forge-1-prd version>`. It sets `status: "complete"`, `completedAt`, the version and `basedOnVersions`, and applies the downstream staleness cascade deterministically, so no downstream status is set by hand.
 2. **Offer a note — don't force one.** As a statement (not a blocking question), let the user know they can jot anything worth preserving across sessions and you'll store it in the `notes` field. If they volunteer something, store it; otherwise proceed.
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete tech-spec v{n}"` (marking `stages.forge-2-tech.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
 4. **Close with the Stage Exit Protocol** (single-sourced in `references/stage-exit-protocol.md`; do not improvise a "Next steps" list):
+
+The `state-complete` call for item 1 — and the `state-note` call only when the user volunteered a note in item 2 — with the portable plugin-root prelude:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-complete \
+  --feature "{feature}" --stage forge-2-tech --version {n} \
+  --based-on "forge-1-prd=<n>" --artifact tech-spec.md --specs-dir "{specsDir}"
+python3 "$R/scripts/forge-session.py" state-note \
+  --feature "{feature}" --note "<what the user volunteered>" --specs-dir "{specsDir}"
+```
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 

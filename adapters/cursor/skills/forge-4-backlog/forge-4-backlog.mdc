@@ -136,17 +136,26 @@ State that the backlog is ready and invite adjustments before committing — a s
 
 Before writing state or running the stage exit, invoke the **Stage-Completion Re-check** block in `references/shared-conventions.md` with `{stage}` = `forge-4-backlog` — a resumed mid-stage continuation must not overwrite a committed `backlog.json` or re-fire a finished exit.
 
-Write pipeline state conforming to `references/pipeline-state-schema.json`. Follow the Git Commit Protocol in `references/shared-conventions.md`.
+Pipeline state is written by the `state-*` verbs — see the Pipeline State Protocol in `references/shared-conventions.md`. Follow the Git Commit Protocol in `references/shared-conventions.md`.
 
-1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
-   - Record `artifacts` (path to backlog.json)
-   - Set `stages.forge-4-backlog.basedOnVersions` to `{"forge-1-prd": <current version>, "forge-2-tech": <current version>, "forge-3-specs": <current version>}`
-   - Set `currentStage` to `forge-5-loop`
-   - Check downstream stages (`forge-5-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-4-backlog`, set their status to `stale`.
+1. Record completion by running `state-complete` (below) with `--version`, `--artifact backlog.json`, and `--based-on forge-1-prd=<current version> --based-on forge-2-tech=<current version> --based-on forge-3-specs=<current version>`. It sets `status: "complete"`, `completedAt`, the version and `basedOnVersions`, and applies the downstream staleness cascade deterministically, so no downstream status is set by hand.
 2. **Offer a note — don't force one.** As a statement (not a blocking question), let the user know they can jot anything worth preserving across sessions and you'll store it in the `notes` field. If they volunteer something, store it; otherwise proceed.
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files, attempt commit (marking `stages.forge-4-backlog.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
 4. If verification was available but the user chose to skip it, record `stages.forge-verify-backlog.status` as `"skipped"` in pipeline state.
 5. **Close with the Stage Exit Protocol** (single-sourced in `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Lead with the item count ("Backlog complete with {N} items."), then:
+
+The `state-complete` call for item 1 — and the `state-note` call only when the user volunteered a note in item 2 — with the portable plugin-root prelude:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-complete \
+  --feature "{feature}" --stage forge-4-backlog --version {n} \
+  --based-on "forge-1-prd=<n>" --based-on "forge-2-tech=<n>" --based-on "forge-3-specs=<n>" \
+  --artifact backlog.json --specs-dir "{specsDir}"
+python3 "$R/scripts/forge-session.py" state-note \
+  --feature "{feature}" --note "<what the user volunteered>" --specs-dir "{specsDir}"
+```
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 

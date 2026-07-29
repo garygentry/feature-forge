@@ -376,8 +376,8 @@
         "bash scripts/validate.sh passes - this is the canonical gate that .rauf/RAUF.md instructs each iteration to run and that CI enforces on every PR. It is a strict superset of `python3 -m pytest tests` (it adds check-spec-purity, the adapters --check freshness gate, traceability, version-sync, the installer build+test and ruff). The pytest / check-spec-purity criteria above remain useful as fast inner-loop signals, but THIS is what gates RAUF_DONE",
         "A behavior-preservation run per spec 06 §9 is recorded under specs/context-efficiency/.verification/, naming the consumption-data-refresh comparison transcripts used, and confirms the seven §9 surfaces are identical: AskUserQuestion option sets/order/'(recommended)' labelling; Decision Support wording; Branch Setup/Reconciliation prompts; Stage-Entry Guard + Stage-Completion Re-check classification; the two-commit Git Commit Protocol including the L245/L248 failure branches; verify-gate routing + stage-exit directive handling; and the NEXT-STEPS block and its sentinel. A run with no recorded comparison basis does not satisfy SC-3. Scoped to this item's PR — §9 marks R4 mandatory and this item converts five authoring bodies carrying three of the seven surfaces. The §9 reduced substitute for R4 is acceptable and must be named explicitly if used: one authoring stage plus a deliberately failed Commit 1 confirming the --resumable revert path (status-only: assert completedAt is absent and version unchanged - a bare --status in-progress would write both)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-29T06:28:26.595Z",
       "dependsOn": [
         "008",
         "009",

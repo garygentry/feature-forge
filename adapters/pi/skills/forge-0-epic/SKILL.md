@@ -230,7 +230,7 @@ so the navigator and resolver can see them before any stage runs. For each `feat
      standalone feature. **No per-feature `status` beyond the stage entry** — the member state
      holds derived stage progress only.
 
-For an example member state, read `references/edit-mode.md` (Member State Example section).
+For an example member state, read `references/edit-mode.md` (Member State Example section). This stub is written by hand rather than by a `state-*` verb — deliberately: no verb writes the `epic` back-pointer a brand-new member needs, so this is a sanctioned exception to the Pipeline State Protocol.
 
 The member subtree holds the **same** artifact set a standalone feature holds; only
 `.pipeline-state.json` exists at creation. No PRD/specs are authored here. The epic subtree is
