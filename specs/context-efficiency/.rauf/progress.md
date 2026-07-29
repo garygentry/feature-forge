@@ -599,3 +599,138 @@ bare `--status in-progress` on B — A stays `{status, startedAt}` only, B gains
 all 7 new preludes) · `build-adapters.py --check` exit 0 · `bash scripts/validate.sh` PASS.
 Adapters restaged 55 paths (5 bodies × 6 targets × {SKILL.md, .md, .mdc} minus non-emitting
 combinations, plus the 24 schema deletions).
+
+## Item 013 — forge-5-loop, forge-6-docs, the navigator, forge-verify (R4's last conversions)
+
+Two real conversions (`forge-5-loop` ×2, `forge-6-docs` ×1, navigator ×1), one
+sanctioned relocation to pay for them, and two deliberate-exclusion notes. R4 is now
+complete.
+
+### `forge-verify` had NOTHING to convert — and that is the correct outcome
+
+The conversion map's row *"production-stage entry/exit stamps it authors (NOT the
+verifyEntry)"* has **no counterpart in the body**. `grep`ping `forge-verify/SKILL.md`
+for every state write finds exactly two, both `verifyEntry` class (Step 6's
+`stages.forge-verify-*` write and the epic-mode `.epic-state.json` write) — plus one
+**read** of a production entry at L228 (`verifiedStageVersion` = the covered stage's
+`version`), which is not a write. verify is not a production stage, so it never stamps
+one. The AC is satisfied vacuously; the edit made here is a **prose-only** exclusion note
+so a future census reads the omission as deliberate rather than missed. Same shape as
+item 012's finding that `forge-0-epic`'s only state write was already a ledger exclusion.
+
+### The line budget: 298 → 296, via the sanctioned verbatim relocation
+
+Each conversion costs **+2** lines (prose line + blank + fence-open + 2-line prelude +
+1-line command + fence-close = 7, replacing a 5-line hand-edit bullet list), so the two
+`forge-5-loop` conversions were **+4** against **2** spare lines. Per the item's owner
+decision, the lines came from **relocating** the 7-line Step-3c paragraph verbatim into
+`references/runner-contract.md`'s existing `## Inform-user output template (Step 3c)`
+section (−6), leaving a one-line citation so fan-out still ships the file. Net **−2**:
+**296 L / 4,478 w**, 4 lines of headroom left for items 006 and 015.
+
+Choosing *which* block to relocate matters: Step 3c was the only candidate that is
+(a) a self-contained paragraph, (b) already deferring its verbatim template to
+runner-contract.md, and (c) in a file the loop reads **unconditionally** — item 015 keeps
+"inform-user template" among runner-contract's six always-loaded sections, so the move is
+behavior-neutral. Relocating into a gated section would have been a behavior change.
+
+**Keeping each command on ONE line is what makes the +2 achievable.** The canon style
+wraps `state-complete` over 3–4 backslash-continued lines; here they are single long
+lines. Same bytes to the model, 2–3 fewer lines against the cap.
+
+### `currentStage` advancement dropped again — same flag as item 012
+
+`forge-5-loop` Step 5 item 2 (`→ "forge-6-docs"`) and `forge-6-docs` Step 5 item 1
+(`→ complete`) both vanish: `state-complete` does not write `currentStage` and spec 03
+§13.1's after-block omits it. Applied consistently with item 012 rather than resolved
+differently. The one visible effect is that a **finished** pipeline's dashboard now shows
+`currentStage: forge-6-docs` instead of `complete` (`build_rows`, forge-session.py L495–498,
+uses the stored field when truthy and only falls back to `"complete"` when it is absent).
+That matches the schema's own definition of the field — *"where the pipeline IS: the most
+recently started stage"* — so it reads as a correction, but it is a **user-visible display
+difference** and is flagged in the §9 record for owner review, not silently adapted.
+
+### Fence placement, third variant
+
+Item 011 found a fence cannot sit inside a list; item 012 put it **after** the numbered
+list. `forge-6-docs` Step 5 needed a third answer: its list ends with a long multi-bullet
+item 4, so an after-the-list fence would sit at the section boundary, far from the item 1
+it serves. The fence goes **before** the list instead, with item 1 saying "the
+`state-complete` call above". Pick whichever end of the list keeps the fence adjacent to
+the item that runs it.
+
+### Repo-wide R4 census — result
+
+Across `skills/` and `references/`, every remaining hit classifies into the ledger:
+- **schema citations (7):** `shared-conventions.md` L186 (anti-instruction, item 011),
+  `forge/SKILL.md` L53 + `forge-verify/SKILL.md` L222 (each precedes an excluded write,
+  retained by name), `forge-0-epic/SKILL.md` L225 + `edit-mode.md` L256 (C7 member stub),
+  `edit-mode.md` L35 + `stage-exit-protocol.md` L158 (document field shapes).
+- **hand-authoring instructions:** `forge-0-epic/SKILL.md` L224 (C7), `forge-verify`
+  Step 6, `forge-fix` Step 5, `forge-4-backlog` L144, `forge-5-loop` L266/L286,
+  `findings-template.md` L98–99 — all verifyEntry class; plus `edit-mode.md`'s
+  Apply/Dismiss flips and `stage-exit-protocol.md`'s `deferredDecisions` flip (mutate an
+  existing array item; no verb does that).
+- **naive-grep false positives:** `forge-guide/SKILL.md` L165 (anti-instruction),
+  `runner-contract.md` L176 + `process-overview.md` L92 + `forge-0-epic/SKILL.md` L72
+  (descriptive prose). The last two were **not** in the item's list — the AC's
+  "no site OTHER THAN THOSE NAMED **instructs**" wording is what makes them harmless.
+
+`findings-template.md` L98–99 is worth noting: it is a verifyEntry-class write in a
+**reference** file, not named in the item's "Known sites" list. Ledger clause (b) is
+categorical ("ANY instruction to write a `stages.forge-verify-*` entry"), so it is
+covered — but a census that matched only the enumerated paths would have flagged it.
+
+### Gotchas re-hit
+
+- The interactive `cp` alias prompts and hangs a non-tty call — `command cp -f`
+  (items 002/003/009/011 all logged this).
+- Removing `forge-6-docs`' schema citation **unships** the file from its bundle on all
+  six targets (6 deletions in `adapters/`) — that is the measurable R4 file-load delta.
+
+### R4 measured net instruction-token delta for item 013 (spec 06 §7.5 / §7.2 method)
+
+Baseline of record: `specs/context-efficiency/.reference/REMEASURE-0.13.0.md`
+(§R4 row: `pipeline-state-schema.json` = 191 L / 1,149 w → **−1.49k tok** word-based,
+−2.75k char/4; re-measured at 100% of the PRD claim). Method: `wc -l` / `wc -w` over the
+canonical surface, prose at ~1.3 tok/word.
+
+Recorded here rather than in the commit message because the iteration agent does not
+commit — the loop runner owns the commit and writes a subject-only message (same as
+items 002/004/012, whose figures also live in this file).
+
+**Static file-load delta.** Exactly one of the four bodies carried a
+`pipeline-state-schema.json` read-to-author-state citation: **`forge-6-docs`**. Removing
+it unships the schema from that skill's bundle on all six adapter targets (6 deletions in
+`adapters/`), so a `forge-6-docs` invocation that would have read it no longer does:
+**−1,494 tok**. The other two citations (`forge/SKILL.md` L53, `forge-verify` L222) are
+retained **by name** in the census carve-out because each precedes a ledger-excluded
+write, and `forge-5-loop` never cited the schema at all.
+
+**Costs, correctly attributed** (all always-paid body growth):
+
+| Surface | Δ words | Δ tok | Net on its targeted invocation |
+|---|---|---|---|
+| `forge-6-docs` body | +101 | +131 | **−1,363** (−1,494 schema, +131 body) |
+| `forge-5-loop` body +63 w / `runner-contract.md` +79 w | +142 | +185 | **+185** |
+| `forge/SKILL.md` (navigator) | +116 | +151 | **+151** |
+| `forge-verify/SKILL.md` (exclusion note only) | +83 | +108 | **+108** |
+
+**Per §7.4, no per-stage token saving is asserted.** The 188-session corpus shows
+`pipeline-state-schema.json` was read **2× total**, not per stage, so the −1,494 figure is
+the static delta on the invocations where the read *does* occur — 13 of 188 transcripts
+mention the file at all. Three of this item's four surfaces are net **positive** in
+tokens; their justification is REQ-R4-02's **drift removal and deterministic resolution**,
+which holds at any read frequency:
+
+- the staleness cascade, the `updatedAt` refresh, `commitHash: null` and the version bump
+  are now computed by `state-complete` instead of transcribed by the model;
+- `forge-5-loop`'s conditional completion is a `--status` argument the skill *evaluates*,
+  not a JSON shape it *authors*;
+- every write is atomic and schema-conformant **by construction** (proven in the §9 record:
+  zero findings from `tests/_state_schema.py` on every state these call sites produce).
+
+SC-1's bar — "a measured net reduction, correctly attributed" — is met by R4 **as a unit**
+(items 011+012+013 together remove the citation from five bodies: forge-1-prd,
+forge-2-tech, forge-3-specs, forge-4-backlog, forge-6-docs); this item's own contribution
+is the −1,363 on `forge-6-docs` plus the drift-removal benefit on the other three.

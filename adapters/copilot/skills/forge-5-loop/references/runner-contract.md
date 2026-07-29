@@ -299,6 +299,16 @@ high and the noise low:
 
 ## Inform-user output template (Step 3c)
 
+Step 3c's instruction, relocated verbatim from the SKILL body:
+
+> Tell the user the run has started and that **this session is now actively
+> supervising it** — they don't need to babysit a terminal — and surface the rendered
+> `loopRunner` monitoring commands (`statusCommand` / `followCommand` / `logCommand` /
+> `listCommand`) and the state-file locations under
+> `{backlogDir}/{loopRunner.stateDir}/` so they can watch directly if they like. The
+> verbatim "Loop started…" inform-user output template is in
+> `references/runner-contract.md`.
+
 This is the verbatim "Loop started…" output the session shows the user after
 launch. Commands are the rendered `loopRunner` monitoring commands.
 

@@ -185,11 +185,13 @@ For the full loop-runner contract — event-stream vs. log-fallback launch, the 
 
 ### 3a. Update Pipeline State
 
-Before launching, update `{resolvedFeatureDir}/.pipeline-state.json`:
-- Set `stages.forge-5-loop.status` to `in-progress`
-- Set `stages.forge-5-loop.startedAt` to current ISO timestamp
-- Set `currentStage` to `forge-5-loop`
-- Update `updatedAt`
+Before launching, record the pre-launch marker by running `state-enter` — one atomic write that sets `stages.forge-5-loop.status` to `in-progress`, `stages.forge-5-loop.startedAt` to the current ISO timestamp, `currentStage` to `forge-5-loop`, and refreshes `updatedAt`:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-enter --feature "{feature}" --stage forge-5-loop --specs-dir "{specsDir}"
+```
 
 Then commit this state write before launching (mandatory). The runner refuses to run with uncommitted changes (*"…pass --force"*), and this marker is itself one — so an otherwise-clean repo fails its first launch unless committed. Commit it via the shared-conventions **Git Commit Protocol** (epic members: stage `{specsDir}/{epic}/`): `{commitPrefix}({feature}): forge-5-loop in-progress` — a launch precondition, required regardless of `gitCommitAfterStage`. Unrelated leftover changes still trip the refusal; surface it, never auto-pass `--force`. See `references/runner-contract.md`.
 
@@ -199,13 +201,7 @@ Launch the loop **backgrounded** (the host's background-execution mechanism) so 
 
 ### 3c. Inform User
 
-Tell the user the run has started and that **this session is now actively
-supervising it** — they don't need to babysit a terminal — and surface the rendered
-`loopRunner` monitoring commands (`statusCommand` / `followCommand` / `logCommand` /
-`listCommand`) and the state-file locations under
-`{backlogDir}/{loopRunner.stateDir}/` so they can watch directly if they like. The
-verbatim "Loop started…" inform-user output template is in
-`references/runner-contract.md`.
+Follow the **Inform-user output template (Step 3c)** section of `references/runner-contract.md` — it carries this step's instruction and the verbatim "Loop started…" template.
 
 ### 3d. Arm a Monitor on the event stream, and react to events
 
@@ -255,11 +251,13 @@ output templates — **all-done**, **needs-human**, **blocked**, **deferred**, a
 
 ## Step 5: Update Pipeline State
 
-Update `{resolvedFeatureDir}/.pipeline-state.json`:
+Record completion by running `state-complete` (below). Evaluate "all backlog items are `done`" yourself and pass the result as `--status`: `complete` if every item is `done`, else `in-progress`. The verb records `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`.
 
-1. Set `stages.forge-5-loop`: `status` = `"complete"` if all backlog items are `done`, else `"in-progress"`; `completedAt` = current ISO timestamp (only if complete); `basedOnVersions` = `{"forge-4-backlog": <current version from pipeline state>}`; `artifacts` = `["{backlogDir}/{loopRunner.stateDir}/state.json"]`.
-2. If all items complete: set `currentStage` to `"forge-6-docs"`
-3. Update `updatedAt`
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-complete --feature "{feature}" --stage forge-5-loop --version {n} --status "<complete|in-progress>" --based-on "forge-4-backlog=<current version from pipeline state>" --artifact "{backlogDir}/{loopRunner.stateDir}/state.json" --specs-dir "{specsDir}"
+```
 
 **No git commit is needed** — the loop runner commits implementation code atomically per completed item during the run. (Step 6's commit, epic members only, is of pipeline state / manifest — a distinct artifact.)
 

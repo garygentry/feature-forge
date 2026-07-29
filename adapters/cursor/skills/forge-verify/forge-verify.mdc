@@ -221,6 +221,14 @@ Do NOT embed this question in your text output.
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
+> **Deliberate R4 exclusion.** This step writes a **verify entry**
+> (`stages.forge-verify-*`), and no `state-*` verb writes verify entries — the verbs
+> cover production stage entries and the two array types only. So this one step stays
+> hand-authored, and the schema citation above is retained to serve it. This skill
+> authors no production stage entry of its own; where it needs one, the owning stage
+> skill records it via a verb per the Pipeline State Protocol in
+> `references/shared-conventions.md`.
+
 Update `{resolvedFeatureDir}/.pipeline-state.json`:
 - Set the relevant verify entry status to `findings-reported` (or `passed` when there
   are zero findings)

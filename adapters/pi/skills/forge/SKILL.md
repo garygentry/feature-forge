@@ -181,7 +181,13 @@ All of this is reconstructed **purely from disk** — the manifest plus each mem
 
 ### 4. Notes Management
 
-If the user says something like "note: switching to jose for JWT" or "remember: we decided X", update the `notes` field in `.pipeline-state.json`. This helps preserve context across session clears.
+If the user says something like "note: switching to jose for JWT" or "remember: we decided X", update the `notes` field by running `state-note` (below). This helps preserve context across session clears.
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-note --feature "{feature}" --note "<what the user said>" --specs-dir "{specsDir}"
+```
 
 ### 5. Available Commands Reference
 
@@ -199,6 +205,8 @@ Commands:
 ```
 
 ### 6. Pipeline Lifecycle Commands
+
+> **Deliberate R4 exclusion.** The `pipelineStatus` writes below (`pause` / `resume` / `abandon`, and the member-pause under **Epic lifecycle**) stay hand-authored on purpose: the `state-*` verbs cover the seven stage and array touch points, and none of them writes `pipelineStatus`. These are the sanctioned exception to the Pipeline State Protocol in `references/shared-conventions.md` — everywhere else, state is written by a verb, never by hand.
 
 Support these sub-commands for pipeline lifecycle management:
 - `/skill:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
