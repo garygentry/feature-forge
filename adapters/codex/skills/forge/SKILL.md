@@ -181,7 +181,7 @@ All of this is reconstructed **purely from disk** — the manifest plus each mem
 
 ### 4. Notes Management
 
-If the user says something like "note: switching to jose for JWT" or "remember: we decided X", update the `notes` field by running `state-note` (below). This helps preserve context across session clears.
+If the user says something like "note: switching to jose for JWT" or "remember: we decided X", update the `notes` field by running `state-note` (below). This helps preserve context across session clears. Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`.
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"

@@ -187,7 +187,7 @@ For the full loop-runner contract — event-stream vs. log-fallback launch, the 
 
 ### 3a. Update Pipeline State
 
-Before launching, record the pre-launch marker by running `state-enter` — one atomic write that sets `stages.forge-5-loop.status` to `in-progress`, `stages.forge-5-loop.startedAt` to the current ISO timestamp, `currentStage` to `forge-5-loop`, and refreshes `updatedAt`:
+Before launching, record the pre-launch marker by running `state-enter` — one atomic write that sets `stages.forge-5-loop.status` to `in-progress`, `stages.forge-5-loop.startedAt` to the current ISO timestamp, `currentStage` to `forge-5-loop`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -253,7 +253,7 @@ output templates — **all-done**, **needs-human**, **blocked**, **deferred**, a
 
 ## Step 5: Update Pipeline State
 
-Record completion by running `state-complete` (below). Evaluate "all backlog items are `done`" yourself and pass the result as `--status`: `complete` if every item is `done`, else `in-progress`. The verb records `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`.
+Record completion by running `state-complete` (below). Evaluate "all backlog items are `done`" yourself and pass the result as `--status`: `complete` if every item is `done`, else `in-progress`. The verb records `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"

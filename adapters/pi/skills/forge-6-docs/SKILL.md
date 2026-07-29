@@ -169,7 +169,7 @@ Present the docs as text. Then use `AskUserQuestion` to collect feedback — do 
 
 ## Step 5: Update Pipeline State and Commit
 
-Pipeline state is written by the `state-*` verbs — see the Pipeline State Protocol in `references/shared-conventions.md`. The `state-complete` call for item 1, with the portable plugin-root prelude:
+Pipeline state is written by the `state-*` verbs — see the Pipeline State Protocol in `references/shared-conventions.md`. The `state-complete` call for item 1, with the portable plugin-root prelude. Add `--epic "{epic}"` when this feature is an epic member — required, per that same protocol:
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"

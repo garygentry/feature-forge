@@ -1095,3 +1095,77 @@ from a `/tmp` backup and confirmed byte-restored via an empty `git diff --stat`.
 from the two new modules) · `ruff check scripts/ eval/` PASS · `check-spec-purity` PASS ·
 `build-adapters.py --check` exit 0 (untouched — tests-only item) ·
 `bash scripts/validate.sh` **PASS**.
+
+## Item 018 — `state-*` verbs wrote the wrong feature's state for epic members
+
+Two halves, both landed: a fail-closed write resolver in `scripts/forge-session.py`
+and an unambiguous `--epic` rule threaded through every `state-*` call site in canon.
+
+### The defect, reproduced and fixed
+
+With `specs/api/.pipeline-state.json` (standalone) **and**
+`specs/checkout/api/.pipeline-state.json` (epic member) both present:
+
+| | before | after |
+|---|---|---|
+| `state-enter --feature api` (no `--epic`) | exit **0**, printed `entered forge-2-tech (in-progress) for api`, mutated the **standalone** file, left the member untouched | exit **2**, `Error: ambiguous feature 'api': 2 directories carry a state file (…) — pass --epic <epic> …`, **neither** file touched |
+| same + `--epic checkout` | n/a | exit 0, member written, standalone byte-identical |
+| two epics, same member name | exit 2 for the **wrong reason** (`no feature directory at …`, a nonexistent flat path) | exit 2 naming both candidates |
+
+### `_resolve_feature_dir_for_write` is a NEW function, not a flag on the old one
+
+Deliberately not a `strict=` parameter: `_resolve_feature_dir` (L1504) is the
+**reader's** resolver and its tolerance is correct for `stage-exit`, which is
+read-only and downgrades an unresolvable dir to `{}`. Widening it would have changed
+that path too. The two now differ by design, and
+`test_the_writer_is_not_more_permissive_than_the_canonical_resolver` pins the
+asymmetry — the same shape as item 007's `_read_state` vs `_load_state_for_write`
+guard, and for the same reason: a future "simplification" that merges them
+reintroduces the silent cross-feature write.
+
+The rule mirrors `epic-manifest.py resolve` step 4 (`shared-conventions.md`
+"Resolution algorithm"): **more than one match anywhere → ambiguous, hard stop.**
+A writer must not be more permissive than the resolver that produced
+`{resolvedFeatureDir}` — that was the argument that settled the design.
+
+Preserved unchanged (AC 5): a lone flat feature, a lone nested member, and the
+**zero-candidate first-write** case (`state-branch` firing before the entry stamp
+against a bare `specs/{feature}/`, item 011's finding) all still resolve from a bare
+name. Only `len(candidates) > 1` raises.
+
+### Canon: one categorical rule + 14 per-fence pointers
+
+`--epic` cannot be hard-coded into the fences the way `state-ecr` does it: `state-ecr`
+is *only* reachable on the epic-backflow path, so `{epic}` is always bound there,
+while every other `state-*` fence serves standalone features too — a literal
+`--epic "{epic}"` would substitute to `--epic ""` for a standalone. A bracketed
+`[--epic …]` form would break the fence as runnable bash. So the AC's sanctioned
+prose route was taken:
+
+- **`shared-conventions.md` "Pipeline State Protocol"** gains the categorical rule
+  ("required whenever the feature is an epic member … append it to every `state-*`
+  call in this file and in every skill body"). That section is the always-loaded
+  surface ~10 skills already read, so it governs every fence at once.
+- Each of the 14 fence intros gains a one-clause pointer to it. **All 9 edited files
+  are line-neutral or nearly so** (`git diff --numstat`: every `skills/*` file is
+  n-added/n-removed) — clauses were appended to existing sentences, never as new
+  lines. `forge-5-loop` stayed at its measured 298 body lines / 4,600 words, so the
+  R6 headroom is intact.
+
+### Deliberate non-edit: the spec still says `_resolve_feature_dir`
+
+`specs/context-efficiency/03-state-verbs.md` §3.1 (table row) and §3.4 (the
+`_load_state_for_write` code block, L229/L252) plus `00-core-definitions.md` §3.3
+(L154/L168) all prescribe reusing `_resolve_feature_dir` on the write path — i.e.
+**the spec propagated this defect**, exactly as it did for item 019's cascade. I
+edited the §3.1 row and then **reverted it**: `specs/CLAUDE.md` says not to fix
+spec↔code divergence unless explicitly asked, and item 018's ACs (unlike 019's,
+which name the spec fix outright) are silent on the specs. Flagged here **for owner
+review** rather than silently adapted — if item 019's spec-sync precedent is meant
+to apply here too, four passages need the same repoint.
+
+### Gates
+
+`python3 -m pytest tests` **695 passed / 2 skipped** (up 5 from item 016's 690) ·
+`check-spec-purity` PASS · `build-adapters.py --check` exit 0 (regenerated: the two
+shared references fan out widely again) · `bash scripts/validate.sh` **PASS**.

@@ -287,6 +287,145 @@ def test_load_state_for_write_resolves_a_nested_epic_member(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# Fail-closed write resolution (the flat-vs-nested collision)
+# --------------------------------------------------------------------------- #
+
+#: A minimal schema-valid state, used to give two same-named dirs a state file.
+_SEED_STATE = {
+    "feature": "api",
+    "createdAt": "2020-01-01T00:00:00Z",
+    "updatedAt": "2020-01-01T00:00:00Z",
+    "currentStage": "forge-1-prd",
+    "pipelineStatus": "active",
+    "stages": {},
+}
+
+
+def _collision_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Seed a standalone `specs/api` AND an epic member `specs/checkout/api`.
+
+    Both carry a state file, so a bare `--feature api` matches two candidates.
+    Returns `(specs_dir, flat_state_path, nested_state_path)`.
+    """
+    specs = tmp_path / "specs"
+    flat = specs / "api"
+    nested = specs / "checkout" / "api"
+    for directory in (flat, nested):
+        directory.mkdir(parents=True)
+        (directory / FS.PIPELINE_STATE_FILENAME).write_text(
+            json.dumps(_SEED_STATE), encoding="utf-8"
+        )
+    return specs, flat / FS.PIPELINE_STATE_FILENAME, nested / FS.PIPELINE_STATE_FILENAME
+
+
+#: The two verbs the regression pins: the entry stamp and the completion write.
+_COLLISION_VERBS = {
+    "state-enter": ("--stage", "forge-2-tech"),
+    "state-complete": ("--stage", "forge-2-tech", "--version", "1"),
+}
+
+
+def test_a_flat_vs_nested_collision_exits_2_and_mutates_neither_file(tmp_path):
+    """A bare `--feature` matching two state-carrying dirs must refuse to guess.
+
+    The reader's `_resolve_feature_dir` returns the FLAT dir whenever it holds a
+    state file, so before the fix `state-enter --feature api` silently mutated a
+    standalone `specs/api` while the epic member `specs/checkout/api` it was
+    meant for went untouched — cross-feature corruption at exit 0.
+    """
+    for verb, extra in _COLLISION_VERBS.items():
+        specs, flat_state, nested_state = _collision_fixture(tmp_path / verb)
+        before = (flat_state.read_bytes(), nested_state.read_bytes())
+
+        result = _run(verb, "--feature", "api", *extra, "--specs-dir", str(specs))
+
+        assert result.returncode == 2, f"{verb}: expected exit 2, got {result.returncode}"
+        assert result.stderr.startswith("Error:"), f"{verb}: {result.stderr!r}"
+        assert "ambiguous feature 'api'" in result.stderr, f"{verb}: {result.stderr!r}"
+        assert "--epic" in result.stderr, f"{verb}: {result.stderr!r}"
+        assert str(flat_state.parent) in result.stderr, f"{verb}: {result.stderr!r}"
+        assert str(nested_state.parent) in result.stderr, f"{verb}: {result.stderr!r}"
+        assert (flat_state.read_bytes(), nested_state.read_bytes()) == before, (
+            f"{verb} mutated a state file while refusing"
+        )
+
+
+def test_epic_disambiguates_the_collision_and_leaves_the_standalone_intact(tmp_path):
+    """With `--epic`, the member is written and the same-named standalone is not."""
+    for verb, extra in _COLLISION_VERBS.items():
+        specs, flat_state, nested_state = _collision_fixture(tmp_path / verb)
+        flat_before = flat_state.read_bytes()
+
+        result = _run(
+            verb, "--feature", "api", *extra, "--epic", "checkout", "--specs-dir", str(specs)
+        )
+
+        assert result.returncode == 0, f"{verb}: {result.stderr}"
+        assert flat_state.read_bytes() == flat_before, f"{verb} touched the standalone feature"
+        written = json.loads(nested_state.read_text(encoding="utf-8"))
+        assert validate_state(written) == [], f"{verb}: {validate_state(written)}"
+        assert written["updatedAt"] != "2020-01-01T00:00:00Z", f"{verb} did not write the member"
+        assert "forge-2-tech" in written["stages"], verb
+
+
+def test_an_unambiguous_lone_flat_or_lone_nested_feature_still_resolves(tmp_path):
+    """The fix must not cost the bare-name convenience where there is no collision."""
+    lone_flat = tmp_path / "flat" / "specs" / "api"
+    lone_flat.mkdir(parents=True)
+    (lone_flat / FS.PIPELINE_STATE_FILENAME).write_text(json.dumps(_SEED_STATE), "utf-8")
+    assert (
+        FS._resolve_feature_dir_for_write(tmp_path / "flat" / "specs", "api", None) == lone_flat
+    )
+
+    lone_nested = tmp_path / "nested" / "specs" / "checkout" / "api"
+    lone_nested.mkdir(parents=True)
+    (lone_nested / FS.PIPELINE_STATE_FILENAME).write_text(json.dumps(_SEED_STATE), "utf-8")
+    assert (
+        FS._resolve_feature_dir_for_write(tmp_path / "nested" / "specs", "api", None)
+        == lone_nested
+    )
+
+    # First write: no state file anywhere yet -> the flat path, so state-branch
+    # (which fires before the entry stamp) still bootstraps a standalone feature.
+    fresh = tmp_path / "fresh" / "specs"
+    (fresh / "api").mkdir(parents=True)
+    assert FS._resolve_feature_dir_for_write(fresh, "api", None) == fresh / "api"
+
+
+def test_two_epics_with_a_same_named_member_are_ambiguous_not_a_flat_fallback(tmp_path):
+    """Multi-nested previously fell back to a nonexistent flat path (exit 2, wrong reason)."""
+    specs = tmp_path / "specs"
+    for epic in ("checkout", "billing"):
+        member = specs / epic / "api"
+        member.mkdir(parents=True)
+        (member / FS.PIPELINE_STATE_FILENAME).write_text(json.dumps(_SEED_STATE), "utf-8")
+
+    result = _run(
+        "state-enter", "--feature", "api", "--stage", "forge-2-tech", "--specs-dir", str(specs)
+    )
+    assert result.returncode == 2
+    assert "ambiguous feature 'api'" in result.stderr, result.stderr
+    assert "no feature directory at" not in result.stderr, result.stderr
+
+
+def test_the_writer_is_not_more_permissive_than_the_canonical_resolver(tmp_path):
+    """`_resolve_feature_dir` stays tolerant for the READ-ONLY stage-exit path.
+
+    Its multi-match fallback is safe for a reader and unsafe for a writer, so the
+    two resolvers must stay distinct — a "simplification" that points the write
+    path back at the reader reintroduces the silent cross-feature write.
+    """
+    specs, _, _ = _collision_fixture(tmp_path)
+    assert FS._resolve_feature_dir(specs, "api", None) == specs / "api"
+    try:
+        FS._resolve_feature_dir_for_write(specs, "api", None)
+    except FS.UsageError as exc:
+        assert "ambiguous" in str(exc)
+    else:  # pragma: no cover - the guard exists to make this unreachable
+        raise AssertionError("the write resolver silently preferred the flat dir")
+
+
+# --------------------------------------------------------------------------- #
 # _commit_state / _stage_entry
 # --------------------------------------------------------------------------- #
 

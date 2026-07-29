@@ -184,7 +184,8 @@ of the stage that owns the context, and the answer has nowhere durable to live.
 Instead, when you notice a decision that belongs downstream, **record it structurally** as
 a `deferredDecisions[]` entry on this feature's `.pipeline-state.json` by running
 `state-decision` (`--rationale` and `--target-stage` are optional; the verb stamps
-`raisedAt` and `status: "open"` for you):
+`raisedAt` and `status: "open"` for you). Add `--epic "{epic}"` when this feature is an
+epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"

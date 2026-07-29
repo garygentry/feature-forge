@@ -572,6 +572,62 @@
         "specs/context-efficiency/01-architecture-layout.md",
         "specs/context-efficiency/00-core-definitions.md"
       ]
+    },
+    {
+      "id": "018",
+      "type": "bug",
+      "priority": 1,
+      "title": "Fix: state-* verbs silently write the wrong feature's state for epic members (missing --epic + ambiguous resolution)",
+      "description": "Every `state-*` fence in `references/shared-conventions.md` (Entry Stamp L306, incremental artifacts L319, Branch Setup L224, Branch Reconciliation L250, both Git Commit Protocol calls L277/L281), in `references/stage-exit-protocol.md` (state-decision L192), and in the authoring bodies (forge-1-prd L148/L151, forge-2-tech L210/L213, forge-3-specs L66/L160/L164, forge-4-backlog L158/L162, forge-6-docs L178, forge-5-loop L195/L261, forge/SKILL.md L190) omits `--epic`. Only `state-ecr` passes `--epic \"{epic}\"`, which proves the placeholder IS available at these call sites.\n\nWith `--epic` absent, `_load_state_for_write` falls through to `_resolve_feature_dir` (forge-session.py L1504-1522), which is a BEST-EFFORT reader-oriented resolver: it returns the flat `{specsDir}/{feature}` whenever that dir has a state file, and only falls back to a nested glob otherwise; a multi-match falls back to the flat literal. That tolerance was written for `stage-exit`, which is READ-ONLY. R4 makes it the resolution path for the script's only WRITERS.\n\nPROVEN: with `specs/api/.pipeline-state.json` (standalone) and `specs/checkout/api/.pipeline-state.json` (epic member) both present, `python3 scripts/forge-session.py state-enter --feature api --stage forge-2-tech --specs-dir ./specs` printed `entered forge-2-tech (in-progress) for api`, exited 0, and mutated `specs/api/.pipeline-state.json` while `specs/checkout/api/.pipeline-state.json` was untouched. That is silent cross-feature state corruption at exit 0. The two-epics-same-member-name variant instead falls back to a nonexistent flat path and exits 2, blocking every state write for that member.\n\nNote this contradicts the canonical resolver the skills already use: `epic-manifest.py resolve` (shared-conventions' Feature Directory Resolution block) REJECTS an ambiguous name with a structured `ambiguous:` finding and instructs the skill to STOP. A writer must not be more permissive than the resolver that produced `{resolvedFeatureDir}`.\n\nFix both halves: (a) thread `--epic \"{epic}\"` through every `state-*` fence for the epic-member path, matching the `state-ecr` precedent, and say explicitly that it is required for a nested member; (b) make `_load_state_for_write` fail closed — when `--epic` is absent and more than one candidate (flat + nested, or multiple nested) carries a state file, raise `UsageError` naming the candidates and directing the caller to pass `--epic`, rather than silently preferring the flat dir.",
+      "acceptanceCriteria": [
+        "Every state-* fenced call in references/shared-conventions.md, references/stage-exit-protocol.md and the skill bodies passes --epic for the nested epic-member path (or the surrounding prose states unambiguously that --epic must be supplied when the feature is an epic member)",
+        "With both specs/api/.pipeline-state.json and specs/checkout/api/.pipeline-state.json present, running any state-* verb with --feature api and no --epic exits 2 with an 'Error:' line naming the ambiguity, and mutates NEITHER file",
+        "With --epic checkout supplied in that same fixture, the verb writes specs/checkout/api/.pipeline-state.json and leaves specs/api/.pipeline-state.json byte-identical",
+        "A regression test in tests/test_state_verbs.py covers the flat-vs-nested collision for at least state-enter and state-complete, asserting both the exit code and the byte-identity of the non-target file",
+        "Unambiguous resolution is unchanged: a lone flat feature and a lone nested member each still resolve without --epic, and the existing test suite stays green",
+        "python3 -m pytest tests passes and bash scripts/validate.sh passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-07-29T07:28:20.685Z",
+      "source": "review",
+      "reviewBatch": "2026-07-29T07:20:08.081Z"
+    },
+    {
+      "id": "019",
+      "type": "bug",
+      "priority": 2,
+      "title": "Fix: staleness cascade omits forge-2-tech, so a PRD revision no longer marks the tech spec stale",
+      "description": "`_CASCADE_TARGETS` in scripts/forge-session.py is `(\"forge-3-specs\", \"forge-4-backlog\", \"forge-5-loop\", \"forge-6-docs\")` — forge-2-tech is excluded, and tests/test_state_verbs.py::test_cascade_targets_is_its_own_map_not_a_production_stages_slice pins that exclusion.\n\nThe pre-feature canon this refactor was supposed to preserve says otherwise. At the baseline commit 9a29e846ed510c3b245876a9bf4cc73b8cb60951, skills/forge-1-prd/SKILL.md L134 reads: 'Check downstream stages (`forge-2-tech`, `forge-3-specs`, `forge-4-backlog`, `forge-5-loop`, `forge-6-docs`). If any have `basedOnVersions` referencing an older version of `forge-1-prd`, set their status to `stale`.' forge-2-tech is named FIRST. Item 012 deleted that bullet on the stated grounds that state-complete's cascade subsumes it — but the cascade does not cover the one target the bullet led with.\n\nPROVEN: fixture with forge-1-prd complete v1, forge-2-tech complete v1 basedOnVersions {forge-1-prd: 1}, forge-3-specs complete v1 basedOnVersions {forge-1-prd: 1}. Running `state-complete --feature demo --stage forge-1-prd --version 2` printed 'marked stale: forge-3-specs' and left forge-2-tech at status 'complete' despite its recorded basedOnVersions.forge-1-prd being 1.\n\nImpact: re-authoring a PRD is the single most common revision path, and its most direct dependent — the tech spec — no longer goes stale. The navigator dashboard shows it as current, and the Stage-Entry Guard's re-author warning loses the ', marked stale' qualifier. Read-time Staleness Detection still warns when forge-2-tech is next entered, so this is a degraded signal rather than a total loss, but it is a behavioral regression in a feature whose stated bar is REQ-BEHAV-02 zero behavioral diff.\n\nNote the spec propagated the defect: specs/context-efficiency/03-state-verbs.md L680-685 defines the same four-tuple. Fix the spec and the code together, or record an explicit owner decision to narrow the cascade and update the pinning test's rationale to cite that decision rather than 'keying off PRODUCTION_STAGES ordering would put forge-2-tech in scope'.",
+      "acceptanceCriteria": [
+        "_CASCADE_TARGETS includes forge-2-tech, OR an explicit owner decision to exclude it is recorded in specs/context-efficiency/03-state-verbs.md and referenced by the pinning test's docstring",
+        "With forge-2-tech complete at basedOnVersions {forge-1-prd: 1}, running state-complete --stage forge-1-prd --version 2 marks forge-2-tech stale and reports it in _cascadedStale (or the recorded owner decision explains why it must not)",
+        "forge-2-tech is still never self-staled when it is itself the completing stage, and no upstream stage (forge-1-prd) is ever marked stale by a downstream completion",
+        "specs/context-efficiency/03-state-verbs.md §6.3's _CASCADE_TARGETS block matches the implementation",
+        "tests/test_state_verbs.py::test_cascade_targets_is_its_own_map_not_a_production_stages_slice is updated to match the resolved behavior and passes",
+        "python3 -m pytest tests passes and bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "source": "review",
+      "reviewBatch": "2026-07-29T07:20:08.081Z"
+    },
+    {
+      "id": "020",
+      "type": "chore",
+      "priority": 3,
+      "title": "Review: currentStage is no longer advanced by any writer, making the schema's 'complete' value unreachable",
+      "description": "Items 012 and 013 removed the 'Set currentStage to <next stage>' bullet from every completion step (forge-1-prd, forge-2-tech, forge-3-specs, forge-4-backlog, forge-5-loop) and the 'currentStage -> complete' write from forge-6-docs Step 5, because state-complete does not write currentStage and spec 03 §13.1's after-block omits it. The only remaining writer is state-enter.\n\nConsequences, verified: (a) after a stage completes, currentStage stays on the stage that just finished until the NEXT stage is entered — pre-R4 it pointed at the next stage; (b) a fully finished pipeline now reports currentStage 'forge-6-docs' instead of 'complete' (rank-features --json on a fixture with all six stages complete returned currentStage 'forge-6-docs', nextStage null); (c) the schema enum value 'complete', documented as 'the whole pipeline is done', is now written by nothing.\n\nImpact is display-only as far as I can trace: build_rows (forge-session.py L495-498) only falls back to 'complete' when currentStage is FALSY, so it does not compensate; epic-manifest.py derive_status uses currentStage for the member's displayed stage but keys completeness off is_complete_for_orchestration (forge-5-loop status + forge-verify-impl), not currentStage; no consumer compares currentStage == 'complete'. The navigator dashboard line 'Stage: {currentStage} ({status}...)' and the epic rollup's member stage are the visible surfaces.\n\nThe new behavior arguably matches the schema's own definition ('where the pipeline IS: the most recently started stage', explicitly NOT the next stage), so this may be a correction rather than a regression. But it is a user-visible change in a zero-behavioral-diff feature. progress.md flags it 'for owner review' in both the item-012 and item-013 §9 records and it was never adjudicated. Either accept it and update the schema description to drop 'complete' (or note that it is legacy/never-written), or restore pipeline-completion signalling via a state-complete flag or a build_rows change.",
+      "acceptanceCriteria": [
+        "An explicit decision is recorded (in specs/context-efficiency/ and progress.md) on whether currentStage should still advance and whether the 'complete' value should still be produced",
+        "If accepted as-is: references/pipeline-state-schema.json's currentStage description no longer implies 'complete' is written by a stage skill, and the display path for a finished pipeline is confirmed acceptable (navigator dashboard and epic member rollup)",
+        "If rejected: a finished pipeline again reports currentStage 'complete', via a mechanism that does not reintroduce hand-authored state (a state-complete flag, or a derived fallback in build_rows)",
+        "No hand-authored .pipeline-state.json instruction is reintroduced into canon; the R4 exclusion ledger is unchanged",
+        "python3 -m pytest tests passes and bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "source": "review",
+      "reviewBatch": "2026-07-29T07:20:08.081Z"
     }
   ]
 }

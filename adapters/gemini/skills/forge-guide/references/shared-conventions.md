@@ -185,6 +185,8 @@ If the helper is unavailable (a non-Claude host without the resolver), skip this
 
 Pipeline state is written by the `state-*` verbs of `scripts/forge-session.py` — never by hand. Each verb writes `{resolvedFeatureDir}/.pipeline-state.json` atomically, conforms to `references/pipeline-state-schema.json` by construction, and refreshes `updatedAt` for you, so no stage needs to read the schema in order to author state.
 
+**Epic members MUST pass `--epic`.** Every `state-*` verb takes an optional `--epic "{epic}"`, and it is **required** whenever the feature is an epic member (its resolved directory is `{specsDir}/{epic}/{feature}/`, i.e. its state carries an `epic` back-pointer) — append it to **every** `state-*` call in this file and in every skill body, exactly as the `state-ecr` calls already do. Omit it only for a standalone feature. Without it the verb resolves the bare name itself and, mirroring `epic-manifest.py resolve`, refuses with exit 2 whenever more than one directory carries a state file rather than guessing which feature to write — so a same-named standalone feature can never be mutated in a member's place.
+
 If a `state-*` verb exits 2, surface the plain `Error:` line from stderr verbatim, do **not** proceed to the next step of the surrounding protocol, and do **not** hand-author the JSON as a workaround. The stage remains resumable because the entry stamp is already on disk — re-run the verb once the cause is fixed.
 
 ### Staleness Detection (Read-Time)
@@ -216,7 +218,7 @@ Invoke this block at the **very start** of a pipeline entry point — `forge-1-p
    - **Create** → `git switch -c {branchPrefix}{label}` (or `git checkout -b` if `switch` is unavailable). If the branch already exists, `git switch {branchPrefix}{label}`.
    - **Stay** → proceed on the default branch; note that subsequent commits (and any `forge-5-loop` run) will land directly on `{defaultBranch}`.
 
-**Record the branch.** After this block resolves, record the resulting branch name in the feature's top-level `branch` field by running `state-branch` (create/update it when the state file is first written for this stage). Emit the call **once the feature directory exists** — i.e. after Feature Directory Resolution and the Entry Stamp, **not** at this block: Branch Setup runs at the very start of the entry point, before any directory resolution, and a brand-new standalone feature may have no directory yet.
+**Record the branch.** After this block resolves, record the resulting branch name in the feature's top-level `branch` field by running `state-branch` (create/update it when the state file is first written for this stage). Emit the call **once the feature directory exists** — i.e. after Feature Directory Resolution and the Entry Stamp, **not** at this block: Branch Setup runs at the very start of the entry point, before any directory resolution, and a brand-new standalone feature may have no directory yet. Add `--epic "{epic}"` to the call when this feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -242,7 +244,7 @@ Act on the emitted `action` (source of truth is where the state actually resolve
 - **`warn-drift`** — you are on the **default** branch and the state records a topic branch. Via `AskUserQuestion`, strongly recommend creating/switching to `{branchPrefix}{feature}` (then record it), still allowing **proceed on the default branch**. Never hard-stop.
 - **`none`** / **`not-resolved`** — nothing to do; proceed.
 
-The `adopt-current` write, with the portable plugin-root prelude:
+The `adopt-current` write, with the portable plugin-root prelude. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol:
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -268,7 +270,7 @@ When `gitCommitAfterStage` is true, follow this exact order to avoid state incon
    - **Nothing to commit:** If all artifacts were already committed, this is fine — mark the stage `complete`, leave `commitHash` at its existing value (or `null` if there was never an artifact commit), and skip Commit 2. Pass `--preserve-commit-hash` on the Commit-1 `state-complete` call so the recorded hash is left alone instead of being reset to `null`. There is no new artifact commit to record.
 5. **Never** use `git add -A`, `--amend`, `--no-verify`, or `--force` flags
 
-The two `state-complete` calls, with the portable plugin-root prelude:
+The two `state-complete` calls, with the portable plugin-root prelude. Add `--epic "{epic}"` to each when this feature is an epic member — required, per the Pipeline State Protocol:
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -298,7 +300,7 @@ Invoke this block at the **start of an authoring stage** (`forge-1-prd`..`forge-
 
 3. **Re-authoring** (`status: "complete"` or `"stale"`) — a finished draft exists. Warn via `AskUserQuestion` before overwriting: "A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?" On confirm, proceed to the Entry Stamp and author a new version (the version increments at exit, per that stage's Update-Pipeline-State step).
 
-**Entry Stamp** (fresh, restart, and re-author paths — NOT the resume path). Before authoring, record the entry stamp by running `state-enter` — one atomic write that sets `stages.{stage}.status` → `"in-progress"`, `stages.{stage}.startedAt` → current ISO-8601 UTC timestamp, top-level `currentStage` → `"{stage}"` (where the pipeline IS, per O1), and refreshes `updatedAt`:
+**Entry Stamp** (fresh, restart, and re-author paths — NOT the resume path). Before authoring, record the entry stamp by running `state-enter` — one atomic write that sets `stages.{stage}.status` → `"in-progress"`, `stages.{stage}.startedAt` → current ISO-8601 UTC timestamp, top-level `currentStage` → `"{stage}"` (where the pipeline IS, per O1), and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol:
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -311,7 +313,7 @@ This write is **left uncommitted**: it is staged and committed as part of this s
 
 **Force Mode.** When `--force` is passed, skip the interactive gate: do not prompt for resume-vs-restart or the re-author warning. Treat entry as a fresh restart — apply the Entry Stamp and author. (`--force` already skips prerequisite checks; here it likewise bypasses the self-stage gate. Existing on-disk artifacts are still loaded per Force Mode.)
 
-**Incremental artifact tracking:** When a stage writes multiple files (e.g. forge-3-specs writing a suite of spec documents), run `state-artifact --feature {feature} --stage {stage} --path <file>` after writing each file — not just at stage completion. This is what makes the Interrupted inventory above precise about which files were successfully written.
+**Incremental artifact tracking:** When a stage writes multiple files (e.g. forge-3-specs writing a suite of spec documents), run `state-artifact --feature {feature} --stage {stage} --path <file>` after writing each file — not just at stage completion. This is what makes the Interrupted inventory above precise about which files were successfully written. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"

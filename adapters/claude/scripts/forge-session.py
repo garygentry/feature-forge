@@ -1943,12 +1943,69 @@ def _write_state(state_path: Path, state: dict) -> None:
         raise UsageError(f"atomic write to {state_path} failed: {exc}") from exc
 
 
+def _resolve_feature_dir_for_write(
+    specs_dir: Path, feature: str, epic: str | None
+) -> Path:
+    """Fail-closed feature dir for the ``state-*`` WRITERS.
+
+    ``_resolve_feature_dir`` is the reader's best-effort resolver: it returns the
+    flat ``{specsDir}/{feature}`` whenever that dir carries a state file, and
+    falls back to the flat literal on a multi-match. That tolerance was written
+    for ``stage-exit``, which is READ-ONLY — an unresolvable dir there just
+    downgrades to ``{}``. For a writer the same tolerance means a bare
+    ``--feature api`` mutates a standalone ``{specsDir}/api/`` while an epic
+    member ``{specsDir}/{epic}/api/`` of the same name is silently left behind:
+    cross-feature state corruption at exit 0.
+
+    So the write path mirrors ``epic-manifest.py resolve`` — the canonical
+    resolver that produced ``{resolvedFeatureDir}`` in the first place, and which
+    rejects an ambiguous name with a structured ``ambiguous:`` finding. A writer
+    must not be more permissive than that resolver: more than one candidate
+    carrying a state file, with no explicit ``--epic``, is a hard stop.
+
+    Args:
+        specs_dir: The configured specs directory (``--specs-dir``).
+        feature: The feature name (``--feature``).
+        epic: The owning epic name for a nested member, else None (``--epic``).
+
+    Returns:
+        The resolved feature directory. With ``--epic`` the nested path is taken
+        verbatim; otherwise the single candidate carrying a state file, or the
+        flat path when none does (the first-write case).
+
+    Raises:
+        UsageError: The bare name matches more than one directory carrying a
+            state file (→ exit 2, nothing written).
+    """
+    if epic:
+        return specs_dir / epic / feature
+    flat = specs_dir / feature
+    candidates = [flat] if (flat / PIPELINE_STATE_FILENAME).is_file() else []
+    if specs_dir.is_dir():
+        candidates.extend(
+            sorted(
+                p
+                for p in specs_dir.glob(f"*/{feature}")
+                if (p / PIPELINE_STATE_FILENAME).is_file()
+            )
+        )
+    if len(candidates) > 1:
+        listed = ", ".join(str(p) for p in candidates)
+        raise UsageError(
+            f"ambiguous feature {feature!r}: {len(candidates)} directories carry a "
+            f"state file ({listed}) — pass --epic <epic> to name the one to write. "
+            f"Refusing to guess; nothing was written."
+        )
+    return candidates[0] if candidates else flat
+
+
 def _load_state_for_write(
     specs_dir: Path, feature: str, epic: str | None
 ) -> tuple[Path, dict]:
     """Resolve a feature's state path and load its current state for mutation.
 
-    Reuses the existing resolver (`_resolve_feature_dir`). Deliberately does NOT
+    Resolves through the fail-closed `_resolve_feature_dir_for_write`, NOT the
+    reader's tolerant `_resolve_feature_dir`. Deliberately does NOT
     reuse `_read_state`: that reader downgrades a *corrupt* file to ``{}`` because
     the navigator's read-only sweep can safely treat it as not-started. A writer
     that inherited it would atomically replace a corrupt-but-recoverable state
@@ -1968,10 +2025,12 @@ def _load_state_for_write(
         no state file exists yet (see the seeding below).
 
     Raises:
-        UsageError: The feature directory does not exist, or the state file
+        UsageError: The bare ``feature`` name is ambiguous (more than one
+            candidate directory carries a state file and no ``--epic`` was
+            given), the feature directory does not exist, or the state file
             exists but is not a JSON object (→ exit 2).
     """
-    state_dir = _resolve_feature_dir(specs_dir, feature, epic)
+    state_dir = _resolve_feature_dir_for_write(specs_dir, feature, epic)
     if not state_dir.is_dir():
         raise UsageError(
             f"no feature directory at {state_dir} — check --feature "
