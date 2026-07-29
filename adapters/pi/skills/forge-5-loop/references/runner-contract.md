@@ -1,0 +1,341 @@
+# forge-5-loop — Loop-Runner Contract (launch, supervision, model precedence)
+
+This file holds the detailed loop-runner contract relocated out of
+`forge-5-loop/SKILL.md`: the event-stream vs. log-fallback **launch** detail
+(Steps 3b/3d/3e), the structured-surface **monitoring** caveats, the **model
+precedence** rule, and the **optional-flags catalog** referenced from Step 2d.
+Every command below is rendered from `loopRunner` with token substitution, as in
+the skill body.
+
+## Model selection precedence (Step 2d)
+
+The runner picks the per-iteration model by precedence (highest wins):
+
+```
+item.model  >  --model / options  >  project default  >  provider default
+```
+
+So a backlog item's own `model` field overrides a `--model` flag passed to the
+run, which overrides the project's configured default, which overrides the
+runner/provider default. Pass `--model <model>` (optional flag below) to override
+the project default for the whole run.
+
+## Agent selection (Step 2d)
+
+This section is **parallel** to `## Model selection precedence` above: it governs
+which **coding agent** rauf drives for the run. The entire surface is
+**presence-gated** on `loopRunner.agentArgument` — when that field is absent or
+empty, there is no selector, no probe, and no `{agent}` substitution, and Step 2d /
+Step 3c are byte-identical to today (capability gate;
+`02-config-schema-and-gating.md`, REQ-PLUG-02). The rest assumes the gate is on.
+
+**Precedence (highest wins):**
+
+```
+item.provider  >  --agent (run selection)  >  loopRunner.defaultAgent (project)  >  runner default (claude-cli)
+```
+
+**Run-layer mapping — why forge never re-implements rauf's resolver.** forge owns
+**only** its run and project layers and collapses them into **one** value
+(`resolve()`: `run_selection or defaultAgent or none`), which it emits as a single
+`--agent {agent}` occupying rauf's **run layer only**. rauf alone resolves
+item-vs-run via its own 5-layer resolver, sitting the per-item `BacklogItem.provider`
+**above** forge's run layer — so a run selection can never clobber a deliberate
+per-item agent. forge **never reads, writes, or overrides** `BacklogItem.provider`
+(REQ-AGENT-05). When forge sends nothing (the default path), rauf applies its own
+default `claude-cli`, byte-identical to today. Empty/whitespace selections are
+treated as unset, and an explicit pick of the runner default id collapses to the
+default path (append nothing, run no probe). See
+`03-selection-resolution-observability.md §3–§4`.
+
+**Availability pre-check + disambiguation.** For a **non-default** resolved id only,
+forge runs `loopRunner.agentsProbeCommand` **once** (no retries) and classifies the
+id by **membership** in the advertised set (`{ row.id for row in agents }`), then the
+matching row's `available` flag — **never** by exit code, because `rauf agents
+--json` always exits 0 (an unknown id is simply absent; a known-unavailable one is
+present with `available: false`):
+
+- **UNKNOWN** (`∉` advertised set): hard-reject **before any loop side-effect**,
+  listing the sorted valid ids; **no proceed-anyway**; the value never interpolates
+  into `{agent}` (the advertised set IS the allow-list — REQ-SEC-01).
+- **UNAVAILABLE** (member, `available == False`): warn with the row's `detail`, then
+  offer **proceed-anyway OR choose-another** — never silent.
+- **AVAILABLE** (member, `available == True`): proceed; the validated id fills
+  `{agent}`.
+- **Probe failure** (non-zero exit / unparseable / wrong shape / empty `agents[]` /
+  row missing `id`): surface it and offer **choose-another OR abort**; never launch
+  the non-default agent unvalidated, never silently fall back to the default.
+
+The default / `claude-cli` path runs **no** probe (zero extra cost). See
+`04-availability-precheck.md` for the full pre-check, classification, and allow-list,
+and `02-config-schema-and-gating.md` for the capability gate.
+
+> **Probe false-negative for Claude Code installs (advisory).** `rauf agents` may
+> report `claude-cli` **unavailable** (e.g. *"credentials file not found:
+> ~/.config/claude-code/credentials.json"*) even when a working `claude` CLI
+> authenticates elsewhere — the probe's credential heuristic doesn't cover every
+> install. This is a rauf probe concern, not something forge-5-loop fixes. The
+> **default-agent path skips the probe entirely**, so an ordinary default run is
+> unaffected; only an **explicit** `--agent claude-cli` would be flagged UNAVAILABLE,
+> and the existing **proceed-anyway** path (above) covers it. Do not attempt to
+> patch rauf's probe from here.
+
+### Claude-only model-alias guard (Step 2d, sub-step d-model)
+
+When the resolved agent is **non-default** (not the default / `claude-cli` path),
+forge must guard against a backlog whose items pin **Claude-specific** model aliases.
+forge-4-backlog (via the rauf author-backlog skill) writes Claude tier aliases
+(`opus` / `sonnet`) into each item's `model`. Because rauf's precedence puts
+`item.model` **above** `--agent`, the alias is forwarded verbatim to the selected
+agent; a non-Claude agent (e.g. codex) then 400s — *"The 'sonnet' model is not
+supported when using Codex with a ChatGPT account."* — so **every** spawn exits 1 and
+rauf reports *"Circuit breaker: 3 consecutive infra failures — halting"* with no hint
+of the real cause. forge-5-loop therefore detects Claude-specific `model` aliases in
+the backlog (tier aliases `opus`/`sonnet`/`haiku` or `claude-*` ids) and, before
+launch, **warns** and offers (via `AskUserQuestion`) to **strip `model` for this run**
+(remove the key from each affected item so each spawn uses the agent's own default) or
+**proceed as-is**. forge only ever touches the `model` field — never `provider`. The
+default / `claude-cli` path skips this guard (the aliases are valid there).
+
+> **Follow-up (out of scope here — rauf repo).** The durable fix would be for the
+> rauf `author-backlog` skill to keep `model` **provider-neutral** by default (or to
+> document that writing a tier alias binds the backlog to Claude agents). That lives
+> in the separate rauf plugin/repo, not feature-forge; tracked as a follow-up.
+>
+> **Follow-up (out of scope here — rauf repo).** The durable fix for the root/sandbox
+> refusal (see "Root/sandbox env guard" under Step 3b) is for **rauf itself** to honor
+> `IS_SANDBOX` when it launches `claude --dangerously-skip-permissions` as root (or to
+> detect root+flag-refused and emit a clear error instead of an opaque circuit-break).
+> feature-forge's launch-time export is the mitigation; the upstream fix lives in the
+> rauf plugin/repo. Track as a follow-up.
+
+## Run mode (Step 2d, rauf)
+
+**Applies only when `loopRunner.name == "rauf"`.** rauf's `--review` runs a review
+pass after all iterations complete (an extra agent session that re-examines the
+finished work and can file follow-up backlog items). feature-forge treats **running
+with review as the recommended default** — a review pass is cheap relative to the
+loop it audits, and catches gaps before the pipeline moves on to docs. So Step 2d
+adds a **"Run mode"** question to the confirmation's `AskUserQuestion` surface with a
+**fixed, non-improvised option order** (determinism is the point — the option set
+must not vary run-to-run):
+
+```
+Run mode:
+  1. Run with review pass (recommended)   → append `--review`   [DEFAULT]
+     After all iterations, a review agent re-examines the finished work and may
+     file follow-up items. Recommended for every forge run.
+  2. Run without review                    → bare rendered command
+     Skip the review pass — iterations only, no post-run audit.
+  3. Review + retry blocked                → append `--review --retry-blocked`
+     ONLY offered when Step 2a counted one or more `blocked` items. Runs the
+     review pass and also unblocks/retries the previously blocked items.
+```
+
+Notes:
+
+- **Option 1 is the default** and the confirmation's rendered command line shows
+  `--review` appended. On any pick, append the option's flags to the rendered run
+  command before Step 3 (launch).
+- **`AskUserQuestion`'s built-in "Other"** already lets the user type ad-hoc flags
+  (`--model <model>`, `--timeout <min>`, or any combination) — do **not** add a
+  separate open-ended option for that.
+- **Option 3 is conditional.** Include it only when the Step 2a tally has `blocked
+  > 0`; otherwise present options 1 and 2 only.
+- **Version floor.** rauf's explicit `review` signal ships in 0.5.0, below the
+  `minRunnerVersion` floor (0.6.0) enforced at gate 1c — so `--review` is always
+  available once the loop is cleared to launch. No extra version check is needed.
+- **Non-rauf runners.** When `loopRunner.name != "rauf"`, add **no** Run-mode
+  question — present the bare rendered command and let the user adjust via "Other",
+  byte-identical to the pre-review-default behavior. `--review` is a rauf-specific
+  flag; a swapped-in runner conforming to the contract need not support it.
+
+## Optional flags catalog (Step 2d, rauf)
+
+These are the optional flags the user may add to the rendered run command. If the
+user requests additional flags, append them to the rendered run command.
+
+```
+  --agent <id>      Coding agent rauf drives this run (see Agent selection below).
+                    Only the runner's advertised ids are valid; an unknown id is
+                    rejected before launch. Shown only when the runner advertises
+                    an agent surface (loopRunner.agentArgument present).
+  --review          Run a review pass after all iterations (extra agent session)
+  --model <model>   Override the model (see precedence above)
+  --timeout <min>   Per-session timeout in minutes (default: 60)
+  --retry-blocked   Unblock and retry previously blocked items
+```
+
+## Launch detail (Step 3b — background process)
+
+Launch the loop **backgrounded** so it survives session end and does not block the
+session, then supervise it live via the runner's structured event file.
+
+> **Clean-tree precondition.** rauf refuses to run with uncommitted changes
+> (*"Refusing to run the loop with uncommitted changes… pass --force"*). Step 3a's
+> in-progress `.pipeline-state.json` write is itself an uncommitted change, so it
+> **must be committed before launch** (Step 3a) — otherwise the first launch on an
+> otherwise-clean repo always fails. If the tree still has unrelated uncommitted
+> changes after that commit, surface it and let the user commit/stash or pass
+> `--force`; never auto-pass `--force`.
+
+> **Root/sandbox env guard.** On a hosted remote (e.g. Claude.ai) the loop often runs
+> **as root**. rauf's default Claude launch is `claude -p --dangerously-skip-permissions
+> …`, which the Claude CLI **refuses under root unless `IS_SANDBOX` is set** — the remote
+> container is a legitimate ephemeral sandbox, but without the flag every spawn exits and
+> rauf circuit-breaks (*"3 consecutive infra failures — halting"*) with no hint of the
+> cause. So when — and only when — the launcher is root (`[ "$(id -u)" = 0 ]`), export
+> `IS_SANDBOX="${IS_SANDBOX:-1}"` in front of the launch (an explicitly-set value is
+> honored; the `:-1` only supplies a default). Non-root/local runs are unaffected — the
+> guard is a no-op. **Surface a one-line note** when you set it — e.g. *"running as root →
+> setting IS_SANDBOX=1 so the sandboxed runner can use --dangerously-skip-permissions"* —
+> so the behavior is never silent. `forge-session.py doctor` also reports this condition.
+> Both launch commands below already carry the guard.
+
+**Do NOT redirect the run's stdout into `{loopRunner.stateDir}`.** rauf **persists
+its own** `{stateDir}/events.ndjson` (structured) and `{stateDir}/{logFile}` (human)
+natively, and **rotates** them at the start of every run (the prior run's files are
+renamed into `{stateDir}/archive/`). A redirect like `… --ndjson >
+{stateDir}/events.ndjson` therefore (a) is **redundant** — the runner writes that
+file regardless — and (b) **collides** with the runner's own writer: the shell holds
+a descriptor on the file the runner immediately rotates away, so the redirected
+`--ndjson` stdout is orphaned into a bogus `archive/` file while the live
+`events.ndjson` is the runner's native stream. It only *looks* clean by accident of
+rotation timing. So:
+
+- **Self-persisting runner (default — rauf writes `{stateDir}/events.ndjson`):**
+  launch the **plain `runCommand`** with `run_in_background: true` and **no
+  redirect** — the Bash tool already captures the run's stdout/stderr to the
+  background task's output file (use it to diagnose a launch refusal). Supervise by
+  arming the Monitor on the runner's **native** `{backlogDir}/{stateDir}/events.ndjson`
+  (Step 3d). Guard the very first run with the state dir:
+
+  ```
+  mkdir -p {backlogDir}/{loopRunner.stateDir} && { [ "$(id -u)" = 0 ] && export IS_SANDBOX="${IS_SANDBOX:-1}" || true; } && {rendered runCommand}
+  ```
+
+  (Note: the `--ndjson` stdout stream and `loopRunner.eventStreamCommand` are **not**
+  used on this path — the native file already carries the same structured records.)
+- **Stdout-only runner (no native event file):** render `eventStreamCommand` (it adds
+  `--ndjson`) and redirect its stdout to a file **outside `{stateDir}`** so it cannot
+  collide with any native file or be swept into `archive/`, then Monitor that file:
+
+  ```
+  mkdir -p {backlogDir}/{loopRunner.stateDir} && { [ "$(id -u)" = 0 ] && export IS_SANDBOX="${IS_SANDBOX:-1}" || true; } && {rendered eventStreamCommand} > {backlogDir}/forge-events.ndjson 2>&1
+  ```
+
+The background task's exit notification remains the single authoritative terminal
+signal (Step 4). Loop runs can take significant time (minutes to hours depending on
+backlog size).
+
+## Arm a Monitor on the event stream (Step 3d)
+
+Arm the **`Monitor` tool** on the structured event stream so events flow back into
+this session as they happen. Use **`persistent: true`** — runs can exceed `Monitor`'s
+maximum `timeout_ms` (1 hour), and a bounded timeout would silently stop watching a
+still-running loop.
+
+**Coverage-complete filter (silence is not success).** The filter MUST match every
+terminal and exception state, not just the happy path — otherwise a crash or hang
+looks identical to "still running." Monitor command (NDJSON path):
+
+```
+tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>/dev/null \
+  | jq -rc --unbuffered 'select(.type | test("item_completed|item_blocked|needs_human|signal_parsed|loop_completed|loop_error|loop_cancelled|llm_stuck_warning"))'
+```
+
+> **Use `tail -F` (follow by name), not `-f` (follow by descriptor).** The runner
+> **rotates** `events.ndjson` at the start of each run (renames the prior file into
+> `archive/`, creates a fresh one). A Monitor that attaches with `-f` during that
+> brief rotation window would follow the **archived** inode and then see silence —
+> indistinguishable from a healthy quiet loop. `-F` re-opens the live file by name,
+> so it always tracks the runner's current native stream. (Send `tail`'s own
+> rotation chatter to `/dev/null` so it can't reach the `jq` filter.)
+
+- **Fallback (log tail, no NDJSON):** match the runner's **structured prose
+  prefixes**, never the `RAUF_*` tokens (those leak inside agent output and
+  false-match). For rauf:
+
+  ```
+  tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/{loopRunner.logFile} 2>/dev/null \
+    | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:'
+  ```
+
+  (Match `needs human input` **without** a trailing colon — the runner writes
+  `needs human input (set aside):`.)
+
+If the Monitor is ever auto-stopped for event volume, re-arm with a tighter filter
+(drop `item_completed`, keep the exception/terminal events).
+
+## React to events as they land (Step 3e)
+
+Each Monitor event arrives as a message. React per type — but keep the user signal
+high and the noise low:
+
+- **`item_completed`** → increment a running tally. These land minutes apart, so they
+  won't trip the volume auto-stop; still, surface a coalesced milestone ("12/30 done")
+  rather than echoing every line. For an exact breakdown, run the one-shot
+  `{rendered statusJsonCommand}` and report `done/total` from `backlogSummary`.
+- **`needs_human`** (or `signal_parsed` with `signal: "needs_human"`) → **surface
+  immediately** and send a **`PushNotification`** (an hours-long run means the user has
+  likely stepped away). **Important — the loop is NOT paused:** the runner has set that
+  item aside and kept working other items. So report *what* needs a human and *which*
+  item, then either (a) collect the user's answer via `AskUserQuestion` to **stage a
+  post-run retry**, or (b) offer to **cancel the run early** if the answer changes the
+  whole plan. Do not tell the user the loop is waiting on their reply — it isn't.
+- **`item_blocked`** → surface the blocked item + reason now (visibility) and
+  accumulate for the final summary. Use `{rendered statusJsonCommand}` to distinguish a
+  genuine `blocked` from a runner-`deferred` "false block" (`backlogSummary.deferred`).
+- **`loop_error`** → a real failure (this is also what a circuit-breaker halt — too many
+  consecutive infra failures — emits). Surface now and `PushNotification`. Offer
+  inspection / `--force` / re-run as appropriate.
+- **Stall detection** → rauf emits an **`llm_stuck_warning`** event when an iteration
+  stops making progress; the filter above includes it, so surface it live (a hang
+  warning, not yet a failure) and offer `--force` if it persists. If you instead want to
+  probe on quiet, run `{rendered watchCommand}` (or read
+  `{backlogDir}/{loopRunner.stateDir}/iteration-status.json`) and key off its
+  `stuckWarning` flag. Do **not** infer a stall from `state.json.updatedAt` alone — it is
+  not a liveness proof.
+
+## Inform-user output template (Step 3c)
+
+This is the verbatim "Loop started…" output the session shows the user after
+launch. Commands are the rendered `loopRunner` monitoring commands.
+
+When the agent surface is gated on (`loopRunner.agentArgument` present), add the
+`Coding agent:` line shown below immediately after the opening `Loop started …`
+line, using the same `sourceLabel` mapping as the Step 2d confirmation
+(`RUN` → `"per-run selection"`, `PROJECT` →
+`"project default (loopRunner.defaultAgent)"`, `DEFAULT` →
+`"runner default — claude-cli"`). When the gate is off, the line is **absent** and
+the template is byte-identical to today (REQ-PLUG-02). When the launch proceeded via
+the UNAVAILABLE *proceed-anyway* path, use the audit variant instead:
+
+```
+Coding agent: {resolved.agent or claude-cli} (source: {sourceLabel}).
+Coding agent: {resolved.agent} (source: {sourceLabel}; proceeded despite unavailability warning).
+```
+
+(The two lines above are alternatives — the first is the normal line; the second
+replaces it only on the proceed-anyway path. This is session-side prose only; it
+introduces no new event type, so the Step 3d Monitor filter is unchanged.)
+
+```
+Loop started for {feature} ({N} items to process).
+Coding agent: {resolved.agent or claude-cli} (source: {sourceLabel}).   # only when the agent surface is gated on
+This session is now monitoring it live — I'll report milestones and stop you in if
+the loop needs a human. The loop also runs detached and survives this session ending.
+Each item gets a fresh agent session with full context from the backlog and specs.
+
+Watch directly if you like (another terminal or `!` prefix):
+  {rendered statusCommand}              # one-shot status
+  {rendered followCommand}              # stream live events (human)
+  {rendered logCommand}                 # tail log file
+  {rendered listCommand}                # check item statuses
+
+State files are at: {backlogDir}/{loopRunner.stateDir}/
+  - state.json             (loop state)
+  - events.ndjson          (structured event stream this session is watching)
+  - {loopRunner.logFile}   (human event log)
+  - iteration-status.json  (live activity, incl. stuckWarning)
+```

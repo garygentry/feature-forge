@@ -12,6 +12,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
+  AGENT_IDS,
   AGENT_TARGETS,
   MANIFEST_PREFIX,
   SCHEMA_VERSION,
@@ -54,7 +55,7 @@ export interface BuildManifestArgs {
   readonly skills: readonly string[];
   /** SHA-256 over the source bundle's canonical (sorted-path) file set — drift anchor (spec 03). */
   readonly sourceHash: string;
-  /** Recorded pinned rauf coordinate (e.g. "@garygentry/rauf@0.12.0"); `null` when `--skip-rauf` (spec 06). */
+  /** Recorded pinned rauf coordinate (e.g. "@garygentry/rauf@0.13.0"); `null` when `--skip-rauf` (spec 06). */
   readonly raufPin: string | null;
   /** Symlink mode only: the source bundle the namespace dir links to (REQ-SAFE-02). */
   readonly link?: { readonly target: string };
@@ -219,7 +220,7 @@ type ValidateResult =
   | { readonly ok: true; readonly value: InstallManifest }
   | { readonly ok: false; readonly reason: string };
 
-const AGENT_IDS_SET = new Set(["claude", "codex", "copilot", "cursor", "gemini"]);
+const AGENT_IDS_SET = new Set<string>(AGENT_IDS);
 
 /** Structural validation of a parsed manifest (internal to manifest.ts). */
 function validateManifest(x: unknown): ValidateResult {

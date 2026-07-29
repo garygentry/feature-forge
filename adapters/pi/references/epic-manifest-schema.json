@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://feature-forge/references/epic-manifest-schema.json",
+  "title": "Feature Forge Epic Manifest",
+  "description": "Canonical record of an epic's membership, dependency edges, charters, and contracts. Lives at {specsDir}/{epic}/epic-manifest.json. Carries NO per-feature status field (REQ-STATE-02); status is derived live from each member's .pipeline-state.json.",
+  "type": "object",
+  "required": ["schemaVersion", "epic", "description", "status", "narrativeDoc", "createdAt", "updatedAt", "features"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Schema evolution guard."
+    },
+    "epic": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Matches the epic subtree directory name. Globally unique, kebab-case."
+    },
+    "description": {
+      "type": "string",
+      "description": "One-paragraph epic summary."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "paused", "abandoned", "complete"],
+      "description": "Epic lifecycle state (REQ-ORCH-05)."
+    },
+    "narrativeDoc": {
+      "const": "EPIC.md",
+      "description": "Relative pointer to the narrative document (REQ-EPIC-03)."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Set once at creation."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Bumped by every mutator on each atomic write (REQ-OBS-01)."
+    },
+    "features": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/feature" },
+      "description": "Ordered. Order is the user-declared sequence; it is NOT a dependency ordering."
+    }
+  },
+  "definitions": {
+    "feature": {
+      "type": "object",
+      "required": ["name", "charter", "dependsOn", "exposes", "consumes"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "description": "Globally unique across the whole specs tree, kebab-case (REQ-DIR-04)."
+        },
+        "charter": {
+          "type": "string",
+          "description": "One-paragraph scope statement + contract obligations (REQ-EPIC-04). No full PRD at creation."
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Names of sibling features in this epic (REQ-EPIC-02). Every entry must be a name in features[]. May be empty."
+        },
+        "exposes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/contract" },
+          "description": "What this feature provides to dependents (REQ-EPIC-03). May be empty."
+        },
+        "consumes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/consumedContract" },
+          "description": "What this feature relies on from its dependencies (REQ-EPIC-03). May be empty."
+        },
+        "mutatesShared": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "OPTIONAL precision hint for cross-member coupling detection (#144): project-root-relative file/glob paths this feature writes or migrates that are shared across the epic (e.g. a corpus a sibling's tests pin). When present, forge-verify CHECK-E10 uses it directly; when absent, CHECK-E10 falls back to grepping specs/backlog for mutated paths. Not a dependency edge — declarative only. May be omitted entirely."
+        }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "required": ["name", "kind", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Identifier of the exposed artifact (e.g. verifyJwt, JWT_SECRET)."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["function", "type", "endpoint", "module", "event"],
+          "description": "Kind of exposed artifact."
+        },
+        "summary": {
+          "type": "string",
+          "description": "One-line human description."
+        }
+      }
+    },
+    "consumedContract": {
+      "type": "object",
+      "required": ["from", "name", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Name of the sibling feature providing this. Must be present in features[]."
+        },
+        "name": {
+          "type": "string",
+          "description": "Identifier being consumed; should match an exposes[].name of the from feature."
+        },
+        "summary": {
+          "type": "string",
+          "description": "One-line human description."
+        }
+      }
+    }
+  }
+}
