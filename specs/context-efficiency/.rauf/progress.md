@@ -159,3 +159,45 @@ large cost from the overwhelmingly common path.
   body is copied into every bundle. `process-overview.md` itself is a *shared* reference,
   fanned out by citation: it still resolves 3× per target after the move, confirming the
   literal-citation requirement did its job.
+
+## Item 005 — `effective-config` subcommand + the shared stdlib schema validator
+
+Per the item's own notes: **no per-stage token saving is claimed for R5.** The
+188-session corpus shows `forge-config-schema.json` was read 1× total, so R5's
+justification here is deterministic default resolution (REQ-R5-02), not a token
+figure. The consumer swap and its measured static delta belong to item 006.
+
+### Learnings
+
+- **`tests/_state_schema.py` is the R4 dependency this item quietly carries.**
+  Items 008/009/010/014 import `validate_state` from it, so it was written and
+  red-tested against the *state* schema now, not just the config one — validated
+  clean against all three real `.pipeline-state.json` files in `specs/`, and
+  proven to go red on a missing `required`, a bad `enum`, a wrong `type`, and an
+  `additionalProperties: false` violation.
+- **Where `additionalProperties: false` actually lives in the state schema:**
+  only on `deferredDecisions[].items` and `epicChangeRequests[].items`. Neither
+  `stageEntry`, `verifyEntry`, `stages`, nor the root sets it — so an extra key
+  on a stage entry is *schema-legal* and the validator correctly stays silent.
+  Item 010's "an extra key is a hard validation failure" note is true only for
+  its two array shapes; do not expect the same guard on `state-enter`/`state-complete`.
+- **`bool` is a subclass of `int` in Python**, so a naive `isinstance(node, int)`
+  passes `True` for `"type": "integer"`. `_check` special-cases it; a future
+  `version: true` regression would otherwise validate clean.
+- **The AC "no import of jsonschema anywhere in scripts/ or tests/" is satisfied
+  for new code only.** Three pre-existing modules (`test_pipeline_state_schema.py`,
+  `test_compliance_eval.py`, `test_forge_bootstrap.py`) use
+  `pytest.importorskip("jsonschema")` and skip in CI by design. Removing them is
+  outside this item's scope; nothing added here imports it.
+- Schema resolution is cwd-independent (`Path(__file__).resolve().parent.parent /
+  "references"`), verified by running the subcommand from `/tmp`: it resolved the
+  bundled schema and, finding no `./forge.config.json` there, degraded to pure
+  defaults at exit 0. That degrade path is deliberate — only an unreadable
+  **schema** is fatal.
+- Editing only `scripts/forge-session.py` restages **6** adapter files (one per
+  target); `RUNTIME_HELPER` scripts are copied wholesale, so the new subcommand
+  ships to every host with no citation work.
+- This repo's local `forge.config.json` pins `loopRunner.bin` to `rauf-stable`
+  (the `pnpm dogfood:runner` build), which makes it a live override fixture — the
+  in-repo run shows `bin: "rauf-stable"` while the pure-defaults run shows `rauf`.
+  Handy end-to-end confirmation that the merge direction is right.

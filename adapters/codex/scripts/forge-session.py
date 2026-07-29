@@ -15,6 +15,7 @@ root navigator:
         [--config FILE] [--epic E] [--json]
     python3 forge-session.py stage-exit --feature F --stage S [--specs-dir DIR] \
         [--config FILE] [--epic E] [--next-feature N] [--host claude|generic] [--json]
+    python3 forge-session.py effective-config [--config FILE] [--schema PATH] [--json]
 
 `rank-features` scans the specs tree for feature-shaped directories (those that
 directly contain a `.pipeline-state.json`, in both the flat
@@ -65,6 +66,13 @@ the DIRECTIVES (whether the in-stage auto-verify runs, which verify gate to
 present, autoFix eligibility, the verify and next-stage commands) plus the
 exact sentinel-terminated NEXT-STEPS block the skill must print verbatim as
 its absolute last output. Deterministic and read-only; always exits 0.
+
+`effective-config` resolves the `loopRunner` block deterministically so no
+caller has to read `references/forge-config-schema.json` just to learn the
+defaults: it extracts each field's schema `default` at runtime and merges the
+project's `loopRunner` overrides on top. A missing or corrupt
+`forge.config.json` resolves to pure defaults (exit 0); only an unreadable
+schema is fatal (exit 2), because then there are no defaults to resolve.
 
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
 matching the conventions of `scripts/epic-manifest.py`.
@@ -1684,6 +1692,120 @@ def _print_stage_exit(payload: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Effective loopRunner config
+# --------------------------------------------------------------------------- #
+
+
+def _default_schema_path() -> Path:
+    """Return the bundled forge-config-schema.json path (sibling references/ dir).
+
+    Resolved relative to this script file so `effective-config` works from any
+    cwd. Overridable via the ``--schema`` flag (chiefly for tests).
+
+    Returns:
+        The Path to ``references/forge-config-schema.json`` next to ``scripts/``.
+    """
+    return Path(__file__).resolve().parent.parent / "references" / "forge-config-schema.json"
+
+
+def _loop_runner_defaults(schema_path: Path) -> dict[str, object]:
+    """Extract every ``loopRunner`` field's schema ``default``.
+
+    Reads ``properties.loopRunner.properties.<field>.default`` for each field.
+    Stdlib-only (``json`` + dict access), mirroring
+    ``tests/test_config_defaults_parity.py``. The schema is the single source of
+    truth; nothing here is hardcoded.
+
+    Only fields that actually declare a ``default`` keyword are included. Every
+    ``loopRunner`` field does today; a field losing its default would be a schema
+    regression the drift guard catches, not something silently patched here.
+
+    Args:
+        schema_path: Path to ``forge-config-schema.json``.
+
+    Returns:
+        A dict mapping each ``loopRunner`` field name to its declared default
+        value (templates such as ``"{bin} loop run …"`` are returned literally).
+
+    Raises:
+        UsageError: If the schema is missing, unreadable, unparseable, or lacks a
+            ``loopRunner.properties`` object — a deterministic failure that must
+            exit 2. Never returns partial/empty defaults silently.
+    """
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise UsageError(f"config schema unreadable: {schema_path} ({exc})") from exc
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"config schema is not valid JSON: {schema_path} ({exc})") from exc
+
+    props = None
+    if isinstance(schema, dict):
+        loop_runner = schema.get("properties", {})
+        if isinstance(loop_runner, dict):
+            loop_runner = loop_runner.get("loopRunner", {})
+        if isinstance(loop_runner, dict):
+            props = loop_runner.get("properties")
+    if not isinstance(props, dict) or not props:
+        raise UsageError(f"config schema has no loopRunner.properties object: {schema_path}")
+
+    return {
+        field: spec["default"]
+        for field, spec in props.items()
+        if isinstance(spec, dict) and "default" in spec
+    }
+
+
+def resolve_loop_runner(config_path: Path, schema_path: Path) -> dict[str, object]:
+    """Resolve the effective ``loopRunner`` config: schema defaults + user overrides.
+
+    Reads the schema defaults, then merges the user's ``loopRunner`` block (from
+    ``forge.config.json`` via the existing ``_load_config``) OVER them. A user
+    field replaces the default; an absent field keeps the default. The result is
+    the fully-resolved block the loop consumes — computed deterministically so no
+    model ever merges it by hand.
+
+    Args:
+        config_path: Path to ``forge.config.json`` (``_load_config`` tolerates a
+            missing/corrupt file, yielding pure defaults).
+        schema_path: Path to ``forge-config-schema.json`` (source of the defaults).
+
+    Returns:
+        The resolved ``loopRunner`` object: every schema-defaulted field present,
+        with user overrides applied.
+
+    Raises:
+        UsageError: If the schema is unreadable/unparseable (propagated from
+            ``_loop_runner_defaults``) — exit 2, a deterministic failure.
+    """
+    resolved: dict[str, object] = dict(_loop_runner_defaults(schema_path))
+
+    user_loop_runner = _load_config(config_path).get("loopRunner")
+    if isinstance(user_loop_runner, dict):
+        for key, value in user_loop_runner.items():
+            # Flat override: a user value replaces the default for that field.
+            # (A future nested loopRunner field would recurse here; today every
+            # field is a scalar, so a shallow override is exact.) An unknown key
+            # is carried through — the model would have carried it too, and the
+            # config schema is the authority that flags it at author time.
+            resolved[key] = value
+
+    return resolved
+
+
+def _print_effective_config(resolved: dict[str, object]) -> None:
+    """Print the resolved loopRunner config as an aligned key: value table.
+
+    Args:
+        resolved: The resolved loopRunner object from ``resolve_loop_runner``.
+    """
+    print("Effective loopRunner config:")
+    width = max((len(k) for k in resolved), default=0)
+    for key in sorted(resolved):
+        print(f"  {key.ljust(width)} : {resolved[key]!r}")
+
+
+# --------------------------------------------------------------------------- #
 # CLI dispatch
 # --------------------------------------------------------------------------- #
 
@@ -1785,6 +1907,17 @@ def main() -> int:
                         help="Host wording for the NEXT-STEPS block")
     p_exit.add_argument("--json", action="store_true", dest="json_output")
 
+    p_eff = sub.add_parser(
+        "effective-config",
+        help="Resolve the loopRunner config from schema defaults + user overrides",
+    )
+    p_eff.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
+    p_eff.add_argument(
+        "--schema", default=None,
+        help="forge-config-schema.json path (default: bundled references/ copy)",
+    )
+    p_eff.add_argument("--json", action="store_true", dest="json_output")
+
     args = parser.parse_args()
 
     try:
@@ -1873,6 +2006,15 @@ def main() -> int:
                 print(json.dumps(payload, indent=2, ensure_ascii=False))
             else:
                 _print_stage_exit(payload)
+            return 0
+
+        if args.cmd == "effective-config":
+            schema_path = Path(args.schema) if args.schema else _default_schema_path()
+            resolved = resolve_loop_runner(Path(args.config), schema_path)
+            if args.json_output:
+                print(json.dumps(resolved, indent=2, ensure_ascii=False))
+            else:
+                _print_effective_config(resolved)
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")
