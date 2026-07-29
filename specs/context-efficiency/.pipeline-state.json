@@ -90,7 +90,7 @@
       "verifiedAt": "2026-07-29T04:35:00Z",
       "verifiedStageVersion": 1,
       "fixedAt": "2026-07-29T07:20:00Z",
-      "commitHash": null,
+      "commitHash": "db69f8e60b717588aaf958e8e121373e247e992e",
       "reverifiedAt": "2026-07-29T05:55:00Z",
       "reverifyFindingsCount": 20,
       "reverifyRounds": 3
