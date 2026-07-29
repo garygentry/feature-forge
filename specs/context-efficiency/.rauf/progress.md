@@ -820,3 +820,72 @@ deterministic resolution / drift removal**, which holds at any read frequency:
 `python3 -m pytest tests` 638 passed / 2 skipped · `check-spec-purity` PASS (Rule 5 green
 on both newly inlined preludes) · `build-adapters.py --check` exit 0 · `bash
 scripts/validate.sh` PASS. Adapters restaged 24 paths (12 body copies + 12 schema deletions).
+
+## Item 015 — split `runner-contract.md`, gate `agent-selection.md` (R6)
+
+Three agent-conditional sections moved verbatim into a new
+`skills/forge-5-loop/references/agent-selection.md`; `runner-contract.md` keeps the six
+always-loaded sections. Four SKILL-body pointers changed (one trim, two re-points, one
+in-line augmentation). **Body 298 → 298 lines** (line-neutral, as REQ-R6-03 requires),
+4,556 → 4,564 words.
+
+### Item 006 retry — NOTHING was deferred, so there is nothing to retry
+
+The AC's conditional ("if item 006 deferred the forge-5-loop effective-config consumer
+edit, RETRY it here") does **not** fire: item 006's progress entry records both consumers
+converted, with the forge-5-loop edit landing at +2 lines against 4 spare. No residual.
+
+### R6 measured net instruction-token delta (spec 06 §7.5 row "R6", §7.2 method)
+
+Baseline of record: `specs/context-efficiency/.reference/REMEASURE-0.13.0.md`
+(§R6 row: conditional slice = 105 L / 913 w → **−1.19k tok**; re-measured at 108% of the
+−1.1k PRD claim). Method: `wc -l` / `wc -w` over the canonical surface, prose at
+~1.3 tok/word.
+
+Recorded here as well as in the commit message, since the iteration agent does not commit.
+
+**Targeted invocation — a gate-OFF loop launch** (`loopRunner.agentArgument` absent or
+empty). It reads `runner-contract.md` only:
+
+| Surface | Before | After | Δ tok |
+|---|---|---|---|
+| `references/runner-contract.md` | 351 L / 2,943 w | 248 L / 2,050 w | **−1,161** |
+| `forge-5-loop/SKILL.md` body | 298 L / 4,556 w | 298 L / 4,564 w | **+10** |
+
+**Net on the targeted invocation: −1,151 tok** — 97% of the −1.19k re-measured claim,
+105% of the −1.1k PRD claim. The +10 is always-paid body growth (the `(e)` bullet's
+catalog pointer), correctly attributed against the saving.
+
+**Gate-ON launch: +98 tok.** It opens both files (2,050 + 961 = 3,011 w vs 2,943 w
+before = +68 w = +88 tok, plus the +10 body). The delta is the new file's 6-line preamble
+plus `runner-contract.md`'s reworded preamble — the split's fixed overhead. Same
+attribution shape as R3: a small always-paid cost on the rarer path buys a large removal
+from the common one. Note the schema default for `agentArgument` is `"--agent {agent}"`,
+so **gate-on is the default posture** — a project only lands on the −1,151 path by
+explicitly emptying the field. That is worth knowing before quoting R6's saving as typical.
+
+### Learnings
+
+- **The preamble is the tenth section nobody counts.** `runner-contract.md`'s L3–8 opening
+  paragraph advertised "the **optional-flags catalog** referenced from Step 2d" — text that
+  is no longer in the file. The nine-section partition test would never have caught it
+  (the preamble carries no heading). It now names `agent-selection.md` *and* states inline
+  that the file is read only under the gate, so the cross-reference cannot be misread as an
+  unconditional read instruction on the gate-off path.
+- **The `(e)` bullet is where the catalog reference had to land.** Spec 05 §3.4's trim
+  resolution drops the catalog clause from the pointer above the gate but does not say who
+  picks it up. `(e) Optional-flags line` already augments the confirmation's flags pointer
+  when the gate is on, so appending the catalog's location there is 0 net lines and is the
+  only site that is both inside the gate and about flags.
+- **A "line-neutral" trim is not automatically word-neutral.** The trim removed 5 words;
+  the `(e)` augmentation added 13. Rule 4 gates both, so measure words too — the body
+  finished at 4,564/5,000, but a bigger augmentation with the same 0-line cost could still
+  have failed the second half of the rule.
+- **Extraction by absolute line span is safe here only because the spans were re-verified.**
+  Spec 05 §3.2's table was written against a 341-line file; item 013's Step-3c relocation
+  grew it to 351. The eight section boundaries L23/L83/L112/L153/L169 were unchanged (the
+  growth is all in the last section), so the table's spans still held — but `grep -n '^#'`
+  first, every time.
+- Adapters: this restaged 12 modified paths and added **6** new ones — `agent-selection.md`
+  reaches all six bundles including `adapters/pi/`, which is the #122/#132 failure class
+  item 017 re-checks.
