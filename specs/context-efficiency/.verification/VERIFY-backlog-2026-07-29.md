@@ -562,3 +562,42 @@ All 15 steps applied 2026-07-29 in a single pass, with all six owner decisions r
 ### Residual follow-up (not a finding, not blocking)
 
 `rauf update --check` reports the project's rauf artifacts were installed by `rauf-manager@0.6.0` while the current tool is `0.13.0`. Content is correct and in sync, so this is tool-version lag only. Running `rauf update .` would refresh `RAUF.md` to the 0.13.0 template — worth doing deliberately, on its own commit, not folded into a verification-fix pass.
+
+---
+
+## Re-verify (round 2) and second fix pass — 2026-07-29
+
+A clean-room re-verify was run after the first fix pass (three parallel `forge-verifier` instances over disjoint slices: item-level ACs; dependency graph + adapter/verification strategy; P0 coverage + spec propagation). It returned **27 raw findings, ~20 distinct**. Several were **regressions introduced by the first fix pass** — recorded here plainly, because that is the point of the gate.
+
+### Regressions the first pass introduced (all now fixed)
+
+- **Item 017's host-neutrality AC (found independently by two slices).** The V-022 fix told the agent to confirm the new reference files sit inside `tests/test_adapter_host_neutrality.py`'s globs and to "extend the globs" otherwise. That test *deliberately* skips any path with `references` in its parts (module docstring: bundled reference docs are copied verbatim and may legitimately quote a tool name), and `NON_CLAUDE_TARGETS` excludes `adapters/pi/` because the pi host implements `AskUserQuestion`. Widening either scope goes red immediately on ~25 committed by-design files per target, and `findings-template.md` / `agent-selection.md` inherit an `AskUserQuestion` token from their source spans — so the only way to green was rewording frozen text. **Unsatisfiable AC. Replaced** with a census-equality criterion (the move introduces no *new* token) plus an explicit "do NOT widen either scope".
+- **Item 012's "reuse the prelude" instruction.** It contradicted `01-architecture-layout.md` §2.2.1 (which mandates inline ×2 at `forge-4-backlog`, 141 spare lines) and coupled R4's item 012 to R5's item 006 text, breaking REQ-DELIV-01/SC-6 revertibility. The deeper defect it propagated is **pre-existing, not introduced**: `$R` is set inside a fenced block and does not survive to a later fence, yet the specs marked `forge-1-prd` and `forge-6-docs` "reuse — 0". Canon pairs preludes to `$R`-uses **1:1 across every surface, zero exceptions**. **Adopted always-inline** (owner decision) across items 012/013 and both spec documents.
+- **The `--status in-progress` carve-out.** Made blanket, but the flag has two opposite callers: `forge-5-loop`'s *partial completion* (§11.2 row 14 — a real completion-with-artifacts that must keep `completedAt`/`version`/`basedOnVersions`/`artifacts`; item 013 passes `--based-on` on that call) and the *failed-Commit-1 revert*. The blanket branch silently discarded those flags. **Split behind a new `--resumable` flag** (owner decision): only `--resumable` records status-only.
+- **`tests/_forge_paths.py` owner.** Assigned to item 016, which executes **17th of 17**, while spec 06's code blocks import it from items running 3rd, 4th, 5th, 7th, 10th and 15th — every one would hit `ModuleNotFoundError`. **Moved to item 003** (its first consumer), with `003` added to items 004/005/016's `dependsOn`.
+- **Dead baseline path.** `.reference/REMEASURE-0.13.0.md` does not resolve from the repo root; the first pass propagated that shorthand from a note into 5 binding ACs. **Corrected to `specs/context-efficiency/.reference/…` in all 6 occurrences.**
+- **Two ACs the first pass never added.** V-021 (the six-tuple `AGENT_TARGETS` assertion) and V-025 (a command-bearing AC 1) had their descriptions updated but not their criteria. **Both added.**
+
+### Findings the re-verify surfaced that predated the fix pass
+
+- **Item 013's census AC was still unsatisfiable**, for a new reason: it ran a repo-wide grep at a point where item 012's five authoring bodies were still unconverted. **Re-scoped**; the repo-wide census now lives on R4's genuinely-last conversion.
+- **Two more hand-authoring sites exist** that no verb can convert: `skills/forge-fix/SKILL.md` Step 5 (`verifyEntry` class, same as the already-sanctioned `forge-verify` Step 6) and `skills/forge-0-epic/references/edit-mode.md`'s ECR `open`→`applied` flip (mutates an existing array item; `state-ecr` only appends). **Documented as exclusions** (owner decision), taking the ledger from three sites to **five**.
+- **Item 012 had no §9 behavior-preservation AC** despite being R4's largest PR (five authoring bodies carrying three of §9's seven surfaces). **Added.**
+- **The batch §9 run was note-only, not a binding AC** — the same defect the original V-009 rejected. **Added as an AC on item 017.**
+- **Declared sequencing no longer matched reality.** `backlog.json`'s `description` and tech-spec §3.7 still asserted `R1+R3 → R5 → R4 → R6`. **Both amended** to record the deliberate R5 split.
+
+### Ordering correction discovered during this pass
+
+Removing item 012's coupling to 006 changed the realized order so that **012 now runs before 013**, making 013 — not 012 — R4's last conversion. The repo-wide census and the R4 token-measurement AC had just been placed on 012 on the opposite assumption. Both were **relocated to 013**, and `013 → 012` was added to `dependsOn` so the ordering is pinned by the graph rather than by a priority tie-break.
+
+### Deliberately not fixed (owner scoped this pass to blocking + correctness)
+
+- Item 001's cross-reference enumeration names `CHECK-I21/I22` where the duplicated ids are actually `I01`×2, `I11`×2, `I21`×3, `I22`×2. The operative counts (28/13/130) are correct and the AC is achievable; only the parenthetical is imprecise.
+- Item 001's title / preamble / shared-directives ordering is unspecified, so three parallel sub-agents may lay the six files out inconsistently.
+- Item 015 AC 6 misattributes *why* `agent-selection.md` reaches the bundles (it ships via the wholesale `references/` copy, not via citation fan-out). The citation is still required, by REQ-PORT-01 and item 016's reverse guard.
+
+### Realized execution order after the second fix pass
+
+`001 002 003 004 005 007 008 009 010 014 011 012 013 006 015 017 016`
+
+Zero priority inversions, zero cycles, zero dangling deps, no deadlock. `rauf backlog validate` → `{"valid": true, "findings": []}`. Full `bash scripts/validate.sh` → **All checks passed!** (including the `build-adapters.py --check` drift gate).

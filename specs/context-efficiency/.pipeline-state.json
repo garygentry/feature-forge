@@ -2,7 +2,7 @@
   "feature": "context-efficiency",
   "branch": "forge/context-efficiency",
   "createdAt": "2026-07-20T02:36:15Z",
-  "updatedAt": "2026-07-29T05:10:00Z",
+  "updatedAt": "2026-07-29T06:05:00Z",
   "currentStage": "forge-5-loop",
   "pipelineStatus": "active",
   "stages": {
@@ -89,8 +89,10 @@
       "findingsCount": 27,
       "verifiedAt": "2026-07-29T04:35:00Z",
       "verifiedStageVersion": 1,
-      "fixedAt": "2026-07-29T05:10:00Z",
-      "commitHash": "ed3ab41354bd7e54dcb01ff4c28ebf725671a3c4"
+      "fixedAt": "2026-07-29T06:05:00Z",
+      "commitHash": null,
+      "reverifiedAt": "2026-07-29T05:55:00Z",
+      "reverifyFindingsCount": 20
     }
   }
 }

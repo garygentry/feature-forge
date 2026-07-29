@@ -184,18 +184,34 @@ body over 300 lines or 5,000 words.
 #### 2.2.1 Prelude position per R4/R5 call site (REQ-PORT-02, C-5)
 
 R2 is scoped out, so **no compact prelude form exists**. Every new fenced call site
-either reuses a full `BOOTSTRAP_PRELUDE` that already precedes it in the same body, or
-inlines the full two-line prelude (~4 lines with the fence). Measured positions:
+**inlines** the full two-line `BOOTSTRAP_PRELUDE` (~4 lines with the fence).
 
-| Skill | Existing full prelude at | R4/R5 call site | Prelude precedes? | Line cost |
-|---|---|---|---|---|
-| `forge-5-loop` | L64 | L22–27 (R5) | **No** — below | inline needed; **budget against 2 spare** |
-| `forge-4-backlog` | L154 | L32 (R5), L139 (R4) | **No** — below | inline ×2 (141 spare) |
-| `forge-2-tech` | L203 | L189 (R4) | **No** — below | inline (91 spare) |
-| `forge-3-specs` | L155 | L141 (R4) | **No** — below | inline (138 spare) |
-| `forge-verify` | L260 | L220 (R4) | **No** — below | inline (43 spare) |
-| `forge-1-prd` | L31, L142 | L127 (R4) | Yes | reuse — 0 |
-| `forge-6-docs` | L47 | L173 (R4) | Yes | reuse — 0 |
+**Always inline — never reuse a prelude from an earlier fence (owner decision,
+2026-07-29).** `$R` is a shell variable set *inside* a fenced block. Each fence is a
+separate tool invocation, and shell state does not persist between them on any supported
+host, so a prelude 90 lines and several interactive steps earlier does **not** resolve
+`$R` at a later call site — the command runs as `python3 "/scripts/forge-session.py" …`
+and fails. Live canon agrees without exception: every canonical surface that uses `$R`
+pairs preludes to `$R`-uses 1:1 (forge-0-epic 5:5, forge-1-prd 2:2, forge-bootstrap 4:4,
+shared-conventions 6:5). There are **zero** instances of a fenced command depending on a
+`$R` set in an earlier separate fence. An earlier revision of this table marked
+`forge-1-prd` and `forge-6-docs` "reuse — 0"; that was wrong and is corrected below.
+
+A second reason to inline: reusing a prelude that *another backlog item* introduced
+couples the two units textually, so reverting one leaves the other's fence with an
+unresolved `$R` — breaking REQ-DELIV-01/SC-6's "revertible without touching the others".
+
+Measured positions:
+
+| Skill | Existing full prelude at | R4/R5 call site | Line cost |
+|---|---|---|---|
+| `forge-5-loop` | L64 | L22–27 (R5) | inline; **budget against 2 spare** |
+| `forge-4-backlog` | L154 | L32 (R5), L139 (R4) | inline ×2 (141 spare) |
+| `forge-2-tech` | L203 | L189 (R4) | inline (91 spare) |
+| `forge-3-specs` | L155 | L141 (R4) | inline (138 spare) |
+| `forge-verify` | L260 | L220 (R4) | inline (43 spare) |
+| `forge-1-prd` | L31, L142 | L127 (R4) | inline (152 spare) |
+| `forge-6-docs` | L47 | L173 (R4) | inline (114 spare) |
 
 `forge-5-loop` is the binding case: it takes R4 **and** R5 **and** R6 against 2 spare
 lines. If the R5 consumer swap cannot be made net ≤0 there, defer that one edit behind an

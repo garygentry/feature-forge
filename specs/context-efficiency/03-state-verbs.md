@@ -621,8 +621,14 @@ The largest verb. Replaces the hand-authored completion write (each stage's
     p_comp.add_argument("--status", default="complete",
                         choices=("complete", "in-progress"),
                         help="Terminal status to record (default: complete). "
-                             "Use in-progress for a partial forge-5-loop run, or to "
-                             "revert a stage after a failed Commit 1.")
+                             "Use in-progress for a partial forge-5-loop run -- the "
+                             "stage still records completedAt/version/basedOnVersions/"
+                             "artifacts; only the status differs.")
+    p_comp.add_argument("--resumable", action="store_true",
+                        help="Failed-Commit-1 revert (L245): record ONLY status="
+                             "in-progress, leaving completedAt/version/basedOnVersions/"
+                             "artifacts/commitHash untouched and firing no cascade. "
+                             "Implies --status in-progress.")
     p_comp.add_argument("--preserve-commit-hash", action="store_true",
                         dest="preserve_commit_hash",
                         help="Do not reset commitHash to null on completion "
@@ -735,6 +741,9 @@ def cmd_state_complete(
     commit_hash: str | None,
     specs_dir: Path,
     epic: str | None,
+    status: str = "complete",
+    preserve_commit_hash: bool = False,
+    resumable: bool = False,
 ) -> dict:
     """Mark ``stage`` complete, bump version, record provenance, cascade staleness.
 
@@ -744,6 +753,13 @@ def cmd_state_complete(
     Commit-2 follow-up recording the real artifact-commit hash (§6.5) and no other
     field is disturbed beyond what a follow-up write should touch. Runs the
     deterministic downstream staleness cascade (§6.3).
+
+    **Exception -- ``resumable``:** the failed-Commit-1 revert (§6.5) records ONLY
+    ``status = "in-progress"`` plus the ``updatedAt`` refresh -- no completedAt, no
+    version bump, no basedOnVersions/artifacts write, no commitHash reset, no
+    cascade. This is gated on ``resumable``, NOT on ``status == "in-progress"``:
+    forge-5-loop's PARTIAL completion also passes ``--status in-progress`` but is a
+    real completion-with-artifacts and keeps every field (§11.2 row 14).
 
     Args:
         feature: Feature name.
@@ -755,9 +771,13 @@ def cmd_state_complete(
             else set commitHash to None (Commit 1). Requires the stage to already
             be complete -- see §6.8.
         status: Terminal status to record. "complete" (default) or "in-progress"
-            for a partial forge-5-loop run or a failed-Commit-1 revert (§6.5).
+            for a partial forge-5-loop run -- which still records completedAt,
+            version, basedOnVersions and artifacts; only the status differs (§6.5).
         preserve_commit_hash: Skip the ``commitHash = None`` reset, for the Git
             Commit Protocol's "Nothing to commit" branch (L248, §6.5).
+        resumable: Failed-Commit-1 revert (L245, §6.5). Record only the status;
+            implies status "in-progress". Distinct from a bare ``status=
+            "in-progress"``, which is forge-5-loop's partial completion.
         specs_dir: Specs directory.
         epic: Owning epic name, or None.
 
@@ -774,7 +794,7 @@ def cmd_state_complete(
         # Commit-2 follow-up: record the real hash, leave everything else intact.
         entry["commitHash"] = commit_hash
         cascaded: list[str] = []
-    elif status == "in-progress":
+    elif resumable:
         # Failed-Commit-1 revert (L245). The frozen contract is "leave state as
         # in-progress so the stage can be resumed" -- so record ONLY the status.
         # Writing completedAt would stamp a completion on a stage that never
@@ -782,10 +802,16 @@ def cmd_state_complete(
         # stale off a commit that did not land; resetting commitHash would
         # discard a recoverable hash. All four are behavioral changes in a
         # zero-behavioral-diff feature (owner decision, 2026-07-29).
-        entry["status"] = status
+        #
+        # NOTE this is gated on --resumable, NOT on status == "in-progress":
+        # forge-5-loop's PARTIAL completion also passes --status in-progress but
+        # is a real completion-with-artifacts, so it must fall through to the
+        # branch below and keep its completedAt/version/basedOnVersions/artifacts
+        # (SS 11.2 row 14). Conflating the two silently discards --based-on.
+        entry["status"] = "in-progress"
         cascaded = []
     else:
-        entry["status"] = status                      # "complete"
+        entry["status"] = status                      # "complete" | "in-progress" (partial)
         entry["completedAt"] = _now_iso()
         entry["version"] = version
         entry["basedOnVersions"] = based_on
@@ -835,16 +861,25 @@ R4 must keep working without any site hand-authoring JSON:
 
 - **"If Commit 1 fails … leave state as `in-progress` so the stage can be resumed"**
   (L245). The sanctioned revert is `state-complete --feature … --stage … --version N
-  --status in-progress`. Use this, **not** `state-enter` — `state-enter` also rewrites
+  --resumable`. Use this, **not** `state-enter` — `state-enter` also rewrites
   `startedAt` and `currentStage`, side effects that are wrong for a failed-commit
   revert and that nobody has sanctioned for this use (owner decision, 2026-07-29).
   This branch records **only** `status` (plus the usual `updatedAt` refresh): it does
-  **not** write `completedAt`, does **not** bump `version`, does **not** reset
-  `commitHash`, and fires **no** staleness cascade (owner decision, 2026-07-29). All
-  four would contradict "leave state as `in-progress` so the stage can be resumed".
-  Note that schema validation **cannot** catch a regression here — `stageEntry`
+  **not** write `completedAt`, `version`, `basedOnVersions` or `artifacts`, does
+  **not** reset `commitHash`, and fires **no** staleness cascade (owner decision,
+  2026-07-29). All would contradict "leave state as `in-progress` so the stage can be
+  resumed".
+
+  **`--resumable`, not a bare `--status in-progress`.** The flag exists because
+  `in-progress` has a *second*, opposite caller: `forge-5-loop`'s partial completion
+  (§11.2 row 14) is a real completion-with-artifacts that happens not to be finished,
+  and it *must* keep `completedAt`, `version`, `basedOnVersions` and `artifacts` —
+  item 013 passes `--based-on forge-4-backlog=N` on exactly that call. Gating the
+  status-only branch on `status == "in-progress"` would silently discard those flags.
+
+  Schema validation **cannot** catch a regression in either direction — `stageEntry`
   declares `status` and `completedAt` as independent optional properties, so a state
-  carrying both validates cleanly. Assert it with a dedicated test instead.
+  carrying both validates cleanly. Assert both branches with dedicated tests instead.
 - **"Nothing to commit → mark the stage `complete`, leave `commitHash` at its existing
   value, skip Commit 2"** (L248). Pass `--preserve-commit-hash` so the completion
   branch does **not** execute `entry["commitHash"] = None`; without it, re-completing a
@@ -1410,9 +1445,12 @@ REQ-R4-04). Prose stays verbatim (§13); only the mechanic swaps.
 > by `state-complete --status` (§6.1), added for exactly this case (owner decision,
 > 2026-07-29) — the skill evaluates the condition and passes the resulting value.
 >
-> **Explicitly out of scope (three sites).** Recorded here so each omission reads as
-> deliberate rather than as a missed site, and so item 013's `grep` acceptance criterion
-> is satisfiable:
+> **Explicitly out of scope (five sites).** Recorded here so each omission reads as
+> deliberate rather than as a missed site, and so the repo-wide R4 census acceptance
+> criterion (item **013**, which is R4's last conversion to execute) enumerates every
+> deliberate exclusion. Item 013 carries two criteria: one scoped to the four bodies it
+> converts itself, and the repo-wide census — the latter is only achievable there,
+> because items 011 and 012 must land first:
 >
 > 1. The navigator's `pipelineStatus` writes (`skills/forge/SKILL.md` **L205–207** —
 >    the three pause / resume / abandon bullets). REQ-R4-04 enumerates seven touch points
@@ -1423,11 +1461,24 @@ REQ-R4-04). Prose stays verbatim (§13); only the mechanic swaps.
 >    and is out of scope for a different reason.
 > 2. `skills/forge-verify/SKILL.md` Step 6's `verifyEntry` write path — R4 adds no verb
 >    for verify entries, so it stays hand-authored.
-> 3. `skills/forge-0-epic/references/edit-mode.md`'s **Member State Example (creation
->    C7)** — the member-subdir stub write. None of the seven verbs writes the `epic`
->    back-pointer a brand-new member stub needs, so conversion is impossible without an
->    eighth verb; forge-0-epic also has only 8 body lines of headroom. Deliberately
->    excluded (owner decision, 2026-07-29).
+> 3. `skills/forge-0-epic/references/edit-mode.md` — **two** sites. (i) The **Member
+>    State Example (creation C7)** member-subdir stub write: none of the seven verbs
+>    writes the `epic` back-pointer a brand-new member stub needs, so conversion is
+>    impossible without an eighth verb; forge-0-epic also has only 8 body lines of
+>    headroom. (ii) The **E0-read Apply step's ECR status flip** (~L61–67), which flips
+>    an existing `epicChangeRequests[]` item's `status` from `"open"` to `"applied"`.
+>    `state-ecr` only **appends**, always with `status: "open"` (§9), so no verb mutates
+>    an existing array item. Both deliberately excluded (owner decision, 2026-07-29).
+> 4. `skills/forge-fix/SKILL.md` **Step 5** (~L66–74) — the `forge-verify-*` entry /
+>    `fixedAt` / `verifiedStageVersion` write. Same `verifyEntry` class as site 2, and
+>    R4 adds no verb for verify entries. Deliberately excluded (owner decision,
+>    2026-07-29).
+>
+> Sites that **match a naive grep but need no exclusion**: `skills/forge-guide/SKILL.md`
+> L165 is an *anti*-instruction ("don't hand-edit `.pipeline-state.json`"), and
+> `skills/forge-5-loop/references/runner-contract.md` L176 is descriptive prose. The
+> census criterion is therefore worded "no site *other than those named* **instructs**
+> hand-authoring" rather than as a raw hit count.
 
 > **`shared-conventions.md` prose caveat.** These edits switch the *mechanic*
 > (the fenced "edit the JSON" / "write to `.pipeline-state.json`" step becomes a

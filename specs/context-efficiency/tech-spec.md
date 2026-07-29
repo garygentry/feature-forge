@@ -300,6 +300,15 @@ touching the others (REQ-DELIV-01, SC-6). Sequence per the audit, with R2 remove
 lower-risk and exercises the "add a forge-session subcommand + stdlib schema
 drift-guard" pattern that R4 then reuses at larger scale.
 
+**R5 split (2026-07-29).** In the authored backlog R5 lands in two commits rather than
+one: `effective-config` (item 005) precedes R4 as stated, but the two consumer swaps
+(item 006) land *after* R4's `forge-5-loop` conversion (item 013). R4's conversion of
+that body is mandatory (REQ-R4-04) and has no deferral clause, while item 006's has one,
+and `forge-5-loop` has only 2 spare body lines — so ordering 006 later lets its
+sanctioned fit-or-defer decision be made against real post-R4 line counts instead of a
+guess. R5 remains independently revertible: its two commits are contiguous with respect
+to every other unit's, and R4 and R6 each stay contiguous.
+
 Every new/moved file is cited by path from ≥1 skill body (REQ-PORT-01), contains
 no Claude-only tokens — no literal `/clear`, no Claude-only tool names
 (REQ-PORT-02) — and all six adapter targets regenerate with fixtures refreshed via the
