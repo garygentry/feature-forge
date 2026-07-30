@@ -64,7 +64,7 @@
       "findingsCount": 10,
       "verifiedAt": "2026-07-30T14:15:15Z",
       "verifiedStageVersion": 1,
-      "commitHash": null
+      "commitHash": "9b4cefb87f6f5c4dfe051af95fad1171b848bd89"
     }
   },
   "currentStage": "forge-3-specs",
