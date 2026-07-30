@@ -3,7 +3,7 @@
   "version": "1",
   "variant": "backlog-json",
   "installedAt": "2026-06-12T22:03:15.612Z",
-  "installedBy": "rauf-manager@0.6.0",
+  "installedBy": "rauf-manager@0.13.0",
   "profile": {
     "stack": "claude-plugin+python",
     "packageManager": null,
