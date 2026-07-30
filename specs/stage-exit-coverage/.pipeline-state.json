@@ -65,7 +65,7 @@
       "verifiedAt": "2026-07-30T05:50:06Z",
       "verifiedStageVersion": 1,
       "fixedAt": "2026-07-30T14:01:44Z",
-      "commitHash": null
+      "commitHash": "8826e56b9dc158760d09f776df424a575e6188dd"
     }
   },
   "currentStage": "forge-3-specs",
