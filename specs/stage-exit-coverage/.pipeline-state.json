@@ -56,7 +56,7 @@
         "forge-1-prd": 3,
         "forge-2-tech": 2
       },
-      "commitHash": "3563d4dfc703a5b4b61be850750e93421d168acf"
+      "commitHash": "f8f01c91be12e630ab487a61e0928dba3eaa72e8"
     },
     "forge-verify-specs": {
       "status": "findings-applied",
