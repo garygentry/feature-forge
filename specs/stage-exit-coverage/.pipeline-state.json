@@ -30,14 +30,14 @@
     "forge-verify-tech": {
       "status": "findings-applied",
       "findingsFile": ".verification/VERIFY-tech-2026-07-30.md",
-      "findingsCount": 4,
-      "verifiedAt": "2026-07-30T04:30:28Z",
+      "findingsCount": 2,
+      "verifiedAt": "2026-07-30T04:42:24Z",
       "verifiedStageVersion": 2,
-      "fixedAt": "2026-07-30T04:35:38Z",
-      "commitHash": "da94dda53a0ba919775d618d837d0a446b4a896d"
+      "fixedAt": "2026-07-30T04:49:54Z",
+      "commitHash": null
     }
   },
   "currentStage": "forge-2-tech",
-  "updatedAt": "2026-07-30T04:35:38Z",
+  "updatedAt": "2026-07-30T04:49:54Z",
   "branch": "forge/stage-exit-coverage"
 }

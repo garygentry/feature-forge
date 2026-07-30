@@ -31,6 +31,7 @@ scripts/
 references/
   stage-exit-protocol.md         # one scripted contract for all covered exits
   pipeline-state-schema.json     # auto-verify-pending + scheduling metadata
+  epic-manifest-schema.json      # additive integer revision for epic freshness
   shared-conventions.md          # immediate state-note recipe follow-up
   runner-contract.md             # stale --model wording correction
 
@@ -227,18 +228,21 @@ Add `auto-verify-pending` to the verify status vocabulary in both `forge-session
 }
 ```
 
-Add one targeted atomic writer:
+Epic freshness uses one canonical artifact revision. Add required integer `revision >= 1` to `epic-manifest-schema.json`; epic creation initializes it to `1`, and every successful manifest/edit-mode mutation increments it exactly once in the same atomic write. Validation/read paths treat a legacy manifest with no field as revision `1`; its first successful mutation writes `revision: 2`. Failed or semantic no-op edits do not increment it. Epic `scheduledStageVersion` and `verifiedStageVersion` store this manifest revision, never a member stage version.
+
+Add one targeted atomic writer with separate result-transition and commit-2 provenance modes:
 
 ```python
 def cmd_state_verify(
     feature: str,
     stage: str,
-    status: str,
     specs_dir: Path,
     epic: str | None,
+    status: str | None = None,
     findings_file: str | None = None,
     findings_count: int | None = None,
     verified_stage_version: int | None = None,
+    commit_hash: str | None = None,
 ) -> dict:
     ...
 ```
@@ -247,16 +251,21 @@ CLI:
 
 ```text
 state-verify --feature F --stage <verify-capable production stage>
-  --status auto-verify-pending|passed|findings-reported|findings-applied|skipped
+  [--status auto-verify-pending|passed|findings-reported|findings-applied|skipped]
   [--findings-file P] [--findings-count N]
-  [--verified-stage-version N] [--epic E] [--specs-dir D] [--json]
+  [--verified-stage-version N] [--commit-hash HASH]
+  [--epic E] [--specs-dir D] [--json]
 ```
 
-For feature stages, the writer maps the production stage through `VERIFY_TOKEN_BY_STAGE`, resolves with `_load_state_for_write(...)`, mutates only that verify entry, refreshes `updatedAt`, and persists with `_commit_state(...)` (REQ-STATE-03). `forge-0-epic` is an explicit branch before that map: `feature` is the epic name, `epic` must be absent or equal to it, the writer strictly resolves `{specsDir}/{feature}/epic-manifest.json`, and atomically mutates only `stages.forge-verify-epic` in the sibling `.epic-state.json`. It never invokes the member-feature writer. Unsafe names, a missing/mismatched manifest, or ambiguous/conflicting epic inputs fail before mutation. The epic path supports `auto-verify-pending`, `passed`, `findings-reported`, `findings-applied`, and `skipped` with the same metadata validation and atomic-failure guarantees as feature state.
+Exactly one mode is required: a result transition supplies `--status`; commit-2 provenance supplies only `--commit-hash` plus identity/path flags. Initial terminal result writes set `commitHash: null`. Commit-2 mode requires an existing applicable verify entry, validates `re.fullmatch(r"[0-9a-fA-F]{40}", value)` before mutation, updates only `commitHash` and the state file's `updatedAt`, and rejects status/findings/version metadata. Missing entries, short/non-hex hashes, or mixed modes fail before mutation. No amend path exists.
 
-For `findings-applied`, the writer records `fixedAt` but deletes any existing `verifiedStageVersion` and rejects a supplied `--verified-stage-version`. This deliberately leaves verification freshness unresolved until a subsequent `passed` write records the current production version; interruption between fix and re-verify therefore cannot advance the pipeline.
+For feature stages, the writer maps the production stage through `VERIFY_TOKEN_BY_STAGE`, resolves with `_load_state_for_write(...)`, mutates only that verify entry, refreshes `updatedAt`, and persists with `_commit_state(...)` (REQ-STATE-03). `forge-0-epic` is an explicit branch before that map: `feature` is the epic name, `epic` must be absent or equal to it, the writer strictly resolves `{specsDir}/{feature}/epic-manifest.json`, reads its canonical revision, and atomically mutates only `stages.forge-verify-epic` plus top-level `updatedAt` in the sibling `.epic-state.json`. It never invokes the member-feature writer. Unsafe names, a missing/mismatched manifest, or ambiguous/conflicting epic inputs fail before mutation. The epic path supports both writer modes and all statuses with the same metadata validation, hash validation, and atomic-failure guarantees as feature state.
 
-`stage_exit()` computes the clean-tree/auto-fix directives first, then, immediately before returning a payload with `runInStageVerify: true`, calls the same internal writer with `auto-verify-pending`. The pending write is idempotent for the same `scheduledStageVersion`: repeated stage-exit calls do not rewrite timestamps or churn bytes (REQ-REL-01). A newer production version creates a new schedule timestamp/version. Terminal writes remove `scheduledAt`/`scheduledStageVersion`, set the existing verified/fixed metadata as applicable, and replace the pending status. Dispatch failure or non-adherence performs no terminal write, so debt remains visible (REQ-DEBT-03/04).
+Read-side behavior is equally explicit: epic `stage_exit`, pending-debt selection, navigator/dashboard rows, rollups, and freshness classification load the epic root's `.epic-state.json` and compare `scheduledStageVersion`/`verifiedStageVersion` to the current manifest revision. They never call feature `_resolve_feature_dir` for epic verification and never inspect a member version. Missing epic state means never verified; matching pending revision means `auto-pending`; matching terminal revision means fresh; a mismatched or legacy result with no recorded revision means stale. This same read path makes pending debt and terminal replacement visible to direct and nested routing.
+
+For `findings-applied`, the writer records `fixedAt` but deletes any existing `verifiedStageVersion` and rejects a supplied `--verified-stage-version`. This deliberately leaves verification freshness unresolved until a subsequent `passed` write records the current artifact revision (feature production-stage version or epic manifest revision); interruption between fix and re-verify therefore cannot advance the pipeline.
+
+`stage_exit()` computes the clean-tree/auto-fix directives first, then, immediately before returning a payload with `runInStageVerify: true`, calls the same internal writer with `auto-verify-pending`. The pending write is idempotent for the same `scheduledStageVersion`: repeated stage-exit calls do not rewrite timestamps or churn bytes (REQ-REL-01). A newer feature-stage version or epic manifest revision creates a new schedule timestamp/version. Terminal writes remove `scheduledAt`/`scheduledStageVersion`, set the existing verified/fixed metadata as applicable, and replace the pending status. Dispatch failure or non-adherence performs no terminal write, so debt remains visible (REQ-DEBT-03/04).
 
 The pending state is classified distinctly:
 
@@ -272,7 +281,7 @@ Alternative considered: a debt-only command. Rejected because it would duplicate
 
 ### 3.8 Full hashes on new writes, permissive legacy reads (REQ-STATE-01/02/04)
 
-Validate `--commit-hash` at the targeted writer boundary with `re.fullmatch(r"[0-9a-fA-F]{40}", value)`. `cmd_state_complete(...)` rejects any new short or non-hex hash before mutation. Any new verify/fix provenance writer follows the same validator.
+Validate `--commit-hash` at each targeted writer boundary with `re.fullmatch(r"[0-9a-fA-F]{40}", value)`. `cmd_state_complete(...)` and `cmd_state_verify(...)` reject any new short or non-hex hash before mutation; the latter uses the explicit commit-2 mode in §3.7 for both feature and epic verification state.
 
 Do not add a restrictive schema pattern to legacy `commitHash` fields and do not reject a loaded short hash. Existing state therefore remains readable without migration (REQ-STATE-02). The two-commit protocol remains unchanged: Commit 1 writes artifacts/state with `commitHash: null`; Commit 2 records the full artifact hash; no amend path is introduced (REQ-STATE-04).
 
@@ -329,9 +338,9 @@ New optional fields:
 | Field | Type | Meaning |
 |---|---|---|
 | `scheduledAt` | ISO-8601 string/null | When automatic verification became owed |
-| `scheduledStageVersion` | integer/null | Production artifact version owed verification |
+| `scheduledStageVersion` | integer/null | Artifact revision owed verification: feature production-stage version or epic manifest revision |
 
-Existing `findingsFile`, `findingsCount`, `verifiedAt`, `fixedAt`, `commitHash`, and `verifiedStageVersion` remain schema-compatible. Transition semantics are tightened: a `findings-applied` write clears `verifiedStageVersion`, and only a subsequent passing verification restores the current version. Scheduling metadata is cleared by terminal result writes.
+Existing `findingsFile`, `findingsCount`, `verifiedAt`, `fixedAt`, `commitHash`, and `verifiedStageVersion` remain schema-compatible. For epic state, the version fields carry the manifest revision and top-level `updatedAt` is maintained by every write. Transition semantics are tightened: a `findings-applied` write clears `verifiedStageVersion`, and only a subsequent passing verification restores the current artifact revision. Scheduling metadata is cleared by terminal result writes.
 
 ### 4.2 Exit request/result model (REQ-OBS-01, REQ-REL-01)
 
@@ -386,7 +395,7 @@ Exit codes remain 0 success / 2 usage-I/O error. Stages 0–4 keep read-tolerant
 
 ### 5.2 `state-verify` command (REQ-DEBT-01..04, REQ-STATE-03)
 
-The exact command and function signature are specified in §3.7. Terminal statuses require their applicable metadata: `passed`/`findings-reported` require `--verified-stage-version`; findings status requires non-negative `--findings-count`; `skipped` records no verified version; `findings-applied` records `fixedAt`, requires no verified version, and clears any prior `verifiedStageVersion` so re-verification remains durably outstanding. Contradictory combinations fail before mutation. For `--stage forge-0-epic`, `--feature` names the epic and the command writes only the epic root's `.epic-state.json`; all other stages retain strict feature-state resolution.
+The exact command, dual-mode function signature, and commit-2 guards are specified in §3.7. Terminal statuses require their applicable metadata: `passed`/`findings-reported` require `--verified-stage-version`; findings status requires non-negative `--findings-count`; `skipped` records no verified version; `findings-applied` records `fixedAt`, requires no verified version, and clears any prior `verifiedStageVersion` so re-verification remains durably outstanding. Contradictory combinations fail before mutation. Commit-2 mode accepts only a validated full `--commit-hash` and identity/path flags, requires an existing entry, and changes only `commitHash` plus `updatedAt`. For `--stage forge-0-epic`, `--feature` names the epic and both modes read the manifest revision and write only the epic root's `.epic-state.json`; all other stages retain strict feature-state resolution.
 
 ### 5.3 Duplicate-aware JSON helper (REQ-CONFIG-01..04)
 
@@ -415,9 +424,11 @@ This repository has no Python package graph; integrations are executable scripts
 2. **`scripts/epic-manifest.py`**
    - CLI import path: `scripts/epic-manifest.py render-status <epic> --specs-dir D --json`.
    - Supplies live epic completion/actionable routing; its `KNOWN_VERIFY_STATUSES` copy must remain byte-identical with `forge-session.py`.
+   - Reads legacy missing `revision` as `1`, initializes new manifests at `1`, and increments the revision exactly once in every successful atomic mutation path.
 
-3. **`references/pipeline-state-schema.json`**
-   - Source of truth for `verifyEntry`; receives additive status/fields only.
+3. **State schemas**
+   - `references/pipeline-state-schema.json` remains the source of truth for feature `verifyEntry` and receives additive status/fields only.
+   - `references/epic-manifest-schema.json` adds required integer `revision >= 1`; compatibility readers supply the documented legacy default before validation.
 
 4. **`scripts/build-adapters.py`**
    - `RUNTIME_HELPERS` copies `forge-session.py`, `epic-manifest.py`, and new `forge_json.py` to every adapter.
@@ -446,10 +457,12 @@ authoring stage commits artifact/state
   -> stage-exit returns directives
   -> outer skill dispatches nested forge-verify
   -> forge-verify writes passed/findings through state-verify
+  -> commit 1 lands report/state with commitHash null
+  -> state-verify(commit_hash) records the full artifact hash in commit 2
   -> findings optionally invoke nested forge-fix
   -> forge-fix writes findings-applied and clears verifiedStageVersion
   -> interruption still reads stale/unresolved
-  -> outer caller mandates nested re-verify and only passed records the current version
+  -> outer caller mandates nested re-verify and only passed records the current artifact revision
   -> outer caller alone prints one terminal NEXT-STEPS block
 ```
 
@@ -507,7 +520,9 @@ Extend `tests/test_stage_exit.py` to cover:
 ### 8.2 State/schema/provenance tests (REQ-DEBT-01..06, REQ-STATE-01..04)
 
 - `tests/test_auto_verify.py`: distinct `auto-pending` classification in `verify_state`, `pending_verify`, navigator rows, status rendering, and stage exit.
-- `tests/test_state_verbs.py`: `state-verify` legal/illegal transitions, idempotent same-version scheduling, atomic failure behavior, feature/epic disambiguation, direct `.epic-state.json` pass/findings/applied/skipped writes, wrong-file non-mutation, result replacement, and `findings-applied` clearing `verifiedStageVersion` until re-verification passes.
+- `tests/test_state_verbs.py`: `state-verify` legal/illegal transitions, idempotent same-revision scheduling, atomic failure behavior, feature/epic disambiguation, direct `.epic-state.json` pass/findings/applied/skipped writes, wrong-file non-mutation, result replacement, and `findings-applied` clearing `verifiedStageVersion` until re-verification passes.
+- Epic revision tests: creation at 1, legacy missing-field read as 1, first mutation to 2, exactly-once increments, no-op/failure stability, same-revision pending idempotency, manifest edits making verification stale, pending visibility, and pass replacement.
+- Verify provenance tests: feature and epic commit-2 success with full hashes, short/non-hex and missing-entry rejection without mutation, mixed-mode rejection, and proof that only `commitHash`/`updatedAt` change with no amend path.
 - `tests/test_state_schema_conformance.py`: every writer sequence validates; legacy files without new status load; short legacy hashes load.
 - hash tests: 40-hex new writes pass; short/non-hex new writes fail without mutation.
 - `tests/test_stage_constants_parity.py`: schema/session/manifest verify vocabularies remain aligned.
@@ -552,7 +567,8 @@ None added. Runtime remains Python 3.10+ standard library. Existing pinned YAML 
 - `scripts/forge-session.py`: CLI, routing, state/config integration.
 - `scripts/epic-manifest.py`: live epic status and verify vocabulary parity.
 - `scripts/forge_json.py`: shared duplicate-aware parsing.
-- `references/pipeline-state-schema.json`: additive state contract.
+- `references/pipeline-state-schema.json`: additive feature-state contract.
+- `references/epic-manifest-schema.json`: canonical integer epic revision contract.
 - `scripts/build-adapters.py`: deterministic distribution and host translation.
 - Canonical skill/reference files named in §2 and tests named in §8.
 
