@@ -25,7 +25,7 @@
       "basedOnVersions": {
         "forge-1-prd": 2
       },
-      "commitHash": null
+      "commitHash": "5e4dc021c5b7d9dff588044a065e5ee0eb7368ea"
     }
   },
   "currentStage": "forge-2-tech",
