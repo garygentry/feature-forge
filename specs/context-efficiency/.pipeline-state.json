@@ -2,7 +2,7 @@
   "feature": "context-efficiency",
   "branch": "forge/context-efficiency",
   "createdAt": "2026-07-20T02:36:15Z",
-  "updatedAt": "2026-07-30T00:15:09Z",
+  "updatedAt": "2026-07-30T00:15:25Z",
   "currentStage": "forge-6-docs",
   "pipelineStatus": "active",
   "stages": {
@@ -136,7 +136,7 @@
         "docs/architecture/context-efficiency/cli-reference.md",
         "docs/architecture/context-efficiency/guides/integration.md"
       ],
-      "commitHash": null
+      "commitHash": "e2c0e7ae98d72be9be97fc41082c7d44c20b8287"
     }
   }
 }
