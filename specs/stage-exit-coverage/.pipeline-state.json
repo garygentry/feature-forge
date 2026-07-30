@@ -64,7 +64,7 @@
       "findingsCount": 5,
       "verifiedAt": "2026-07-30T15:34:57Z",
       "verifiedStageVersion": 1,
-      "commitHash": null,
+      "commitHash": "4bc392db2b431d7f010c6f21798c3a97b103819d",
       "fixedAt": "2026-07-30T15:34:57Z"
     }
   },
