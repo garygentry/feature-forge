@@ -59,16 +59,15 @@
       "commitHash": "3563d4dfc703a5b4b61be850750e93421d168acf"
     },
     "forge-verify-specs": {
-      "status": "findings-applied",
-      "findingsFile": ".verification/VERIFY-specs-2026-07-30.md",
-      "findingsCount": 6,
-      "verifiedAt": "2026-07-30T05:50:06Z",
+      "status": "findings-reported",
+      "findingsFile": ".verification/VERIFY-specs-2026-07-30-round2.md",
+      "findingsCount": 10,
+      "verifiedAt": "2026-07-30T14:15:15Z",
       "verifiedStageVersion": 1,
-      "fixedAt": "2026-07-30T14:01:44Z",
-      "commitHash": "8826e56b9dc158760d09f776df424a575e6188dd"
+      "commitHash": null
     }
   },
   "currentStage": "forge-3-specs",
-  "updatedAt": "2026-07-30T14:01:44Z",
+  "updatedAt": "2026-07-30T14:15:15Z",
   "branch": "forge/stage-exit-coverage"
 }
