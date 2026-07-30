@@ -24,6 +24,9 @@ handoffs, persist auto-verify debt before control can be lost, and prove branch-
 
 - As a forge user, I want every production stage to end with an authoritative next action so that I
   never have to reconstruct where the pipeline should continue.
+- As a forge user with verification still outstanding, I want verification—not the downstream
+  production stage—to be the authoritative next action so that I cannot accidentally bypass the
+  verify-before-clear gate.
 - As a user running verify or fix, I want the diversion to rejoin the production stage it served so
   that successful audit work does not lose the original pipeline thread.
 - As an epic editor, I want the exit to use the selected member's actual progress so that I am not
@@ -53,6 +56,14 @@ handoffs, persist auto-verify debt before control can be lost, and prove branch-
   duplicate terminal exits.
 - **REQ-EXIT-05 (P0):** Existing host-specific command forms and fresh-session wording MUST remain
   correct for Claude, Pi, and generic adapter hosts.
+- **REQ-EXIT-06 (P0):** When verification is outstanding and has not been explicitly skipped, the
+  verify command MUST be the single authoritative primary action in the terminal NEXT-STEPS block;
+  the downstream production command MUST be demoted to follow-up guidance that applies only after
+  verification passes.
+- **REQ-EXIT-07 (P0):** The Standard Verify Gate MUST be selected from actual host capabilities, not
+  a Claude-only host-name check. A Pi session with `AskUserQuestion` and a dispatchable
+  `forge-verifier` MUST receive the interactive gate; a host without the clean-room path MUST use a
+  verify-first manual fallback rather than presenting the downstream stage as primary.
 
 ### 3.2 Branch Diversion and Rejoin Routing
 
@@ -173,7 +184,8 @@ handoffs, persist auto-verify debt before control can be lost, and prove branch-
 
 - **REQ-COMPAT-01 (P0):** Existing scripted exits for stages 0–4 MUST preserve their user-visible
   prompts, verify-gate routing, directives, host translations, and sentinel placement except where
-  #175 intentionally corrects epic edit-mode routing.
+  #175 corrects epic edit-mode routing and REQ-EXIT-06/07 correct the unsafe verify-primary ordering
+  and Claude-only capability check.
 - **REQ-COMPAT-02 (P0):** Existing direct, nested auto-verify, standalone, and epic workflows MUST
   remain supported with no required migration of project config or pipeline state.
 - **REQ-COMPAT-03 (P0):** `smokeCommand: null` MUST remain valid and CHECK-I21 MUST remain
@@ -237,7 +249,10 @@ None. Interview decisions:
 - docs retains context-aware terminal handoff;
 - duplicate config keys warn everywhere but remain last-key-wins;
 - new writes use full hashes while legacy short hashes remain readable; and
-- the exit guard uses an explicit allow-list.
+- the exit guard uses an explicit allow-list;
+- unresolved verification owns the primary terminal action until it passes or is explicitly skipped;
+  and
+- Standard Verify Gate selection is capability-aware, including capable Pi sessions.
 
 ## 8. Success Criteria
 
@@ -255,3 +270,7 @@ None. Interview decisions:
 8. `skills/forge-5-loop/SKILL.md` remains within both spec-purity body caps, and every canon/script
    change ships with fresh adapters in the same commit.
 9. `bash scripts/validate.sh` and `ruff check scripts/ eval/` pass with no adapter or docs drift.
+10. With auto-verify off and verification outstanding, capable Pi receives the interactive Standard
+    Verify Gate; fallback Pi/generic output fences the verify command and shows the production
+    successor only as post-verification guidance. No path advances without a passed verify or an
+    explicitly recorded skip.

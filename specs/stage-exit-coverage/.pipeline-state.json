@@ -5,17 +5,17 @@
   "stages": {
     "forge-1-prd": {
       "status": "complete",
-      "startedAt": "2026-07-30T03:44:44Z",
-      "completedAt": "2026-07-30T03:48:43Z",
-      "version": 1,
+      "startedAt": "2026-07-30T04:22:51Z",
+      "completedAt": "2026-07-30T04:23:13Z",
+      "version": 2,
       "basedOnVersions": {},
       "artifacts": [
         "PRD.md"
       ],
-      "commitHash": "e89d8faa0fa610303d49d15f507054521a362307"
+      "commitHash": null
     },
     "forge-2-tech": {
-      "status": "complete",
+      "status": "stale",
       "startedAt": "2026-07-30T03:49:46Z",
       "artifacts": [
         "tech-spec.md"
@@ -28,7 +28,7 @@
       "commitHash": "99f914c5f634083ed66060150cf06e5025a137ad"
     }
   },
-  "currentStage": "forge-2-tech",
-  "updatedAt": "2026-07-30T04:12:46Z",
+  "currentStage": "forge-1-prd",
+  "updatedAt": "2026-07-30T04:23:13Z",
   "branch": "forge/stage-exit-coverage"
 }
