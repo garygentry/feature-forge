@@ -12,7 +12,7 @@
       "artifacts": [
         "PRD.md"
       ],
-      "commitHash": null
+      "commitHash": "302c93f5fe2227df5d11bba97ac295e1c1f8279b"
     },
     "forge-2-tech": {
       "status": "complete",
@@ -64,7 +64,7 @@
       "findingsCount": 10,
       "verifiedAt": "2026-07-30T14:15:15Z",
       "verifiedStageVersion": 1,
-      "commitHash": null,
+      "commitHash": "302c93f5fe2227df5d11bba97ac295e1c1f8279b",
       "fixedAt": "2026-07-30T15:16:00Z"
     }
   },
