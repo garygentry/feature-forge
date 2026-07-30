@@ -31,3 +31,6 @@ adapter-src/*/node_modules/
 **/.rauf/archive/
 __pycache__/
 *.pyc
+
+# pi subagent run artifacts (transcripts/meta from forge-verifier fan-outs)
+.pi-subagents/

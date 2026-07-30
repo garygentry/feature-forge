@@ -36,11 +36,23 @@ def _write_state(specs_dir: Path, name: str, state: dict) -> None:
 
 
 def _rank(specs_dir: Path, config_path: Path | None = None) -> dict:
+    """Run ``rank-features`` against a tmp specs tree, isolated from this repo.
+
+    ``--config`` defaults to the RELATIVE ``./forge.config.json``, resolved against the
+    child's cwd. Without ``cwd=``, the child inherits pytest's — the repo root — so a
+    ``config_path=None`` call silently reads *this project's* real config instead of the
+    intended "no config" state, and the assertions then depend on whatever the developer
+    happens to have set locally (it was `autoVerify: true` that surfaced this). Anchor the
+    child in the tmp tree so the default resolves to a nonexistent file and `_load_config`
+    downgrades to ``{}``. ``tests/test_stage_exit.py::_exit`` already does this.
+    """
     argv = [sys.executable, str(HELPER), "rank-features",
             "--specs-dir", str(specs_dir), "--json"]
     if config_path is not None:
         argv += ["--config", str(config_path)]
-    result = subprocess.run(argv, capture_output=True, text=True)
+    result = subprocess.run(
+        argv, capture_output=True, text=True, cwd=str(specs_dir.parent)
+    )
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
 
