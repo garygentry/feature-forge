@@ -66,6 +66,50 @@ test("codex update is idempotent and prunes an orphaned mirror file", async () =
   });
 });
 
+test("pi global install mirrors agents/*.md into ~/.pi/agent/agents and uninstall removes them", async () => {
+  await withSandbox(async (sb) => {
+    // Global scope is the npm-installer path W4 fixes: the primary bundle lands in
+    // ~/.pi/agent/skills/feature-forge (not a pi-subagents package root), so agents are only
+    // reachable via the mirror into ~/.pi/agent/agents, the user scope pi-subagents scans.
+    await makeFixtureBundle(sb, "pi", ["forge-1-prd"], ["forge-researcher", "forge-verifier"]);
+    await seedConfigDir(sb, "pi", "global");
+
+    const r = await runCli2(["install", "-a", "pi", "-g", "--source", sb.source], sb);
+    assert.equal(r.exitCode, EXIT.SUCCESS);
+    // primary bundle under the global pi skills dir
+    assert.ok(await exists(join(sb.home, ".pi/agent/skills/feature-forge/skills/forge-1-prd/SKILL.md")));
+    // mirror (flat) under ~/.pi/agent/agents
+    assert.ok(await exists(join(sb.home, ".pi/agent/agents/forge-researcher.md")));
+    assert.ok(await exists(join(sb.home, ".pi/agent/agents/forge-verifier.md")));
+
+    // manifest records the mirror at the global second root
+    const mf = JSON.parse(await readFile(join(sb.home, ".pi/agent/skills/.feature-forge.global.json"), "utf8"));
+    assert.equal(mf.placements.length, 1);
+    assert.equal(mf.placements[0].kind, "mirror");
+    assert.equal(mf.placements[0].destination, join(sb.home, ".pi/agent/agents"));
+
+    await runCli2(["uninstall", "-a", "pi", "-g", "--source", sb.source], sb);
+    assert.equal(await exists(join(sb.home, ".pi/agent/agents/forge-researcher.md")), false);
+    assert.equal(await exists(join(sb.home, ".pi/agent/agents/forge-verifier.md")), false);
+  });
+});
+
+test("pi project install mirrors agents/*.md into .pi/agents (not .pi/agent/agents)", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "pi", ["forge-1-prd"], ["forge-researcher"]);
+    await seedConfigDir(sb, "pi", "project");
+
+    const r = await runCli2(["install", "-a", "pi", "--source", sb.source], sb);
+    assert.equal(r.exitCode, EXIT.SUCCESS);
+    // project scope scans <root>/.pi/agents — NOT the global .pi/agent/agents subtree
+    assert.ok(await exists(join(sb.cwd, ".pi/agents/forge-researcher.md")));
+    assert.equal(await exists(join(sb.cwd, ".pi/agent/agents/forge-researcher.md")), false);
+
+    const mf = JSON.parse(await readFile(join(sb.cwd, ".pi/skills/.feature-forge.project.json"), "utf8"));
+    assert.equal(mf.placements[0].destination, join(sb.cwd, ".pi/agents"));
+  });
+});
+
 test("copilot install merges a managed block, preserving pre-existing user content", async () => {
   await withSandbox(async (sb) => {
     await makeFixtureBundle(sb, "copilot", ["forge-1-prd"]);

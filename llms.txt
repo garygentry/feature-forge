@@ -1,0 +1,14 @@
+# feature-forge
+
+> Turn a feature idea into shipped, verified code through a fixed, resumable pipeline — works with any coding agent.
+
+## Setting up feature-forge with a coding agent
+
+If you are a coding agent asked to install or use feature-forge in the user's project, follow the deterministic setup procedure — install the skills for your host agent, install and wire the rauf loop runner, initialize the project, and start Stage 1, pausing only at gates:
+
+- [Agent setup procedure](https://raw.githubusercontent.com/garygentry/feature-forge/main/AGENTS-SETUP.md): the machine-facing install-and-start tree with a JSON install manifest and confirmation gates.
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/garygentry/feature-forge/main/README.md): overview, install methods, the pipeline stages, and configuration.
+- [Documentation site](https://garygentry.github.io/feature-forge/): human-readable guides (pipeline, dashboard, agents, epics).

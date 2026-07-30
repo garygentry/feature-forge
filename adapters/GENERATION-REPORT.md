@@ -124,6 +124,26 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-verify/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 | `skills/forge/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 
+## pi
+
+| Source | Construct | Reason |
+|--------|-----------|--------|
+| `agents/forge-researcher.md` | `sub-agent key 'model'` | Claude model aliases (opus/sonnet) are not Pi model ids; pin via subagents.agentOverrides.<name>.model in Pi settings instead (D1) |
+| `agents/forge-spec-writer.md` | `sub-agent key 'model'` | Claude model aliases (opus/sonnet) are not Pi model ids; pin via subagents.agentOverrides.<name>.model in Pi settings instead (D1) |
+| `agents/forge-verifier.md` | `sub-agent key 'model'` | Claude model aliases (opus/sonnet) are not Pi model ids; pin via subagents.agentOverrides.<name>.model in Pi settings instead (D1) |
+| `skills/forge-0-epic/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-1-prd/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-2-tech/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-3-specs/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-4-backlog/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-5-loop/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-6-docs/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-bootstrap/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-fix/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-guide/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge-verify/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+| `skills/forge/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
+
 ## Copied verbatim (no provenance header)
 
 These files are transported byte-for-byte from canon into every `adapters/<agent>/` bundle and intentionally carry **no** provenance header (a header would break byte-identity / corrupt parsed files):

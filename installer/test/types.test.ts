@@ -9,7 +9,7 @@ import {
 } from "../dist/types.js";
 
 test("AGENT_IDS is the canonical determinism order (spec 08 §2)", () => {
-  assert.deepEqual(AGENT_IDS, ["claude", "codex", "copilot", "cursor", "gemini"]);
+  assert.deepEqual(AGENT_IDS, ["claude", "codex", "copilot", "cursor", "gemini", "pi"]);
 });
 
 test("Object.keys(AGENT_TARGETS) covers exactly AGENT_IDS", () => {

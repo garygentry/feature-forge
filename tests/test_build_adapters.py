@@ -194,6 +194,244 @@ def test_bundle_is_self_contained(fixture_copy, agent):
     assert not (bundle / "skills" / "noarg" / "references").exists()
 
 
+def test_verbatim_reference_copy_excludes_python_cache_artifacts(fixture_copy):
+    """Generated bundles do not ship pytest/import byproducts from references trees."""
+    root = fixture_copy("minimal-canon")
+    pycache = root / "references" / "__pycache__"
+    pycache.mkdir()
+    (pycache / "loop-agent-selection.cpython-310.pyc").write_bytes(b"cache")
+    own_cache = root / "skills" / "with-refs" / "references" / "__pycache__"
+    own_cache.mkdir()
+    (own_cache / "detail.cpython-310.pyc").write_bytes(b"cache")
+
+    assert run_build(root).returncode == 0
+
+    for path in (root / "adapters").rglob("*"):
+        rel = path.relative_to(root / "adapters").as_posix()
+        assert "__pycache__" not in rel
+        assert not rel.endswith(".pyc")
+
+
+def test_pi_frontmatter_descriptions_use_skill_command_wording(fixture_copy):
+    """Pi skill/role descriptions are startup context, so translate Claude commands there too."""
+    root = fixture_copy("minimal-canon")
+    skill_path = root / "skills" / "with-refs" / "SKILL.md"
+    skill_path.write_text(
+        skill_path.read_text().replace(
+            "description: \"Build the thing: do it precisely.\"",
+            "description: \"Use when user runs /feature-forge:with-refs.\"",
+        ),
+        encoding="utf-8",
+    )
+    agent_path = root / "agents" / "researcher.md"
+    agent_path.write_text(
+        agent_path.read_text().replace(
+            "description: \"Researches the codebase: thoroughly and concisely.\"",
+            "description: \"Researches before /feature-forge:forge-2-tech.\"",
+        ),
+        encoding="utf-8",
+    )
+
+    assert run_build(root).returncode == 0
+
+    pi_skill = (root / "adapters" / "pi" / "skills" / "with-refs" / "SKILL.md").read_text()
+    pi_agent = (root / "adapters" / "pi" / "agents" / "researcher.md").read_text()
+    assert "/skill:with-refs" in pi_skill
+    assert "/feature-forge:" not in pi_skill.split("---", 2)[1]
+    assert "/skill:forge-2-tech" in pi_agent
+    assert "/feature-forge:" not in pi_agent.split("---", 2)[1]
+
+
+def test_pi_support_files_use_skill_command_wording(fixture_copy):
+    """Pi copied references/helpers can print next-step commands, so translate those too."""
+    root = fixture_copy("minimal-canon")
+    shared = root / "references" / "shared-conventions.md"
+    shared.write_text(
+        shared.read_text() + "\nNext: /feature-forge:forge-2-tech demo\n",
+        encoding="utf-8",
+    )
+    helper = root / "scripts" / "forge-session.py"
+    helper.write_text(
+        helper.read_text() + '\nNEXT = "/feature-forge:forge demo"\n',
+        encoding="utf-8",
+    )
+
+    assert run_build(root).returncode == 0
+
+    pi_shared = root / "adapters" / "pi" / "references" / "shared-conventions.md"
+    pi_fanned = root / "adapters" / "pi" / "skills" / "with-refs" / "references" / "shared-conventions.md"
+    pi_helper = root / "adapters" / "pi" / "scripts" / "forge-session.py"
+    for path in (pi_shared, pi_fanned, pi_helper):
+        text = path.read_text(encoding="utf-8")
+        assert "/skill:" in text
+        assert "/feature-forge:" not in text
+
+    claude_helper = root / "adapters" / "claude" / "scripts" / "forge-session.py"
+    assert "/feature-forge:forge demo" in claude_helper.read_text(encoding="utf-8")
+
+
+def test_pi_bundle_includes_ask_user_question_extension(fixture_copy):
+    """The Pi adapter is self-contained and ships the whole AskUserQuestion tree.
+
+    The extension is a vendored third-party package (adapter-src/pi/UPSTREAM.md),
+    so this asserts the *bundle* contract — entry point, tool name, license,
+    header policy — and deliberately not the vendored implementation's internals,
+    which are upstream's to change and are covered behaviourally by
+    ``adapter-src/pi``'s own ``npm run verify``.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+
+    package = json.loads((root / "adapters" / "pi" / "package.json").read_text())
+    assert package["pi"]["extensions"] == ["./extensions/ask-user-question/index.ts"]
+
+    ext_dir = root / "adapters" / "pi" / "extensions" / "ask-user-question"
+    entry = ext_dir / "index.ts"
+    assert entry.is_file(), "the manifest's declared entry point must exist in the bundle"
+
+    # The whole module graph must ship: an entry point without its imports is a
+    # bundle that typechecks in-tree and dies on first load in a Pi session.
+    assert (ext_dir / "state" / "questionnaire-session.ts").is_file()
+    assert (ext_dir / "tool" / "types.ts").is_file()
+    assert (ext_dir / "view" / "dialog-builder.ts").is_file()
+    assert (ext_dir / "rpc-fallback.ts").is_file()
+
+    # Vendor patches that canon depends on (UPSTREAM.md patches 1 and 3).
+    assert 'ASK_USER_QUESTION_TOOL_NAME = "AskUserQuestion"' in (ext_dir / "ask-user-question.ts").read_text()
+    assert "process.env.FEATURE_FORGE_ROOT ||=" in entry.read_text()
+
+    # MIT attribution ships verbatim — a provenance header would alter the license text.
+    license_text = (ext_dir / "LICENSE").read_text()
+    assert license_text.startswith("MIT License")
+    assert "GENERATED" not in license_text
+
+    # JSON has no comment syntax, so locales must not be headered either.
+    en = (ext_dir / "locales" / "en.json").read_text()
+    assert json.loads(en)["sentinel.other"] == "Type something."
+
+    # TypeScript still carries provenance naming its adapter-src path.
+    assert entry.read_text().startswith(
+        "// GENERATED — DO NOT EDIT. Source: adapter-src/pi/extensions/ask-user-question/index.ts"
+    )
+
+
+def test_pi_bundle_declares_its_agents_to_the_subagent_registry(fixture_copy):
+    """The Pi manifest declares ``agents/`` so a Pi subagent extension can find it.
+
+    Without this key the emitted agent files are inert bytes: nothing tells any Pi
+    component the directory exists, and the model reports the forge agents as "not
+    installed". The key is third-party (pi-subagents 0.35.1) and so lives at the
+    manifest top level rather than inside the core-Pi ``pi`` block; it is emitted
+    unconditionally because it is inert when no such extension is installed.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+
+    pi_root = root / "adapters" / "pi"
+    package = json.loads((pi_root / "package.json").read_text())
+    assert package["pi-subagents"] == {"agents": ["./agents"]}
+    assert "subagents" not in package["pi"], "third-party key must stay out of the pi block"
+
+    declared = pi_root / package["pi-subagents"]["agents"][0]
+    assert declared.is_dir(), "the declared agents dir must exist in the bundle"
+    assert sorted(p.name for p in declared.glob("*.md")) == ["author.md", "researcher.md", "verifier.md"]
+
+
+def test_installer_pi_manifest_paths_resolve_in_the_generated_tree():
+    """The hand-written installer manifest must point at paths the generator emits.
+
+    ``installer/package.json``'s ``pi`` block is what ``pi install
+    npm:@garygentry/feature-forge`` reads, and its ``./adapters/...`` paths are
+    published-tarball-relative — ``prepack`` copies the repo's ``adapters/`` tree
+    to ``installer/adapters/``, so each one resolves against the repo root here.
+    Nothing in ``installer/src/`` reads the block, so only this test couples it to
+    the generated tree; it shipped pointing at a nonexistent
+    ``extensions/ask-user-question.ts`` (the entry point is
+    ``extensions/ask-user-question/index.ts``) precisely because nothing did.
+    """
+    manifest = json.loads((REPO_ROOT / "installer" / "package.json").read_text(encoding="utf-8"))
+    declared = manifest["pi"]["skills"] + manifest["pi"]["extensions"]
+    assert declared, "the pi block must declare something for pi install to find"
+
+    for entry in declared:
+        assert entry.startswith("./adapters/"), f"{entry} must be tarball-relative"
+        assert (REPO_ROOT / entry).exists(), f"{entry} does not exist in the generated tree"
+
+
+def test_pi_host_notes_name_the_real_subagent_dispatch_shape(fixture_copy):
+    """Pi skill bodies tell the model to dispatch, not to give up (regression).
+
+    The overlay used to state that Pi had no subagent construct at all, so the model
+    obeyed the bundle and improvised substitutes for gates like ``forge-verify``.
+    Inline execution stays as an explicit fallback because the subagent tool is not
+    guaranteed to be present.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+
+    for path in sorted((root / "adapters" / "pi" / "skills").rglob("SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        assert "Pi has no Claude-style" not in text, f"{path.name} still tells the model to give up"
+        assert '{ agent: "forge-verifier", task: "..." }' in text
+        assert '{ tasks: [{ agent: "forge-spec-writer", task: "..." }, ...] }' in text
+        assert "run that step inline yourself" in text
+        # The overlay is subject to the same no-Claude-tokens contract as the body.
+        for token in ("subagent_type=", "Agent tool", "Task tool"):
+            assert token not in text, f"{path.name} names Claude-only {token!r}"
+
+
+def test_pi_agent_frontmatter_is_translated_to_the_subagent_schema(fixture_copy):
+    """Canon Claude agent frontmatter maps to pi-subagents' schema (W2), not drop-recorded.
+
+    The mapped shapes were confirmed by round-tripping through pi-subagents 0.35.1's real
+    loader; this asserts the emitter keeps producing them. `read-only` vs `writer` and the
+    completion-guard exemption are DERIVED from the tool allowlist: an agent with `Write`
+    is a writer; a read-only agent carries `bash` (which pi-subagents treats as
+    mutation-capable), so it must set `completionGuard: false` or a correctly no-op run is
+    judged a failed implementation. `turnBudget` must be a single-line JSON string (pi
+    ``JSON.parse``s it), never a YAML block.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    agents_dir = root / "adapters" / "pi" / "agents"
+
+    def frontmatter(name: str) -> str:
+        """The ``---`` frontmatter block of one emitted Pi agent (provenance line included)."""
+        return (agents_dir / f"{name}.md").read_text(encoding="utf-8").split("---\n", 2)[1]
+
+    # read-only agent (verifier): Glob → find+ls, no model, memory {scope,path}, guard off.
+    verifier = frontmatter("verifier")
+    assert "tools: read, find, ls, grep, bash\n" in verifier
+    assert 'turnBudget: \'{"maxTurns": 40}\'\n' in verifier  # single-line JSON string, not a mapping
+    assert "memory:\n  scope: project\n  path: verifier\n" in verifier
+    assert "skills: forge-verify\n" in verifier
+    assert "inheritProjectContext: true\n" in verifier
+    assert "acceptanceRole: read-only\n" in verifier
+    assert "completionGuard: false\n" in verifier
+    assert "\nmodel:" not in verifier  # dropped by D1
+
+    # researcher: effort → thinking; no memory/skills.
+    researcher = frontmatter("researcher")
+    assert "thinking: medium\n" in researcher
+    assert 'turnBudget: \'{"maxTurns": 25}\'\n' in researcher
+    assert "memory:" not in researcher and "skills:" not in researcher
+
+    # writer agent (author): +write,edit; acceptanceRole writer; NO completionGuard exemption.
+    author = frontmatter("author")
+    assert "tools: read, find, ls, grep, bash, write, edit\n" in author
+    assert "acceptanceRole: writer\n" in author
+    assert "completionGuard:" not in author
+
+    # model is the ONLY canon key still drop-recorded for pi (with the D1 reason).
+    report = (root / "adapters" / "GENERATION-REPORT.md").read_text(encoding="utf-8")
+    pi_drops = [
+        ln for ln in report.splitlines()
+        if ln.startswith("| `agents/") and "sub-agent key" in ln and "D1" in ln
+    ]
+    assert len(pi_drops) == 3, "exactly one model drop per agent, each carrying the D1 reason"
+    assert all("'model'" in ln for ln in pi_drops)
+
+
 @pytest.mark.parametrize("agent", AGENT_TARGETS)
 def test_cited_shared_references_fan_out_skill_local(fixture_copy, agent):
     """A cited bundle-root SHARED reference resolves skill-local after build (#122/#132).
@@ -577,6 +815,25 @@ def test_clear_slash_command_degrades_on_non_claude(agent):
     )
 
 
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+def test_pi_skill_bodies_use_new_not_clear():
+    """Pi skill bodies name Pi's real fresh-session command `/new`, not `/clear` or the
+    host-neutral phrasing the other non-Claude adapters use.
+
+    Pi is excluded from the generic `/clear`-degradation test because it degrades to its
+    own command instead of the neutral prose: `/clear` -> `/new`, and the scripted
+    stage-exit stamp is `--host pi` (not `--host generic`). See `_PI_HOST_TERM_REPLACEMENTS`.
+    """
+    blob = "\n".join(p.read_text("utf-8") for p in _skill_body_files("pi"))
+    assert "/clear" not in blob, "pi skill body still carries a literal /clear"
+    assert "/new" in blob, "pi skill bodies never carry the `/new` Pi command — rebuild?"
+    # The neutral degradation phrase is for the other non-Claude adapters, not Pi.
+    assert "clear your session / start a fresh session" not in blob
+    # The scripted stage-exit stamp routes to the pi host wording.
+    assert "--host pi" in blob
+    assert "--host claude" not in blob and "--host generic" not in blob
+
+
 def _load_generator_module():
     """Import the hyphenated generator in-process for unit-testing pure helpers."""
     pytest.importorskip("yaml")
@@ -610,6 +867,23 @@ def test_translate_host_terms_is_deterministic_and_idempotent():
     assert "Then clear your session / start a fresh session and re-run." in once
     assert "`clear your session" not in once  # no orphaned opening backtick
     assert mod.translate_host_terms(once) == once  # idempotent
+
+
+def test_pi_translation_uses_real_pi_commands_not_neutral_prose():
+    """The Pi table names Pi's real commands where the generic table degrades to prose:
+    `/clear` -> `/new`, `--host claude` -> `--host pi`, `/feature-forge:` -> `/skill:`.
+    Backticks around `` `/clear` `` are preserved as `` `/new` `` (a real command)."""
+    mod = _load_generator_module()
+    src = (
+        "Run `python3 forge-session.py stage-exit --host claude`, then `/clear`, "
+        "then re-run `/feature-forge:forge`."
+    )
+    out = mod.translate_host_terms(src, agent_id="pi")
+    assert "/clear" not in out and "clear your session" not in out
+    assert "`/new`" in out  # backticks preserved → reads as a real Pi command
+    assert "--host pi" in out and "--host claude" not in out
+    assert "/skill:forge" in out and "/feature-forge:" not in out
+    assert mod.translate_host_terms(out, agent_id="pi") == out  # idempotent
 
 
 def test_claude_body_helpers_are_verbatim_passthrough():

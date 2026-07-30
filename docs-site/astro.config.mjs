@@ -38,6 +38,7 @@ export default defineConfig({
         {
           label: "Start Here",
           items: [
+            { label: "Let your agent set it up", slug: "start-here/agent-setup" },
             { label: "Install", slug: "start-here/install" },
             { label: "Quick Start", slug: "start-here/quick-start" },
             { label: "Key Concepts & Glossary", slug: "start-here/concepts" },

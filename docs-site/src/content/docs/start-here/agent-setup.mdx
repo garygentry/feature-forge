@@ -1,0 +1,65 @@
+---
+title: Let your agent set it up
+description: Point your coding agent at feature-forge and have it install the skills, wire the rauf loop runner, initialize your project, and start Stage 1 — pausing only to confirm at a few gates.
+---
+
+You do not have to install feature-forge by hand. If you are already working in a
+coding-agent session (Claude Code, Codex, Copilot, Cursor, or Gemini), you can
+hand the whole setup to the agent and just confirm at a few decision points.
+
+## The one thing to paste
+
+In your agent session, paste:
+
+> Set up feature-forge in this project — follow
+> `https://raw.githubusercontent.com/garygentry/feature-forge/main/AGENTS-SETUP.md` —
+> then start a PRD for **&lt;my feature&gt;**.
+
+Or simply paste this repo's URL — `https://github.com/garygentry/feature-forge` —
+and say *"set up feature-forge for me."* The agent lands on the README, finds the
+pointer to the setup procedure, and takes it from there.
+
+## What the agent does
+
+[`AGENTS-SETUP.md`](https://raw.githubusercontent.com/garygentry/feature-forge/main/AGENTS-SETUP.md)
+is a deterministic, machine-facing procedure — a small install manifest plus a
+linear tree the agent executes top to bottom:
+
+1. **Install the skills for its own surface** — the Claude plugin, or
+   `npx @garygentry/feature-forge install -a <agent>` for the others.
+2. **Install and wire the loop runner** — the [rauf](https://github.com/garygentry/rauf)
+   CLI, then `rauf install .` in your project.
+3. **Initialize the project** — `forge-bootstrap` for an empty repo, `forge-init`
+   for an existing one (writing `forge.config.json`).
+4. **Hand you Stage 1** — starting `forge-1-prd` for the feature you name.
+
+After each step it runs a quick self-check (the skill resolves, `rauf version`
+meets the floor, `forge.config.json` exists) before moving on, so an early
+failure stops the flow instead of cascading.
+
+## Where it pauses (the gates)
+
+The flow is **autonomous, with confirmation at gates**. The agent runs every
+other step without asking, and stops only for these:
+
+- **Which host agent** — only if it cannot tell what it is running in.
+- **How to install rauf** — globally (`npm i -g @garygentry/rauf`, adds it to your
+  PATH) or on demand (`npx @garygentry/rauf`, installs nothing).
+- **Bootstrap vs init** — scaffold an empty repo, or initialize an existing one.
+- **Before Stage 1** — it confirms the feature name before writing anything.
+
+## Identity guard
+
+The procedure opens by telling the agent, in no uncertain terms, that it is
+**installing feature-forge into your project — not contributing to the
+feature-forge repository**. That matters because this repo also ships an
+`AGENTS.md` full of build-and-contribute instructions; without the guard, an
+agent that auto-reads `AGENTS.md` could mistake "set up forge" for "help build
+forge." The setup artifact and the router at the top of `AGENTS.md` both redirect
+it to the right task.
+
+## Prefer to do it yourself?
+
+The manual path is unchanged — see [Install](/start-here/install/) for the
+plugin marketplace commands, the universal `npx` installer, and the loop-runner
+setup, then head to the [Quick Start](/start-here/quick-start/).

@@ -79,6 +79,27 @@ Replace stack-specific checks with these generic equivalents:
 | "JSDoc on every field" | "Documentation comments on every field" |
 | "tsconfig.json extends root" | "Build configuration follows project conventions" |
 
+### Runtime Entrypoints & Bootstrap-Wiring Sites
+
+Used by `CHECK-I22` (a runtime-required bootstrap needs a **non-test** caller on one of these) and
+`CHECK-I23` (a heavy init wired into a **universal** bootstrap entry should move to a lazier site).
+Since no dedicated profile applies, identify these by role rather than exact filename:
+
+- **Runtime entrypoints (a legitimate non-test call site):** the process/main entry the build's
+  run command actually launches (from the CI/`Makefile`/manifest "start" target), an HTTP/RPC handler
+  or route, a scheduled/worker task, or a CLI subcommand — **not** a file in the project's test
+  directory or matching its test-file convention.
+- **Universal bootstrap entries (run on every startup — the `CHECK-I23` risk site):** any
+  module/hook the framework runs **once per process before serving** — a startup/lifecycle hook, an
+  import-time initializer, a global preload, or a shared test-setup module that bootstraps production
+  graphs. Side effects here run on every process start (and, under a dev/watch runtime, on every
+  reload).
+- **Heavy server-only import markers (what makes an init "heavy" for `CHECK-I23`):** database/ORM
+  clients and connection pools, message/queue clients, telemetry/observability SDKs, or a broad
+  whole-service-layer import. An init pulling any of these into a universal bootstrap entry is the
+  CHECK-I23 pattern — recommend lazy initialization at the first handler/worker that needs the graph,
+  not eagerly at process start.
+
 ## Acceptance Criteria Patterns
 
 Use these placeholder patterns in backlog items. Replace `{typeCheckCommand}`, `{testCommand}`, and `{module}` with values from `forge.config.json` and the project structure:

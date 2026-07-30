@@ -84,6 +84,25 @@ When examining a Go project, check for:
 - **Formatting**: `gofmt -l .` or `goimports -l .` (should produce no output)
 - **Module tidiness**: `go mod tidy` (ensures `go.mod` and `go.sum` are consistent)
 
+### Runtime Entrypoints & Bootstrap-Wiring Sites
+
+Used by `CHECK-I22` (a runtime-required bootstrap needs a **non-test** caller on one of these) and
+`CHECK-I23` (a heavy init wired into a **universal** bootstrap entry should move to a lazier site).
+
+- **Runtime entrypoints (a legitimate non-test call site):** `func main()` in a `package main` under
+  `cmd/…` or the module root, an HTTP handler registered on a `*http.ServeMux` / router, a gRPC service
+  registration, or a worker/consumer goroutine started from `main` — not a `*_test.go` file.
+- **Universal bootstrap entries (run on every startup — the `CHECK-I23` risk site):** a package-level
+  `func init()` that constructs heavy clients, package-level `var` initializers that dial/connect at
+  import time, or a single `bootstrap`/`wire` module `main` calls before serving. `init()` and
+  package-var side effects run on **every** binary start, before `main` gets control.
+- **Heavy server-only import markers (what makes an init "heavy" for `CHECK-I23`):** DB drivers/pools
+  (`database/sql` + a driver, `pgx`, `gorm`, `mongo-driver`), message/queue clients (`sarama`/Kafka,
+  `amqp`, `go-redis`), telemetry SDKs (`go.opentelemetry.io/*`, `sentry-go`), or a broad internal
+  service package. An `init()` or package-var that dials any of these is the CHECK-I23 pattern —
+  recommend a `sync.Once` lazy constructor invoked from the first handler that needs it, not an
+  eager package-level connect.
+
 ## Testing
 
 - **Framework**: `testing` stdlib package

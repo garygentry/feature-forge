@@ -111,6 +111,27 @@ async def refresh_session_token(
 - **Import validation**: `mypy` with `--strict` or `--disallow-untyped-defs` catches missing type annotations
 - **Module export validation**: `__all__` lists in `__init__.py` match spec's public API
 
+### Runtime Entrypoints & Bootstrap-Wiring Sites
+
+Used by `CHECK-I22` (a runtime-required bootstrap needs a **non-test** caller on one of these) and
+`CHECK-I23` (a heavy init wired into a **universal** bootstrap entry should move to a lazier site).
+
+- **Runtime entrypoints (a legitimate non-test call site):** a `if __name__ == "__main__":` block, a
+  `[project.scripts]` console-script target in `pyproject.toml`, an ASGI/WSGI app object
+  (`app = FastAPI()` / Django `wsgi.py` / `asgi.py`), a route/view/handler, a Celery/RQ task module, or
+  a management command — not a `test_*.py` / `conftest.py`.
+- **Universal bootstrap entries (run on every startup — the `CHECK-I23` risk site):** a package
+  `__init__.py` that eagerly instantiates heavy clients at import time, a framework startup hook
+  (FastAPI `lifespan` / `@app.on_event("startup")`, Django `AppConfig.ready()`, a Gunicorn/uvicorn
+  `--preload` module), or a `conftest.py` that bootstraps production graphs. Import-time side effects
+  here run on every process start.
+- **Heavy server-only import markers (what makes an init "heavy" for `CHECK-I23`):** DB/ORM engines
+  (`sqlalchemy.create_engine`, `psycopg`, Django ORM, `pymongo`, `redis`), task queues (`celery`,
+  `rq`, `kafka`), telemetry SDKs (`opentelemetry`, `sentry_sdk`), or a whole-service-layer package
+  import. An init pulling any of these at a universal entry is the CHECK-I23 pattern — recommend lazy
+  init (module-level `@lru_cache` factory, `Depends()` provider, or first-use lazy import) at the
+  handler that needs it.
+
 ## Testing
 
 - **Framework**: pytest (with `conftest.py` for fixtures)

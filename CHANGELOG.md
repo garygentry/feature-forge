@@ -7,6 +7,172 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-07-27
+
+### Added
+
+- **Pi adapter bundle foundation.** `scripts/build-adapters.py` now emits `adapters/pi/` as a self-contained Pi package: generated skills, package metadata, and an `AskUserQuestion` compatibility extension, so the interactive forge interview runs in Pi's TUI instead of degrading to prose prompts. Pi skill bodies preserve `AskUserQuestion` while translating forge slash commands to `/skill:*` and adding Pi-specific host notes.
+- **Pi `AskUserQuestion` extension.** A vendored snapshot of [`@juicesharp/rpiv-ask-user-question`](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question) 2.1.0 (MIT), carried under `adapter-src/pi/extensions/ask-user-question/` with a documented four-patch delta — see `adapter-src/pi/UPSTREAM.md`. It renders a tabbed questionnaire (1–4 questions, 2–4 options each) with option descriptions, focused previews, multi-select, per-option notes, terminal-row-aware overflow scrolling, a collapsible overlay, a final Submit review, and an automatically appended free-text row. On RPC/ACP hosts that report a UI but cannot render a custom overlay (the VSCode pendant, Zed, Paseo) it degrades to sequential `select`/`input` dialogs rather than telling the model the user never saw the questions. It ships **inside** the bundle rather than as a dependency because the pipeline's interview stages have no fallback question mechanism on Pi, so a missing `pi install` would be a hard stall rather than a degraded experience; vendoring also puts the tool name under our control, so it registers as Claude's `AskUserQuestion` and canon needs no build-time rename. The extension seeds `FEATURE_FORGE_ROOT` from its own package root so generated forge shell snippets prefer the active Pi adapter over unrelated local Claude installs.
+- **forge's custom agents are dispatchable on Pi.** The generated `adapters/pi/package.json` now declares the bundle's `agents/` directory through a top-level `pi-subagents` key, and every Pi skill's host notes name the real dispatch shape (`{ agent, task }`, or `{ tasks: [...] }` for parallel fan-out) instead of asserting that Pi has no subagent construct at all. Previously both halves were broken together: the agent files were emitted but declared to nothing, and the bundle's own prose told the model to give up — so `forge-verify` silently degraded to improvised substitutes rather than running the official gate. The key follows [`pi-subagents`](https://github.com/nicobailon/pi-subagents) 0.35.1's manifest schema and is emitted unconditionally; with no such extension installed it is inert and the host notes keep inline execution as an explicit fallback, so the bundle gains no runtime dependency.
+- **The Pi agents' frontmatter is translated into `pi-subagents`' schema, so `forge-verifier`'s read-only contract is tool-enforced, not just prose.** Previously only `{name, description}` mapped and every structural key was drop-recorded, so a dispatched verifier ran with the host's full default tool set — `write`/`edit` included — while its own prompt declared it read-only. `PiEmitter.emit_agent` now maps canon's `tools` onto Pi builtin names (`Read, Glob, Grep, Bash` → `read, find, ls, grep, bash`; spec-writer adds `write, edit`), `maxTurns` → `turnBudget` (as a single-line JSON string, because pi `JSON.parse`s it), `effort` → `thinking`, `memory: project` → `{scope, path}`, and `skills` through. It also derives three Pi-only fields from the tool allowlist: `acceptanceRole` (`writer` iff the agent carries `Write`, else `read-only`), `completionGuard: false` on the read-only agents (they carry `bash`, which pi-subagents treats as mutation-capable, so a correctly no-op verify would otherwise be judged a failed implementation), and `inheritProjectContext: true` (non-builtin agents default `false`, which would blind a forge agent to the target repo's `AGENTS.md`). `model` stays dropped by design (`opus`/`sonnet` are Claude aliases, not Pi model ids; the documented override is `subagents.agentOverrides.<name>.model`). Every mapped shape was confirmed by round-tripping the generated files through pi-subagents 0.35.1's real `loadAgentsFromDir`, not its README — two shapes bite silently otherwise (a `turnBudget` YAML block makes `JSON.parse` throw; a block-sequence `tools`/`skills` is dropped by Pi's line parser, so both emit comma-joined).
+- **The npm installer registers the Pi agents too, not just the package install path.** The `-a pi` install copies the bundle under `skills/`, which `pi-subagents` discovery does not scan as a package root — so the manifest key above never reached installer-based setups, only working-tree dev setups listed in Pi's `packages`. The Pi target now carries a `mirror` placement (parallel to Codex's `.codex/agents/`) that copies `agents/*.md` flat into the scope `pi-subagents` scans directly: `~/.pi/agent/agents/` with `--global`, `.pi/agents/` for a project install. Because that second root differs by scope where Codex's does not, `PlacementSpec` gained optional `globalBaseDir`/`projectBaseDir` overrides (mirroring the existing `AgentTarget` split); Codex's scope-invariant placement is unchanged. The scope directories were confirmed read-only against pi-subagents 0.35.1's source (`discoverAgents`), not just its README.
+- **Pi install/root-discovery support.** `forge-root.sh` now discovers Pi installs under `PI_CODING_AGENT_DIR`, `~/.pi/agent/skills`, project `.pi/skills` (including ancestor project roots), and Pi package clone/cache layouts while keeping `FEATURE_FORGE_ROOT` as the escape hatch. The npm installer accepts `-a pi` with scope-correct destinations (`~/.pi/agent/skills/feature-forge` globally, `./.pi/skills/feature-forge` for projects), validates the Pi bundle metadata/extension, and advertises Pi package metadata in the real installer `package.json`.
+
+### Changed
+
+- **rauf pin advanced to `@garygentry/rauf@0.13.0`.** That is the rauf release which ships the `--agent pi` loop preset, so it is what makes the Pi pipeline's loop stage actually drive Pi. `forge-5-loop` is agent-agnostic — it probes `rauf agents --json` and offers one option per advertised row — so Pi loop support is delivered entirely by the runner, and a fresh install pinned to an older rauf would complete the Pi pipeline right up to the loop stage and then never list `pi` as an agent. `minRunnerVersion` deliberately stays at **0.6.0**: it is a single floor applied to every agent, and raising it would force an unnecessary rauf upgrade on Claude and Codex users who gain nothing from it. The Pi-specific requirement is recorded as prose in `COMPATIBILITY.md` under "Per-agent runner requirements" instead.
+- **The generator can emit a source *tree*, not just a single file.** `adapter_tree()` joins `adapter_source()` in `scripts/build-adapters.py`, walking an `adapter-src/<agent>/<subdir>/` tree in sorted order and emitting it at the same relative path in the bundle. Source layout now mirrors emitted layout exactly, because the Pi extension resolves its own bundle root by walking up from `import.meta.url` — a source tree at a different depth typechecks and tests green in-tree while resolving the wrong root once emitted. Files that cannot carry a line-comment header (`LICENSE`, `locales/*.json`) are emitted verbatim; the existing regen-and-diff drift guard already covers them, and the MIT license text must stay byte-identical for its attribution to hold.
+- **Real code that a target agent loads is verified before it ships.** Most of `adapters/` is generated from canon prose; the exception is code a target agent executes at runtime, which now lives under `adapter-src/<agent>/` and is read by the generator at build time. `scripts/validate.sh` iterates `adapter-src/*/` and runs each directory's own `verify` script, so a future agent's source is enrolled in CI just by existing; a directory with no verifier is reported as a visible `SKIP`, never a silent pass. Pi's verifier is `tsc --noEmit` over the whole extension tree plus `node --test`, which drives the real extension through a fake `ExtensionAPI` and a headless TUI: registration and tool name, `FEATURE_FORGE_ROOT` seeding, the questionnaire state machine (tabs, single- and multi-select, preview pane, cancel), the RPC fallback, and the validation guards. Those assert *feature-forge's* contracts rather than restating the vendored package's own suite, so the question the gate answers is "did an upstream refresh change what we depend on".
+- **A bare `install` / `update` (no `-a`) now targets Pi too, wherever Pi is detected.** `AGENT_IDS` gained `pi`, and a subcommand run without `-a` installs into every *detected* agent (`installer/src/cli.ts`) — so for an existing user with Pi on the machine, the next routine `feature-forge update` performs a first-time Pi install rather than only refreshing the agents they already had. That is the intended behavior (it is how every other supported agent is picked up), but it writes to a scope the user never explicitly opted into, so it is called out here rather than left to be discovered. Scope Pi out with `-a <agent>`, or preview any run with `--dry-run`.
+- The file-wide `# ruff: noqa: E501` on `scripts/build-adapters.py` is removed; the long lines it masked left with the extracted TypeScript, restoring the E501 floor that `ruff.toml` requires for future edits to the generator.
+
+### Fixed
+
+- **The Quality Gate ran on Node 20 and silently tested almost nothing on the installer side; it now runs Node 22.** Two defects shared this root cause. First, `installer/`'s test suite is written in TypeScript and executed by Node's *native* type stripping — `installer/tsconfig.json` sets `include: ["src"]`, so the tests are never compiled — which Node 20 cannot do. `node --test` therefore discovered **zero** files, printed `# tests 0 # fail 0`, and the gate reported `PASS: installer build + node:test suite`. All 182 installer tests had been passing locally and running nowhere in CI. Second, `adapter-src/pi`'s verifier loads `@earendil-works/pi-coding-agent`, whose bundled `undici` calls `webidl.util.markAsUncloneable` — a symbol that does not exist on Node 20 — so every Pi extension test aborted in its `before` hook. The gate now pins Node 22, matching `os-matrix.yml` and `npm-publish.yml`, and the gate's own comment records why the floor exists so it is not lowered again. `adapter-src/pi`'s `test` script also stops passing a `**` pattern to `node --test` (glob support only landed in Node 21; before that the pattern is read as a literal path) in favor of a shell-expanded file list.
+- **Pi bundles now recommend Pi's `/new` for a fresh session instead of Claude's `/clear`.** Between stages forge tells the user to start a clean session; on Pi that command is `/new`, not `/clear`. Previously the Pi adapter degraded `/clear` to the same host-neutral phrasing every non-Claude adapter uses ("clear your session / start a fresh session"), which named no real Pi command. The Pi host-term table now maps `/clear` → `/new` (backticks preserved, so it reads as a command) and routes the scripted stage-exit stamp to a new `forge-session.py --host pi` that emits `/new` wording and `/skill:` next-commands (including the structured `nextCommand`/`verifyCommand` directives). The fix is centralized in the two translated surfaces — skill bodies and the stage-exit helper — so it covers every place the user is shown "start a fresh session for the next command"; the self-contained verbatim `references/` copies still carry Claude wording by design (secondary model-facing guidance, not the primary instruction). `/new` was verified as Pi's real command against Pi's own `quickstart.md`/`extensions.md`.
+- `installer` now runs `npm run build` before `npm test` (a `pretest` script). The suite imports compiled `dist/`, so a stale build silently tested old code — observed producing both false failures and, worse, false passes.
+- Pi adapter generation now translates `/feature-forge:*` command references in Pi skill and role frontmatter descriptions, not just skill bodies, and excludes Python cache byproducts from copied reference trees so installer/package outputs do not ship `__pycache__` or `.pyc` files.
+- Pi adapter generation now also rewrites `/feature-forge:*` slash commands inside copied Pi reference files and runtime helper scripts, so helper-generated next-step text can point Pi users at `/skill:*` commands.
+
+### Known issues
+
+- **A damaged Claude install alongside a healthy Pi install can serve Claude the Pi bundle.** `forge-root.sh` resolves the bundle a session should use, and its long-standing rule is that a *complete* install beats a *partial* one: a candidate root that is missing a core asset is remembered as a fallback while probing continues. If a Claude install is partial (mid-reinstall, a half-deleted directory), a Pi install is complete, and nothing identifies the host — no `PI_CODING_AGENT_DIR`, which Pi sets only inside a Pi session — the complete Pi root wins, and the Claude session silently gets Pi wording (`/skill:` commands, `/new` instead of `/clear`) instead of the actionable `install incomplete/degraded at … — reinstall with …` error it used to get. The rule was safe while every bundle was interchangeable, and Pi is the first bundle for which that is no longer true. It is documented rather than fixed because the precondition is an install that is already broken and already needs a reinstall, while every candidate fix either breaks Pi discovery for installer-based setups or pushes same-agent-family tracking into a shell script that ships verbatim in six bundles. **Workaround:** repair the damaged install — `feature-forge update -a claude`, or `npx @garygentry/feature-forge -a claude`. Note that `FEATURE_FORGE_ROOT` does *not* help here: it is a later fallback than the directory probe, so a complete root found during the probe wins before the override is ever consulted.
+
+## [0.12.9] — 2026-07-19
+
+### Added
+
+- **Cross-member shared-state test coupling detection (#144).** In an epic, a member that
+  writes or migrates a file a *sibling's* already-shipped tests pin (e.g. a shared corpus a
+  benchmark suite reads at v1) silently breaks that sibling the moment it runs — red-gating
+  every one of the mutating member's own commits — and nothing in the epic contract checks
+  (E04–E09, which cover code symbols, not shared data files) caught it. A new **forge-verify
+  epic-mode check `CHECK-E10`** now detects it heuristically: for each member it collects the
+  shared paths it writes (from a new optional `mutatesShared[]` manifest hint, or by grepping
+  its specs/backlog when the hint is absent) and greps every **completed** sibling's committed
+  tests for reads of those paths; a hit is a non-fatal `inconsistency` finding recommending a
+  **reconciliation backlog item** scheduled before the first mutating item. The optional
+  `mutatesShared` array-of-paths field is added to `epic-manifest-schema.json` (and accepted by
+  `epic-manifest.py validate` — schema-legal when present, ignored when absent); it is declarative
+  only, **not** a dependency edge. `forge-4-backlog` gains matching authoring guidance so the
+  reconciliation item is planned up front rather than discovered mid-loop on a red gate. Degrades
+  to a clean no-op when no member declares or greps a shared write. Adapters regenerated.
+
+- **Generated-artifact freshness vs. `testCommand` `--check` gates (#145).** When a project's
+  configured `testCommand` gates on staleness of generated artifacts (`<generator> --check`-style
+  sub-commands that fail if a checked-in generated file is out of date with its source), a backlog
+  item that regenerated *one* gated artifact but omitted a sibling would pass locally yet red-gate
+  every commit on the stale-generated check — with no backlog check catching it. New **forge-verify
+  backlog-mode check `CHECK-B26`** string-scans `testCommand` for `--check` freshness gates and flags
+  (a) a gate whose artifact no item regenerates while some item edits its source, and (b) an item that
+  regenerates a proper subset of the artifacts a `--check` set covers — recommending the missing
+  generators be added to the item's execute + commit sequence. Advisory / not-applicable when the
+  command shape has no parseable `--check` tokens. `forge-4-backlog` (and its rauf `author-backlog`
+  delegate) gain matching authoring guidance: enumerate the whole `--check`-gated set up front, not
+  just the artifact an item is "about".
+
+- **Dev-runtime smoke guidance + heavy-bootstrap heuristic `CHECK-I23` (#149, follow-up to #121).**
+  The impl-verify runnability checks now target the failure modes that a static typecheck and a clean
+  prod smoke both hide. `CHECK-I21`'s prose now recommends the configured `smokeCommand` exercise the
+  **dev runtime** the developer actually uses (dev server / watch loop / HMR) — where
+  module-graph-identity bugs (a "singleton" duplicated across a re-evaluated module graph) and
+  watch-loop bugs (an init that never re-fires, or re-fires and leaks on reload) live — and that a
+  **fix** be re-verified in the same runtime mode the original bug manifested. A new **`CHECK-I23`**
+  (advisory `gap`/`improvement`, **never** a hard fail) flags a runtime-required init wired into a
+  **universal framework bootstrap entry** (a Next.js `instrumentation.ts`, an app-server preload, a
+  global setup module) that pulls a large **server-only import graph** (DB/ORM clients, queue workers,
+  telemetry SDKs), recommending **lazy init** at the first route/handler/worker that needs the graph
+  instead of eager wiring on every cold start. Detection is static, driven by a new **Runtime
+  Entrypoints & Bootstrap-Wiring Sites** section added to every stack profile
+  (`references/stacks/{typescript,python,go,rust,_generic}.md`) — which also retroactively backs the
+  stack-profile reference `CHECK-I22` already made. Guidance + heuristic lint only (no runtime-health
+  monitor). Impl mode total `~22 → ~23`. Adapters regenerated.
+
+- **Contradictory-lifecycle backlog heuristic `CHECK-B27` + authoring guidance (#150).** A test/e2e
+  item whose only path to green is "artifact `X` is *published* / *approved* / *reviewed*", while
+  another item pins `X` *draft* and no publish/review item sits between them, forced the autonomous
+  loop to **fabricate** the publication or human sign-off (a provenance defect a `--review` pass
+  caught). A new **`CHECK-B27`** (advisory, keyword/artifact-name based; **not-applicable** when no
+  lifecycle vocabulary is present, never a hard fail) pairs contradictory lifecycle assertions about
+  the **same named artifact** and flags an `inconsistency` when the later-state item has no
+  human-gated publisher in its `dependsOn` closure, plus an anti-pattern note visible even where the
+  heuristic can't fire. Matching authoring guidance lands in `forge-4-backlog` and its rauf
+  `author-backlog` delegate: a test item asserting a human-gated state must either `dependsOn` an
+  explicit publish/review item or assert the state via a dev-build/fixture path — never be the sole
+  driver of a lifecycle transition another item forbids. Forge tracks no artifact-lifecycle model;
+  this is guidance + heuristic lint only. Backlog mode total `~26 → ~27`. Adapters regenerated.
+
+### Changed
+
+- **forge-5-loop: `--review` is now the recommended default run mode (rauf only).**
+  Step 2d's launch confirmation previously left the `AskUserQuestion` option set
+  unprescribed — it handed the model a prose block ("Proceed, or would you like to
+  adjust?") and let it improvise the choices, so the rendered options varied
+  run-to-run (sometimes "bare + a specific `--review` option", sometimes "bare +
+  open-ended add-a-flag"), and the bare no-review command was always the default.
+  Step 2d now prescribes a deterministic **"Run mode"** question with a fixed option
+  order: **(1) Run with review pass — recommended/default** (appends `--review`),
+  **(2) Run without review** (bare command), and **(3, only when the backlog has
+  blocked items) Review + retry blocked** (`--review --retry-blocked`).
+  `AskUserQuestion`'s built-in "Other" still covers ad-hoc flags (`--model`,
+  `--timeout`). The run mode surface is **gated on `loopRunner.name == "rauf"`**
+  (`--review` is a rauf-specific flag; the 0.6.0 `minRunnerVersion` floor guarantees
+  it is available once the loop clears gate 1c) — non-rauf runners keep the prior
+  bare-command confirmation byte-for-byte. Verbatim option labels live in
+  `forge-5-loop/references/runner-contract.md` (`## Run mode`). No downstream change:
+  Step 4a already reads the `review_completed` event for review runs.
+
+### Fixed
+
+- **Unknown `forge-verify-*` status no longer silently poisons the epic rollup +
+  dependency gates (#148).** An unrecognized status string in a member's
+  `.pipeline-state.json` (e.g. the eye-slip `findings-resolved`, conflated with the
+  adjacent `findingsResolved` count) was treated as "not complete-for-orchestration"
+  with **no diagnostic** — so one typo on one member under-reported the whole epic
+  (`rollup 0/6`) and fabricated phantom `unmetDeps` on every dependent, surfacing only
+  as a confusing false dependency warning steps downstream. The accepted vocabulary is
+  now a single labelled constant `KNOWN_VERIFY_STATUSES` (byte-identical in
+  `epic-manifest.py` and `forge-session.py`, sourced from
+  `references/pipeline-state-schema.json`), with the orchestration-complete / resolved
+  sets documented as strict subsets. `epic-manifest.py render-status` now emits a
+  `warnings[]` entry (and a "Warnings:" row in the text dashboard) naming the member,
+  stage, and bad value; `forge-session.py`'s freshness classifier prints a one-time
+  stderr diagnostic when it reads an out-of-vocabulary status. Treating an unknown
+  status as incomplete is unchanged — doing so **silently** was the trap.
+
+- **Authoring stages self-abort a replayed mid-stage continuation instead of overwriting
+  a committed artifact (#151).** The Stage-Entry Guard protects only a top-of-skill re-run;
+  a pasted/resumed mid-stage instruction ("continue forge-3-specs: write `TRACEABILITY.md`,
+  run the stage exit") entered *below* it, and nothing re-checked `stages.<stage>.status`
+  before regenerating — followed literally, it would overwrite a committed spec artifact and
+  re-fire a completed stage exit. A new **Stage-Completion Re-check** block in
+  `references/shared-conventions.md` (sibling to the Stage-Entry Guard) is cited at the head
+  of the write/exit step in `forge-1-prd`..`forge-4-backlog`: before writing an artifact or
+  running the Scripted Stage Exit, it re-reads the stage entry and, when the stage is already
+  `complete`/`stale` with artifacts on disk + a recorded `commitHash` that the current session
+  did **not** author, routes to the entry guard's Re-authoring warning (detect-and-refuse)
+  rather than regenerating. Distinguisher is provenance — a legitimate exit runs in the session
+  that stamped the entry; when unconfirmable, it refuses (a false refuse costs one click, a
+  false proceed overwrites committed work). Skill bodies gain one citation line each (all stay
+  under the 300-line cap); adapters regenerated.
+
+- **Stale/partial install now fails loudly instead of running degraded (#152).** When a
+  skill dir was present but the bundled `scripts/`/shared `references/` were missing (a
+  skill-only extraction, or an install predating the shared-reference fan-out), the skill ran
+  **degraded with no warning** — hand-improvised state schema, skipped Mint Guard + scripted
+  stage-exit. This is not a packaging defect (a fresh install ships everything), so the fix is
+  a preflight self-diagnostic in the single verbatim-copied resolver `scripts/forge-root.sh`:
+  a new completeness gate verifies a resolved root also carries its core assets
+  (`scripts/forge-session.py`, `references/pipeline-state-schema.json`,
+  `references/stage-exit-protocol.md`). A sentinel-bearing but asset-incomplete root is now
+  reported as `install incomplete/degraded at <dir> (missing <asset>) — reinstall …` with exit
+  1, rather than handed back as if whole; a complete root found later in the probe order still
+  wins over an earlier partial one. Because **every** skill's bootstrap prelude execs
+  `forge-root.sh` at stage start, the guard fires on every **cold** stage entry with no reliance
+  on the `/feature-forge:forge` navigator, and with **zero** skill-body changes. README gains a
+  "stale or partial install" note pointing at reinstall / `feature-forge update`. Adapters
+  regenerated (5 resolver mirrors).
+
 ## [0.12.8] — 2026-07-14
 
 Installer republished as `@garygentry/feature-forge@0.2.13` (unchanged installer logic; carries the 0.12.8 plugin pin).

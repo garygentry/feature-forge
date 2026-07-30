@@ -39,8 +39,8 @@ function dests(sb: Sandbox, agent: AgentId): {
   destination: string;
   manifestPath: string;
 } {
-  const cfg = { claude: ".claude", codex: ".codex", copilot: ".copilot", cursor: ".cursor", gemini: ".gemini" };
-  const sub = { claude: "skills", codex: "skills", copilot: "skills", cursor: "rules", gemini: "extensions" };
+  const cfg = { claude: ".claude", codex: ".agents", copilot: ".github", cursor: ".cursor", gemini: ".gemini", pi: ".pi" };
+  const sub = { claude: "skills", codex: "skills", copilot: "", cursor: "rules", gemini: "extensions", pi: "skills" };
   const agentRoot = path.join(sb.cwd, cfg[agent as keyof typeof cfg]);
   const destination = path.join(agentRoot, sub[agent as keyof typeof sub], "feature-forge");
   return { agentRoot, destination, manifestPath: manifestPath(agent, "project", sb.resolve()) };
@@ -62,7 +62,7 @@ function ctxFor(
     destination: d.destination,
     manifestPath: d.manifestPath,
     source: src,
-    raufPin: "@garygentry/rauf@0.12.0",
+    raufPin: "@garygentry/rauf@0.13.0",
     now: NOW,
     priorManifest: null,
     ...extra,
@@ -344,14 +344,14 @@ test("copy: an all-unchanged re-run with a CHANGED raufPin rewrites the manifest
 
     const first = planInstall({
       agent: "claude", scope: "project", mode: "copy", destination: ctx.destination,
-      source: src, priorManifest: null, force: false, raufPin: "@garygentry/rauf@0.12.0",
+      source: src, priorManifest: null, force: false, raufPin: "@garygentry/rauf@0.13.0",
     });
     assert.ok(first.ok);
-    await apply(first.value, ctxFor(sb, "claude", src, "copy", { raufPin: "@garygentry/rauf@0.12.0" }));
+    await apply(first.value, ctxFor(sb, "claude", src, "copy", { raufPin: "@garygentry/rauf@0.13.0" }));
 
     const m1 = readManifest(ctx.manifestPath);
     assert.ok(m1.ok && m1.value !== null);
-    assert.equal(m1.value.raufPin, "@garygentry/rauf@0.12.0");
+    assert.equal(m1.value.raufPin, "@garygentry/rauf@0.13.0");
 
     // Re-plan: files all unchanged, but the pin was bumped.
     const second = planInstall({

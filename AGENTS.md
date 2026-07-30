@@ -1,5 +1,13 @@
 # AGENTS.md — feature-forge
 
+> **Which task are you here for?**
+> This file is for agents **contributing to the feature-forge repository itself** — building the
+> adapters, running the checks, opening PRs against this repo.
+> If you were asked to **install or use feature-forge in another project** (the user pasted this
+> repo's URL, or said "set up feature-forge for me"), **stop reading this file** and follow
+> [`AGENTS-SETUP.md`](AGENTS-SETUP.md) instead — it is the deterministic install-and-start
+> procedure. Nothing below applies to that task.
+
 feature-forge is a vendor-neutral, spec-pure skill canon that builds per-agent adapters
 deterministically. This file is the cross-agent entry point: it tells any AI coding agent
 (Claude, Codex, Copilot, Cursor, Gemini, or a future target) how to build, test, and
@@ -44,14 +52,71 @@ fields. Per-agent output is **generated** into `adapters/` by `scripts/build-ada
 **never hand-edited**. If you need to change what an adapter emits, edit the canonical source
 and regenerate.
 
-### Tooling — stdlib + pinned YAML, no pnpm/TypeScript gate
+### Hand-written adapter sources
+
+Most of what lands in `adapters/` is generated from canon prose. The exception is real code
+that a target agent loads at runtime — today Pi's `AskUserQuestion` TUI extension. Those
+artifacts live under `adapter-src/<agent>/` and are read by `scripts/build-adapters.py` at
+build time, which prepends the `GENERATED — DO NOT EDIT` header naming the `adapter-src` path.
+Edit the file under `adapter-src/`, never the emitted copy, then regenerate.
+
+**Source layout mirrors emitted layout.** `adapter-src/pi/extensions/…` becomes
+`adapters/pi/extensions/…` at the same relative path. That is a correctness requirement, not
+tidiness: the Pi extension resolves its own bundle root by walking up from `import.meta.url`,
+so a source tree at a different depth would typecheck and test green in-tree while resolving
+the wrong root once emitted.
+
+**Not all of it is ours.** `adapter-src/pi/extensions/ask-user-question/` is a *vendored*
+snapshot of the third-party `@juicesharp/rpiv-ask-user-question` package, carried with a
+four-patch delta. Read `adapter-src/pi/UPSTREAM.md` before touching anything in that tree —
+reformatting or refactoring it is friction at the next upstream refresh, and every local edit
+has to be re-applied by hand. Files that cannot carry a line-comment header (`LICENSE`,
+`locales/*.json`) are emitted verbatim; the regen-and-diff drift guard is what protects them.
+
+**The Pi agent output follows a third-party schema, in two places.** `adapters/pi/package.json`
+carries a top-level `pi-subagents` block declaring the bundle's `agents/` directory, and each
+`adapters/pi/agents/<name>.md` carries frontmatter (`tools`, `turnBudget`, `thinking`, `memory`,
+`skills`, `acceptanceRole`, `completionGuard`, `inheritProjectContext`) in the shape
+[`pi-subagents`](https://github.com/nicobailon/pi-subagents) 0.35.1 expects. Pi core reads none of
+it; the extension does, and that schema is not ours. The manifest key is kept out of the core-Pi
+`pi` block precisely so the coupling stays visible, and it is emitted unconditionally because an
+unread key is inert — the bundle must never require an extension it does not ship. Unknown keys are
+tolerated by that loader, so schema drift degrades rather than breaks. **Two frontmatter shapes bite
+silently, so they are verified against pi-subagents' real loader, not its README** (see the mapping
+notes above `PiEmitter` in `scripts/build-adapters.py`): `turnBudget` is `JSON.parse`d and must be a
+single-line JSON string, and Pi's line parser drops block-sequence `tools`/`skills`, so both are
+emitted comma-joined. See `docs/agents/pi.md` for the user-facing behaviour and the full mapping.
+
+The npm installer adds a **second** coupling to the same extension: the manifest key is only read
+where the bundle sits in Pi's `packages` list, which the `-a pi` install (under `skills/`) is not.
+So the Pi target carries a `mirror` placement copying `agents/*.md` into the directories
+`pi-subagents` scans directly — `~/.pi/agent/agents/` (user scope) and `.pi/agents/` (project
+scope). Those paths are a behavioural contract, not a schema, and were confirmed read-only against
+pi-subagents 0.35.1's `discoverAgents` source rather than its README. If a future version renames
+those scan dirs the mirror lands in the wrong place silently, so re-confirm them on an upgrade.
+
+Each agent directory owns its own toolchain and opts into verification by exposing a `verify`
+script in its `package.json`; `scripts/validate.sh` iterates `adapter-src/*/` and runs each one.
+A directory with no `verify` script is reported as a visible `SKIP` — shipping unverified code
+is allowed, but never silently. Pi's `verify` is `tsc --noEmit` over the whole tree plus
+`node --test`, which drives the real extension through a fake `ExtensionAPI` and a headless
+TUI — registration, the questionnaire state machine, the RPC fallback, and the validation
+guards — so an upstream refresh that breaks a feature-forge contract fails before it ships.
+Anything here is dev-only: `adapter-src/*/node_modules/` is gitignored and nothing from it is
+published.
+
+### Tooling — Python stdlib + pinned YAML; npm confined to two dirs
 
 The generator is Python 3 (3.10+ baseline) + Bash + Markdown. There is exactly one runtime
 dependency beyond the standard library: a pinned YAML library specified in
 `scripts/requirements-adapters.txt`. `bash scripts/validate.sh` auto-provisions it into the
 gitignored `.venv-adapters` virtual environment on first run; subsequent runs reuse the venv.
-There is no `pnpm`, no `npm`, and no TypeScript build step — `bash scripts/validate.sh` is
-the single verify command.
+There is no `pnpm`.
+
+Node/npm and TypeScript are confined to exactly two places, both gated by `validate.sh` and
+neither part of the generator itself: `installer/` (the published CLI, built with `tsc` and
+tested with `node --test`) and `adapter-src/<agent>/` (hand-written adapter sources, each
+verified by its own toolchain). `bash scripts/validate.sh` remains the single verify command.
 
 ### The resolver/prelude pattern
 

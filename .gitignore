@@ -23,6 +23,11 @@ installer/node_modules/
 installer/dist/
 installer/adapters/
 installer/LICENSE
+
+# Hand-written adapter sources (adapter-src/<agent>/): each agent dir carries its
+# own verify toolchain. Deps are devDeps only — never shipped, never published.
+adapter-src/*/node_modules/
+
 **/.rauf/archive/
 __pycache__/
 *.pyc

@@ -36,10 +36,24 @@ before forge-5's setup gate.
 
 The cross-agent installer (`@garygentry/feature-forge`) records a single pinned
 rauf coordinate as the provisioned default loop runner — currently
-**`@garygentry/rauf@0.12.0`** (`installer/src/rauf.ts` `RAUF_PIN`). This **pin** is
+**`@garygentry/rauf@0.13.0`** (`installer/src/rauf.ts` `RAUF_PIN`). This **pin** is
 distinct from the `minRunnerVersion` **floor** above: the floor is the minimum
 rauf an existing install must satisfy (0.6.0), while the pin is the specific
 known-good rauf a fresh install provisions. The pin is advanced on each
 feature-forge release to a newly published, compatible rauf; rauf and
 feature-forge are versioned **independently** (no lockstep — this pin and this
 matrix are the only coupling).
+
+## Per-agent runner requirements
+
+`minRunnerVersion` is a single floor applied to **every** agent, so it stays at
+the lowest version the pipeline itself needs (0.6.0). Individual agents may need
+a newer rauf than that floor; those requirements are recorded here rather than by
+raising the floor for everyone.
+
+- **Pi** — driving the loop with `--agent pi` needs rauf **≥ 0.13.0**, the
+  release that ships the Pi agent preset. `forge-5-loop` discovers agents by
+  probing `rauf agents --json` and offers one option per advertised row, so an
+  older rauf simply never lists `pi` — the pipeline degrades gracefully rather
+  than failing, but the Pi loop stage is unavailable until rauf is upgraded. A
+  fresh install provisions the pin above, which satisfies this.

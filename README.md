@@ -5,7 +5,18 @@
 [![CI](https://github.com/garygentry/feature-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/garygentry/feature-forge/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@garygentry/feature-forge)](https://www.npmjs.com/package/@garygentry/feature-forge)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![agents](https://img.shields.io/badge/agents-5_supported-blue)](#c-per-surface-setup)
+[![agents](https://img.shields.io/badge/agents-6_supported-blue)](#c-per-surface-setup)
+
+> **Using a coding agent?** Let it set feature-forge up for you. Paste this into your session:
+>
+> > Set up feature-forge in this project — follow
+> > `https://raw.githubusercontent.com/garygentry/feature-forge/main/AGENTS-SETUP.md` —
+> > then start a PRD for **&lt;my feature&gt;**.
+>
+> (Or just paste this repo's URL and say "set up feature-forge for me.") The agent installs the
+> skills for its own surface, wires the [rauf](https://github.com/garygentry/rauf) loop runner,
+> runs `forge-init`, and hands you Stage 1 — pausing only to confirm at a few gates. Prefer to do
+> it by hand? The [Install](#install) section below is unchanged.
 
 A feature development pipeline that starts from true _requirements_ (deliberately abstracted from tech or implementation details) and enforces a structured flow, producing a complete implementation backlog an agent can process in an autonomous loop.
 
@@ -76,7 +87,7 @@ npx @garygentry/feature-forge install
 Scope to one agent with `-a`, or preview without writing using `--dry-run --json`:
 
 ```bash
-npx @garygentry/feature-forge install -a codex        # one agent
+npx @garygentry/feature-forge install -a pi           # one agent
 npx @garygentry/feature-forge install --dry-run --json # preview the plan, change nothing
 ```
 
@@ -89,6 +100,14 @@ npx @garygentry/feature-forge install --dry-run --json # preview the plan, chang
 | Copilot | `npx @garygentry/feature-forge install -a copilot`                                                     | [docs/agents/copilot.md](docs/agents/copilot.md) |
 | Cursor  | `npx @garygentry/feature-forge install -a cursor`                                                      | [docs/agents/cursor.md](docs/agents/cursor.md)   |
 | Gemini  | `npx @garygentry/feature-forge install -a gemini`                                                      | [docs/agents/gemini.md](docs/agents/gemini.md)   |
+| Pi      | `npx @garygentry/feature-forge install -a pi` _(or `pi install npm:@garygentry/feature-forge` after pack/publish)_ | [docs/agents/pi.md](docs/agents/pi.md)           |
+
+> **Stale or partial install?** If a skill starts and reports
+> `feature-forge: install incomplete/degraded … (missing …)`, the bundled
+> `scripts/`/`references/` under your agent's skill dir are out of date or were only
+> partially extracted — the resolver refuses to run degraded rather than silently
+> improvising. Fix it by re-running the installer above (or `feature-forge update`) to
+> restore the full bundle.
 
 > The default loop runner ([forge-5-loop](#stage-5-loop-forge-5-loop)) is **rauf**, published to npm as
 > [`@garygentry/rauf`](https://www.npmjs.com/package/@garygentry/rauf). Install the rauf CLI with

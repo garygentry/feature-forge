@@ -46,6 +46,20 @@ test("resolvePlacements: agents without a rule return []", () => {
   }
 });
 
+test("resolvePlacements: pi mirror uses a scope-aware second root (.pi/agent global, .pi project)", () => {
+  // pi-subagents scans ~/.pi/agent/agents at user scope but <root>/.pi/agents at project scope —
+  // one baseDir string can't express both, hence globalBaseDir/projectBaseDir on the spec.
+  const global = resolvePlacements(AGENT_TARGETS.pi, "global", opts);
+  assert.equal(global.length, 1);
+  assert.equal(global[0]!.kind, "mirror");
+  assert.equal(global[0]!.root, "/h/.pi/agent");
+  assert.equal(global[0]!.destination, "/h/.pi/agent/agents");
+
+  const project = resolvePlacements(AGENT_TARGETS.pi, "project", opts);
+  assert.equal(project[0]!.root, "/p/.pi");
+  assert.equal(project[0]!.destination, "/p/.pi/agents");
+});
+
 test("selectMirrorFiles: picks agents/* flat, sorted, ignores non-prefixed", () => {
   const source = {
     root: "/src",

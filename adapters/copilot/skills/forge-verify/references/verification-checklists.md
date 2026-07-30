@@ -153,6 +153,60 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 - [ ] **CHECK-B24**: There are items for tests (or testing is included in each feature item's acceptance criteria)
 - [ ] **CHECK-B25**: No large items that try to do too many things (should be broken down)
 
+### Generated-Artifact Freshness
+- [ ] **CHECK-B26**: **Generated-artifact freshness vs. `testCommand` `--check` gates** (#145). When a
+  project's configured `testCommand` (forge.config.json) gates on **staleness of generated artifacts**
+  — sub-commands of the shape `<generator> --check` / `--verify` / `:check` that fail if a checked-in
+  generated file is out of date with its source — every backlog item that regenerates *one* gated
+  artifact must regenerate (and commit) **all** the sibling artifacts those same `--check` gates
+  depend on, or the item will pass locally yet red-gate on the stale-generated check. Verify
+  heuristically:
+  1. **Enumerate the gates.** String-scan `testCommand` for `--check`-style freshness sub-commands and
+     collect the generator/artifact each one guards (e.g. `build-benchmarks --check` guards
+     `partner-program-benchmarks`). If the command shape is unrecognized (no parseable `--check`
+     tokens), this check is **advisory / not-applicable** — never a hard fail.
+  2. **A gate with no regenerator.** If a `--check` gate guards an artifact that **no** backlog item
+     regenerates, and some item edits that artifact's *source*, flag a `gap`: the source change will
+     trip the freshness gate with nothing scheduled to refresh the output.
+  3. **Partial regeneration.** If an item regenerates a proper subset of the artifacts gated by the
+     `--check` set it touches (e.g. runs `build-partner-programs` + `build-analysis` but the gate also
+     covers `build-benchmarks`), flag an `inconsistency` naming the missing generator(s) and
+     recommending they be added to that item's execute + commit sequence. Same posture as the authoring
+     guidance in `forge-4-backlog` / rauf `author-backlog`: enumerate the whole `--check`-gated set, not
+     just the artifact the item is "about".
+
+### Artifact Lifecycle Consistency
+- [ ] **CHECK-B27**: **No test item forcing a lifecycle transition another item forbids** (#150).
+  *Advisory heuristic — keyword/artifact-name based; **not-applicable** when no lifecycle vocabulary is
+  present, **never** a hard fail.* A **lifecycle state** (draft / published / released / approved /
+  reviewed / signed-off / gated) is a downstream-project concept forge does not itself track — but a
+  backlog can still encode a **contradiction** about one named artifact: item A pins artifact `X` as
+  *draft* / *unpublished* / *unreviewed* while item B asserts (in its acceptance criteria or a test it
+  adds) that `X` is *published* / *released* / *approved*, with **no** publishing/review item for `X`
+  anywhere in B's dependency closure. That leaves a **test/e2e item as the only thing forcing the
+  transition** — and since the autonomous loop can neither publish a package nor stand in for a human
+  reviewer, asked to make such a test green it **fabricates** the publication or sign-off (a provenance
+  defect a `--review` pass has caught in the wild). Verify heuristically:
+  1. **Find lifecycle assertions.** Scan item titles/descriptions/`acceptanceCriteria` for a named
+     artifact paired with a lifecycle-state keyword — earlier states (`draft` / `unpublished` /
+     `pending review` / `unreleased`) vs later states (`published` / `released` / `approved` / `live` /
+     `signed-off` / `gated`). If **no** item carries such vocabulary, this check is **not-applicable**.
+  2. **Pair by artifact name.** Group assertions that reference the **same named artifact**. A pair
+     where one item requires the *earlier* state and another asserts the *later* state is a candidate.
+  3. **Check the dependency closure.** If the later-state item has **no** publish / review / human-gated
+     item for that artifact in its transitive `dependsOn`, flag an `inconsistency`: name the artifact,
+     both items, and recommend either (a) adding a `dependsOn` on an explicit human-gated publish/review
+     item that legitimately produces the state, or (b) re-asserting the state via a dev-build / fixture
+     path — never letting a test item be the sole driver of the transition (mirrors the authoring
+     guidance in `forge-4-backlog` / rauf `author-backlog`). **Report, do not repair.**
+
+  > **Anti-pattern (visible even where the heuristic can't fire):** a test/e2e item whose pass condition
+  > is "artifact `X` is published / approved / reviewed" while the backlog contains no human-gated
+  > publish or review item producing that state. The autonomous loop cannot publish or sign off on
+  > behalf of a human; asked to make such a test green it will **fabricate** the published/reviewed
+  > provenance. Any item asserting a human-gated lifecycle state must trace — via `dependsOn` — to the
+  > item that legitimately produces it, or assert the state through a dev-build / fixture path instead.
+
 ## Implementation Mode Checklist
 
 ### Spec Compliance
@@ -190,13 +244,17 @@ Detailed checklists for each verification mode. Execute EVERY check — do not s
 > **When these fire:** only at impl-verify **completion** (impl mode runs post-loop), never mid-loop — an early skeleton that only compiles is not punished. **Both degrade gracefully:** a feature with no runnable surface (a pure library with no bootstrap contract) or no configured `smokeCommand` yields an **advisory not-applicable** finding, never a hard fail — the same way a null `{typeCheckCommand}` is handled. These exist because `CHECK-I01..I20` are all static reads + typecheck/lint + "tests exist"; nothing here asserts the assembled application actually **runs**. A bootstrap that is exported and unit-tested (each test calls it manually) but never wired into a runtime entrypoint passes every other check yet serves no real request (#121).
 
 - [ ] **CHECK-I21**: **End-to-end smoke passes.** If `smokeCommand` from forge.config.json is set, execute it — it boots the wired entrypoint and drives one happy-path request end-to-end; **pass iff exit 0**. A non-zero exit is an `error` finding (the assembled app does not run — quote the command's failing output). If `smokeCommand` is `null`, this is **advisory**: emit a `not-applicable` finding recommending the user configure a `smokeCommand` so "clean" means "it runs" (never fabricate or guess a command — run only the user-configured one, exactly as `CHECK-I11` runs only a configured `{typeCheckCommand}`).
-- [ ] **CHECK-I22**: **Runtime-required bootstrap has a non-test caller.** Every exported bootstrap / `init*` / singleton-populator the specs mark as **required for runtime** must have ≥1 **non-test** call site on a runtime path — an entrypoint such as `main` / `instrumentation` / a route / a layout / a worker, NOT only test files. Statically grep for each such symbol's references (use the stack profile `references/stacks/{stack}.md` for what counts as a runtime entrypoint in this language). A symbol that is exported and covered by tests but referenced **only** from test files is a `gap` — the #121 walking-skeleton (bootstrap wired to nothing). Degrades naturally: a feature whose specs mark no bootstrap symbol as runtime-required is `not-applicable`. Weaker than `CHECK-I21` (it proves a call site exists, not that the boot succeeds), so it complements rather than replaces the smoke.
+  - **Prefer the dev runtime the developer actually uses (#149).** Recommend the configured `smokeCommand` boot the app in its **development** mode — the dev server / watch loop / HMR runtime — not only a clean production build. The failure modes that a static typecheck and a prod smoke both miss live in the dev runtime: **module-graph-identity** bugs (a "singleton" duplicated across a re-evaluated module graph, so the initialized instance and the one the request path reads are different objects) and **watch-loop** bugs (an init that fires once but never re-fires on hot reload, or fires on every reload and leaks). A prod build evaluates the graph once and hides both. When the project is served in dev during development, the `smokeCommand` should exercise that same runtime.
+  - **For a fix, re-verify in the mode the bug manifested.** When impl-verify runs after a **fix** (not a greenfield build), re-run the smoke in the **same runtime mode where the original bug appeared** — a bug reproduced in dev/watch mode is not proven fixed by a green prod-mode smoke, and vice versa. Note the mode in the finding so "smoke passed" is unambiguous about *which* runtime was exercised.
+- [ ] **CHECK-I22**: **Runtime-required bootstrap has a non-test caller.** Every exported bootstrap / `init*` / singleton-populator the specs mark as **required for runtime** must have ≥1 **non-test** call site on a runtime path — an entrypoint such as `main` / `instrumentation` / a route / a layout / a worker, NOT only test files. Statically grep for each such symbol's references (use the stack profile `references/stacks/{stack}.md` **Runtime Entrypoints & Bootstrap-Wiring Sites** list for what counts as a runtime entrypoint in this language). A symbol that is exported and covered by tests but referenced **only** from test files is a `gap` — the #121 walking-skeleton (bootstrap wired to nothing). Degrades naturally: a feature whose specs mark no bootstrap symbol as runtime-required is `not-applicable`. Weaker than `CHECK-I21` (it proves a call site exists, not that the boot succeeds), so it complements rather than replaces the smoke.
+- [ ] **CHECK-I23**: **Heavy bootstrap wired into a universal startup entry — recommend lazy init** (#149). *Advisory heuristic — a `gap`/`improvement` at most, **never** a hard fail.* When a runtime-required `init`/bootstrap/singleton-populator is wired into a **framework bootstrap entry that runs on every startup** (a Next.js `instrumentation.ts`, an app-server preload/`register` hook, a global setup module) **and** that init pulls in a **large server-only import graph** (DB clients, ORMs, queue/background workers, telemetry exporters, the whole service layer), recommend moving to **lazy initialization at the entry that already loads that graph** — the first route / handler / worker that needs it — rather than eager wiring at the universal entry. Eager wiring drags the heavy graph into every cold start, and in dev into every module re-evaluation (the watch-loop cost `CHECK-I21` also targets). **Detect statically:** from the stack profile's **Runtime Entrypoints & Bootstrap-Wiring Sites** list, identify this stack's universal bootstrap entries; grep those files for imports of the feature's runtime-required bootstrap symbols (`CHECK-I22`) and for the server-only heavy-import markers the profile names. A match → an `improvement`/`gap` finding naming the entry, the heavy graph it pulls, and the lazier call site to move initialization to. Degrades to `not-applicable` when the stack has no universal bootstrap entry, when no heavy init is wired there, or when the profile lists no bootstrap-wiring sites — **report, do not repair.**
 
 ## Epic Mode Checklist
 
 Run `epic-manifest.py validate "{epic}" --specs-dir "{specsDir}" --json` once; map its
-findings to E01/E02/E03/E08. Then perform the judgment checks E04–E07 by reading the
-manifest, EPIC.md, and completed members' specs.
+findings to E01/E02/E03/E08. Then perform the judgment checks E04–E07, E09, and E10 by
+reading the manifest, EPIC.md, completed members' specs, and (for E10) sibling members'
+committed tests.
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -242,6 +300,27 @@ python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}"
   `.blockingEpicChangeRequests`); the per-request `kind`/`target`/`rationale` detail is read
   from the member `.pipeline-state.json` already loaded in Step 2. This is the pre-emptive
   surface for the divergence class CHECK-E06/E07 otherwise catch only after the fact.
+- [ ] **CHECK-E10**: **cross-member shared-state test coupling** (#144). A member that writes or
+  migrates a file a *sibling's* committed tests already pin will break the sibling's suite the
+  moment it runs — blocking every one of its own commits from a green test gate — yet nothing in
+  E04–E09 catches it (contracts cover code symbols, not shared data files). Detect it heuristically,
+  per member `M`:
+  1. **Collect `M`'s mutated paths.** Take `M`'s `mutatesShared[]` from the manifest if present
+     (the authored precision hint). If absent or empty, fall back to grepping `M`'s specs
+     (change-maps / "files this writes") and backlog item `execute` steps for project-root-relative
+     paths it creates, writes, or migrates (data corpora, generated fixtures, migration outputs —
+     not `M`'s own source modules or its own tests).
+  2. **Grep sibling tests for reads of those paths.** For every *other* member `S` that is already
+     **`complete`** (derived status — its regression suite is live and gating), grep `S`'s committed
+     **test** files/globs for a read/import/load of any path in step 1. Use the stack profile
+     (`references/stacks/{stack}.md`) for what a test glob looks like in this language.
+  3. **Emit the finding.** A hit → a non-fatal `inconsistency` finding: name `M`, the shared path,
+     the sibling `S` and the specific test, and **recommend a reconciliation backlog item** on `M`
+     (regenerate/re-pin `S`'s fixture, or update `S`'s test to the new shape) scheduled *before*
+     `M`'s first mutating item — so the coupling is planned, not discovered mid-loop on a red gate.
+     **Report, do not repair** (same posture as CHECK-E07/E09). Degrades to a clean no-op when no
+     member declares or greps a shared write, or when no completed sibling reads it — never a
+     spurious hard-fail.
 
 ## Findings Document Template (Step 4)
 

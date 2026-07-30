@@ -121,6 +121,8 @@ Iterate until the user confirms the PRD is complete.
 
 ## Step 6: Update Pipeline State and Commit
 
+Before writing state or running the stage exit, invoke the **Stage-Completion Re-check** block in `references/shared-conventions.md` with `{stage}` = `forge-1-prd` — a resumed mid-stage continuation must not overwrite a committed `PRD.md` or re-fire a finished exit.
+
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 1. Create or update `{resolvedFeatureDir}/.pipeline-state.json`:

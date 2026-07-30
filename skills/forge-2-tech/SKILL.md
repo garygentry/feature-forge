@@ -184,6 +184,8 @@ Use `AskUserQuestion` to collect this feedback.
 
 ## Step 7: Update Pipeline State and Commit
 
+Before writing state or running the stage exit, invoke the **Stage-Completion Re-check** block in `references/shared-conventions.md` with `{stage}` = `forge-2-tech` — a resumed mid-stage continuation must not overwrite a committed `tech-spec.md` or re-fire a finished exit.
+
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 1. Update `{resolvedFeatureDir}/.pipeline-state.json`:
