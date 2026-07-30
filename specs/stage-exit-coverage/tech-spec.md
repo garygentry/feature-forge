@@ -1,6 +1,6 @@
 # Stage Exit Coverage — Technical Specification
 
-> Based on PRD v1. This document specifies HOW the deterministic exit contract expands; the PRD remains the source of WHAT is required. Every technical decision cites its governing requirement IDs.
+> Based on PRD v2. This document specifies HOW the deterministic exit contract expands; the PRD remains the source of WHAT is required. Every technical decision cites its governing requirement IDs.
 
 ## 1. Overview
 
