@@ -24,10 +24,9 @@ The configured project stack remains Python with `ruff check scripts/ eval/` and
 ```text
 scripts/
   forge-session.py               # expanded stage-exit, state-verify, routing tables
-  forge_json.py                  # NEW importable helper module: duplicate-aware JSON load
   epic-manifest.py               # verify-status parity; existing render-status CLI reused
   forge-bootstrap.py             # adopts shared duplicate-aware config read
-  build-adapters.py              # add forge_json.py to copied runtime helpers
+  build-adapters.py              # unchanged helper set; no new runtime copy
 
 references/
   stage-exit-protocol.md         # one scripted contract for all covered exits
@@ -65,7 +64,7 @@ tests/
   test_build_adapters.py          # expanded host/runtime-copy assertions
 ```
 
-`forge-session.py` remains the public control-plane executable. Exit logic is not extracted into a new package: the repository already copies this flat helper into every adapter, and keeping state resolution, CLI validation, and routing together minimizes adapter import risk (REQ-COMPAT-02, REQ-PERF-01). `forge_json.py` is the sole narrow extraction because both `forge-session.py` and `forge-bootstrap.py` must import the same duplicate-aware parser through ordinary Python import syntax (REQ-CONFIG-02/04).
+`forge-session.py` remains the public control-plane executable. Exit logic is not extracted into a new package: the repository already copies this flat helper into every adapter, and keeping state resolution, CLI validation, and routing together minimizes adapter import risk (REQ-COMPAT-02, REQ-PERF-01). The duplicate-aware parser is likewise **not** extracted: it is mirrored into `forge-session.py` and `forge-bootstrap.py` with a drift guard, because the flat scripts are copied verbatim into six bundles and share no import module by standing repository invariant (`01-architecture-layout.md` §3.4; REQ-CONFIG-02/04, REQ-COMPAT-02).
 
 ### 2.2 Generated output (REQ-COMPAT-02, REQ-GUARD-03)
 
@@ -288,7 +287,7 @@ Do not add a restrictive schema pattern to legacy `commitHash` fields and do not
 
 ### 3.9 Recursive duplicate-key diagnostics (REQ-CONFIG-01..04, REQ-PERF-02)
 
-Add `scripts/forge_json.py` with an importable stdlib API:
+Mirror an identical stdlib helper pair into both config-reading scripts:
 
 ```python
 def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
@@ -298,7 +297,7 @@ def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
 
 It uses `json.loads(..., object_pairs_hook=...)`, records duplicates at every object nesting level, and assigns each repeated key normally so the last value wins. Callers retain their current malformed/missing-file policy. A shared warning formatter writes one warning per duplicate key/source to stderr, preserving JSON stdout. `forge-session.py::_load_config(config_path: Path) -> dict`, effective config, stage exit, navigator/status consumers, and `forge-bootstrap.py` use this parser. Duplicate detection is general and includes nested objects such as `loopRunner` and `autoVerifyStages`; it is not specialized to `autoVerify` (REQ-CONFIG-04).
 
-`scripts/build-adapters.py` adds `forge_json.py` to `RUNTIME_HELPERS` so ordinary imports resolve from every emitted `scripts/` directory.
+`scripts/build-adapters.py` is unchanged: `RUNTIME_HELPERS` stays at six entries, no new file is emitted, and no import has to resolve inside a bundle. `tests/test_json_loader_parity.py` holds the two copies identical.
 
 ### 3.10 Canonical scripted exit and explicit guard (REQ-EXIT-03..07, REQ-GUARD-01..03)
 
@@ -432,7 +431,7 @@ This repository has no Python package graph; integrations are executable scripts
    - `references/epic-manifest-schema.json` adds required integer `revision >= 1`; compatibility readers supply the documented legacy default before validation.
 
 4. **`scripts/build-adapters.py`**
-   - `RUNTIME_HELPERS` copies `forge-session.py`, `epic-manifest.py`, and new `forge_json.py` to every adapter.
+   - `RUNTIME_HELPERS` copies `forge-session.py` and `epic-manifest.py` to every adapter, unchanged.
    - Existing Claude/Pi/generic host substitutions remain the build-time translation layer.
 
 5. **Canonical skills and references**
@@ -446,7 +445,7 @@ This repository has no Python package graph; integrations are executable scripts
 - Every scripted stage-exit caller passes `--verify-capability interactive` only when both `AskUserQuestion` and clean-room `forge-verifier` dispatch are available; otherwise it passes `manual`.
 - `forge-verify` and `forge-fix` call `state-verify` for result transitions; direct calls serialize their mode as `--verify-mode`, while nested calls carry their owning `--served-stage`.
 - Navigator/status rendering consumes the new `auto-pending` label.
-- `forge-bootstrap.py` and all `forge-session.py` config consumers import `forge_json.py`.
+- `forge-bootstrap.py` and all `forge-session.py` config consumers route through their own mirrored copy of the duplicate-aware read.
 - Tests and compliance eval execute the real CLI via subprocess; no production code imports test helpers.
 
 ### 6.3 Data flow (REQ-DEBT-01..05, REQ-ROUTE-04/05)
@@ -534,7 +533,7 @@ Extend `tests/test_stage_exit.py` to cover:
 
 ### 8.4 Canon, adapter, and cap guards (REQ-GUARD-01..03, REQ-COMPAT-01/02)
 
-`tests/test_stage_exit_protocol.py` explicitly enumerates the nine required skills and rejects missing/duplicate terminal contracts. `tests/test_build_adapters.py` confirms `forge_json.py` ships and all new stamp sites translate for Claude/Pi/generic. Existing adapter-neutrality, spec-purity, drift, and forge-5-loop body-cap tests remain hard gates.
+`tests/test_stage_exit_protocol.py` explicitly enumerates the nine required skills and rejects missing/duplicate terminal contracts. `tests/test_build_adapters.py` confirms no new runtime helper ships and all new stamp sites translate for Claude/Pi/generic; `tests/test_json_loader_parity.py` guards the mirrored loader. Existing adapter-neutrality, spec-purity, drift, and forge-5-loop body-cap tests remain hard gates.
 
 ### 8.5 Compliance evaluation (REQ-EVAL-01..03)
 
@@ -567,7 +566,7 @@ None added. Runtime remains Python 3.10+ standard library. Existing pinned YAML 
 
 - `scripts/forge-session.py`: CLI, routing, state/config integration.
 - `scripts/epic-manifest.py`: live epic status and verify vocabulary parity.
-- `scripts/forge_json.py`: shared duplicate-aware parsing.
+- mirrored duplicate-aware parsing in both config-reading scripts (no shared module).
 - `references/pipeline-state-schema.json`: additive feature-state contract.
 - `references/epic-manifest-schema.json`: canonical integer epic revision contract.
 - `scripts/build-adapters.py`: deterministic distribution and host translation.

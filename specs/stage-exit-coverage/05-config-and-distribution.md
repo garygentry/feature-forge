@@ -23,7 +23,7 @@ in `00-core-definitions.md` §8 and the file ownership/layout in
 `01-architecture-layout.md` §§2–4; it does not redefine their shared types, stage-exit payloads,
 or `UsageError` hierarchy.
 
-The implementation adds exactly one source module, `scripts/forge_json.py`. It replaces only
+The implementation adds **no source module**. It replaces only
 project-config JSON reads in the existing consumers. It does **not** replace pipeline-state,
 schema, sentinel, transcript, findings, or arbitrary CLI-payload parsing (tech-spec §§2.1,
 3.9). Duplicate keys do not invalidate a project in this release: the final value remains the
@@ -34,8 +34,13 @@ REQ-COMPAT-02).
 
 ### 2.1 Loader algorithm (REQ-CONFIG-03/04, REQ-REL-01)
 
-Create `scripts/forge_json.py` with the exact public APIs declared in
-`00-core-definitions.md` §8. The complete implementation contract is:
+Mirror the following pair of functions into **both** `scripts/forge-session.py` and
+`scripts/forge-bootstrap.py`, with the exact public APIs declared in
+`00-core-definitions.md` §8. Do **not** create a shared module: `01-architecture-layout.md`
+§3.4 records why (the flat scripts are copied verbatim into six bundles and share no import
+module by standing repository invariant), and `tests/test_json_loader_parity.py` holds the two
+copies in sync. Each copy is preceded by a `#: mirrors ``load_json_with_duplicates`` in
+<other file>` comment, matching the existing convention. The complete implementation contract is:
 
 ```python
 """Shared JSON loading with recursive duplicate-object-key diagnostics."""
@@ -131,7 +136,6 @@ Example:
 ```python
 from pathlib import Path
 
-from forge_json import load_json_with_duplicates, warn_duplicate_keys
 
 config_path = Path("forge.config.json")
 value, duplicates = load_json_with_duplicates(config_path)
@@ -178,7 +182,6 @@ configuration change does not introduce another stage-exit API.
 Add this ordinary sibling import at the top of `scripts/forge-session.py`:
 
 ```python
-from forge_json import load_json_with_duplicates, warn_duplicate_keys
 ```
 
 Replace `_load_config` internally, retaining its exact import path and signature:
@@ -226,7 +229,6 @@ def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult: ..
 Add the same sibling import:
 
 ```python
-from forge_json import load_json_with_duplicates, warn_duplicate_keys
 ```
 
 Within `commit`, replace only the direct `json.loads((target /
@@ -328,8 +330,8 @@ def run_self_containment_pass(
 def build_tree(root: Path, dest: Path) -> tuple[EmitResult, ...]: ...
 ```
 
-Add `"forge_json.py"` to `RUNTIME_HELPERS` beside its Python consumers. Do not add a separate
-copy loop or emitter special case. `build_tree` calls `run_self_containment_pass` once for each
+`RUNTIME_HELPERS` is **unchanged** — the mirrored loader lives inside the two scripts already in
+that set, so no entry is added and no copy loop or emitter special case is needed. `build_tree` calls `run_self_containment_pass` once for each
 of the existing targets (`claude`, `codex`, `copilot`, `cursor`, `gemini`, and `pi`); that pass
 copies every runtime helper from `<repo>/scripts/<name>` to
 `<bundle>/scripts/<name>`.
@@ -343,15 +345,14 @@ The existing pass remains authoritative:
 - for Pi, permit only the existing `/feature-forge:` to `/skill:` substitution and verify the
   transformed helper against that expected text.
 
-`forge_json.py` contains no host command string, so all six emitted copies are byte-identical to
-`scripts/forge_json.py`, including Pi. The sibling layout is load-bearing: when either executable
-runs as `<bundle>/scripts/forge-session.py` or `<bundle>/scripts/forge-bootstrap.py`, Python places
-that scripts directory on `sys.path`, so `from forge_json import ...` resolves without package
-installation or `PYTHONPATH` changes (REQ-CONFIG-02; tech-spec §2.1).
+The mirrored loader contains no host command string, so it survives adapter generation unchanged
+inside both consumers, including Pi. **No import has to resolve at runtime**, which is the point:
+a bundle cannot fail on a missing or mislocated sibling module, because there is no sibling module
+(REQ-CONFIG-02, REQ-COMPAT-02; `01-architecture-layout.md` §3.4).
 
 ### 5.2 Generated-output rules (tech-spec §2.2; project generation constraint)
 
-Never hand-edit `adapters/*/scripts/forge_json.py` or either generated consumer. Implement in
+Never hand-edit either generated consumer under `adapters/*/scripts/`. Implement in
 `scripts/`, update generator fixtures, and run:
 
 ```text
@@ -363,8 +364,8 @@ helpers use the byte-copy path, not frontmatter/canon emitters. Provenance is en
 runtime-helper list, copy assertions, deterministic generation, and drift guard. The source
 helper plus all generated adapter copies must land in the same implementation change.
 
-Update `tests/fixtures/minimal-canon/scripts/forge_json.py` and each committed
-`expected-adapters/<agent>/scripts/forge_json.py` snapshot. These are test fixtures, not an
+Update the committed `expected-adapters/<agent>/scripts/` snapshots for the two changed
+consumers. No new fixture file is added. These are test fixtures, not an
 alternative production source. A full regenerate atomically replaces the adapter tree, so no
 adapter target may retain a stale consumer without its imported sibling helper.
 
@@ -374,7 +375,7 @@ A missing source helper causes the generator's existing file-copy failure and ab
 it must not silently omit the helper. Containment or byte-divergence failures remain generator
 defects (`AssertionError` or the existing Pi `SystemExit`) and prevent atomic publication.
 `CanonError` handling and staging-tree cleanup remain unchanged. Runtime `ModuleNotFoundError`
-for `forge_json` indicates an incomplete/stale adapter and is prevented by helper-presence and
+for the mirrored loader indicates an incomplete/stale adapter and is prevented by helper-presence and
 import-smoke tests; consumers must not fall back to silent direct `json.loads` in that case.
 
 ## 6. Determinism, Compatibility, and Performance
@@ -405,13 +406,12 @@ startup and existing stage-exit processing.
 
 ## Public API and Internal Surface
 
-- **Repository-importable module — the one true public surface here:** `scripts/forge_json.py`
-  exporting `load_json_with_duplicates(path) -> tuple[object, list[str]]` and
-  `warn_duplicate_keys(path, duplicate_keys) -> None` (§2.1–§2.2). It is the sanctioned
-  exception to the self-contained-scripts rule (`01-architecture-layout.md` §3.4), so both
-  `forge-session.py` and `forge-bootstrap.py` import it rather than each carrying a copy.
-  Because it is copied into every generated adapter (§5.1), its signature is effectively
-  frozen once shipped: changing it silently breaks already-installed adapter bundles.
+- **Repository-importable module:** none. `load_json_with_duplicates(path) -> tuple[object,
+  list[str]]` and `warn_duplicate_keys(path, duplicate_keys) -> None` (§2.1–§2.2) are **mirrored
+  private helpers**, one copy per consuming script, not a shared import surface. Nothing outside
+  the two scripts may call them, and no adapter bundle exposes them as a module. This preserves
+  the self-contained-scripts rule (`01-architecture-layout.md` §3.4) rather than excepting it;
+  `tests/test_json_loader_parity.py` is what keeps the copies honest.
 - **User-facing CLI behavior (no new command):** the duplicate-key warning contract of §2.2 and
   the stdout/stderr split of §4. Warnings go to stderr so `--json` stdout stays machine-
   parseable; that separation is the contract, not an implementation detail.
@@ -464,7 +464,7 @@ Update `tests/test_effective_config.py` and bootstrap coverage in
 - bootstrap malformed/unreadable config still exits 2 with `Error:` and no false JSON stdout.
 
 Tests should execute the real CLI subprocesses where stdout/stderr and exit behavior matter.
-Pure recursive parser cases may import `scripts/forge_json.py` directly after placing `scripts/`
+Pure recursive parser cases may load either consumer script directly after placing `scripts/`
 on the test import path; they must call the real exported functions rather than reproduce the
 hook in test code.
 
@@ -472,11 +472,12 @@ hook in test code.
 
 Update `tests/test_build_adapters.py` and the minimal-canon snapshots to verify:
 
-- `forge_json.py` is present under `scripts/` for all six `AGENT_TARGETS`;
+- `RUNTIME_HELPERS` still has exactly six entries and no new file appears under `scripts/` for any
+  of the six `AGENT_TARGETS`;
 - each emitted helper is mode `0644` and has no generated header;
 - each emitted helper's bytes equal the fixture source (including Pi, because the helper has no
   slash-command prefix);
-- both emitted consumers and `forge_json.py` coexist at the same scripts depth;
+- both emitted consumers carry the mirrored loader byte-identically to canon;
 - importing/running the emitted consumers does not raise `ModuleNotFoundError`;
 - two builds remain tree-identical, a full regenerate purges orphans, and `--check` detects a
   missing/stale generated helper.
@@ -497,7 +498,8 @@ Acceptance requires all of the following:
 - [ ] Valid JSON stdout parses without filtering warning text.
 - [ ] Missing/malformed behavior matches §3.3.
 - [ ] No direct project-config `json.loads` remains in the two specified consumer sites.
-- [ ] `forge_json.py` ships beside both consumers in every adapter target.
+- [ ] No new runtime helper ships; both mirrored copies survive generation byte-identically, and
+      `tests/test_json_loader_parity.py` passes against canon.
 - [ ] Generated runtime helpers were regenerated, not hand-edited.
 - [ ] The drift guard reports no adapter difference.
 - [ ] No runtime dependency, network call, history scan, model turn, or config migration was added.

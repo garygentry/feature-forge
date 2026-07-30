@@ -253,9 +253,10 @@ Use or add fixtures at these exact locations (REQ-DEBT-06, REQ-EVAL-01/02):
   epic fixture legacy.
 - local `tmp_path` feature states: transition and routing matrices; avoid a combinatorial tree of
   nearly identical committed JSON.
-- `tests/fixtures/minimal-canon/scripts/forge_json.py` plus each
-  `tests/fixtures/minimal-canon/expected-adapters/<agent>/scripts/forge_json.py`: generator snapshot
-  inputs/outputs.
+- `tests/fixtures/minimal-canon/scripts/` plus each
+  `tests/fixtures/minimal-canon/expected-adapters/<agent>/scripts/`: generator snapshot
+  inputs/outputs for the two changed consumers. **No new fixture file** — the mirrored loader lives
+  inside scripts already snapshotted.
 - `eval/fixtures/compliance/verify-fix-reverify.json`: the only committed branch compliance fixture;
   it is below a nested directory so `eval/run-eval.py`'s `fixtures/*.json` trigger glob cannot load
   it.
@@ -524,9 +525,12 @@ statuses from `00-core-definitions.md`, extract both script constants, and compa
 
 ### 5.1 Pure loader matrix
 
-Add focused tests for real `scripts/forge_json.py::load_json_with_duplicates` and
-`warn_duplicate_keys` in `tests/test_effective_config.py` or a new
-`tests/test_forge_json.py`; do not reproduce the hook in test code (REQ-CONFIG-01/03/04):
+Add focused tests for the real mirrored `load_json_with_duplicates` and `warn_duplicate_keys` in
+`tests/test_effective_config.py`, loading them from `scripts/forge-session.py` via the existing
+`importlib.util.spec_from_file_location` convention (both filenames are hyphenated, so neither is
+importable by name). Do not reproduce the hook in test code, and **parametrize the matrix over both
+copies** — `forge-session.py` and `forge-bootstrap.py` — so a divergence fails behaviourally as well
+as structurally (REQ-CONFIG-01/03/04):
 
 | Input | Parsed value | Duplicate list/warning |
 |---|---|---|
@@ -544,6 +548,18 @@ Add focused tests for real `scripts/forge_json.py::load_json_with_duplicates` an
 Assert the exact warning line from `05-config-and-distribution.md` §2.2, stderr-only output, one
 line per repeated occurrence, and deterministic ordering. Add a negative control proving the test
 fails if first-key-wins or duplicate deduplication is substituted (REQ-REL-01).
+
+**Mirrored-loader drift guard.** Add `tests/test_json_loader_parity.py`, following the established
+drift-guard modules (`tests/test_stage_constants_parity.py`, `tests/test_agent_targets_parity.py`)
+and their constraints — no skip gate, no import of the hyphenated scripts. It differs from both in
+one respect: the mirrored unit is a **pair of functions, not a literal**, so `ast.literal_eval` does
+not apply. Extract each function's source block from `scripts/forge-session.py` and
+`scripts/forge-bootstrap.py` (locate `def load_json_with_duplicates` / `def warn_duplicate_keys` and
+take through the end of each body by indentation), normalize leading indentation and trailing
+whitespace, and assert the two copies are equal. On failure, print both bodies in the diff. Also
+assert each copy is preceded by its `#: mirrors …` comment, so the convention that signals
+duplication cannot be silently dropped (REQ-CONFIG-02, REQ-COMPAT-02;
+`01-architecture-layout.md` §3.4).
 
 ### 5.2 Session and bootstrap CLI matrix
 
@@ -574,7 +590,7 @@ normal warning evidence must use the real function/CLI (REQ-CONFIG-03, REQ-OBS-0
 
 A deterministic unit test may count loader calls/file opens for one consumer to ensure duplicate
 detection does not add a second config read. Source assertions reject subprocess, Git, network, or
-repository traversal in `forge_json.py`. Do not add wall-clock microbenchmarks; they are flaky and
+repository traversal in the mirrored loader. Do not add wall-clock microbenchmarks; they are flaky and
 unnecessary for the bounded `O(n + p)` algorithm. The no-duplicate functional result must equal the
 pre-feature result and emit no extra bytes (REQ-PERF-01/02).
 
@@ -618,9 +634,10 @@ Add/retain canon tests for (REQ-CAP-01, REQ-FOLLOW-01/02, REQ-A11Y-01):
 Extend `tests/test_build_adapters.py` and minimal-canon snapshots (REQ-EXIT-05/07,
 REQ-COMPAT-02):
 
-- `forge_json.py` exists beside both consumers for all six `AGENT_TARGETS`, mode `0644`, without a
-  generated header, and byte-equal to source (including Pi);
-- emitted consumer import smoke does not raise `ModuleNotFoundError`;
+- `RUNTIME_HELPERS` still has exactly six entries and no new file appears under `scripts/` in any
+  of the six `AGENT_TARGETS`;
+- both emitted consumers carry the mirrored loader byte-equal to canon (including Pi), mode `0644`,
+  without a generated header;
 - all nine stamp sites ship in generated adapters;
 - Claude output retains `/feature-forge:` and `/clear`; Pi output uses `/skill:` and `/new`;
   generic adapter canon remains vendor-neutral;

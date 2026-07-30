@@ -69,7 +69,7 @@
     }
   },
   "currentStage": "forge-3-specs",
-  "updatedAt": "2026-07-30T15:34:57Z",
+  "updatedAt": "2026-07-30T16:26:49Z",
   "branch": "forge/stage-exit-coverage",
-  "notes": "PRD v3 adds REQ-REL-04 (single-writer model, no locking). The lock protocol introduced at forge-3-specs by round-1 finding V-006 was removed: it answered no requirement and would have overturned the documented single-writer invariant in _write_state. tech-spec and specs were amended in place against the delta rather than re-authored, because the delta only REMOVES scope."
+  "notes": "PRD v3 adds REQ-REL-04 (single-writer model, no locking). The lock protocol introduced at forge-3-specs by round-1 finding V-006 was removed: it answered no requirement and would have overturned the documented single-writer invariant in _write_state. tech-spec and specs were amended in place against the delta rather than re-authored, because the delta only REMOVES scope. 2026-07-30: forge_json.py dropped \u2014 the duplicate-aware loader is mirrored into forge-session.py and forge-bootstrap.py with a drift guard, per the repo's standing no-shared-import invariant (test_stage_constants_parity.py). This removes the feature's only new file, its only intra-project import, and its only RUNTIME_HELPERS change, so no CONFIG split is needed and CONFIG-01..04 stays here."
 }

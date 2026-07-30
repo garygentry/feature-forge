@@ -32,8 +32,11 @@ python3 <bundle-root>/scripts/forge-session.py <subcommand> ...
 ```
 
 No Python package manifest, `src/` package, database, service, or third-party runtime
-library is introduced. The one new module, `scripts/forge_json.py`, is an importable
-sibling helper because config parsing is shared by two executable scripts. Exit routing
+library is introduced — **and no new module**. The flat scripts stay self-contained: each is
+copied verbatim into six per-agent adapter bundles, so the repository's standing invariant is
+that they share no import module (`tests/test_stage_constants_parity.py`). The duplicate-aware
+JSON loader is therefore *mirrored* into its two consumers rather than extracted, following the
+same precedent as `PRODUCTION_STAGES` and `AGENT_TARGETS` (§3.4). Exit routing
 stays in `forge-session.py` so it can reuse existing feature resolution, state readers,
 production-stage ordering, host translation, and argparse error handling without a new
 cross-script protocol.
@@ -49,11 +52,10 @@ Generated files under `adapters/` are outputs only and are regenerated, never ed
 scripts/
   forge-session.py                         M  exit router, state-verify, debt, hashes,
                                               duplicate-aware config consumer
-  forge_json.py                            N  recursive duplicate-key JSON loader
   epic-manifest.py                         M  verify vocabulary, manifest revision,
                                               pending/read-side parity
   forge-bootstrap.py                       M  shared duplicate-aware config consumer
-  build-adapters.py                        M  add forge_json.py to RUNTIME_HELPERS
+  build-adapters.py                        M  unchanged helper set; no new runtime copy
 
 references/
   stage-exit-protocol.md                   M  sole nine-skill terminal contract
@@ -93,13 +95,13 @@ tests/
   test_state_schema_conformance.py          M  additive schema and legacy reads
   test_stage_constants_parity.py            M  verify vocabulary parity
   test_effective_config.py                  M  recursive duplicate warnings
+  test_json_loader_parity.py                N  mirrored loader drift guard
   test_compliance_eval.py                   M  branch fixture/scorer validity
   test_build_adapters.py                    M  runtime helper and translated stamps
   <existing epic manifest tests>            M  revision mutation/freshness matrix
 
 adapters/{claude,codex,copilot,cursor,gemini,pi}/
   scripts/forge-session.py                  G
-  scripts/forge_json.py                     G
   scripts/epic-manifest.py                  G
   ...canonical skills/references...         G
 ```
@@ -213,24 +215,36 @@ The loop prerequisite from commit `c174b55` is immutable: before editing
 
 ### 3.4 Config parser ownership
 
-`scripts/forge_json.py` exports only:
+The duplicate-aware loader is **mirrored, not extracted**. `scripts/forge-session.py` and
+`scripts/forge-bootstrap.py` each carry their own copy of:
 
 ```python
 def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]: ...
 def warn_duplicate_keys(path: Path, duplicate_keys: list[str]) -> None: ...
 ```
 
-Consumers import it by sibling module name:
+**Why duplication and not a shared module.** Every flat script is copied verbatim into the six
+per-agent adapter bundles, so the repository's standing invariant — stated in
+`tests/test_stage_constants_parity.py` — is that these scripts have *no shared import module*.
+`epic-manifest.py` already mirrors `PRODUCTION_STAGES` and `KNOWN_VERIFY_STATUSES` from
+`forge-session.py` for exactly this reason, and `tests/test_agent_targets_parity.py` exists
+because `AGENT_TARGETS` drifted once and silently dropped `adapters/pi/` coverage. The remedy the
+repository has twice chosen is a drift guard, not an import. A new `scripts/forge_json.py` would
+be the first violation of that invariant, would add a seventh `RUNTIME_HELPERS` entry whose import
+must resolve inside every bundle, and would freeze its signature across six shipped bundles — all
+to avoid duplicating roughly 25 lines. The trade is not worth it (REQ-COMPAT-02, REQ-PERF-01).
 
-```python
-from forge_json import load_json_with_duplicates, warn_duplicate_keys
-```
+Each copy carries a `#: mirrors ``load_json_with_duplicates`` in <other file>` comment, matching
+the existing convention. `forge-session.py` uses its copy inside `_load_config`;
+`forge-bootstrap.py` uses its copy at the config read it currently performs as a bare
+`json.loads(path.read_text(...))`. Effective config, stage exit, navigator, init/validate, and
+other callers inherit warnings from those read paths rather than implementing their own scan.
 
-This works because executable and helper are copied at the same `scripts/` depth in every
-adapter. `forge-session.py` uses it inside `_load_config`; `forge-bootstrap.py` uses it at
-its config read/validation point. Effective config, stage exit, navigator, init/validate,
-and other callers inherit warnings from those shared read paths rather than implementing
-their own duplicate scan.
+**Drift guard.** `tests/test_json_loader_parity.py` asserts the two copies stay identical. Unlike
+the existing parity tests it cannot use `ast.literal_eval`, because the mirrored unit is a pair of
+functions rather than a literal: it extracts each function's source block from both files and
+compares them after normalizing indentation and trailing whitespace. A divergence fails the suite
+with both bodies in the diff. Like the modules it follows, it may not grow a skip gate.
 
 ## 4. Integration Map and Data Flow
 
@@ -299,10 +313,11 @@ RUNTIME_HELPERS: tuple[str, ...] = (
 )
 ```
 
-Add `"forge_json.py"` beside the Python runtime helpers. The source/emitted depth remains
-`scripts/forge_json.py`, so sibling imports resolve after installation. Build-time host
-translation still rewrites canonical skill-body commands; runtime `_host_command`
-translates script-generated commands. Both layers require tests.
+`RUNTIME_HELPERS` is **unchanged** by this feature. Because the loader is mirrored into the two
+consuming scripts (§3.4) rather than extracted, no new file is emitted and no import has to
+resolve inside a bundle — the set stays at six, and the existing per-target copy assertions cover
+it unmodified. Build-time host translation still rewrites canonical skill-body commands; runtime
+`_host_command` translates script-generated commands. Both layers require tests.
 
 All data reads are bounded to small config/state/manifest files and local skill artifacts.
 No network, repository-history scan, or additional model turn is introduced.
@@ -313,7 +328,7 @@ Implement in this order:
 
 1. **Definitions and additive schemas** — constants, status fields, manifest revision,
    tests proving legacy reads.
-2. **`forge_json.py` + distribution** — shared parser, consumer integration, adapter
+2. **Mirrored JSON loader + drift guard** — both copies, consumer integration, adapter
    helper copy, warning tests.
 3. **Targeted verification writer** — feature and epic result/provenance modes, full-hash
    validation, revision freshness, atomic-failure tests.
@@ -368,14 +383,15 @@ redefined. Consult the owning contract rather than treating a path in §2 as a d
 - the `state-verify` CLI, the state writers, and the single-writer model →
   `03-verification-state.md`;
 - the skill-side stamp and slash-command surface users actually type → `04-skill-integration.md`;
-- `scripts/forge_json.py` and the adapter/runtime-helper distribution surface →
+- the mirrored duplicate-aware loader and the adapter distribution surface →
   `05-config-and-distribution.md`;
 - coverage guards, fixtures, and scorers → `06-compliance-and-coverage.md`.
 
-The one ownership rule this document does contribute: `scripts/forge-session.py` and
-`scripts/epic-manifest.py` stay independently executable and self-contained, so a shared
-definition is duplicated deliberately rather than imported across that boundary — with
-`scripts/forge_json.py` the single sanctioned exception (§3.4).
+The one ownership rule this document does contribute: the flat scripts stay independently
+executable and self-contained, so a shared definition is duplicated deliberately rather than
+imported across that boundary — **with no exception**. This feature adds none (§3.4), and the
+duplication is held in sync by a drift guard, as it already is for `PRODUCTION_STAGES`,
+`KNOWN_VERIFY_STATUSES`, and `AGENT_TARGETS`.
 
 ## Dependencies
 
@@ -388,7 +404,8 @@ definition is duplicated deliberately rather than imported across that boundary 
 
 - [ ] Every path in §2 is accounted for by the implementation diff or explicitly retained.
 - [ ] No generated adapter file was edited directly.
-- [ ] `forge_json.py` appears beside its consumers in every emitted `scripts/` directory.
+- [ ] No new file appears in any emitted `scripts/` directory; `RUNTIME_HELPERS` still has six
+      entries, and both mirrored loader copies survive adapter generation byte-identically.
 - [ ] All nine direct skills invoke the single scripted exit contract.
 - [ ] Nested branch invocations emit no sentinel; outer invocations emit one final sentinel.
 - [ ] Every successful epic manifest mutation increments revision exactly once.

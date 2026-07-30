@@ -2,8 +2,8 @@
 
 > Shared Python contracts for deterministic stage exits, branch rejoin routing,
 > verification debt, duplicate-key diagnostics, and provenance. Every later document
-> imports these definitions conceptually from `scripts/forge-session.py` or
-> `scripts/forge_json.py`; no new package-level public API is introduced.
+> imports these definitions conceptually from `scripts/forge-session.py`; no new module and no
+> package-level public API is introduced.
 
 ## Requirement Coverage
 
@@ -29,7 +29,9 @@ flat executable scripts that own them:
   verification state transitions, state writer errors, and rendered payload types.
 - `scripts/epic-manifest.py` mirrors verification vocabulary and owns manifest revision
   reads/mutations.
-- `scripts/forge_json.py` owns duplicate-aware JSON loading and warning formatting.
+- Duplicate-aware JSON loading and warning formatting are **mirrored** into
+  `scripts/forge-session.py` and `scripts/forge-bootstrap.py`; no shared module owns them
+  (`01-architecture-layout.md` §3.4).
 
 The project convention is `TypedDict`, `Literal`, `Final`, plain dictionaries at JSON
 boundaries, Google-style docstrings, and `UsageError` for failures that map to CLI exit 2.
@@ -525,7 +527,9 @@ and read paths stay permissive. The two-commit protocol is unchanged: Commit 1 w
 
 ## 8. Duplicate-Aware JSON Types
 
-Create `scripts/forge_json.py` with this exact importable API:
+Mirror this exact API into `scripts/forge-session.py` and `scripts/forge-bootstrap.py` — one
+private copy each, held in sync by `tests/test_json_loader_parity.py`. There is no shared module
+and no importable surface (`05-config-and-distribution.md` §2.1):
 
 ```python
 from pathlib import Path
@@ -569,8 +573,8 @@ numbered spec imports. Signatures live in the sections cited below and are not r
   `EXIT_STAGES`, `EXIT_OUTCOMES`, `VERIFY_MODE_TO_STAGE`, `NEXT_STEPS_SENTINEL`, and
   `FULL_GIT_HASH_RE`; the §4 result types `EpicReconcile`, `StageExitDirectives`, and
   `StageExitPayload`; the §6 `VerifyEntry`; the §7 `UsageError`; and the §8 duplicate-aware
-  helpers `load_json_with_duplicates` and `warn_duplicate_keys` (defined in the new
-  `scripts/forge_json.py`, the one genuinely importable module this feature adds). The §5
+  helpers `load_json_with_duplicates` and `warn_duplicate_keys` (mirrored privately into the two
+  consuming scripts — this feature adds no importable module). The §5
   `stage_exit`, `next_stage`, and §6 `cmd_state_verify` entry points are declared here and
   implemented by their owning documents.
 - **Private helpers (leading underscore, no cross-module contract):** `_host_command`,
