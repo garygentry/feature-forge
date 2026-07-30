@@ -17,8 +17,8 @@
 ## 1. Purpose and Scope
 
 This document specifies the domain implementation and existing-module integrations for
-recursive duplicate-key diagnostics in `forge.config.json`, plus distribution of the new
-runtime helper to every generated adapter. It implements the shared contracts already defined
+recursive duplicate-key diagnostics in `forge.config.json`, plus the distribution consequences
+for the two adapter-copied consumers that now carry the mirrored loader. It implements the shared contracts already defined
 in `00-core-definitions.md` §8 and the file ownership/layout in
 `01-architecture-layout.md` §§2–4; it does not redefine their shared types, stage-exit payloads,
 or `UsageError` hierarchy.
@@ -43,15 +43,7 @@ copies in sync. Each copy is preceded by a `#: mirrors ``load_json_with_duplicat
 <other file>` comment, matching the existing convention. The complete implementation contract is:
 
 ```python
-"""Shared JSON loading with recursive duplicate-object-key diagnostics."""
-
-from __future__ import annotations
-
-import json
-import sys
-from pathlib import Path
-
-
+#: mirrors ``load_json_with_duplicates``/``warn_duplicate_keys`` in scripts/forge-bootstrap.py
 def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
     """Load JSON with last-key-wins values and ordered duplicate key names.
 
@@ -100,6 +92,13 @@ def warn_duplicate_keys(path: Path, duplicate_keys: list[str]) -> None:
             file=sys.stderr,
         )
 ```
+
+The mirrored region is exactly the comment plus these two `def` blocks — no module docstring, no
+`from __future__` line, and no imports: both scripts already import `json`, `sys`, and `Path`, and
+`from __future__ import annotations` must precede all other statements, so copying one in would be
+a `SyntaxError`. **Exactly one `#: mirrors …` comment precedes the pair in each file**, and the two
+comments differ by design (each names the other file), which is why the drift guard compares only
+from the `def` line onward and asserts the comment separately (`07-testing-strategy.md` §5.1).
 
 `json.loads(..., object_pairs_hook=...)` invokes `object_from_pairs` for every object,
 including objects inside arrays. Membership is local to each newly constructed `result`, so
@@ -179,10 +178,9 @@ def resolve_loop_runner(config_path: Path, schema_path: Path) -> dict[str, objec
 `stage_exit` is extended separately to the signature in `00-core-definitions.md` §3. This
 configuration change does not introduce another stage-exit API.
 
-Add this ordinary sibling import at the top of `scripts/forge-session.py`:
-
-```python
-```
+Place the mirrored loader pair (§2.1) at module scope in `scripts/forge-session.py`, immediately
+above `_load_config`, preceded by its `#: mirrors …` comment. No new import is required — `json`,
+`sys`, and `Path` are already imported there.
 
 Replace `_load_config` internally, retaining its exact import path and signature:
 
@@ -226,10 +224,9 @@ The exact existing integration signature found in source is:
 def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult: ...
 ```
 
-Add the same sibling import:
-
-```python
-```
+Place the mirrored loader pair (§2.1) at module scope in `scripts/forge-bootstrap.py`, immediately
+above `commit(...)`, preceded by its `#: mirrors …` comment. No new import is required — `json`,
+`sys`, and `Path` are already imported there.
 
 Within `commit`, replace only the direct `json.loads((target /
 "forge.config.json").read_text(...))` block:
@@ -282,8 +279,10 @@ For every successful config consumer (REQ-CONFIG-01/03, REQ-OBS-02):
 Malformed/missing handling remains consumer-owned: `load_json_with_duplicates` raises built-in
 `OSError` or `json.JSONDecodeError`; session `_load_config` degrades them to `{}`, while bootstrap
 wraps them in the shared `UsageError` from its existing module and emits its normal `Error:` line
-at exit 2. The helper must not import either executable's `UsageError`, preventing a circular
-import and preserving the error hierarchy in `00-core-definitions.md` §7.
+at exit 2. Neither mirrored copy may reference `UsageError` or any other consumer-specific symbol. Error
+translation stays in the caller. This is not merely hierarchy hygiene (`00-core-definitions.md`
+§7): a copy that referenced its host script's symbols could not stay byte-identical to the other,
+and `tests/test_json_loader_parity.py` would fail.
 
 Example subprocess expectations:
 
@@ -367,16 +366,17 @@ helper plus all generated adapter copies must land in the same implementation ch
 Update the committed `expected-adapters/<agent>/scripts/` snapshots for the two changed
 consumers. No new fixture file is added. These are test fixtures, not an
 alternative production source. A full regenerate atomically replaces the adapter tree, so no
-adapter target may retain a stale consumer without its imported sibling helper.
+adapter target may retain a stale consumer.
 
 ### 5.3 Distribution failures
 
 A missing source helper causes the generator's existing file-copy failure and aborts generation;
 it must not silently omit the helper. Containment or byte-divergence failures remain generator
 defects (`AssertionError` or the existing Pi `SystemExit`) and prevent atomic publication.
-`CanonError` handling and staging-tree cleanup remain unchanged. Runtime `ModuleNotFoundError`
-for the mirrored loader indicates an incomplete/stale adapter and is prevented by helper-presence and
-import-smoke tests; consumers must not fall back to silent direct `json.loads` in that case.
+`CanonError` handling and staging-tree cleanup remain unchanged. The mirrored loader cannot fail to
+resolve at runtime because it is in-file; the corresponding staleness risk is a bundle whose consumer
+copy diverged from canon, which the byte-identity assertion in §8.2 and
+`tests/test_json_loader_parity.py` cover. Consumers must not fall back to a direct `json.loads`.
 
 ## 6. Determinism, Compatibility, and Performance
 
@@ -408,8 +408,10 @@ startup and existing stage-exit processing.
 
 - **Repository-importable module:** none. `load_json_with_duplicates(path) -> tuple[object,
   list[str]]` and `warn_duplicate_keys(path, duplicate_keys) -> None` (§2.1–§2.2) are **mirrored
-  private helpers**, one copy per consuming script, not a shared import surface. Nothing outside
-  the two scripts may call them, and no adapter bundle exposes them as a module. This preserves
+  private helpers**, one copy per consuming script, not a shared import surface. No **production** code
+  outside its own script may call a copy, and no adapter bundle exposes them as a module; `tests/`
+  may load either script via `importlib.util.spec_from_file_location` to exercise a copy directly
+  (`07-testing-strategy.md` §5.1). This preserves
   the self-contained-scripts rule (`01-architecture-layout.md` §3.4) rather than excepting it;
   `tests/test_json_loader_parity.py` is what keeps the copies honest.
 - **User-facing CLI behavior (no new command):** the duplicate-key warning contract of §2.2 and
@@ -432,7 +434,7 @@ The following specifications must be implemented first:
 
 - `00-core-definitions.md` — authoritative duplicate-loader APIs, warning contract ownership,
   built-in error behavior, and shared `UsageError` policy.
-- `01-architecture-layout.md` — source/emitted paths, sibling imports, consumer ownership, and
+- `01-architecture-layout.md` — source/emitted paths, mirrored-copy placement, consumer ownership, and
   implementation sequence.
 
 Existing source integrations required by this document:
@@ -464,9 +466,10 @@ Update `tests/test_effective_config.py` and bootstrap coverage in
 - bootstrap malformed/unreadable config still exits 2 with `Error:` and no false JSON stdout.
 
 Tests should execute the real CLI subprocesses where stdout/stderr and exit behavior matter.
-Pure recursive parser cases may load either consumer script directly after placing `scripts/`
-on the test import path; they must call the real exported functions rather than reproduce the
-hook in test code.
+Pure recursive parser cases may load either consumer script directly via
+`importlib.util.spec_from_file_location`, as the existing tests do (both filenames are hyphenated,
+so neither is importable by name); they must call the real in-file functions rather than reproduce
+the hook in test code.
 
 ### 8.2 Distribution tests (tech-spec §8.4; REQ-REL-01)
 
@@ -478,7 +481,8 @@ Update `tests/test_build_adapters.py` and the minimal-canon snapshots to verify:
 - each emitted helper's bytes equal the fixture source (including Pi, because the helper has no
   slash-command prefix);
 - both emitted consumers carry the mirrored loader byte-identically to canon;
-- importing/running the emitted consumers does not raise `ModuleNotFoundError`;
+- each emitted consumer still executes and its in-file loader is reachable (no import resolution
+  is involved);
 - two builds remain tree-identical, a full regenerate purges orphans, and `--check` detects a
   missing/stale generated helper.
 

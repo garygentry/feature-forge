@@ -26,7 +26,7 @@ scripts/
   forge-session.py               # expanded stage-exit, state-verify, routing tables
   epic-manifest.py               # verify-status parity; existing render-status CLI reused
   forge-bootstrap.py             # adopts shared duplicate-aware config read
-  build-adapters.py              # unchanged helper set; no new runtime copy
+  build-adapters.py              # unchanged; listed for orientation only
 
 references/
   stage-exit-protocol.md         # one scripted contract for all covered exits
@@ -62,6 +62,8 @@ tests/
   test_effective_config.py
   test_compliance_eval.py
   test_build_adapters.py          # expanded host/runtime-copy assertions
+  test_json_loader_parity.py      # mirrored loader drift guard
+  test_forge_bootstrap.py         # duplicate commitPrefix warning + exit-2 policy
 ```
 
 `forge-session.py` remains the public control-plane executable. Exit logic is not extracted into a new package: the repository already copies this flat helper into every adapter, and keeping state resolution, CLI validation, and routing together minimizes adapter import risk (REQ-COMPAT-02, REQ-PERF-01). The duplicate-aware parser is likewise **not** extracted: it is mirrored into `forge-session.py` and `forge-bootstrap.py` with a drift guard, because the flat scripts are copied verbatim into six bundles and share no import module by standing repository invariant (`01-architecture-layout.md` §3.4; REQ-CONFIG-02/04, REQ-COMPAT-02).
@@ -431,7 +433,7 @@ This repository has no Python package graph; integrations are executable scripts
    - `references/epic-manifest-schema.json` adds required integer `revision >= 1`; compatibility readers supply the documented legacy default before validation.
 
 4. **`scripts/build-adapters.py`**
-   - `RUNTIME_HELPERS` copies `forge-session.py` and `epic-manifest.py` to every adapter, unchanged.
+   - `RUNTIME_HELPERS` copies all six flat helpers — `forge-root.sh`, `forge-init.sh`, `epic-manifest.py`, `forge-session.py`, `validate-traceability.py`, `forge-bootstrap.py` — to every adapter. The set is unchanged by this feature; `forge-session.py` and `forge-bootstrap.py` simply carry the mirrored loader inside their existing copies.
    - Existing Claude/Pi/generic host substitutions remain the build-time translation layer.
 
 5. **Canonical skills and references**
@@ -472,7 +474,7 @@ A direct verify/fix begins at the branch skill, passes `--owner direct`, and tha
 
 - `context-efficiency` introduced the current stage-exit/state-verb machinery and loop body/reference splits. Its behavior-preservation guards are updated to the intentional new contract; loop body ≤300 lines and ≤5,000 words remains mandatory.
 - `epic-orchestration` owns `render-status`, edit mode, member handoff, and docs behavior. This feature reuses its live state derivation instead of duplicating dependency logic.
-- `forge-bootstrap` owns config creation and independently reads `forge.config.json`; it must adopt the shared duplicate-aware parser.
+- `forge-bootstrap` owns config creation and independently reads `forge.config.json`; it must adopt its own mirrored copy of the duplicate-aware parser.
 - No other active feature is editing these surfaces. Completed feature specs are compatibility evidence, not alternative sources of truth.
 
 ## 7. Error Handling

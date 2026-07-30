@@ -559,7 +559,8 @@ The parser uses `json.loads(text, object_pairs_hook=hook)`. The hook assigns eve
 to a normal dict so the last value wins, while appending a key when it already exists in
 the current object. Warnings name both path and key, never contaminate JSON stdout, and
 never change success/failure semantics. `_load_config(config_path: Path) -> dict` in
-`forge-session.py` and the corresponding bootstrap config read import this helper.
+`forge-session.py` and the corresponding bootstrap config read each call their own in-file copy
+of this helper.
 
 ## Public API and Internal Surface
 
@@ -572,11 +573,13 @@ numbered spec imports. Signatures live in the sections cited below and are not r
 - **Repository-internal, importable by sibling modules and tests:** the §2 literals
   `EXIT_STAGES`, `EXIT_OUTCOMES`, `VERIFY_MODE_TO_STAGE`, `NEXT_STEPS_SENTINEL`, and
   `FULL_GIT_HASH_RE`; the §4 result types `EpicReconcile`, `StageExitDirectives`, and
-  `StageExitPayload`; the §6 `VerifyEntry`; the §7 `UsageError`; and the §8 duplicate-aware
-  helpers `load_json_with_duplicates` and `warn_duplicate_keys` (mirrored privately into the two
-  consuming scripts — this feature adds no importable module). The §5
+  `StageExitPayload`; the §6 `VerifyEntry`; and the §7 `UsageError`. The §5
   `stage_exit`, `next_stage`, and §6 `cmd_state_verify` entry points are declared here and
   implemented by their owning documents.
+- **Mirrored private, per-script:** the §8 `load_json_with_duplicates` and `warn_duplicate_keys` —
+  one copy in each of `forge-session.py` and `forge-bootstrap.py`, not importable as a module, and
+  loadable by tests only via `importlib.util.spec_from_file_location` (both filenames are
+  hyphenated). This feature adds no importable module.
 - **Private helpers (leading underscore, no cross-module contract):** `_host_command`,
   `_resolve_feature_dir`, `_resolve_feature_dir_for_write`, `_next_steps_block`,
   `_verify_state_for`, `_load_state_for_write`, and `_commit_state`. They appear here only so

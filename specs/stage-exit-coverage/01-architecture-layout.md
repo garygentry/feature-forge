@@ -55,7 +55,7 @@ scripts/
   epic-manifest.py                         M  verify vocabulary, manifest revision,
                                               pending/read-side parity
   forge-bootstrap.py                       M  shared duplicate-aware config consumer
-  build-adapters.py                        M  unchanged helper set; no new runtime copy
+  build-adapters.py                        —  unchanged; listed for orientation only
 
 references/
   stage-exit-protocol.md                   M  sole nine-skill terminal contract
@@ -95,6 +95,7 @@ tests/
   test_state_schema_conformance.py          M  additive schema and legacy reads
   test_stage_constants_parity.py            M  verify vocabulary parity
   test_effective_config.py                  M  recursive duplicate warnings
+  test_forge_bootstrap.py                   M  duplicate commitPrefix warning + exit-2 policy
   test_json_loader_parity.py                N  mirrored loader drift guard
   test_compliance_eval.py                   M  branch fixture/scorer validity
   test_build_adapters.py                    M  runtime helper and translated stamps
@@ -243,8 +244,11 @@ other callers inherit warnings from those read paths rather than implementing th
 **Drift guard.** `tests/test_json_loader_parity.py` asserts the two copies stay identical. Unlike
 the existing parity tests it cannot use `ast.literal_eval`, because the mirrored unit is a pair of
 functions rather than a literal: it extracts each function's source block from both files and
-compares them after normalizing indentation and trailing whitespace. A divergence fails the suite
-with both bodies in the diff. Like the modules it follows, it may not grow a skip gate.
+compares them after a uniform `textwrap.dedent` and trailing-whitespace strip. **Exactly one
+`#: mirrors …` comment precedes the pair in each file**; the comment is asserted separately and lies
+outside the compared region, because the two comments differ by design (each names the other file).
+A divergence fails the suite with both bodies in the diff. Like the modules it follows, it may not
+grow a skip gate.
 
 ## 4. Integration Map and Data Flow
 
@@ -329,7 +333,7 @@ Implement in this order:
 1. **Definitions and additive schemas** — constants, status fields, manifest revision,
    tests proving legacy reads.
 2. **Mirrored JSON loader + drift guard** — both copies, consumer integration, adapter
-   helper copy, warning tests.
+   regeneration, warning tests.
 3. **Targeted verification writer** — feature and epic result/provenance modes, full-hash
    validation, revision freshness, atomic-failure tests.
 4. **Read-side debt parity** — session classifiers, navigator rows, epic rollups/status.
@@ -370,7 +374,8 @@ Generated output rules:
 - Every canon/schema/runtime-helper edit that changes generated output ships with a fresh
   `python3 scripts/build-adapters.py` result.
 - `python3 scripts/build-adapters.py --check` must report no drift.
-- New helper presence is asserted for all six targets.
+- Both mirrored loader copies are asserted byte-identical to canon in all six targets; no new file
+  appears under any emitted `scripts/`.
 
 ## Public API and Internal Surface
 

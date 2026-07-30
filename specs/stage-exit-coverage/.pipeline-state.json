@@ -21,11 +21,11 @@
         "tech-spec.md"
       ],
       "completedAt": "2026-07-30T04:24:44Z",
-      "version": 2,
+      "version": 3,
       "basedOnVersions": {
         "forge-1-prd": 3
       },
-      "commitHash": "5e4dc021c5b7d9dff588044a065e5ee0eb7368ea"
+      "commitHash": null
     },
     "forge-verify-tech": {
       "status": "passed",
@@ -51,25 +51,25 @@
         "TRACEABILITY.md"
       ],
       "completedAt": "2026-07-30T05:26:26Z",
-      "version": 1,
+      "version": 2,
       "basedOnVersions": {
         "forge-1-prd": 3,
-        "forge-2-tech": 2
+        "forge-2-tech": 3
       },
-      "commitHash": "f8f01c91be12e630ab487a61e0928dba3eaa72e8"
+      "commitHash": null
     },
     "forge-verify-specs": {
       "status": "findings-applied",
-      "findingsFile": ".verification/VERIFY-specs-2026-07-30-round3.md",
-      "findingsCount": 5,
-      "verifiedAt": "2026-07-30T15:34:57Z",
-      "verifiedStageVersion": 1,
-      "commitHash": "4bc392db2b431d7f010c6f21798c3a97b103819d",
-      "fixedAt": "2026-07-30T15:34:57Z"
+      "findingsFile": ".verification/VERIFY-specs-2026-07-30-round4.md",
+      "findingsCount": 14,
+      "verifiedAt": "2026-07-30T16:54:37Z",
+      "verifiedStageVersion": 2,
+      "commitHash": null,
+      "fixedAt": "2026-07-30T16:54:37Z"
     }
   },
   "currentStage": "forge-3-specs",
-  "updatedAt": "2026-07-30T16:26:49Z",
+  "updatedAt": "2026-07-30T16:54:37Z",
   "branch": "forge/stage-exit-coverage",
   "notes": "PRD v3 adds REQ-REL-04 (single-writer model, no locking). The lock protocol introduced at forge-3-specs by round-1 finding V-006 was removed: it answered no requirement and would have overturned the documented single-writer invariant in _write_state. tech-spec and specs were amended in place against the delta rather than re-authored, because the delta only REMOVES scope. 2026-07-30: forge_json.py dropped \u2014 the duplicate-aware loader is mirrored into forge-session.py and forge-bootstrap.py with a drift guard, per the repo's standing no-shared-import invariant (test_stage_constants_parity.py). This removes the feature's only new file, its only intra-project import, and its only RUNTIME_HELPERS change, so no CONFIG split is needed and CONFIG-01..04 stays here."
 }

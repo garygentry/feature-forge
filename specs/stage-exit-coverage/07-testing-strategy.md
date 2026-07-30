@@ -555,10 +555,14 @@ and their constraints — no skip gate, no import of the hyphenated scripts. It 
 one respect: the mirrored unit is a **pair of functions, not a literal**, so `ast.literal_eval` does
 not apply. Extract each function's source block from `scripts/forge-session.py` and
 `scripts/forge-bootstrap.py` (locate `def load_json_with_duplicates` / `def warn_duplicate_keys` and
-take through the end of each body by indentation), normalize leading indentation and trailing
-whitespace, and assert the two copies are equal. On failure, print both bodies in the diff. Also
-assert each copy is preceded by its `#: mirrors …` comment, so the convention that signals
-duplication cannot be silently dropped (REQ-CONFIG-02, REQ-COMPAT-02;
+take through the end of each body by indentation). **Assert extraction found both functions in both
+files before comparing**, failing with the file and function name if not. Apply `textwrap.dedent` to
+the whole extracted block — never strip indentation per line, which would flatten the nested
+`object_from_pairs` and mask a real divergence — then strip trailing whitespace and assert the two
+copies are equal. On failure, print both bodies in the diff. Compare only from the `def` line
+onward: **exactly one `#: mirrors …` comment precedes the pair in each file**, and it is asserted
+separately because the two comments differ by design (each names the other file). Asserting it at
+all matters because the convention that signals duplication must not be silently dropped (REQ-CONFIG-02, REQ-COMPAT-02;
 `01-architecture-layout.md` §3.4).
 
 ### 5.2 Session and bootstrap CLI matrix
@@ -575,7 +579,7 @@ Execute real CLIs (REQ-CONFIG-01..03):
 - malformed/unreadable/non-object bootstrap config remains an actionable exit-2 error with no false
   success JSON.
 
-Inspect the source to ensure specified project-config reads use the shared helper. Do not demand
+Inspect the source to ensure specified project-config reads use their in-file mirrored copy. Do not demand
 that state, schema, transcript, or arbitrary answers JSON use it; that would widen scope
 (REQ-CONFIG-02/04).
 
@@ -743,7 +747,8 @@ During implementation, run focused groups first:
 ```text
 python3 -m pytest tests/test_stage_exit.py tests/test_auto_verify.py -q
 python3 -m pytest tests/test_state_verbs.py tests/test_state_schema_conformance.py tests/test_stage_constants_parity.py tests/test_epic_manifest.py -q
-python3 -m pytest tests/test_effective_config.py tests/test_forge_bootstrap.py -q
+python3 -m pytest tests/test_effective_config.py tests/test_forge_bootstrap.py \
+  tests/test_json_loader_parity.py -q
 python3 -m pytest tests/test_stage_exit_protocol.py tests/test_build_adapters.py tests/test_compliance_eval.py -q
 ```
 
