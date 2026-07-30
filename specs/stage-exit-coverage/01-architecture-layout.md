@@ -1,0 +1,376 @@
+# 01 — Architecture & Layout
+
+> Exhaustive implementation map for expanding deterministic stage exits without adding a
+> package, service, dependency, or network path. Shared types and signatures are defined
+> in `00-core-definitions.md`; this document pins file ownership, imports, runtime copies,
+> integration paths, and delivery ordering.
+
+## Requirement Coverage
+
+| REQ ID | Requirement | Section |
+|---|---|---|
+| REQ-EXIT-01..07 | Unified scripted exit surface and host/capability split | §2–§4 |
+| REQ-ROUTE-01..06 | Branch-skill inputs and deterministic rejoin ownership | §3–§4 |
+| REQ-PROD-01..06 | Loop/docs/epic skill integration | §3 |
+| REQ-DEBT-01..06 | State/schema/session/manifest integration | §2–§4 |
+| REQ-STATE-01..04 | Targeted atomic writers and two-commit provenance | §2, §5 |
+| REQ-CONFIG-01..04 | Shared duplicate parser and all config consumers | §2–§4 |
+| REQ-GUARD-01..03 | Explicit nine-skill guard | §2, §6 |
+| REQ-EVAL-01..03 | Separate branch-path compliance fixture | §2, §6 |
+| REQ-CAP-01, REQ-FOLLOW-01/02 | Preserved loop prerequisite and focused canon edits | §3, §5 |
+| REQ-COMPAT-01..03 | Existing stage behavior, state/config compatibility, null smoke | §4–§6 |
+| REQ-PERF-01/02 | Local bounded reads only | §4 |
+| REQ-PORT/SEC/REL (constraints) | Adapter shipping, containment, deterministic layering | §4–§6 |
+
+## 1. Architectural Boundaries
+
+This feature extends the repository's existing **flat script control plane**. The public
+runtime entry remains:
+
+```text
+python3 <bundle-root>/scripts/forge-session.py <subcommand> ...
+```
+
+No Python package manifest, `src/` package, database, service, or third-party runtime
+library is introduced. The one new module, `scripts/forge_json.py`, is an importable
+sibling helper because config parsing is shared by two executable scripts. Exit routing
+stays in `forge-session.py` so it can reuse existing feature resolution, state readers,
+production-stage ordering, host translation, and argparse error handling without a new
+cross-script protocol.
+
+Canonical prose and schemas remain under `skills/`, `agents/`, and `references/`.
+Generated files under `adapters/` are outputs only and are regenerated, never edited.
+
+## 2. Complete File Layout
+
+`N` = new, `M` = modified, `G` = regenerated output.
+
+```text
+scripts/
+  forge-session.py                         M  exit router, state-verify, debt, hashes,
+                                              duplicate-aware config consumer
+  forge_json.py                            N  recursive duplicate-key JSON loader
+  epic-manifest.py                         M  verify vocabulary, manifest revision,
+                                              pending/read-side parity
+  forge-bootstrap.py                       M  shared duplicate-aware config consumer
+  build-adapters.py                        M  add forge_json.py to RUNTIME_HELPERS
+
+references/
+  stage-exit-protocol.md                   M  sole nine-skill terminal contract
+  pipeline-state-schema.json               M  auto-verify-pending + schedule metadata
+  epic-manifest-schema.json                M  required revision >= 1
+  shared-conventions.md                    M  immediate state-note recipes
+  runner-contract.md                       M  stale --model wording correction
+
+skills/
+  forge-0-epic/SKILL.md                    M  scripted creation/edit terminal
+  forge-0-epic/references/edit-mode.md     M  live member-state handoff
+  forge-1-prd/SKILL.md                     M  capability-aware stage exit + state-note
+  forge-2-tech/SKILL.md                    M  capability-aware stage exit + state-note
+  forge-3-specs/SKILL.md                   M  capability-aware stage exit
+  forge-4-backlog/SKILL.md                 M  capability-aware stage exit
+  forge-5-loop/SKILL.md                    M  scripted result terminus; preserve body cap
+  forge-5-loop/references/result-reporting.md
+                                            M  typed loop outcomes and terminal ownership
+  forge-5-loop/references/runner-contract.md
+                                            M  stale --model wording (if this is the live
+                                               skill-local path; do not create a duplicate)
+  forge-6-docs/SKILL.md                     M  scripted context-aware docs terminus
+  forge-verify/SKILL.md                     M  direct/nested owner, state-verify, exit
+  forge-fix/SKILL.md                        M  complete outcomes, state-verify, exit
+
+eval/
+  run-compliance-eval.py                    M  separate branch-path probe/scorer
+  README.md                                 M  linear baseline vs branch result
+  fixtures/<branch-fixture>.json            N  verify/fix/re-verify command evidence
+
+tests/
+  test_stage_exit.py                        M  nine-stage/outcome/host routing matrix
+  test_stage_exit_protocol.py               M  explicit canonical coverage allow-list
+  test_auto_verify.py                       M  auto-pending classification/debt
+  test_state_verbs.py                       M  state-verify transitions + hashes
+  test_state_schema_conformance.py          M  additive schema and legacy reads
+  test_stage_constants_parity.py            M  verify vocabulary parity
+  test_effective_config.py                  M  recursive duplicate warnings
+  test_compliance_eval.py                   M  branch fixture/scorer validity
+  test_build_adapters.py                    M  runtime helper and translated stamps
+  <existing epic manifest tests>            M  revision mutation/freshness matrix
+
+adapters/{claude,codex,copilot,cursor,gemini,pi}/
+  scripts/forge-session.py                  G
+  scripts/forge_json.py                     G
+  scripts/epic-manifest.py                  G
+  ...canonical skills/references...         G
+```
+
+Before implementation, resolve whether the canonical runner reference is root
+`references/runner-contract.md` or skill-local
+`skills/forge-5-loop/references/runner-contract.md`. The current repository listing shows
+the skill-local file; edit the existing source and do **not** create a second copy merely
+because tech-spec §2 used a shortened path.
+
+## 3. Module and Canon Ownership
+
+### 3.1 `scripts/forge-session.py`
+
+Keep the existing top-level order:
+
+```text
+imports
+constants and TypedDicts
+feature scan / next-stage / verify classifiers
+config and navigator helpers
+...
+scripted stage exit constants + validation + routing + rendering
+loopRunner effective config
+...
+strict state resolution + atomic state helpers
+state-* handlers (including new cmd_state_verify)
+argparse registration / dispatch
+main guard
+```
+
+New code slots:
+
+1. Extend `KNOWN_VERIFY_STATUSES`, `EXIT_STAGES`, stage nouns, mode maps, outcome maps,
+   and result types beside current equivalents.
+2. Add pure validation/routing helpers immediately before `stage_exit`; avoid one giant
+   conditional.
+3. Extend `_next_steps_block` in place; preserve `_host_command` as the sole runtime host
+   translator.
+4. Add `cmd_state_verify` beside other `cmd_state_*` handlers so it reuses strict writer
+   machinery.
+5. Register flags/subcommand with existing argparse conventions and dispatch under the
+   existing `UsageError`/`OSError` exit-2 handler.
+
+Exact existing integration signatures read from `scripts/forge-session.py`:
+
+```python
+def next_stage(state: dict) -> str | None: ...
+def verify_state(state: dict) -> tuple[str | None, str]: ...
+def pending_verify(state: dict) -> str | None: ...
+def build_rows(specs_dir: Path, config: dict | None = None) -> list[FeatureRow]: ...
+def _load_config(config_path: Path) -> dict: ...
+def _resolve_feature_dir(specs_dir: Path, feature: str, epic: str | None) -> Path: ...
+def _host_command(command: str, host: str) -> str: ...
+def _verify_state_for(state: dict, stage: str) -> str: ...
+def _resolve_feature_dir_for_write(
+    specs_dir: Path, feature: str, epic: str | None
+) -> Path: ...
+def _load_state_for_write(
+    specs_dir: Path, feature: str, epic: str | None
+) -> tuple[Path, dict]: ...
+def _commit_state(state_path: Path, state: dict) -> dict: ...
+```
+
+`stage_exit`, `_next_steps_block`, `cmd_state_complete`, and new `cmd_state_verify`
+follow the complete signatures in `00-core-definitions.md`.
+
+### 3.2 `scripts/epic-manifest.py`
+
+This script remains self-contained; do not import `forge-session.py`. Keep its mirrored
+constants byte-identical where parity tests require that. Exact existing import paths and
+signatures:
+
+```python
+# File import/execution path: scripts/epic-manifest.py
+KNOWN_VERIFY_STATUSES: Final[frozenset[str]]
+
+def load_manifest(epic_dir: Path) -> dict: ...
+def atomic_write(path: Path, data: dict) -> None: ...
+def validate(epic_dir: Path, specs_dir: Path) -> list[Finding]: ...
+def is_complete_for_orchestration(state: dict) -> bool: ...
+def derive_status(feature_dir: Path) -> FeatureStatus: ...
+def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus: ...
+def _bump_and_write(
+    epic_dir: Path, specs_dir: Path, manifest: dict
+) -> list[Finding]: ...
+```
+
+Manifest creation writes `revision: 1`. `load_manifest` presents legacy missing revision
+as logical revision 1 without requiring an eager migration. Every successful semantic
+mutation increments once in `_bump_and_write`; failures and no-ops do not increment.
+Do not duplicate revision increments in individual mutators.
+
+### 3.3 Canonical skill layer
+
+Every directly invoked pipeline-advancing skill calls `stage-exit` and prints script
+output last. `references/stage-exit-protocol.md` is the single directive contract; skill
+bodies contain only stage-specific preparation, typed arguments, gate handling, and the
+final invocation.
+
+Ownership rules:
+
+- Authoring stages 0–6 are outer owners.
+- Direct `forge-verify`/`forge-fix` pass `--owner direct` and own one terminal block.
+- Auto/nested verify/fix pass `--owner nested`; the outer authoring stage remains owner.
+- Result-reporting branches provide explicit outcomes rather than hand-written commands.
+
+The loop prerequisite from commit `c174b55` is immutable: before editing
+`skills/forge-5-loop/SKILL.md`, confirm Step 2d remains single-sourced in
+`skills/forge-5-loop/references/runner-contract.md`. Preserve the ≤300 body-line and
+≤5,000 body-word gates after every loop-skill edit.
+
+### 3.4 Config parser ownership
+
+`scripts/forge_json.py` exports only:
+
+```python
+def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]: ...
+def warn_duplicate_keys(path: Path, duplicate_keys: list[str]) -> None: ...
+```
+
+Consumers import it by sibling module name:
+
+```python
+from forge_json import load_json_with_duplicates, warn_duplicate_keys
+```
+
+This works because executable and helper are copied at the same `scripts/` depth in every
+adapter. `forge-session.py` uses it inside `_load_config`; `forge-bootstrap.py` uses it at
+its config read/validation point. Effective config, stage exit, navigator, init/validate,
+and other callers inherit warnings from those shared read paths rather than implementing
+their own duplicate scan.
+
+## 4. Integration Map and Data Flow
+
+### 4.1 Authoring exit with automatic verification
+
+```text
+state-complete Commit 1/Commit 2
+  -> outer skill invokes stage-exit(stage, capability)
+  -> stage_exit loads duplicate-aware config + stage state
+  -> effective auto verify is owed
+  -> targeted state-verify writes auto-verify-pending atomically
+  -> payload says runInStageVerify=true, debtRecorded=true
+  -> outer skill dispatches nested forge-verify(owner=nested)
+  -> verify writes terminal result through state-verify
+  -> findings optionally dispatch nested forge-fix(owner=nested)
+  -> fix writes findings-applied (freshness cleared)
+  -> outer requires nested re-verify
+  -> only passed/skip permits production successor as primary
+  -> outer prints exactly one sentinel-last block
+```
+
+The pending write occurs immediately before returning `runInStageVerify: true`. A process
+failure after that write leaves durable debt. The clean-tree snapshot used for
+`autoFixEligible` is taken before this sanctioned state mutation.
+
+### 4.2 Direct branch rejoin
+
+```text
+forge-verify or forge-fix
+  -> determine explicit verify mode / findings metadata
+  -> serialize served production stage
+  -> write result via state-verify
+  -> invoke stage-exit(owner=direct, outcome=...)
+  -> route to fix, re-verify, recovery, or next production stage
+  -> print one terminal block
+```
+
+No direct branch skill derives the served stage from prose or `currentStage`.
+
+### 4.3 Epic route
+
+The CLI integration path remains:
+
+```text
+scripts/epic-manifest.py render-status <epic> --specs-dir <dir> --json
+```
+
+`forge-0-epic --next-feature` first resolves that member state and uses the same
+production walk as `next_stage`. Unreadable member state may degrade only to the named
+`forge-1-prd` fallback with a warning. Epic-member docs exits consume `render-status`
+for actionable/blocked/completed handoff. Epic verification state lives in the epic
+root's `.epic-state.json`; it never mutates a member state.
+
+### 4.4 Adapter distribution
+
+Current `scripts/build-adapters.py` defines:
+
+```python
+RUNTIME_HELPERS: tuple[str, ...] = (
+    "forge-root.sh",
+    "forge-init.sh",
+    "epic-manifest.py",
+    "forge-session.py",
+    "validate-traceability.py",
+    "forge-bootstrap.py",
+)
+```
+
+Add `"forge_json.py"` beside the Python runtime helpers. The source/emitted depth remains
+`scripts/forge_json.py`, so sibling imports resolve after installation. Build-time host
+translation still rewrites canonical skill-body commands; runtime `_host_command`
+translates script-generated commands. Both layers require tests.
+
+All data reads are bounded to small config/state/manifest files and local skill artifacts.
+No network, repository-history scan, or additional model turn is introduced.
+
+## 5. Implementation Sequencing and Dependencies
+
+Implement in this order:
+
+1. **Definitions and additive schemas** — constants, status fields, manifest revision,
+   tests proving legacy reads.
+2. **`forge_json.py` + distribution** — shared parser, consumer integration, adapter
+   helper copy, warning tests.
+3. **Targeted verification writer** — feature and epic result/provenance modes, full-hash
+   validation, revision freshness, atomic-failure tests.
+4. **Read-side debt parity** — session classifiers, navigator rows, epic rollups/status.
+5. **Expanded pure routing/rendering** — stage/outcome validation, owner semantics,
+   verify-first commands, host/capability matrices.
+6. **Canonical skill adoption** — branch skills, loop, docs, epic edit, stages 1–4,
+   follow-up state-note recipes. Regenerate adapters after each coherent canon batch.
+7. **Coverage guard and compliance fixture** — enforce the final nine-skill surface and
+   real command-result evidence.
+8. **Full regeneration and verification** — regenerate once more, run all gates.
+
+The state writer precedes auto-verify scheduling so no directive can promise durable debt
+before the writer exists. Routing precedes skill conversion so every converted skill can
+be tested against a stable CLI. The explicit guard lands after all nine call sites to
+avoid weakening it temporarily.
+
+## 6. Build, Test, and Deployment
+
+There is no deployment process beyond adapter generation and npm bundling of the generated
+tree. Runtime and dev dependencies do not change.
+
+Commands:
+
+```bash
+python3 scripts/build-adapters.py
+bash scripts/validate.sh
+ruff check scripts/ eval/
+```
+
+`bash scripts/validate.sh` is the single repository verify gate and includes spec purity,
+drift, adapter-source verification, tests, ruff, traceability, and version sync.
+`smokeCommand` remains `null`; CHECK-I21 is intentionally not-applicable for this repo and
+must not be re-raised.
+
+Generated output rules:
+
+- Never hand-edit `adapters/`.
+- Every canon/schema/runtime-helper edit that changes generated output ships with a fresh
+  `python3 scripts/build-adapters.py` result.
+- `python3 scripts/build-adapters.py --check` must report no drift.
+- New helper presence is asserted for all six targets.
+
+## Dependencies
+
+- `00-core-definitions.md` — all shared enums, payloads, writer signatures, and errors.
+- Existing `scripts/forge-session.py`, `scripts/epic-manifest.py`, and
+  `scripts/build-adapters.py` at the paths/signatures quoted above.
+- Existing canonical stage skills and `references/stage-exit-protocol.md`.
+
+## Verification
+
+- [ ] Every path in §2 is accounted for by the implementation diff or explicitly retained.
+- [ ] No generated adapter file was edited directly.
+- [ ] `forge_json.py` appears beside its consumers in every emitted `scripts/` directory.
+- [ ] All nine direct skills invoke the single scripted exit contract.
+- [ ] Nested branch invocations emit no sentinel; outer invocations emit one final sentinel.
+- [ ] Every successful epic manifest mutation increments revision exactly once.
+- [ ] Loop skill remains within both body caps and retains the completed Step 2d split.
+- [ ] Full validation and ruff commands pass with `smokeCommand: null` unchanged.

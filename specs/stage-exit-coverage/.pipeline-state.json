@@ -35,9 +35,31 @@
       "verifiedStageVersion": 2,
       "fixedAt": "2026-07-30T04:53:11Z",
       "commitHash": "50225d78035ea44392fb0551bd8c192bd40344e1"
+    },
+    "forge-3-specs": {
+      "status": "complete",
+      "startedAt": "2026-07-30T05:06:43Z",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-stage-exit-routing.md",
+        "03-verification-state.md",
+        "04-skill-integration.md",
+        "05-config-and-distribution.md",
+        "06-compliance-and-coverage.md",
+        "07-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "completedAt": "2026-07-30T05:26:26Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 2,
+        "forge-2-tech": 2
+      },
+      "commitHash": null
     }
   },
-  "currentStage": "forge-2-tech",
-  "updatedAt": "2026-07-30T04:55:17Z",
+  "currentStage": "forge-3-specs",
+  "updatedAt": "2026-07-30T05:26:26Z",
   "branch": "forge/stage-exit-coverage"
 }
