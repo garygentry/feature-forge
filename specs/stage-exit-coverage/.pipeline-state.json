@@ -64,10 +64,11 @@
       "findingsCount": 10,
       "verifiedAt": "2026-07-30T14:15:15Z",
       "verifiedStageVersion": 1,
-      "commitHash": "9b4cefb87f6f5c4dfe051af95fad1171b848bd89"
+      "commitHash": "e2959c1507054eb0fa9e78bbf117dca4ad981ae2",
+      "partiallyAppliedAt": "2026-07-30T14:37:56Z"
     }
   },
   "currentStage": "forge-3-specs",
-  "updatedAt": "2026-07-30T14:15:15Z",
+  "updatedAt": "2026-07-30T14:37:56Z",
   "branch": "forge/stage-exit-coverage"
 }
