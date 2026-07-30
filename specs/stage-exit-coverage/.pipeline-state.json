@@ -28,16 +28,16 @@
       "commitHash": "5e4dc021c5b7d9dff588044a065e5ee0eb7368ea"
     },
     "forge-verify-tech": {
-      "status": "findings-applied",
+      "status": "passed",
       "findingsFile": ".verification/VERIFY-tech-2026-07-30.md",
-      "findingsCount": 1,
-      "verifiedAt": "2026-07-30T04:52:23Z",
+      "findingsCount": 0,
+      "verifiedAt": "2026-07-30T04:55:17Z",
       "verifiedStageVersion": 2,
       "fixedAt": "2026-07-30T04:53:11Z",
-      "commitHash": "1a9945dbe08027b47320e9d9f825e46ebbfa4e95"
+      "commitHash": null
     }
   },
   "currentStage": "forge-2-tech",
-  "updatedAt": "2026-07-30T04:53:11Z",
+  "updatedAt": "2026-07-30T04:55:17Z",
   "branch": "forge/stage-exit-coverage"
 }
