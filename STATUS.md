@@ -103,7 +103,11 @@ before advancing it.
 
 ## Open issues
 
-_GitHub tracker (`gh issue list --state open`) is **empty**._
+_The snapshot below is as of 2026-07-14 and is **stale** — the tracker is no longer empty. Twelve
+issues were filed between 2026-07-19 and 2026-07-29, mostly surfaced by dogfooding the
+context-efficiency pipeline; see `plans/ROADMAP-post-context-efficiency.md` for the current
+review. Four of them (#172 / #175 / #176 / #163) are the stage-exit-coverage cluster that
+reclassified the item under "Scheduled" above._
 
 All of **#121 / #122 / #123 / #124 / #126 / #132 / #135** are closed — #123 was a duplicate of #122;
 the rest auto-closed with PRs #134/#137/#138/#139. The 0.13.0 / installer 0.3.0 publish is done;
@@ -118,15 +122,53 @@ Two known non-blocking follow-ups, untracked (no issue filed):
   type-checked — they only run under Node's native type stripping. A type error in a test file
   passes CI silently.
 
+## Scheduled
+
+- **forge-5-loop exit → stage-exit migration (Option B) — RECLASSIFIED, now scheduled.** This was
+  triaged on 2026-07-14 as **do not build unless drift appears**, with a named re-open trigger:
+  "(a) the bespoke loop exit drifts from the scripted one and causes a real user-hit
+  inconsistency, or (b) a stage-exit semantics change makes two paths demonstrably costly."
+  **That trigger has since fired three times**, all filed after the triage:
+  - **#172** — `stage-exit` rejects `forge-6-docs`, so the skill's own text prescribes a command
+    the script refuses. Four consecutive runs in one epic hand-rolled the state write, producing a
+    real short-vs-full `commitHash` inconsistency and a 500-line diff from JSON round-tripping.
+    This is (a) — a user-hit inconsistency caused by a hand-rolled exit.
+  - **#175** — the state-aware next-stage override is gated on `stage in PRODUCTION_STAGES`, which
+    excludes `forge-0-epic`, so edit-mode re-entry routes the user back to `forge-1-prd` on a
+    member whose backlog is already complete.
+  - **#176** — the general form: exit determinism was hardened along the linear spine where
+    compliance was already easy, and left to model discretion exactly where the pipeline branches.
+    `forge-verify` and `forge-fix` have **no exit block at all**.
+
+  The 2026-07-14 finding of "no drift" was accurate **at the time** — it checked the loop exit
+  against `stage-exit-protocol.md` and found them single-sourced. What it did not check, and what
+  #176 reframes as the real defect, is exit **coverage**: `stage-exit --stage` accepts only
+  `forge-0-epic … forge-4-backlog`, so every skill outside that enum either hand-rolls its exit or
+  has none. The migration is therefore no longer "code-path convergence with no user-visible
+  benefit" — it is the fix for four filed issues.
+
+  Two things also made it cheaper than it was. `state-complete` (R4, 0.14.0) now owns the state
+  write and the staleness cascade, so widening `stage-exit` is mostly a next-stage-resolution
+  problem rather than a state-authoring one. And the 300-line body cap objection has a known
+  buy-back (V-012: relocate the Step 2d "Run mode" paragraph into `runner-contract.md`, ~10 lines).
+
+  Scheduled as **Phase 1** of the post-context-efficiency roadmap, sized to run through the forge
+  pipeline itself. Original triage context:
+  `plans/HANDOFF-triage-deferred-composite-and-loop-exit.md`. Still distinct from **chunk 5a**
+  under "Explicitly won't build" (that is the Stop-hook sentinel guard, not code-path convergence),
+  whose own re-open condition — a remote run showing post-sentinel drift — has **not** fired.
+
 ## Deferred / optional (not scheduled)
 
 - **Epic-backflow — automated composite `move-boundary`/`split` mutators.** Design in
   `plans/DESIGN-epic-backflow.md`; Phases 1–2 shipped in 0.12.4. The **`adopt-feature` recovery**
   command (the #126 "Phase 3" split-brain reconciler) shipped in PR #139; these remaining
   composite kinds (moving a frozen contract boundary, splitting a feature) stay guided-manual for now.
-- **forge-5-loop exit → stage-exit migration (Option B)** — the loop's bespoke post-loop exit
-  blocks converged onto scripted `stage-exit`. Low value; loop is at its 300-line body cap.
-  (The user-facing win — copyable next-command — was already captured via Option A in 0.12.4.)
+  _Triaged 2026-07-14: no triggering evidence, remains deferred (trigger: guided-manual
+  `move-boundary`/`split` proven clunky in real epic use, **or** the owner plans an epic needing it).
+  Checked all real epics — `consumption-data-refresh/{data-views,data-refresh}`,
+  `consumption/{data-enhancement,data-views,data-refresh}`, `rauf/agent-agnostic` — none has recorded
+  a single `changeRequest`, so guided-manual has not been exercised at all._
 - **Remote e2e retest** — of the latest publish (now `@garygentry/feature-forge@0.2.13`;
   `plans/remote-retest-checklist.md`). Needs a Claude.ai remote / root env; still owner's to run.
   **Also clears the pending end-to-end verification of the #99 root/sandbox fix** (landed with
