@@ -12,7 +12,7 @@
       "artifacts": [
         "PRD.md"
       ],
-      "commitHash": null
+      "commitHash": "784c826a186eb5b5234758811c6dac8386f1996c"
     },
     "forge-2-tech": {
       "status": "stale",
