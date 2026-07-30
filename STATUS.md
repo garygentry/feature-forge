@@ -65,10 +65,50 @@ next release; deferred/optional items are listed below.
 
 ## Open issues
 
-_GitHub tracker (`gh issue list --state open`) is **empty**._
+_The snapshot below is as of 2026-07-14 and is **stale** — the tracker is no longer empty. Twelve
+issues were filed between 2026-07-19 and 2026-07-29, mostly surfaced by dogfooding the
+context-efficiency pipeline; see `plans/ROADMAP-post-context-efficiency.md` for the current
+review. Four of them (#172 / #175 / #176 / #163) are the stage-exit-coverage cluster that
+reclassified the item under "Scheduled" above._
 
 All of **#121 / #122 / #123 / #124 / #126 / #132 / #135** are closed — #123 was a duplicate of #122;
 the rest auto-closed with PRs #134/#137/#138/#139. Next action is purely the batched 0.12.8 publish.
+
+## Scheduled
+
+- **forge-5-loop exit → stage-exit migration (Option B) — RECLASSIFIED, now scheduled.** This was
+  triaged on 2026-07-14 as **do not build unless drift appears**, with a named re-open trigger:
+  "(a) the bespoke loop exit drifts from the scripted one and causes a real user-hit
+  inconsistency, or (b) a stage-exit semantics change makes two paths demonstrably costly."
+  **That trigger has since fired three times**, all filed after the triage:
+  - **#172** — `stage-exit` rejects `forge-6-docs`, so the skill's own text prescribes a command
+    the script refuses. Four consecutive runs in one epic hand-rolled the state write, producing a
+    real short-vs-full `commitHash` inconsistency and a 500-line diff from JSON round-tripping.
+    This is (a) — a user-hit inconsistency caused by a hand-rolled exit.
+  - **#175** — the state-aware next-stage override is gated on `stage in PRODUCTION_STAGES`, which
+    excludes `forge-0-epic`, so edit-mode re-entry routes the user back to `forge-1-prd` on a
+    member whose backlog is already complete.
+  - **#176** — the general form: exit determinism was hardened along the linear spine where
+    compliance was already easy, and left to model discretion exactly where the pipeline branches.
+    `forge-verify` and `forge-fix` have **no exit block at all**.
+
+  The 2026-07-14 finding of "no drift" was accurate **at the time** — it checked the loop exit
+  against `stage-exit-protocol.md` and found them single-sourced. What it did not check, and what
+  #176 reframes as the real defect, is exit **coverage**: `stage-exit --stage` accepts only
+  `forge-0-epic … forge-4-backlog`, so every skill outside that enum either hand-rolls its exit or
+  has none. The migration is therefore no longer "code-path convergence with no user-visible
+  benefit" — it is the fix for four filed issues.
+
+  Two things also made it cheaper than it was. `state-complete` (R4, 0.14.0) now owns the state
+  write and the staleness cascade, so widening `stage-exit` is mostly a next-stage-resolution
+  problem rather than a state-authoring one. And the 300-line body cap objection has a known
+  buy-back (V-012: relocate the Step 2d "Run mode" paragraph into `runner-contract.md`, ~10 lines).
+
+  Scheduled as **Phase 1** of the post-context-efficiency roadmap, sized to run through the forge
+  pipeline itself. Original triage context:
+  `plans/HANDOFF-triage-deferred-composite-and-loop-exit.md`. Still distinct from **chunk 5a**
+  under "Explicitly won't build" (that is the Stop-hook sentinel guard, not code-path convergence),
+  whose own re-open condition — a remote run showing post-sentinel drift — has **not** fired.
 
 ## Deferred / optional (not scheduled)
 
@@ -91,18 +131,6 @@ the rest auto-closed with PRs #134/#137/#138/#139. Next action is purely the bat
 
 ## Explicitly won't build
 
-- **forge-5-loop exit → stage-exit migration (Option B).** Resolved **DO NOT BUILD unless drift
-  appears** (2026-07-14, owner-confirmed). Converging the loop's bespoke post-loop exit onto
-  scripted `stage-exit` buys code-path convergence, not user-visible behavior — the copyable
-  next-command win already shipped via Option A in 0.12.4. Triage found **no drift**: the loop's
-  exit is single-sourced against `references/stage-exit-protocol.md`, which owns both the standard
-  block and the warm variant (the `forge-5-loop → forge-6-docs` boundary is the one place clearing
-  is optional; scripted stage-exit models *cold* boundaries, so a migration would have to *extend*
-  it, not just reuse it). No open/closed issue reports a loop-exit inconsistency. Loop is also at
-  its 300-line body cap. Re-open only if (a) the bespoke loop exit drifts from the scripted one and
-  causes a real user-hit inconsistency, or (b) a stage-exit semantics change makes two paths
-  demonstrably costly. Context: `plans/HANDOFF-triage-deferred-composite-and-loop-exit.md`. Distinct
-  from **chunk 5a** below (that is the Stop-hook sentinel guard, not code-path convergence).
 - **Chunk 5a — last-output Stop-hook sentinel guard.** Resolved **DO NOT BUILD** (2026-07-10):
   a local dogfood of 0.12.2 hit 3/3 HELD on every scripted stage-exit — no post-sentinel drift.
   Only re-open if a future **remote** run shows real post-sentinel drift (that would implicate
