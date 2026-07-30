@@ -60,7 +60,6 @@ references/
   pipeline-state-schema.json               M  auto-verify-pending + schedule metadata
   epic-manifest-schema.json                M  required revision >= 1
   shared-conventions.md                    M  immediate state-note recipes
-  runner-contract.md                       M  stale --model wording correction
 
 skills/
   forge-0-epic/SKILL.md                    M  scripted creation/edit terminal
@@ -73,8 +72,7 @@ skills/
   forge-5-loop/references/result-reporting.md
                                             M  typed loop outcomes and terminal ownership
   forge-5-loop/references/runner-contract.md
-                                            M  stale --model wording (if this is the live
-                                               skill-local path; do not create a duplicate)
+                                            M  stale --model wording correction (sole source)
   forge-6-docs/SKILL.md                     M  scripted context-aware docs terminus
   forge-verify/SKILL.md                     M  direct/nested owner, state-verify, exit
   forge-fix/SKILL.md                        M  complete outcomes, state-verify, exit
@@ -103,11 +101,10 @@ adapters/{claude,codex,copilot,cursor,gemini,pi}/
   ...canonical skills/references...         G
 ```
 
-Before implementation, resolve whether the canonical runner reference is root
-`references/runner-contract.md` or skill-local
-`skills/forge-5-loop/references/runner-contract.md`. The current repository listing shows
-the skill-local file; edit the existing source and do **not** create a second copy merely
-because tech-spec §2 used a shortened path.
+The canonical runner reference is the skill-local
+`skills/forge-5-loop/references/runner-contract.md` — the sole source, and the only
+runner-contract file in the repository outside generated `adapters/` output. Edit that file
+in place; there is no root-level `references/runner-contract.md` to create or reconcile.
 
 ## 3. Module and Canon Ownership
 
@@ -356,6 +353,25 @@ Generated output rules:
   `python3 scripts/build-adapters.py` result.
 - `python3 scripts/build-adapters.py --check` must report no drift.
 - New helper presence is asserted for all six targets.
+
+## Public API and Internal Surface
+
+**This document defines no API.** It fixes file placement, module ownership, and
+implementation order; every signature it mentions is owned elsewhere and is cited, never
+redefined. Consult the owning contract rather than treating a path in §2 as a declaration:
+
+- shared literals, result types, and the `UsageError`/hash contract → `00-core-definitions.md`;
+- the `stage-exit` CLI and its routing callables → `02-stage-exit-routing.md`;
+- the `state-verify` CLI, the state writers, and the lock protocol → `03-verification-state.md`;
+- the skill-side stamp and slash-command surface users actually type → `04-skill-integration.md`;
+- `scripts/forge_json.py` and the adapter/runtime-helper distribution surface →
+  `05-config-and-distribution.md`;
+- coverage guards, fixtures, and scorers → `06-compliance-and-coverage.md`.
+
+The one ownership rule this document does contribute: `scripts/forge-session.py` and
+`scripts/epic-manifest.py` stay independently executable and self-contained, so a shared
+definition is duplicated deliberately rather than imported across that boundary — with
+`scripts/forge_json.py` the single sanctioned exception (§3.4).
 
 ## Dependencies
 

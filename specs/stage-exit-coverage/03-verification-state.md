@@ -15,16 +15,16 @@
 | REQ-DEBT-06 | Load legacy state without migration | §2.1, §6.2 |
 | REQ-STATE-01 | Full 40-character hashes on new scripted writes | §3.4, §6.1 |
 | REQ-STATE-02 | Continue reading legacy short hashes | §6.2 |
-| REQ-STATE-03 | Atomic, targeted feature and epic state mutation | §3–§4, §7.1 |
+| REQ-STATE-03 | Atomic, targeted feature and epic state mutation | §3–§4, §3.5, §7.1 |
 | REQ-STATE-04 | Preserve two-commit provenance without amend | §6.3 |
 | REQ-REL-01 | Deterministic and idempotent same-revision scheduling | §4.1 |
-| REQ-REL-02 | Fail closed on unsafe or ambiguous state targets | §3.2, §7.1 |
+| REQ-REL-02 | Fail closed on unsafe or ambiguous state targets | §3.2, §3.5, §7.1 |
 | REQ-REL-03 | Make interrupted automatic verification recoverable | §4.1, §7.2 |
 | REQ-COMPAT-02 | Preserve legacy standalone, member, and epic workflows | §2, §3.2, §6.2 |
 | REQ-PERF-01 | Use bounded local state/manifest reads only | §4.1, §8 |
 | REQ-OBS-01 | Expose distinct debt and transition information | §3.3, §5 |
 | REQ-OBS-02 | Name the affected feature/epic, stage, and recovery action | §5.3, §7 |
-| REQ-SEC-01 | Retain path safety and epic/member disambiguation | §3.2, §7.1 |
+| REQ-SEC-01 | Retain path safety and epic/member disambiguation | §3.2, §3.5, §7.1 |
 
 ## 1. Purpose and Scope
 
@@ -175,7 +175,9 @@ verification token (REQ-REL-02).
 
 ### 3.2 Atomic target selection (REQ-STATE-03, REQ-REL-02, REQ-SEC-01)
 
-Select the target before constructing or mutating an entry:
+Select the target before constructing or mutating an entry. Target selection resolves the
+state path first, then acquires that file's lock (§3.5) **before** the load in step 1 or 2,
+so every value the mutation validates against is read under the lock:
 
 1. For `forge-1-prd` through `forge-5-loop`, map `stage` through existing
    `VERIFY_TOKEN_BY_STAGE`, then call
@@ -196,7 +198,9 @@ Select the target before constructing or mutating an entry:
 Feature writes finish through existing `_commit_state`; epic writes use the same atomic
 `_write_state` mechanism and set top-level `updatedAt` before one replacement. Both
 write only the selected verify entry and top-level `updatedAt`; unrelated keys and
-entries survive byte-for-data-equivalent serialization (REQ-STATE-03).
+entries survive byte-for-data-equivalent serialization (REQ-STATE-03). The lock is
+released only after that replacement returns, so an unrelated concurrent update cannot be
+read, shadowed, and overwritten between load and replace.
 
 ### 3.3 Transition validation and mutation (REQ-DEBT-02/03, REQ-OBS-01)
 
@@ -235,6 +239,89 @@ On success change only the selected entry's `commitHash` and top-level `updatedA
 perform one atomic write. Status, findings metadata, scheduling metadata, timestamps,
 and versions remain unchanged. This mode is valid for feature and epic entries and does
 not invoke Git or amend a commit.
+
+### 3.5 State-file lock protocol (REQ-STATE-03, REQ-REL-02, REQ-SEC-01)
+
+Atomic replacement prevents a *torn* file; it does not prevent a **lost update**. Two
+writers can load the same document, each mutate a different entry, and each replace
+successfully — the later replacement silently discarding the earlier one, which also
+reported success. Every writer therefore holds a portable per-state-file lock across the
+whole critical section.
+
+**Scope.** This protocol governs every `state-*` writer — `state-enter`,
+`state-artifact`, `state-complete`, `state-branch`, `state-note`, `state-decision`,
+`state-ecr`, and `state-verify` — against both `{resolvedFeatureDir}/.pipeline-state.json`
+and `{specsDir}/{epic}/.epic-state.json`. Read-only consumers (navigator, `render-status`,
+dashboards, rollups) do **not** acquire it and keep the tolerant lock-free reads described
+in §7.2; `os.replace` already gives them a consistent snapshot, and a contended lock must
+never block status output.
+
+**Lock file.** A sibling of the state file with a `.lock` suffix appended to its full name:
+`.pipeline-state.json.lock` and `.epic-state.json.lock`. It lives in the directory the
+writer already resolved and validated for containment, so it inherits the same path-safety
+guarantees (REQ-SEC-01). It is transient control-plane debris, never an artifact: the
+specs-hygiene `.gitignore` gains `*.json.lock`, and no stage may stage or commit one.
+
+**Acquisition.** `os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)` —
+atomic create-if-absent on every filesystem that already supports `os.replace`, and free of
+the `fcntl`/`msvcrt` platform split. On success the writer writes owner metadata, flushes,
+fsyncs, and closes:
+
+```json
+{
+  "token": "<uuid4 hex — identifies this acquisition, not this process>",
+  "pid": 12345,
+  "host": "<socket.gethostname()>",
+  "verb": "state-verify",
+  "acquiredAt": "2026-07-30T00:00:00Z"
+}
+```
+
+`token` is regenerated per acquisition, so a pid that releases and re-acquires is a
+different owner. On `FileExistsError` the writer polls: sleep `LOCK_POLL_S` (0.05 s, with
+jitter to de-synchronize equal-deadline racers) and retry until `LOCK_TIMEOUT_S` (10.0 s),
+measured on `time.monotonic()` so a wall-clock adjustment cannot extend or collapse the
+deadline. The bound is generous by orders of magnitude: the critical section is one local
+load-mutate-replace, never a model turn or a subagent dispatch.
+
+**Stale recovery.** A holder killed between acquire and release would otherwise wedge the
+feature permanently, so a lock older than `LOCK_STALE_S` (300.0 s) is reclaimable — but
+only under a token-stability double-check, which is what makes reclamation safe:
+
+1. Read the lock's metadata and its mtime. If the age is below `LOCK_STALE_S`, keep polling.
+2. Record the observed `token`, sleep one poll interval, and re-read.
+3. Reclaim only if the file still exists, still carries the **same** `token`, and is still
+   older than `LOCK_STALE_S` — then `os.unlink` it and resume acquisition.
+
+A lock released and freshly re-acquired between steps 1 and 3 presents a new token, so the
+double-check aborts the reclamation and the writer goes back to polling. Reclamation is
+attempted at most `LOCK_STEAL_ATTEMPTS` (3) times per acquisition; exhausting them is
+contention, not success. A lock whose metadata is missing, truncated, or unparseable is
+treated as an unreadable holder and is reclaimable under the same age rule, using its mtime
+in place of the token for stability.
+
+Liveness is deliberately **not** inferred from `pid`: pids are recycled, and a shared
+filesystem may host writers from another machine entirely, where a local pid probe is
+meaningless. Age plus token stability is the portable signal.
+
+**Release.** Release is token-checked and runs in a `finally`: re-read the lock file, parse
+its metadata, and `os.unlink` **only** when its `token` equals ours. A mismatch means our
+lock was reclaimed after we exceeded `LOCK_STALE_S` and another writer now owns the file —
+unlinking it would strip a live holder's lock, so the writer leaves it alone and emits a
+named warning on stderr instead. A release failure must never mask an in-flight write error
+(§7.1): the original exception propagates and the release problem is appended to it.
+
+**Held region.** The lock is acquired **before** the first read of the state document and
+released **after** `os.replace` returns. Every input the mutation derives from the document
+or its sibling manifest — the production stage's `version`, the epic manifest `revision`,
+the prior verify entry consulted by `findings-applied` — is read inside the lock, so a
+concurrent write cannot skew a value between validation and mutation. Validation failures
+release the lock on the way out and leave the target byte-identical.
+
+**Ordering.** At most one state-file lock is held at a time. The feature branch and the
+epic branch of §3.2 are mutually exclusive targets, and no writer acquires a second lock
+while holding one, so the protocol has no lock-ordering cycle and needs no global ordering
+rule.
 
 ## 4. Scheduling and Replacement Flow
 
@@ -410,12 +497,23 @@ byte-identical. Covered failures include:
 - short/non-hex hash on a new write;
 - unsafe name, mismatched epic identity, ambiguous member, path escape;
 - missing/corrupt/non-object state or manifest;
-- malformed `stages` objects; and
-- temp creation, serialization, flush/fsync, or `os.replace` failure.
+- malformed `stages` objects;
+- temp creation, serialization, flush/fsync, or `os.replace` failure; and
+- lock-acquisition timeout (§3.5).
 
 Validation and mutation operate on an in-memory copy or on state not yet committed.
 Atomic replacement uses a sibling temp file; cleanup failure must not hide the original
 write error. No partial state is accepted as success.
+
+**Contention diagnostics.** Exhausting `LOCK_TIMEOUT_S` raises `UsageError` like any other
+fail-closed error — `Error: ...` on stderr, exit `2`, no success JSON, target byte-identical
+— but its message must be actionable rather than a bare timeout (REQ-OBS-02). Name the
+state file, the holder's `pid`/`host`/`verb` and the lock's age from the metadata that was
+readable, and the recovery action: wait and retry, or — if the age exceeds `LOCK_STALE_S`
+and the reported holder is known dead — remove the named `.lock` file. Report an unreadable
+holder as unreadable rather than fabricating owner fields. A lock that could not be released
+because its token no longer matches is a stderr warning on an otherwise successful write,
+never a failure: the write itself already landed.
 
 ### 7.2 Read and interruption behavior (REQ-DEBT-04/05, REQ-REL-03)
 
@@ -424,6 +522,13 @@ feature files, but must surface a named warning when an expected debt record can
 read. Strict writers never inherit tolerant `{}` fallback. Once scheduling succeeds,
 all later failures leave the pending marker as the authoritative state and route to
 verification recovery, never to the downstream production stage.
+
+A writer interrupted inside its critical section leaves a `.lock` file behind. That
+abandoned lock blocks other writers only until `LOCK_STALE_S` elapses, after which the
+§3.5 double-checked reclamation clears it automatically — no manual cleanup step is part
+of the normal recovery path, and no read-only consumer is affected in the meantime. The
+interrupted write itself is never partially applied: it either completed its `os.replace`
+or never began one.
 
 ## 8. Exact Existing Integration Surface
 
@@ -463,6 +568,29 @@ def _bump_and_write(
 All reads and writes are bounded to the selected config/state/manifest and the existing
 one-level feature scan. No repository-wide Git history query or network call is added
 (REQ-PERF-01).
+
+## Public API and Internal Surface
+
+- **User-facing CLI:** `python3 scripts/forge-session.py state-verify --feature F --stage S
+  [--status ...] [--findings-file P] [--findings-count N] [--verified-stage-version N]
+  [--commit-hash HASH] [--epic E] [--specs-dir D] [--json]` — full contract in §3.1. This is
+  the eighth `state-*` verb and the only new command this document adds.
+- **Repository-internal, importable:** `cmd_state_verify(...)` (§3.1, the callable behind the
+  CLI) and the read-side classifiers `verify_state`, `pending_verify`, and `build_rows` (§5),
+  which the navigator and `epic-manifest.py` parity paths consume.
+- **Private helpers:** `_verify_state_for`, `_load_state_for_write`, `_commit_state`,
+  `_write_state`, `_now_iso`, and `_bump_and_write`, plus the §3.5 lock helpers
+  `_acquire_state_lock(state_path)` / `_release_state_lock(handle)` and the tunable module
+  constants `LOCK_TIMEOUT_S`, `LOCK_POLL_S`, `LOCK_STALE_S`, and `LOCK_STEAL_ATTEMPTS`. The
+  lock helpers are private on purpose — no skill, adapter, or external caller may acquire or
+  release a state lock directly; the only sanctioned way to mutate state is through a
+  `state-*` verb, which owns the whole critical section.
+- **Not an API surface:** `.pipeline-state.json`, `.epic-state.json`, and the transient
+  `*.json.lock` files are *data*, not a contract for hand-editing. §3.5 and the R4 state-verb
+  work exist precisely so that nothing hand-authors these documents.
+- **Test/eval-only:** none. The constants above are injectable so the suite can exercise
+  timeout and staleness paths cheaply (`07-testing-strategy.md` §4.3), but they ship with the
+  §3.5 defaults and are not a supported configuration knob.
 
 ## 9. Dependencies
 

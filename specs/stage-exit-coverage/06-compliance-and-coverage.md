@@ -51,7 +51,13 @@ from typing import Final, NamedTuple
 class CanonicalExitSite(NamedTuple):
     """One required skill and the exact canon files that own its direct terminus."""
 
+    # Skill id, matching its directory name under `skills/`. Must be one of the
+    # nine covered skills; a skill in INTENTIONALLY_EXCLUDED_SKILLS must not appear.
     skill: str
+    # Repo-relative canon files that together own this skill's terminal exit —
+    # SKILL.md plus any reference file carrying part of the stamp. Non-empty, and
+    # paths are canon-only: never an `adapters/` path, which is generated output.
+    # A tuple, not a list, so the coverage table stays immutable at import time.
     contract_paths: tuple[str, ...]
 
 
@@ -216,30 +222,73 @@ EvidenceStage = Literal[
 
 
 class ExpectedCommand(TypedDict):
-    """One ordered command that must have a successful tool result."""
+    """One ordered command that must have a successful tool result.
 
+    Total. Ordering is positional: an ExpectedCommand's index in
+    `BranchScenario.expectedCommands` IS its required order, which is why matching
+    is ordered-subsequence rather than set membership (§4.2).
+    """
+
+    # Which branch step this command belongs to (verify, fix, re-verify). Groups
+    # evidence so a scorer can attribute a miss to a step, not just to the run.
     stage: EvidenceStage
+    # Substrings that must ALL appear in one command string — an AND, not an OR,
+    # and substring matching rather than equality so incidental flag ordering and
+    # absolute paths do not make the fixture brittle. Non-empty; an empty list
+    # would match every command and silently pass.
     contains: list[str]
 
 
 class BranchScenario(TypedDict):
-    """One deterministic branch-path compliance scenario."""
+    """One deterministic branch-path compliance scenario.
 
+    Total. The three outcome fields are the fixture's INPUTS — the branch results
+    being simulated — while `expected*` are the ground truth being scored. The
+    narrow Literals are deliberate: this fixture exercises the findings→fix→
+    re-verify path only, and a widened value belongs in a new scenario rather than
+    a loosened type.
+    """
+
+    # Stable scenario id, used in scorer output and to select a single scenario.
     name: BranchScenarioName
+    # Initial verify result being simulated. Always "findings" — a passing initial
+    # verify produces no fix step and so exercises no branch path.
     initialVerifyOutcome: Literal["findings"]
+    # Fix result being simulated. Always "applied": a fix that applies nothing has
+    # no rejoin to verify.
     fixOutcome: Literal["applied"]
+    # Re-verify result being simulated. This is the branch: "passed" rejoins the
+    # served production stage, while "findings"/"failed" must keep verification
+    # authoritative instead of advancing.
     reverifyOutcome: Literal["passed", "findings", "failed"]
+    # The single command that MUST be primary at the terminus for this outcome —
+    # the assertion that catches a dropped pipeline thread (#176).
     expectedPrimaryCommand: str
+    # Ordered commands that must each appear with a successful tool result.
     expectedCommands: list[ExpectedCommand]
 
 
 class BranchFixture(TypedDict):
-    """Versioned offline input for the branch compliance probe."""
+    """Versioned offline input for the branch compliance probe.
 
+    Total. Deliberately isolated from the existing linear fixtures (§3.1): this
+    file is loaded only by the branch probe, so a change here cannot move the
+    linear baseline.
+    """
+
+    # Fixture schema version. Literal[1] — a shape change bumps this rather than
+    # mutating v1 in place, so an older probe fails loudly instead of
+    # misinterpreting new fields.
     schemaVersion: Literal[1]
+    # Synthetic feature name built into the scratch repo. Never a real repo feature.
     feature: str
+    # Production stage the simulated verify/fix diversion serves and rejoins.
     servedStage: Literal["forge-1-prd"]
+    # Verify mode paired with `servedStage`; must agree with it under
+    # VERIFY_MODE_TO_STAGE, and the fixture validator checks that agreement.
     verifyMode: Literal["prd"]
+    # The scenarios to run. Exactly two in the shipped fixture (successful rejoin
+    # and unresolved re-verify); non-empty, and names must be unique.
     scenarios: list[BranchScenario]
 ```
 
@@ -336,28 +385,68 @@ Bash command strings and final text. Extend its returned dictionary additively; 
 
 ```python
 class CommandEvidence(TypedDict):
-    """A Bash request paired with its actual host tool result."""
+    """A Bash request paired with its actual host tool result.
 
+    Total. The whole point of this type is that a REQUESTED command is not a RUN
+    command: scoring on requests alone would credit a command the host rejected or
+    that failed. `resultSeen` plus `isError` is what makes the evidence real.
+    """
+
+    # 0-based position among Bash requests in the transcript. Establishes the
+    # ordering that ordered-subsequence matching consumes.
     requestIndex: int
+    # Host tool-use id linking request to result. The join key — never positional,
+    # since results can interleave.
     toolUseId: str
+    # Verbatim requested command string, unnormalized.
     command: str
+    # Whether a matching tool RESULT was found. False means the command was
+    # requested but never observed to complete — a request without evidence, which
+    # never scores as executed.
     resultSeen: bool
+    # Parsed exit status, or None when the host did not report one (including every
+    # `resultSeen: False` case). None is unknown, never success.
     exitCode: int | None
+    # Host-reported error flag. True fails the evidence even with exitCode 0, since
+    # the host may error out before the command's own status is meaningful.
     isError: bool
+    # Trailing slice of result output, bounded for diagnostics. Never matched
+    # against — it is for reading a failure, not for scoring.
     resultTail: str
 
 
 class ParsedTranscript(TypedDict, total=False):
-    """Normalized fields shared by compliance scorers."""
+    """Normalized fields shared by compliance scorers.
 
+    `total=False` because a malformed or truncated transcript yields a partial
+    parse: `ok: False` plus `note`, with the content fields absent. A scorer must
+    check `ok` before reading anything else — a missing `bash_commands` means "not
+    parsed", never "no commands were run".
+    """
+
+    # Whether the transcript parsed. False means every content field below may be
+    # absent and the run must not be scored as a compliance failure.
     ok: bool
+    # The assistant's final user-facing message — where the terminal NEXT-STEPS
+    # block and its sentinel must appear.
     final_text: str
+    # All assistant messages in order, for asserting no content follows the
+    # sentinel and no competing terminal block was emitted.
     assistant_texts: list[str]
+    # Every requested Bash command, in order. Requests only — pair with
+    # `command_evidence` for what actually ran.
     bash_commands: list[str]
+    # Requests joined to results; the evidence scoring consumes.
     command_evidence: list[CommandEvidence]
+    # Run cost in USD, None when the host did not report it. Advisory telemetry —
+    # never a scoring criterion.
     cost_usd: float | None
+    # Assistant turn count, None when unreported. Advisory.
     turns: int | None
+    # Wall-clock duration in ms, None when unreported. Advisory.
     duration_ms: int | None
+    # Human-readable parse diagnostic. Present on `ok: False`; may also carry a
+    # non-fatal advisory on a successful parse.
     note: str
 
 
@@ -534,6 +623,31 @@ invariant failures raise `RuntimeError`; filesystem and JSON exceptions retain `
 The CLI returns non-zero only for harness defects such as an invalid static fixture, duplicate tool
 IDs, impossible expected payload, or prelude/constant drift. Missing `claude` remains a successful
 skip. Do not catch programming errors and relabel them as model misses.
+
+## Public API and Internal Surface
+
+Everything this document defines is **maintainer- and CI-facing**. None of it ships to a
+project that installs feature-forge, and no skill, adapter, or end user calls into it.
+
+- **User-facing:** none. `eval/run-compliance-eval.py` has a CLI, but its audience is
+  maintainers running the compliance evaluation, not forge users; it is never invoked by a
+  pipeline stage.
+- **Test-only, importable by `tests/`:** `CanonicalExitSite` and `CANONICAL_EXIT_SITES`
+  (§2.1), `INTENTIONALLY_EXCLUDED_SKILLS` (§2.1), and the contract assertions of §2.3. The
+  coverage data is the guard's ground truth: adding a pipeline skill without adding its row
+  is the exact failure §2 exists to catch.
+- **Eval-only, importable by `eval/`:** the fixture types `ExpectedCommand`, `BranchScenario`,
+  and `BranchFixture` (§3.2); `load_branch_fixture`, `build_branch_fixture`, `branch_prompt`,
+  and `expected_branch_exit` (§3.2–§3.3); the evidence types `CommandEvidence` and
+  `ParsedTranscript` with `parse_transcript` and `ordered_command_evidence` (§4); and
+  `score_branch_path` with `run_branch_probe` (§5).
+- **Private helpers:** `_extract_block`, `_render`, `_read_contract_surface` (§2.2), and
+  `_git_init` (§3.3).
+- **Consumed, not owned:** `expected_stage_exit` and `run_session` are existing eval helpers;
+  §3.3 reuses them and the branch path must not fork a second copy (REQ-EVAL-03).
+- **Fixture files are data, not API:** `eval/fixtures/<branch-fixture>.json` conforms to the
+  §3.2 shape and is validated by `load_branch_fixture`; it carries no stability guarantee
+  beyond that schema.
 
 ## 8. Dependencies
 

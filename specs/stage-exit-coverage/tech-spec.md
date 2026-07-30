@@ -33,7 +33,6 @@ references/
   pipeline-state-schema.json     # auto-verify-pending + scheduling metadata
   epic-manifest-schema.json      # additive integer revision for epic freshness
   shared-conventions.md          # immediate state-note recipe follow-up
-  runner-contract.md             # stale --model wording correction
 
 skills/
   forge-0-epic/SKILL.md
@@ -44,6 +43,7 @@ skills/
   forge-4-backlog/SKILL.md
   forge-5-loop/SKILL.md
   forge-5-loop/references/result-reporting.md
+  forge-5-loop/references/runner-contract.md   # stale --model wording correction (sole source)
   forge-6-docs/SKILL.md
   forge-verify/SKILL.md
   forge-fix/SKILL.md             # all covered direct exits use scripted invocation
@@ -316,7 +316,7 @@ Claude uses `/clear` and `/feature-forge:*`, Pi uses `/new` and `/skill:*`, and 
 
 Commit `c174b55` already satisfied the Step 2d runner-contract prerequisite. Implementation verifies this before touching `skills/forge-5-loop/SKILL.md` and preserves both body caps.
 
-Correct the stale `runner-contract.md` wording that calls `--model` an "optional flag below" without making the agent-selection reference unconditional (REQ-FOLLOW-01).
+Correct the stale wording in `skills/forge-5-loop/references/runner-contract.md` — the sole runner-contract source — that calls `--model` an "optional flag below", without making the agent-selection reference unconditional (REQ-FOLLOW-01).
 
 Add an immediate sanctioned `state-note` invocation to the PRD/tech parking-lot instructions, including `--epic` for members, so promised persistence never relies on hand-authored JSON (REQ-FOLLOW-02).
 
@@ -490,6 +490,12 @@ Once `auto-verify-pending` is written, dispatch failure, compaction, non-answer,
 ### 7.3 State/config writes (REQ-STATE-03/04, REQ-CONFIG-03)
 
 State mutation retains sibling-temp-file + flush/fsync + `os.replace` atomicity. No model authors whole JSON. Duplicate config keys warn to stderr but do not fail parsing; malformed JSON retains each caller's current fallback/error semantics.
+
+**Serialization across writers.** `os.replace` guarantees a reader never sees a torn file, but it does not serialize *writers*: two writers can load the same document, each mutate a different entry, and each replace successfully — the later one silently discarding the earlier, still-successful update. Because every `state-*` verb is read-modify-write over a whole document, and an auto-verify chain can put a stage exit and a verify writer in flight at once, the writers take a **portable per-state-file lock** held across the entire load → validate → mutate → fsync → replace critical section. The protocol is specified once in `03-verification-state.md` §3.5 and applies to every state writer (`state-enter`, `state-artifact`, `state-complete`, `state-branch`, `state-note`, `state-decision`, `state-ecr`, `state-verify`) against both `.pipeline-state.json` and `.epic-state.json`.
+
+Portability is the constraint that picks the mechanism: `fcntl.flock` is POSIX-only and `msvcrt.locking` is Windows-only, and neither is reliable over network filesystems. `O_CREAT | O_EXCL` sibling lock-file creation is atomic on every filesystem the project already requires for `os.replace`, needs no third-party dependency, and keeps the writer stdlib-only. Read-only paths (navigator, `render-status`, dashboards) deliberately do **not** acquire the lock and keep their tolerant lock-free reads, so a stale or contended lock can never block status output.
+
+Alternative considered: optimistic concurrency via a monotonic `stateRevision` with compare-and-retry. Rejected because it requires a new required top-level field that every legacy state file lacks, and the retry would have to re-run validation whose inputs (artifact version, manifest revision) are themselves read from the document being retried.
 
 ### 7.4 Commit provenance (REQ-STATE-01/02/04)
 

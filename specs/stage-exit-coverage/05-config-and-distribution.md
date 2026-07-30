@@ -403,6 +403,29 @@ command retain existing I/O shape; this feature does not add a new read solely t
 The small `forge.config.json` files make the hook and duplicate list negligible relative to CLI
 startup and existing stage-exit processing.
 
+## Public API and Internal Surface
+
+- **Repository-importable module — the one true public surface here:** `scripts/forge_json.py`
+  exporting `load_json_with_duplicates(path) -> tuple[object, list[str]]` and
+  `warn_duplicate_keys(path, duplicate_keys) -> None` (§2.1–§2.2). It is the sanctioned
+  exception to the self-contained-scripts rule (`01-architecture-layout.md` §3.4), so both
+  `forge-session.py` and `forge-bootstrap.py` import it rather than each carrying a copy.
+  Because it is copied into every generated adapter (§5.1), its signature is effectively
+  frozen once shipped: changing it silently breaks already-installed adapter bundles.
+- **User-facing CLI behavior (no new command):** the duplicate-key warning contract of §2.2 and
+  the stdout/stderr split of §4. Warnings go to stderr so `--json` stdout stays machine-
+  parseable; that separation is the contract, not an implementation detail.
+- **Private helpers:** `_load_config` and `_config_value` in each consuming script (§3.1–§3.2).
+  They stay private and per-script; only the duplicate-aware loader is shared.
+- **Build-time / maintainer-only:** `RUNTIME_HELPERS`, `run_self_containment_pass(...)`, and
+  `build_tree(root, dest)` in `scripts/build-adapters.py` (§5). These run at adapter generation
+  time and are never present in, or callable from, an installed bundle. `commit(...)` in
+  `forge-bootstrap.py` is likewise internal to bootstrap.
+- **Generated output is not an API:** everything under `adapters/` is regenerated wholesale
+  (§5.2). Editing a generated file is not an extension point — it is drift the adapter gate
+  fails on.
+- **Test/eval-only:** none.
+
 ## 7. Dependencies
 
 The following specifications must be implemented first:

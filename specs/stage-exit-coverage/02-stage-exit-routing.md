@@ -441,6 +441,26 @@ sentinel as its final line. Changing `--verify-mode` to `prd` conflicts with the
 served stage and exits 2 without a NEXT-STEPS block (REQ-ROUTE-01..04,
 REQ-EXIT-03/05).
 
+## Public API and Internal Surface
+
+- **User-facing CLI:** `python3 scripts/forge-session.py stage-exit --feature F --stage S
+  [--specs-dir D] [--config FILE] [--epic E] [--next-feature N] [--host claude|generic]
+  [--verify-capability ...] [--json]` — the full flag contract is §2.2. This is the surface
+  skills invoke and the only one this document exposes to users; its stdout (the
+  sentinel-terminated NEXT-STEPS block) and its `--json` payload are both contracts.
+- **Repository-internal, importable:** `stage_exit(...)` (§2.2, the callable behind the CLI),
+  `resolve_served_stage(...)` (§3.2), and `next_stage(state)` (§2.1). Tests import these
+  directly; the shapes they return are `00-core-definitions.md` §4.
+- **Private helpers:** `_verify_state_for`, `_host_command`, `_next_steps_block`,
+  `_resolve_feature_dir`, and `_resolve_feature_dir_for_write`. `_next_steps_block` in
+  particular is private *and* load-bearing — it is the single renderer that guarantees
+  sentinel-last output (REQ-EXIT-03), so the coverage guard in `06-compliance-and-coverage.md`
+  asserts against its rendered output rather than calling it.
+- **Consumed, not owned:** `render_status(epic_dir, specs_dir)` belongs to
+  `scripts/epic-manifest.py`; the epic route (§9) reads it and must not reimplement it.
+  `cmd_state_verify` belongs to `03-verification-state.md`; §4's scheduling boundary calls it.
+- **Test/eval-only:** none.
+
 ## Dependencies
 
 Implement these specifications first:

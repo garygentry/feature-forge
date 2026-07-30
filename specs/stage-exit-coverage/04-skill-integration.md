@@ -97,13 +97,31 @@ The live epic integration was read from `scripts/epic-manifest.py`:
 
 ```python
 class RenderStatus(TypedDict):
+    """Live epic status. Total — every key is always present, so an empty list is
+    an answer ("none") and never a missing field."""
+
+    # Epic name; equals the epic directory name under specsDir.
     epic: str
+    # Epic-level lifecycle state, distinct from any member's stage progress. A
+    # "complete" epic can still contain members with outstanding verification.
     status: Literal["active", "paused", "abandoned", "complete"]
+    # Per-member status in manifest order — the authoritative member progress the
+    # edit-mode exit routes on, instead of assuming forge-1-prd (REQ-PROD-05/06).
     features: list[FeatureStatus]
+    # Member names that can be worked right now (dependencies satisfied). Empty
+    # means nothing is actionable, not that the check was skipped.
     actionable: list[str]
+    # Subset of `actionable` that may additionally run concurrently — members with
+    # no dependency on each other. Always a subset; never contains a name absent
+    # from `actionable`.
     parallelEligible: list[str]
+    # Aggregate counts across members. Read-only here; owned by epic-manifest.py.
     rollup: Rollup
+    # Host-rendered command for the epic's single best next action, or None when
+    # nothing is actionable. Already host-translated — print verbatim.
     nextCommand: str | None
+    # Non-fatal advisories (drift, latent name collisions, legacy manifests).
+    # Empty list means checked and clean.
     warnings: list[str]
 
 
@@ -475,6 +493,29 @@ The guard verifies a canonical invocation, applicable typed flags, direct sentin
 instruction, and nested no-terminal wording. It replaces assertions for the loop's
 standard/warm blocks and docs' terminal prose with positive scripted-contract assertions;
 it does not delete equivalent coverage (REQ-GUARD-01..03).
+
+## Public API and Internal Surface
+
+This document adds **no Python API**. It specifies how the nine canonical skills consume the
+surfaces owned by `02-stage-exit-routing.md` and `03-verification-state.md`, so its own
+"public surface" is the prose contract skills follow and the commands users type.
+
+- **User-facing:** the slash commands the NEXT-STEPS block prescribes — `/feature-forge:*` on
+  Claude, `/skill:*` on Pi, and the host-neutral generic forms (§3.2). These are a
+  compatibility surface: §3.2's host determination and the build-time translation in
+  `05-config-and-distribution.md` must keep all three correct, and changing a rendered command
+  string is a user-visible break (REQ-EXIT-05).
+- **Skill-side contract (internal to the canon, enforced mechanically):** the single canonical
+  stamp of §3.1, the directive order and sentinel-last rule of §3.3, and terminal-ownership
+  capture in §5.1. `06-compliance-and-coverage.md` enforces all three against
+  `CANONICAL_EXIT_SITES`; a skill that hand-rolls an exit instead of stamping fails that guard.
+- **Consumed, not owned:** `stage_exit`, `cmd_state_note`, `cmd_state_verify`,
+  `_host_command`, `_next_steps_block`, and `render_status` — every signature in §2.2 is read
+  from existing source or owned by another document and is cited there, never redefined here.
+- **Repository-internal constant declared here:** `COVERED_SKILLS` (§10), the migration
+  allow-list naming the nine skills that must carry a scripted exit. It is consumed by the
+  coverage guard and is the one importable value this document contributes.
+- **Test/eval-only:** none.
 
 ## Dependencies
 
