@@ -167,9 +167,7 @@ For the model-selection precedence (item.model > --model/options > project defau
 provider default), read references/runner-contract.md.
 ```
 
-**Run mode (gated on `loopRunner.name == "rauf"`).** When the runner is rauf, add a **"Run mode"** question to this same `AskUserQuestion` surface with these options **in this exact order** (do NOT improvise — deterministic ordering is the point): **(1) "Run with review pass (recommended)"** — append `--review`, and this is the default; **(2) "Run without review"** — the bare rendered command; **(3, only when 2a counted blocked items) "Review + retry blocked"** — append `--review --retry-blocked`. `AskUserQuestion`'s built-in "Other" covers ad-hoc flags (`--model`/`--timeout`); add no separate open-ended option. The command line shown above renders `--review` (the recommended default). **When the runner is not rauf**, add NO Run-mode question — present the bare rendered command and let the user adjust via "Other" (byte-identical to today). Verbatim option labels: `## Run mode (Step 2d, rauf)` in `references/runner-contract.md`.
-
-For the full loop-runner contract — event-stream vs. log-fallback launch, the live-supervision/monitor rules, and the model-selection precedence — read `references/runner-contract.md`. Whichever Run-mode option (or "Other") the user picks, append its flags to the rendered run command before Step 3.
+**Run mode and full loop-runner contract:** follow `## Run mode (Step 2d, rauf)` and the remaining sections in `references/runner-contract.md` verbatim.
 
 #### Agent selection (gated on `loopRunner.agentArgument`)
 
