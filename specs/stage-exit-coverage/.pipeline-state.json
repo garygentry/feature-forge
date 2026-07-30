@@ -56,10 +56,10 @@
         "forge-1-prd": 2,
         "forge-2-tech": 2
       },
-      "commitHash": null
+      "commitHash": "3563d4dfc703a5b4b61be850750e93421d168acf"
     }
   },
   "currentStage": "forge-3-specs",
-  "updatedAt": "2026-07-30T05:26:26Z",
+  "updatedAt": "2026-07-30T05:26:33Z",
   "branch": "forge/stage-exit-coverage"
 }
