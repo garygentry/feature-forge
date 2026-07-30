@@ -25,7 +25,7 @@
       "basedOnVersions": {
         "forge-1-prd": 3
       },
-      "commitHash": null
+      "commitHash": "4b89009b7986711c46a2646c88cbe0466ccadd4f"
     },
     "forge-verify-tech": {
       "status": "passed",
@@ -56,7 +56,7 @@
         "forge-1-prd": 3,
         "forge-2-tech": 3
       },
-      "commitHash": null
+      "commitHash": "4b89009b7986711c46a2646c88cbe0466ccadd4f"
     },
     "forge-verify-specs": {
       "status": "findings-applied",
@@ -64,7 +64,7 @@
       "findingsCount": 14,
       "verifiedAt": "2026-07-30T16:54:37Z",
       "verifiedStageVersion": 2,
-      "commitHash": null,
+      "commitHash": "4b89009b7986711c46a2646c88cbe0466ccadd4f",
       "fixedAt": "2026-07-30T16:54:37Z"
     }
   },
