@@ -15,20 +15,20 @@
       "commitHash": "784c826a186eb5b5234758811c6dac8386f1996c"
     },
     "forge-2-tech": {
-      "status": "stale",
-      "startedAt": "2026-07-30T03:49:46Z",
+      "status": "complete",
+      "startedAt": "2026-07-30T04:23:37Z",
       "artifacts": [
         "tech-spec.md"
       ],
-      "completedAt": "2026-07-30T04:12:39Z",
-      "version": 1,
+      "completedAt": "2026-07-30T04:24:44Z",
+      "version": 2,
       "basedOnVersions": {
-        "forge-1-prd": 1
+        "forge-1-prd": 2
       },
-      "commitHash": "99f914c5f634083ed66060150cf06e5025a137ad"
+      "commitHash": null
     }
   },
-  "currentStage": "forge-1-prd",
-  "updatedAt": "2026-07-30T04:23:13Z",
+  "currentStage": "forge-2-tech",
+  "updatedAt": "2026-07-30T04:24:44Z",
   "branch": "forge/stage-exit-coverage"
 }
