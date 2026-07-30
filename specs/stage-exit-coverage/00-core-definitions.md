@@ -160,7 +160,11 @@ def stage_exit(
         outcome: Required stage-specific outcome for loop/docs/verify/fix.
         owner: Required for verify/fix: `direct` or `nested`.
         verify_capability: `interactive` only when both question and clean-room
-            verifier dispatch capabilities exist; otherwise `manual`.
+            verifier dispatch capabilities exist; otherwise `manual`. Dispatch
+            capability is permission, not tool presence: a dispatch permitted
+            only once the user has asked is still `interactive`, because the
+            `standard` gate's own prompt supplies that request
+            (`04-skill-integration.md` §3.2).
 
     Returns:
         A JSON-serializable `StageExitPayload` dictionary.
@@ -250,10 +254,13 @@ class StageExitDirectives(TypedDict, total=False):
     # Resolved host: "claude", "pi", or "generic". Selects command syntax and
     # fresh-session wording; never inferred downstream, always decided here.
     host: str
-    # Whether the host can dispatch a clean-room verifier subagent —
+    # Whether the host may dispatch a clean-room verifier subagent —
     # VerifyCapability, i.e. exactly "interactive" or "manual". A manual host
     # receives verify-first ordering with copy-paste commands instead of an
     # interactive gate; capable Pi is interactive, not manual (REQ-EXIT-07).
+    # "May", not "has the tool": a session that bars unsolicited dispatch but
+    # offers a question tool is interactive, since the gate's prompt makes the
+    # dispatch solicited. Only no-question-tool-and-no-dispatch is manual.
     verifyCapability: str
     # Current verification state of the served artifact, as classified by
     # `verify_state` — including "auto-pending" for unrun scheduled verification.

@@ -242,6 +242,13 @@ it MUST NOT print an advancing production command as primary (REQ-REL-02, tech-s
 §3.3). Durable debt recording is specified outside this concern; this router consumes
 its distinct `auto-pending` label and treats it as outstanding.
 
+"Fails to dispatch" includes a caller that *may not* dispatch unsolicited. Auto-verify is
+authorized by config rather than by a live user request, so it is the one directive a
+standing no-unsolicited-dispatch instruction can block outright. Per
+`04-skill-integration.md` §3.3, such a caller routes the auto path through the `standard`
+gate — ask, then dispatch on the affirmative — rather than skipping verification. Under
+no reading of the bar does the production successor become the primary action.
+
 ## 5. Capability Gate and Host Rendering
 
 ### 5.1 Capability-aware Standard Verify Gate
@@ -250,6 +257,13 @@ The canonical skill caller passes `verify_capability == "interactive"` only when
 actual tool surface has both (a) a question mechanism and (b) dispatchable clean-room
 `forge-verifier`. Otherwise it passes `manual`. `stage_exit` MUST NOT inspect `host` to
 infer either capability (REQ-EXIT-07).
+
+(b) means **permitted** dispatch, not a listed tool. A session that bars *unsolicited*
+subagent dispatch while offering a question mechanism is still `interactive`: the
+`standard` gate's affirmative choice is the user request that authorizes the dispatch.
+`manual` is for genuine incapability — no question mechanism **and** no permitted
+dispatch. The determination rule is owned by `04-skill-integration.md` §3.2; this router
+only consumes the resulting value.
 
 For `verifyGate == "standard"`, `references/stage-exit-protocol.md` MUST present three
 explicitly labeled choices with descriptions and the recommended default (REQ-A11Y-01):

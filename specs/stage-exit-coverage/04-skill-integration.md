@@ -192,6 +192,23 @@ Before the call, each outer/direct skill independently computes two inputs:
    dispatched clean-room. If either is absent or capability cannot be proven, pass
    `manual`.
 
+**(b) is a test of permission, not of presence.** The question is not "is a subagent
+dispatch tool listed in my tool surface" but "**may I dispatch `forge-verifier` right
+now**". A session can carry a standing host instruction against dispatching subagents
+unless the user asked — such instructions are injected by the harness, are outside both
+the user's config and this project's control, can be enabled or disabled per session, and
+outrank skill prose. A model that reads (b) as mere tool presence will self-report
+`interactive`, attempt the dispatch, decline its own attempt, and land in the §3.2
+recovery path instead of the correct path. Read (b) as permission and classify up front.
+
+**A consent requirement is `interactive`, not `manual`.** When dispatch is barred only
+*unless the user asked*, and a question tool **is** available, pass `interactive`. The
+`standard` gate's own prompt supplies the missing user request: the user selecting
+"Verify {stageNoun} now" **is** the request, so the dispatch that follows that choice is
+solicited and permitted. Degrading this case to `manual` would print a copy-paste command
+and throw away the in-context digest for no reason. Pass `manual` only when there is no
+question tool **and** no permitted dispatch — genuine incapability, not a consent step.
+
 Do not use `host == claude` as a capability proxy. In particular, capable Pi is
 `--host pi --verify-capability interactive`; Pi without the dispatchable verifier is
 `manual`. Interactive gate options retain explicit labels, recommended defaults, and
@@ -210,6 +227,15 @@ Skills consume the `StageExitPayload` from `00-core-definitions.md` in this orde
 
 1. Surface `invalidAutoVerifyKeys` and `warning` before terminal output.
 2. If `runInStageVerify`, execute the nested verify/fix/re-verify chain synchronously.
+   This is the one directive that asks for an **unsolicited** dispatch — auto-verify is
+   authorized by config, not by a live user request — so it is exactly where a standing
+   no-unsolicited-dispatch instruction bites. When dispatch requires consent and a
+   question tool is available, do **not** dispatch silently and do **not** treat the bar
+   as a reason to skip: present the Standard Verify Gate first and dispatch on the
+   affirmative choice, then continue the chain unchanged. `autoVerifyDebtRecorded` is
+   already durable at this point (`03-verification-state.md` §4.1), so a declined or
+   deferred gate leaves recorded debt rather than a silent pass. Advancing to the
+   production successor is never an available response to the bar (REQ-REL-02).
 3. Handle `verifyGate == standard`; a pass/finding/explicit skip must be persisted and
    routing recomputed before printing a block. A stop choice emits no advancing block.
 4. For `manual-print`, do not dispatch inline; use the script's verify-first block.

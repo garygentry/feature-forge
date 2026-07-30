@@ -50,13 +50,13 @@
         "07-testing-strategy.md",
         "TRACEABILITY.md"
       ],
-      "completedAt": "2026-07-30T05:26:26Z",
-      "version": 2,
+      "completedAt": "2026-07-30T22:04:42Z",
+      "version": 3,
       "basedOnVersions": {
         "forge-1-prd": 3,
         "forge-2-tech": 3
       },
-      "commitHash": "4b89009b7986711c46a2646c88cbe0466ccadd4f"
+      "commitHash": null
     },
     "forge-verify-specs": {
       "status": "findings-applied",
@@ -70,21 +70,21 @@
     "forge-4-backlog": {
       "status": "complete",
       "startedAt": "2026-07-30T20:44:14Z",
-      "completedAt": "2026-07-30T20:55:24Z",
-      "version": 1,
+      "completedAt": "2026-07-30T22:04:45Z",
+      "version": 2,
       "basedOnVersions": {
         "forge-1-prd": 3,
         "forge-2-tech": 3,
-        "forge-3-specs": 2
+        "forge-3-specs": 3
       },
       "artifacts": [
         "backlog.json"
       ],
-      "commitHash": "373943fdc889ad96c97a028ee1c777062d1dc999"
+      "commitHash": null
     }
   },
   "currentStage": "forge-4-backlog",
-  "updatedAt": "2026-07-30T20:55:32Z",
+  "updatedAt": "2026-07-30T22:04:45Z",
   "branch": "forge/stage-exit-coverage",
   "notes": "BACKLOG CHECK (read this before generating items): the backlog must NOT contain any item creating scripts/forge_json.py. That module was specified, then deliberately dropped in f8f01c9 — the duplicate-aware JSON loader is MIRRORED into scripts/forge-session.py and scripts/forge-bootstrap.py, held in sync by a new tests/test_json_loader_parity.py, because the flat scripts share no import module by standing repo invariant (see tests/test_stage_constants_parity.py and 01-architecture-layout.md 3.4). Expect items for: both mirrored copies, their consumer wiring, the parity drift guard, and adapter regeneration of the two consumers. Expect NO item for a new file under scripts/ and NO change to RUNTIME_HELPERS (it stays at six entries). An item proposing forge_json.py means a stale spec was read — stop and re-read 01 3.4 and 05 2.1. Second check: no item may introduce locking, leasing, or optimistic versioning for state writes — PRD REQ-REL-04 forbids it; see issue #180. Basis: PRD v3, tech-spec v3, specs v2."
 }

@@ -51,7 +51,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001"],
+      "dependsOn": [
+        "001"
+      ],
       "notes": "Epic scheduledStageVersion and verifiedStageVersion carry THIS revision, never a member's production-stage version (03 §2.2). The semantic no-op comparison in _bump_and_write is what makes 'edit that changes nothing' leave bytes untouched — a test asserts byte equality, so do not refresh updatedAt on a no-op.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -80,7 +82,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001"],
+      "dependsOn": [
+        "001"
+      ],
       "notes": "A shared module was specified, then DELIBERATELY DROPPED in commit f8f01c9. If you find yourself creating scripts/forge_json.py, stop and re-read 01-architecture-layout.md §3.4 and 05-config-and-distribution.md §2.1 — the mirrored-copies-plus-drift-guard design is the decision, following the existing PRODUCTION_STAGES / KNOWN_VERIFY_STATUSES / AGENT_TARGETS precedent. tests/fixtures/minimal-canon/scripts/*.py are stub files, not real copies, so they need no content change.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -109,7 +113,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["003"],
+      "dependsOn": [
+        "003"
+      ],
       "notes": "This item is test-only — it must not change scripts/. If a row fails, fix the loader in item 003's files and re-run the parity guard. Do not widen scope: state, schema, transcript, and --answers JSON keep their current parsers and are NOT required to use the duplicate-aware loader.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -138,7 +144,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001"],
+      "dependsOn": [
+        "001"
+      ],
       "notes": "findings-applied deliberately leaves freshness UNRESOLVED (03 §3.3): clearing verifiedStageVersion is what makes an interruption between fix and re-verify unable to advance the pipeline. Do not 'helpfully' preserve it. Existing anchors: tests/test_state_verbs.py:1427 _VERB_INVOCATIONS, tests/test_state_schema_conformance.py:100 asserts seven verbs.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -166,7 +174,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["002", "005"],
+      "dependsOn": [
+        "002",
+        "005"
+      ],
       "notes": "references/epic-manifest-schema.json is NOT the schema for .epic-state.json — its current minimal contract is documented in skills/forge-verify/references/findings-template.md and must stay additive (03 §1 warning). REQ-SEC-01: epic verification is epic-scoped and must never resolve a member directory.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -194,7 +205,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["005", "006"],
+      "dependsOn": [
+        "005",
+        "006"
+      ],
       "notes": "PRD REQ-REL-04 FORBIDS introducing any locking, leasing, or optimistic-versioning mechanism for state writes — atomicity protects against an interrupted write, not against concurrent writers, and multi-session concurrency is explicitly out of scope for this feature (see issue #180). The guard test in step 5 exists precisely so a future widening has to amend REQ-REL-04 first. Do not add one here even if a test seems to want it.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -223,7 +237,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["005"],
+      "dependsOn": [
+        "005"
+      ],
       "notes": "REQ-DEBT-02 is the whole point: 'auto-verify was owed but has not run' must be distinguishable from 'verification was never scheduled', from manual pending work, and from an explicit skip. Do not fold auto-pending into never as a convenience — a dropped runInStageVerify directive is exactly what this makes visible (issue #163).",
       "estimatedIterations": 1,
       "specReferences": [
@@ -251,7 +267,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["002", "006"],
+      "dependsOn": [
+        "002",
+        "006"
+      ],
       "notes": "scripts/epic-manifest.py stays self-contained — do NOT import scripts/forge-session.py. KNOWN_VERIFY_STATUSES must remain byte-identical between the two scripts (tests/test_stage_constants_parity.py enforces it).",
       "estimatedIterations": 1,
       "specReferences": [
@@ -280,7 +299,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001"],
+      "dependsOn": [
+        "001"
+      ],
       "notes": "Stages 0–4 keep the TOLERANT _resolve_feature_dir read path after syntactic validation (REQ-COMPAT-01); the new branch, loop, docs, and explicit member-routing paths use strict resolution and fail closed. Conversational context and currentStage are never valid inference sources for the served stage (REQ-ROUTE-03). This item lands the surface only — verify-first ordering is item 011 and the outcome route tables are items 013-016.",
       "estimatedIterations": 2,
       "specReferences": [
@@ -294,7 +315,7 @@
       "type": "feature",
       "priority": 1,
       "title": "Make unresolved verification the primary action with capability-aware gates",
-      "description": "Stop the exit from ever fencing the downstream production stage while verification is outstanding. Spec: 02-stage-exit-routing.md §4-§5, tech-spec §3.3.\n\n1. Extend `_next_steps_block` to the 00 §5 signature: `(primary_command, host, reconcile=None, deferred_command=None, outcome_text=None) -> str`. It must start with `**Next steps**`, include `outcome_text` when supplied, fence EXACTLY `primary_command` after `_host_command` translation, render `deferred_command` only inline and unfenced as conditional prose (\"After verification passes, continue with …\"), preserve existing `epicReconcile` precedence, and end with `NEXT_STEPS_SENTINEL` as the final line with nothing after it.\n2. Implement the 02 §4 priority table: `fresh`/`skipped` → production successor, gate `none`; auto-verify effective and outstanding → nested chain, `runInStageVerify: true`; outstanding + `interactive` → gate `standard`; outstanding + `manual` → gate `manual-print` with `verifyCommand` fenced as primary.\n3. REMOVE the current `host == \"claude\"` branch. `--host` now controls ONLY command translation and fresh-session wording; `--verify-capability` alone selects the gate, so a capable Pi session gets `standard` and an incapable Claude session gets `manual-print`.\n4. Fresh-session guidance follows the primary verification action — it must never tell the user to clear and run the production successor first. `nextCommand` stays as compatibility/routing metadata and must not override `primaryCommand`.\n5. When outstanding verification and a blocking epic reconcile coexist, verification stays primary and the reconcile becomes the first deferred action, ahead of the ordinary production successor.\n6. Update the stages 0–4 snapshots in `tests/test_stage_exit.py` DELIBERATELY for this intended change (07 §3.8): each re-recorded expectation needs an assertion or comment naming verify-primary ordering or capability-aware gate selection as the reason. Broad re-recording without that justification is not acceptable.\n7. Cover the 07 §3.4 matrix across all three hosts. Regenerate and commit adapters/.",
+      "description": "Stop the exit from ever fencing the downstream production stage while verification is outstanding. Spec: 02-stage-exit-routing.md §4-§5, tech-spec §3.3.\n\n1. Extend `_next_steps_block` to the 00 §5 signature: `(primary_command, host, reconcile=None, deferred_command=None, outcome_text=None) -> str`. It must start with `**Next steps**`, include `outcome_text` when supplied, fence EXACTLY `primary_command` after `_host_command` translation, render `deferred_command` only inline and unfenced as conditional prose (\"After verification passes, continue with …\"), preserve existing `epicReconcile` precedence, and end with `NEXT_STEPS_SENTINEL` as the final line with nothing after it.\n2. Implement the 02 §4 priority table: `fresh`/`skipped` → production successor, gate `none`; auto-verify effective and outstanding → nested chain, `runInStageVerify: true`; outstanding + `interactive` → gate `standard`; outstanding + `manual` → gate `manual-print` with `verifyCommand` fenced as primary.\n3. REMOVE the current `host == \"claude\"` branch. `--host` now controls ONLY command translation and fresh-session wording; `--verify-capability` alone selects the gate, so a capable Pi session gets `standard` and an incapable Claude session gets `manual-print`. `stage_exit` takes the flag at face value and never re-derives it: whether the caller had to obtain user consent to dispatch is the CALLER's determination (04 §3.2), invisible here, and MUST NOT introduce a third gate form. A consent-required caller sends `interactive` and gets `standard` — that is the intended, already-correct path.\n4. Fresh-session guidance follows the primary verification action — it must never tell the user to clear and run the production successor first. `nextCommand` stays as compatibility/routing metadata and must not override `primaryCommand`.\n5. When outstanding verification and a blocking epic reconcile coexist, verification stays primary and the reconcile becomes the first deferred action, ahead of the ordinary production successor.\n6. Update the stages 0–4 snapshots in `tests/test_stage_exit.py` DELIBERATELY for this intended change (07 §3.8): each re-recorded expectation needs an assertion or comment naming verify-primary ordering or capability-aware gate selection as the reason. Broad re-recording without that justification is not acceptable.\n7. Cover the 07 §3.4 matrix across all three hosts. Regenerate and commit adapters/.",
       "acceptanceCriteria": [
         "_next_steps_block matches the 00-core-definitions.md §5 signature and its final line is always exactly NEXT_STEPS_SENTINEL",
         "While verification is unresolved, primaryCommand is the verify command and is the only fenced command; deferredCommand never appears inside a fence",
@@ -306,12 +327,16 @@
         "Claude renders /clear and /feature-forge:, Pi renders /new and /skill:, and generic output stays host-neutral",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "ruff check scripts/ eval/ passes"
+        "ruff check scripts/ eval/ passes",
+        "The gate is a pure function of verifyState and verify_capability; no third capability value or consent-specific gate form is introduced"
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["008", "010"],
-      "notes": "This is the one item that intentionally changes stages 0–4 user-visible output (REQ-COMPAT-01 carves out exactly this correction plus the #175 epic edit fix). Expect existing test_stage_exit.py expectations to fail — that is the signal, not a regression, but each change must be justified per 07 §3.8. REQ-EXIT-06: no path may fence or recommend the deferred production command while verification remains unresolved.",
+      "dependsOn": [
+        "008",
+        "010"
+      ],
+      "notes": "This is the one item that intentionally changes stages 0–4 user-visible output (REQ-COMPAT-01 carves out exactly this correction plus the #175 epic edit fix). Expect existing test_stage_exit.py expectations to fail — that is the signal, not a regression, but each change must be justified per 07 §3.8. REQ-EXIT-06: no path may fence or recommend the deferred production command while verification remains unresolved. A session may bar UNSOLICITED subagent dispatch (a harness-injected standing instruction, outside this project's control and flippable per session). That case arrives here as --verify-capability interactive and must select `standard` unchanged — the gate's own prompt is what makes the later dispatch solicited. Do not add a capability value for it.",
       "estimatedIterations": 2,
       "specReferences": [
         "specs/stage-exit-coverage/02-stage-exit-routing.md",
@@ -340,7 +365,11 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["005", "010", "011"],
+      "dependsOn": [
+        "005",
+        "010",
+        "011"
+      ],
       "notes": "REQ-REL-03: a crash between scheduling and dispatch must leave durable state exposing the obligation. Ordering is load-bearing — the write happens before the directive is returned, never after, so there is no window where the model is told to verify but nothing on disk records that it was owed. The resulting state-file modification is a SANCTIONED control-plane mutation, not user dirt; subsequent verify/fix commits include it.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -370,7 +399,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["010", "011"],
+      "dependsOn": [
+        "010",
+        "011"
+      ],
       "notes": "REQ-ROUTE-05/06 require a terminus for EVERY outcome — there is no fall-through. no-findings must not silently assume 'absence of applicable findings equals a pass'. A direct interactive 'skip re-verify' is deferred, not reverified, because findings-applied cleared freshness (04 §5.3).",
       "estimatedIterations": 2,
       "specReferences": [
@@ -399,7 +431,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["010", "011"],
+      "dependsOn": [
+        "010",
+        "011"
+      ],
       "notes": "REQ-PROD-02: a non-complete loop outcome must point to a deterministic resume or recovery action and must NOT imply downstream production stages are ready. A loop runner's successful process exit is not by itself complete — final backlog state controls the outcome, and that selection logic is the skill's job in item 020.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -427,7 +462,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["010", "011"],
+      "dependsOn": [
+        "010",
+        "011"
+      ],
       "notes": "The subprocess is local and bounded by the small manifest/state files — REQ-PERF-01 forbids adding a network call or repository-history scan. The exact RenderStatus shape is documented in 04-skill-integration.md §2.2; every key is always present, so an empty actionable list means 'nothing is actionable', never 'the check was skipped'.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -456,7 +494,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["010", "011"],
+      "dependsOn": [
+        "010",
+        "011"
+      ],
       "notes": "This is the #175 reproduction. REQ-PROD-06 requires degrading safely rather than fabricating progress — the fallback goes DOWN to PRD with a visible warning, never UP to a later stage that was inferred. REQ-COMPAT-01 carves out this correction as one of the two intended stages 0–4 behavior changes.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -469,7 +510,7 @@
       "type": "refactor",
       "priority": 1,
       "title": "Rewrite stage-exit-protocol.md as the single nine-skill scripted contract",
-      "description": "Make `references/stage-exit-protocol.md` the sole directive contract for all nine covered direct exits, replacing the five-stage wording and the legacy standard/warm block variants. Spec: 04-skill-integration.md §3, tech-spec §3.10.\n\n1. Replace the existing standard/warm bespoke terminal blocks with ONE canonical stamp usable by every direct exit, retaining the portable `forge-root.sh` prelude and invoking `stage-exit` with `--feature`, `--stage`, `--specs-dir`, `--host`, `--verify-capability`, plus the stage-specific typed flags in the 04 §3.1 table.\n2. Document host and capability determination (04 §3.2): `--host` describes only the adapter command surface; `--verify-capability interactive` is passed ONLY when both a question mechanism equivalent to `AskUserQuestion` AND dispatchable clean-room `forge-verifier` exist. State explicitly that `host == claude` is not a capability proxy and that capable Pi is `--host pi --verify-capability interactive`.\n3. Document the directive consumption order (04 §3.3): surface `invalidAutoVerifyKeys` and `warning` first; execute the nested chain when `runInStageVerify`; handle `verifyGate == standard`; for `manual-print` do not dispatch inline; print `nextSteps` byte-for-byte only when `terminalOwnedBy == \"self\"`.\n4. Specify the Standard Verify Gate with three explicitly labeled choices, descriptions, and the recommended default (02 §5.1): Verify now (recommended); Verify now + enable auto-verify going forward; Skip for now. Advancement is allowed only after a pass or after an explicit skip is persisted.\n5. State the sentinel-last rule: a direct payload contains one occurrence of the sentinel as its final line, with no summary, sign-off, warning, command result, or acceptance text after it. A nested payload has `nextSteps is None` and prints no terminal block.\n6. Record that a clean-room dispatch returning `CLEAN_ROOM_UNAVAILABLE` or a non-answer means verification failed/not run: leave the debt unresolved and obtain a FRESH manual-capability payload rather than reusing one that promotes advancement.\n7. Regenerate and commit adapters/.",
+      "description": "Make `references/stage-exit-protocol.md` the sole directive contract for all nine covered direct exits, replacing the five-stage wording and the legacy standard/warm block variants. Spec: 04-skill-integration.md §3, tech-spec §3.10.\n\n1. Replace the existing standard/warm bespoke terminal blocks with ONE canonical stamp usable by every direct exit, retaining the portable `forge-root.sh` prelude and invoking `stage-exit` with `--feature`, `--stage`, `--specs-dir`, `--host`, `--verify-capability`, plus the stage-specific typed flags in the 04 §3.1 table.\n2. Document host and capability determination (04 §3.2): `--host` describes only the adapter command surface; `--verify-capability interactive` is passed ONLY when both a question mechanism equivalent to `AskUserQuestion` AND dispatchable clean-room `forge-verifier` exist. State explicitly that `host == claude` is not a capability proxy and that capable Pi is `--host pi --verify-capability interactive`. State explicitly that clause (b) tests PERMISSION, not tool presence — \"may I dispatch `forge-verifier` right now\", not \"is a dispatch tool listed\" — because a session can carry a harness-injected standing instruction against unsolicited subagent dispatch that outranks this prose. Such a session, when it has a question mechanism, is `interactive`: the Standard Verify Gate's affirmative choice IS the user request that authorizes the dispatch. `manual` is reserved for no-question-mechanism AND no-permitted-dispatch.\n3. Document the directive consumption order (04 §3.3): surface `invalidAutoVerifyKeys` and `warning` first; execute the nested chain when `runInStageVerify` — and record that this is the ONE directive asking for an unsolicited dispatch (auto-verify is authorized by config, not by a live user request), so a consent-required session presents the Standard Verify Gate first and dispatches on the affirmative choice rather than dispatching silently, skipping verification, or advancing; handle `verifyGate == standard`; for `manual-print` do not dispatch inline; print `nextSteps` byte-for-byte only when `terminalOwnedBy == \"self\"`.\n4. Specify the Standard Verify Gate with three explicitly labeled choices, descriptions, and the recommended default (02 §5.1): Verify now (recommended); Verify now + enable auto-verify going forward; Skip for now. Advancement is allowed only after a pass or after an explicit skip is persisted.\n5. State the sentinel-last rule: a direct payload contains one occurrence of the sentinel as its final line, with no summary, sign-off, warning, command result, or acceptance text after it. A nested payload has `nextSteps is None` and prints no terminal block.\n6. Record that a clean-room dispatch returning `CLEAN_ROOM_UNAVAILABLE` or a non-answer means verification failed/not run: leave the debt unresolved and obtain a FRESH manual-capability payload rather than reusing one that promotes advancement.\n7. Regenerate and commit adapters/.",
       "acceptanceCriteria": [
         "references/stage-exit-protocol.md contains exactly one canonical scripted stamp usable by all nine covered skills",
         "The retired standard and warm bespoke terminal blocks no longer appear as an alternative advancing contract",
@@ -479,11 +520,16 @@
         "The clean-room-unavailable recovery path requires a fresh manual-capability payload rather than reuse of an advancing one",
         "The exact sentinel value appears once in the scripted contract",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
-        "bash scripts/validate.sh passes"
+        "bash scripts/validate.sh passes",
+        "references/stage-exit-protocol.md states that dispatch capability is permission rather than tool presence, and that a consent-required session routes the auto-verify directive through the Standard Verify Gate instead of skipping or advancing"
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["011", "012", "013"],
+      "dependsOn": [
+        "011",
+        "012",
+        "013"
+      ],
       "notes": "This reference is the single source the coverage guard in item 024 renders and matches against verbatim, so wording precision matters more than usual — items 018-023 stamp from it. Canon in skills/, agents/, and references/ must stay vendor-neutral and spec-pure; scripts/check-spec-purity.py is a hard gate in validate.sh.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -510,7 +556,11 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["005", "013", "017"],
+      "dependsOn": [
+        "005",
+        "013",
+        "017"
+      ],
       "notes": "REQ-EXIT-04: in a nested auto-verify chain, terminal ownership stays with the outermost authoring stage — a nested verify emitting its own sentinel is exactly the ownership leak the compliance scorer's nested_steps_emitted_no_sentinel criterion catches. Epic verification never resolves or writes a member .pipeline-state.json (REQ-SEC-01).",
       "estimatedIterations": 1,
       "specReferences": [
@@ -537,7 +587,11 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["005", "013", "017"],
+      "dependsOn": [
+        "005",
+        "013",
+        "017"
+      ],
       "notes": "REQ-ROUTE-05 enumerates the required termini: no applicable findings, unresolved decisions, failed fix work, fixes applied, re-verify success, re-verify findings, and explicit deferral. The 'applied does not equal verified' rule is the whole point of item 005's verifiedStageVersion clearing — do not let the skill re-assert freshness the writer deliberately dropped.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -564,7 +618,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["014", "017"],
+      "dependsOn": [
+        "014",
+        "017"
+      ],
       "notes": "REQ-CAP-01's prerequisite is already satisfied by commit c174b55 — verify it, do not redo it. The body caps are measured on the BODY (frontmatter-aware), so raw wc -l on the file is a false failure signal; 04 §6.3 records the file was 302 total lines / 4,512 total words at spec time.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -590,7 +647,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["015", "017"],
+      "dependsOn": [
+        "015",
+        "017"
+      ],
       "notes": "REQ-PROD-04 requires PRESERVING current context-aware behavior, not replacing it: epic members still route to the next actionable member or the epic dashboard, and standalone completion still offers the navigator/new-feature actions. The change is that the script decides, not the skill prose. Note the current test suite treats forge-6-docs as terminal — item 024 replaces that assertion.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -616,7 +676,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["016", "017"],
+      "dependsOn": [
+        "016",
+        "017"
+      ],
       "notes": "This is the canon half of the #175 fix; item 016 is the script half. REQ-PROD-05 requires creation-mode behavior to remain UNCHANGED — only edit mode with a concrete next member gains live state resolution.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -629,7 +692,7 @@
       "type": "feature",
       "priority": 1,
       "title": "Add capability flags to stages 1-4 and immediate state-note parking-lot calls",
-      "description": "Bring the four authoring stages onto the capability-aware contract and give the PRD/tech parking-lot promise a sanctioned persistence path. Spec: 04-skill-integration.md §4, REQ-FOLLOW-02.\n\n1. In `skills/forge-1-prd/SKILL.md`, `skills/forge-2-tech/SKILL.md`, `skills/forge-3-specs/SKILL.md`, and `skills/forge-4-backlog/SKILL.md`, retain the existing call locations and fixed stage identities and add `--verify-capability` determined per the shared protocol, plus `--epic \"{epic}\"` for members. Do NOT change their artifact/state-complete ordering. Their host translations, fresh-session wording, auto-verify directives, and epic-reconcile behavior stay script-owned.\n2. In `skills/forge-1-prd/SKILL.md` and `skills/forge-2-tech/SKILL.md`, replace the parking-lot promise to \"note it\" with an IMMEDIATE call at the moment the concern is raised: `python3 \"$R/scripts/forge-session.py\" state-note --feature \"{feature}\" --note \"<concise downstream concern>\" --specs-dir \"{specsDir}\"`, appending `--epic \"{epic}\"` for an epic member. Omitting `--epic` for a member is an error and must not fall back to a same-named flat feature.\n3. Document that `state-note` overwrites the single `notes` string, so preserving an earlier note means reading it and supplying a combined concise string — the model never edits or round-trips JSON. This interview-time call is separate from the optional completion note and must not be deferred to stage closure.\n4. On `UsageError`/exit 2, the skill surfaces the named feature/epic and the recovery instruction and stops claiming the concern was persisted. Epic decomposition changes continue through `epicChangeRequests`, not `notes`.\n5. Add the matching immediate `state-note` recipe to `references/shared-conventions.md` so the pattern is single-sourced.\n6. Regenerate and commit adapters/.",
+      "description": "Bring the four authoring stages onto the capability-aware contract and give the PRD/tech parking-lot promise a sanctioned persistence path. Spec: 04-skill-integration.md §4, REQ-FOLLOW-02.\n\n1. In `skills/forge-1-prd/SKILL.md`, `skills/forge-2-tech/SKILL.md`, `skills/forge-3-specs/SKILL.md`, and `skills/forge-4-backlog/SKILL.md`, retain the existing call locations and fixed stage identities and add `--verify-capability` determined per the shared protocol (04 §3.2 — note that its clause (b) is a PERMISSION test, not tool presence: a session that bars unsolicited subagent dispatch but offers a question tool is `interactive`, not `manual`, because the standard gate's affirmative choice supplies the user request), plus `--epic \"{epic}\"` for members. Do NOT change their artifact/state-complete ordering. Their host translations, fresh-session wording, auto-verify directives, and epic-reconcile behavior stay script-owned.\n2. In `skills/forge-1-prd/SKILL.md` and `skills/forge-2-tech/SKILL.md`, replace the parking-lot promise to \"note it\" with an IMMEDIATE call at the moment the concern is raised: `python3 \"$R/scripts/forge-session.py\" state-note --feature \"{feature}\" --note \"<concise downstream concern>\" --specs-dir \"{specsDir}\"`, appending `--epic \"{epic}\"` for an epic member. Omitting `--epic` for a member is an error and must not fall back to a same-named flat feature.\n3. Document that `state-note` overwrites the single `notes` string, so preserving an earlier note means reading it and supplying a combined concise string — the model never edits or round-trips JSON. This interview-time call is separate from the optional completion note and must not be deferred to stage closure.\n4. On `UsageError`/exit 2, the skill surfaces the named feature/epic and the recovery instruction and stops claiming the concern was persisted. Epic decomposition changes continue through `epicChangeRequests`, not `notes`.\n5. Add the matching immediate `state-note` recipe to `references/shared-conventions.md` so the pattern is single-sourced.\n6. Regenerate and commit adapters/.",
       "acceptanceCriteria": [
         "All four of skills/forge-1-prd, forge-2-tech, forge-3-specs, and forge-4-backlog pass --verify-capability on their stage-exit invocation",
         "Their existing stage identities, call locations, and artifact/state-complete ordering are unchanged",
@@ -639,12 +702,16 @@
         "A state-note exit 2 makes the skill surface the failure and stop claiming persistence",
         "references/shared-conventions.md carries the matching immediate state-note recipe",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
-        "bash scripts/validate.sh passes"
+        "bash scripts/validate.sh passes",
+        "Each stage's --verify-capability recipe states that dispatch capability means permitted dispatch, not a listed tool, and that a consent-required session is interactive rather than manual",
+        "No stage treats a no-unsolicited-dispatch instruction as grounds to skip verification or to fence the production successor"
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["017"],
-      "notes": "tests/test_state_verb_call_sites.py already guards state-verb call sites — check whether the new state-note call sites need registering there. REQ-FOLLOW-02 exists because the parking-lot instruction previously implied a hand-authored state edit; the whole point is that no canon path authors state JSON by hand.",
+      "dependsOn": [
+        "017"
+      ],
+      "notes": "tests/test_state_verb_call_sites.py already guards state-verb call sites — check whether the new state-note call sites need registering there. REQ-FOLLOW-02 exists because the parking-lot instruction previously implied a hand-authored state edit; the whole point is that no canon path authors state JSON by hand. Observed in dogfooding on 2026-07-30: an Opus 5 session carrying a harness instruction against unsolicited Agent dispatch declined the auto-verify dispatch at the forge-4-backlog exit and printed the next-stage command as the only fenced action. This item's capability wording is the upstream guard against that.",
       "estimatedIterations": 1,
       "specReferences": [
         "specs/stage-exit-coverage/04-skill-integration.md",
@@ -672,7 +739,14 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["018", "019", "020", "021", "022", "023"],
+      "dependsOn": [
+        "018",
+        "019",
+        "020",
+        "021",
+        "022",
+        "023"
+      ],
       "notes": "This guard lands AFTER all nine call sites exist (01 §5.7) so it never has to be temporarily weakened. CANONICAL_EXIT_SITES is the SINGLE declaration of the covered set — 04 §10 derives COVERED_SKILLS from it rather than re-listing the names, so do not add a second hand-maintained allow-list. Never inspect generated adapters/ as the source of truth and never rewrite canon from a test.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -701,7 +775,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["013"],
+      "dependsOn": [
+        "013"
+      ],
       "notes": "REQ-EVAL-03: this must NOT overwrite or merge into the linear forge-1-prd baseline, which measured only the already-scripted linear path. Ground truth comes from the real CLI after the scenario's state transition, never from hand-written fixture prose.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -730,7 +806,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["025"],
+      "dependsOn": [
+        "025"
+      ],
       "notes": "REQ-EVAL-02 is why this exists: scoring on requested commands alone would credit a command the host rejected or that failed. The type comment in 06 §4.1 says it plainly — a REQUESTED command is not a RUN command. Extend parse_transcript in place; do not fork a second parser for the branch probe.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -759,7 +837,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["025", "026"],
+      "dependsOn": [
+        "025",
+        "026"
+      ],
       "notes": "nested_steps_emitted_no_sentinel is the criterion that catches REQ-EXIT-04 ownership leaks — a nested verify or fix that prints its own terminal block. The live harness stays advisory and local-only; the fixture loader, ground truth, parser, evidence matcher, and scorer are the parts that are hard-tested offline in CI.",
       "estimatedIterations": 2,
       "specReferences": [
@@ -784,7 +865,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["027"],
+      "dependsOn": [
+        "027"
+      ],
       "notes": "REQ-EVAL-03 exists because the original baseline is easy to misread as proof the whole pipeline complies, when it only ever exercised forge-1-prd's already-scripted linear exit. The separation must be explicit prose, not implied by a table layout.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -812,7 +895,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["024", "028"],
+      "dependsOn": [
+        "024",
+        "028"
+      ],
       "notes": "This is the invariant-confirmation sweep, not new implementation. If any check here fails, fix it in the owning item's files rather than adding a workaround. REQ-COMPAT-03 is explicit that raising smokeCommand from null or changing CHECK-I21 semantics is OUT OF SCOPE for this feature.",
       "estimatedIterations": 1,
       "specReferences": [
