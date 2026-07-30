@@ -26,6 +26,7 @@ scripts/
   forge-session.py               # expanded stage-exit, state-verify, routing tables
   forge_json.py                  # NEW importable helper module: duplicate-aware JSON load
   epic-manifest.py               # verify-status parity; existing render-status CLI reused
+  forge-bootstrap.py             # adopts shared duplicate-aware config read
   build-adapters.py              # add forge_json.py to copied runtime helpers
 
 references/

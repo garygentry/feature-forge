@@ -14,7 +14,7 @@
 | REQ-EVAL-01..03 | Branch compliance scenarios, command-result evidence, negative fixtures, and baseline separation | §7 |
 | REQ-CAP-01 | Preserve the loop prerequisite and both body caps | §6.2 |
 | REQ-FOLLOW-01/02 | Runner wording and immediate PRD/tech state-note call sites | §6.2 |
-| REQ-REL-01..03 | Deterministic output, fail-closed negatives, idempotency, and interrupted debt recovery | §3–§5, §7 |
+| REQ-REL-01..04 | Deterministic output, fail-closed negatives, idempotency, interrupted debt recovery, and the preserved single-writer model | §3–§5, §7 |
 | REQ-COMPAT-01..03 | Stages 0–4 regression coverage, legacy inputs, null smoke command, and CHECK-I21 semantics | §3.8, §4.4, §8 |
 | REQ-PERF-01/02 | Bounded-file/no-network behavior and negligible common paths | §5.4, §8.2 |
 | REQ-OBS-01/02 | Structured directive assertions and named human diagnostics | §3–§5, §7 |
@@ -451,7 +451,7 @@ version, negative count, empty findings path, findings metadata on passed/skippe
 version on applied, applied without a prior report, neither mode, and mixed result/hash mode. Every
 case exits 2 and preserves bytes (REQ-REL-02).
 
-### 4.3 Target isolation and atomic failures
+### 4.3 Target isolation and atomic failures (REQ-STATE-03, REQ-SEC-01, REQ-REL-04)
 
 Reuse the existing flat/nested collision fixture and add epic-root cases (REQ-STATE-03,
 REQ-SEC-01):
@@ -466,6 +466,12 @@ REQ-SEC-01):
 Use `monkeypatch` only for `tempfile.mkstemp`, `os.fsync`, and `os.replace` spies/failures. Assert
 successful call order and failed replacement cleanup as the existing `_write_state` tests do. The
 original file must remain byte-identical and no sibling temporary debris may remain (REQ-STATE-03).
+
+**Single-writer model preserved (REQ-REL-04).** Assert the writers acquire no lock, lease, or
+version guard: the atomic sequence is exactly sibling temp file → flush/fsync → `os.replace`, with
+no additional sibling file created or removed and no retry/backoff on a busy target. This is a
+guard against silent widening — a future change that adds a mutual-exclusion mechanism must amend
+REQ-REL-04 first, and this test is what forces that conversation.
 
 ### 4.4 Epic revision and legacy fixtures
 

@@ -60,21 +60,16 @@
     },
     "forge-verify-specs": {
       "status": "findings-applied",
-      "findingsFile": ".verification/VERIFY-specs-2026-07-30-round2.md",
-      "findingsCount": 10,
-      "verifiedAt": "2026-07-30T14:15:15Z",
+      "findingsFile": ".verification/VERIFY-specs-2026-07-30-round3.md",
+      "findingsCount": 5,
+      "verifiedAt": "2026-07-30T15:34:57Z",
       "verifiedStageVersion": 1,
-      "commitHash": "302c93f5fe2227df5d11bba97ac295e1c1f8279b",
-      "fixedAt": "2026-07-30T15:16:00Z"
+      "commitHash": null,
+      "fixedAt": "2026-07-30T15:34:57Z"
     }
   },
   "currentStage": "forge-3-specs",
-  "updatedAt": "2026-07-30T15:16:00Z",
+  "updatedAt": "2026-07-30T15:34:57Z",
   "branch": "forge/stage-exit-coverage",
-  "notes": [
-    {
-      "at": "2026-07-30T15:16:00Z",
-      "note": "PRD v3 adds REQ-REL-04 (single-writer model, no locking). The lock protocol introduced at forge-3-specs by round-1 finding V-006 was removed: it answered no requirement and would have overturned the documented single-writer invariant in _write_state. tech-spec and specs were amended in place against the delta rather than re-authored, because the delta only REMOVES scope."
-    }
-  ]
+  "notes": "PRD v3 adds REQ-REL-04 (single-writer model, no locking). The lock protocol introduced at forge-3-specs by round-1 finding V-006 was removed: it answered no requirement and would have overturned the documented single-writer invariant in _write_state. tech-spec and specs were amended in place against the delta rather than re-authored, because the delta only REMOVES scope."
 }

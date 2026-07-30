@@ -82,9 +82,9 @@ CANONICAL_EXIT_SITES: Final[tuple[CanonicalExitSite, ...]] = (
 INTENTIONALLY_EXCLUDED_SKILLS: Final[frozenset[str]] = frozenset(
     {
         "forge",
+        "forge-bootstrap",
         "forge-guide",
         "forge-init",
-        "forge-update",
     }
 )
 ```
@@ -94,11 +94,15 @@ INTENTIONALLY_EXCLUDED_SKILLS: Final[frozenset[str]] = frozenset(
 - its `skill` tuple equals `EXIT_STAGES` from `00-core-definitions.md`, in the same order;
 - it has nine unique skill names and no duplicate path;
 - every path exists under `REPO_ROOT` and remains contained by `skills/`;
-- every excluded identifier is absent from the covered table; and
+- every excluded identifier is absent from the covered table;
+- every id in `INTENTIONALLY_EXCLUDED_SKILLS` resolves to an existing `skills/<id>/SKILL.md`, so
+  the exclusion set cannot rot into phantom entries; and
 - no navigator/setup/bootstrap/advisory skill is added merely because its name begins with
   `forge-`.
 
-The exclusions are documentary and defensive, not an exhaustive list of every helper skill. A new
+The exclusions are documentary and defensive, not an exhaustive list of every helper skill. They
+name the navigator (`forge`), bootstrap (`forge-bootstrap`), setup (`forge-init`), and advisory
+(`forge-guide`) skills called out by REQ-GUARD-02, and each must exist under `skills/`. A new
 pipeline-advancing skill requires an intentional edit to both the shared `EXIT_STAGES` domain and
 this table; a new advisory skill does not silently become covered.
 

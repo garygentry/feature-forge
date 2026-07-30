@@ -20,7 +20,7 @@
 | REQ-CAP-01, REQ-FOLLOW-01/02 | Preserved loop prerequisite and focused canon edits | §3, §5 |
 | REQ-COMPAT-01..03 | Existing stage behavior, state/config compatibility, null smoke | §4–§6 |
 | REQ-PERF-01/02 | Local bounded reads only | §4 |
-| REQ-PORT/SEC/REL (constraints) | Adapter shipping, containment, deterministic layering | §4–§6 |
+| PRD §5 constraints | Adapter shipping, path containment, deterministic layering | §4–§6 |
 
 ## 1. Architectural Boundaries
 

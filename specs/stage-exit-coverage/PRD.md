@@ -188,7 +188,13 @@ handoffs, persist auto-verify debt before control can be lost, and prove branch-
   requirement, §4.2). No locking, leasing, or optimistic-versioning mechanism may be introduced here: doing
   so would overturn a documented repository-wide invariant on the authority of a single feature, and
   the concurrency threat model that would justify it has never been established. A genuine
-  multi-session concurrency need is a separate feature with its own PRD.
+  multi-session concurrency need is a separate feature with its own PRD. The known candidate for that
+  PRD is concurrent sessions on two *different members of one epic*: member state is disjoint, but
+  both share `epic-manifest.json` — whose `revision` this feature makes load-bearing via a
+  read-modify-write increment — and `.epic-state.json`. A lost increment there would not merely
+  drop an edit; it could leave `revision` unchanged after a semantic mutation landed, letting a
+  stale epic verification classify as `fresh`. Recording that here is deliberate scope deferral,
+  not an omission.
 
 ### 4.2 Compatibility
 

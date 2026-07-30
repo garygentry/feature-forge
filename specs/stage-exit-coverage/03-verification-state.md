@@ -208,7 +208,10 @@ epic-manifest.py") and for epic manifest writes (the `epic-orchestration` PRD's 
 requirement, §4.2). No
 lock, lease, or optimistic-version check is introduced here: the repository-wide invariant
 is not this feature's to overturn, and no concurrency threat model has been established.
-A real multi-session need is a separate feature with its own PRD.
+A real multi-session need is a separate feature with its own PRD; see PRD REQ-REL-04 for the
+known candidate (concurrent sessions on two members of one epic, sharing `epic-manifest.json`
+and `.epic-state.json`, where a lost `revision` increment could make a stale epic verification
+read as fresh — §5.2).
 
 ### 3.3 Transition validation and mutation (REQ-DEBT-02/03, REQ-OBS-01)
 
