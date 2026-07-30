@@ -88,6 +88,7 @@ A technology constraint is valid when it stems from organizational mandate, exis
 - Challenge assumptions: which users specifically, what does "fast" mean quantitatively
 - Identify edge cases: empty input, concurrent access, scale
 - Capture non-functional requirements: performance, security, accessibility, observability
+- **Record a position on cross-cutting concerns, including when the position is "out of scope."** Concurrency is the recurring one: if the feature writes shared state, the PRD must say whether simultaneous writers are in scope. "Single writer assumed; atomicity protects only against an interrupted write" is a complete, valid answer — but it has to be *written down as a requirement*. An unstated position is not neutral: downstream `forge-verify` runs `CHECK-S27` ("Concurrent access scenarios are addressed if relevant") against the specs, and with nothing to point at, that check has been observed to induce a full locking protocol that no requirement asked for. State the position and the check resolves in one sentence. The same applies to any concern a verification checklist probes generically — failure modes, ordering, idempotency, resource limits.
 - Ask about what's OUT of scope — as important as what's in scope; when proposing a scope line, recommend one and name what each side gives up
 
 **Completion criteria:** The interview is complete when:

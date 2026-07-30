@@ -176,6 +176,10 @@ GOOD finding: "PRD.md REQ-ERR-04 requires rate limit retry behavior, but spec 03
 Every finding must include:
 1. A unique ID (V-001, V-002, etc.)
 2. Severity: `gap` (missing requirement coverage), `inconsistency` (contradictory specs), `improvement` (not wrong but could be better), `error` (factually incorrect)
+
+   **A checklist item with no PRD position behind it is a PRD gap, not a design to invent.** Several checks are deliberately conditional — `CHECK-S27` ("Concurrent access scenarios are addressed **if relevant**") is the clearest, and the same shape appears for performance, observability, and security checks that defer to the PRD. When such a check fires and the PRD takes **no position** on the concern, the finding is that the *requirements* are silent. Report it as an `improvement` (or a `gap` against the PRD, in `prd` mode) whose suggested fix is to **record the position** — including "out of scope, single writer assumed", which is a complete answer. Do **not** specify a mechanism to satisfy the check: a verifier that answers an open requirements question by designing a protocol converts a one-sentence PRD amendment into a foundational change that no requirement asked for, at the stage where it is least visible. Precedent both ways: `epic-orchestration` V-008 raised `CHECK-S27` against a PRD that *had* scoped concurrency out and correctly cost one sentence at `improvement`; `stage-exit-coverage` V-006 raised the same check against a silent PRD, was filed as a `gap`, and induced a full locking protocol that was later removed.
+
+   Relatedly, **do not let `improvement` fall out of use.** A report containing only `gap`/`error`/`inconsistency` usually means observations that should have been `improvement` were promoted into must-fix findings. If a finding would not block implementation, it is an `improvement` — say so.
 3. Exact location (file + section)
 4. What's wrong
 5. Suggested fix (specific enough that a fresh agent can apply it)

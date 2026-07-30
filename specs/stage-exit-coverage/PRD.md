@@ -179,6 +179,16 @@ handoffs, persist auto-verify debt before control can be lost, and prove branch-
   and provide an actionable error; no path may silently choose a different feature or stage.
 - **REQ-REL-03 (P0):** A crash between scheduling auto-verify and dispatching it MUST leave recoverable
   durable state that exposes the outstanding obligation.
+- **REQ-REL-04 (P0):** State writes introduced by this feature MUST preserve the repository's existing
+  **single-writer** model. Atomicity (sibling temp file, flush/fsync, `os.replace`) protects only
+  against an *interrupted* write by one writer; it is not, and need not be, mutual exclusion between
+  writers. Concurrent state-mutating commands from multiple simultaneous sessions are **out of scope**
+  for this feature, as they already are for `scripts/forge-session.py::_write_state` ("single writer
+  assumed, matching epic-manifest.py") and for epic manifest writes (the `epic-orchestration` PRD's Robustness
+  requirement, §4.2). No locking, leasing, or optimistic-versioning mechanism may be introduced here: doing
+  so would overturn a documented repository-wide invariant on the authority of a single feature, and
+  the concurrency threat model that would justify it has never been established. A genuine
+  multi-session concurrency need is a separate feature with its own PRD.
 
 ### 4.2 Compatibility
 

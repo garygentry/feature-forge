@@ -196,9 +196,9 @@ class SessionCliResult:
     # Captured stdout, decoded text. Machine-readable under `--json` and parsed by
     # `json()`; warnings never appear here, which is what keeps `--json` parseable.
     stdout: str
-    # Captured stderr, decoded text. Carries `Error: ...` lines and every warning,
-    # including the lock-contention diagnostic. Asserting on stderr content is how
-    # the tests verify diagnostics are actionable rather than bare.
+    # Captured stderr, decoded text. Carries `Error: ...` lines and every warning.
+    # Asserting on stderr content is how the tests verify diagnostics are
+    # actionable rather than bare.
     stderr: str
 
     def json(self) -> Any:
@@ -466,49 +466,6 @@ REQ-SEC-01):
 Use `monkeypatch` only for `tempfile.mkstemp`, `os.fsync`, and `os.replace` spies/failures. Assert
 successful call order and failed replacement cleanup as the existing `_write_state` tests do. The
 original file must remain byte-identical and no sibling temporary debris may remain (REQ-STATE-03).
-
-**Lost-update serialization.** The lock protocol of `03-verification-state.md` §3.5 exists to stop
-two successful writers from discarding each other's unrelated updates, so prove that directly rather
-than only asserting the lock file appears (REQ-STATE-03, REQ-REL-02):
-
-- *Feature writers.* Two concurrent `state-verify` calls against the same `.pipeline-state.json`
-  mutate **different** stage entries. Both must exit 0 and both mutations must be present in the
-  final document. Run them as real concurrent processes (`subprocess` via the §2.2 real-CLI fixture)
-  rather than threads, since the lock is cross-process by construction. Assert the negative control
-  too: with acquisition stubbed to a no-op, the same test fails — proving the test observes the lock
-  and not incidental timing.
-- *Epic writers.* The same pairing against one `.epic-state.json`: an epic verify transition
-  concurrent with an unrelated epic-state update, both surviving.
-- *Interleaving is forced, not hoped for.* Wrap the load step with a `monkeypatch` barrier that makes
-  writer A pause after its load until writer B has attempted acquisition. Without the lock this is a
-  deterministic lost update; with it, B blocks until A replaces, then re-reads A's result.
-
-**Lock lifecycle.** Cover acquisition, reclamation, and release as specified (REQ-REL-02, REQ-OBS-02):
-
-- a live lock is **not** stolen — a second writer against a lock younger than `LOCK_STALE_S` blocks
-  and then succeeds once the holder releases, and the holder's own release still finds its token;
-- an abandoned lock recovers — a lock file aged past `LOCK_STALE_S` (set its mtime; do not sleep) is
-  reclaimed and the write succeeds, with the double-check exercised by mutating the lock's `token`
-  between the two reads so reclamation aborts and the writer resumes polling;
-- an unreadable lock (truncated/non-JSON metadata) is reclaimable under the same age rule and its
-  diagnostics report the holder as unreadable rather than inventing `pid`/`host` fields;
-- acquisition timeout exits 2 with a message naming the state file, the holder's `pid`/`host`/`verb`,
-  the lock age, and the recovery action — and leaves the target byte-identical;
-- token-checked release: a writer whose lock was reclaimed mid-write does **not** unlink the new
-  holder's lock, warns on stderr, and still reports its own completed write as success;
-- a release failure does not mask an in-flight write error — the original exception propagates;
-- no `.lock` file survives a successful write, and `*.json.lock` is matched by the repository-root
-  `.gitignore` so a lock can never be staged — assert the pattern's presence in that file directly,
-  since an unignored lock inside the tracked `specs/` tree would dirty the working tree that
-  `cleanTree`/`autoFixEligible` and the two-commit protocol depend on.
-
-Keep `LOCK_TIMEOUT_S`, `LOCK_POLL_S`, `LOCK_STALE_S`, and `LOCK_STEAL_ATTEMPTS` injectable (module
-constants patched per test) so the suite exercises real timeout and staleness paths without a
-10-second or 300-second wall-clock cost. Assert the shipped defaults separately as plain constants.
-
-**Writer coverage.** These lock tests parameterize over all eight `state-*` verbs, not `state-verify`
-alone: §3.5 governs every writer, and a verb that skips acquisition reintroduces the lost update for
-every other verb sharing the file.
 
 ### 4.4 Epic revision and legacy fixtures
 
@@ -820,19 +777,19 @@ REQ-STATE-03).
 **This document defines no production API.** It specifies tests, and tests are consumers: every
 signature reproduced in §2.1 was read from existing source to pin what the suite may rely on,
 and is owned by the document that specifies it — routing by `02-stage-exit-routing.md`, state
-and locking by `03-verification-state.md`, the duplicate-aware loader and build helpers by
+and state writing by `03-verification-state.md`, the duplicate-aware loader and build helpers by
 `05-config-and-distribution.md`, guards and fixtures by `06-compliance-and-coverage.md`.
 
 - **User-facing:** none.
 - **Test-only surface this document does own:** the reusable real-CLI fixture of §2.2 —
   `run_session_cli()` and its `SessionCliResult` result type — plus the fixture inventory of
   §2.3. These exist so tests exercise the shipped CLI as a subprocess rather than
-  re-implementing argument parsing, which is what makes the §4.3 cross-process lock tests
-  meaningful.
+  re-implementing argument parsing, so the tests exercise the shipped entry point rather
+  than an in-process approximation of it.
 - **Private to the suite:** `_in_fenced_block` and `_probe_report`, and any per-module
   `monkeypatch` seams. **§1 and §4.3** constrain where patching is legitimate at all — §1 as the
   principle (mocks only inject an otherwise difficult local failure), §4.3 as the allow-list:
-  `tempfile.mkstemp`, `os.fsync`, `os.replace`, and the injectable lock constants, plus the two
+  `tempfile.mkstemp`, `os.fsync`, and `os.replace`, plus the two
   narrowly scoped exceptional-path injections sanctioned elsewhere (the `subprocess.run` failure
   in §3.6 and the stderr write failure in §5.3). Never the logic under test. (§9 governs error
   *assertions* — exit codes, stderr prefixes, byte-identical files, traceback leakage — not

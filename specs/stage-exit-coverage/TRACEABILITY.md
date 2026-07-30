@@ -1,6 +1,6 @@
 # Stage Exit Coverage — Traceability Matrix
 
-> PRD v2 → implementation specification suite. Every PRD requirement is mapped to its
+> PRD v3 → implementation specification suite. Every PRD requirement is mapped to its
 > primary implementation contract and its final verification matrix. Supporting shared
 > types and file ownership are in `00-core-definitions.md` and
 > `01-architecture-layout.md`.
@@ -52,6 +52,7 @@
 | REQ-REL-01 | `02-stage-exit-routing.md` §3–§10; `03-verification-state.md` §4.1 | `07-testing-strategy.md` §3–§5, §7 |
 | REQ-REL-02 | `02-stage-exit-routing.md` §3, §10; `03-verification-state.md` §3.2, §7.1 | `07-testing-strategy.md` §3.2, §3.7, §4.3, §9 |
 | REQ-REL-03 | `03-verification-state.md` §4.1, §7.2 — durable crash recovery | `07-testing-strategy.md` §4.1–§4.3 |
+| REQ-REL-04 | `03-verification-state.md` §3.2 — single-writer model preserved, no lock introduced | `07-testing-strategy.md` §4.3 |
 | REQ-COMPAT-01 | `02-stage-exit-routing.md` §3–§9; `04-skill-integration.md` §2–§9 | `07-testing-strategy.md` §3.8, §6.3 |
 | REQ-COMPAT-02 | `03-verification-state.md` §2–§6; `05-config-and-distribution.md` §3.3 | `07-testing-strategy.md` §4.4, §5, §6.3 |
 | REQ-COMPAT-03 | `01-architecture-layout.md` §6; `06-compliance-and-coverage.md` §6–§8 | `07-testing-strategy.md` §8.3 |
@@ -59,7 +60,7 @@
 | REQ-PERF-02 | `02-stage-exit-routing.md` §8–§10; `05-config-and-distribution.md` §2.3, §6.3 | `07-testing-strategy.md` §5.4, §8.2 |
 | REQ-OBS-01 | `00-core-definitions.md` §4, §6; `06-compliance-and-coverage.md` §4–§5 | `07-testing-strategy.md` §3–§4, §7 |
 | REQ-OBS-02 | `02-stage-exit-routing.md` §3, §6, §10; `05-config-and-distribution.md` §2.2, §4 | `07-testing-strategy.md` §3–§5, §9 |
-| REQ-SEC-01 | `02-stage-exit-routing.md` §3, §9–§10; `03-verification-state.md` §3.2, §3.5, §7.1 | `07-testing-strategy.md` §3.7, §4.3, §5.3, §9 |
+| REQ-SEC-01 | `02-stage-exit-routing.md` §3, §9–§10; `03-verification-state.md` §3.2, §7.1 | `07-testing-strategy.md` §3.7, §4.3, §5.3, §9 |
 | REQ-A11Y-01 | `02-stage-exit-routing.md` §5.1; `04-skill-integration.md` §3.2, §5 | `07-testing-strategy.md` §6.2 |
 
 ## Technical-Decision Coverage
@@ -80,7 +81,7 @@
 
 ## Validation Summary
 
-- All 54 PRD requirement IDs have at least one primary implementation mapping.
+- All 55 PRD requirement IDs have at least one primary implementation mapping.
 - Every numbered document has a Requirement Coverage table and Dependencies and
   Verification sections.
 - Cross-document references use existing filenames; no broken numbered-spec reference was

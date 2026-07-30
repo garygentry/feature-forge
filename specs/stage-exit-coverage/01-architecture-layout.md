@@ -46,8 +46,6 @@ Generated files under `adapters/` are outputs only and are regenerated, never ed
 `N` = new, `M` = modified, `G` = regenerated output.
 
 ```text
-.gitignore                                 M  ignore transient *.json.lock state locks
-
 scripts/
   forge-session.py                         M  exit router, state-verify, debt, hashes,
                                               duplicate-aware config consumer
@@ -367,7 +365,8 @@ redefined. Consult the owning contract rather than treating a path in §2 as a d
 
 - shared literals, result types, and the `UsageError`/hash contract → `00-core-definitions.md`;
 - the `stage-exit` CLI and its routing callables → `02-stage-exit-routing.md`;
-- the `state-verify` CLI, the state writers, and the lock protocol → `03-verification-state.md`;
+- the `state-verify` CLI, the state writers, and the single-writer model →
+  `03-verification-state.md`;
 - the skill-side stamp and slash-command surface users actually type → `04-skill-integration.md`;
 - `scripts/forge_json.py` and the adapter/runtime-helper distribution surface →
   `05-config-and-distribution.md`;

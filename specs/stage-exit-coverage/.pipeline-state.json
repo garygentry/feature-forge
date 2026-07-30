@@ -6,13 +6,13 @@
     "forge-1-prd": {
       "status": "complete",
       "startedAt": "2026-07-30T04:22:51Z",
-      "completedAt": "2026-07-30T04:23:13Z",
-      "version": 2,
+      "completedAt": "2026-07-30T15:16:00Z",
+      "version": 3,
       "basedOnVersions": {},
       "artifacts": [
         "PRD.md"
       ],
-      "commitHash": "784c826a186eb5b5234758811c6dac8386f1996c"
+      "commitHash": null
     },
     "forge-2-tech": {
       "status": "complete",
@@ -23,7 +23,7 @@
       "completedAt": "2026-07-30T04:24:44Z",
       "version": 2,
       "basedOnVersions": {
-        "forge-1-prd": 2
+        "forge-1-prd": 3
       },
       "commitHash": "5e4dc021c5b7d9dff588044a065e5ee0eb7368ea"
     },
@@ -53,22 +53,28 @@
       "completedAt": "2026-07-30T05:26:26Z",
       "version": 1,
       "basedOnVersions": {
-        "forge-1-prd": 2,
+        "forge-1-prd": 3,
         "forge-2-tech": 2
       },
       "commitHash": "3563d4dfc703a5b4b61be850750e93421d168acf"
     },
     "forge-verify-specs": {
-      "status": "findings-reported",
+      "status": "findings-applied",
       "findingsFile": ".verification/VERIFY-specs-2026-07-30-round2.md",
       "findingsCount": 10,
       "verifiedAt": "2026-07-30T14:15:15Z",
       "verifiedStageVersion": 1,
-      "commitHash": "e2959c1507054eb0fa9e78bbf117dca4ad981ae2",
-      "partiallyAppliedAt": "2026-07-30T14:37:56Z"
+      "commitHash": null,
+      "fixedAt": "2026-07-30T15:16:00Z"
     }
   },
   "currentStage": "forge-3-specs",
-  "updatedAt": "2026-07-30T14:37:56Z",
-  "branch": "forge/stage-exit-coverage"
+  "updatedAt": "2026-07-30T15:16:00Z",
+  "branch": "forge/stage-exit-coverage",
+  "notes": [
+    {
+      "at": "2026-07-30T15:16:00Z",
+      "note": "PRD v3 adds REQ-REL-04 (single-writer model, no locking). The lock protocol introduced at forge-3-specs by round-1 finding V-006 was removed: it answered no requirement and would have overturned the documented single-writer invariant in _write_state. tech-spec and specs were amended in place against the delta rather than re-authored, because the delta only REMOVES scope."
+    }
+  ]
 }
