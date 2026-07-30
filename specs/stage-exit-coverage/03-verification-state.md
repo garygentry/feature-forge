@@ -260,7 +260,12 @@ never block status output.
 `.pipeline-state.json.lock` and `.epic-state.json.lock`. It lives in the directory the
 writer already resolved and validated for containment, so it inherits the same path-safety
 guarantees (REQ-SEC-01). It is transient control-plane debris, never an artifact: the
-specs-hygiene `.gitignore` gains `*.json.lock`, and no stage may stage or commit one.
+**repository-root `.gitignore`** gains `*.json.lock`, and no stage may stage or commit one.
+That file is the one this feature modifies — there is no `.gitignore` under
+`references/templates/specs-hygiene/` (it holds only `AGENTS.md` and `CLAUDE.md`), so the
+ignore rule has exactly one home and one owner. Projects that install feature-forge inherit
+nothing here; if an installed project must also ignore locks, that is a separate template
+addition and is deliberately **not** in scope for this feature.
 
 **Acquisition.** `os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)` —
 atomic create-if-absent on every filesystem that already supports `os.replace`, and free of

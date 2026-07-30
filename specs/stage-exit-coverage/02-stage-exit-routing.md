@@ -443,11 +443,14 @@ REQ-EXIT-03/05).
 
 ## Public API and Internal Surface
 
-- **User-facing CLI:** `python3 scripts/forge-session.py stage-exit --feature F --stage S
-  [--specs-dir D] [--config FILE] [--epic E] [--next-feature N] [--host claude|generic]
-  [--verify-capability ...] [--json]` — the full flag contract is §2.2. This is the surface
-  skills invoke and the only one this document exposes to users; its stdout (the
-  sentinel-terminated NEXT-STEPS block) and its `--json` payload are both contracts.
+- **User-facing CLI:** `python3 scripts/forge-session.py stage-exit --feature F --stage S ...` —
+  **§2.2 is the authoritative flag contract, including every enum domain**; this bullet
+  deliberately does not restate the flags, so the summary cannot drift from the contract the
+  way a partial copy does. This is the surface skills invoke and the only one this document
+  exposes to users; its stdout (the sentinel-terminated NEXT-STEPS block) and its `--json`
+  payload are both contracts. Note in particular that `--host` is `{claude,pi,generic}`: Pi is
+  a first-class host, and a capable Pi session is `interactive`, never `manual`
+  (REQ-EXIT-05/07, §5.1–§5.2).
 - **Repository-internal, importable:** `stage_exit(...)` (§2.2, the callable behind the CLI),
   `resolve_served_stage(...)` (§3.2), and `next_stage(state)` (§2.1). Tests import these
   directly; the shapes they return are `00-core-definitions.md` §4.

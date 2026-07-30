@@ -497,8 +497,10 @@ than only asserting the lock file appears (REQ-STATE-03, REQ-REL-02):
 - token-checked release: a writer whose lock was reclaimed mid-write does **not** unlink the new
   holder's lock, warns on stderr, and still reports its own completed write as success;
 - a release failure does not mask an in-flight write error — the original exception propagates;
-- no `.lock` file survives a successful write, and `*.json.lock` is matched by the specs-hygiene
-  `.gitignore` so a lock can never be staged.
+- no `.lock` file survives a successful write, and `*.json.lock` is matched by the repository-root
+  `.gitignore` so a lock can never be staged — assert the pattern's presence in that file directly,
+  since an unignored lock inside the tracked `specs/` tree would dirty the working tree that
+  `cleanTree`/`autoFixEligible` and the two-commit protocol depend on.
 
 Keep `LOCK_TIMEOUT_S`, `LOCK_POLL_S`, `LOCK_STALE_S`, and `LOCK_STEAL_ATTEMPTS` injectable (module
 constants patched per test) so the suite exercises real timeout and staleness paths without a
@@ -828,9 +830,13 @@ and locking by `03-verification-state.md`, the duplicate-aware loader and build 
   re-implementing argument parsing, which is what makes the §4.3 cross-process lock tests
   meaningful.
 - **Private to the suite:** `_in_fenced_block` and `_probe_report`, and any per-module
-  `monkeypatch` seams. §9 constrains where patching is legitimate at all: only
-  `tempfile.mkstemp`, `os.fsync`, `os.replace`, and the injectable lock constants — never the
-  logic under test.
+  `monkeypatch` seams. **§1 and §4.3** constrain where patching is legitimate at all — §1 as the
+  principle (mocks only inject an otherwise difficult local failure), §4.3 as the allow-list:
+  `tempfile.mkstemp`, `os.fsync`, `os.replace`, and the injectable lock constants, plus the two
+  narrowly scoped exceptional-path injections sanctioned elsewhere (the `subprocess.run` failure
+  in §3.6 and the stderr write failure in §5.3). Never the logic under test. (§9 governs error
+  *assertions* — exit codes, stderr prefixes, byte-identical files, traceback leakage — not
+  patching.)
 - **A private helper reproduced in §2.1 is not thereby promoted.** Importing `_commit_state`
   or `_next_steps_block` in a test does not make it public; it stays renameable, and a test
   that pins its *name* rather than its *behavior* is the fragile kind §1 warns against.

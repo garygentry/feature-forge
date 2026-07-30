@@ -22,6 +22,8 @@ The configured project stack remains Python with `ruff check scripts/ eval/` and
 ### 2.1 Canonical implementation layout (REQ-EXIT-01/02, REQ-STATE-03, REQ-CONFIG-02, REQ-GUARD-01)
 
 ```text
+.gitignore                       # ignore transient *.json.lock state locks
+
 scripts/
   forge-session.py               # expanded stage-exit, state-verify, routing tables
   forge_json.py                  # NEW importable helper module: duplicate-aware JSON load

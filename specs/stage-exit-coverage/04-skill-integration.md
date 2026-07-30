@@ -473,20 +473,16 @@ loop result reporting/body; update docs; update epic edit/creation; add capabili
 to stages 1–4; then regenerate every adapter. Never edit `adapters/` directly
 (REQ-COMPAT-02, tech-spec §3.10).
 
-`tests/test_stage_exit_protocol.py` must enumerate exactly these ownership sites:
+`tests/test_stage_exit_protocol.py` must enumerate exactly these ownership sites — and it
+already does, via `CANONICAL_EXIT_SITES` in `06-compliance-and-coverage.md` §2.1, which is the
+**single** declaration of the covered set. This document does not re-list the nine names: two
+hand-maintained allow-lists in one module is the drift REQ-GUARD-01 exists to prevent, and the
+`06` tuple is the richer of the two (it carries the `contract_paths` the guard actually reads).
+
+Where a plain name tuple is convenient, derive it — never re-author it:
 
 ```python
-COVERED_SKILLS: tuple[str, ...] = (
-    "forge-0-epic",
-    "forge-1-prd",
-    "forge-2-tech",
-    "forge-3-specs",
-    "forge-4-backlog",
-    "forge-5-loop",
-    "forge-6-docs",
-    "forge-verify",
-    "forge-fix",
-)
+COVERED_SKILLS: tuple[str, ...] = tuple(site.skill for site in CANONICAL_EXIT_SITES)
 ```
 
 The guard verifies a canonical invocation, applicable typed flags, direct sentinel-last
@@ -512,9 +508,10 @@ surfaces owned by `02-stage-exit-routing.md` and `03-verification-state.md`, so 
 - **Consumed, not owned:** `stage_exit`, `cmd_state_note`, `cmd_state_verify`,
   `_host_command`, `_next_steps_block`, and `render_status` — every signature in §2.2 is read
   from existing source or owned by another document and is cited there, never redefined here.
-- **Repository-internal constant declared here:** `COVERED_SKILLS` (§10), the migration
-  allow-list naming the nine skills that must carry a scripted exit. It is consumed by the
-  coverage guard and is the one importable value this document contributes.
+- **Declares no constant of its own.** The covered-skill allow-list is owned by
+  `06-compliance-and-coverage.md` §2.1 (`CANONICAL_EXIT_SITES`); §10 derives `COVERED_SKILLS`
+  from it rather than re-listing the names, so there is exactly one place a newly added
+  pipeline skill must be registered.
 - **Test/eval-only:** none.
 
 ## Dependencies

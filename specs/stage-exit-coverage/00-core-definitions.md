@@ -228,12 +228,16 @@ class StageExitDirectives(TypedDict, total=False):
     # Verify mode in play (`prd`, `tech`, `specs`, `backlog`, `impl`, `epic`), keyed
     # by VERIFY_MODE_TO_STAGE. None when this exit is not a verify/fix exit.
     verifyMode: str | None
-    # Terminal outcome for stages with a multi-way result — notably forge-5-loop
-    # (`complete`, `partial`, `blocked`, `needs-human`). Must be a member of
-    # EXIT_OUTCOMES[stage]. None for stages whose exit has a single outcome.
+    # Terminal outcome for stages with a multi-way result. Must be a member of
+    # EXIT_OUTCOMES[stage] (§2) — consult that table rather than this comment,
+    # which is deliberately not a second copy of the domain. None for stages
+    # whose exit has a single outcome.
     outcome: str | None
-    # Skill id that invoked this exit, for diagnostics and nested-chain attribution.
-    # None when the caller did not identify itself.
+    # Branch ownership for a verify/fix exit — ExitOwner, i.e. exactly "direct"
+    # (this call owns and prints the terminal block) or "nested" (an outer
+    # authoring stage owns it). REQUIRED for forge-verify/forge-fix and REJECTED
+    # for stages 0–6, which are always direct owners (§3, `02` §3.1 step 5).
+    # None only on a production-stage exit, where the concept does not apply.
     owner: str | None
     # Who prints the terminal block. "self" — this caller renders exactly one
     # sentinel-terminated block. "outer" — a nested invocation that must print
@@ -244,9 +248,10 @@ class StageExitDirectives(TypedDict, total=False):
     # Resolved host: "claude", "pi", or "generic". Selects command syntax and
     # fresh-session wording; never inferred downstream, always decided here.
     host: str
-    # Whether the host can dispatch a clean-room verifier subagent
-    # ("capable"/"manual"). A manual host receives verify-first ordering with
-    # copy-paste commands instead of an interactive gate.
+    # Whether the host can dispatch a clean-room verifier subagent —
+    # VerifyCapability, i.e. exactly "interactive" or "manual". A manual host
+    # receives verify-first ordering with copy-paste commands instead of an
+    # interactive gate; capable Pi is interactive, not manual (REQ-EXIT-07).
     verifyCapability: str
     # Current verification state of the served artifact, as classified by
     # `verify_state` — including "auto-pending" for unrun scheduled verification.

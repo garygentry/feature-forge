@@ -645,9 +645,11 @@ project that installs feature-forge, and no skill, adapter, or end user calls in
   `_git_init` (§3.3).
 - **Consumed, not owned:** `expected_stage_exit` and `run_session` are existing eval helpers;
   §3.3 reuses them and the branch path must not fork a second copy (REQ-EVAL-03).
-- **Fixture files are data, not API:** `eval/fixtures/<branch-fixture>.json` conforms to the
-  §3.2 shape and is validated by `load_branch_fixture`; it carries no stability guarantee
-  beyond that schema.
+- **Fixture files are data, not API:** `eval/fixtures/compliance/verify-fix-reverify.json`
+  conforms to the §3.2 shape and is validated by `load_branch_fixture`; it carries no stability
+  guarantee beyond that schema. The `compliance/` nesting is load-bearing, not cosmetic — §3.1
+  places it below `eval/run-eval.py::load_fixtures()`'s non-recursive `eval/fixtures/*.json`
+  glob precisely so a compliance fixture can never be picked up as a trigger fixture.
 
 ## 8. Dependencies
 

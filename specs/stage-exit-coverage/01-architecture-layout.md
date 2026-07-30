@@ -46,6 +46,8 @@ Generated files under `adapters/` are outputs only and are regenerated, never ed
 `N` = new, `M` = modified, `G` = regenerated output.
 
 ```text
+.gitignore                                 M  ignore transient *.json.lock state locks
+
 scripts/
   forge-session.py                         M  exit router, state-verify, debt, hashes,
                                               duplicate-aware config consumer
@@ -80,7 +82,10 @@ skills/
 eval/
   run-compliance-eval.py                    M  separate branch-path probe/scorer
   README.md                                 M  linear baseline vs branch result
-  fixtures/<branch-fixture>.json            N  verify/fix/re-verify command evidence
+  fixtures/compliance/verify-fix-reverify.json
+                                            N  verify/fix/re-verify command evidence; nested
+                                               below run-eval's non-recursive fixtures/*.json
+                                               glob so it cannot load as a trigger fixture
 
 tests/
   test_stage_exit.py                        M  nine-stage/outcome/host routing matrix

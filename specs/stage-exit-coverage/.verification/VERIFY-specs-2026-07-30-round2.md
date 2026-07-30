@@ -386,3 +386,39 @@ plausible-but-unverified reference paths) is worth a convention note rather than
   `ExitOwner` and `VerifyCapability` literal domains, `EXIT_OUTCOMES["forge-5-loop"]`, the contents
   of `references/templates/specs-hygiene/`, the root `.gitignore`, `02` §2.2's `--host` domain, and
   the absence of any patching policy in `07` §9. All six held.
+
+## Fix Progress
+
+- Step 5: [APPLIED] 2026-07-30 — Corrected the three wrong value domains in `00` §4
+  `StageExitDirectives`. `owner` now describes the `ExitOwner` `direct`/`nested` domain, noting it
+  is required for verify/fix and rejected for stages 0–6. `verifyCapability` now reads
+  `"interactive"`/`"manual"` and states that capable Pi is interactive, never manual. `outcome` no
+  longer carries a partial copy of the loop-outcome domain — it points at `EXIT_OUTCOMES[stage]`,
+  which removes the `deferred` omission and the possibility of the copy drifting again. No declared
+  field, type, or ordering changed.
+- Step 3: [APPLIED] 2026-07-30 — `03` §3.5 and `07` §4.3 now name the **repository-root**
+  `.gitignore`. §3.5 additionally records that `references/templates/specs-hygiene/` holds only
+  `AGENTS.md` and `CLAUDE.md`, so the ignore rule has one home and one owner, and scopes an
+  installed-project template addition explicitly out of this feature. The file change is now visible
+  in both layout maps: `.gitignore  M  ignore transient *.json.lock state locks` in `01` §2 and
+  tech-spec §2.1. `07` §4.3 asserts the pattern's presence in that file directly, with the
+  `cleanTree`/two-commit rationale stated.
+- Step 6: [APPLIED] 2026-07-30 — `02`'s API section no longer restates the flag list at all; it
+  points at §2.2 as authoritative and calls out that `--host` is `{claude,pi,generic}` with capable
+  Pi interactive (the drift that dropped `pi` cannot recur from a partial copy that no longer
+  exists). `07`'s API section re-attributes the patching policy from §9 to §1 and §4.3, adds the
+  §3.6 and §5.3 exceptions, and notes what §9 actually governs. `06`'s API section and `01` §2 both
+  use `eval/fixtures/compliance/verify-fix-reverify.json`, with the non-recursive-glob rationale
+  recorded at both sites.
+- Step 7: [APPLIED] 2026-07-30 — `04` §10 no longer re-lists the nine skill names. It states that
+  `CANONICAL_EXIT_SITES` (`06` §2.1) is the single declaration, explains why (the `06` tuple carries
+  the `contract_paths` the guard reads), and derives `COVERED_SKILLS = tuple(site.skill for site in
+  CANONICAL_EXIT_SITES)`. `04`'s API section now declares no constant of its own. `06` §2.1 is
+  unchanged.
+
+Re-ran `validate-traceability.py` after Steps 3/5/6/7: 54 requirements, 8 spec files, 0 uncovered,
+0 orphaned; authored matrix still 54 rows. No numbered section was added or renumbered.
+
+**Still open — deferred to a design decision, not applied here:** Steps 1, 2, and 4 (R2-V-002,
+R2-V-003, R2-V-004, R2-V-006). These change the locking design rather than correct a typo, and
+carry the four User Decisions above. `forge-verify-specs` therefore remains `findings-reported`.
