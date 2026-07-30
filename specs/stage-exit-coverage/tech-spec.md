@@ -9,7 +9,7 @@ Stage Exit Coverage extends the existing Python-stdlib control plane in `scripts
 The design has six coordinated parts:
 
 1. Expand `stage-exit` from stages 0–4 to the explicit nine-skill coverage set: `forge-0-epic` through `forge-6-docs`, plus direct `forge-verify` and `forge-fix` (REQ-EXIT-01/02, REQ-GUARD-01/02).
-2. Add typed `--served-stage`, `--outcome`, `--owner`, and `--verify-capability` inputs for branch/loop and verification-gate routing. New paths fail closed; existing stages 0–4 retain their tolerant state fallback while correcting unsafe verify-primary ordering (REQ-EXIT-06/07, REQ-ROUTE-01..06, REQ-REL-02, REQ-COMPAT-01).
+2. Add typed `--served-stage`, `--verify-mode`, `--outcome`, `--owner`, and `--verify-capability` inputs for branch/loop and verification-gate routing. New paths fail closed; existing stages 0–4 retain their tolerant state fallback while correcting unsafe verify-primary ordering (REQ-EXIT-06/07, REQ-ROUTE-01..06, REQ-REL-02, REQ-COMPAT-01).
 3. Add a targeted `state-verify` writer and persist `auto-verify-pending` immediately before `runInStageVerify: true` is returned (REQ-DEBT-01..06, REQ-STATE-03).
 4. Replace hand-written loop, docs, epic-edit, verify, and fix termini with the scripted sentinel contract while preserving current context-aware routing (REQ-EXIT-03/04, REQ-PROD-01..06).
 5. Add recursive duplicate-key diagnostics through a small shared stdlib JSON parser while preserving last-key-wins compatibility (REQ-CONFIG-01..04).
@@ -24,9 +24,9 @@ The configured project stack remains Python with `ruff check scripts/ eval/` and
 ```text
 scripts/
   forge-session.py               # expanded stage-exit, state-verify, routing tables
-  forge-json.py                  # NEW executable helper module: duplicate-aware JSON load
+  forge_json.py                  # NEW importable helper module: duplicate-aware JSON load
   epic-manifest.py               # verify-status parity; existing render-status CLI reused
-  build-adapters.py              # add forge-json.py to copied runtime helpers
+  build-adapters.py              # add forge_json.py to copied runtime helpers
 
 references/
   stage-exit-protocol.md         # one scripted contract for all covered exits
@@ -63,7 +63,7 @@ tests/
   test_build_adapters.py          # expanded host/runtime-copy assertions
 ```
 
-`forge-session.py` remains the public control-plane executable. Exit logic is not extracted into a new package: the repository already copies this flat helper into every adapter, and keeping state resolution, CLI validation, and routing together minimizes adapter import risk (REQ-COMPAT-02, REQ-PERF-01). `forge-json.py` is the sole narrow extraction because both `forge-session.py` and `forge-bootstrap.py` must use the same duplicate-aware parser (REQ-CONFIG-02/04).
+`forge-session.py` remains the public control-plane executable. Exit logic is not extracted into a new package: the repository already copies this flat helper into every adapter, and keeping state resolution, CLI validation, and routing together minimizes adapter import risk (REQ-COMPAT-02, REQ-PERF-01). `forge_json.py` is the sole narrow extraction because both `forge-session.py` and `forge-bootstrap.py` must import the same duplicate-aware parser through ordinary Python import syntax (REQ-CONFIG-02/04).
 
 ### 2.2 Generated output (REQ-COMPAT-02, REQ-GUARD-03)
 
@@ -115,6 +115,7 @@ def stage_exit(
     host: str,
     next_feature: str | None,
     served_stage: str | None = None,
+    verify_mode: str | None = None,
     outcome: str | None = None,
     owner: str | None = None,
     verify_capability: str = "manual",
@@ -127,6 +128,7 @@ CLI additions:
 ```text
 stage-exit --feature F --stage S
   [--served-stage forge-0-epic|forge-1-prd|...|forge-6-docs]
+  [--verify-mode epic|prd|tech|specs|backlog|impl]
   [--outcome <stage-specific enum>]
   [--owner direct|nested]
   [--verify-capability interactive|manual]
@@ -138,7 +140,8 @@ Rules:
 - `forge-verify` and `forge-fix` require `--owner` (REQ-EXIT-04).
 - `--owner nested` returns a machine-readable payload with `directives.terminalOwnedBy = "outer"`, routing/result fields, `nextSteps = null`, and `sentinel = null`. The nested skill prints no terminal block (REQ-EXIT-04).
 - `--owner direct` emits exactly one sentinel-terminated block (REQ-EXIT-03).
-- Direct branch calls prefer explicit `--served-stage`. If absent, verify mode metadata maps uniquely through the existing `VERIFY_TOKEN_BY_STAGE` reverse mapping (`prd→forge-1-prd`, `tech→forge-2-tech`, `specs→forge-3-specs`, `backlog→forge-4-backlog`, `impl→forge-5-loop`, `epic→forge-0-epic`). Missing or ambiguous inference exits 2 with an actionable instruction to pass `--served-stage` (REQ-ROUTE-01..03).
+- Direct branch calls accept explicit `--served-stage` and/or serialized `--verify-mode` metadata. `--verify-mode` maps uniquely (`prd→forge-1-prd`, `tech→forge-2-tech`, `specs→forge-3-specs`, `backlog→forge-4-backlog`, `impl→forge-5-loop`, `epic→forge-0-epic`). If both inputs are present, they must map to the same production stage; disagreement exits 2. Otherwise explicit `--served-stage` takes precedence, then the unique mode mapping. Missing metadata exits 2 with an actionable instruction to pass one of these flags (REQ-ROUTE-01..03).
+- Direct `forge-verify` obtains `verify_mode` from its explicit mode argument or pipeline-state auto-detection. Direct `forge-fix` obtains it from the selected findings filename/header before invoking `stage-exit`; it never guesses from conversational context. Nested callers pass the served stage they already own.
 - Epic verification remains epic-scoped; it never resolves or writes a member `.pipeline-state.json` (REQ-SEC-01).
 - `--verify-capability interactive` means the caller has both a question mechanism and a dispatchable clean-room verifier; `manual` means either capability is absent. The skill determines this from the actual tool surface before invoking the script—never from `--host` alone (REQ-EXIT-07).
 
@@ -249,7 +252,9 @@ state-verify --feature F --stage <verify-capable production stage>
   [--verified-stage-version N] [--epic E] [--specs-dir D] [--json]
 ```
 
-The writer maps the production stage through `VERIFY_TOKEN_BY_STAGE`, resolves with `_load_state_for_write(...)`, mutates only that verify entry, refreshes `updatedAt`, and persists with `_commit_state(...)` (REQ-STATE-03).
+For feature stages, the writer maps the production stage through `VERIFY_TOKEN_BY_STAGE`, resolves with `_load_state_for_write(...)`, mutates only that verify entry, refreshes `updatedAt`, and persists with `_commit_state(...)` (REQ-STATE-03). `forge-0-epic` is an explicit branch before that map: `feature` is the epic name, `epic` must be absent or equal to it, the writer strictly resolves `{specsDir}/{feature}/epic-manifest.json`, and atomically mutates only `stages.forge-verify-epic` in the sibling `.epic-state.json`. It never invokes the member-feature writer. Unsafe names, a missing/mismatched manifest, or ambiguous/conflicting epic inputs fail before mutation. The epic path supports `auto-verify-pending`, `passed`, `findings-reported`, `findings-applied`, and `skipped` with the same metadata validation and atomic-failure guarantees as feature state.
+
+For `findings-applied`, the writer records `fixedAt` but deletes any existing `verifiedStageVersion` and rejects a supplied `--verified-stage-version`. This deliberately leaves verification freshness unresolved until a subsequent `passed` write records the current production version; interruption between fix and re-verify therefore cannot advance the pipeline.
 
 `stage_exit()` computes the clean-tree/auto-fix directives first, then, immediately before returning a payload with `runInStageVerify: true`, calls the same internal writer with `auto-verify-pending`. The pending write is idempotent for the same `scheduledStageVersion`: repeated stage-exit calls do not rewrite timestamps or churn bytes (REQ-REL-01). A newer production version creates a new schedule timestamp/version. Terminal writes remove `scheduledAt`/`scheduledStageVersion`, set the existing verified/fixed metadata as applicable, and replace the pending status. Dispatch failure or non-adherence performs no terminal write, so debt remains visible (REQ-DEBT-03/04).
 
@@ -273,7 +278,7 @@ Do not add a restrictive schema pattern to legacy `commitHash` fields and do not
 
 ### 3.9 Recursive duplicate-key diagnostics (REQ-CONFIG-01..04, REQ-PERF-02)
 
-Add `scripts/forge-json.py` with an importable stdlib API:
+Add `scripts/forge_json.py` with an importable stdlib API:
 
 ```python
 def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
@@ -283,7 +288,7 @@ def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
 
 It uses `json.loads(..., object_pairs_hook=...)`, records duplicates at every object nesting level, and assigns each repeated key normally so the last value wins. Callers retain their current malformed/missing-file policy. A shared warning formatter writes one warning per duplicate key/source to stderr, preserving JSON stdout. `forge-session.py::_load_config(config_path: Path) -> dict`, effective config, stage exit, navigator/status consumers, and `forge-bootstrap.py` use this parser. Duplicate detection is general and includes nested objects such as `loopRunner` and `autoVerifyStages`; it is not specialized to `autoVerify` (REQ-CONFIG-04).
 
-`scripts/build-adapters.py` adds `forge-json.py` to `RUNTIME_HELPERS` so imports resolve from every emitted `scripts/` directory.
+`scripts/build-adapters.py` adds `forge_json.py` to `RUNTIME_HELPERS` so ordinary imports resolve from every emitted `scripts/` directory.
 
 ### 3.10 Canonical scripted exit and explicit guard (REQ-EXIT-03..07, REQ-GUARD-01..03)
 
@@ -326,7 +331,7 @@ New optional fields:
 | `scheduledAt` | ISO-8601 string/null | When automatic verification became owed |
 | `scheduledStageVersion` | integer/null | Production artifact version owed verification |
 
-Existing `findingsFile`, `findingsCount`, `verifiedAt`, `fixedAt`, `commitHash`, and `verifiedStageVersion` remain unchanged. Scheduling metadata is cleared by terminal result writes.
+Existing `findingsFile`, `findingsCount`, `verifiedAt`, `fixedAt`, `commitHash`, and `verifiedStageVersion` remain schema-compatible. Transition semantics are tightened: a `findings-applied` write clears `verifiedStageVersion`, and only a subsequent passing verification restores the current version. Scheduling metadata is cleared by terminal result writes.
 
 ### 4.2 Exit request/result model (REQ-OBS-01, REQ-REL-01)
 
@@ -337,6 +342,7 @@ The CLI remains the serialized request contract. The JSON result preserves exist
   "directives": {
     "stage": "forge-verify",
     "servedStage": "forge-2-tech",
+    "verifyMode": "tech",
     "outcome": "findings",
     "owner": "direct",
     "terminalOwnedBy": "self",
@@ -364,6 +370,7 @@ forge-session.py stage-exit
   --feature FEATURE
   --stage {forge-0-epic,...,forge-6-docs,forge-verify,forge-fix}
   [--served-stage {forge-0-epic,...,forge-6-docs}]
+  [--verify-mode {epic,prd,tech,specs,backlog,impl}]
   [--outcome <validated per-stage value>]
   [--owner {direct,nested}]
   [--verify-capability {interactive,manual}]
@@ -379,7 +386,7 @@ Exit codes remain 0 success / 2 usage-I/O error. Stages 0–4 keep read-tolerant
 
 ### 5.2 `state-verify` command (REQ-DEBT-01..04, REQ-STATE-03)
 
-The exact command and function signature are specified in §3.7. Terminal statuses require their applicable metadata: `passed`/`findings-reported` require `--verified-stage-version`; findings status requires non-negative `--findings-count`; `skipped` records no verified version; `findings-applied` records the current stage version and `fixedAt`. Contradictory combinations fail before mutation.
+The exact command and function signature are specified in §3.7. Terminal statuses require their applicable metadata: `passed`/`findings-reported` require `--verified-stage-version`; findings status requires non-negative `--findings-count`; `skipped` records no verified version; `findings-applied` records `fixedAt`, requires no verified version, and clears any prior `verifiedStageVersion` so re-verification remains durably outstanding. Contradictory combinations fail before mutation. For `--stage forge-0-epic`, `--feature` names the epic and the command writes only the epic root's `.epic-state.json`; all other stages retain strict feature-state resolution.
 
 ### 5.3 Duplicate-aware JSON helper (REQ-CONFIG-01..04)
 
@@ -401,6 +408,7 @@ This repository has no Python package graph; integrations are executable scripts
    - `_resolve_feature_dir_for_write(specs_dir: Path, feature: str, epic: str | None) -> Path`: strict mutation path.
    - `_load_state_for_write(...) -> tuple[Path, dict]`, `_commit_state(state_path: Path, state: dict) -> dict`: targeted atomic state-write path.
    - `cmd_state_complete(...) -> dict`: two-commit completion/provenance writer; gains full-hash input validation only.
+   - `cmd_state_verify(...) -> dict`: validates verification transitions, writes feature verify entries through the existing strict writer, and branches explicitly to atomic epic-root `.epic-state.json` writes for `forge-0-epic`.
    - `_host_command(...)`: preserved command translation surface.
    - `_next_steps_block(primary_command: str, host: str, reconcile: dict | None = None, deferred_command: str | None = None) -> str`: extended rendering surface that fences verification while production advancement is deferred.
 
@@ -412,7 +420,7 @@ This repository has no Python package graph; integrations are executable scripts
    - Source of truth for `verifyEntry`; receives additive status/fields only.
 
 4. **`scripts/build-adapters.py`**
-   - `RUNTIME_HELPERS` copies `forge-session.py`, `epic-manifest.py`, and new `forge-json.py` to every adapter.
+   - `RUNTIME_HELPERS` copies `forge-session.py`, `epic-manifest.py`, and new `forge_json.py` to every adapter.
    - Existing Claude/Pi/generic host substitutions remain the build-time translation layer.
 
 5. **Canonical skills and references**
@@ -424,9 +432,9 @@ This repository has no Python package graph; integrations are executable scripts
 - All nine covered direct skills call `forge-session.py stage-exit`.
 - Stage authoring and navigator auto-verify paths call branch skills with `--owner nested`.
 - Every scripted stage-exit caller passes `--verify-capability interactive` only when both `AskUserQuestion` and clean-room `forge-verifier` dispatch are available; otherwise it passes `manual`.
-- `forge-verify` and `forge-fix` call `state-verify` for result transitions.
+- `forge-verify` and `forge-fix` call `state-verify` for result transitions; direct calls serialize their mode as `--verify-mode`, while nested calls carry their owning `--served-stage`.
 - Navigator/status rendering consumes the new `auto-pending` label.
-- `forge-bootstrap.py` and all `forge-session.py` config consumers import `forge-json.py`.
+- `forge-bootstrap.py` and all `forge-session.py` config consumers import `forge_json.py`.
 - Tests and compliance eval execute the real CLI via subprocess; no production code imports test helpers.
 
 ### 6.3 Data flow (REQ-DEBT-01..05, REQ-ROUTE-04/05)
@@ -439,8 +447,9 @@ authoring stage commits artifact/state
   -> outer skill dispatches nested forge-verify
   -> forge-verify writes passed/findings through state-verify
   -> findings optionally invoke nested forge-fix
-  -> forge-fix writes findings-applied
-  -> outer caller mandates nested re-verify
+  -> forge-fix writes findings-applied and clears verifiedStageVersion
+  -> interruption still reads stale/unresolved
+  -> outer caller mandates nested re-verify and only passed records the current version
   -> outer caller alone prints one terminal NEXT-STEPS block
 ```
 
@@ -457,7 +466,7 @@ A direct verify/fix begins at the branch skill, passes `--owner direct`, and tha
 
 ### 7.1 Usage and routing failures (REQ-ROUTE-03, REQ-REL-02, REQ-SEC-01)
 
-Unsafe names, ambiguous strict resolution, unsupported outcomes, missing direct-branch ownership, and absent/ambiguous served-stage inference raise `UsageError` and exit 2 with an actionable `Error:` line. No NEXT-STEPS block is emitted on an invalid request because a guessed command would violate fail-closed routing.
+Unsafe names, ambiguous strict resolution, unsupported outcomes, missing direct-branch ownership, absent inference metadata, conflicting `--served-stage`/`--verify-mode`, and invalid epic-state targets raise `UsageError` and exit 2 with an actionable `Error:` line. No NEXT-STEPS block is emitted on an invalid request because a guessed command would violate fail-closed routing.
 
 Existing stages 0–4 continue to degrade unreadable state to their fixed successor. Epic member unreadability uses only the documented `forge-1-prd` fallback with a warning directive (REQ-PROD-06).
 
@@ -481,9 +490,10 @@ Extend `tests/test_stage_exit.py` to cover:
 
 - all nine accepted stage identifiers;
 - every per-stage outcome and every invalid stage/outcome combination;
-- explicit served stage, unique inference, missing/ambiguous fail-closed cases;
+- explicit served stage, every `--verify-mode` mapping, matching dual inputs, conflicting inputs, and missing-metadata fail-closed cases;
+- direct verify mode from explicit/auto-detected pipeline mode and direct fix mode parsed from the selected findings report;
 - direct ownership emits one sentinel; nested ownership emits none;
-- verify → fix → re-verify success and recovery routing;
+- verify → fix → re-verify success and recovery routing, including interruption after `findings-applied` proving freshness remains unresolved;
 - loop complete/partial/blocked/needs-human/deferred routing;
 - docs standalone/actionable/blocked/complete epic routing;
 - epic edit member at every production stage plus unreadable fallback;
@@ -497,7 +507,7 @@ Extend `tests/test_stage_exit.py` to cover:
 ### 8.2 State/schema/provenance tests (REQ-DEBT-01..06, REQ-STATE-01..04)
 
 - `tests/test_auto_verify.py`: distinct `auto-pending` classification in `verify_state`, `pending_verify`, navigator rows, status rendering, and stage exit.
-- `tests/test_state_verbs.py`: `state-verify` legal/illegal transitions, idempotent same-version scheduling, atomic failure behavior, epic disambiguation, and result replacement.
+- `tests/test_state_verbs.py`: `state-verify` legal/illegal transitions, idempotent same-version scheduling, atomic failure behavior, feature/epic disambiguation, direct `.epic-state.json` pass/findings/applied/skipped writes, wrong-file non-mutation, result replacement, and `findings-applied` clearing `verifiedStageVersion` until re-verification passes.
 - `tests/test_state_schema_conformance.py`: every writer sequence validates; legacy files without new status load; short legacy hashes load.
 - hash tests: 40-hex new writes pass; short/non-hex new writes fail without mutation.
 - `tests/test_stage_constants_parity.py`: schema/session/manifest verify vocabularies remain aligned.
@@ -508,7 +518,7 @@ Extend `tests/test_stage_exit.py` to cover:
 
 ### 8.4 Canon, adapter, and cap guards (REQ-GUARD-01..03, REQ-COMPAT-01/02)
 
-`tests/test_stage_exit_protocol.py` explicitly enumerates the nine required skills and rejects missing/duplicate terminal contracts. `tests/test_build_adapters.py` confirms `forge-json.py` ships and all new stamp sites translate for Claude/Pi/generic. Existing adapter-neutrality, spec-purity, drift, and forge-5-loop body-cap tests remain hard gates.
+`tests/test_stage_exit_protocol.py` explicitly enumerates the nine required skills and rejects missing/duplicate terminal contracts. `tests/test_build_adapters.py` confirms `forge_json.py` ships and all new stamp sites translate for Claude/Pi/generic. Existing adapter-neutrality, spec-purity, drift, and forge-5-loop body-cap tests remain hard gates.
 
 ### 8.5 Compliance evaluation (REQ-EVAL-01..03)
 
@@ -541,7 +551,7 @@ None added. Runtime remains Python 3.10+ standard library. Existing pinned YAML 
 
 - `scripts/forge-session.py`: CLI, routing, state/config integration.
 - `scripts/epic-manifest.py`: live epic status and verify vocabulary parity.
-- `scripts/forge-json.py`: shared duplicate-aware parsing.
+- `scripts/forge_json.py`: shared duplicate-aware parsing.
 - `references/pipeline-state-schema.json`: additive state contract.
 - `scripts/build-adapters.py`: deterministic distribution and host translation.
 - Canonical skill/reference files named in §2 and tests named in §8.
@@ -554,7 +564,7 @@ None. Interview decisions are closed:
 
 - extend `forge-session.py` rather than extract exit routing;
 - use typed explicit flags and per-stage outcome enums;
-- use one unified `state-verify` writer;
+- use one unified `state-verify` command with explicit feature-state and epic-state write branches;
 - encode direct/nested ownership explicitly;
 - derive epic/docs progress from live state;
 - preserve tolerant stages 0–4 while new branch paths fail closed;

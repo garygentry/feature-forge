@@ -26,9 +26,18 @@
         "forge-1-prd": 2
       },
       "commitHash": "5e4dc021c5b7d9dff588044a065e5ee0eb7368ea"
+    },
+    "forge-verify-tech": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-tech-2026-07-30.md",
+      "findingsCount": 4,
+      "verifiedAt": "2026-07-30T04:30:28Z",
+      "verifiedStageVersion": 2,
+      "fixedAt": "2026-07-30T04:35:38Z",
+      "commitHash": null
     }
   },
   "currentStage": "forge-2-tech",
-  "updatedAt": "2026-07-30T04:24:44Z",
+  "updatedAt": "2026-07-30T04:35:38Z",
   "branch": "forge/stage-exit-coverage"
 }
