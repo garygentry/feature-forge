@@ -1,0 +1,824 @@
+{
+  "project": "feature-forge — stage-exit-coverage",
+  "description": "Expand feature-forge's deterministic stage-exit contract from stages 0–4 to all nine pipeline-advancing skills (forge-0-epic through forge-6-docs plus direct forge-verify and forge-fix), add durable auto-verify debt, capability-aware verify-first routing, recursive duplicate-key config diagnostics, full-hash provenance, an explicit nine-skill coverage guard, and a separate verify → fix → re-verify compliance fixture. Implementation order follows specs/stage-exit-coverage/01-architecture-layout.md §5.",
+  "items": [
+    {
+      "id": "001",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add shared exit/verify constants and additive pipeline-state schema fields",
+      "description": "Land the shared vocabulary every later item imports. Follow 00-core-definitions.md §2 and §6 EXACTLY — copy the literals verbatim, do not abbreviate.\n\n1. In `scripts/forge-session.py`, add the `Literal` aliases (`ProductionStage`, `ExitStage`, `VerifyMode`, `ExitOwner`, `VerifyCapability`, `VerifyStateLabel`, `VerifyStatus`, `VerifyGate`, `LoopOutcome`, `DocsOutcome`, `VerifyOutcome`, `FixOutcome`) and the `Final` constants `EXIT_STAGES` (nine ids), `EXIT_OUTCOMES`, `VERIFY_MODE_TO_STAGE`, `NEXT_STEPS_SENTINEL`, `FULL_GIT_HASH_RE`. Place them beside the existing constants block. Leave `PRODUCTION_STAGES` (six stages) unchanged.\n2. Add `auto-verify-pending` to `KNOWN_VERIFY_STATUSES` in `scripts/forge-session.py` AND in `scripts/epic-manifest.py`; the two must stay byte-identical. Do NOT change `_VERIFY_RESOLVED` — pending debt is not resolved.\n3. In `references/pipeline-state-schema.json#/definitions/verifyEntry`: add `auto-verify-pending` to `status.enum`; add nullable ISO-8601 string `scheduledAt`; add nullable integer `scheduledStageVersion` with `minimum: 1`. Do NOT add `additionalProperties: false` and do NOT add any pattern/length constraint to `commitHash` (legacy short hashes must keep loading).\n4. Update `tests/test_stage_constants_parity.py` to expect the six statuses from 00 §2, extracting both script constants and comparing them against the schema enum.\n5. `tests/test_state_schema_conformance.py` pins `PRE_R4_SCHEMA_CONTRACT_SHA256` (~line 270), which will now correctly fail. Replace it with a structural assertion proving ONLY the intended status enum value and the two scheduling fields changed — compare parsed schema objects, do not blindly re-pin a digest.\n6. Run `python3 scripts/build-adapters.py` and commit the regenerated `adapters/` tree in the same commit.\n\nAdd no routing logic and no writer here — later items own those.",
+      "acceptanceCriteria": [
+        "scripts/forge-session.py defines EXIT_STAGES with exactly the nine ids from 00-core-definitions.md §2, in that order",
+        "EXIT_OUTCOMES, VERIFY_MODE_TO_STAGE, NEXT_STEPS_SENTINEL, and FULL_GIT_HASH_RE match 00-core-definitions.md §2 verbatim",
+        "KNOWN_VERIFY_STATUSES includes auto-verify-pending and is byte-identical in scripts/forge-session.py and scripts/epic-manifest.py",
+        "references/pipeline-state-schema.json verifyEntry accepts all six statuses plus nullable scheduledAt and scheduledStageVersion, has no additionalProperties:false, and adds no commitHash pattern",
+        "A legacy state file written before this change still validates against the updated schema",
+        "tests/test_stage_constants_parity.py compares both script constants to the schema enum and has no skip gate",
+        "PRE_R4_SCHEMA_CONTRACT_SHA256 is replaced by a structural assertion that fails if any field other than the status enum and the two scheduling fields changed",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": [],
+      "notes": "Foundation item — items 002-029 all build on these literals. The schema change is purely additive: REQ-DEBT-06 requires existing state files to load unmigrated. bash scripts/validate.sh includes build-adapters.py --check as a HARD drift gate, so skipping the regeneration will fail the gate even though the code is correct.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/00-core-definitions.md",
+        "specs/stage-exit-coverage/03-verification-state.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "002",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add canonical epic manifest revision with exactly-once increment",
+      "description": "Give epics a canonical artifact revision so epic-scoped verification freshness has a version to compare against. Spec: 03-verification-state.md §2.2.\n\n1. In `references/epic-manifest-schema.json`, add top-level `revision` — `{\"type\": \"integer\", \"minimum\": 1, \"description\": \"Canonical artifact revision for epic-scoped verification freshness.\"}` — and add `revision` to the schema's `required` array.\n2. In `scripts/epic-manifest.py`: add `revision` to `_TOP_REQUIRED` and to the allowed top-level keys; validate it is an integer (explicitly NOT a bool) and >= 1.\n3. Epic creation writes `revision: 1`.\n4. `load_manifest(epic_dir)` presents a legacy manifest with no `revision` as logical `1` in the returned dict WITHOUT eagerly rewriting the file, so legacy validation and rendering keep working.\n5. Funnel every increment through `_bump_and_write`: compare the proposed manifest against the on-disk manifest ignoring only `updatedAt` and the synthesized revision; if all semantic fields match, return `[]` without writing. Otherwise validate, set `revision = current + 1`, refresh `updatedAt`, and call `atomic_write` once. Do NOT duplicate the increment inside individual mutators.\n6. Update `tests/fixtures/valid-epic/auth-overhaul/epic-manifest.json` and `tests/fixtures/status-derivation/lifecycle/epic-manifest.json` to carry `revision: 1`. Keep committed fixtures in the current format; test legacy compatibility by copying a fixture and removing the field locally.\n7. Extend `tests/test_epic_manifest.py` per 07 §4.4 rows 1-6.\n8. Run `python3 scripts/build-adapters.py` and commit the regenerated adapters/.",
+      "acceptanceCriteria": [
+        "references/epic-manifest-schema.json requires an integer revision with minimum 1",
+        "scripts/epic-manifest.py rejects a boolean or a value below 1 for revision",
+        "A newly created manifest has revision 1",
+        "A copied fixture with revision removed loads as logical revision 1 without its bytes being rewritten, and its first semantic mutation writes revision 2",
+        "Every mutator path (add-feature, remove-feature, reorder, set-dep, set-status, edit-mode) increments revision exactly once per successful mutation",
+        "A validation failure, an I/O failure, and a semantic no-op each leave both revision and file bytes unchanged",
+        "tests/fixtures/valid-epic/auth-overhaul/epic-manifest.json and tests/fixtures/status-derivation/lifecycle/epic-manifest.json carry revision 1",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["001"],
+      "notes": "Epic scheduledStageVersion and verifiedStageVersion carry THIS revision, never a member's production-stage version (03 §2.2). The semantic no-op comparison in _bump_and_write is what makes 'edit that changes nothing' leave bytes untouched — a test asserts byte equality, so do not refresh updatedAt on a no-op.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/03-verification-state.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "003",
+      "type": "feature",
+      "priority": 1,
+      "title": "Mirror the duplicate-aware JSON loader into both config-reading scripts",
+      "description": "Add recursive duplicate-key diagnostics for `forge.config.json`. Spec: 05-config-and-distribution.md §2-§3 and 01-architecture-layout.md §3.4.\n\nCRITICAL — do NOT create `scripts/forge_json.py` or any new module. The flat scripts share no import module by standing repository invariant. `RUNTIME_HELPERS` in `scripts/build-adapters.py` stays at exactly six entries and no new file appears under any emitted `scripts/`.\n\n1. Copy the `load_json_with_duplicates(path) -> tuple[object, list[str]]` and `warn_duplicate_keys(path, duplicate_keys) -> None` pair verbatim from 05 §2.1 into `scripts/forge-session.py` at module scope immediately above `_load_config`, and into `scripts/forge-bootstrap.py` immediately above `commit(...)`. No new imports are needed — `json`, `sys`, and `Path` are already imported in both.\n2. Precede each copy with EXACTLY ONE `#: mirrors ``load_json_with_duplicates``/``warn_duplicate_keys`` in <other file>` comment. The two comments differ by design (each names the other file).\n3. The mirrored region is the two `def` blocks only — no module docstring, no `from __future__` line, no imports. Neither copy may reference `UsageError` or any host-script symbol; error translation stays in the caller.\n4. Rewrite `_load_config` in `forge-session.py` exactly as 05 §3.1 shows: catch `(OSError, json.JSONDecodeError)` and return `{}`, else warn and return the value if it is a dict.\n5. In `forge-bootstrap.py::commit`, replace only the direct `json.loads((target / \"forge.config.json\").read_text(...))` block with the 05 §3.2 version, keeping the `UsageError` exit-2 policy and adding the object-root check.\n6. Add `tests/test_json_loader_parity.py` per 07 §5.1: extract both function source blocks from both files by indentation, assert extraction found both functions in both files first, apply `textwrap.dedent` to the WHOLE block (never per-line), strip trailing whitespace, assert equality, print both bodies on failure. Assert the `#: mirrors` comment separately and compare only from the `def` line onward. No skip gate.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "No file named scripts/forge_json.py exists and no new file appears under scripts/ or any adapters/*/scripts/",
+        "RUNTIME_HELPERS in scripts/build-adapters.py still has exactly six entries",
+        "scripts/forge-session.py and scripts/forge-bootstrap.py each contain one copy of load_json_with_duplicates and warn_duplicate_keys, each preceded by exactly one '#: mirrors' comment naming the other file",
+        "Neither mirrored copy references UsageError or any other host-script symbol",
+        "_load_config returns {} for missing, unreadable, malformed, scalar-root, and array-root config, and warns then returns the dict otherwise",
+        "forge-bootstrap.py commit raises UsageError (exit 2) for malformed, unreadable, or non-object config and warns then uses the last commitPrefix otherwise",
+        "A config with a duplicate top-level key produces the exact stderr line 'Warning: duplicate JSON key \"<key>\" in <path>; using the last value.' and the last value is effective",
+        "tests/test_json_loader_parity.py fails when either copy is edited independently, has no skip gate, and does not import the hyphenated scripts by name",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["001"],
+      "notes": "A shared module was specified, then DELIBERATELY DROPPED in commit f8f01c9. If you find yourself creating scripts/forge_json.py, stop and re-read 01-architecture-layout.md §3.4 and 05-config-and-distribution.md §2.1 — the mirrored-copies-plus-drift-guard design is the decision, following the existing PRODUCTION_STAGES / KNOWN_VERIFY_STATUSES / AGENT_TARGETS precedent. tests/fixtures/minimal-canon/scripts/*.py are stub files, not real copies, so they need no content change.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/05-config-and-distribution.md",
+        "specs/stage-exit-coverage/01-architecture-layout.md",
+        "specs/stage-exit-coverage/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "004",
+      "type": "test",
+      "priority": 1,
+      "title": "Cover recursive duplicate-key diagnostics across both copies and both CLIs",
+      "description": "Prove duplicate detection is general JSON-object behavior, not an `autoVerify` special case (REQ-CONFIG-04). Spec: 05 §8.1 and 07 §5.\n\n1. In `tests/test_effective_config.py`, load the real mirrored functions from BOTH `scripts/forge-session.py` and `scripts/forge-bootstrap.py` via `importlib.util.spec_from_file_location` (both filenames are hyphenated, so neither is importable by name) and PARAMETRIZE the matrix over both copies, so a behavioral divergence fails here as well as structurally in the parity guard. Do not reproduce the object hook in test code.\n2. Cover every row of 07 §5.1: no duplicate; same key twice at root; same key three times (two warnings, final value wins); nested object; object inside an array; the same key once in two separate objects (no warning); nested plus root duplicate in decoder-hook order; a Unicode/control-character key rendered safely by `json.dumps`; scalar and array roots still finding nested duplicates; malformed and unreadable input preserving `json.JSONDecodeError` / `OSError`.\n3. Add a negative control proving the test fails if first-key-wins or duplicate deduplication were substituted.\n4. CLI matrix via real subprocesses: `effective-config --json` and one other `_load_config` consumer must warn on top-level and nested (`loopRunner`, `autoVerifyStages`) duplicates while stdout stays independently parseable with `json.loads` and the exit stays 0.\n5. In `tests/test_forge_bootstrap.py`, run the real `forge-bootstrap.py commit` with a duplicate `commitPrefix`: it warns, succeeds, and uses the last prefix; malformed/unreadable/non-object config remains exit 2 with an `Error:` line and no false JSON stdout.\n6. In `tests/test_build_adapters.py`, assert `RUNTIME_HELPERS` still has exactly six entries, no new file appears under `scripts/` for any of the six `AGENT_TARGETS`, and each emitted consumer carries the mirrored loader byte-identically to canon (including Pi, since the loader contains no slash-command string).\n7. Assert warning-only commands leave config bytes unchanged and never contaminate stdout.",
+      "acceptanceCriteria": [
+        "The loader matrix is parametrized over the copies in both scripts/forge-session.py and scripts/forge-bootstrap.py and calls the real in-file functions",
+        "Every row of 07-testing-strategy.md §5.1 has a named test, including nested objects, objects inside arrays, three occurrences, and Unicode keys",
+        "A negative control proves the matrix fails under first-key-wins or duplicate deduplication",
+        "effective-config --json with duplicate keys exits 0, stdout parses with json.loads, and the warning appears only on stderr",
+        "Nested duplicates in loopRunner and autoVerifyStages are detected, proving detection is not specialized to autoVerify",
+        "forge-bootstrap.py commit with a duplicate commitPrefix warns, succeeds, and uses the last prefix",
+        "tests/test_build_adapters.py asserts RUNTIME_HELPERS has six entries, no new file under any adapters/*/scripts/, and byte-identical mirrored loaders in both emitted consumers for all six targets",
+        "Config file bytes are captured before and after each warning-only command and are unchanged",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["003"],
+      "notes": "This item is test-only — it must not change scripts/. If a row fails, fix the loader in item 003's files and re-run the parity guard. Do not widen scope: state, schema, transcript, and --answers JSON keep their current parsers and are NOT required to use the duplicate-aware loader.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/05-config-and-distribution.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "005",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add state-verify writer with feature-target result mode",
+      "description": "Add the eighth `state-*` verb so verify results stop being model-authored JSON. Spec: 03-verification-state.md §3.1-§3.3.\n\n1. Add `cmd_state_verify(feature, stage, specs_dir, epic, status=None, findings_file=None, findings_count=None, verified_stage_version=None, commit_hash=None) -> dict` to `scripts/forge-session.py`, beside the other `cmd_state_*` handlers so it reuses the strict writer machinery.\n2. Register the argparse surface from 03 §3.1: `--stage` choices are `forge-0-epic` through `forge-5-loop` ONLY (exclude `forge-6-docs`, which has no verification token); `--status`, `--findings-file`, `--findings-count`, `--verified-stage-version`, `--commit-hash`, `--epic`, `--specs-dir`, `--json`. Dispatch through the existing `_emit` convention and the existing `UsageError`/`OSError` exit-2 handler in `main()`.\n3. This item implements FEATURE targets only: map `stage` through the existing `VERIFY_TOKEN_BY_STAGE`, resolve with `_load_state_for_write(...)`, mutate key `forge-verify-{token}`, refresh top-level `updatedAt`, persist with `_commit_state(...)`. Leave the `forge-0-epic` branch to item 006 — reject it with a clear `UsageError` for now.\n4. Enforce mode exclusivity: result mode has `status` set and `commit_hash` None; reject neither-mode and mixed-mode before any write. Commit-2 mode lands in item 007.\n5. Implement the full result matrix from 03 §3.3 for `auto-verify-pending`, `passed`, `findings-reported`, `findings-applied`, and `skipped`, including: terminal writes DELETE (not null) `scheduledAt` and `scheduledStageVersion`; `findings-applied` requires a prior report, records `fixedAt`, rejects `--verified-stage-version`, and DELETES any existing `verifiedStageVersion`; initial terminal writes set `commitHash: null`.\n6. Add `state-verify` to `tests/test_state_verbs.py::_VERB_INVOCATIONS` and `tests/test_state_schema_conformance.py::VERB_INVOCATIONS`, and change the `len(registered) == 7` assertion to 8.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "python3 scripts/forge-session.py state-verify is registered with the exact flags from 03-verification-state.md §3.1 and rejects --stage forge-6-docs",
+        "Every legal feature-target transition in the 03 §3.3 matrix writes the specified fields and mutates only the selected verify entry plus top-level updatedAt",
+        "Terminal result writes remove scheduledAt and scheduledStageVersion rather than setting them to null",
+        "findings-applied requires an existing findings-reported or findings-applied entry, sets fixedAt, rejects --verified-stage-version, and deletes any prior verifiedStageVersion",
+        "passed and findings-reported require a current --verified-stage-version and reject a stale, zero, boolean, or negative value",
+        "Neither-mode and mixed result/commit-hash mode both exit 2 with an Error: line and leave the state file byte-identical",
+        "Unrelated stage entries and unknown top-level state fields survive every write",
+        "test_state_schema_conformance.py expects eight state verbs and validates state after each transition in the sequences schedule→passed and schedule→findings→applied",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["001"],
+      "notes": "findings-applied deliberately leaves freshness UNRESOLVED (03 §3.3): clearing verifiedStageVersion is what makes an interruption between fix and re-verify unable to advance the pipeline. Do not 'helpfully' preserve it. Existing anchors: tests/test_state_verbs.py:1427 _VERB_INVOCATIONS, tests/test_state_schema_conformance.py:100 asserts seven verbs.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/03-verification-state.md",
+        "specs/stage-exit-coverage/00-core-definitions.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "006",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add the epic-target branch of state-verify writing .epic-state.json",
+      "description": "Let `state-verify --stage forge-0-epic` write epic-scoped verification state without ever touching a member's `.pipeline-state.json`. Spec: 03-verification-state.md §3.2 step 2 and §2.1.\n\n1. In `cmd_state_verify`, branch on `stage == \"forge-0-epic\"` BEFORE the `VERIFY_TOKEN_BY_STAGE` lookup. In this branch `feature` names the epic and `epic` must be `None` or exactly equal to `feature`.\n2. Strictly resolve `{specsDir}/{feature}`, require its `epic-manifest.json`, require the manifest's own `epic` value to equal `feature`, and read its canonical revision (item 002's `load_manifest`, which presents a legacy missing revision as 1).\n3. Read or lazily create the sibling `{specsDir}/{feature}/.epic-state.json`, requiring a JSON object whose existing `epic` is absent or equal to `feature` and whose `stages` is absent or an object. The minimal written shape is in 03 §2.1: `epic`, `updatedAt`, and `stages.forge-verify-epic`.\n4. Mutate only `stages.forge-verify-epic` plus top-level `updatedAt`, using the same atomic `_write_state` mechanism. Never call the member-feature writer, and never fall back from an epic target to a feature state or vice versa.\n5. The epic path supports the same statuses and the same metadata validation as feature state, with `current` being the manifest revision instead of a production-stage version.\n6. Fail with `UsageError` before mutation on: unsafe name, containment escape, missing or identity-mismatched manifest, corrupt or non-object state, malformed `stages`, and conflicting `--feature`/`--epic`.\n7. Add the 07 §4.3 epic-root cases to `tests/test_state_verbs.py`.\n8. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "state-verify --stage forge-0-epic writes only {specsDir}/{epic}/.epic-state.json and never creates or changes any member .pipeline-state.json",
+        "A newly created .epic-state.json matches the minimal shape in 03-verification-state.md §2.1",
+        "Epic scheduledStageVersion and verifiedStageVersion carry the manifest revision, never a member stage version",
+        "A mismatched --feature/--epic pair, a missing manifest, a manifest whose epic value differs from --feature, a corrupt epic state, and a non-object stages value each exit 2 before any mutation",
+        "An epic write leaves every member state file byte-identical",
+        "pass, findings-reported, findings-applied, and skipped all work against the epic target with the same metadata validation as feature targets",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["002", "005"],
+      "notes": "references/epic-manifest-schema.json is NOT the schema for .epic-state.json — its current minimal contract is documented in skills/forge-verify/references/findings-template.md and must stay additive (03 §1 warning). REQ-SEC-01: epic verification is epic-scoped and must never resolve a member directory.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/03-verification-state.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "007",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add commit-2 provenance mode, full-hash validation, and the single-writer guard",
+      "description": "Complete the two-commit provenance protocol for verification state and tighten hash validation on new writes. Spec: 03-verification-state.md §3.4 and §6.\n\n1. Add commit-2 mode to `cmd_state_verify`: only `commit_hash` plus identity/path flags are present, every result field is `None`. It requires an existing selected verify entry (feature or epic), validates with `FULL_GIT_HASH_RE.fullmatch(commit_hash)` — exactly 40 hex characters, preserving caller case — and on success changes ONLY that entry's `commitHash` and top-level `updatedAt` in one atomic write. Status, findings metadata, scheduling metadata, timestamps, and versions are untouched.\n2. Add the same `FULL_GIT_HASH_RE.fullmatch` guard at the start of the existing `cmd_state_complete` commit-hash branch. Validate before loading for mutation where possible, and always before `_commit_state`/`_write_state`.\n3. Do NOT add a regex, minLength, or maxLength for `commitHash` in any schema, and do not reject, migrate, truncate, or Git-resolve a loaded short hash. Legacy short hashes must keep reading through `_read_state`, `_load_state_for_write`, manifest status readers, the navigator, and stage exit.\n4. Extend `tests/test_state_verbs.py` and `tests/test_state_schema_conformance.py` per 07 §4.5: 40-char lower/upper/mixed hex succeeds; lengths 0, 7, 39, 41 plus non-hex and whitespace fail before mutation; missing selected entry and mixed result/hash metadata fail; Commit 1 leaves `commitHash: null` and Commit 2 records the supplied hash; a loaded legacy short hash still passes read-side paths.\n5. Add the REQ-REL-04 single-writer guard test (07 §4.3): assert the writers acquire NO lock, lease, optimistic-version check, retry, or backoff — the atomic sequence is exactly sibling temp file → flush/fsync → `os.replace`, with no additional sibling file created or removed. Use `monkeypatch` only on `tempfile.mkstemp`, `os.fsync`, and `os.replace` to assert call order and that a failed replacement leaves the original byte-identical with no temp debris.\n6. Assert no code or canon path contains a `git commit --amend` provenance route.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "Commit-2 mode changes only commitHash and top-level updatedAt for both feature and epic verify entries",
+        "Commit-2 mode against a missing verify entry exits 2 without mutation",
+        "40-character lower-, upper-, and mixed-case hex hashes are accepted by both cmd_state_complete and cmd_state_verify; lengths 0, 7, 39, 41, non-hex, and whitespace fail before any mutation",
+        "No schema adds a pattern, minLength, or maxLength to commitHash, and a state file carrying a 7-character legacy hash still loads through the navigator, classifiers, and stage exit",
+        "A single-writer guard test asserts the atomic sequence is exactly temp file → flush/fsync → os.replace with no lock, lease, version check, retry, or backoff",
+        "A forced os.replace failure leaves the original state file byte-identical and leaves no sibling temp debris",
+        "No source or canon path introduces a git commit --amend provenance route",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["005", "006"],
+      "notes": "PRD REQ-REL-04 FORBIDS introducing any locking, leasing, or optimistic-versioning mechanism for state writes — atomicity protects against an interrupted write, not against concurrent writers, and multi-session concurrency is explicitly out of scope for this feature (see issue #180). The guard test in step 5 exists precisely so a future widening has to amend REQ-REL-04 first. Do not add one here even if a test seems to want it.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/03-verification-state.md",
+        "specs/stage-exit-coverage/00-core-definitions.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "008",
+      "type": "feature",
+      "priority": 1,
+      "title": "Classify auto-verify-pending distinctly in session read-side paths",
+      "description": "Make owed-but-unrun automatic verification visible everywhere it matters, and never confusable with `never` or with success. Spec: 03-verification-state.md §5.1 and §5.3.\n\n1. Update these existing functions in `scripts/forge-session.py` WITHOUT changing their signatures: `verify_state(state) -> tuple[str | None, str]`, `pending_verify(state) -> str | None`, `_verify_state_for(state, stage) -> str`, and `build_rows(specs_dir, config=None) -> list[FeatureRow]`.\n2. Order the classification rules before the generic unresolved handling: a matching `auto-verify-pending.scheduledStageVersion` returns `auto-pending`; pending with a missing or invalid version is STILL `auto-pending` and emits an actionable legacy/malformed-metadata warning rather than degrading to `never`; pending for an older revision remains `auto-pending` with a message stating the artifact has advanced.\n3. `pending_verify` returns the served production stage for `auto-pending`. `build_rows` sets `verifyPending=true`, `verifyState=\"auto-pending\"`, and a non-null `verifyCommand`, and never treats the feature as verification-complete. `_verify_state_for` applies identical labels for stage-exit routing.\n4. Keep `_VERIFY_RESOLVED` unchanged — pending debt is not resolved and is not skipped.\n5. Emit the exact human diagnostic from 03 §5.3: `<feature-or-epic>: automatic verification is still pending for <served-stage>; run <host-translated forge-verify command> to resolve it.` When the recorded scheduled revision differs from current, append both revision numbers. Never dump or reformat the full state file. JSON output carries stable `verifyState: \"auto-pending\"`, the served stage, and the retry command.\n6. Extend `tests/test_auto_verify.py`, and update `tests/test_rank_features.py` and `tests/test_doctor.py` where the new label surfaces.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "verify_state, _verify_state_for, pending_verify, and build_rows all report auto-pending for an auto-verify-pending entry and none of them report never or a resolved state",
+        "An auto-verify-pending entry with a missing or malformed scheduledStageVersion is still auto-pending and produces an actionable warning",
+        "An auto-verify-pending entry scheduled at an older revision stays auto-pending and its message states the artifact has advanced",
+        "build_rows sets verifyPending true, verifyState auto-pending, and a non-null verifyCommand",
+        "_VERIFY_RESOLVED is unchanged and auto-verify-pending is not a member of it",
+        "Navigator, rank-features, and doctor output emit the exact diagnostic sentence from 03-verification-state.md §5.3 without dumping the state file",
+        "The signatures of verify_state, pending_verify, _verify_state_for, and build_rows are unchanged",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["005"],
+      "notes": "REQ-DEBT-02 is the whole point: 'auto-verify was owed but has not run' must be distinguishable from 'verification was never scheduled', from manual pending work, and from an explicit skip. Do not fold auto-pending into never as a convenience — a dropped runInStageVerify directive is exactly what this makes visible (issue #163).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/03-verification-state.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "009",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add epic-manifest verify-status parity and epic-root freshness classification",
+      "description": "Bring `scripts/epic-manifest.py` to parity with the session classifiers and teach it to derive epic verification freshness from `.epic-state.json` versus the manifest revision. Spec: 03-verification-state.md §5.2.\n\n1. `_verify_status_warnings` must recognize `auto-verify-pending` as a KNOWN status so it stops emitting the misleading unknown-status warning.\n2. `is_complete_for_orchestration(state)` continues to return `False` for an implementation verification entry carrying this status.\n3. `derive_status(feature_dir)` treats it as in-progress, never complete.\n4. `_next_command` routes an otherwise production-complete member carrying `auto-verify-pending` to `/feature-forge:forge-verify <member>`, reserving `/feature-forge:forge-fix <member>` for `findings-reported`.\n5. `render_status(epic_dir, specs_dir)` appends a deterministic warning naming the member, the served stage, and the verify retry command when a member carries automatic debt. This is an OBLIGATION warning, not an unknown-value warning, and must appear in both the JSON `warnings` array and human status output.\n6. Implement epic-root freshness against the manifest revision from item 002: missing `.epic-state.json` is `never`; a matching pending revision is `auto-pending`; matching `passed` is `fresh`; matching `findings-reported` is `failing`; `findings-applied` with no version is `stale`; a mismatched or missing terminal version is `stale`; `skipped` is resolved under the existing compatibility rule.\n7. Add the corresponding cases to `tests/test_epic_manifest.py`, including 07 §4.4 rows 7-8: a manifest edit makes a prior epic pass stale and makes a prior pending marker visibly owed.\n8. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "_verify_status_warnings does not warn about auto-verify-pending as an unknown status",
+        "is_complete_for_orchestration returns False and derive_status reports in-progress for a member whose implementation verify entry is auto-verify-pending",
+        "_next_command routes a production-complete member with auto-verify-pending to forge-verify and one with findings-reported to forge-fix",
+        "render_status emits a deterministic obligation warning naming the member, served stage, and retry command in both JSON warnings and human output",
+        "Epic freshness classifies missing state as never, matching pending as auto-pending, matching passed as fresh, matching findings-reported as failing, and findings-applied or a version mismatch as stale",
+        "A semantic manifest edit makes a previously passing epic verification stale and a previously scheduled pending marker visibly owed",
+        "Epic verification reads .epic-state.json and the manifest revision only — no member .pipeline-state.json is read for epic verification state",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["002", "006"],
+      "notes": "scripts/epic-manifest.py stays self-contained — do NOT import scripts/forge-session.py. KNOWN_VERIFY_STATUSES must remain byte-identical between the two scripts (tests/test_stage_constants_parity.py enforces it).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/03-verification-state.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "010",
+      "type": "feature",
+      "priority": 1,
+      "title": "Expand stage_exit to nine stages with typed CLI inputs and owner semantics",
+      "description": "Widen the exit router from the stages-0–4 baseline to the full nine-skill surface. Spec: 02-stage-exit-routing.md §2-§3 and 00-core-definitions.md §3.\n\n1. Extend `stage_exit(...)` in `scripts/forge-session.py` to the exact target signature in 00 §3, keeping the existing first seven parameters positional and adding `served_stage`, `verify_mode`, `outcome`, `owner`, and `verify_capability=\"manual\"`. Do NOT create a second routing entry point.\n2. Register the CLI flags from 02 §2.2: `--served-stage`, `--verify-mode`, `--outcome`, `--owner`, `--verify-capability`. Argparse `choices` come from `EXIT_STAGES` and the shared literal domains; per-stage outcome validation happens inside `stage_exit`, because argparse cannot express a different enum per stage.\n3. Implement the deterministic validation order in 02 §3.1 exactly, so the same invalid request always reports the same FIRST error: safe names; `stage in EXIT_STAGES`; reject an outcome for stages 0–4 and require a member of `EXIT_OUTCOMES[stage]` for loop/docs/verify/fix; reject `owner` for stages 0–6 and require `direct` or `nested` for verify/fix; validate `host` and `verify_capability` independently; resolve the served stage; reject branch-only flags on production exits and `--next-feature` outside `forge-0-epic`.\n4. Add private `resolve_served_stage(served_stage, verify_mode) -> str` per 02 §3.2: both inputs must agree if both are given; explicit stage takes precedence; else the unique `VERIFY_MODE_TO_STAGE` mapping; else raise the actionable `UsageError` message quoted in the spec.\n5. Implement terminal ownership: `direct` sets `terminalOwnedBy: \"self\"` with one sentinel-terminated block; `nested` sets `terminalOwnedBy: \"outer\"`, `nextSteps: None`, `sentinel: None` while preserving routing directives.\n6. Make `_print_stage_exit(payload)` tolerate a nested payload with `nextSteps is None` without printing a terminal section.\n7. Cover 07 §3.1-§3.2 in `tests/test_stage_exit.py`. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "The CLI accepts exactly the nine EXIT_STAGES identifiers and rejects any other --stage value with exit 2",
+        "Stages 0–4 reject a supplied --outcome; forge-5-loop, forge-6-docs, forge-verify, and forge-fix require a member of their own EXIT_OUTCOMES set",
+        "Stages 0–6 reject --owner; forge-verify and forge-fix require direct or nested",
+        "resolve_served_stage accepts matching explicit-stage and mode inputs, prefers the explicit stage, maps a mode-only input via VERIFY_MODE_TO_STAGE, and exits 2 naming both flags when metadata is absent or conflicting",
+        "A direct payload contains exactly one occurrence of the sentinel and it is the final line; a nested payload has nextSteps None and sentinel None",
+        "An unknown --verify-capability exits 2 rather than silently degrading to manual",
+        "Invalid requests exit 2, begin stderr with 'Error:', emit no success JSON, and contain no sentinel",
+        "Repeated identical requests produce byte-identical directives and NEXT-STEPS output",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["001"],
+      "notes": "Stages 0–4 keep the TOLERANT _resolve_feature_dir read path after syntactic validation (REQ-COMPAT-01); the new branch, loop, docs, and explicit member-routing paths use strict resolution and fail closed. Conversational context and currentStage are never valid inference sources for the served stage (REQ-ROUTE-03). This item lands the surface only — verify-first ordering is item 011 and the outcome route tables are items 013-016.",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/stage-exit-coverage/02-stage-exit-routing.md",
+        "specs/stage-exit-coverage/00-core-definitions.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "011",
+      "type": "feature",
+      "priority": 1,
+      "title": "Make unresolved verification the primary action with capability-aware gates",
+      "description": "Stop the exit from ever fencing the downstream production stage while verification is outstanding. Spec: 02-stage-exit-routing.md §4-§5, tech-spec §3.3.\n\n1. Extend `_next_steps_block` to the 00 §5 signature: `(primary_command, host, reconcile=None, deferred_command=None, outcome_text=None) -> str`. It must start with `**Next steps**`, include `outcome_text` when supplied, fence EXACTLY `primary_command` after `_host_command` translation, render `deferred_command` only inline and unfenced as conditional prose (\"After verification passes, continue with …\"), preserve existing `epicReconcile` precedence, and end with `NEXT_STEPS_SENTINEL` as the final line with nothing after it.\n2. Implement the 02 §4 priority table: `fresh`/`skipped` → production successor, gate `none`; auto-verify effective and outstanding → nested chain, `runInStageVerify: true`; outstanding + `interactive` → gate `standard`; outstanding + `manual` → gate `manual-print` with `verifyCommand` fenced as primary.\n3. REMOVE the current `host == \"claude\"` branch. `--host` now controls ONLY command translation and fresh-session wording; `--verify-capability` alone selects the gate, so a capable Pi session gets `standard` and an incapable Claude session gets `manual-print`.\n4. Fresh-session guidance follows the primary verification action — it must never tell the user to clear and run the production successor first. `nextCommand` stays as compatibility/routing metadata and must not override `primaryCommand`.\n5. When outstanding verification and a blocking epic reconcile coexist, verification stays primary and the reconcile becomes the first deferred action, ahead of the ordinary production successor.\n6. Update the stages 0–4 snapshots in `tests/test_stage_exit.py` DELIBERATELY for this intended change (07 §3.8): each re-recorded expectation needs an assertion or comment naming verify-primary ordering or capability-aware gate selection as the reason. Broad re-recording without that justification is not acceptable.\n7. Cover the 07 §3.4 matrix across all three hosts. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "_next_steps_block matches the 00-core-definitions.md §5 signature and its final line is always exactly NEXT_STEPS_SENTINEL",
+        "While verification is unresolved, primaryCommand is the verify command and is the only fenced command; deferredCommand never appears inside a fence",
+        "A capable Pi session (--host pi --verify-capability interactive) receives verifyGate standard, and a Claude session with --verify-capability manual receives manual-print",
+        "No code path selects the gate from the host name; the host == claude branch is removed",
+        "Fresh-session wording follows the primary verification action rather than preceding a production command",
+        "With outstanding verification plus a blocking epic reconcile, verification is primary and the reconcile is the first deferred action",
+        "Every changed stages 0–4 snapshot carries an assertion or comment naming verify-primary ordering or capability-aware gate selection as the intended cause",
+        "Claude renders /clear and /feature-forge:, Pi renders /new and /skill:, and generic output stays host-neutral",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["008", "010"],
+      "notes": "This is the one item that intentionally changes stages 0–4 user-visible output (REQ-COMPAT-01 carves out exactly this correction plus the #175 epic edit fix). Expect existing test_stage_exit.py expectations to fail — that is the signal, not a regression, but each change must be justified per 07 §3.8. REQ-EXIT-06: no path may fence or recommend the deferred production command while verification remains unresolved.",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/stage-exit-coverage/02-stage-exit-routing.md",
+        "specs/stage-exit-coverage/00-core-definitions.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "012",
+      "type": "feature",
+      "priority": 1,
+      "title": "Persist auto-verify debt at the stage-exit scheduling boundary",
+      "description": "Make a configured-but-unrun in-stage verification survive a dropped directive, a crash, or compaction. Spec: 03-verification-state.md §4.1, tech-spec §3.7.\n\n1. In `stage_exit`, compute repository cleanliness and `autoFixEligible` FIRST, from a snapshot taken BEFORE any sanctioned state mutation — the pending write must not dirty its own precondition.\n2. After determining that effective configuration owes automatic verification, and IMMEDIATELY BEFORE returning a payload with `directives.runInStageVerify == true`, invoke the same internal transition `cmd_state_verify` uses with `status=\"auto-verify-pending\"`.\n3. Make scheduling idempotent by target revision: if the selected entry is already `auto-verify-pending` with `scheduledStageVersion == current`, return without calling `_commit_state`, without refreshing `updatedAt`, without replacing the file, and without changing `scheduledAt`. A newer revision writes a new `scheduledAt` and revision exactly once. A pending marker for an older revision is superseded. A terminal entry fresh for the current revision prevents scheduling. An explicit `skipped` entry stays resolved and is not auto-overwritten.\n4. Set `autoVerifyDebtRecorded: true` and `runInStageVerify: true` ONLY after the atomic write succeeds. A write failure raises `UsageError` and returns no dispatch directive, so a crash before the write cannot falsely claim the debt was recorded.\n5. For `--stage forge-0-epic`, read `.epic-state.json` and the manifest revision directly — never `_resolve_feature_dir`, never a member stage version, never the placeholder first actionable member.\n6. Also expose `autoVerifyEffective` and `invalidAutoVerifyKeys` in directives per 00 §4.\n7. Extend `tests/test_auto_verify.py` per 07 §4.1, including the interruption case: run stage-exit, deliberately perform NO later verify call, then reopen the persisted file in a separate CLI process and prove the marker is still readable.\n8. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "stage_exit writes auto-verify-pending before returning runInStageVerify true, and reports autoVerifyDebtRecorded true only after the write lands",
+        "A repeated stage-exit at the same revision is byte-idempotent, including scheduledAt and top-level updatedAt",
+        "A newer artifact revision creates exactly one new schedule; an older pending marker is superseded",
+        "A terminal entry fresh for the current revision, and an explicit skipped entry, both prevent rescheduling",
+        "An injected write failure exits 2 and emits no dispatch directive",
+        "After a stage-exit with no follow-up verify, a separate CLI process still reads the auto-verify-pending marker",
+        "The clean-tree snapshot driving autoFixEligible is taken before the pending write",
+        "forge-0-epic scheduling reads .epic-state.json and the manifest revision, and touches no member state",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["005", "010", "011"],
+      "notes": "REQ-REL-03: a crash between scheduling and dispatch must leave durable state exposing the obligation. Ordering is load-bearing — the write happens before the directive is returned, never after, so there is no window where the model is told to verify but nothing on disk records that it was owed. The resulting state-file modification is a SANCTIONED control-plane mutation, not user dirt; subsequent verify/fix commits include it.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/03-verification-state.md",
+        "specs/stage-exit-coverage/00-core-definitions.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "013",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement direct verify/fix rejoin routing tables",
+      "description": "Make a verify or fix diversion rejoin the production stage it served instead of dropping the pipeline thread (issue #176). Spec: 02-stage-exit-routing.md §6.\n\n1. Implement the `forge-verify` table (02 §6.1): `passed` → live successor after the served stage; `findings` → `/feature-forge:forge-fix FEATURE --served-stage SERVED`; `skipped` → live successor, valid only after the skip is persisted; `failed` → `/feature-forge:forge-verify FEATURE --served-stage SERVED` with actionable intervention text and no advancement.\n2. Implement the `forge-fix` table (02 §6.2) for all seven outcomes: `no-findings` → re-verify while verification is still owed, otherwise live successor; `decisions` and `failed` → fix or navigator recovery naming the unresolved work, no advancement; `applied` → `/feature-forge:forge-verify FEATURE --served-stage SERVED` (re-verification is mandatory); `reverified` → live successor, allowed only after a passed state is recorded; `reverify-findings` → fix for the same served stage; `deferred` → deterministic fix/navigator resume explicitly stating findings remain unresolved.\n3. \"Live successor\" means the current production position, not a conversational assumption: for stages 0–5 the first applicable production action after the served artifact; a completed stage 6 routes to its context-appropriate completion action, never a nonexistent stage 7.\n4. Every direct outcome must set `servedStage`, `outcome`, `nextStage`, `primaryCommand`, and `terminalOwnedBy` in directives so tests and downstream tools can tell rejoin, recovery, and defer apart.\n5. Commands shown in the spec are canonical, pre-`_host_command` forms — translate at render time.\n6. Cover 07 §3.3 in `tests/test_stage_exit.py`, including the full paths findings → applied → passed and findings → applied → findings, and the case that runs a FRESH stage-exit after `findings-applied` and proves the production successor is NOT primary.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "All four forge-verify outcomes and all seven forge-fix outcomes produce the exact primary route from 02-stage-exit-routing.md §6",
+        "Every branch command carries the resolved served stage forward",
+        "fix applied routes to forge-verify and never to a production stage",
+        "decisions, failed, deferred, and reverify-findings never advance to a production stage",
+        "A fresh stage-exit taken after a findings-applied write does not make the production successor primary",
+        "Directives expose servedStage, outcome, nextStage, primaryCommand, and terminalOwnedBy on every direct branch exit",
+        "A nested chain emits no sentinel at any intermediate step and a final direct call emits exactly one",
+        "Live successor derivation uses current production position, and a completed stage 6 routes to a completion action rather than a nonexistent stage 7",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["010", "011"],
+      "notes": "REQ-ROUTE-05/06 require a terminus for EVERY outcome — there is no fall-through. no-findings must not silently assume 'absence of applicable findings equals a pass'. A direct interactive 'skip re-verify' is deferred, not reverified, because findings-applied cleared freshness (04 §5.3).",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/stage-exit-coverage/02-stage-exit-routing.md",
+        "specs/stage-exit-coverage/00-core-definitions.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "014",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement loop outcome routing for all five LoopOutcome values",
+      "description": "Give every loop result a deterministic resume or recovery action. Spec: 02-stage-exit-routing.md §7, tech-spec §3.6.\n\n1. Route `forge-5-loop` by its required `--outcome`: `complete` → verify-first implementation routing, then the live docs or epic-member handoff (docs is never primary until verification passes or is explicitly skipped); `partial` → `/feature-forge:forge-5-loop FEATURE` as the fenced primary, state remains resumable; `deferred` → the same loop resume, with text explaining the explicit deferral; `blocked` → `/feature-forge:forge FEATURE` as the deterministic diagnostic/recovery action; `needs-human` → the same navigator command, naming the human decision or recovery need.\n2. NO non-complete outcome may route to `forge-6-docs` or mark downstream readiness in any directive or rendered text.\n3. Emit outcome-specific explanatory text INSIDE the NEXT-STEPS block via `_next_steps_block(..., outcome_text=...)`, above the sentinel. Nothing is appended after the block.\n4. A missing or invalid outcome raises `UsageError` before any output.\n5. For a completed epic member, delegate to the live epic status routing rather than duplicating dependency logic here (item 015 lands the `render-status` consumption; reuse it).\n6. Cover 07 §3.5 in `tests/test_stage_exit.py`: assert the exact primary command per outcome and assert the forbidden docs-readiness claim is absent from both directives and rendered text.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "forge-5-loop requires --outcome and accepts exactly complete, partial, blocked, needs-human, and deferred",
+        "partial and deferred fence the forge-5-loop resume command",
+        "blocked and needs-human fence the navigator recovery command",
+        "No non-complete outcome routes to forge-6-docs or sets any directive implying downstream readiness",
+        "complete uses verify-first implementation routing so docs is not primary before verification passes or is explicitly skipped",
+        "Outcome-specific explanatory text is rendered inside the NEXT-STEPS block above the sentinel and nothing follows the sentinel",
+        "A missing or foreign outcome exits 2 before any output is produced",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["010", "011"],
+      "notes": "REQ-PROD-02: a non-complete loop outcome must point to a deterministic resume or recovery action and must NOT imply downstream production stages are ready. A loop runner's successful process exit is not by itself complete — final backlog state controls the outcome, and that selection logic is the skill's job in item 020.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/02-stage-exit-routing.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "015",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement docs routing from live epic status via render-status",
+      "description": "Replace the docs stage's hand-rolled terminus with scripted routing driven by live epic state. Spec: 02-stage-exit-routing.md §8, tech-spec §3.5.\n\n1. `forge-6-docs` requires `--outcome complete` or `blocked` and always uses `stage-exit`.\n2. For an epic member, consume the adjacent executable integration `python3 <bundle-root>/scripts/epic-manifest.py render-status EPIC --specs-dir SPECS_DIR --json` and read its live `nextCommand`, actionable/blocked state, and rollup. Do NOT duplicate dependency or completion derivation inside `forge-session.py`.\n3. Route: an actionable next member → that member's live command; no actionable member because remaining work is blocked → the epic dashboard `/feature-forge:forge-0-epic EPIC`; all members complete → the dashboard completion view using the same epic command; `blocked` docs outcome → navigator/epic dashboard recovery, never completion.\n4. Standalone `complete` fences `/feature-forge:forge FEATURE` as the authoritative completion action and may mention starting a new feature only as secondary unfenced text. Standalone `blocked` also routes to the navigator with recovery wording.\n5. A nonzero `render-status` exit, malformed JSON, a missing required field, a timeout, or an invalid graph is an actionable exit-2 routing failure: emit no guessed member command and no sentinel.\n6. Cover 07 §3.6 in `tests/test_stage_exit.py` by constructing REAL manifest and member state and executing the real local `render-status` — do not mock it. A narrowly injected `subprocess.run` failure may test the exceptional wrapper only after the real success and nonzero integration cases exist.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "forge-6-docs requires --outcome complete or blocked and rejects any other value with exit 2",
+        "An epic member with an actionable next member routes to that member's live nextCommand from render-status",
+        "No actionable member and all-members-complete both route to the epic dashboard command",
+        "A blocked docs outcome routes to navigator/dashboard recovery and never claims pipeline completion",
+        "Standalone complete fences /feature-forge:forge FEATURE with new-feature guidance only as secondary unfenced text",
+        "render-status nonzero exit, malformed JSON, a missing required field, and an invalid graph each exit 2 with no sentinel and no guessed member command",
+        "The docs routing tests construct real manifest and member state and execute the real render-status CLI rather than mocking it",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["010", "011"],
+      "notes": "The subprocess is local and bounded by the small manifest/state files — REQ-PERF-01 forbids adding a network call or repository-history scan. The exact RenderStatus shape is documented in 04-skill-integration.md §2.2; every key is always present, so an empty actionable list means 'nothing is actionable', never 'the check was skipped'.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/02-stage-exit-routing.md",
+        "specs/stage-exit-coverage/04-skill-integration.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "016",
+      "type": "bugfix",
+      "priority": 1,
+      "title": "Route epic edit-mode from the selected member's live production state",
+      "description": "Fix issue #175: epic edit-mode currently routes a progressed member back to `forge-1-prd` because the exit ignores the member's actual state. Spec: 02-stage-exit-routing.md §9.\n\n1. For `forge-0-epic --next-feature MEMBER`, resolve exactly that member under the selected epic, load its `.pipeline-state.json`, and call the existing `next_stage(state: dict) -> str | None`.\n2. If state resolves, route to the returned first incomplete production stage — a member with a completed PRD resumes at tech, specs, backlog, loop, or docs, and must NOT be sent back to PRD.\n3. If all production stages are complete, route to the epic dashboard rather than fabricating another member stage.\n4. If state is absent, unreadable, malformed, non-object, ambiguous, escapes containment, or cannot be associated with the selected epic, emit a NAMED warning directive and fall back ONLY to `/feature-forge:forge-1-prd MEMBER`. Do not crash stage closure and do not infer later progress. This tolerant fallback is the one documented new tolerant case.\n5. Creation mode is unchanged: a newly created member has no completed production stage, so it still routes to PRD.\n6. An explicitly unsafe member name remains a `UsageError` exit 2 — the tolerant fallback applies to unreadable or unresolvable progress AFTER identity containment, never to path traversal.\n7. Cover 07 §3.7 in `tests/test_stage_exit.py`: create an epic with one selected member at each live production position (fresh PRD, PRD complete, tech complete, specs complete, backlog complete, loop complete, all complete) and assert `next_stage` parity and the exact command. Add the negative set: missing state, corrupt JSON, non-object JSON, unreadable file, unsafe member, flat/nested collision, two-epic ambiguity, and a wrong epic back-pointer.\n8. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "A member at each of the seven live production positions routes to the command matching next_stage for that member's state",
+        "A member with a completed PRD is never routed back to forge-1-prd",
+        "A member with all production stages complete routes to the epic dashboard",
+        "Missing, corrupt, non-object, or unreadable member state emits a named warning directive and falls back only to /feature-forge:forge-1-prd MEMBER without crashing stage closure",
+        "An unsafe member name, a path escape, and a two-epic ambiguity each exit 2 rather than taking the tolerant fallback",
+        "Creation mode still routes a newly created member with no progress to forge-1-prd",
+        "No candidate state file is modified by any epic edit-mode exit",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["010", "011"],
+      "notes": "This is the #175 reproduction. REQ-PROD-06 requires degrading safely rather than fabricating progress — the fallback goes DOWN to PRD with a visible warning, never UP to a later stage that was inferred. REQ-COMPAT-01 carves out this correction as one of the two intended stages 0–4 behavior changes.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/02-stage-exit-routing.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "017",
+      "type": "refactor",
+      "priority": 1,
+      "title": "Rewrite stage-exit-protocol.md as the single nine-skill scripted contract",
+      "description": "Make `references/stage-exit-protocol.md` the sole directive contract for all nine covered direct exits, replacing the five-stage wording and the legacy standard/warm block variants. Spec: 04-skill-integration.md §3, tech-spec §3.10.\n\n1. Replace the existing standard/warm bespoke terminal blocks with ONE canonical stamp usable by every direct exit, retaining the portable `forge-root.sh` prelude and invoking `stage-exit` with `--feature`, `--stage`, `--specs-dir`, `--host`, `--verify-capability`, plus the stage-specific typed flags in the 04 §3.1 table.\n2. Document host and capability determination (04 §3.2): `--host` describes only the adapter command surface; `--verify-capability interactive` is passed ONLY when both a question mechanism equivalent to `AskUserQuestion` AND dispatchable clean-room `forge-verifier` exist. State explicitly that `host == claude` is not a capability proxy and that capable Pi is `--host pi --verify-capability interactive`.\n3. Document the directive consumption order (04 §3.3): surface `invalidAutoVerifyKeys` and `warning` first; execute the nested chain when `runInStageVerify`; handle `verifyGate == standard`; for `manual-print` do not dispatch inline; print `nextSteps` byte-for-byte only when `terminalOwnedBy == \"self\"`.\n4. Specify the Standard Verify Gate with three explicitly labeled choices, descriptions, and the recommended default (02 §5.1): Verify now (recommended); Verify now + enable auto-verify going forward; Skip for now. Advancement is allowed only after a pass or after an explicit skip is persisted.\n5. State the sentinel-last rule: a direct payload contains one occurrence of the sentinel as its final line, with no summary, sign-off, warning, command result, or acceptance text after it. A nested payload has `nextSteps is None` and prints no terminal block.\n6. Record that a clean-room dispatch returning `CLEAN_ROOM_UNAVAILABLE` or a non-answer means verification failed/not run: leave the debt unresolved and obtain a FRESH manual-capability payload rather than reusing one that promotes advancement.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "references/stage-exit-protocol.md contains exactly one canonical scripted stamp usable by all nine covered skills",
+        "The retired standard and warm bespoke terminal blocks no longer appear as an alternative advancing contract",
+        "Capability determination is documented as requiring both a question mechanism and dispatchable clean-room forge-verifier, and explicitly rejects host name as a proxy",
+        "The Standard Verify Gate is specified with three labeled choices, one-line trade-off descriptions, and a recommended default",
+        "The directive consumption order and the sentinel-last rule are both stated, including that nested payloads print no terminal block",
+        "The clean-room-unavailable recovery path requires a fresh manual-capability payload rather than reuse of an advancing one",
+        "The exact sentinel value appears once in the scripted contract",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["011", "012", "013"],
+      "notes": "This reference is the single source the coverage guard in item 024 renders and matches against verbatim, so wording precision matters more than usual — items 018-023 stamp from it. Canon in skills/, agents/, and references/ must stay vendor-neutral and spec-pure; scripts/check-spec-purity.py is a hard gate in validate.sh.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/04-skill-integration.md",
+        "specs/stage-exit-coverage/02-stage-exit-routing.md"
+      ]
+    },
+    {
+      "id": "018",
+      "type": "feature",
+      "priority": 1,
+      "title": "Convert forge-verify to owner capture, state-verify writes, and the scripted exit",
+      "description": "Give `skills/forge-verify/SKILL.md` a complete, deterministic terminus for every outcome. Spec: 04-skill-integration.md §5.1-§5.2.\n\n1. Serialize the skill's explicit or auto-detected mode as `--verify-mode`; the unique `VERIFY_MODE_TO_STAGE` mapping determines the served stage. When the caller already owns a stage, additionally pass a matching `--served-stage` — disagreement fails closed. Ambiguous mode selection still uses `AskUserQuestion` BEFORE any write. Epic mode stays rooted at `{specsDir}/{epic}/.epic-state.json`.\n2. Determine `direct` vs `nested` at entry and preserve it through re-verify. A direct verify owns exactly one terminal block; a nested verify returns its structured result to the outer caller and prints nothing terminal.\n3. Replace hand-authored verify state with `state-verify` calls for every result, followed by the two-commit sequence: the result transition writes with `commitHash: null`, Commit 1 records the report and state, then `state-verify --commit-hash <40-hex Commit-1 hash>` records provenance in Commit 2. No `--amend`.\n4. Invoke `stage-exit` exactly once for the applicable terminal result, using the 04 §5.2 mapping: clean → `passed`; findings report written → `findings`; explicit user skip/defer with the skip persisted → `skipped`; dispatch/check/write failure requiring intervention → `failed`.\n5. Encode the distinction the spec insists on: merely presenting findings is `findings`; `skipped` applies only when the user chooses to defer pipeline action AND the skip is persisted. A state-write failure is `failed`, and because authoritative state is then unknown, no success block may be printed.\n6. Add the `--verify-capability` determination from the shared protocol, and `--owner direct|nested` on every invocation.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "skills/forge-verify/SKILL.md invokes python3 \"$R/scripts/forge-session.py\" stage-exit with --stage forge-verify and an explicit --owner on every path",
+        "All four verify outcomes (passed, findings, skipped, failed) have a documented terminus and none falls through",
+        "The served stage is derived only from an explicit mode argument or authoritative pipeline state, never from conversational context or currentStage",
+        "Every verify result is written through state-verify rather than hand-authored JSON, followed by the two-commit provenance sequence with a full 40-character hash",
+        "A direct path instructs printing the script NEXT-STEPS verbatim as the absolute final output; the nested path instructs returning the structured result and printing no terminal block",
+        "skipped is used only when an explicit user deferral has been persisted, and merely presenting findings maps to findings",
+        "A state-write failure maps to failed and no success block is printed",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["005", "013", "017"],
+      "notes": "REQ-EXIT-04: in a nested auto-verify chain, terminal ownership stays with the outermost authoring stage — a nested verify emitting its own sentinel is exactly the ownership leak the compliance scorer's nested_steps_emitted_no_sentinel criterion catches. Epic verification never resolves or writes a member .pipeline-state.json (REQ-SEC-01).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/04-skill-integration.md",
+        "specs/stage-exit-coverage/03-verification-state.md"
+      ]
+    },
+    {
+      "id": "019",
+      "type": "feature",
+      "priority": 1,
+      "title": "Give forge-fix a complete seven-outcome terminus matrix",
+      "description": "Replace `skills/forge-fix/SKILL.md`'s current open-ended Step 6 with a complete outcome matrix so no fix path can end without a defined terminus. Spec: 04-skill-integration.md §5.1 and §5.3.\n\n1. Derive the served stage ONLY from the selected findings report's mode/header, before any mutation. Never use conversational context, `currentStage`, or the newest arbitrary feature stage. Missing/malformed/ambiguous metadata yields `no-findings` only when no applicable report exists; a report whose served stage cannot be established is a fail-closed error instructing the user to select or re-run verification.\n2. Determine `direct` vs `nested` at entry and preserve it through re-verify. A direct fix stays terminal owner through its optional re-verify; a nested fix invokes nested verify and returns to its outer stage.\n3. Implement the full 04 §5.3 matrix: no applicable findings → `no-findings`; unresolved user decisions → `decisions`; a failed fix step, validation, commit, or state write → `failed`; fixes persisted but re-verify not yet run → `applied`; mandatory re-verify passes → `reverified`; mandatory re-verify reports findings → `reverify-findings`; explicit user deferral of fix or re-verify → `deferred`.\n4. Write results through `state-verify`. `findings-applied` no longer claims freshness — the writer clears `verifiedStageVersion`, so only `reverified` after a passing verify permits advancement. A direct interactive \"skip re-verify\" is therefore `deferred`, NOT `reverified`.\n5. Map a cancellation, an unavailable tool, or a non-answer to `deferred` when it was an explicit user choice and to `failed` when it was an operational failure. Never treat an unavailable tool as an explicit user skip.\n6. Invoke `stage-exit --stage forge-fix --owner direct|nested --outcome <FixOutcome>` with the served stage carried forward; print `nextSteps` verbatim only on the direct path.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "All seven FixOutcome values have a documented authoritative action in skills/forge-fix/SKILL.md and none falls through",
+        "The served stage is read from the selected findings report header only, and an unestablishable served stage is a fail-closed error rather than a guess",
+        "A direct interactive skip of re-verify maps to deferred, never to reverified",
+        "Fix results are written through state-verify and findings-applied is not treated as claiming freshness",
+        "An unavailable tool or non-answer maps to failed or deferred by whether it was an operational failure or an explicit user choice, and is never treated as an explicit skip",
+        "Nested applied returns to the outer caller for mandatory re-verify and emits no terminal block of its own",
+        "The skill invokes stage-exit with --stage forge-fix, an explicit --owner, an outcome, and the served stage",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["005", "013", "017"],
+      "notes": "REQ-ROUTE-05 enumerates the required termini: no applicable findings, unresolved decisions, failed fix work, fixes applied, re-verify success, re-verify findings, and explicit deferral. The 'applied does not equal verified' rule is the whole point of item 005's verifiedStageVersion clearing — do not let the skill re-assert freshness the writer deliberately dropped.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/04-skill-integration.md",
+        "specs/stage-exit-coverage/03-verification-state.md"
+      ]
+    },
+    {
+      "id": "020",
+      "type": "feature",
+      "priority": 1,
+      "title": "Convert forge-5-loop to scripted termini with deterministic outcome priority",
+      "description": "Replace the loop's hand-written standard/warm terminal commands with one scripted exit per run. Spec: 04-skill-integration.md §6, REQ-CAP-01, REQ-FOLLOW-01.\n\n1. BEFORE any body edit, confirm Step 2d remains single-sourced in `skills/forge-5-loop/references/runner-contract.md` as established by commit `c174b55`. Do not copy run-mode detail back into `SKILL.md` and do not make the conditional agent-selection reference always-loaded.\n2. In `skills/forge-5-loop/references/result-reporting.md`, keep the factual counts but remove the hand-written terminal commands. After `state-complete`, select ONE `LoopOutcome` deterministically from authoritative final counts, in this exact priority order: (1) `needs-human` when `needsHuman > 0`, even if blocked also exists; (2) else `blocked` when genuine `blocked > 0`; (3) else `deferred` when runner-deferred items exist; (4) else `partial` when pending/in-progress items remain because the iteration limit was reached; (5) else `complete` only when every item is done.\n3. Emit exactly one `stage-exit` invocation and one terminal block per run, using the call shape in 04 §6.1 with `--stage forge-5-loop --outcome {LoopOutcome}` plus host, capability, and `--epic` for members.\n4. Operational failure before authoritative counts are available must NOT fabricate an outcome: surface recovery and do not close the stage. A loop runner's successful process exit is not by itself `complete` — final backlog state controls.\n5. For completed epic members, let the router consume live epic status; the skill may announce the rollup before invoking stage-exit but appends no hand-authored terminal action after it.\n6. Fix REQ-FOLLOW-01: correct the stale phrase in `skills/forge-5-loop/references/runner-contract.md` that calls `--model` an \"optional flag below\" after the catalog split, without making the conditional agent-selection reference unconditional.\n7. Enforce the body caps after editing: at most 300 body lines and 5,000 body words, counted with the repository's existing frontmatter-aware helpers in `tests/test_runner_contract_split.py` / `tests/test_always_loaded_surface.py` — not raw total lines.\n8. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "skills/forge-5-loop/references/result-reporting.md documents the five-step deterministic outcome priority and no longer contains a hand-written standard or warm terminal command",
+        "A run with both needsHuman and blocked counts selects needs-human, and a runner exit 0 with pending backlog items selects partial rather than complete",
+        "Exactly one stage-exit invocation and one terminal block are emitted per loop run",
+        "Operational failure before authoritative counts surfaces recovery and does not close the stage or fabricate an outcome",
+        "skills/forge-5-loop/SKILL.md still points Step 2d at references/runner-contract.md and does not duplicate run-mode detail",
+        "skills/forge-5-loop/references/runner-contract.md no longer calls --model an optional flag below, and the agent-selection reference remains conditional",
+        "skills/forge-5-loop/SKILL.md is at or below 300 body lines and 5,000 body words using the existing frontmatter-aware helpers",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["014", "017"],
+      "notes": "REQ-CAP-01's prerequisite is already satisfied by commit c174b55 — verify it, do not redo it. The body caps are measured on the BODY (frontmatter-aware), so raw wc -l on the file is a false failure signal; 04 §6.3 records the file was 302 total lines / 4,512 total words at spec time.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/04-skill-integration.md",
+        "specs/stage-exit-coverage/02-stage-exit-routing.md"
+      ]
+    },
+    {
+      "id": "021",
+      "type": "feature",
+      "priority": 1,
+      "title": "Convert forge-6-docs to the scripted context-aware terminus",
+      "description": "Replace `skills/forge-6-docs/SKILL.md` Step 5's hand-written terminal paragraph with the scripted exit, preserving today's context-aware behavior. Spec: 04-skill-integration.md §7.\n\n1. Replace the Step 5 terminal paragraph with the exact call shape from 04 §7.1: `stage-exit --feature \"{feature}\" --stage forge-6-docs --outcome complete --specs-dir \"{specsDir}\" --host \"{host}\" --verify-capability \"{capability}\"` plus `--epic \"{epic}\"` for a member.\n2. For an epic member, the script executes and consumes `render-status`: an actionable member routes to its live command, blocked/no-actionable routes to the epic dashboard, and all-complete routes to the dashboard completion view. The skill must NOT trust a Step 1 snapshot after docs state has changed — the status read happens at exit time.\n3. For standalone completion, `/feature-forge:forge {feature}` is the fenced completion action; new-feature and epic-creation suggestions remain secondary unfenced text.\n4. If docs work cannot complete, persist only valid partial state and invoke the same call with `--outcome blocked`; its primary action is navigator/recovery and it never claims pipeline completion. A failure before a safe state write stops without a success exit.\n5. Keep the existing implementation-verify backstop, but an unresolved result cannot be bypassed by the docs terminal wording: an explicit \"generate anyway\" choice must persist `skipped` BEFORE docs can complete. Operationally unavailable verification is NOT an implicit skip — the scripted exit stays verify-first/manual until a pass or an explicit skip.\n6. Remove any remaining hand-authored \"Next steps\" list from the skill body.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "skills/forge-6-docs/SKILL.md invokes stage-exit with --stage forge-6-docs and an explicit --outcome, and contains no hand-written terminal Next steps list",
+        "Both complete and blocked outcomes are documented, and blocked routes to navigator/recovery without claiming pipeline completion",
+        "Epic-member routing consumes render-status at exit time rather than trusting a Step 1 snapshot",
+        "Standalone completion fences /feature-forge:forge {feature} with new-feature guidance only as secondary unfenced text",
+        "An explicit generate-anyway choice persists a skipped verification state before docs can complete",
+        "Operationally unavailable verification is not treated as an implicit skip",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["015", "017"],
+      "notes": "REQ-PROD-04 requires PRESERVING current context-aware behavior, not replacing it: epic members still route to the next actionable member or the epic dashboard, and standalone completion still offers the navigator/new-feature actions. The change is that the script decides, not the skill prose. Note the current test suite treats forge-6-docs as terminal — item 024 replaces that assertion.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/04-skill-integration.md",
+        "specs/stage-exit-coverage/02-stage-exit-routing.md"
+      ]
+    },
+    {
+      "id": "022",
+      "type": "feature",
+      "priority": 1,
+      "title": "Wire forge-0-epic creation and edit-mode to the scripted exit",
+      "description": "Make the epic skill close through the scripted contract, with edit mode routing from live member progress. Spec: 04-skill-integration.md §8.\n\n1. Creation compatibility: keep the call in `skills/forge-0-epic/SKILL.md` at Step C8 with `--feature \"{epic}\" --stage forge-0-epic --next-feature \"{first-actionable-feature}\"`, adding `--verify-capability`. A newly created member has no completed production stage, so the existing PRD handoff is unchanged.\n2. In `skills/forge-0-epic/references/edit-mode.md`, replace the dashboard-only closing prose with a FRESH `render-status` call made after the successful mutation and commit — not a stale pre-mutation snapshot.\n3. When `actionable` supplies a concrete next member, pass it as `--next-feature`; the script resolves that member's `.pipeline-state.json`, calls `next_stage`, and routes to its first incomplete production stage. A member with a completed PRD must not be sent back to PRD.\n4. When no member is actionable, invoke the epic stage-exit WITHOUT a concrete member and route to the epic dashboard/completion view. Do not pass a literal placeholder value.\n5. When the selected member's state is missing, unreadable, unsafe, or ambiguous, the script emits a named warning and degrades only to `forge-1-prd <member>`. The skill surfaces that warning BEFORE the block and does not derive a later stage itself.\n6. A failed or invalid `render-status` must not lead to a guessed follow-up: surface the findings and use the safe epic dashboard recovery path, never an arbitrary member.\n7. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "skills/forge-0-epic/SKILL.md Step C8 retains --next-feature for creation mode and adds --verify-capability",
+        "skills/forge-0-epic/references/edit-mode.md makes a fresh render-status call after the successful mutation and commit",
+        "An actionable concrete member is passed as --next-feature and a progressed member resumes at its actual next production stage",
+        "No actionable member results in an epic stage-exit without a concrete member, routing to the dashboard, with no literal placeholder passed",
+        "An unresolvable selected member surfaces the script's named warning before the terminal block and the skill derives no later stage itself",
+        "A failed or invalid render-status routes to epic dashboard recovery rather than an arbitrary member",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["016", "017"],
+      "notes": "This is the canon half of the #175 fix; item 016 is the script half. REQ-PROD-05 requires creation-mode behavior to remain UNCHANGED — only edit mode with a concrete next member gains live state resolution.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/04-skill-integration.md",
+        "specs/stage-exit-coverage/02-stage-exit-routing.md"
+      ]
+    },
+    {
+      "id": "023",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add capability flags to stages 1-4 and immediate state-note parking-lot calls",
+      "description": "Bring the four authoring stages onto the capability-aware contract and give the PRD/tech parking-lot promise a sanctioned persistence path. Spec: 04-skill-integration.md §4, REQ-FOLLOW-02.\n\n1. In `skills/forge-1-prd/SKILL.md`, `skills/forge-2-tech/SKILL.md`, `skills/forge-3-specs/SKILL.md`, and `skills/forge-4-backlog/SKILL.md`, retain the existing call locations and fixed stage identities and add `--verify-capability` determined per the shared protocol, plus `--epic \"{epic}\"` for members. Do NOT change their artifact/state-complete ordering. Their host translations, fresh-session wording, auto-verify directives, and epic-reconcile behavior stay script-owned.\n2. In `skills/forge-1-prd/SKILL.md` and `skills/forge-2-tech/SKILL.md`, replace the parking-lot promise to \"note it\" with an IMMEDIATE call at the moment the concern is raised: `python3 \"$R/scripts/forge-session.py\" state-note --feature \"{feature}\" --note \"<concise downstream concern>\" --specs-dir \"{specsDir}\"`, appending `--epic \"{epic}\"` for an epic member. Omitting `--epic` for a member is an error and must not fall back to a same-named flat feature.\n3. Document that `state-note` overwrites the single `notes` string, so preserving an earlier note means reading it and supplying a combined concise string — the model never edits or round-trips JSON. This interview-time call is separate from the optional completion note and must not be deferred to stage closure.\n4. On `UsageError`/exit 2, the skill surfaces the named feature/epic and the recovery instruction and stops claiming the concern was persisted. Epic decomposition changes continue through `epicChangeRequests`, not `notes`.\n5. Add the matching immediate `state-note` recipe to `references/shared-conventions.md` so the pattern is single-sourced.\n6. Regenerate and commit adapters/.",
+      "acceptanceCriteria": [
+        "All four of skills/forge-1-prd, forge-2-tech, forge-3-specs, and forge-4-backlog pass --verify-capability on their stage-exit invocation",
+        "Their existing stage identities, call locations, and artifact/state-complete ordering are unchanged",
+        "skills/forge-1-prd/SKILL.md and skills/forge-2-tech/SKILL.md call state-note immediately when a parking-lot concern is raised, not at stage closure",
+        "Both state-note recipes include the --epic member form and state that omitting it for a member is an error",
+        "The overwrite semantics of the single notes string are documented, including reading and combining an earlier note",
+        "A state-note exit 2 makes the skill surface the failure and stop claiming persistence",
+        "references/shared-conventions.md carries the matching immediate state-note recipe",
+        "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["017"],
+      "notes": "tests/test_state_verb_call_sites.py already guards state-verb call sites — check whether the new state-note call sites need registering there. REQ-FOLLOW-02 exists because the parking-lot instruction previously implied a hand-authored state edit; the whole point is that no canon path authors state JSON by hand.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/04-skill-integration.md",
+        "specs/stage-exit-coverage/03-verification-state.md"
+      ]
+    },
+    {
+      "id": "024",
+      "type": "test",
+      "priority": 1,
+      "title": "Add the explicit nine-skill canonical exit coverage guard",
+      "description": "Add a mechanical guard that fails when any covered skill's scripted exit is removed, duplicated, or replaced by a bespoke block. Spec: 06-compliance-and-coverage.md §2, 07 §6.1.\n\n1. In `tests/test_stage_exit_protocol.py`, replace the inferred authoring-stage sets and the old terminal allow-list with the explicit immutable table from 06 §2.1: the `CanonicalExitSite` NamedTuple, `CANONICAL_EXIT_SITES` (nine entries, with `forge-5-loop` owning both `skills/forge-5-loop/SKILL.md` and `skills/forge-5-loop/references/result-reporting.md`), and `INTENTIONALLY_EXCLUDED_SKILLS` = {forge, forge-bootstrap, forge-guide, forge-init}.\n2. Assert: the `skill` tuple equals `EXIT_STAGES` in the same order; nine unique names and no duplicate path; every path exists under `REPO_ROOT` and stays contained by `skills/`; every excluded id is absent from the covered table; every excluded id resolves to an existing `skills/<id>/SKILL.md` so exclusions cannot rot into phantoms; and no skill is covered merely because its name starts with `forge-`. This is an allow-list, NOT a prefix scan.\n3. Add `_read_contract_surface(site)` reading only the explicitly listed canon files, joined in order. Do not recursively scan references.\n4. Assert the 06 §2.3 contract per site: the scripted invocation with the exact `--stage <skill>` value; `--owner direct` on direct branch invocations and `--owner nested` with explicit outer-ownership return on nested ones; a verbatim-print instruction naming the no-content-after-sentinel rule; no retired bespoke standard/warm block as an alternative advancing contract; exactly one terminal-print instruction on direct paths and zero on nested paths. Use stable marker literals from `references/stage-exit-protocol.md`, not broad words like \"Next steps\".\n5. Per 06 §2.4, REPLACE (do not delete) the current assertions that `forge-6-docs` is terminal and that `forge-5-loop` stamps bespoke blocks, with positive tests proving the loop surface covers every `EXIT_OUTCOMES[\"forge-5-loop\"]` value and docs requires `--outcome complete|blocked`.\n6. Add negative tests that operate on COPIED strings — never mutate repository files — removing an invocation, duplicating a terminal marker, restoring a bespoke block, and adding a nested sentinel.",
+      "acceptanceCriteria": [
+        "CANONICAL_EXIT_SITES equals the nine EXIT_STAGES ids in order, with unique names and unique existing canon paths contained by skills/",
+        "Every id in INTENTIONALLY_EXCLUDED_SKILLS resolves to an existing skills/<id>/SKILL.md and is absent from the covered table",
+        "The guard uses an explicit allow-list and does not infer coverage from a forge- name prefix",
+        "Removing any one covered scripted invocation makes the test fail",
+        "Adding a second terminal-print instruction to any covered surface makes the test fail",
+        "Restoring a bespoke standard or warm terminal block on a covered surface makes the test fail",
+        "A nested branch surface containing a sentinel makes the test fail",
+        "Positive replacement tests prove forge-5-loop covers all five loop outcomes and forge-6-docs requires --outcome complete or blocked; no obsolete assertion is merely deleted",
+        "Negative tests operate on copied strings and mutate no repository file",
+        "python3 -m pytest tests/test_stage_exit_protocol.py passes",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["018", "019", "020", "021", "022", "023"],
+      "notes": "This guard lands AFTER all nine call sites exist (01 §5.7) so it never has to be temporarily weakened. CANONICAL_EXIT_SITES is the SINGLE declaration of the covered set — 04 §10 derives COVERED_SKILLS from it rather than re-listing the names, so do not add a second hand-maintained allow-list. Never inspect generated adapters/ as the source of truth and never rewrite canon from a test.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/06-compliance-and-coverage.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md",
+        "specs/stage-exit-coverage/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "025",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add the branch compliance fixture and its strict loader",
+      "description": "Create the isolated verify → fix → re-verify compliance fixture and the validating loader. Spec: 06-compliance-and-coverage.md §3.\n\n1. Create the fixture at EXACTLY `eval/fixtures/compliance/verify-fix-reverify.json`. The nested `compliance/` directory is load-bearing: `eval/run-eval.py::load_fixtures()` uses the non-recursive glob `eval/fixtures/*.json`, so nesting prevents a compliance fixture from ever being picked up as a trigger fixture. Do NOT alter the existing `eval/fixtures/forge-1-prd.json` or `forge-5-loop.json` schema, and do not place branch data at that level.\n2. Add the eval-internal `TypedDict`s from 06 §3.2 to `eval/run-compliance-eval.py`: `BranchScenarioName`, `EvidenceStage`, `ExpectedCommand`, `BranchScenario`, `BranchFixture`. These are eval-internal boundaries and do not redefine shared domain types.\n3. Author exactly two scenarios in file order: `successful-rejoin` (verify findings → fix applied → re-verify passed → the final direct exit fences `/feature-forge:forge-2-tech <feature>`) and `recovery` (verify findings → fix applied → re-verify findings → the final direct recovery terminus fences the deterministic `forge-fix` recovery command for the same served stage). `servedStage` is `forge-1-prd` and `verifyMode` is `prd`.\n4. Each `expectedCommands` list orders the real `forge-session.py stage-exit` calls with tokens for the exact stage, outcome, owner, and served-stage/mode arguments. Intermediate verify/fix calls use `--owner nested`; the final call is the sole terminal owner. The fixture never accepts a prose claim in place of a command.\n5. Implement `load_branch_fixture(path) -> BranchFixture` with strict validation: schema version 1; exactly one occurrence of each scenario name in the order successful-rejoin then recovery; non-empty token lists; no duplicate command stage within a scenario; the same safe feature/served-stage throughout; unknown keys FAIL rather than being ignored. Raise `RuntimeError` for fixture invariants while preserving `OSError` and `json.JSONDecodeError`.\n6. Add `build_branch_fixture(root, fixture)`, `branch_prompt(fixture, scenario)`, and `expected_branch_exit(root, fixture, scenario)` per 06 §3.3, reusing the existing `run_session`, `expected_stage_exit`, and `_git_init` helpers rather than forking copies.",
+      "acceptanceCriteria": [
+        "eval/fixtures/compliance/verify-fix-reverify.json exists with schemaVersion 1 and exactly two scenarios in the order successful-rejoin then recovery",
+        "eval/run-eval.py::load_fixtures() does not discover the nested compliance fixture, and the existing trigger fixtures are unchanged",
+        "load_branch_fixture rejects an unknown schema version, a missing scenario, a duplicate scenario, the wrong scenario order, an unsafe feature, an empty command token list, a duplicate evidence stage, and any unknown key",
+        "load_branch_fixture preserves OSError and json.JSONDecodeError and uses RuntimeError only for fixture invariants",
+        "servedStage forge-1-prd and verifyMode prd agree under VERIFY_MODE_TO_STAGE and the loader checks that agreement",
+        "expectedCommands order real stage-exit calls with exact stage, outcome, owner, and served-stage tokens; intermediate calls use --owner nested and only the final call is terminal owner",
+        "build_branch_fixture builds a fresh throwaway repository per scenario whose state validates against references/pipeline-state-schema.json, with no state leaking between scenarios",
+        "expected_branch_exit derives ground truth by executing the real forge-session.py stage-exit, and no nextSteps value is hard-coded in the fixture",
+        "ruff check scripts/ eval/ passes",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["013"],
+      "notes": "REQ-EVAL-03: this must NOT overwrite or merge into the linear forge-1-prd baseline, which measured only the already-scripted linear path. Ground truth comes from the real CLI after the scenario's state transition, never from hand-written fixture prose.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/06-compliance-and-coverage.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "026",
+      "type": "feature",
+      "priority": 1,
+      "title": "Pair transcript tool requests with results and add ordered evidence matching",
+      "description": "Make the compliance harness score commands that actually RAN, not commands that were merely requested. Spec: 06-compliance-and-coverage.md §4.\n\n1. Extend `parse_transcript(stdout)` in `eval/run-compliance-eval.py` ADDITIVELY to return the `ParsedTranscript` shape from 06 §4.1, preserving `bash_commands` for the existing linear and R2 scorers. Add `command_evidence: list[CommandEvidence]` and `assistant_texts: list[str]`.\n2. Pair an assistant `tool_use` block by its non-empty `id` with the later `tool_result` block whose `tool_use_id` matches, preserving request order even when results arrive later. Verify the live Claude stream event shape while implementing — the current parser exposes no result pairing.\n3. Normalize a successful Bash result to `exitCode == 0` and `isError is False`; an error result uses its reported non-zero exit code where present, otherwise `exitCode is None` with `isError is True`. An unpaired request sets `resultSeen=False`, `exitCode=None`. `exitCode is None` means UNKNOWN, never success.\n4. Duplicate tool ids, a result preceding its request, or two results for one request make the transcript unusable: return `ok=False` with an actionable `note` rather than guessing.\n5. Cap `resultTail` at the last 500 characters for auditability. Scoring must never infer success from its prose. `assistant_texts` contains every assistant text block in event order plus the result event's final result only if not already present, so sentinel counting spans the full path rather than only the final answer.\n6. Add `ordered_command_evidence(transcript, expected) -> tuple[bool, list[CommandEvidence]]` per 06 §4.2: a subsequence over `command_evidence` where each expectation matches exactly one later request with a seen, non-error, zero-exit result, and no stage-exit request occurs between matched entries out of fixture order. Every `contains` value is a literal token, not a regex, and all tokens in one entry must appear in one command (AND, not OR). A command qualifies as a real exit only when it contains BOTH `forge-session.py` and `stage-exit`. Reconnaissance commands between exit commands are ignored.\n7. Cover the 07 §7.2 transcript cases.",
+      "acceptanceCriteria": [
+        "parse_transcript still returns bash_commands unchanged for the existing linear and R2 scorers",
+        "tool_use and tool_result blocks are joined by id, not by position, and request order is preserved when results arrive later",
+        "An unpaired request yields resultSeen False and exitCode None and never scores as executed",
+        "A duplicate tool id, a result preceding its request, and two results for one request each yield ok False with an actionable note",
+        "resultTail is capped at 500 characters and is never matched against for scoring",
+        "assistant_texts contains every assistant text block in event order so the sentinel can be counted across the full path",
+        "ordered_command_evidence returns True only when every expectation matches exactly one later request with a seen, non-error, zero-exit result in fixture order",
+        "A command counts as a real exit only when it contains both forge-session.py and stage-exit, and reconnaissance commands between exits are ignored",
+        "A missing result, a non-zero or error result, a reordered exit, and a duplicate exit each return False",
+        "ruff check scripts/ eval/ passes",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["025"],
+      "notes": "REQ-EVAL-02 is why this exists: scoring on requested commands alone would credit a command the host rejected or that failed. The type comment in 06 §4.1 says it plainly — a REQUESTED command is not a RUN command. Extend parse_transcript in place; do not fork a second parser for the branch probe.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/06-compliance-and-coverage.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "027",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add the branch scorer, probe registration, and the offline negative matrix",
+      "description": "Score a full verify → fix → re-verify path and prove the scorer catches every way it can go wrong. Spec: 06-compliance-and-coverage.md §5, 07 §7.2.\n\n1. Add `score_branch_path(transcript, expected_payload, scenario) -> dict[str, bool]` to `eval/run-compliance-eval.py`, returning EXACTLY these eight keys: `ordered_command_results`, `all_commands_succeeded`, `exactly_one_sentinel`, `nested_steps_emitted_no_sentinel`, `nothing_after_sentinel`, `next_command_fenced`, `block_verbatim`, `correct_rejoin_or_recovery`. Semantics are in 06 §5.2 — note that `exactly_one_sentinel` counts across ALL `assistant_texts`, `nothing_after_sentinel` requires the final non-whitespace content of `final_text` to be exactly the sentinel (a suffix check alone is insufficient when an earlier duplicate exists), `next_command_fenced` uses the existing `_in_fenced_block`, and `block_verbatim` requires the expected payload's `nextSteps` byte-for-byte in `final_text`.\n2. Add `run_branch_probe(models, n) -> list[ProbeReport]` running both scenarios in fresh repositories per model/run. Retain the existing `RunResult`, `ProbeReport`, `Report`, `_to_result`, and `_probe_report` shapes.\n3. Register `branch-path` as a distinct `--probe` choice, include it under `all`, and report `successful-rejoin` and `recovery` as separate variants — do NOT merge their rates into `stage-exit/cold` or `stage-exit/warm`.\n4. In `tests/test_compliance_eval.py`, add pure transcript dictionaries (no live CLI, no network, no API key) for all twelve negatives in 07 §7.2: missing tool result; non-zero/error result; reordered fix and re-verify; duplicate stage-exit request; duplicate terminal sentinel; sentinel emitted during a nested call; correct sentinel followed by prose; prose-only claim with no Bash evidence; verbatim-looking block without the real terminal command; wrong feature or served stage; recovery incorrectly advancing to production; successful commands but the wrong fenced primary command.\n5. Each negative asserts its TARGETED criterion is false and, where relevant, that unrelated criteria remain true — a blanket `all(...) is False` assertion would mask scorer defects.\n6. Add positive offline tests for both scenarios proving all eight criteria true.\n7. Keep the advisory behavior: a missing `claude` driver returns a visible skipped report at exit 0; a model miss is a scored non-compliant `RunResult`, not a process failure; only harness defects exit non-zero.",
+      "acceptanceCriteria": [
+        "score_branch_path returns exactly the eight keys listed in 06-compliance-and-coverage.md §5.2 and compliance requires all to be true",
+        "exactly_one_sentinel counts occurrences across all assistant_texts, not just final_text",
+        "nothing_after_sentinel fails when a correct final sentinel is preceded by an earlier duplicate",
+        "branch-path is a distinct --probe choice included in all, reporting successful-rejoin and recovery as separate variants never averaged into the linear cells",
+        "All twelve negative transcript fixtures exist offline and each asserts its targeted criterion is false without a blanket all-false assertion",
+        "Positive offline fixtures for both scenarios satisfy all eight criteria",
+        "The offline tests invoke no live model, network, or API key",
+        "A missing claude driver still returns a visible skipped report at exit 0 and a model miss is a scored non-compliant RunResult rather than a non-zero process exit",
+        "python3 -m pytest tests/test_compliance_eval.py passes",
+        "ruff check scripts/ eval/ passes",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["025", "026"],
+      "notes": "nested_steps_emitted_no_sentinel is the criterion that catches REQ-EXIT-04 ownership leaks — a nested verify or fix that prints its own terminal block. The live harness stays advisory and local-only; the fixture loader, ground truth, parser, evidence matcher, and scorer are the parts that are hard-tested offline in CI.",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/stage-exit-coverage/06-compliance-and-coverage.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "028",
+      "type": "chore",
+      "priority": 2,
+      "title": "Document the linear baseline separately from branch compliance in eval/README.md",
+      "description": "Record that the original compliance baseline measured only the already-scripted linear path, so it is never read as evidence for branch coverage. Spec: 06-compliance-and-coverage.md §6, REQ-EVAL-03.\n\n1. Update `eval/README.md` WITHOUT rewriting historical results. It must state in substance that: the original `stage-exit/cold` and `stage-exit/warm` `forge-1-prd` baseline measures only the already-scripted linear authoring path; it is NOT evidence for verify/fix diversion compliance; `branch-path/successful-rejoin` and `branch-path/recovery` are separately reported cells that must not be averaged into, or compared as replacements for, the linear baseline; branch runs require actual ordered command results rather than prose; and the live harness remains advisory and local-only while `tests/test_compliance_eval.py` validates the fixture and scorer in CI.\n2. Update the cost formula and table to include the two new cells when `--probe all` is used.\n3. Preserve the current absent-driver behavior description (prints skipped, returns 0), the model pins, the rate-over-N interpretation, and the statement that a low model score is not a correctness failure.\n4. Add `branch-path` to the `--probe` help text if item 027 did not already.\n5. Do not change any historical recorded number.",
+      "acceptanceCriteria": [
+        "eval/README.md states that the forge-1-prd stage-exit/cold and stage-exit/warm baseline measured only the already-scripted linear path and is not evidence for branch compliance",
+        "branch-path/successful-rejoin and branch-path/recovery are documented as separately reported cells that must not be averaged into the linear baseline",
+        "The README states that branch runs require ordered command results rather than prose",
+        "The cost formula and table include the two new cells under --probe all",
+        "The absent-driver skip behavior, model pins, rate-over-N interpretation, and the low-score-is-not-a-correctness-failure statement are preserved",
+        "No historical recorded result number is altered",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["027"],
+      "notes": "REQ-EVAL-03 exists because the original baseline is easy to misread as proof the whole pipeline complies, when it only ever exercised forge-1-prd's already-scripted linear exit. The separation must be explicit prose, not implied by a table layout.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/06-compliance-and-coverage.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "029",
+      "type": "chore",
+      "priority": 1,
+      "title": "Run the final regeneration and full gate sweep with invariant confirmation",
+      "description": "Close the feature with a full regeneration and a complete verification pass, confirming every repository invariant this feature was required to preserve. Spec: 01-architecture-layout.md §6, 07 §8.\n\n1. Run `python3 scripts/build-adapters.py` once more and commit any resulting change, then confirm `python3 scripts/build-adapters.py --check` reports no drift.\n2. Run `bash scripts/validate.sh` and `ruff check scripts/ eval/` and fix anything they surface.\n3. Confirm the structural invariants that this feature must NOT have violated:\n   - `RUNTIME_HELPERS` in `scripts/build-adapters.py` still has exactly six entries, and no new file appears under `scripts/` or under any of the six `adapters/*/scripts/` directories. In particular, `scripts/forge_json.py` must not exist.\n   - Both mirrored `load_json_with_duplicates`/`warn_duplicate_keys` copies survive adapter generation byte-identically, and `tests/test_json_loader_parity.py` passes against canon.\n   - No state writer acquires a lock, lease, or optimistic-version check, and no `git commit --amend` provenance path exists in any script or canon file.\n   - `forge.config.json` still has `smokeCommand: null`, `tests/test_smoke_command.py` still passes, and CHECK-I21 is recorded as not-applicable by design — do not fabricate a smoke command.\n   - `skills/forge-5-loop/SKILL.md` is within both body caps and retains its Step 2d pointer.\n4. Confirm all nine direct skills invoke the single scripted exit contract and that requirement traceability passes for `specs/stage-exit-coverage/`.\n5. Verify two consecutive builds produce byte-identical `adapters/` trees.",
+      "acceptanceCriteria": [
+        "python3 scripts/build-adapters.py --check reports no drift and two consecutive builds produce byte-identical adapters/ trees",
+        "scripts/forge_json.py does not exist, RUNTIME_HELPERS has exactly six entries, and no new file appears under scripts/ or any adapters/*/scripts/",
+        "tests/test_json_loader_parity.py passes and both mirrored loader copies are byte-identical to canon in all six adapter targets",
+        "No state writer contains a lock, lease, optimistic-version check, retry, or backoff, and no script or canon file contains a git commit --amend provenance path",
+        "forge.config.json still has smokeCommand null, tests/test_smoke_command.py passes, and CHECK-I21 remains recorded as not-applicable by design",
+        "skills/forge-5-loop/SKILL.md is within 300 body lines and 5,000 body words and retains its Step 2d pointer to references/runner-contract.md",
+        "All nine skills in CANONICAL_EXIT_SITES invoke the scripted stage-exit contract and tests/test_stage_exit_protocol.py passes",
+        "Requirement traceability passes for specs/stage-exit-coverage/",
+        "bash scripts/validate.sh passes with no errors",
+        "ruff check scripts/ eval/ passes"
+      ],
+      "status": "pending",
+      "completedAt": null,
+      "dependsOn": ["024", "028"],
+      "notes": "This is the invariant-confirmation sweep, not new implementation. If any check here fails, fix it in the owning item's files rather than adding a workaround. REQ-COMPAT-03 is explicit that raising smokeCommand from null or changing CHECK-I21 semantics is OUT OF SCOPE for this feature.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/stage-exit-coverage/01-architecture-layout.md",
+        "specs/stage-exit-coverage/07-testing-strategy.md"
+      ]
+    }
+  ]
+}
