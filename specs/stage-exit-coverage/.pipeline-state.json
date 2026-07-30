@@ -13,9 +13,22 @@
         "PRD.md"
       ],
       "commitHash": "e89d8faa0fa610303d49d15f507054521a362307"
+    },
+    "forge-2-tech": {
+      "status": "complete",
+      "startedAt": "2026-07-30T03:49:46Z",
+      "artifacts": [
+        "tech-spec.md"
+      ],
+      "completedAt": "2026-07-30T04:12:39Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 1
+      },
+      "commitHash": null
     }
   },
-  "currentStage": "forge-1-prd",
-  "updatedAt": "2026-07-30T03:48:43Z",
+  "currentStage": "forge-2-tech",
+  "updatedAt": "2026-07-30T04:12:39Z",
   "branch": "forge/stage-exit-coverage"
 }
