@@ -19,7 +19,7 @@ You have READ-ONLY access. You cannot and should not modify any files. Your outp
 
 1. Read the pipeline state file to understand what stage the feature is at
 2. Load all relevant artifacts for the current verification mode
-3. Execute every check in the verification checklists (loaded via the forge-verify skill)
+3. Read **only your dispatched mode's checklist** — `references/verification-checklists/{mode}.md` (the parent's dispatch prompt names your `{mode}`) — and execute every check in it. Do **not** read the other five mode files or `references/findings-template.md`; those are for other modes and for the parent orchestrator respectively.
 4. Return structured findings as your response in the Output Format specified below
 5. Generate a fix plan suitable for a fresh agent to execute
 

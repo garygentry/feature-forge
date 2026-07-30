@@ -26,21 +26,23 @@ This skill is delegated to the `forge-verifier` subagent via the host's subagent
 
 Pick based on how many checks the mode carries (see the per-mode totals in Step 3):
 
-- **Small modes (prd ~15, tech ~15): single verifier.** Use the host's subagent mechanism once with
+- **Small modes (prd 15, tech 17): single verifier.** Use the host's subagent mechanism once with
   `the forge-verifier custom agent`, passing the feature name and mode. It runs all
   checks and returns findings.
-- **Large modes (specs ~38, backlog ~27, impl ~23): parallel dimensioned fan-out.**
+- **Large modes (specs 38, backlog 27, impl 23): parallel dimensioned fan-out.**
   Split the mode's checklist into **dimension groups** and dispatch **one
   `forge-verifier` per group, in parallel — a single message with multiple subagent
   calls** (the `superpowers:dispatching-parallel-agents` pattern). Each instance owns a
   disjoint slice of CHECK-IDs, so it verifies deeper over a narrower scope and they all
-  run concurrently. Suggested groups (map to the category clusters in
-  `references/verification-checklists.md`):
-  - **specs:** (1) types/contracts, (2) architecture/layout, (3) cross-reference &
+  run concurrently. Suggested groups (map to the category clusters in that mode's own
+  checklist file):
+  - **specs** (`references/verification-checklists/specs.md`): (1) types/contracts,
+    (2) architecture/layout, (3) cross-reference &
     traceability, (4) testing strategy, (5) integration.
-  - **backlog:** (1) item scoping & acceptance criteria, (2) dependency/ordering sanity,
+  - **backlog** (`references/verification-checklists/backlog.md`): (1) item scoping &
+    acceptance criteria, (2) dependency/ordering sanity,
     (3) spec coverage & traceability, (4) schema/enum correctness.
-  - **impl:** (1) requirement coverage vs specs, (2) integration correctness,
+  - **impl** (`references/verification-checklists/impl.md`): (1) requirement coverage vs specs, (2) integration correctness,
     (3) testing, (4) code-quality/conventions, (5) runnability (owns CHECK-I21/I22 —
     the smoke command and the non-test-caller heuristic).
 
@@ -160,11 +162,11 @@ Load into context ALL artifacts for this feature based on mode:
 
 ## Step 3: Run Verification Checklists
 
-Read `references/verification-checklists.md` for the detailed checklists per mode. Execute every check. Do not skip checks because things "look fine." That same reference also holds the relocated **Findings Document Template (Step 4)**, the worked **Example Findings (Step 4)**, and the **Epic Mode State Write Detail (Step 6)** sections used later in this skill.
+Read `references/verification-checklists/{mode}.md` for the detailed checklist for the mode being verified — one of `references/verification-checklists/prd.md`, `references/verification-checklists/tech.md`, `references/verification-checklists/specs.md`, `references/verification-checklists/backlog.md`, `references/verification-checklists/impl.md`, `references/verification-checklists/epic.md`. Read only that mode's file. Execute every check. Do not skip checks because things "look fine." The orchestrator-only **Findings Document Template (Step 4)**, worked **Example Findings (Step 4)**, and **Epic Mode State Write Detail (Step 6)** sections live in `references/findings-template.md`, read later by the parent role at Steps 4/6.
 
-Each check in `verification-checklists.md` has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: ~15 checks, tech: ~15 checks, specs: ~38 checks, backlog: ~27 checks, impl: ~23 checks, epic: ~10 checks), you likely skipped checks — go back and complete them.
+Each check in that mode checklist has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: 15 checks, tech: 17 checks, specs: 38 checks, backlog: 27 checks, impl: 23 checks, epic: 10 checks), you likely skipped checks — go back and complete them.
 
-**Epic mode dispatch.** Epic mode is a small (~10-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the host's subagent mechanism, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E10 from the `## Epic Mode Checklist` in `references/verification-checklists.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07, E09, and E10 are verifier judgment) and returns its findings.
+**Epic mode dispatch.** Epic mode is a small (10-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the host's subagent mechanism, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E10 from the `## Epic Mode Checklist` in `references/verification-checklists/epic.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07, E09, and E10 are verifier judgment) and returns its findings.
 
 ### Important: Be Specific, Not General
 
@@ -188,7 +190,7 @@ Ensure the `.verification/` subdirectory exists, then write findings to `{resolv
 
 The full findings-document template (report header, `V-NNN` finding shape, and the
 Fix Execution Plan layout) and the worked **Example Findings** (gap / inconsistency /
-improvement) live in `references/verification-checklists.md` under the **Findings
+improvement) live in `references/findings-template.md` under the **Findings
 Document Template (Step 4)** and **Example Findings (Step 4)** sections — follow that
 template verbatim when writing the document.
 
@@ -218,6 +220,14 @@ Do NOT embed this question in your text output.
 
 Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
+> **Deliberate R4 exclusion.** This step writes a **verify entry**
+> (`stages.forge-verify-*`), and no `state-*` verb writes verify entries — the verbs
+> cover production stage entries and the two array types only. So this one step stays
+> hand-authored, and the schema citation above is retained to serve it. This skill
+> authors no production stage entry of its own; where it needs one, the owning stage
+> skill records it via a verb per the Pipeline State Protocol in
+> `references/shared-conventions.md`.
+
 Update `{resolvedFeatureDir}/.pipeline-state.json`:
 - Set the relevant verify entry status to `findings-reported` (or `passed` when there
   are zero findings)
@@ -240,7 +250,7 @@ state file `{specsDir}/{epic}/.epic-state.json` — **never** into any member's
 `verifiedAt`. The full `.epic-state.json` schema (minimal shape) and the atomic
 temp-file + `os.replace()` **write-mechanism** detail (lazy-create, merge/replace,
 fail-intact) — including the worked Python snippet — live in
-`references/verification-checklists.md` under the **Epic Mode State Write Detail
+`references/findings-template.md` under the **Epic Mode State Write Detail
 (Step 6)** section. Follow it verbatim.
 
 Do NOT mark as `findings-applied` — that happens after the fix pass.

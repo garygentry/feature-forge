@@ -19,11 +19,13 @@ tokenized as `{loopRunner.logFile}`.
 
 ## Resolve the loop runner
 
-Read `forge.config.json`. Build the effective `loopRunner` by taking its
-`loopRunner` block (if present) and filling any missing field from the defaults
-in `references/forge-config-schema.json`. **If `forge.config.json` has no
-`loopRunner` block at all, state plainly: "No loopRunner configured — defaulting
-to the rauf loop runner."** then proceed with the full default block.
+Resolve the effective `loopRunner` with the command below — it merges this project's `loopRunner` block over the schema defaults deterministically, so do not read the config schema for defaults. **If `forge.config.json` has no `loopRunner` block at all, state plainly: "No loopRunner configured — defaulting to the rauf loop runner."** then proceed with the full default block, which is exactly what the call returns. If the call exits 2, surface the plain `Error:` line from stderr verbatim and fall back to the documented rauf defaults.
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" effective-config --config ./forge.config.json --json
+```
 
 Token substitution applies to every `*Command` string. Substitute:
 
@@ -161,7 +163,7 @@ Backlog summary:
   - Iterations: {iterationCount} ({activeItems} items x {loopIterationMultiplier} multiplier)
 
 For the model-selection precedence (item.model > --model/options > project default >
-provider default) and the full optional-flags catalog, read references/runner-contract.md.
+provider default), read references/runner-contract.md.
 ```
 
 **Run mode (gated on `loopRunner.name == "rauf"`).** When the runner is rauf, add a **"Run mode"** question to this same `AskUserQuestion` surface with these options **in this exact order** (do NOT improvise — deterministic ordering is the point): **(1) "Run with review pass (recommended)"** — append `--review`, and this is the default; **(2) "Run without review"** — the bare rendered command; **(3, only when 2a counted blocked items) "Review + retry blocked"** — append `--review --retry-blocked`. `AskUserQuestion`'s built-in "Other" covers ad-hoc flags (`--model`/`--timeout`); add no separate open-ended option. The command line shown above renders `--review` (the recommended default). **When the runner is not rauf**, add NO Run-mode question — present the bare rendered command and let the user adjust via "Other" (byte-identical to today). Verbatim option labels: `## Run mode (Step 2d, rauf)` in `references/runner-contract.md`.
@@ -170,25 +172,27 @@ For the full loop-runner contract — event-stream vs. log-fallback launch, the 
 
 #### Agent selection (gated on `loopRunner.agentArgument`)
 
-**Capability gate.** Everything below applies **only when** the effective `loopRunner.agentArgument` is present and non-empty. **When it is absent or empty, Step 2d is exactly the confirmation above — no probe, no agent question, no availability listing, no `Agent:` line — byte-identical to today** (REQ-PLUG-02, REQ-COMPAT-01). The full algorithm, precedence, and verbatim message shapes are in `## Agent selection` of `references/runner-contract.md`; read it. When the gate is on, augment Step 2d in order:
+**Capability gate.** Everything below applies **only when** the effective `loopRunner.agentArgument` is present and non-empty. **When it is absent or empty, Step 2d is exactly the confirmation above — no probe, no agent question, no availability listing, no `Agent:` line — byte-identical to today** (REQ-PLUG-02, REQ-COMPAT-01). The full algorithm, precedence, and verbatim message shapes are in `## Agent selection` of `references/agent-selection.md`; read it. When the gate is on, augment Step 2d in order:
 
 - **(a) Probe once.** Before confirming, run `loopRunner.agentsProbeCommand` (default `{bin} agents --json`) **exactly once** (no retries, no second probe); it exits 0 with `{ agents: [...] }`. Parse `agents[]`; build the advertised set `{ row.id }` — this one parsed array drives (b)–(d).
 - **(b) Agent question.** Add an **"agent"** question to the same `AskUserQuestion` surface: **one option per advertised row** labelled `"{displayName} ({id}) — available/not found"`, **plus an explicit `"default (claude-cli)"` choice mapping to `run_selection = None`**. Resolve the pick (run > project, empty/whitespace unset, an explicit runner-default pick collapses to the default path) into `{resolved.agent, resolved.source}`. Precedence: `item.provider > --agent > project defaultAgent > runner default` (forge never reads a backlog item's provider).
 - **(c) Availability listing.** From the **same** parsed `agents[]` (no second probe), list `id` / `displayName` / available (`yes`/`no`, `detail` on unavailable rows).
 - **(d) Verdict** — only for a **non-default** resolved agent (default path `None`/`claude-cli` → no probe, byte-identical to today). Classify by **membership** then `available` (never by exit code): **UNKNOWN** (`∉` set) → **hard-reject BEFORE any loop side-effect**, error lists the **sorted** valid ids, **NO proceed-anyway**; **UNAVAILABLE** (member, `available False`) → warn with `detail`, `AskUserQuestion` offering **proceed-anyway OR choose-another** (re-presents the same `agents[]`), never silent; **AVAILABLE** → proceed, the validated id fills `{agent}`; **probe failure** (non-zero exit / unparseable / missing or empty `agents[]` / row lacking `id`) → surface it, offer **choose-another OR abort**, **never launch the non-default agent unvalidated** and never silently fall back to the default.
-- **(d-model) Claude-only model-alias guard.** Runs **only** when the resolved agent is **non-default** (not the default / `claude-cli` path). Read the backlog.json (Step 1e path); collect items whose `model` is a **Claude-specific alias** (tier `opus`/`sonnet`/`haiku` or a `claude-*` id). **If none, skip silently.** Otherwise warn before launch via `AskUserQuestion` (NOT prose): `item.model` outranks `--agent`, so the alias is forwarded verbatim to `{agent}`, which will likely reject it (e.g. codex 400 *"The 'sonnet' model is not supported…"*) — every spawn exits 1 and rauf circuit-breaks (*"3 consecutive infra failures — halting"*) with no hint of the cause. Offer: **(1) Strip `model` for this run (recommended)** — rewrite backlog.json removing the `model` key from each affected item (persistent edit; re-run forge-4-backlog to restore), then proceed; **(2) Proceed as-is** — only safe if `{agent}` understands the pinned ids. forge touches only `model`, never `provider`. Full rationale: `references/runner-contract.md`.
-- **(e) Optional-flags line.** Augment the confirmation block's closing flags/precedence pointer to list `--agent <id>` first plus the agent precedence pointer (`item.provider > --agent > project defaultAgent > runner default`) alongside the model precedence.
+- **(d-model) Claude-only model-alias guard.** Runs **only** when the resolved agent is **non-default** (not the default / `claude-cli` path). Read the backlog.json (Step 1e path); collect items whose `model` is a **Claude-specific alias** (tier `opus`/`sonnet`/`haiku` or a `claude-*` id). **If none, skip silently.** Otherwise warn before launch via `AskUserQuestion` (NOT prose): `item.model` outranks `--agent`, so the alias is forwarded verbatim to `{agent}`, which will likely reject it (e.g. codex 400 *"The 'sonnet' model is not supported…"*) — every spawn exits 1 and rauf circuit-breaks (*"3 consecutive infra failures — halting"*) with no hint of the cause. Offer: **(1) Strip `model` for this run (recommended)** — rewrite backlog.json removing the `model` key from each affected item (persistent edit; re-run forge-4-backlog to restore), then proceed; **(2) Proceed as-is** — only safe if `{agent}` understands the pinned ids. forge touches only `model`, never `provider`. Full rationale: `references/agent-selection.md`.
+- **(e) Optional-flags line.** Augment the confirmation block's closing flags/precedence pointer to list `--agent <id>` first plus the agent precedence pointer (`item.provider > --agent > project defaultAgent > runner default`) alongside the model precedence; the full catalog is `## Optional flags catalog (Step 2d, rauf)` in `references/agent-selection.md`.
 - **(f) Resolved-agent line.** Add to the confirmation block: `Agent: {resolved.agent or claude-cli} (source: {sourceLabel})` — `sourceLabel`: `RUN` → `"per-run selection"`, `PROJECT` → `"project default (loopRunner.defaultAgent)"`, `DEFAULT` → `"runner default — claude-cli"`.
 
 ## Step 3: Execute the Loop
 
 ### 3a. Update Pipeline State
 
-Before launching, update `{resolvedFeatureDir}/.pipeline-state.json`:
-- Set `stages.forge-5-loop.status` to `in-progress`
-- Set `stages.forge-5-loop.startedAt` to current ISO timestamp
-- Set `currentStage` to `forge-5-loop`
-- Update `updatedAt`
+Before launching, record the pre-launch marker by running `state-enter` — one atomic write that sets `stages.forge-5-loop.status` to `in-progress`, `stages.forge-5-loop.startedAt` to the current ISO timestamp, `currentStage` to `forge-5-loop`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-enter --feature "{feature}" --stage forge-5-loop --specs-dir "{specsDir}"
+```
 
 Then commit this state write before launching (mandatory). The runner refuses to run with uncommitted changes (*"…pass --force"*), and this marker is itself one — so an otherwise-clean repo fails its first launch unless committed. Commit it via the shared-conventions **Git Commit Protocol** (epic members: stage `{specsDir}/{epic}/`): `{commitPrefix}({feature}): forge-5-loop in-progress` — a launch precondition, required regardless of `gitCommitAfterStage`. Unrelated leftover changes still trip the refusal; surface it, never auto-pass `--force`. See `references/runner-contract.md`.
 
@@ -198,13 +202,7 @@ Launch the loop **backgrounded** (the host's background-execution mechanism) so 
 
 ### 3c. Inform User
 
-Tell the user the run has started and that **this session is now actively
-supervising it** — they don't need to babysit a terminal — and surface the rendered
-`loopRunner` monitoring commands (`statusCommand` / `followCommand` / `logCommand` /
-`listCommand`) and the state-file locations under
-`{backlogDir}/{loopRunner.stateDir}/` so they can watch directly if they like. The
-verbatim "Loop started…" inform-user output template is in
-`references/runner-contract.md`.
+Follow the **Inform-user output template (Step 3c)** section of `references/runner-contract.md` — it carries this step's instruction and the verbatim "Loop started…" template.
 
 ### 3d. Arm a Monitor on the event stream, and react to events
 
@@ -254,11 +252,13 @@ output templates — **all-done**, **needs-human**, **blocked**, **deferred**, a
 
 ## Step 5: Update Pipeline State
 
-Update `{resolvedFeatureDir}/.pipeline-state.json`:
+Record completion by running `state-complete` (below). Evaluate "all backlog items are `done`" yourself and pass the result as `--status`: `complete` if every item is `done`, else `in-progress`. The verb records `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
 
-1. Set `stages.forge-5-loop`: `status` = `"complete"` if all backlog items are `done`, else `"in-progress"`; `completedAt` = current ISO timestamp (only if complete); `basedOnVersions` = `{"forge-4-backlog": <current version from pipeline state>}`; `artifacts` = `["{backlogDir}/{loopRunner.stateDir}/state.json"]`.
-2. If all items complete: set `currentStage` to `"forge-6-docs"`
-3. Update `updatedAt`
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-complete --feature "{feature}" --stage forge-5-loop --version {n} --status "<complete|in-progress>" --based-on "forge-4-backlog=<current version from pipeline state>" --artifact "{backlogDir}/{loopRunner.stateDir}/state.json" --specs-dir "{specsDir}"
+```
 
 **No git commit is needed** — the loop runner commits implementation code atomically per completed item during the run. (Step 6's commit, epic members only, is of pipeline state / manifest — a distinct artifact.)
 

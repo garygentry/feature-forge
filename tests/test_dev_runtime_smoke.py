@@ -20,7 +20,9 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CHECKLISTS = REPO_ROOT / "skills" / "forge-verify" / "references" / "verification-checklists.md"
+CHECKLISTS = (
+    REPO_ROOT / "skills" / "forge-verify" / "references" / "verification-checklists" / "impl.md"
+)
 VERIFY_SKILL = REPO_ROOT / "skills" / "forge-verify" / "SKILL.md"
 STACKS_DIR = REPO_ROOT / "references" / "stacks"
 STACK_PROFILES = ["typescript", "python", "go", "rust", "_generic"]
@@ -28,7 +30,9 @@ STACK_PROFILES = ["typescript", "python", "go", "rust", "_generic"]
 
 def _runnability() -> str:
     text = CHECKLISTS.read_text(encoding="utf-8")
-    return text.split("### Runnability", 1)[1].split("## Epic Mode Checklist", 1)[0]
+    # `### Runnability` is impl.md's last section, so slice to end-of-file (the old
+    # `## Epic Mode Checklist` terminator now lives in epic.md).
+    return text.split("### Runnability", 1)[1]
 
 
 def test_i21_prose_recommends_dev_runtime_and_fix_mode_reverify() -> None:
@@ -65,5 +69,5 @@ def test_every_stack_profile_has_bootstrap_wiring_section() -> None:
 
 def test_verify_skill_impl_total_bumped() -> None:
     text = VERIFY_SKILL.read_text(encoding="utf-8")
-    assert "impl: ~23 checks" in text
-    assert "impl ~23" in text
+    assert "impl: 23 checks" in text
+    assert "impl 23" in text

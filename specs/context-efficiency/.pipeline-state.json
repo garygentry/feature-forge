@@ -1,0 +1,142 @@
+{
+  "feature": "context-efficiency",
+  "branch": "forge/context-efficiency",
+  "createdAt": "2026-07-20T02:36:15Z",
+  "updatedAt": "2026-07-30T00:15:25Z",
+  "currentStage": "forge-6-docs",
+  "pipelineStatus": "active",
+  "stages": {
+    "forge-3-specs": {
+      "status": "complete",
+      "version": 1,
+      "startedAt": "2026-07-20T03:30:00Z",
+      "completedAt": "2026-07-20T03:52:00Z",
+      "commitHash": "36c0a147f41c637b4b3b9defea46ecaf789e7a7d",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-verify-checklist-split.md",
+        "03-state-verbs.md",
+        "04-effective-config.md",
+        "05-instruction-relocations.md",
+        "06-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "basedOnVersions": {
+        "forge-1-prd": 2,
+        "forge-2-tech": 1
+      }
+    },
+    "forge-2-tech": {
+      "status": "complete",
+      "version": 1,
+      "artifacts": [
+        "tech-spec.md"
+      ],
+      "startedAt": "2026-07-20T02:46:48Z",
+      "completedAt": "2026-07-20T03:18:18Z",
+      "commitHash": "b3ad22de0feec98a93a8e507c2cf3d0a61007295",
+      "basedOnVersions": {
+        "forge-1-prd": 2
+      }
+    },
+    "forge-1-prd": {
+      "status": "complete",
+      "version": 2,
+      "artifacts": [
+        "PRD.md"
+      ],
+      "startedAt": "2026-07-20T02:36:15Z",
+      "completedAt": "2026-07-20T02:42:08Z",
+      "commitHash": "706c96ecd21ff607c40f084b78d258d5f97de505",
+      "basedOnVersions": {}
+    },
+    "forge-verify-prd": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-prd-2026-07-20.md",
+      "findingsCount": 4,
+      "verifiedAt": "2026-07-20T02:36:15Z",
+      "fixedAt": "2026-07-20T02:42:08Z",
+      "verifiedStageVersion": 2
+    },
+    "forge-4-backlog": {
+      "status": "complete",
+      "startedAt": "2026-07-29T02:44:17Z",
+      "version": 1,
+      "completedAt": "2026-07-29T03:42:52Z",
+      "commitHash": "9a29e846ed510c3b245876a9bf4cc73b8cb60951",
+      "artifacts": [
+        "backlog.json"
+      ],
+      "basedOnVersions": {
+        "forge-1-prd": 2,
+        "forge-2-tech": 1,
+        "forge-3-specs": 1
+      }
+    },
+    "forge-verify-specs": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-specs-2026-07-29.md",
+      "findingsCount": 36,
+      "verifiedAt": "2026-07-29T03:05:02Z",
+      "verifiedStageVersion": 1,
+      "fixedAt": "2026-07-29T03:30:44Z",
+      "commitHash": "b3c4c9bf19bb83028bc65d962ea48ef55a7098d9"
+    },
+    "forge-verify-backlog": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-backlog-2026-07-29.md",
+      "findingsCount": 27,
+      "verifiedAt": "2026-07-29T04:35:00Z",
+      "verifiedStageVersion": 1,
+      "fixedAt": "2026-07-29T07:20:00Z",
+      "commitHash": "db69f8e60b717588aaf958e8e121373e247e992e",
+      "reverifiedAt": "2026-07-29T05:55:00Z",
+      "reverifyFindingsCount": 20,
+      "reverifyRounds": 3
+    },
+    "forge-5-loop": {
+      "status": "complete",
+      "startedAt": "2026-07-29T05:07:43Z",
+      "completedAt": "2026-07-29T07:49:12Z",
+      "basedOnVersions": {
+        "forge-4-backlog": 1
+      },
+      "artifacts": [
+        "specs/context-efficiency/.rauf/state.json"
+      ],
+      "version": 1
+    },
+    "forge-verify-impl": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-impl-2026-07-29.md",
+      "findingsCount": 18,
+      "verifiedAt": "2026-07-29T08:40:00Z",
+      "verifiedStageVersion": 1,
+      "fixedAt": "2026-07-29T09:35:00Z",
+      "commitHash": "c50092d65524d24000450d5e52a6776eafee1956",
+      "reverifiedAt": "2026-07-29T10:20:00Z",
+      "reverifyFindingsCount": 6,
+      "reverifyRounds": 1
+    },
+    "forge-6-docs": {
+      "status": "complete",
+      "completedAt": "2026-07-30T00:15:09Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 2,
+        "forge-2-tech": 1,
+        "forge-3-specs": 1,
+        "forge-4-backlog": 1,
+        "forge-5-loop": 1
+      },
+      "artifacts": [
+        "docs/architecture/context-efficiency/README.md",
+        "docs/architecture/context-efficiency/architecture.md",
+        "docs/architecture/context-efficiency/cli-reference.md",
+        "docs/architecture/context-efficiency/guides/integration.md"
+      ],
+      "commitHash": "e2c0e7ae98d72be9be97fc41082c7d44c20b8287"
+    }
+  }
+}

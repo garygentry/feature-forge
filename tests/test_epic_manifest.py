@@ -882,3 +882,183 @@ def test_perf_20_feature_validate_render(run_cli, helper_module, tmp_path) -> No
     in_start = time.perf_counter()
     helper_module.render_status(specs / epic, specs)
     assert (time.perf_counter() - in_start) < 0.1
+
+
+# ---------------------------------------------------------------------------
+# Item 020 — nextCommand is DERIVED from stages[].status, never from currentStage
+# ---------------------------------------------------------------------------
+
+
+def _make_single_member_epic(
+    specs: Path,
+    *,
+    current_stage: str,
+    stages: dict,
+    prd: bool = True,
+) -> str:
+    """Build a one-member epic whose member carries the given state; return the epic."""
+    epic = "nextcmd-epic"
+    member_dir = specs / epic / "m1"
+    member_dir.mkdir(parents=True, exist_ok=True)
+    if prd:
+        (member_dir / "PRD.md").write_text("# PRD\n")
+    (member_dir / ".pipeline-state.json").write_text(json.dumps({
+        "feature": "m1",
+        "epic": epic,
+        "createdAt": "2026-07-29T00:00:00Z",
+        "updatedAt": "2026-07-29T00:00:00Z",
+        "pipelineStatus": "active",
+        "currentStage": current_stage,
+        "stages": stages,
+    }))
+    (specs / epic / "epic-manifest.json").write_text(json.dumps({
+        "schemaVersion": 1,
+        "epic": epic,
+        "description": "x",
+        "status": "active",
+        "narrativeDoc": "EPIC.md",
+        "createdAt": "2026-07-29T00:00:00Z",
+        "updatedAt": "2026-07-29T00:00:00Z",
+        "features": [
+            {"name": "m1", "charter": "c", "dependsOn": [], "exposes": [], "consumes": []}
+        ],
+    }))
+    (specs / epic / "EPIC.md").write_text("# nextcmd-epic\n")
+    return epic
+
+
+def _complete(version: int = 1) -> dict:
+    return {
+        "status": "complete",
+        "version": version,
+        "completedAt": "2026-07-29T00:00:00Z",
+    }
+
+
+def test_next_command_advances_past_a_completed_stage(run_cli, tmp_path) -> None:
+    """A member whose PRD is complete is pointed at forge-2-tech, not back at forge-1-prd.
+
+    Item 020 regression. R4 left `state-enter` as the only writer of `currentStage`,
+    so between "forge-1-prd completes" and "forge-2-tech is entered" the field still
+    reads `forge-1-prd` — the window in which a user actually consults the rollup to
+    find out what to do next. Reading the field here recommended re-running the stage
+    they had just finished, and nothing would advance it, because advancing it
+    requires running the stage the rollup declined to recommend.
+    """
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs, current_stage="forge-1-prd", stages={"forge-1-prd": _complete()}
+    )
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert out["nextCommand"] == "/feature-forge:forge-2-tech m1"
+
+
+def test_next_command_is_independent_of_the_recorded_current_stage(
+    run_cli, tmp_path
+) -> None:
+    """The same stages[] produces the same recommendation under either convention.
+
+    Pre-R4 canon wrote `currentStage` = the NEXT stage on completion; the schema
+    defines it as the most recently STARTED stage. Both values must yield the same
+    nextCommand, which is only true if the field is not consulted at all.
+    """
+    stages = {"forge-1-prd": _complete(), "forge-2-tech": _complete()}
+    results = []
+    for i, recorded in enumerate(("forge-2-tech", "forge-3-specs")):
+        specs = tmp_path / f"specs-{i}"
+        epic = _make_single_member_epic(specs, current_stage=recorded, stages=stages)
+        results.append(
+            run_cli("render-status", epic, "--specs-dir", str(specs), "--json")
+            .json()["nextCommand"]
+        )
+    assert results == ["/feature-forge:forge-3-specs m1"] * 2
+
+
+def test_next_command_resumes_an_in_progress_stage(run_cli, tmp_path) -> None:
+    """An entered-but-unfinished stage is still the next thing to run (resume it)."""
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs,
+        current_stage="forge-2-tech",
+        stages={"forge-1-prd": _complete(), "forge-2-tech": {"status": "in-progress"}},
+    )
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert out["nextCommand"] == "/feature-forge:forge-2-tech m1"
+
+
+def test_next_command_treats_a_stale_stage_as_un_run(run_cli, tmp_path) -> None:
+    """A stage marked `stale` by the cascade is not complete, so it is next."""
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs,
+        current_stage="forge-3-specs",
+        stages={
+            "forge-1-prd": _complete(version=2),
+            "forge-2-tech": {"status": "stale", "version": 1},
+        },
+    )
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert out["nextCommand"] == "/feature-forge:forge-2-tech m1"
+
+
+def test_next_command_still_routes_a_missing_prd_to_forge_1_prd(
+    run_cli, tmp_path
+) -> None:
+    """The PRD-absent guard is unchanged: no PRD.md means start at forge-1-prd."""
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs,
+        current_stage="forge-2-tech",
+        stages={"forge-1-prd": _complete()},
+        prd=False,
+    )
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert out["nextCommand"] == "/feature-forge:forge-1-prd m1"
+
+
+def test_next_command_recommends_forge_fix_when_only_findings_remain(
+    run_cli, tmp_path
+) -> None:
+    """All six stages complete but findings unapplied -> actionable, and forge-fix.
+
+    `findings-reported` keeps the member out of complete-for-orchestration, so it is
+    still actionable while having no un-run production stage. The old code emitted
+    `/feature-forge:{currentStage}` here, which pre-R4 was the literal
+    `/feature-forge:complete` — not a command.
+    """
+    specs = tmp_path / "specs"
+    stages = {s: _complete() for s in (
+        "forge-1-prd", "forge-2-tech", "forge-3-specs",
+        "forge-4-backlog", "forge-5-loop", "forge-6-docs",
+    )}
+    stages["forge-verify-impl"] = {"status": "findings-reported"}
+    epic = _make_single_member_epic(specs, current_stage="forge-6-docs", stages=stages)
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert "m1" in out["actionable"]
+    assert out["nextCommand"] == "/feature-forge:forge-fix m1"
+
+
+def test_a_finished_member_reports_complete_without_a_next_command(
+    run_cli, tmp_path
+) -> None:
+    """Item 020 AC: the epic rollup's finished-member display is acceptable as-is.
+
+    `currentStage` now reads `forge-6-docs` rather than the unreachable `complete`,
+    but the member's coarse status comes from `is_complete_for_orchestration`, so the
+    rollup still says `complete` and offers no next command.
+    """
+    specs = tmp_path / "specs"
+    stages = {s: _complete() for s in (
+        "forge-1-prd", "forge-2-tech", "forge-3-specs",
+        "forge-4-backlog", "forge-5-loop", "forge-6-docs",
+    )}
+    stages["forge-verify-impl"] = {"status": "passed"}
+    epic = _make_single_member_epic(specs, current_stage="forge-6-docs", stages=stages)
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+
+    row = next(f for f in out["features"] if f["name"] == "m1")
+    assert row["status"] == "complete"
+    assert row["stage"] == "forge-6-docs"
+    assert out["rollup"]["complete"] == out["rollup"]["total"] == 1
+    assert out["actionable"] == []
+    assert out["nextCommand"] is None

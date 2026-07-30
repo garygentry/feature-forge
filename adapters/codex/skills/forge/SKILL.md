@@ -14,9 +14,9 @@ You are the navigator for the feature-forge development pipeline. Your job is to
 
 Read and follow `references/shared-conventions.md` for configuration reading (feature name validation, config defaults, force mode).
 
-For pipeline architecture details, read `references/process-overview.md`.
-
 ### 2. Determine Context
+
+**Only if the user is asking how the pipeline works** — architecture, stage ordering, what a stage does, or "explain forge" — read `references/process-overview.md` for the details before answering. For routine status/dashboard rendering, do **not** read it.
 
 **If a feature name is provided** (e.g., `/feature-forge:forge auth`):
 - **First test whether the name is an epic:** if `{specsDir}/{name}/epic-manifest.json` exists, render the **Epic Dashboard** (see format below) and stop — do not treat it as a feature.
@@ -48,8 +48,6 @@ If no epics and no standalone features exist **on the current branch**, do not c
 The feature name must be a single kebab-case token. If the user provides multiple words (e.g., "user auth flow"), convert to kebab-case: `user-auth-flow`.
 
 ### 3. Pipeline Status Dashboard
-
-Write pipeline state conforming to `references/pipeline-state-schema.json`.
 
 Display a clear, scannable status for the feature:
 
@@ -181,7 +179,13 @@ All of this is reconstructed **purely from disk** — the manifest plus each mem
 
 ### 4. Notes Management
 
-If the user says something like "note: switching to jose for JWT" or "remember: we decided X", update the `notes` field in `.pipeline-state.json`. This helps preserve context across session clears.
+If the user says something like "note: switching to jose for JWT" or "remember: we decided X", update the `notes` field by running `state-note` (below). This helps preserve context across session clears. Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`.
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-note --feature "{feature}" --note "<what the user said>" --specs-dir "{specsDir}"
+```
 
 ### 5. Available Commands Reference
 
@@ -199,6 +203,8 @@ Commands:
 ```
 
 ### 6. Pipeline Lifecycle Commands
+
+> **Deliberate R4 exclusion.** The `pipelineStatus` writes below (`pause` / `resume` / `abandon`, and the member-pause under **Epic lifecycle**) stay hand-authored on purpose: the `state-*` verbs cover the seven stage and array touch points, and none of them writes `pipelineStatus`. These are the sanctioned exception to the Pipeline State Protocol in `references/shared-conventions.md` — everywhere else, state is written by a verb, never by hand. When authoring one of these `pipelineStatus` writes, conform to `references/pipeline-state-schema.json` — this is the one navigator path that still reads it.
 
 Support these sub-commands for pipeline lifecycle management:
 - `/feature-forge:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.

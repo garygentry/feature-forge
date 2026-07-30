@@ -109,3 +109,22 @@ In the suspect environment (e.g. a fresh remote session after the marketplace se
    text the session loaded if version skew is suspected.
 3. Check `currentBranch` vs. each feature's `stateBranch` (root cause B when they diverge).
 4. Check `backlogPath`/`backlogExists` per feature before trusting any claim about the backlog.
+5. If the loop stage misbehaves rather than failing outright — wrong binary, wrong run command,
+   a flag the project never set — resolve the loop-runner config deterministically instead of
+   reading it off `forge.config.json` and mentally merging the schema defaults:
+
+   ```bash
+   python3 <plugin-root>/scripts/forge-session.py effective-config \
+     --config ./forge.config.json --json
+   ```
+
+   It prints the **effective** `loopRunner` block: every field's default from the bundled
+   `references/forge-config-schema.json`, with the project's `loopRunner` overrides merged on
+   top. Command templates keep their `{bin}`/`{backlogDir}`/`{iterations}` placeholders, so what
+   you see is what the loop stage renders from. Two exit codes only, and the split matters when
+   you are diagnosing an environment: a **missing or corrupt `forge.config.json` is not an
+   error** — it resolves to pure defaults and exits **0**, which is what an unconfigured project
+   should get. Only an unreadable, unparseable, or `loopRunner`-less schema exits **2**, because
+   then there are no defaults to resolve and a partial merge would be worse than failing. So an
+   exit 2 here points at the *install* (root cause A territory — the wrong or a damaged bundle),
+   never at the project's config.

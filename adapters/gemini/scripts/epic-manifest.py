@@ -62,6 +62,21 @@ KNOWN_VERIFY_STATUSES: Final = frozenset(
 #: 'skipped', and 'pending' do NOT unblock dependents. Not collapsible into the set above.
 _VERIFY_ORCH_COMPLETE: Final = frozenset({"passed", "findings-applied"})
 
+#: The six production stages in pipeline order — mirrors ``PRODUCTION_STAGES`` in
+#: forge-session.py. Used ONLY to DERIVE "what runs next" from ``stages[].status``
+#: (see ``_next_production_stage``), never to read it out of ``currentStage``:
+#: the schema defines ``currentStage`` as "where the pipeline IS" (the most
+#: recently *started* stage), which is one stage behind the next un-run stage for
+#: the whole window between a stage completing and its successor being entered.
+_PRODUCTION_STAGES: Final = (
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+    "forge-5-loop",
+    "forge-6-docs",
+)
+
 
 # --------------------------------------------------------------------------- #
 # Type Definitions (00-core-definitions.md §4, §5; 02 §8.4)
@@ -946,19 +961,47 @@ def _transitive_deps(name: str, adjacency: dict[str, list[str]]) -> set[str]:
     return seen
 
 
+def _next_production_stage(state: dict) -> str | None:
+    """Return the first production stage that is not yet complete, else None.
+
+    The epic-side mirror of ``next_stage()`` in forge-session.py, and for the same
+    reason its docstring gives: "what runs next" is DERIVED from ``stages[].status``,
+    never read from the stored ``currentStage``. A missing, pending, in-progress or
+    stale stage all count as "not done".
+    """
+    stages = state.get("stages")
+    if not isinstance(stages, dict):
+        return _PRODUCTION_STAGES[0]
+    for stage in _PRODUCTION_STAGES:
+        entry = stages.get(stage)
+        if not isinstance(entry, dict) or entry.get("status") != "complete":
+            return stage
+    return None
+
+
 def _next_command(feature_dir: Path, status_row: FeatureStatus) -> str:
     """Recommend the next forge command for an actionable feature (02 §8.3).
 
-    ``/feature-forge:forge-1-prd <name>`` when the feature's PRD is absent (or it
-    has not progressed past epic creation), else the command for its next un-run
-    stage (its ``currentStage``).
+    ``/feature-forge:forge-1-prd <name>`` when the feature's PRD is absent (or the
+    member has not progressed past epic creation), else the command for its next
+    un-run production stage — DERIVED from ``stages[].status``, not read from
+    ``currentStage`` (item 020: ``currentStage`` is "where the pipeline IS", so
+    reading it here recommended re-running the stage the member had just finished
+    for the whole window before the next stage was entered).
+
+    When every production stage is complete but the member is still actionable, the
+    only thing holding it back is unapplied verify findings (``forge-verify-impl``
+    is ``findings-reported``), so ``forge-fix`` is the accurate recommendation.
     """
     name = status_row["name"]
-    stage = status_row["stage"]
+    state = _read_state_safely(feature_dir / PIPELINE_STATE_FILENAME)
+    nxt = _next_production_stage(state)
     prd_present = (feature_dir / "PRD.md").is_file()
-    if not prd_present or stage in ("forge-0-epic", "forge-1-prd"):
+    if not prd_present or nxt == "forge-1-prd":
         return f"/feature-forge:forge-1-prd {name}"
-    return f"/feature-forge:{stage} {name}"
+    if nxt is None:
+        return f"/feature-forge:forge-fix {name}"
+    return f"/feature-forge:{nxt} {name}"
 
 
 def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:

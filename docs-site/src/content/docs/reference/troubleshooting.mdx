@@ -31,6 +31,34 @@ The [loop stage](/pipeline/stage-5-loop/) has a few preconditions. Common causes
 - The runner isn't set up in the project — rauf needs a `.rauf.json`, created by running `rauf install .`.
 - There are uncommitted changes. The runner refuses a dirty tree, so the stage commits pipeline state before launching.
 
+## What loop-runner settings will the loop actually use?
+
+Most `loopRunner` fields have defaults, so the block in your `forge.config.json` is only the
+part you overrode — which makes "what will actually run?" hard to answer by reading it. Ask
+the pipeline instead:
+
+```
+python3 <plugin-root>/scripts/forge-session.py effective-config --config ./forge.config.json --json
+```
+
+That prints the **effective** configuration: every field's default (read from the bundled
+`references/forge-config-schema.json`) with your overrides merged on top. Command templates
+come back with their `{bin}`, `{backlogDir}` and `{iterations}` placeholders intact, because
+that is exactly what the [loop stage](/pipeline/stage-5-loop/) renders from. Drop `--json`
+for an aligned, readable table.
+
+It is a diagnostic, so its exit codes are worth knowing:
+
+- **Exit 0** — resolved. A **missing or corrupt `forge.config.json` is not an error**: it
+  resolves to pure defaults, which is what an unconfigured project should get.
+- **Exit 2** — the bundled schema itself is unreadable or unparseable. Nothing is printed,
+  deliberately: with no defaults to resolve, a partial answer would be worse than none. This
+  points at the install, not at your config — repair it with `feature-forge update`.
+
+This is also the reason the loop stage no longer mis-reports its own settings: the defaults
+merge is computed by the script rather than assembled by the model reading a schema. See
+[configuration](/advanced/config/) for what each field means.
+
 ## The loop stopped — what do the signals mean?
 
 For each item, the agent emits one signal (see [core concepts](/start-here/concepts/) and the [loop stage](/pipeline/stage-5-loop/)):

@@ -15,6 +15,27 @@ root navigator:
         [--config FILE] [--epic E] [--json]
     python3 forge-session.py stage-exit --feature F --stage S [--specs-dir DIR] \
         [--config FILE] [--epic E] [--next-feature N] [--host claude|generic] [--json]
+    python3 forge-session.py effective-config [--config FILE] [--schema PATH] [--json]
+
+Plus the `state-*` write verbs, which author `.pipeline-state.json` so no stage
+has to hand-write the JSON (and therefore no stage has to read the state schema):
+
+    python3 forge-session.py state-enter --feature F --stage S [--specs-dir DIR] \
+        [--epic E] [--json]
+    python3 forge-session.py state-artifact --feature F --stage S --path P \
+        [--path P ...] [--specs-dir DIR] [--epic E] [--json]
+    python3 forge-session.py state-complete --feature F --stage S --version N \
+        [--based-on STAGE=N ...] [--artifact P ...] [--commit-hash H] \
+        [--status complete|in-progress] [--resumable] [--preserve-commit-hash] \
+        [--specs-dir DIR] [--epic E] [--json]
+    python3 forge-session.py state-branch --feature F --branch B [--specs-dir DIR] \
+        [--epic E] [--json]
+    python3 forge-session.py state-note --feature F --note TEXT [--specs-dir DIR] \
+        [--epic E] [--json]
+    python3 forge-session.py state-decision --feature F --question Q --raised-by S \
+        [--rationale R] [--target-stage S] [--specs-dir DIR] [--epic E] [--json]
+    python3 forge-session.py state-ecr --feature F --kind K --target T --rationale R \
+        --raised-by S --blocks-current true|false [--specs-dir DIR] [--epic E] [--json]
 
 `rank-features` scans the specs tree for feature-shaped directories (those that
 directly contain a `.pipeline-state.json`, in both the flat
@@ -66,6 +87,44 @@ present, autoFix eligibility, the verify and next-stage commands) plus the
 exact sentinel-terminated NEXT-STEPS block the skill must print verbatim as
 its absolute last output. Deterministic and read-only; always exits 0.
 
+`effective-config` resolves the `loopRunner` block deterministically so no
+caller has to read `references/forge-config-schema.json` just to learn the
+defaults: it extracts each field's schema `default` at runtime and merges the
+project's `loopRunner` overrides on top. A missing or corrupt
+`forge.config.json` resolves to pure defaults (exit 0); only an unreadable
+schema is fatal (exit 2), because then there are no defaults to resolve.
+
+The `state-*` verbs are the script's only writers. Each follows the same
+resolve -> load -> mutate -> refresh `updatedAt` -> atomic write path, so every
+successful write leaves a schema-conformant state file: `state-enter` stamps a
+stage in-progress and moves `currentStage`, `state-artifact` appends artifact
+paths to a stage (de-duplicating), `state-branch` records the branch resolved by
+Branch Setup / Branch Reconciliation, and `state-note` persists the free-text
+note a user volunteers at a stage exit. They never create a feature directory —
+an unknown `--feature` is a usage error (exit 2) — and they never overwrite a
+state file they could not parse.
+
+`state-complete` is the largest of them: it records the completion (status,
+`completedAt`, `version`, `basedOnVersions`, `artifacts`), resets `commitHash` to
+null for Commit 1 of the two-commit Git Commit Protocol, and runs the
+deterministic downstream staleness cascade that each stage used to describe in
+prose. `--commit-hash` is the Commit-2 follow-up, setting only that field (and
+refusing a stage that is not yet complete). The protocol's two recovery branches
+stay executable without hand-authored JSON: `--resumable` is the failed-Commit-1
+revert (status-only, no cascade), and `--preserve-commit-hash` is the "nothing to
+commit" branch. A bare `--status in-progress` is something else again —
+forge-5-loop's partial completion, which keeps every completion field.
+
+`state-decision` and `state-ecr` are the two array-appending verbs. The first
+appends a `deferredDecisions[]` item — a same-feature decision deliberately
+postponed to a later stage; the second appends an `epicChangeRequests[]` item —
+a member stage's report that the epic decomposition itself must change, whose
+`blocksCurrent` boolean drives the stage exit's pause-now vs. finish-then-edit
+routing (so it is required and parsed strictly: only `true`/`false`). Both always
+record `status: "open"` — resolving an item is the target stage's job, never the
+recorder's — and both emit exactly the schema keys, because those two array item
+shapes set `additionalProperties: false`.
+
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
 matching the conventions of `scripts/epic-manifest.py`.
 
@@ -81,9 +140,10 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Final, TypedDict
+from typing import Callable, Final, TypedDict
 
 
 # --------------------------------------------------------------------------- #
@@ -104,6 +164,34 @@ PRODUCTION_STAGES: Final[tuple[str, ...]] = (
     "forge-5-loop",
     "forge-6-docs",
 )
+
+#: The --stage domain for the state-write verbs: the six PRODUCTION_STAGES above
+#: (order-sensitive — next_stage/verify_state/stage_exit all walk that tuple, so it
+#: is NEVER redefined) plus forge-0-epic, which also carries a stageEntry but is
+#: excluded from the next-stage walk.
+STATE_VERB_STAGES: Final[tuple[str, ...]] = ("forge-0-epic", *PRODUCTION_STAGES)
+
+#: The `--raised-by` / `--target-stage` domains for `state-decision`, and the
+#: `--kind` / `--raised-by` domains for `state-ecr`. SOURCE OF TRUTH:
+#: references/pipeline-state-schema.json (the `deferredDecisions` and
+#: `epicChangeRequests` array item enums). Mirrored here so an out-of-enum value is
+#: rejected at parse time; a drift guard asserts they still match the schema.
+DECISION_RAISED_BY: Final[tuple[str, ...]] = (
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+)
+DECISION_TARGET_STAGES: Final[tuple[str, ...]] = (
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+    "forge-5-loop",
+    "forge-6-docs",
+)
+ECR_KINDS: Final[tuple[str, ...]] = ("add-feature", "redep", "move-boundary", "split")
+ECR_RAISED_BY: Final[tuple[str, ...]] = ("forge-1-prd", "forge-2-tech")
 
 #: Production stage -> the verify token its findings file uses, and the
 #: `forge-verify-<token>` key its state lives under. forge-6-docs has no verify.
@@ -1684,8 +1772,857 @@ def _print_stage_exit(payload: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Effective loopRunner config
+# --------------------------------------------------------------------------- #
+
+
+def _default_schema_path() -> Path:
+    """Return the bundled forge-config-schema.json path (sibling references/ dir).
+
+    Resolved relative to this script file so `effective-config` works from any
+    cwd. Overridable via the ``--schema`` flag (chiefly for tests).
+
+    Returns:
+        The Path to ``references/forge-config-schema.json`` next to ``scripts/``.
+    """
+    return Path(__file__).resolve().parent.parent / "references" / "forge-config-schema.json"
+
+
+def _loop_runner_defaults(schema_path: Path) -> dict[str, object]:
+    """Extract every ``loopRunner`` field's schema ``default``.
+
+    Reads ``properties.loopRunner.properties.<field>.default`` for each field.
+    Stdlib-only (``json`` + dict access), mirroring
+    ``tests/test_config_defaults_parity.py``. The schema is the single source of
+    truth; nothing here is hardcoded.
+
+    Only fields that actually declare a ``default`` keyword are included. Every
+    ``loopRunner`` field does today; a field losing its default would be a schema
+    regression the drift guard catches, not something silently patched here.
+
+    Args:
+        schema_path: Path to ``forge-config-schema.json``.
+
+    Returns:
+        A dict mapping each ``loopRunner`` field name to its declared default
+        value (templates such as ``"{bin} loop run …"`` are returned literally).
+
+    Raises:
+        UsageError: If the schema is missing, unreadable, unparseable, or lacks a
+            ``loopRunner.properties`` object — a deterministic failure that must
+            exit 2. Never returns partial/empty defaults silently.
+    """
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise UsageError(f"config schema unreadable: {schema_path} ({exc})") from exc
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"config schema is not valid JSON: {schema_path} ({exc})") from exc
+
+    props = None
+    if isinstance(schema, dict):
+        loop_runner = schema.get("properties", {})
+        if isinstance(loop_runner, dict):
+            loop_runner = loop_runner.get("loopRunner", {})
+        if isinstance(loop_runner, dict):
+            props = loop_runner.get("properties")
+    if not isinstance(props, dict) or not props:
+        raise UsageError(f"config schema has no loopRunner.properties object: {schema_path}")
+
+    return {
+        field: spec["default"]
+        for field, spec in props.items()
+        if isinstance(spec, dict) and "default" in spec
+    }
+
+
+def resolve_loop_runner(config_path: Path, schema_path: Path) -> dict[str, object]:
+    """Resolve the effective ``loopRunner`` config: schema defaults + user overrides.
+
+    Reads the schema defaults, then merges the user's ``loopRunner`` block (from
+    ``forge.config.json`` via the existing ``_load_config``) OVER them. A user
+    field replaces the default; an absent field keeps the default. The result is
+    the fully-resolved block the loop consumes — computed deterministically so no
+    model ever merges it by hand.
+
+    Args:
+        config_path: Path to ``forge.config.json`` (``_load_config`` tolerates a
+            missing/corrupt file, yielding pure defaults).
+        schema_path: Path to ``forge-config-schema.json`` (source of the defaults).
+
+    Returns:
+        The resolved ``loopRunner`` object: every schema-defaulted field present,
+        with user overrides applied.
+
+    Raises:
+        UsageError: If the schema is unreadable/unparseable (propagated from
+            ``_loop_runner_defaults``) — exit 2, a deterministic failure.
+    """
+    resolved: dict[str, object] = dict(_loop_runner_defaults(schema_path))
+
+    user_loop_runner = _load_config(config_path).get("loopRunner")
+    if isinstance(user_loop_runner, dict):
+        for key, value in user_loop_runner.items():
+            # Flat override: a user value replaces the default for that field.
+            # (A future nested loopRunner field would recurse here; today every
+            # field is a scalar, so a shallow override is exact.) An unknown key
+            # is carried through — the model would have carried it too, and the
+            # config schema is the authority that flags it at author time.
+            resolved[key] = value
+
+    return resolved
+
+
+def _print_effective_config(resolved: dict[str, object]) -> None:
+    """Print the resolved loopRunner config as an aligned key: value table.
+
+    Args:
+        resolved: The resolved loopRunner object from ``resolve_loop_runner``.
+    """
+    print("Effective loopRunner config:")
+    width = max((len(k) for k in resolved), default=0)
+    for key in sorted(resolved):
+        print(f"  {key.ljust(width)} : {resolved[key]!r}")
+
+
+# --------------------------------------------------------------------------- #
+# State writes (shared machinery for the state-* verbs)
+# --------------------------------------------------------------------------- #
+
+
+def _now_iso() -> str:
+    """Return the current UTC time as a Z-suffixed, second-precision ISO-8601 string.
+
+    Matches the `.pipeline-state.json` timestamp convention already on disk (the
+    schema's ``format: date-time`` values; the read path normalizes a trailing
+    ``Z``). Second precision keeps `updatedAt`/`startedAt`/`completedAt` visually
+    consistent with the values other pipeline writers produce.
+
+    Returns:
+        A timestamp like ``"2026-07-29T03:30:00Z"``.
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _write_state(state_path: Path, state: dict) -> None:
+    """Atomically write a `.pipeline-state.json` (temp file + os.replace).
+
+    Mirrors epic-manifest.py's ``atomic_write``: write to a sibling temp file in
+    the same directory as the target, flush + fsync the bytes, then os.replace()
+    the temp file onto the target. os.replace is atomic on POSIX within one
+    filesystem, so an interrupted write never leaves a partial or corrupt state
+    file. Concurrent multi-session mutation is out of scope (single writer
+    assumed, matching epic-manifest.py).
+
+    Args:
+        state_path: Destination path, e.g.
+            ``{specsDir}/{feature}/.pipeline-state.json``.
+        state: The fully-formed state dict to serialize.
+
+    Raises:
+        UsageError: If the temp file cannot be created/written or the replace
+            fails (→ exit 2). The temp file is removed first, so a failed write
+            leaves no debris and the original target untouched.
+    """
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{state_path.name}.", suffix=".tmp", dir=state_path.parent
+        )
+    except OSError as exc:
+        raise UsageError(f"atomic write to {state_path} failed: {exc}") from exc
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, state_path)
+    except OSError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise UsageError(f"atomic write to {state_path} failed: {exc}") from exc
+
+
+def _resolve_feature_dir_for_write(
+    specs_dir: Path, feature: str, epic: str | None
+) -> Path:
+    """Fail-closed feature dir for the ``state-*`` WRITERS.
+
+    ``_resolve_feature_dir`` is the reader's best-effort resolver: it returns the
+    flat ``{specsDir}/{feature}`` whenever that dir carries a state file, and
+    falls back to the flat literal on a multi-match. That tolerance was written
+    for ``stage-exit``, which is READ-ONLY — an unresolvable dir there just
+    downgrades to ``{}``. For a writer the same tolerance means a bare
+    ``--feature api`` mutates a standalone ``{specsDir}/api/`` while an epic
+    member ``{specsDir}/{epic}/api/`` of the same name is silently left behind:
+    cross-feature state corruption at exit 0.
+
+    So the write path mirrors ``epic-manifest.py resolve`` — the canonical
+    resolver that produced ``{resolvedFeatureDir}`` in the first place, and which
+    rejects an ambiguous name with a structured ``ambiguous:`` finding. A writer
+    must not be more permissive than that resolver: more than one candidate
+    carrying a state file, with no explicit ``--epic``, is a hard stop.
+
+    Args:
+        specs_dir: The configured specs directory (``--specs-dir``).
+        feature: The feature name (``--feature``).
+        epic: The owning epic name for a nested member, else None (``--epic``).
+
+    Returns:
+        The resolved feature directory. With ``--epic`` the nested path is taken
+        verbatim; otherwise the single candidate carrying a state file, or the
+        flat path when none does (the first-write case).
+
+    Raises:
+        UsageError: The bare name matches more than one directory carrying a
+            state file (→ exit 2, nothing written).
+    """
+    if epic:
+        return specs_dir / epic / feature
+    flat = specs_dir / feature
+    candidates = [flat] if (flat / PIPELINE_STATE_FILENAME).is_file() else []
+    if specs_dir.is_dir():
+        candidates.extend(
+            sorted(
+                p
+                for p in specs_dir.glob(f"*/{feature}")
+                if (p / PIPELINE_STATE_FILENAME).is_file()
+            )
+        )
+    if len(candidates) > 1:
+        listed = ", ".join(str(p) for p in candidates)
+        raise UsageError(
+            f"ambiguous feature {feature!r}: {len(candidates)} directories carry a "
+            f"state file ({listed}) — pass --epic <epic> to name the one to write. "
+            f"Refusing to guess; nothing was written."
+        )
+    return candidates[0] if candidates else flat
+
+
+def _load_state_for_write(
+    specs_dir: Path, feature: str, epic: str | None
+) -> tuple[Path, dict]:
+    """Resolve a feature's state path and load its current state for mutation.
+
+    Resolves through the fail-closed `_resolve_feature_dir_for_write`, NOT the
+    reader's tolerant `_resolve_feature_dir`. Deliberately does NOT
+    reuse `_read_state`: that reader downgrades a *corrupt* file to ``{}`` because
+    the navigator's read-only sweep can safely treat it as not-started. A writer
+    that inherited it would atomically replace a corrupt-but-recoverable state
+    file with a near-empty one at exit 0. So: absent -> ``{}``; present but
+    unparseable -> refuse, leaving the file byte-intact.
+
+    The verbs never create a feature directory; an unknown ``--feature`` is a
+    usage error, not a silent create.
+
+    Args:
+        specs_dir: The configured specs directory (``--specs-dir``).
+        feature: The feature name (``--feature``).
+        epic: The owning epic name for a nested member, else None (``--epic``).
+
+    Returns:
+        A ``(state_path, state)`` tuple. ``state`` is a schema-shaped shell when
+        no state file exists yet (see the seeding below).
+
+    Raises:
+        UsageError: The bare ``feature`` name is ambiguous (more than one
+            candidate directory carries a state file and no ``--epic`` was
+            given), the feature directory does not exist, or the state file
+            exists but is not a JSON object (→ exit 2).
+    """
+    state_dir = _resolve_feature_dir_for_write(specs_dir, feature, epic)
+    if not state_dir.is_dir():
+        raise UsageError(
+            f"no feature directory at {state_dir} — check --feature "
+            f"(and --epic for a nested epic member)"
+        )
+    state_path = state_dir / PIPELINE_STATE_FILENAME
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise UsageError(
+                f"{state_path} exists but is not valid JSON ({exc}); refusing to "
+                f"overwrite it. Fix or move the file, then re-run."
+            ) from exc
+        if not isinstance(state, dict):
+            raise UsageError(
+                f"{state_path} is not a JSON object; refusing to overwrite it."
+            )
+    else:
+        state = {}
+
+    # Seed the schema-required top-level fields for EVERY verb, not just
+    # state-enter. Branch Setup fires state-branch before the entry stamp
+    # (references/shared-conventions.md), so without this a first-write
+    # state-branch would persist {"branch": ..., "updatedAt": ...} — missing
+    # every required field — at exit 0. setdefault keeps existing state as-is.
+    # (`updatedAt`, the sixth required field, is stamped by _commit_state.)
+    state.setdefault("feature", feature)
+    state.setdefault("createdAt", _now_iso())
+    state.setdefault("pipelineStatus", "active")
+    state.setdefault("stages", {})
+    state.setdefault("currentStage", PRODUCTION_STAGES[0])
+    return state_path, state
+
+
+def _commit_state(state_path: Path, state: dict) -> dict:
+    """Refresh ``updatedAt`` and write ``state`` atomically; return it for echo.
+
+    Every verb calls this exactly once, after its mutation, so ``updatedAt`` is
+    always refreshed on a successful write and the write is atomic.
+
+    Args:
+        state_path: The resolved ``.pipeline-state.json`` path.
+        state: The mutated state dict.
+
+    Returns:
+        The same ``state`` dict (now carrying a fresh ``updatedAt``), so the verb
+        can echo it under ``--json``.
+
+    Raises:
+        UsageError: If the atomic write fails (→ exit 2).
+    """
+    state["updatedAt"] = _now_iso()
+    _write_state(state_path, state)
+    return state
+
+
+def _stage_entry(state: dict, stage: str) -> dict:
+    """Return (creating if absent) the mutable ``stages.{stage}`` sub-object.
+
+    Bootstraps ``state["stages"]`` and ``state["stages"][stage]`` when missing, so
+    a verb can write into a brand-new state (``{}``), and returns the stage dict
+    for in-place mutation. The bootstrap seeds ``{"status": "pending"}`` rather
+    than ``{}`` because ``stageEntry`` declares ``required: ["status"]`` — an entry
+    created by state-artifact (which sets only ``artifacts``) would otherwise be
+    schema-invalid at exit 0.
+
+    Args:
+        state: The full state dict (mutated in place).
+        stage: A stage id from ``STATE_VERB_STAGES`` (e.g. ``"forge-1-prd"``).
+
+    Returns:
+        The mutable ``stages.{stage}`` dict.
+    """
+    stages = state.setdefault("stages", {})
+    return stages.setdefault(stage, {"status": "pending"})
+
+
+# --------------------------------------------------------------------------- #
+# State-write verbs
+# --------------------------------------------------------------------------- #
+
+
+def cmd_state_enter(feature: str, stage: str, specs_dir: Path, epic: str | None) -> dict:
+    """Apply the Entry Stamp: mark ``stage`` in-progress and set ``currentStage``.
+
+    Idempotent on re-entry within the same run: re-stamping an already
+    in-progress stage simply refreshes ``startedAt``/``updatedAt``. The
+    interactive resume-vs-restart decision stays the skill's — the verb never
+    prompts. The write is left uncommitted; the stage's existing exit commit
+    stages it later.
+
+    Args:
+        feature: Feature name.
+        stage: The stage being entered (a ``STATE_VERB_STAGES`` id).
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    entry = _stage_entry(state, stage)
+    entry["status"] = "in-progress"
+    entry["startedAt"] = _now_iso()
+    state["currentStage"] = stage
+    return _commit_state(state_path, state)
+
+
+def cmd_state_artifact(
+    feature: str, stage: str, paths: list[str], specs_dir: Path, epic: str | None
+) -> dict:
+    """Append each path in ``paths`` to ``stages.{stage}.artifacts``, de-duplicating.
+
+    Idempotent: an already-tracked path is a no-op (no duplicate append), so a
+    resumed run that re-records files it wrote earlier does not bloat the array.
+    ``updatedAt`` is refreshed even on the all-duplicates branch, keeping "state
+    was touched" honest. The verb does NOT stat the file — it records the path
+    the skill asserts it wrote.
+
+    Args:
+        feature: Feature name.
+        stage: The producing stage id.
+        paths: Artifact paths relative to the feature dir (repeatable ``--path``).
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    entry = _stage_entry(state, stage)
+    artifacts = entry.setdefault("artifacts", [])
+    for path in paths:
+        if path not in artifacts:
+            artifacts.append(path)
+    return _commit_state(state_path, state)
+
+
+def _parse_based_on(pairs: list[str]) -> dict[str, int]:
+    """Parse ``--based-on STAGE=N`` tokens into a ``{stageId: int}`` map.
+
+    Args:
+        pairs: Raw ``STAGE=N`` strings from repeated ``--based-on`` flags.
+
+    Returns:
+        A ``{stageId: version}`` dict (empty when no pairs were given — the
+        forge-1-prd case, which records ``basedOnVersions == {}``).
+
+    Raises:
+        UsageError: If a token lacks ``=`` or its value is not an integer
+            (→ exit 2).
+    """
+    out: dict[str, int] = {}
+    for token in pairs:
+        if "=" not in token:
+            raise UsageError(f"--based-on expects STAGE=N, got: {token!r}")
+        stage_id, _, raw = token.partition("=")
+        try:
+            out[stage_id] = int(raw)
+        except ValueError as exc:
+            raise UsageError(f"--based-on version must be an integer: {token!r}") from exc
+    return out
+
+
+#: Stages the staleness cascade may mark stale (downstream authored artifacts).
+#: The scope is tech..docs, matching the pre-R4 canon this cascade replaces —
+#: forge-1-prd L134 named `forge-2-tech` FIRST among the stages a PRD revision
+#: invalidates, and the tech spec is a PRD revision's most direct dependent.
+#: forge-1-prd is never marked stale by a later completion (nothing downstream
+#: feeds back into it). Keyed off this map, NOT off PRODUCTION_STAGES ordering —
+#: the two are not interchangeable (a positional slice from the completing stage
+#: would also break on forge-0-epic, which is a valid --stage but not a
+#: PRODUCTION_STAGES member).
+_CASCADE_TARGETS: Final[tuple[str, ...]] = (
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+    "forge-5-loop",
+    "forge-6-docs",
+)
+
+
+def _cascade_staleness(state: dict, completed_stage: str, new_version: int) -> list[str]:
+    """Mark downstream stages ``stale`` when they were built on an OLDER version.
+
+    Deterministic replacement for the model-prose rule in each stage's completion
+    step ("if any downstream stage has basedOnVersions referencing an older
+    version, set its status to stale"). For every downstream target (tech..docs),
+    if its recorded ``basedOnVersions[completed_stage]`` is an integer strictly
+    less than ``new_version`` AND the stage is currently ``complete``, flip it to
+    ``stale``. A downstream stage that never referenced this upstream, or already
+    references the new version, is untouched. A ``pending``/``in-progress``/
+    already-``stale`` downstream stage is not re-flipped — only a ``complete``
+    artifact can go stale.
+
+    Args:
+        state: The full state dict (mutated in place).
+        completed_stage: The stage that just completed (e.g. "forge-1-prd").
+        new_version: That stage's new version.
+
+    Returns:
+        The list of stage ids newly marked stale (for the --json echo / printer).
+    """
+    stages = state.get("stages", {})
+    newly_stale: list[str] = []
+    for target in _CASCADE_TARGETS:
+        if target == completed_stage:
+            continue
+        entry = stages.get(target)
+        if not isinstance(entry, dict) or entry.get("status") != "complete":
+            continue
+        based_on = entry.get("basedOnVersions")
+        if not isinstance(based_on, dict):
+            continue
+        recorded = based_on.get(completed_stage)
+        if isinstance(recorded, int) and not isinstance(recorded, bool) and recorded < new_version:
+            entry["status"] = "stale"
+            newly_stale.append(target)
+    return newly_stale
+
+
+def cmd_state_complete(
+    feature: str,
+    stage: str,
+    version: int,
+    based_on: dict[str, int],
+    artifacts: list[str],
+    commit_hash: str | None,
+    specs_dir: Path,
+    epic: str | None,
+    status: str | None = None,
+    preserve_commit_hash: bool = False,
+    resumable: bool = False,
+) -> dict:
+    """Mark ``stage`` complete, bump version, record provenance, cascade staleness.
+
+    Three branches, in precedence order:
+
+    1. ``commit_hash`` given — Commit 2 of the two-commit Git Commit Protocol.
+       Sets ONLY ``commitHash``, leaving status/version/artifacts intact. Guarded
+       on the stage already being ``complete``, so a typo'd ``--stage`` cannot
+       write a lone ``{"commitHash": …}`` entry (which would violate
+       ``stageEntry``'s ``required: ["status"]``) at exit 0.
+    2. ``resumable`` — the failed-Commit-1 revert (`references/shared-conventions.md`
+       L245). Records ONLY ``status = "in-progress"`` plus the ``updatedAt``
+       refresh: no completedAt, no version bump, no basedOnVersions/artifacts
+       write, no commitHash reset, no cascade. The frozen contract is "leave state
+       as in-progress so the stage can be resumed"; stamping a completion, bumping
+       the version, or cascading staleness off a commit that never landed are all
+       behavioral changes.
+    3. Otherwise — the completion write: status, completedAt, version,
+       basedOnVersions, artifacts, ``commitHash = None`` (Commit 1) unless
+       ``preserve_commit_hash``, then the downstream staleness cascade.
+
+    Branch 2 is gated on ``resumable``, NOT on ``status == "in-progress"``:
+    forge-5-loop's PARTIAL completion also passes ``--status in-progress`` but is a
+    real completion-with-artifacts, so it takes branch 3 and keeps its
+    completedAt/version/basedOnVersions/artifacts. Only ``status`` differs between
+    ``--status complete`` and a bare ``--status in-progress``. Conflating the two
+    would silently discard the ``--based-on`` item 013 passes on that call.
+
+    Args:
+        feature: Feature name.
+        stage: The completing stage id.
+        version: The stage's new version.
+        based_on: Parsed ``{upstreamStage: version}`` provenance map.
+        artifacts: Final canonical artifact path list for this stage.
+        commit_hash: If given, record it as the stage's commitHash (Commit 2);
+            else set commitHash to None (Commit 1).
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+        status: Terminal status to record — "complete" (the default when the flag
+            is absent) or "in-progress" for a partial forge-5-loop run. ``None``
+            means "not passed".
+        preserve_commit_hash: Skip the ``commitHash = None`` reset, for the Git
+            Commit Protocol's "Nothing to commit" branch (L248).
+        resumable: Failed-Commit-1 revert (L245). Record only the status; implies
+            ``--status in-progress``.
+
+    Returns:
+        The mutated state dict, plus a synthetic ``_cascadedStale`` key that is
+        surfaced in the --json echo / printer but NEVER written to disk.
+
+    Raises:
+        UsageError: Contradictory ``--resumable --status complete``, a
+            ``--commit-hash`` follow-up against a stage that is not complete, an
+            unknown feature directory, an unparseable state file, or a failed
+            atomic write (→ exit 2).
+    """
+    if resumable and status == "complete":
+        raise UsageError(
+            "--resumable implies --status in-progress; do not pass --status complete"
+        )
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    entry = _stage_entry(state, stage)
+    cascaded: list[str] = []
+    if commit_hash is not None:
+        # Commit-2 follow-up: record the real hash, leave everything else intact.
+        actual = entry.get("status")
+        if actual != _DONE_STATUS:
+            raise UsageError(
+                f"--commit-hash requires {stage} to be complete (status: {actual!r}); "
+                "run state-complete without --commit-hash first"
+            )
+        entry["commitHash"] = commit_hash
+    elif resumable:
+        # Failed-Commit-1 revert (L245): record ONLY the status. See the note above
+        # on why this is gated on --resumable rather than on the status value.
+        entry["status"] = "in-progress"
+    else:
+        entry["status"] = status or _DONE_STATUS   # "complete" | "in-progress" (partial)
+        entry["completedAt"] = _now_iso()
+        entry["version"] = version
+        entry["basedOnVersions"] = based_on
+        entry["artifacts"] = artifacts
+        if not preserve_commit_hash:
+            entry["commitHash"] = None             # Commit 1 of the Commit Protocol
+        cascaded = _cascade_staleness(state, stage, version)
+    result = _commit_state(state_path, state)
+    # Surface the cascade result for the caller without persisting it in state:
+    # _commit_state already wrote the real dict, and `echo` is a copy.
+    echo = dict(result)
+    echo["_cascadedStale"] = cascaded
+    return echo
+
+
+def cmd_state_branch(feature: str, branch: str, specs_dir: Path, epic: str | None) -> dict:
+    """Set the top-level ``branch`` field.
+
+    Records the branch resolved by Branch Setup / Branch Reconciliation. The verb
+    only writes the field; the interactive prompts and the visible one-line
+    reconciliation note stay unchanged skill prose.
+
+    Branch Setup fires before the Entry Stamp, so this verb can legitimately be
+    the FIRST thing to touch a feature's state file — `_load_state_for_write`'s
+    field seeding is what keeps that first write schema-valid.
+
+    Args:
+        feature: Feature name.
+        branch: The branch name to record.
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    state["branch"] = branch
+    return _commit_state(state_path, state)
+
+
+def cmd_state_note(feature: str, note: str, specs_dir: Path, epic: str | None) -> dict:
+    """Set the top-level ``notes`` field to ``note``.
+
+    Overwrites any existing note (the field is a single free-text string, not an
+    append log — matching the schema's ``notes: string``). The skill's "offer a
+    note — don't force one" statement is unchanged; this verb runs only when the
+    user volunteered text.
+
+    Args:
+        feature: Feature name.
+        note: The note text.
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    state["notes"] = note
+    return _commit_state(state_path, state)
+
+
+def cmd_state_decision(
+    feature: str,
+    question: str,
+    raised_by: str,
+    rationale: str | None,
+    target_stage: str | None,
+    specs_dir: Path,
+    epic: str | None,
+) -> dict:
+    """Append an open deferred-decision item to ``deferredDecisions[]``.
+
+    Emits exactly the schema keys — the array item sets
+    ``additionalProperties: false``, so a convenience field is a hard validation
+    failure: required ``question``/``raisedBy``/``raisedAt``/``status``, plus
+    ``rationale``/``targetStage`` only when provided. ``status`` is always
+    ``"open"``; the recorder never resolves a decision (the target stage flips it
+    to ``"addressed"``).
+
+    Args:
+        feature: Feature name.
+        question: The deferred decision, phrased for the target stage.
+        raised_by: The deferring stage id.
+        rationale: Optional reason for deferring.
+        target_stage: Optional resolving stage id.
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    item: dict = {
+        "question": question,
+        "raisedBy": raised_by,
+        "raisedAt": _now_iso(),
+        "status": "open",
+    }
+    if rationale is not None:
+        item["rationale"] = rationale
+    if target_stage is not None:
+        item["targetStage"] = target_stage
+    state.setdefault("deferredDecisions", []).append(item)
+    return _commit_state(state_path, state)
+
+
+def _parse_bool(raw: str, flag: str) -> bool:
+    """Parse an explicit boolean CLI value; fail closed on anything else.
+
+    Args:
+        raw: The raw flag value (e.g. from ``--blocks-current``).
+        flag: The flag name, for the error message.
+
+    Returns:
+        ``True`` for ``"true"``, ``False`` for ``"false"`` (case-insensitive,
+        surrounding whitespace ignored).
+
+    Raises:
+        UsageError: For any other value (→ exit 2), so a typo like ``"yes"`` is
+            rejected rather than silently misrouting the stage exit.
+    """
+    normalized = raw.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise UsageError(f"{flag} expects true|false, got: {raw!r}")
+
+
+def cmd_state_ecr(
+    feature: str,
+    kind: str,
+    target: str,
+    rationale: str,
+    raised_by: str,
+    blocks_current: bool,
+    specs_dir: Path,
+    epic: str | None,
+) -> dict:
+    """Append an open epic-change-request item to ``epicChangeRequests[]``.
+
+    Emits exactly the schema keys — the array item sets
+    ``additionalProperties: false``, so a convenience field is a hard validation
+    failure. All six payload fields are required, and ``status`` is always
+    ``"open"`` (only forge-0-epic edit mode flips it). ``blocksCurrent`` drives
+    stage-exit routing, so it is a strictly-parsed boolean.
+
+    Args:
+        feature: Feature name.
+        kind: One of add-feature|redep|move-boundary|split.
+        target: The sibling feature to add, or the affected feature/boundary.
+        rationale: Why the epic must change.
+        raised_by: forge-1-prd or forge-2-tech.
+        blocks_current: True → pause-now; False → finish-then-edit.
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: Unknown feature directory, unparseable state file, or a
+            failed atomic write (→ exit 2).
+    """
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    item = {
+        "kind": kind,
+        "target": target,
+        "rationale": rationale,
+        "blocksCurrent": blocks_current,
+        "raisedBy": raised_by,
+        "raisedAt": _now_iso(),
+        "status": "open",
+    }
+    state.setdefault("epicChangeRequests", []).append(item)
+    return _commit_state(state_path, state)
+
+
+def _print_state_enter(state: dict) -> None:
+    """Print the one-line human summary for `state-enter`."""
+    print(f"entered {state['currentStage']} (in-progress) for {state['feature']}")
+
+
+def _print_state_artifact(state: dict, stage: str, paths: list[str]) -> None:
+    """Print the one-line human summary for `state-artifact`."""
+    total = len(state.get("stages", {}).get(stage, {}).get("artifacts", []))
+    print(f"tracked {stage} artifact(s): {', '.join(paths)} ({total} total)")
+
+
+def _print_state_complete(
+    state: dict, stage: str, commit_hash: str | None, resumable: bool
+) -> None:
+    """Print the one-line human summary for `state-complete` (one per branch)."""
+    if commit_hash is not None:
+        print(f"recorded {stage} commitHash: {commit_hash}")
+        return
+    if resumable:
+        print(f"left {stage} in-progress (resumable — no completion recorded)")
+        return
+    entry = state.get("stages", {}).get(stage, {})
+    label = (
+        "completed"
+        if entry.get("status") == _DONE_STATUS
+        else f"partially completed ({entry.get('status')})"
+    )
+    recorded = entry.get("commitHash")
+    cascaded = state.get("_cascadedStale") or []
+    suffix = f"; marked stale: {', '.join(cascaded)}" if cascaded else ""
+    print(
+        f"{label} {stage} v{entry.get('version')} "
+        f"(commitHash: {'null' if recorded is None else recorded}){suffix}"
+    )
+
+
+def _print_state_branch(state: dict) -> None:
+    """Print the one-line human summary for `state-branch`."""
+    print(f"recorded branch for {state['feature']}: {state['branch']}")
+
+
+def _print_state_note(state: dict) -> None:
+    """Print the one-line human summary for `state-note`."""
+    print(f"note set for {state['feature']} ({len(state['notes'])} chars)")
+
+
+def _print_state_decision(state: dict) -> None:
+    """Print the one-line human summary for `state-decision` (the item appended)."""
+    item = state["deferredDecisions"][-1]
+    target = item.get("targetStage")
+    routing = f"{item['raisedBy']} → {target}" if target else f"{item['raisedBy']}, no target stage"
+    print(f"deferred decision recorded (raisedBy {routing})")
+
+
+def _print_state_ecr(state: dict) -> None:
+    """Print the one-line human summary for `state-ecr` (the item appended)."""
+    item = state["epicChangeRequests"][-1]
+    blocks = "true" if item["blocksCurrent"] else "false"
+    print(
+        f"epic change request recorded ({item['kind']} → {item['target']}, "
+        f"blocksCurrent={blocks})"
+    )
+
+
+# --------------------------------------------------------------------------- #
 # CLI dispatch
 # --------------------------------------------------------------------------- #
+
+
+def _emit(payload: dict, json_output: bool, printer: Callable[[dict], None]) -> None:
+    """Emit a state-verb result: the full JSON echo on --json, else the printer.
+
+    Args:
+        payload: The verb's resulting state dict.
+        json_output: The ``--json`` flag.
+        printer: The verb's one-line human-readable printer.
+    """
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        printer(payload)
 
 
 def _print_rank_table(rows: list[FeatureRow], counts: dict[str, int]) -> None:
@@ -1785,6 +2722,126 @@ def main() -> int:
                         help="Host wording for the NEXT-STEPS block")
     p_exit.add_argument("--json", action="store_true", dest="json_output")
 
+    p_eff = sub.add_parser(
+        "effective-config",
+        help="Resolve the loopRunner config from schema defaults + user overrides",
+    )
+    p_eff.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
+    p_eff.add_argument(
+        "--schema", default=None,
+        help="forge-config-schema.json path (default: bundled references/ copy)",
+    )
+    p_eff.add_argument("--json", action="store_true", dest="json_output")
+
+    p_enter = sub.add_parser(
+        "state-enter", help="Stamp a stage as in-progress (Entry Stamp)"
+    )
+    p_enter.add_argument("--feature", required=True, help="Feature name")
+    p_enter.add_argument("--stage", required=True, choices=STATE_VERB_STAGES,
+                         help="The stage being entered")
+    p_enter.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_enter.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_enter.add_argument("--json", action="store_true", dest="json_output")
+
+    p_art = sub.add_parser(
+        "state-artifact", help="Append artifact paths to a stage (de-duplicating)"
+    )
+    p_art.add_argument("--feature", required=True, help="Feature name")
+    p_art.add_argument("--stage", required=True, choices=STATE_VERB_STAGES,
+                       help="The stage producing the artifact")
+    p_art.add_argument("--path", required=True, action="append", dest="paths",
+                       metavar="PATH",
+                       help="Artifact path relative to the feature dir (repeatable)")
+    p_art.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_art.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_art.add_argument("--json", action="store_true", dest="json_output")
+
+    p_comp = sub.add_parser(
+        "state-complete", help="Mark a stage complete; bump version; cascade staleness"
+    )
+    p_comp.add_argument("--feature", required=True, help="Feature name")
+    p_comp.add_argument("--stage", required=True, choices=STATE_VERB_STAGES,
+                        help="The stage being completed")
+    p_comp.add_argument("--version", type=int, required=True,
+                        help="This stage's new version (integer)")
+    p_comp.add_argument("--based-on", action="append", default=[], dest="based_on",
+                        metavar="STAGE=N",
+                        help="Upstream version this artifact was built on (repeatable)")
+    p_comp.add_argument("--artifact", action="append", default=[], dest="artifacts",
+                        metavar="PATH",
+                        help="Artifact path produced by this stage (repeatable)")
+    p_comp.add_argument("--commit-hash", default=None, dest="commit_hash",
+                        help="Commit 2 follow-up: record the artifact commit's hash")
+    p_comp.add_argument("--status", default=None,
+                        choices=("complete", "in-progress"),
+                        help="Terminal status to record (default: complete). "
+                             "Use in-progress for a partial forge-5-loop run -- the "
+                             "stage still records completedAt/version/basedOnVersions/"
+                             "artifacts; only the status differs.")
+    p_comp.add_argument("--resumable", action="store_true",
+                        help="Failed-Commit-1 revert (L245): record ONLY status="
+                             "in-progress, leaving completedAt/version/basedOnVersions/"
+                             "artifacts/commitHash untouched and firing no cascade. "
+                             "Implies --status in-progress.")
+    p_comp.add_argument("--preserve-commit-hash", action="store_true",
+                        dest="preserve_commit_hash",
+                        help="Do not reset commitHash to null on completion "
+                             "(the Git Commit Protocol's 'Nothing to commit' branch)")
+    p_comp.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_comp.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_comp.add_argument("--json", action="store_true", dest="json_output")
+
+    p_br = sub.add_parser("state-branch", help="Set the top-level branch field")
+    p_br.add_argument("--feature", required=True, help="Feature name")
+    p_br.add_argument("--branch", required=True, help="Branch name to record")
+    p_br.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_br.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_br.add_argument("--json", action="store_true", dest="json_output")
+
+    p_note = sub.add_parser("state-note", help="Set the top-level notes field")
+    p_note.add_argument("--feature", required=True, help="Feature name")
+    p_note.add_argument("--note", required=True, help="Note text to persist")
+    p_note.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_note.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_note.add_argument("--json", action="store_true", dest="json_output")
+
+    p_dec = sub.add_parser(
+        "state-decision", help="Append a deferred decision (status: open)"
+    )
+    p_dec.add_argument("--feature", required=True, help="Feature name")
+    p_dec.add_argument("--question", required=True,
+                       help="The deferred decision, phrased for the target stage")
+    p_dec.add_argument("--raised-by", required=True, dest="raised_by",
+                       choices=DECISION_RAISED_BY,
+                       help="The stage deferring the decision")
+    p_dec.add_argument("--rationale", default=None, help="Why it is deferred (optional)")
+    p_dec.add_argument("--target-stage", default=None, dest="target_stage",
+                       choices=DECISION_TARGET_STAGES,
+                       help="The stage that should resolve it (optional)")
+    p_dec.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_dec.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_dec.add_argument("--json", action="store_true", dest="json_output")
+
+    p_ecr = sub.add_parser(
+        "state-ecr", help="Append an epic change request (status: open)"
+    )
+    p_ecr.add_argument("--feature", required=True, help="Feature name")
+    p_ecr.add_argument("--kind", required=True, choices=ECR_KINDS,
+                       help="The decomposition change kind")
+    p_ecr.add_argument("--target", required=True,
+                       help="The sibling feature to add, or the feature/boundary affected")
+    p_ecr.add_argument("--rationale", required=True, help="Why the epic must change")
+    p_ecr.add_argument("--raised-by", required=True, dest="raised_by",
+                       choices=ECR_RAISED_BY,
+                       help="The stage that detected the epic-level concern")
+    p_ecr.add_argument("--blocks-current", required=True, dest="blocks_current",
+                       metavar="true|false",
+                       help="true → pause-now (reconcile before proceeding); "
+                            "false → finish-then-edit")
+    p_ecr.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_ecr.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_ecr.add_argument("--json", action="store_true", dest="json_output")
+
     args = parser.parse_args()
 
     try:
@@ -1873,6 +2930,97 @@ def main() -> int:
                 print(json.dumps(payload, indent=2, ensure_ascii=False))
             else:
                 _print_stage_exit(payload)
+            return 0
+
+        if args.cmd == "effective-config":
+            schema_path = Path(args.schema) if args.schema else _default_schema_path()
+            resolved = resolve_loop_runner(Path(args.config), schema_path)
+            if args.json_output:
+                print(json.dumps(resolved, indent=2, ensure_ascii=False))
+            else:
+                _print_effective_config(resolved)
+            return 0
+
+        if args.cmd == "state-enter":
+            payload = cmd_state_enter(
+                args.feature, args.stage, Path(args.specs_dir), args.epic
+            )
+            _emit(payload, args.json_output, _print_state_enter)
+            return 0
+
+        if args.cmd == "state-artifact":
+            payload = cmd_state_artifact(
+                args.feature, args.stage, args.paths, Path(args.specs_dir), args.epic
+            )
+            _emit(
+                payload,
+                args.json_output,
+                lambda state: _print_state_artifact(state, args.stage, args.paths),
+            )
+            return 0
+
+        if args.cmd == "state-complete":
+            payload = cmd_state_complete(
+                args.feature,
+                args.stage,
+                args.version,
+                _parse_based_on(args.based_on),
+                args.artifacts,
+                args.commit_hash,
+                Path(args.specs_dir),
+                args.epic,
+                status=args.status,
+                preserve_commit_hash=args.preserve_commit_hash,
+                resumable=args.resumable,
+            )
+            _emit(
+                payload,
+                args.json_output,
+                lambda state: _print_state_complete(
+                    state, args.stage, args.commit_hash, args.resumable
+                ),
+            )
+            return 0
+
+        if args.cmd == "state-branch":
+            payload = cmd_state_branch(
+                args.feature, args.branch, Path(args.specs_dir), args.epic
+            )
+            _emit(payload, args.json_output, _print_state_branch)
+            return 0
+
+        if args.cmd == "state-note":
+            payload = cmd_state_note(
+                args.feature, args.note, Path(args.specs_dir), args.epic
+            )
+            _emit(payload, args.json_output, _print_state_note)
+            return 0
+
+        if args.cmd == "state-decision":
+            payload = cmd_state_decision(
+                args.feature,
+                args.question,
+                args.raised_by,
+                args.rationale,
+                args.target_stage,
+                Path(args.specs_dir),
+                args.epic,
+            )
+            _emit(payload, args.json_output, _print_state_decision)
+            return 0
+
+        if args.cmd == "state-ecr":
+            payload = cmd_state_ecr(
+                args.feature,
+                args.kind,
+                args.target,
+                args.rationale,
+                args.raised_by,
+                _parse_bool(args.blocks_current, "--blocks-current"),
+                Path(args.specs_dir),
+                args.epic,
+            )
+            _emit(payload, args.json_output, _print_state_ecr)
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")

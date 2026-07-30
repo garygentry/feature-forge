@@ -41,3 +41,14 @@ When running as a rauf loop iteration, follow these operational rules:
 The runner picks the model by precedence (highest wins):
 `item.model` > `--model` / options > project default > provider default.
 <!-- rauf:end -->
+
+## Repo conventions
+
+Conventions for agents contributing to this repository live in [`AGENTS.md`](AGENTS.md) —
+read it before building, testing, or opening a PR here.
+
+One that is routinely re-litigated: **`smokeCommand` is `null` by design.** `testCommand`
+(`bash scripts/validate.sh`) is a strict superset of any smoke this repo could run, and
+there is no bootable app runtime here. `CHECK-I21` is therefore `not-applicable` on this
+repo on purpose — report it as such and do **not** recommend configuring one. See
+AGENTS.md § "Verification conventions (forge-verify on this repo)".

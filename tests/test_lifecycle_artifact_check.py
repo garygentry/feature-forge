@@ -17,7 +17,9 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CHECKLISTS = REPO_ROOT / "skills" / "forge-verify" / "references" / "verification-checklists.md"
+CHECKLISTS = (
+    REPO_ROOT / "skills" / "forge-verify" / "references" / "verification-checklists" / "backlog.md"
+)
 VERIFY_SKILL = REPO_ROOT / "skills" / "forge-verify" / "SKILL.md"
 FORGE4 = REPO_ROOT / "skills" / "forge-4-backlog" / "SKILL.md"
 
@@ -26,9 +28,9 @@ def test_b27_present_and_advisory() -> None:
     text = CHECKLISTS.read_text(encoding="utf-8")
     assert "### Artifact Lifecycle Consistency" in text
     assert "**CHECK-B27**" in text
-    backlog = text.split("### Artifact Lifecycle Consistency", 1)[1].split(
-        "## Implementation Mode Checklist", 1
-    )[0]
+    # backlog.md ends with this section, so slice to end-of-file (the old
+    # `## Implementation Mode Checklist` terminator now lives in impl.md).
+    backlog = text.split("### Artifact Lifecycle Consistency", 1)[1]
     lowered = backlog.lower()
     assert "not-applicable" in lowered
     assert "never" in lowered and "hard fail" in lowered
@@ -46,5 +48,5 @@ def test_forge4_cites_b27_lifecycle_guidance() -> None:
 
 def test_verify_skill_backlog_total_bumped() -> None:
     text = VERIFY_SKILL.read_text(encoding="utf-8")
-    assert "backlog: ~27 checks" in text
-    assert "backlog ~27" in text
+    assert "backlog: 27 checks" in text
+    assert "backlog 27" in text

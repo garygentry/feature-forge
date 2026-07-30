@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate the feature-forge skill canon for spec purity (REQ-VER-01..03).
 
-Stdlib-only (no pyyaml), matching scripts/epic-manifest.py. Enforces the five
+Stdlib-only (no pyyaml), matching scripts/epic-manifest.py. Enforces the six
 rules from tech-spec.md §3.4 against the canonical skill surfaces, printing a
 human-readable report (REQ-OBS-01) and exiting non-zero on any violation
 (REQ-VER-02). See spec docs 00-core-definitions.md (types/constants) and
@@ -168,10 +168,11 @@ VR_RESIDUAL_VAR: str = "residual ${CLAUDE_PLUGIN_ROOT} in canonical surface"
 VR_BODY_LINES: str = "body {n} lines exceeds {limit}"
 VR_BODY_WORDS: str = "body {n} words exceeds {limit}"
 VR_PRELUDE_DRIFT: str = "bootstrap prelude not byte-identical to canon"
+VR_UNBOUND_ROOT: str = "shell fence uses $R with no in-fence prelude (R= assignment)"
 
 
 class Rule(str, enum.Enum):
-    """The five spec-purity rules check-spec-purity.py enforces (tech-spec §3.4).
+    """The six spec-purity rules check-spec-purity.py enforces (tech-spec §3.4).
 
     Uses the ``str, enum.Enum`` mixin (rather than 3.11's ``enum.StrEnum``) so the
     checker runs on the repo's Python 3.10 baseline; ``.value`` is a plain ``str``,
@@ -183,6 +184,7 @@ class Rule(str, enum.Enum):
     NO_RESIDUAL_VAR = "no-residual-var"  # rule 3 — REQ-RES-03
     BODY_SIZE = "body-size"  # rule 4 — REQ-SIZE-03 (hard fail)
     PRELUDE_IDENTITY = "prelude-identity"  # rule 5 — REQ-RES-05 / REQ-MAINT-01
+    PRELUDE_PRESENCE = "prelude-presence"  # rule 6 — REQ-RES-05 companion (V-002)
 
 
 @dataclass(frozen=True)
@@ -356,7 +358,7 @@ def _skill_md_files(root: Path) -> list[Path]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §3.1–§3.5 — the five rules
+# §3.1–§3.5 — the five spec'd rules, plus rule 6 (their REQ-RES-05 companion)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -553,8 +555,94 @@ def check_prelude_identity(root: Path) -> list[Violation]:
     return violations
 
 
+#: Fence languages rule 6 treats as runnable shell. A bare or non-shell fence may
+#: describe `$R` narratively (forge-bootstrap's step list does) without ever being
+#: executed, so only these are held to the in-fence-prelude requirement.
+_SHELL_FENCE_LANGS: frozenset[str] = frozenset({"bash", "sh", "shell", "zsh"})
+
+#: Opening fence, capturing the info string's FIRST word: ```` ```bash ```` and
+#: ```` ```bash title="x" ```` both yield `bash`. Matching the whole rest of the line
+#: is deliberate — an opener this pattern failed to recognize would have its CLOSING
+#: fence parsed as an opener instead, inverting fence parity and silently switching the
+#: rule off for the remainder of the file.
+_FENCE_OPEN_RE = re.compile(r"^```(\w*)[^`]*$")
+
+#: An expansion of the root variable, in either legal form: `$R/...` and `${R}/...`.
+#: Word-bounded so `$ROOT` or `$RAUF` do not count.
+_ROOT_EXPANSION_RE = re.compile(r"\$(?:R\b|\{R\})")
+
+#: An in-fence assignment that binds `$R`. Anchored to line start (MULTILINE) so a
+#: mention inside a comment or a quoted string does not satisfy the rule.
+_ROOT_ASSIGN_RE = re.compile(r"^R=", re.MULTILINE)
+
+
+def _shell_fences(text: str) -> list[str]:
+    """Return the body of every runnable shell fence in ``text``, in document order.
+
+    Args:
+        text: A canonical markdown file's contents, newline-normalized.
+
+    Returns:
+        One string per ```bash``/``sh``/``shell``/``zsh`` fence, fence markers excluded.
+    """
+    fences: list[str] = []
+    inside = False
+    lang = ""
+    buffer: list[str] = []
+    for line in text.split("\n"):
+        if inside and line.strip() == "```":
+            if lang in _SHELL_FENCE_LANGS:
+                fences.append("\n".join(buffer))
+            inside, buffer = False, []
+            continue
+        opened = _FENCE_OPEN_RE.match(line)
+        if opened is not None and not inside:
+            inside, lang, buffer = True, opened.group(1), []
+            continue
+        if inside:
+            buffer.append(line)
+    return fences
+
+
+def check_prelude_presence(root: Path) -> list[Violation]:
+    """Rule 6: a shell fence that uses ``$R`` binds it in-fence (REQ-RES-05 companion).
+
+    Rule 5's companion, closing the other half of the class: rule 5 verifies that a
+    prelude which EXISTS is byte-identical to canon; it is structurally blind to a
+    MISSING one. Shell variables do not survive across fences — each fence is its own
+    process — so a fence that expands ``$R`` without its own ``R=`` assignment resolves
+    to the empty string and silently runs against ``/``. That is exactly how the
+    Specs-Directory-Hygiene CLAUDE.md copy was dead from 2026-06-19 (finding V-002)
+    without any rule seeing it.
+
+    Only ``bash``/``sh``/``shell``/``zsh`` fences are held to this: a bare or non-shell
+    fence may name ``$R`` narratively without ever being executed.
+
+    Args:
+        root: The repo root to scan.
+
+    Returns:
+        One Violation per file containing at least one unbound-``$R`` shell fence.
+    """
+    violations: list[Violation] = []
+    for path in iter_canonical_files(root):
+        text = _read_text(path)
+        if text is None:
+            continue
+        normalized = text.replace("\r\n", "\n")
+        unbound = any(
+            _ROOT_EXPANSION_RE.search(fence) is not None
+            and _ROOT_ASSIGN_RE.search(fence) is None
+            for fence in _shell_fences(normalized)
+        )
+        if unbound:
+            rel = path.relative_to(root).as_posix()
+            violations.append(Violation(rel, Rule.PRELUDE_PRESENCE, VR_UNBOUND_ROOT))
+    return violations
+
+
 def collect_violations(root: Path) -> list[Violation]:
-    """Run all five rules and return their violations in deterministic order (§7).
+    """Run all six rules and return their violations in deterministic order (§7).
 
     Args:
         root: The repo root to scan.
@@ -569,6 +657,7 @@ def collect_violations(root: Path) -> list[Violation]:
     violations += check_no_residual_var(root)  # rule 3 — REQ-RES-03
     violations += check_body_size(root)  # rule 4 — REQ-SIZE-03
     violations += check_prelude_identity(root)  # rule 5 — REQ-RES-05
+    violations += check_prelude_presence(root)  # rule 6 — REQ-RES-05 companion
     return sorted(violations, key=lambda v: (v.path, v.rule.value, v.reason))
 
 
