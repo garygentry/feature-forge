@@ -160,3 +160,60 @@ added the `tests/test_json_loader_parity.py` drift guard. **No shared module was
 `python3 -m pytest tests -q` → 753 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` no drift (all 12
 adapter copies of the two scripts regenerated).
+
+## Item 004 — duplicate-key coverage across both copies and both CLIs
+
+Test-only, as scoped: `scripts/` is untouched. Added the 07 §5.1 matrix (parametrized over
+BOTH mirrored copies), the negative control, the real-CLI matrix, the bootstrap `commit`
+rows, and the distribution-boundary loader assertions.
+
+### Gotchas for later items
+
+- **Only `adapters/pi/scripts/forge-session.py` differs from canon.** Verified against the
+  real tree: `forge-bootstrap.py` is byte-equal on all six targets, and `forge-session.py`
+  on all but Pi. Pi's single permitted divergence is the literal
+  `"/feature-forge:" -> "/skill:"` replacement applied by
+  `_translate_pi_support_command_strings` — **not** `translate_host_terms`, which also
+  rewrites `--host claude` and `/clear` and does NOT run over runtime helpers. Using
+  `translate_host_terms` to predict the Pi helper fails.
+
+- **Executing an emitted adapter script writes `__pycache__` into `adapters/`.** That is
+  drift the `--check` gate would flag. Any test that imports/execs a bundled helper must
+  pass `-B` (and `-I`, so the bundle rather than the repo supplies the imports).
+
+- **The mirrored-block extractor is now single-sourced.**
+  `tests/test_json_loader_parity.py::mirrored_loader_pair` is the public alias;
+  `tests/test_build_adapters.py` and `tests/test_effective_config.py` both call it.
+  Do not add a third copy — a drifting extractor would silently pass.
+
+- **`forge-bootstrap.py commit` renders the config path RELATIVE** (`forge.config.json`),
+  because the CLI is invoked with target `"."` from inside the repo. Warning-line
+  assertions there must not use an absolute `tmp_path`.
+
+- **`commit` runs `git add` over `artifactsWritten` BEFORE reading the prefix.** A
+  mode-000 `forge.config.json` therefore fails inside git, never reaching the loader's
+  `OSError` branch. The portable way to exercise that branch at CLI level is a *directory*
+  named `forge.config.json` containing one file: it stages cleanly and `read_text` raises
+  `IsADirectoryError`.
+
+- **An always-unwritable fd 2 makes CPython exit 120** flushing at shutdown, which masks
+  the exit code under test. The suite injects a stderr whose *first* write raises instead
+  (`test_effective_config.run_with_failing_stderr`, shared with the bootstrap module):
+  the first write is the duplicate warning, and later writes still land so
+  bootstrap's `Error:` line stays observable. This is what pins the 05 §3.3 asymmetry —
+  session exit 0 with the advisory dropped, bootstrap exit 2.
+
+- **Decoder-hook order, re-confirmed at CLI level.** For a config with a root duplicate
+  plus nested `loopRunner`/`autoVerifyStages` duplicates, stderr order is
+  `bin`, `forge-1-prd`, `autoVerify` — nested first, root last, regardless of source order.
+
+- **Control characters in test data:** build them with `chr(7)` rather than embedding a
+  raw byte, so the file stays greppable and diffable.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite` and
+`PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 852 passed, 2 skipped (both pre-existing);
+`python3 -m pytest tests/test_effective_config.py tests/test_forge_bootstrap.py
+tests/test_build_adapters.py -q` -> 234 passed, 2 skipped; `ruff check scripts/ eval/` clean.

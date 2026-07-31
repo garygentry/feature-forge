@@ -91,6 +91,24 @@ def _extract_pair(path: Path) -> str:
     return "\n\n\n".join(_extract_function(path, name) for name in MIRRORED_FUNCTIONS)
 
 
+def mirrored_loader_pair(path: Path) -> str:
+    """Public alias of the extractor above, for the sibling guards that reuse it.
+
+    `tests/test_build_adapters.py` compares each generated adapter copy of the pair
+    against canon, and `tests/test_effective_config.py` scans the same block for banned
+    I/O. Both call this rather than re-implementing the extraction: a second copy of it
+    could drift and then silently pass, which is precisely the failure mode this module
+    exists to prevent.
+
+    Args:
+        path: Any file carrying the mirrored pair — canon or a generated adapter copy.
+
+    Returns:
+        Both function blocks, dedented as a unit and joined in declaration order.
+    """
+    return _extract_pair(path)
+
+
 def test_extraction_finds_both_functions_in_both_files():
     """Both copies exist before anything is compared — an empty diff is not a pass."""
     for path in (SESSION, BOOTSTRAP):

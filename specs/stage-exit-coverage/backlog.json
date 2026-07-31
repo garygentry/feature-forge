@@ -119,8 +119,8 @@
         "python3 -m pytest tests/test_effective_config.py tests/test_forge_bootstrap.py tests/test_build_adapters.py passes",
         "a duplicate-key config read with unwritable stderr leaves forge-session.py's exit code unchanged and returns the parsed dict, while forge-bootstrap.py commit still exits 2"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T03:52:50.806Z",
       "dependsOn": [
         "003"
       ],
