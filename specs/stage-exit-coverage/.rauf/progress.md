@@ -1019,3 +1019,72 @@ rendered block; `complete` with implementation verification outstanding fences
 `/feature-forge:forge-6-docs` once a `passed` entry is recorded. Every block carries its
 outcome sentence immediately under `**Next steps**` and exactly one sentinel as the final
 line.
+
+## Item 016 — epic edit-mode live member routing (issue #175)
+
+Added `_epic_member_state` + `_same_named_candidates` and the
+`EPIC_MEMBER_FALLBACK_WARNING` / `EPIC_MEMBER_FALLBACK_REASONS` constants, wired an
+epic edit-mode override into `stage_exit`'s `next_stage_id`/`next_command`
+computation, made the fallback warning `warnings` entry 1, and covered 07 §3.7 in
+`tests/test_stage_exit.py`.
+
+### Gotchas for later items
+
+- **The fixed `forge-0-epic -> forge-1-prd` successor is a CREATION-mode answer.**
+  The override sits AFTER `next_command` is built (so the placeholder path is
+  untouched) and applies only when `--next-feature` is present. `--next-feature`
+  is already validated as epic-only in step 1, so `next_feature is not None`
+  is sufficient — no second `stage == "forge-0-epic"` test is needed, and adding
+  one would silently exclude a future epic-served branch exit.
+
+- **Member resolution runs EARLY, right after the `_resolve_feature_dir` read**,
+  not at the routing site. The ambiguity `UsageError` must fire before the 03 §4.1
+  scheduling boundary, otherwise an exit 2 would leave an `auto-verify-pending`
+  marker behind for a route it refused to emit.
+
+- **`state_path.exists()`, not `.is_file()`.** A directory occupying the state
+  file's name reads `unreadable` (read_text raises `IsADirectoryError`) rather
+  than `missing`. That is what makes the `unreadable` row testable for EVERY uid —
+  a `chmod 000` row has to be skipped under root, the same split
+  `tests/test_effective_config.py` uses.
+
+- **Ambiguity is an IDENTITY failure, not a progress failure, and only the
+  identity half fails closed.** The resolver reads `{specsDir}/{epic}/{member}`
+  and nowhere else, so a flat/nested collision and a two-epic collision that the
+  selected epic participates in both resolve deterministically to the epic's own
+  member (two positive tests pin this). `_same_named_candidates` is consulted ONLY
+  when the member is absent from the selected epic: zero others -> `missing`, one
+  other -> `not a member of this epic` (tolerant, 02 §9), two or more -> exit 2,
+  because a guess there would route a DIFFERENT feature's pipeline (02 §10's
+  "Strict feature/epic resolution" row, REQ-REL-02).
+
+- **An absent `epic` back-pointer is NOT a mismatch.** Containment already
+  associates the member; only a back-pointer naming a *different* epic yields
+  `not a member of this epic`. Rejecting the absent case would fail every member
+  written before the back-pointer existed.
+
+- **`tests/test_stage_exit.py` already had a `_member_state(complete: bool)`** for
+  the docs/loop sections (line ~1821). Defining a second one at module scope
+  shadowed it and broke six docs tests with a confusing wrong-command failure —
+  ruff does not flag a redefined module-scope `def` at this distance. The item-016
+  helpers are prefixed `_edit_*`. Grep for the name before adding a test helper.
+
+- **The 02 §9 template is spelled out literally in the test file**
+  (`_fallback_warning`), deliberately NOT imported from the script: 07 §3 asserts
+  the literal, and building the expectation from the constant would let a
+  reworded template pass. Same convention as the `EXIT_STAGES` literal above it.
+
+- `test_epic_stage_handoff_placeholder_and_next_feature` still asserts
+  `/feature-forge:forge-1-prd config-store`, but for a NEW reason (the member has
+  no state under the epic, so it takes the named fallback). Its docstring carries
+  the `INTENTIONAL CHANGE (item 016, ...)` note and it now also asserts the
+  warning, which is the observable difference.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with
+`PASS: epic-manifest pytest suite` and `PASS: adapters/ matches a fresh generation
+(no drift)`; `python3 -m pytest tests -q` -> 1501 passed, 2 skipped (both
+pre-existing); `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py`
+run and the regenerated `adapters/` tree left in the working tree for the loop
+runner to commit.

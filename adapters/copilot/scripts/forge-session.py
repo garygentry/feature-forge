@@ -290,6 +290,25 @@ INVALID_AUTO_VERIFY_KEY_WARNING: Final = (
     'Warning: autoVerifyStages key "{key}" names no verify-capable stage; it is '
     "ignored. Valid keys are {valid}."
 )
+#: The exact 02 §9 template for an epic edit-mode member whose live pipeline state
+#: cannot be resolved. It is `warnings` entry 1 (00 §4 fixed order) and the router's
+#: ONE tolerant new case: the exit degrades DOWN to `forge-1-prd <member>` rather
+#: than fabricating progress it could not read (REQ-PROD-06). The trailing sentence
+#: is what makes the warning name both the affected feature and the recovery action
+#: (REQ-OBS-02); `{reason}` is one of `EPIC_MEMBER_FALLBACK_REASONS`.
+EPIC_MEMBER_FALLBACK_WARNING: Final = (
+    "Warning: {member}: pipeline state could not be resolved under epic {epic} "
+    "({reason}); routing to forge-1-prd. Run /feature-forge:forge {member} to "
+    "inspect its state."
+)
+#: The closed reason domain for `EPIC_MEMBER_FALLBACK_WARNING` (02 §9). No other
+#: value may be substituted — `07-testing-strategy.md` §3 asserts the literal.
+EPIC_MEMBER_FALLBACK_REASONS: Final[tuple[str, ...]] = (
+    "missing",
+    "unreadable",
+    "malformed",
+    "not a member of this epic",
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -2266,6 +2285,97 @@ def _resolve_feature_dir(specs_dir: Path, feature: str, epic: str | None) -> Pat
     return flat
 
 
+def _same_named_candidates(specs_dir: Path, epic: str, member: str) -> list[Path]:
+    """Directories OTHER than ``{specsDir}/{epic}/{member}`` carrying that name's state.
+
+    Read-only, and used only to tell "no such feature anywhere" apart from "that
+    name belongs to someone else" when the selected epic does not contain the
+    member. Sorted, so the ambiguity error it feeds is deterministic (02 §10).
+    """
+    contained = specs_dir / epic / member
+    out: list[Path] = []
+    flat = specs_dir / member
+    if flat != contained and (flat / PIPELINE_STATE_FILENAME).is_file():
+        out.append(flat)
+    if specs_dir.is_dir():
+        out.extend(
+            sorted(
+                p
+                for p in specs_dir.glob(f"*/{member}")
+                if p != contained and (p / PIPELINE_STATE_FILENAME).is_file()
+            )
+        )
+    return out
+
+
+def _epic_member_state(specs_dir: Path, epic: str, member: str) -> tuple[dict, str | None]:
+    """Resolve ONE epic member's live pipeline state for edit-mode routing (02 §9).
+
+    Identity containment comes first: the member is read from
+    ``{specsDir}/{epic}/{member}`` and nowhere else, so a same-named flat feature
+    or a member of a different epic can never be substituted for it (REQ-SEC-01).
+    ``_assert_safe_name`` has already rejected traversal by the time this runs.
+
+    Progress is then TOLERATED rather than demanded: an absent, unreadable,
+    malformed, or foreign-epic state yields a reason instead of an exception, so
+    the caller can degrade DOWN to ``forge-1-prd`` with a named warning rather
+    than crash a stage closing or infer progress it could not read (REQ-PROD-06).
+    This is the one documented new tolerant case (02 §9, 07 §3.7).
+
+    Identity itself still fails closed: a member that is not under the selected
+    epic at all and whose bare name matches more than one other candidate cannot
+    be pinned to a single feature, and guessing would route a DIFFERENT feature's
+    pipeline (REQ-REL-02, 02 §10 "Strict feature/epic resolution").
+
+    Args:
+        specs_dir: The configured specs directory.
+        epic: The selected epic — what ``--feature`` carries on an epic exit.
+        member: The selected member (``--next-feature``), already name-checked.
+
+    Returns:
+        ``(state, None)`` when the member's state resolved, else ``({}, reason)``
+        where ``reason`` is a member of ``EPIC_MEMBER_FALLBACK_REASONS``.
+
+    Raises:
+        UsageError: The member is not under the selected epic and its bare name is
+            ambiguous across the specs tree (→ exit 2, no route guessed).
+    """
+    member_dir = specs_dir / epic / member
+    state_path = member_dir / PIPELINE_STATE_FILENAME
+    # ``exists`` rather than ``is_file``: something occupying the state file's name
+    # that cannot be read as one is `unreadable`, not absent.
+    if not state_path.exists():
+        if member_dir.is_dir():
+            # Contained, just not started yet — the creation-mode case.
+            return {}, "missing"
+        elsewhere = _same_named_candidates(specs_dir, epic, member)
+        if len(elsewhere) > 1:
+            listed = ", ".join(str(p) for p in elsewhere)
+            raise UsageError(
+                f"ambiguous member {member!r} for epic {epic}: it is not under "
+                f"{member_dir} and {len(elsewhere)} other directories carry a state "
+                f"file for that name ({listed}) — refusing to guess which feature to "
+                f"route to. Re-run naming the epic that owns it."
+            )
+        return {}, "not a member of this epic" if elsewhere else "missing"
+    try:
+        raw = state_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}, "unreadable"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}, "malformed"
+    if not isinstance(parsed, dict):
+        return {}, "malformed"
+    back_pointer = parsed.get("epic")
+    if isinstance(back_pointer, str) and back_pointer != epic:
+        # The file sits under this epic but claims another one. Trusting either
+        # side would assert progress for a feature we cannot identify.
+        return {}, "not a member of this epic"
+    return parsed, None
+
+
 def _host_command(command: str, host: str) -> str:
     """Rewrite a `/feature-forge:` slash command to the host's surface.
 
@@ -3147,6 +3257,11 @@ def stage_exit(
       the fixed successor. ``--next-feature`` names the first actionable
       feature for the epic handoff; without it the runtime placeholder
       ``{first-actionable-feature}`` passes through for the skill to resolve.
+      With it, the handoff is derived from THAT member's live state via
+      ``next_stage`` (02 §9): a progressed member resumes where it actually is,
+      a fully complete member hands back to the epic dashboard, and a member
+      whose state cannot be resolved falls back to ``forge-1-prd`` with
+      ``warnings`` entry 1 naming it.
     - ``epicReconcile`` — present only when the exiting member carries
       ``open`` ``epicChangeRequests`` (epic-backflow). ``required: true`` (any
       ``blocksCurrent: true`` request) interposes a reconcile-first exit: the
@@ -3282,6 +3397,16 @@ def stage_exit(
     feature_dir = _resolve_feature_dir(specs_dir, feature, epic)
     state = _read_state(feature_dir / PIPELINE_STATE_FILENAME)
 
+    # 02 §9 epic edit-mode: resolve the SELECTED member's live progress here, before
+    # the scheduling boundary below, so an ambiguous identity exits 2 without having
+    # mutated anything. `--next-feature` is accepted only for `forge-0-epic` (step 1),
+    # so this is exactly the epic edit-mode selection. Read-only: no candidate state
+    # file is opened for writing on this path.
+    member_state: dict = {}
+    member_reason: str | None = None
+    if next_feature is not None:
+        member_state, member_reason = _epic_member_state(specs_dir, feature, next_feature)
+
     # The clean-tree snapshot is taken HERE, before the sanctioned debt write
     # below, so the pending marker cannot dirty its own precondition (03 §4.1).
     # Every other directive is likewise a pre-mutation snapshot; only
@@ -3388,6 +3513,36 @@ def stage_exit(
         "{first-actionable-feature}" if route_stage == "forge-0-epic" else feature
     )
     next_command = f"/feature-forge:{next_stage_id} {next_arg}" if next_stage_id else None
+
+    # ---- 02 §9 epic edit-mode live member routing (issue #175) -------------- #
+    # The fixed `forge-0-epic -> forge-1-prd` successor above is a CREATION-mode
+    # answer: a member that has just been decomposed has no completed production
+    # stage, so PRD is right. In edit mode the selected member may be anywhere in
+    # the pipeline, and sending it back to PRD would ask for work already done.
+    # The live position comes from the member's own state via `next_stage`, never
+    # from the epic's state, the successor table, or conversational context.
+    epic_member_warning: str | None = None
+    if next_feature is not None:
+        if member_reason is not None:
+            # Degrade DOWN, never up: an unreadable member cannot be assumed to
+            # have progressed, and inferring a later stage would fabricate the
+            # very progress this exit failed to read (REQ-PROD-06).
+            epic_member_warning = EPIC_MEMBER_FALLBACK_WARNING.format(
+                member=next_feature, epic=feature, reason=member_reason
+            )
+            next_stage_id = "forge-1-prd"
+            next_command = f"/feature-forge:forge-1-prd {next_feature}"
+        else:
+            member_next = next_stage(member_state)
+            if member_next is None:
+                # Every production stage is complete. There is no stage 7 to
+                # fabricate, so the handoff is the epic dashboard itself.
+                next_stage_id = None
+                next_command = f"/feature-forge:forge-0-epic {feature}"
+            else:
+                next_stage_id = member_next
+                next_command = f"/feature-forge:{member_next} {next_feature}"
+
     if loop_incomplete:
         # The pipeline has no next production stage from here, exactly as it has
         # none after `forge-6-docs`. Cleared BEFORE the epic-backflow block below,
@@ -3508,9 +3663,11 @@ def stage_exit(
         primary_canonical = next_command or "/feature-forge:forge"
         deferred_canonical = None
 
-    # 00 §4 fixed order. Entry 1 (the epic-member unreadable-state fallback) is not
-    # emitted by this stage of the router; entries 2 and 3 are.
+    # 00 §4 fixed order: entry 1 is the epic-member unreadable-state fallback (02 §9),
+    # then the debt-metadata and revision-mismatch entries.
     warnings: list[str] = []
+    if epic_member_warning is not None:
+        warnings.append(epic_member_warning)
     warnings.extend(
         _debt_metadata_warnings(
             verify_entry, verify_key, route_stage, feature, verify_command, verify_current

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -299,12 +300,21 @@ def test_state_walk_behind_stage_never_wins(tmp_path: Path) -> None:
 
 
 def test_epic_stage_handoff_placeholder_and_next_feature(tmp_path: Path) -> None:
+    """INTENTIONAL CHANGE (item 016, 02 §9 epic edit-mode live member routing).
+
+    The placeholder half is unchanged. The `--next-feature` half still lands on
+    `forge-1-prd config-store` — but now because that member has no state under
+    the epic at all, which is the *named fallback*, not the old unconditional
+    PRD handoff. The warning is the observable difference (REQ-PROD-06).
+    """
     root = _project(tmp_path, config={}, feature="my-epic")
     d = _exit(root, "--feature", "my-epic", "--stage", "forge-0-epic")["directives"]
     assert d["nextCommand"] == "/feature-forge:forge-1-prd {first-actionable-feature}"
+    assert d["warnings"] == []
     d2 = _exit(root, "--feature", "my-epic", "--stage", "forge-0-epic",
                "--next-feature", "config-store")["directives"]
     assert d2["nextCommand"] == "/feature-forge:forge-1-prd config-store"
+    assert d2["warnings"] == [_fallback_warning("config-store", "my-epic", "missing")]
 
 
 def test_epic_stage_verify_state_reads_the_epic_state_file(tmp_path: Path) -> None:
@@ -2557,3 +2567,385 @@ def test_every_loop_outcome_has_a_route_and_a_sentence() -> None:
     # Only `complete` may reach a production stage.
     assert [o for o, k in session._LOOP_ROUTE_KIND.items() if k == "handoff"] == \
         ["complete"]
+
+
+# --------------------------------------------------------------------------- #
+# 07 §3.7 — epic edit-mode live member routing and safety (02 §9, issue #175)
+# --------------------------------------------------------------------------- #
+
+EDIT_EPIC = "my-epic"
+#: The six production stages a member can sit at, in order. `PRODUCTION_STAGES`
+#: above is the *exit* subset (it leads with `forge-0-epic`); a member's own walk
+#: starts at PRD.
+MEMBER_STAGES = EXIT_STAGES[1:7]
+#: A `forge-verify-epic` entry that classifies `fresh` against revision 1, so the
+#: epic's own verification is resolved and the member handoff — the subject of
+#: this section — is the fenced primary rather than a demoted deferred line
+#: (02 §4 verify-primary ordering, item 011).
+_FRESH_EPIC_VERIFY = {"status": "passed", "verifiedStageVersion": 1}
+
+
+def _fallback_warning(member: str, epic: str, reason: str) -> str:
+    """The 02 §9 template, spelled out here rather than imported.
+
+    07 §3 asserts this literal, not a paraphrase: building it from the script's
+    own constant would let a reworded template pass unnoticed.
+    """
+    return (
+        f"Warning: {member}: pipeline state could not be resolved under epic "
+        f"{epic} ({reason}); routing to forge-1-prd. Run /feature-forge:forge "
+        f"{member} to inspect its state."
+    )
+
+
+def _edit_member_state(complete_through: int, epic: str | None = EDIT_EPIC) -> dict:
+    """Member state whose first `complete_through` production stages are complete."""
+    state: dict = {
+        "pipelineStatus": "active",
+        "stages": {
+            stage: {"status": "complete", "version": 1}
+            for stage in MEMBER_STAGES[:complete_through]
+        },
+    }
+    if epic is not None:
+        state["epic"] = epic
+    return state
+
+
+def _edit_project(
+    tmp_path: Path,
+    members: dict[str, dict | None] | None = None,
+    epic: str = EDIT_EPIC,
+) -> Path:
+    """An epic with resolved epic-verification plus zero or more member dirs.
+
+    A `None` value creates the member directory with no state file; a dict is
+    written verbatim as that member's `.pipeline-state.json`.
+    """
+    root = _epic_project(tmp_path, revision=1, epic_entry=_FRESH_EPIC_VERIFY, epic=epic)
+    for name, state in (members or {}).items():
+        member_dir = root / "specs" / epic / name
+        member_dir.mkdir(parents=True, exist_ok=True)
+        if state is not None:
+            (member_dir / ".pipeline-state.json").write_text(json.dumps(state))
+    return root
+
+
+def _edit_exit(root: Path, member: str, epic: str = EDIT_EPIC) -> dict:
+    return _exit(root, "--feature", epic, "--stage", "forge-0-epic",
+                 "--next-feature", member)["directives"]
+
+
+def _state_bytes(root: Path) -> dict[str, bytes]:
+    """Every `.pipeline-state.json` under `specs/`, by path — the mutation guard."""
+    return {
+        str(p.relative_to(root)): p.read_bytes()
+        for p in sorted((root / "specs").rglob(".pipeline-state.json"))
+    }
+
+
+@pytest.mark.parametrize(
+    "complete_through,expected",
+    [
+        (0, "forge-1-prd"),        # fresh: nothing done yet
+        (1, "forge-2-tech"),       # PRD complete — never back to PRD
+        (2, "forge-3-specs"),
+        (3, "forge-4-backlog"),
+        (4, "forge-5-loop"),
+        (5, "forge-6-docs"),
+    ],
+    ids=["fresh", "prd", "tech", "specs", "backlog", "loop"],
+)
+def test_edit_mode_routes_each_live_member_position(
+    tmp_path: Path, complete_through: int, expected: str
+) -> None:
+    """Each of the six live positions routes to `next_stage`'s answer (REQ-PROD-05).
+
+    This is the issue #175 reproduction: before item 016 every one of these rows
+    emitted `/feature-forge:forge-1-prd config-store`, because the exit used the
+    fixed `forge-0-epic -> forge-1-prd` successor and never opened the member's
+    state.
+    """
+    state = _edit_member_state(complete_through)
+    root = _edit_project(tmp_path, {"config-store": state})
+
+    # Parity with the exact integration 02 §9 names, not a reimplementation of it.
+    assert _load_session().next_stage(state) == expected
+
+    d = _edit_exit(root, "config-store")
+    assert d["nextStage"] == expected
+    assert d["nextCommand"] == f"/feature-forge:{expected} config-store"
+    assert d["primaryCommand"] == f"/feature-forge:{expected} config-store"
+    assert d["warnings"] == []
+
+
+@pytest.mark.parametrize("complete_through", [1, 2, 3, 4, 5, 6],
+                         ids=["prd", "tech", "specs", "backlog", "loop", "all"])
+def test_a_member_with_a_completed_prd_is_never_sent_back_to_prd(
+    tmp_path: Path, complete_through: int
+) -> None:
+    root = _edit_project(tmp_path, {"config-store": _edit_member_state(complete_through)})
+    payload = _exit(root, "--feature", EDIT_EPIC, "--stage", "forge-0-epic",
+                    "--next-feature", "config-store")
+    d = payload["directives"]
+    assert "forge-1-prd" not in (d["nextCommand"] or "")
+    assert "forge-1-prd" not in d["primaryCommand"]
+    assert "forge-1-prd" not in payload["nextSteps"]
+
+
+def test_a_fully_complete_member_hands_back_to_the_epic_dashboard(
+    tmp_path: Path,
+) -> None:
+    """No stage 7 is fabricated: `next_stage` returns None, so the epic is next."""
+    state = _edit_member_state(6)
+    root = _edit_project(tmp_path, {"config-store": state})
+    assert _load_session().next_stage(state) is None
+
+    d = _edit_exit(root, "config-store")
+    assert d["nextStage"] is None
+    assert d["nextCommand"] == f"/feature-forge:forge-0-epic {EDIT_EPIC}"
+    assert d["primaryCommand"] == f"/feature-forge:forge-0-epic {EDIT_EPIC}"
+    assert d["warnings"] == []
+
+
+def test_creation_mode_still_routes_a_brand_new_member_to_prd(tmp_path: Path) -> None:
+    """REQ-PROD-05: a member with no completed production stage is unchanged."""
+    root = _edit_project(tmp_path, {"config-store": _edit_member_state(0)})
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd config-store"
+    assert d["warnings"] == []
+    # And the placeholder form (no member selected at all) is untouched.
+    bare = _exit(root, "--feature", EDIT_EPIC, "--stage", "forge-0-epic")["directives"]
+    assert bare["nextCommand"] == \
+        "/feature-forge:forge-1-prd {first-actionable-feature}"
+
+
+# ---- tolerant fallback: the one documented new tolerant case (02 §9) -------- #
+
+
+def test_missing_member_state_falls_back_to_prd_with_the_named_warning(
+    tmp_path: Path,
+) -> None:
+    root = _edit_project(tmp_path, {"config-store": None})
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd config-store"
+    assert d["warnings"][0] == \
+        _fallback_warning("config-store", EDIT_EPIC, "missing")
+
+
+def test_an_entirely_unknown_member_is_missing_not_a_crash(tmp_path: Path) -> None:
+    root = _edit_project(tmp_path)
+    d = _edit_exit(root, "ghost")
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd ghost"
+    assert d["warnings"] == [_fallback_warning("ghost", EDIT_EPIC, "missing")]
+
+
+@pytest.mark.parametrize("payload", ['{"stages":', "[1, 2]", '"a string"', "null"],
+                         ids=["corrupt", "array", "string", "null"])
+def test_malformed_member_state_falls_back_to_prd(tmp_path: Path, payload: str) -> None:
+    """Corrupt JSON and non-object JSON both read as `malformed`."""
+    root = _edit_project(tmp_path, {"config-store": None})
+    (root / "specs" / EDIT_EPIC / "config-store" / ".pipeline-state.json").write_text(
+        payload
+    )
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd config-store"
+    assert d["warnings"] == [
+        _fallback_warning("config-store", EDIT_EPIC, "malformed")
+    ]
+
+
+def test_a_directory_in_the_state_files_place_reads_unreadable(tmp_path: Path) -> None:
+    """Deterministic for every uid, including root, where mode 000 stays readable."""
+    root = _edit_project(tmp_path, {"config-store": None})
+    (root / "specs" / EDIT_EPIC / "config-store" / ".pipeline-state.json").mkdir()
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd config-store"
+    assert d["warnings"] == [
+        _fallback_warning("config-store", EDIT_EPIC, "unreadable")
+    ]
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="mode 000 stays readable as root; the directory row covers OSError there",
+)
+def test_an_unreadable_member_state_falls_back_to_prd(tmp_path: Path) -> None:
+    root = _edit_project(tmp_path, {"config-store": _edit_member_state(3)})
+    state_path = root / "specs" / EDIT_EPIC / "config-store" / ".pipeline-state.json"
+    state_path.chmod(0o000)
+    try:
+        d = _edit_exit(root, "config-store")
+    finally:
+        state_path.chmod(0o644)
+    # Progress is NOT inferred from the unreadable file: the fallback goes DOWN.
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd config-store"
+    assert d["warnings"] == [
+        _fallback_warning("config-store", EDIT_EPIC, "unreadable")
+    ]
+
+
+def test_a_wrong_epic_back_pointer_falls_back_to_prd(tmp_path: Path) -> None:
+    """The file sits under this epic but claims another — identity is unresolved."""
+    root = _edit_project(tmp_path, {"config-store": _edit_member_state(4, epic="other")})
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd config-store"
+    assert d["warnings"] == [
+        _fallback_warning("config-store", EDIT_EPIC, "not a member of this epic")
+    ]
+
+
+def test_a_member_of_a_different_epic_falls_back_to_prd(tmp_path: Path) -> None:
+    """Selected epic does not contain it; exactly one other epic does."""
+    root = _edit_project(tmp_path)
+    other = root / "specs" / "other-epic" / "config-store"
+    other.mkdir(parents=True)
+    (other / ".pipeline-state.json").write_text(json.dumps(_edit_member_state(4, "other-epic")))
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd config-store"
+    assert d["warnings"] == [
+        _fallback_warning("config-store", EDIT_EPIC, "not a member of this epic")
+    ]
+
+
+def test_a_member_state_without_a_back_pointer_still_routes_live(tmp_path: Path) -> None:
+    """Containment already associates it; an absent `epic` field is not a mismatch."""
+    root = _edit_project(tmp_path, {"config-store": _edit_member_state(2, epic=None)})
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-3-specs config-store"
+    assert d["warnings"] == []
+
+
+def test_the_fallback_warning_is_entry_one_of_the_fixed_order(tmp_path: Path) -> None:
+    """00 §4 fixed order: the epic-member fallback precedes the debt entries."""
+    root = _edit_project(tmp_path, {"config-store": None})
+    # Owed auto-verify debt with unusable scheduling metadata is `warnings` entry 2.
+    (root / "specs" / EDIT_EPIC / ".epic-state.json").write_text(json.dumps({
+        "epic": EDIT_EPIC,
+        "stages": {"forge-verify-epic": {"status": "auto-verify-pending"}},
+    }))
+    d = _edit_exit(root, "config-store")
+    assert len(d["warnings"]) == 2
+    assert d["warnings"][0] == _fallback_warning("config-store", EDIT_EPIC, "missing")
+    assert "auto-verify-pending" in d["warnings"][1]
+
+
+def test_no_fallback_path_crashes_stage_closure(tmp_path: Path) -> None:
+    """Every tolerant reason still produces a complete, sentinel-terminated block."""
+    root = _edit_project(tmp_path, {"config-store": None})
+    payload = _exit(root, "--feature", EDIT_EPIC, "--stage", "forge-0-epic",
+                    "--next-feature", "config-store")
+    assert payload["nextSteps"].rstrip("\n").endswith(SENTINEL)
+    assert payload["nextSteps"].count(SENTINEL) == 1
+    assert "```\n/feature-forge:forge-1-prd config-store\n```" in payload["nextSteps"]
+
+
+# ---- identity still fails closed (REQ-SEC-01, REQ-REL-02) ------------------ #
+
+
+@pytest.mark.parametrize(
+    "member", ["../evil", "a/b", "/abs", "..", "Bad_Name", ""],
+    ids=["parent", "separator", "absolute", "dotdot", "shouty", "empty"],
+)
+def test_an_unsafe_member_name_exits_2_rather_than_falling_back(
+    tmp_path: Path, member: str
+) -> None:
+    root = _edit_project(tmp_path)
+    err = _rejected(root, "--feature", EDIT_EPIC, "--stage", "forge-0-epic",
+                    "--next-feature", member)
+    assert "--next-feature" in err
+    assert "routing to forge-1-prd" not in err
+
+
+def test_a_two_epic_ambiguity_exits_2_rather_than_falling_back(tmp_path: Path) -> None:
+    """The name is not under the selected epic and two others claim it.
+
+    Guessing would route a DIFFERENT feature's pipeline, so the exit refuses
+    (02 §10 "Strict feature/epic resolution"), rather than taking §9's tolerant
+    fallback — which is reserved for an identity that IS pinned.
+    """
+    root = _edit_project(tmp_path)
+    for owner in ("epic-a", "epic-b"):
+        member_dir = root / "specs" / owner / "config-store"
+        member_dir.mkdir(parents=True)
+        (member_dir / ".pipeline-state.json").write_text(
+            json.dumps(_edit_member_state(2, owner))
+        )
+    err = _rejected(root, "--feature", EDIT_EPIC, "--stage", "forge-0-epic",
+                    "--next-feature", "config-store")
+    assert "ambiguous member 'config-store'" in err
+    assert "epic-a" in err and "epic-b" in err
+    assert "routing to forge-1-prd" not in err
+
+
+def test_a_flat_nested_collision_resolves_to_the_epics_own_member(
+    tmp_path: Path,
+) -> None:
+    """Containment decides: a same-named FLAT feature is never substituted."""
+    root = _edit_project(tmp_path, {"config-store": _edit_member_state(3)})
+    flat = root / "specs" / "config-store"
+    flat.mkdir()
+    (flat / ".pipeline-state.json").write_text(json.dumps(_edit_member_state(0, epic=None)))
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-4-backlog config-store"
+    assert d["warnings"] == []
+
+
+def test_a_two_epic_collision_the_selected_epic_owns_is_not_ambiguous(
+    tmp_path: Path,
+) -> None:
+    """Another epic having the same member name never changes this epic's route."""
+    root = _edit_project(tmp_path, {"config-store": _edit_member_state(1)})
+    other = root / "specs" / "other-epic" / "config-store"
+    other.mkdir(parents=True)
+    (other / ".pipeline-state.json").write_text(
+        json.dumps(_edit_member_state(5, "other-epic"))
+    )
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-2-tech config-store"
+    assert d["warnings"] == []
+
+
+# ---- read-only guarantee --------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "member_state",
+    [None, _edit_member_state(0), _edit_member_state(3), _edit_member_state(6),
+     _edit_member_state(4, epic="other")],
+    ids=["no-file", "fresh", "mid", "complete", "wrong-epic"],
+)
+def test_no_candidate_state_file_is_modified_by_an_edit_mode_exit(
+    tmp_path: Path, member_state: dict | None
+) -> None:
+    """The edit-mode read path opens no candidate for writing (REQ-SEC-01)."""
+    root = _edit_project(tmp_path, {"config-store": member_state, "other": _edit_member_state(2)})
+    flat = root / "specs" / "config-store"
+    flat.mkdir()
+    (flat / ".pipeline-state.json").write_text(json.dumps(_edit_member_state(0, epic=None)))
+
+    before = _state_bytes(root)
+    _edit_exit(root, "config-store")
+    assert _state_bytes(root) == before
+
+
+def test_repeated_edit_mode_exits_are_byte_identical(tmp_path: Path) -> None:
+    """02 §10 determinism, across both the live route and the fallback."""
+    root = _edit_project(tmp_path, {"live": _edit_member_state(3), "broken": None})
+    for member in ("live", "broken"):
+        first = _exit(root, "--feature", EDIT_EPIC, "--stage", "forge-0-epic",
+                      "--next-feature", member)
+        second = _exit(root, "--feature", EDIT_EPIC, "--stage", "forge-0-epic",
+                       "--next-feature", member)
+        assert first == second
+
+
+def test_the_member_route_never_reads_the_epics_own_state(tmp_path: Path) -> None:
+    """The member's position comes from ITS state, not the epic's (REQ-SEC-01)."""
+    root = _edit_project(tmp_path, {"config-store": _edit_member_state(4)})
+    # A member-shaped state planted on the epic root itself must not be consulted.
+    (root / "specs" / EDIT_EPIC / ".pipeline-state.json").write_text(
+        json.dumps(_edit_member_state(0, epic=None))
+    )
+    d = _edit_exit(root, "config-store")
+    assert d["nextCommand"] == "/feature-forge:forge-5-loop config-store"
