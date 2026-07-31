@@ -783,3 +783,88 @@ template, and the 07 §4.1 test block.
 `python3 -m pytest tests -q` -> 1281 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
 regenerated `adapters/` tree left in the working tree for the loop runner to commit.
+
+## Item 013 — direct verify/fix rejoin routing tables
+
+Landed the 02 §6 outcome tables (`_BRANCH_ROUTE_KIND`, `_BRANCH_OUTCOME_TEXT`,
+`_NO_FINDINGS_RESOLVED_TEXT`) and `_branch_route`, wired them into `stage_exit` ahead of
+item 011's verify-first ordering, and covered 07 §3.3 in `tests/test_stage_exit.py`.
+
+### Gotchas for later items
+
+- **A branch exit's primary command does NOT come from verify-first ordering.** The 02 §6
+  outcome table is consulted FIRST and wholly supplies `primaryCommand`. Without that
+  ordering a `forge-verify --outcome findings` exit fell through to item 011's
+  "verification is unresolved → fence the verify command" branch and emitted
+  `/feature-forge:forge-verify FEATURE` with **no `--served-stage`** — dropping the very
+  thread issue #176 is about. Items 014/015 own the loop/docs tables; they should extend
+  the same `if stage in _BRANCH_STAGES: ... elif not resolved: ...` chain rather than add a
+  second override after it.
+
+- **`verifyGate` is now `none` for every branch exit.** A branch exit is already inside the
+  diversion and its outcome table names the one action, so a `standard`/`manual-print` gate
+  would ask "verify now?" beside a fenced FIX command — two contradictory asks. The
+  `verify` rows of the table ARE the verification prompt. Note the structural guard
+  `test_no_source_path_selects_the_gate_from_the_host_name` slices from the first
+  `verify_gate =` to `next_stage_id` and bans the substring `host` in that slice: the
+  branch condition had to go on the `if` line (before the first assignment), and any
+  comment about hosts must stay above it.
+
+- **`_next_steps_block`'s verify-first wording now follows the FENCED command**, because on
+  a branch exit the fenced action may be a fix rather than a verification. It sniffs
+  `"forge-fix " in fenced_command` (post-`_host_command`, so it survives Pi's `/skill:`
+  rewrite) and says "run the fix below" instead of "run the verification below". Production
+  exits are byte-identical, which is what
+  `test_fresh_session_guidance_follows_the_verification_action` pins. The signature stayed
+  at 00 §5's five parameters — a sixth would have broken
+  `test_next_steps_block_matches_the_00_section_5_signature`.
+
+- **The `skipped`/`reverified` preconditions are the CALLER's, not the router's.** 02 §6
+  says `skipped` is "valid only after explicit skip persistence" and `reverified` "allowed
+  only after passed state is recorded". A first draft enforced both as `UsageError`; that
+  made two *valid* members of `EXIT_OUTCOMES[stage]` exit 2 on a bare project and broke
+  item 010's landed `test_every_own_outcome_is_accepted`. Items 018/019 own the obligation
+  (the branch skills write through `state-verify` before invoking the exit, and a fix that
+  merely skips re-verification reports `deferred`, not `reverified`). `_branch_route`'s
+  docstring records the division so it is not "fixed" back.
+
+- **`no-findings` is the ONE state-dependent outcome** (`verify-if-owed`): it re-verifies
+  while the served stage's verification is unresolved and rejoins only when it is settled.
+  Consequence for parametrized tests: it cannot be listed among the always-non-advancing
+  outcomes, and with `--served-stage forge-6-docs` (tokenless → label `none` → resolved) it
+  advances to the completion action.
+
+- **`next_arg` is now keyed off `route_stage`, not `stage`.** Previously a branch exit that
+  served `forge-0-epic` produced `/feature-forge:forge-1-prd <epic>` — a member fabricated
+  from the epic's name. It now emits the same `{first-actionable-feature}` placeholder the
+  epic's own exit does. Identical for every production exit, where `route_stage is stage`.
+
+- **Live successor = `next_command`, which is already state-aware.** The existing
+  `next_stage(state)` override means a member past tech/specs rejoins at backlog, not at
+  `served + 1`. `next_command is None` happens only at the end of the pipeline (served
+  `forge-6-docs`), and `_branch_route` maps that to `/feature-forge:forge FEATURE` — the
+  completion action, never a nonexistent stage 7.
+
+- **Complete-path tests drive the REAL `state-verify` writer** (`_state_verify` /
+  `_report_findings` helpers) rather than hand-writing entries, so
+  findings → applied → passed and findings → applied → findings exercise the actual
+  freshness clearing. `--findings-file` needs the file to exist under the feature dir;
+  `_served_project` creates `findings.md`.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite` and
+`PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 1377 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` reports no
+drift, with the regenerated `adapters/` tree left in the working tree for the loop runner
+to commit.
+
+Re-verified in a second iteration by driving the real CLI directly, not only the suite:
+all four §6.1 verify rows and all seven §6.2 fix rows emit the exact primary command;
+`no-findings` flips from the verify command to `/feature-forge:forge-3-specs` once the
+served stage's verification is recorded `passed`; a branch exit serving `forge-6-docs`
+emits `/feature-forge:forge <feature>` with `nextStage: null`; a fresh production exit
+taken after a `findings-applied` write makes the verify command primary rather than the
+successor; and the two nested payloads contain ZERO sentinels while the final direct call
+contains exactly one, as its last line.

@@ -1439,3 +1439,350 @@ def test_next_steps_block_matches_the_00_section_5_signature() -> None:
                 assert block.splitlines()[-1] == SENTINEL
                 if text:
                     assert text in block
+
+
+# --------------------------------------------------------------------------- #
+# 07 §3.3 — direct verify/fix rejoin routing (02 §6, issue #176)
+# --------------------------------------------------------------------------- #
+
+#: The served stage every route test below diverts from, and the artifact version
+#: its state records. Chosen mid-pipeline so both a real successor and a real
+#: predecessor exist.
+SERVED = "forge-1-prd"
+SERVED_VERSION = 3
+SUCCESSOR_COMMAND = "/feature-forge:forge-2-tech widget"
+
+#: 02 §6.1/§6.2 as a literal table, spelled out here rather than imported: this is
+#: the CLI's black-box contract, so a typo in the script's own routing table must
+#: fail here instead of being echoed back. `_BRANCH_ROUTE_KIND` is compared against
+#: the outcome domain structurally in
+#: `test_the_branch_route_table_has_a_terminus_for_every_outcome`.
+FIX_BRANCH = f"/feature-forge:forge-fix widget --served-stage {SERVED}"
+VERIFY_BRANCH = f"/feature-forge:forge-verify widget --served-stage {SERVED}"
+BRANCH_ROUTES = {
+    ("forge-verify", "passed"): SUCCESSOR_COMMAND,
+    ("forge-verify", "findings"): FIX_BRANCH,
+    ("forge-verify", "skipped"): SUCCESSOR_COMMAND,
+    ("forge-verify", "failed"): VERIFY_BRANCH,
+    ("forge-fix", "no-findings"): VERIFY_BRANCH,   # verification still owed
+    ("forge-fix", "decisions"): FIX_BRANCH,
+    ("forge-fix", "failed"): FIX_BRANCH,
+    ("forge-fix", "applied"): VERIFY_BRANCH,
+    ("forge-fix", "reverified"): SUCCESSOR_COMMAND,
+    ("forge-fix", "reverify-findings"): FIX_BRANCH,
+    ("forge-fix", "deferred"): FIX_BRANCH,
+}
+#: The outcomes that are non-advancing regardless of state. `no-findings` is left
+#: out on purpose: it is the one outcome whose terminus depends on live state
+#: (02 §6.2), and it is covered by its own owed/resolved pair below.
+NON_ADVANCING = [
+    ("forge-verify", "findings"), ("forge-verify", "failed"),
+    ("forge-fix", "decisions"), ("forge-fix", "failed"),
+    ("forge-fix", "applied"), ("forge-fix", "reverify-findings"),
+    ("forge-fix", "deferred"),
+]
+
+
+def _served_project(
+    tmp_path: Path, entry: dict | None = None, completed: tuple[str, ...] = (SERVED,)
+) -> Path:
+    """A project whose `completed` production stages are done at `SERVED_VERSION`."""
+    stages: dict = {
+        stage: {"status": "complete", "version": SERVED_VERSION} for stage in completed
+    }
+    if entry is not None:
+        stages["forge-verify-prd"] = entry
+    root = _project(
+        tmp_path, config={}, state={"pipelineStatus": "active", "stages": stages}
+    )
+    (root / "specs" / "widget" / "findings.md").write_text("# findings\n")
+    return root
+
+
+def _branch(cwd: Path, stage: str, outcome: str, *extra: str, owner: str = "direct"):
+    """Run one branch exit against `SERVED` and return the whole payload."""
+    return _exit(cwd, "--feature", "widget", "--stage", stage, "--outcome", outcome,
+                 "--served-stage", SERVED, "--owner", owner, *extra)
+
+
+def _state_verify(cwd: Path, *args: str) -> None:
+    """Write real verification state through the real writer (03 §3)."""
+    proc = subprocess.run(
+        [sys.executable, str(HELPER), "state-verify", "--feature", "widget",
+         "--stage", SERVED, *args],
+        capture_output=True, text=True, cwd=str(cwd),
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+def _report_findings(root: Path) -> None:
+    _state_verify(root, "--status", "findings-reported", "--findings-file",
+                  "findings.md", "--findings-count", "2",
+                  "--verified-stage-version", str(SERVED_VERSION))
+
+
+@pytest.mark.parametrize(
+    "stage,outcome", sorted(BRANCH_ROUTES), ids=lambda v: v if isinstance(v, str) else v
+)
+def test_every_branch_outcome_produces_its_exact_02_section_6_route(
+    tmp_path: Path, stage: str, outcome: str
+) -> None:
+    """All four verify and all seven fix outcomes route exactly as 02 §6 tabulates."""
+    root = _served_project(tmp_path)
+    d = _branch(root, stage, outcome)["directives"]
+    assert d["primaryCommand"] == BRANCH_ROUTES[(stage, outcome)]
+
+
+@pytest.mark.parametrize(
+    "stage,outcome", sorted(BRANCH_ROUTES), ids=lambda v: v if isinstance(v, str) else v
+)
+def test_every_direct_branch_exit_exposes_the_02_section_6_directives(
+    tmp_path: Path, stage: str, outcome: str
+) -> None:
+    """§6's five keys plus `verifyStage`, so a tool can tell rejoin/recovery/defer apart."""
+    root = _served_project(tmp_path)
+    d = _branch(root, stage, outcome)["directives"]
+    for key in ("servedStage", "verifyStage", "outcome", "nextStage", "primaryCommand",
+                "terminalOwnedBy"):
+        assert key in d, key
+    assert d["servedStage"] == SERVED
+    assert d["outcome"] == outcome
+    assert d["terminalOwnedBy"] == "self"
+    # `nextStage` stays the next PRODUCTION stage in pipeline order (00 §4) — routing
+    # introspection, never a promotion over `primaryCommand`.
+    assert d["nextStage"] == "forge-2-tech"
+
+
+@pytest.mark.parametrize("served", PRODUCTION_STAGES, ids=PRODUCTION_STAGES)
+@pytest.mark.parametrize("stage,outcome", NON_ADVANCING,
+                         ids=[f"{s}-{o}" for s, o in NON_ADVANCING])
+def test_every_branch_command_carries_the_resolved_served_stage_forward(
+    tmp_path: Path, served: str, stage: str, outcome: str
+) -> None:
+    """The whole point of #176: a diversion never loses the stage it served."""
+    root = _served_project(tmp_path)
+    d = _exit(root, "--feature", "widget", "--stage", stage, "--outcome", outcome,
+              "--served-stage", served, "--owner", "direct")["directives"]
+    assert d["primaryCommand"].endswith(f" --served-stage {served}")
+    assert d["servedStage"] == served
+
+
+@pytest.mark.parametrize("served", PRODUCTION_STAGES, ids=PRODUCTION_STAGES)
+def test_fix_applied_always_routes_to_verify_and_never_to_production(
+    tmp_path: Path, served: str
+) -> None:
+    """`applied` is not `reverified`: re-verification is mandatory (02 §6.2)."""
+    root = _served_project(tmp_path)
+    d = _exit(root, "--feature", "widget", "--stage", "forge-fix", "--outcome",
+              "applied", "--served-stage", served, "--owner", "direct")["directives"]
+    assert d["primaryCommand"] == f"/feature-forge:forge-verify widget --served-stage {served}"
+    for production in PRODUCTION_STAGES:
+        assert f"/feature-forge:{production} " not in d["primaryCommand"]
+
+
+@pytest.mark.parametrize(
+    "stage,outcome",
+    [("forge-fix", o) for o in ("decisions", "failed", "deferred", "reverify-findings")],
+    ids=["decisions", "failed", "deferred", "reverify-findings"],
+)
+def test_unresolved_fix_outcomes_never_advance_to_a_production_stage(
+    tmp_path: Path, stage: str, outcome: str
+) -> None:
+    """REQ-ROUTE-06: unresolved work stops the thread; it does not hand it downstream."""
+    payload = _branch(_served_project(tmp_path), stage, outcome)
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["primaryCommand"] == FIX_BRANCH
+    assert _fenced_commands(block) == [FIX_BRANCH]
+    # The successor may appear only as unfenced, conditional prose.
+    assert SUCCESSOR_COMMAND not in _fenced_commands(block)
+    assert d["deferredCommand"] == SUCCESSOR_COMMAND
+
+
+def test_deferred_states_that_findings_remain_unresolved(tmp_path: Path) -> None:
+    """02 §6.2 requires `deferred` to say so explicitly, not merely stop."""
+    block = _branch(_served_project(tmp_path), "forge-fix", "deferred")["nextSteps"]
+    assert "explicitly deferred" in block
+    assert "UNRESOLVED" in block
+
+
+def test_verify_failed_carries_actionable_intervention_text(tmp_path: Path) -> None:
+    """02 §6.1: `failed` names the intervention and never advances."""
+    payload = _branch(_served_project(tmp_path), "forge-verify", "failed")
+    assert payload["directives"]["primaryCommand"] == VERIFY_BRANCH
+    assert "could not run to a result" in payload["nextSteps"]
+    assert _fenced_commands(payload["nextSteps"]) == [VERIFY_BRANCH]
+
+
+def test_no_findings_re_verifies_while_verification_is_still_owed(tmp_path: Path):
+    """02 §6.2: absence of applicable findings is never assumed to equal a pass."""
+    root = _served_project(tmp_path)   # no verify entry at all → owed
+    payload = _branch(root, "forge-fix", "no-findings")
+    assert payload["directives"]["primaryCommand"] == VERIFY_BRANCH
+    assert "is not a pass" in payload["nextSteps"]
+
+
+def test_no_findings_rejoins_once_verification_is_already_resolved(tmp_path: Path):
+    root = _served_project(
+        tmp_path, {"status": "passed", "verifiedStageVersion": SERVED_VERSION}
+    )
+    d = _branch(root, "forge-fix", "no-findings")["directives"]
+    assert d["primaryCommand"] == SUCCESSOR_COMMAND
+
+
+# --- live successor derivation --------------------------------------------- #
+
+
+def test_live_successor_uses_the_current_production_position(tmp_path: Path) -> None:
+    """Not `served + 1`: a member already past tech/specs rejoins at backlog."""
+    root = _served_project(
+        tmp_path, completed=(SERVED, "forge-2-tech", "forge-3-specs")
+    )
+    d = _branch(root, "forge-verify", "passed")["directives"]
+    assert d["nextStage"] == "forge-4-backlog"
+    assert d["primaryCommand"] == "/feature-forge:forge-4-backlog widget"
+
+
+def test_a_completed_stage_6_routes_to_completion_not_a_nonexistent_stage_7(
+    tmp_path: Path,
+) -> None:
+    root = _served_project(tmp_path)
+    d = _exit(root, "--feature", "widget", "--stage", "forge-verify", "--outcome",
+              "passed", "--served-stage", "forge-6-docs", "--owner",
+              "direct")["directives"]
+    assert d["nextStage"] is None
+    assert d["primaryCommand"] == "/feature-forge:forge widget"
+    assert "forge-7" not in json.dumps(d)
+
+
+@pytest.mark.parametrize("host,expected", [
+    ("claude", "/feature-forge:forge-fix widget --served-stage forge-1-prd"),
+    ("pi", "/skill:forge-fix widget --served-stage forge-1-prd"),
+    ("generic", "/feature-forge:forge-fix widget --served-stage forge-1-prd"),
+])
+def test_branch_commands_are_translated_at_render_time(
+    tmp_path: Path, host: str, expected: str
+) -> None:
+    """02 §6: the tables are canonical, pre-`_host_command` forms."""
+    payload = _branch(_served_project(tmp_path), "forge-verify", "findings",
+                      "--host", host)
+    assert payload["directives"]["primaryCommand"] == expected
+    assert _fenced_commands(payload["nextSteps"]) == [expected]
+
+
+# --- complete paths -------------------------------------------------------- #
+
+
+def test_the_findings_applied_passed_path_rejoins_production(tmp_path: Path) -> None:
+    """07 §3.3: findings → applied → passed, driven by the real state writer."""
+    root = _served_project(tmp_path)
+
+    _report_findings(root)
+    assert _branch(root, "forge-verify", "findings")["directives"][
+        "primaryCommand"] == FIX_BRANCH
+
+    _state_verify(root, "--status", "findings-applied")
+    assert _branch(root, "forge-fix", "applied")["directives"][
+        "primaryCommand"] == VERIFY_BRANCH
+
+    _state_verify(root, "--status", "passed",
+                  "--verified-stage-version", str(SERVED_VERSION))
+    d = _branch(root, "forge-verify", "passed")["directives"]
+    assert d["primaryCommand"] == SUCCESSOR_COMMAND
+    assert d["verifyState"] == "fresh"
+
+
+def test_the_findings_applied_findings_path_stays_in_recovery(tmp_path: Path) -> None:
+    """07 §3.3: findings → applied → findings never reaches a production stage."""
+    root = _served_project(tmp_path)
+
+    _report_findings(root)
+    assert _branch(root, "forge-verify", "findings")["directives"][
+        "primaryCommand"] == FIX_BRANCH
+
+    _state_verify(root, "--status", "findings-applied")
+    assert _branch(root, "forge-fix", "applied")["directives"][
+        "primaryCommand"] == VERIFY_BRANCH
+
+    _report_findings(root)   # the re-verification found more
+    for stage, outcome, expected in (
+        ("forge-verify", "findings", FIX_BRANCH),
+        ("forge-fix", "reverify-findings", FIX_BRANCH),
+    ):
+        payload = _branch(root, stage, outcome)
+        assert payload["directives"]["primaryCommand"] == expected
+        assert _fenced_commands(payload["nextSteps"]) == [expected]
+
+
+def test_a_fresh_exit_after_findings_applied_does_not_promote_the_successor(
+    tmp_path: Path,
+) -> None:
+    """`findings-applied` CLEARS freshness, so the production successor stays demoted."""
+    root = _served_project(tmp_path)
+    _report_findings(root)
+    _state_verify(root, "--status", "findings-applied")
+
+    # A FRESH production stage-exit, taken before re-verification runs.
+    payload = _exit(root, "--feature", "widget", "--stage", SERVED)
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["verifyState"] == "stale"
+    assert d["primaryCommand"] == "/feature-forge:forge-verify widget"
+    assert d["deferredCommand"] == SUCCESSOR_COMMAND
+    assert _fenced_commands(block) == ["/feature-forge:forge-verify widget"]
+    assert SUCCESSOR_COMMAND not in _fenced_commands(block)
+
+
+def test_a_nested_chain_emits_no_sentinel_and_the_final_direct_call_emits_one(
+    tmp_path: Path,
+) -> None:
+    """REQ-EXIT-04: the outermost authoring stage is the sole terminal owner."""
+    root = _served_project(tmp_path)
+
+    def human(*args: str) -> str:
+        proc = subprocess.run(
+            [sys.executable, str(HELPER), "stage-exit", "--feature", "widget", *args],
+            capture_output=True, text=True, cwd=str(root),
+        )
+        assert proc.returncode == 0, proc.stderr
+        return proc.stdout
+
+    _report_findings(root)
+    steps = [
+        ("forge-verify", "findings"),
+        ("forge-fix", "applied"),
+        ("forge-verify", "passed"),
+    ]
+    for i, (stage, outcome) in enumerate(steps):
+        out = human("--stage", stage, "--outcome", outcome,
+                    "--served-stage", SERVED, "--owner", "nested")
+        assert SENTINEL not in out, f"nested step {i} ({stage}/{outcome}) leaked a block"
+        assert "NEXT-STEPS" not in out
+        payload = _branch(root, stage, outcome, owner="nested")
+        assert payload["nextSteps"] is None and payload["sentinel"] is None
+        # Routing directives survive the whole way down.
+        assert payload["directives"]["servedStage"] == SERVED
+        assert payload["directives"]["terminalOwnedBy"] == "outer"
+        if i == 0:
+            _state_verify(root, "--status", "findings-applied")
+        elif i == 1:
+            _state_verify(root, "--status", "passed",
+                          "--verified-stage-version", str(SERVED_VERSION))
+
+    # The outer authoring stage now owns exactly one terminal block.
+    outer = human("--stage", SERVED)
+    assert outer.count(SENTINEL) == 1
+    assert outer.rstrip().splitlines()[-1] == SENTINEL
+
+
+def test_the_branch_route_table_has_a_terminus_for_every_outcome() -> None:
+    """REQ-ROUTE-05/06: no fall-through — every outcome is routed explicitly."""
+    session = _load_session()
+    table = session._BRANCH_ROUTE_KIND
+    assert set(table) == set(BRANCH_STAGES)
+    for stage in BRANCH_STAGES:
+        assert set(table[stage]) == set(EXIT_OUTCOMES[stage]), stage
+        assert set(session._BRANCH_OUTCOME_TEXT[stage]) == set(EXIT_OUTCOMES[stage])
+    # The literal table above is the black-box contract; this proves it covers the
+    # same domain the script routes, so neither can grow an outcome the other lacks.
+    assert set(BRANCH_ROUTES) == {
+        (stage, outcome) for stage in BRANCH_STAGES for outcome in EXIT_OUTCOMES[stage]
+    }

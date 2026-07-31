@@ -2051,6 +2051,106 @@ _EXIT_NEXT_STAGE: Final[dict[str, str]] = {
     "forge-5-loop": "forge-6-docs",
 }
 
+#: 02 §6 — the route each branch outcome takes. Every value is a COMPLETE map over
+#: ``EXIT_OUTCOMES[stage]``: REQ-ROUTE-05/06 require a terminus for every outcome and
+#: forbid a fall-through, so a missing key is a bug, not a default. The four kinds:
+#:
+#:   ``successor``      rejoin the live production position after the served stage
+#:   ``fix``            ``/skill:forge-fix FEATURE --served-stage SERVED``
+#:   ``verify``         ``/skill:forge-verify FEATURE --served-stage SERVED``
+#:   ``verify-if-owed`` ``verify`` while verification is still owed, else ``successor``
+#:
+#: Only ``successor`` advances. ``decisions``, ``failed``, ``deferred``, and
+#: ``reverify-findings`` are deliberately absent from it: unresolved work never
+#: reaches a production stage.
+_BRANCH_ROUTE_KIND: Final[dict[str, dict[str, str]]] = {
+    "forge-verify": {
+        "passed": "successor",
+        "findings": "fix",
+        "skipped": "successor",
+        "failed": "verify",
+    },
+    "forge-fix": {
+        "no-findings": "verify-if-owed",
+        "decisions": "fix",
+        "failed": "fix",
+        # `applied` is NOT `reverified`: the writer clears `verifiedStageVersion`, so
+        # re-verification is mandatory and this may never route to production.
+        "applied": "verify",
+        "reverified": "successor",
+        "reverify-findings": "fix",
+        "deferred": "fix",
+    },
+}
+
+#: The deterministic sentence each branch outcome renders inside its NEXT-STEPS block
+#: (``_next_steps_block(..., outcome_text=...)``). Every non-advancing outcome names
+#: the unresolved work explicitly, which is what 02 §6.2 requires of `decisions`,
+#: `failed`, and `deferred`, and what §6.1 requires of a `failed` verification.
+_BRANCH_OUTCOME_TEXT: Final[dict[str, dict[str, str]]] = {
+    "forge-verify": {
+        "passed": (
+            "Verification passed for {served} — the pipeline rejoins where the "
+            "diversion left it."
+        ),
+        "findings": (
+            "Verification reported findings for {served}. They are recorded and "
+            "remain unresolved, so the pipeline does not advance until they are "
+            "fixed and re-verification passes."
+        ),
+        "skipped": (
+            "Verification for {served} was explicitly skipped and the skip is "
+            "recorded, so the pipeline may continue."
+        ),
+        "failed": (
+            "Verification for {served} could not run to a result — the dispatch, the "
+            "check, or the state write failed. Nothing advances until it does: "
+            "resolve the failure, then re-run the verification below."
+        ),
+    },
+    "forge-fix": {
+        "no-findings": (
+            "No applicable findings were found for {served}, but its verification is "
+            "still owed — the absence of applicable findings is not a pass, so "
+            "verification runs before the pipeline advances."
+        ),
+        "decisions": (
+            "The fix stopped on unresolved decisions for {served}. Answer them and "
+            "re-run the fix below; the pipeline does not advance while they are open."
+        ),
+        "failed": (
+            "The fix for {served} failed — a fix step, a validation, a commit, or a "
+            "state write did not complete. The findings remain unresolved, so the "
+            "pipeline does not advance; address the failure and re-run the fix below."
+        ),
+        "applied": (
+            "Fixes were applied for {served}, but applied is not verified: the "
+            "recorded freshness was cleared, so re-verification is mandatory before "
+            "the pipeline advances."
+        ),
+        "reverified": (
+            "Re-verification passed for {served} — the findings are resolved and the "
+            "pipeline rejoins where the diversion left it."
+        ),
+        "reverify-findings": (
+            "Re-verification reported further findings for {served}. They remain "
+            "unresolved, so the pipeline does not advance."
+        ),
+        "deferred": (
+            "Fix work for {served} was explicitly deferred. The findings remain "
+            "UNRESOLVED — the pipeline does not advance until they are fixed and "
+            "re-verification passes."
+        ),
+    },
+}
+
+#: `no-findings` is the one outcome whose terminus depends on live state, so it has a
+#: second sentence for the already-resolved case (02 §6.2).
+_NO_FINDINGS_RESOLVED_TEXT: Final[str] = (
+    "No applicable findings were found for {served}, and its verification is already "
+    "resolved — the pipeline rejoins where the diversion left it."
+)
+
 
 def _classify_verify_entry(entry: dict, verify_key: str, current: int | None) -> str:
     """Label one ``forge-verify-*`` entry against the artifact revision it serves.
@@ -2252,24 +2352,27 @@ def _next_steps_block(
         if navigator
         else "re-run the forge navigator skill to resume from disk."
     )
-    if verify_first:
-        # REQ-EXIT-06: the fresh-session guidance follows the PRIMARY verification
-        # action. It must never tell the user to clear and run the production
-        # successor first.
-        next_line = (
-            f"{fresh_prefix} the verification below — verification is still "
-            "outstanding for this stage, so it comes before the next production "
-            f"stage. Or {resume}"
-        )
-    else:
-        next_line = f"{fresh_prefix} the next stage below — or {resume}"
-    blocking = bool(reconcile and reconcile.get("required"))
     # The primary actionable command goes in a fenced block so mobile/remote hosts
     # get a native copy button (inline code is not tap-to-copy). The CALLER decides
     # which command is primary (02 §5.2 rule 3 — the renderer fences exactly what it
     # is given); the fence sits before the sentinel, so the sentinel remains the
     # absolute last line.
     fenced_command = _host_command(primary_command, host)
+    if verify_first:
+        # REQ-EXIT-06: the fresh-session guidance follows the PRIMARY action, and
+        # must never tell the user to clear and run the production successor first.
+        # It names what is actually FENCED: on a branch exit that is the fix standing
+        # between recorded findings and the re-verification (02 §6), not a verify
+        # command. Every other case keeps the wording verbatim.
+        action_noun = "fix" if "forge-fix " in fenced_command else "verification"
+        next_line = (
+            f"{fresh_prefix} the {action_noun} below — verification is still "
+            "outstanding for this stage, so it comes before the next production "
+            f"stage. Or {resume}"
+        )
+    else:
+        next_line = f"{fresh_prefix} the next stage below — or {resume}"
+    blocking = bool(reconcile and reconcile.get("required"))
     reconcile_is_primary = bool(
         blocking and _host_command(reconcile["command"], host) == fenced_command
     )
@@ -2372,6 +2475,71 @@ def resolve_served_stage(
     raise UsageError(
         "forge-verify requires --served-stage or an unambiguous --verify-mode; "
         "rerun with the production stage this verification served"
+    )
+
+
+def _branch_route(
+    stage: str,
+    outcome: str,
+    feature: str,
+    served: str,
+    successor_command: str | None,
+    resolved: bool,
+) -> tuple[str, str | None, str, bool]:
+    """Route one verify/fix outcome back into the pipeline — the 02 §6 rejoin tables.
+
+    A verify or fix diversion must rejoin the production stage it SERVED rather than
+    dropping the pipeline thread (issue #176), so the served stage is carried forward
+    in every branch command this returns. Commands are canonical, pre-`_host_command`
+    forms; the renderer translates them.
+
+    "Live successor" is the current production position, never a conversational
+    assumption: `successor_command` is already the state-aware next production action
+    after the served artifact, and it is None only at the end of the pipeline — a
+    completed stage 6, which routes to the navigator completion action rather than a
+    nonexistent stage 7.
+
+    Args:
+        stage: `forge-verify` or `forge-fix`.
+        outcome: A member of `EXIT_OUTCOMES[stage]`, already validated.
+        feature: The feature (or epic) the diversion served.
+        served: The resolved served production stage.
+        successor_command: Canonical live-successor command, or None at pipeline end.
+        resolved: Whether the served stage's verification is settled. Consulted only
+            by `no-findings`, the one outcome whose terminus depends on live state.
+
+    Returns:
+        `(primary_canonical, deferred_canonical, outcome_text, advancing)`.
+        `deferred_canonical` is the demoted production successor, rendered only as
+        unfenced prose, and is None whenever the primary command already advances.
+
+    Two rows carry a precondition this router does NOT re-check: `skipped` is valid
+    only after the skip is persisted and `reverified` only after a passing state is
+    recorded (02 §6.1/§6.2). Both are the CALLER's obligation — the branch skills
+    write through `state-verify` before invoking this exit (04 §5.2/§5.3), and a fix
+    that merely skips re-verification reports `deferred`, not `reverified`. Rejecting
+    the outcome here would make a valid member of `EXIT_OUTCOMES[stage]` exit 2, which
+    is a different contract from the one `stage_exit` validates.
+    """
+    kind = _BRANCH_ROUTE_KIND[stage][outcome]
+    if kind == "verify-if-owed":
+        template = (
+            _NO_FINDINGS_RESOLVED_TEXT if resolved else _BRANCH_OUTCOME_TEXT[stage][outcome]
+        )
+        kind = "successor" if resolved else "verify"
+    else:
+        template = _BRANCH_OUTCOME_TEXT[stage][outcome]
+    text = template.format(served=served)
+
+    if kind == "successor":
+        return successor_command or f"/skill:forge {feature}", None, text, True
+
+    branch = "forge-fix" if kind == "fix" else "forge-verify"
+    return (
+        f"/skill:{branch} {feature} --served-stage {served}",
+        successor_command,
+        text,
+        False,
     )
 
 
@@ -2576,6 +2744,10 @@ def stage_exit(
       branch metadata. A production exit serves only itself, so ``servedStage``
       is None there; ``verifyStage`` is the DISTINCT value ``pending_verify``
       returns, naming the stage outstanding verification is owed on (00 §4).
+      On a branch exit the 02 §6 outcome table in ``_branch_route`` — not
+      verify-first ordering — supplies ``primaryCommand``: a diversion rejoins
+      the production stage it served, and every recovery/defer route carries
+      ``--served-stage`` forward so the thread is never dropped (issue #176).
     - ``warnings`` — non-fatal advisories in the 00 §4 fixed order. Always
       present; ``[]`` means checked-and-clean, which is not the same as absent.
 
@@ -2738,7 +2910,12 @@ def stage_exit(
     # caller needed user consent to dispatch is the CALLER's determination
     # (04 §3.2) and is invisible here — a consent-required caller sends
     # `interactive` and gets `standard`, which is the intended path.
-    if resolved or run_in_stage:
+    #
+    # A BRANCH exit is already inside the diversion and its 02 §6 outcome table
+    # names the one action to take, so there is nothing left to gate: offering
+    # "verify now?" beside a fenced fix command would be a second, contradictory
+    # ask. The table's `verify` routes ARE the verification prompt.
+    if resolved or run_in_stage or stage in _BRANCH_STAGES:
         verify_gate = "none"
     elif verify_capability == "interactive":
         verify_gate = "standard"
@@ -2757,8 +2934,12 @@ def stage_exit(
         # or behind-the-stage walk (state not yet flushed, corrupt file) falls
         # back to the fixed successor, never to an earlier stage.
         next_stage_id = state_next
+    # Keyed off the ROUTED stage, so a branch exit that served the epic decomposition
+    # hands off the same way the epic's own exit does — naming a member to resolve
+    # rather than fabricating a member named after the epic. Identical to the previous
+    # behavior for every production exit, where `route_stage is stage`.
     next_arg = next_feature or (
-        "{first-actionable-feature}" if stage == "forge-0-epic" else feature
+        "{first-actionable-feature}" if route_stage == "forge-0-epic" else feature
     )
     next_command = f"/skill:{next_stage_id} {next_arg}" if next_stage_id else None
 
@@ -2800,9 +2981,28 @@ def stage_exit(
     verify_canonical = f"/skill:forge-verify {feature}"
     verify_command = _host_command(verify_canonical, host)
     blocking_reconcile = bool(epic_reconcile and epic_reconcile.get("required"))
-    if not resolved:
-        primary_canonical: str | None = verify_canonical
-        deferred_canonical: str | None = next_command
+    primary_canonical: str | None
+    deferred_canonical: str | None
+    outcome_text: str | None = None
+    if stage in _BRANCH_STAGES:
+        # 02 §6: the outcome table alone decides a branch terminus — verify-first
+        # ordering does not apply, because the branch IS the verification work.
+        primary_canonical, deferred_canonical, outcome_text, advancing = _branch_route(
+            stage,
+            outcome,
+            feature,
+            resolved_served,
+            next_command,
+            resolved,
+        )
+        if advancing and blocking_reconcile:
+            # An advancing rejoin is subject to the same reconcile-first rule as a
+            # production exit; a non-advancing one already outranks the reconcile.
+            primary_canonical = epic_reconcile["command"]
+            deferred_canonical = None
+    elif not resolved:
+        primary_canonical = verify_canonical
+        deferred_canonical = next_command
     elif blocking_reconcile:
         # Verification is settled, so the blocking reconcile is the primary
         # action and `epicReconcile["deferred"]` carries the demoted successor.
@@ -2867,6 +3067,7 @@ def stage_exit(
             host,
             epic_reconcile,
             deferred_command=deferred_canonical,
+            outcome_text=outcome_text,
         ),
         "sentinel": NEXT_STEPS_SENTINEL,
     }
