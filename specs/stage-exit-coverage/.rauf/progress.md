@@ -1154,3 +1154,80 @@ exits, and added the four contracts specs v4 introduced: capability-as-permissio
 `python3 -m pytest tests -q` -> 1501 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
 regenerated `adapters/` tree left in the working tree for the loop runner to commit.
+
+## Item 020 — forge-5-loop scripted termini + deterministic outcome priority
+
+Converted the loop's two bespoke stamp sites to ONE scripted exit (new `## Step 7: Close
+the Stage` in `SKILL.md`), moved the `LoopOutcome` ladder into
+`references/result-reporting.md`, added the Step 1b `auto-verify-pending` case, fixed the
+stale `--model` phrase, and **deleted both retired blocks** from
+`references/stage-exit-protocol.md` (item 017's handoff — the three had to go together).
+
+### Gotchas for later items
+
+- **The stamp belongs in `SKILL.md`, NOT `result-reporting.md`.** Skill-own
+  `references/` are copied **verbatim** by `build-adapters.py` (only skill BODIES are
+  host-translated), so a stamp in `result-reporting.md` would ship a literal
+  `--host claude` to the Pi/Gemini/Codex bundles. Verified after the build: the loop
+  body's stamp reads `--host pi` / `--host generic` in those adapters. The retired warm
+  block's own note said the same thing about `/clear`; it applies to `--host claude`
+  identically. Items 018/019/021 must apply the same rule — a skill-own reference can
+  document the contract, but only a BODY can carry the call.
+
+- **Item 017's "Retired blocks" section is gone, and the guard was REPLACED not
+  deleted.** `tests/test_stage_exit_protocol.py` now (a) adds forge-5-loop to
+  `_SCRIPTED_SITES` with args `--feature "{feature}" --stage forge-5-loop --outcome
+  "{LoopOutcome}"`, (b) asserts both marker pairs are absent from the reference, (c)
+  asserts no canon `.md` under `skills/` carries either block's marker prose, and (d)
+  asserts the joined loop surface names all five outcomes and contains exactly ONE
+  `--stage forge-5-loop --outcome` occurrence. Item 024 replaces this file wholesale;
+  those four are the positive assertions it should carry forward.
+
+- **Line-count pressure is real and the fix is long unwrapped lines.** The body went
+  296 → 312 body lines on the first pass (cap 300). Both `test_always_loaded_surface.py`
+  and `test_runner_contract_split.py` measure the same budget with slightly different
+  frontmatter strippers. Joining wrapped paragraphs into single long lines recovered 13
+  lines with zero content loss; final state is **299 body lines / 4,534 body words**.
+  Note the +4 lines Step 1b's three-case list costs — a later item adding to that step
+  has ~1 line of headroom.
+
+- **Step 6 lost its next-feature picker on purpose.** Items 3/4 used to `AskUserQuestion`
+  over the actionable set and then point at the picked member's `nextCommand` — a
+  hand-authored terminal action that now competes with `_loop_route`'s handoff, which
+  fences `render-status`'s single `nextCommand`. Step 6 item 3 is now an *announcement*
+  ("say which members can start"), and routing is Step 7's. This is the REQ-COMPAT-02
+  reading of 04 §6.2 ("the skill may announce the rollup … but no hand-authored terminal
+  action follows it"); if REQ-ORCH-03's serial pick is wanted back, it has to arrive as a
+  *pre-exit* interaction that feeds `--next-feature`, not as a second fenced command.
+
+- **Retry hints survived, commands did not.** The blocked/deferred/pending templates no
+  longer print `Re-run /feature-forge:forge-5-loop {feature}` — the script fences exactly
+  that for `partial`/`deferred` anyway. The useful part (`--retry-blocked` picks set-aside
+  items back up) is kept as prose attached to the ladder, and the blocked report keeps its
+  `{bin} backlog show` inspection line, which is a diagnostic and not a routing action.
+
+- **`--model` pointer wording.** `runner-contract.md` now names
+  `## Optional flags catalog (Step 2d, rauf)` in `references/agent-selection.md` **and**
+  says to read it only when the Step 2d capability gate is on, so the pointer cannot be
+  read as a licence to always-load the conditional file.
+  `test_no_agent_selection_content_leaked_back_into_runner_contract` bans three content
+  markers (`agentsProbeCommand`, ``opus`/`sonnet`/`haiku``, `--retry-blocked   Unblock`);
+  a pointer trips none of them, but do not quote catalog rows into that file.
+
+- **Step 1b ordering is load-bearing.** `auto-verify-pending` must be tested BEFORE the
+  generic "anything else" branch; the wording is `03 §5.3`'s sentence verbatim
+  (`{feature}: automatic verification is still pending for forge-4-backlog; run … to
+  resolve it.`) with no spec-file citation, since canon must stay spec-pure.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with
+`PASS: epic-manifest pytest suite` and `PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 1505 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
+regenerated `adapters/` tree left in the working tree for the loop runner to commit.
+
+Also driven against the real CLI rather than only the suite: all five outcomes emit the
+documented call shape successfully, each with exactly one sentinel as the final line —
+`needs-human`/`blocked` fencing `/feature-forge:forge widget`, `partial`/`deferred`
+fencing the loop resume, and `complete` routing verify-first.

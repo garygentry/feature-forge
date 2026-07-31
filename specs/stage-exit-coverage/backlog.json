@@ -669,8 +669,8 @@
         "skills/forge-5-loop/SKILL.md Step 1b names owed auto-verify debt using 03-verification-state.md §5.3's wording rather than reporting 'hasn't been verified yet'",
         "the runner-contract --model phrase points at '## Optional flags catalog (Step 2d, rauf)' in references/agent-selection.md, which remains conditionally loaded and is not inlined"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T09:18:44.914Z",
       "dependsOn": [
         "008",
         "014",
