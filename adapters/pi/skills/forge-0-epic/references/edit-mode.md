@@ -210,13 +210,27 @@ follow the Git Commit Protocol in shared-conventions:
 Because every mutation is committed, the git history of `epic-manifest.json` is the audit trail; no
 separate in-manifest audit log is kept.
 
-### Closing message
+### Closing the stage — fresh live status, then the Scripted Stage Exit
 
-After a successful **creation**, present the next-steps message (already specified in C8). After a
-successful **edit-mode mutation**, confirm the change and re-surface the dashboard pointer:
+After a successful **creation**, close with Step C8's Scripted Stage Exit, exactly as specified there.
 
-> Epic `{epic}` updated (`<action>`). Run `/skill:forge {epic}` to see the refreshed
-> dashboard, or re-run `/skill:forge-0-epic {epic}` to make another change.
+After a successful **edit-mode mutation** — the mutator returned exit `0` **and** the E6 commit above landed — confirm the change in one line (`Epic {epic} updated (<action>).`) and then close with the **same** Scripted Stage Exit. Do **not** hand-write a dashboard pointer, a "Next steps" list, or any other next command: the script owns edit-mode routing end to end, and a second hand-written command can only disagree with it.
+
+**Read live status again first.** The E4 `render-status` snapshot is stale by the time you get here — it was taken *before* the mutation, so a member the edit just unblocked (or just blocked) is misreported, and the whole point of routing from live state is lost. Re-read it **after** the mutation and the commit:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
+```
+
+Choosing the `--next-feature` argument from that **fresh** payload is the only routing decision this step makes; every other one belongs to the script:
+
+- **`actionable` is non-empty** → `{first-actionable-feature}` is its **first** entry, a concrete member name. Pass it as `--next-feature "{first-actionable-feature}"`. The script then resolves that member's own `.pipeline-state.json` and routes to its **first incomplete production stage**, so a member whose PRD is already written resumes at tech/specs/backlog/loop/docs — it is never sent back to `forge-1-prd`. Do **not** derive that stage yourself and do **not** read the member's state to second-guess the script.
+- **`actionable` is empty** → there is no member to hand off to. **Omit `--next-feature` entirely**; the script routes to the epic dashboard/completion view. Never substitute a stand-in for the flag value — not the literal `{first-actionable-feature}`, not the epic name, not an arbitrary member off `features[]`. An unresolved placeholder is not a member name, and the script rejects an unsafe value with exit `2`.
+- **`render-status` exits `≥ 1`, or its payload is malformed or missing a required field** → surface every `findings[]` entry **verbatim**, then take the same no-member path: close with the epic stage exit carrying **no** `--next-feature`, so recovery lands on the epic dashboard. A failed status read is never grounds to guess a follow-up member.
+
+**Surface the script's warnings before the block.** `warnings` is part of the directive contract. When the selected member's pipeline state is missing, unreadable, malformed, or not a member of this epic, the script emits a named warning naming that member and the recovery command, and degrades **only** to `forge-1-prd {member}` on its own. Print that warning ahead of the terminal block exactly as emitted, and leave the routing where the script put it — do **not** "correct" the fallback to a later stage you inferred, and do **not** re-read the member's state to override it.
 
 ## EPIC.md Mirror Template (creation C6 / edit E5)
 

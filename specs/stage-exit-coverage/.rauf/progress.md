@@ -1293,3 +1293,68 @@ with the new-feature and new-epic suggestions as unfenced prose; standalone `blo
 the pipeline is NOT complete and routes to the navigator; both end with exactly one
 sentinel as the final line; the `state-verify --stage forge-5-loop --status skipped` fence
 writes `forge-verify-impl = skipped` at exit 0.
+
+## Item 022 — forge-0-epic creation + edit-mode wired to the scripted exit
+
+Step C8 already carried `--next-feature` and `--verify-capability` (item 017 re-stamped it),
+so the canon work was edit mode: `references/edit-mode.md`'s closing prose is replaced by a
+FRESH `render-status` read taken after the mutation AND the E6 commit, the `--next-feature`
+selection rules, the `render-status`-failure recovery path, and the warning-surfacing rule.
+One small script change was needed to make the no-actionable-member route real.
+
+### Gotchas for later items
+
+- **The script now routes an epic exit with NO `--next-feature` to the epic dashboard.**
+  It used to emit `/feature-forge:forge-1-prd {first-actionable-feature}` — a runtime
+  template for the skill to substitute. Edit mode reaches that call precisely when
+  `actionable` is EMPTY, so there is nothing to substitute and the template would be
+  printed to the user verbatim. AC 4 ("routing to the dashboard, with no literal
+  placeholder passed") is unsatisfiable without it. `next_stage_id` goes to `None` and
+  `nextCommand` to `/feature-forge:forge-0-epic {epic}` — the same non-fabrication answer
+  02 §9 gives a named member that has finished every production stage. Keyed on
+  `route_stage`, so a branch exit that served the epic decomposition keeps the parity item
+  013 established. **Creation mode is unaffected**: Step C8 always passes a concrete
+  member, which is what AC 1 pins. The two tests item 016 left asserting "the placeholder
+  form is untouched" were REPLACED (not deleted) with `INTENTIONAL CHANGE (item 022, …)`
+  docstrings; the literal `{first-actionable-feature}` no longer appears in
+  `scripts/forge-session.py` at all.
+
+- **The edit-mode exit is NOT a second stamp.** `06 §2.1`'s `CANONICAL_EXIT_SITES` gives
+  `forge-0-epic` exactly one `contract_path` (`skills/forge-0-epic/SKILL.md`) and §2.3
+  rule 5 requires exactly one terminal-print instruction there, so edit mode reuses Step
+  C8's single stamped block and `edit-mode.md` supplies only the argument-selection rules
+  — the same split the loop uses (SKILL.md stamps, `result-reporting.md` picks the
+  outcome). Item 024 must not add `references/edit-mode.md` to the epic's contract paths.
+
+- **A stamp could not have gone in `edit-mode.md` anyway.** Skill-own `references/` are
+  copied VERBATIM by `build-adapters.py` (only skill BODIES are host-translated), so a
+  fence there would ship a literal `--host claude` to the Pi/Gemini/Codex/Copilot/Cursor
+  bundles. Same rule item 020 recorded for `result-reporting.md`. Bonus: deleting the old
+  closing blockquote removed the file's last two untranslated `/feature-forge:` slash
+  commands — `edit-mode.md` now contains none.
+
+- **`skills/forge-0-epic/SKILL.md` is at the 300-body-line cap.** The pointer paragraph
+  added in Edit Mode pushed it to 301 and `scripts/check-spec-purity.py` hard-failed;
+  re-writing it as one long unwrapped line brought it to 295. Same lesson as item 020:
+  in these bodies, prefer long unwrapped lines to wrapped prose. `check-spec-purity.py`
+  runs standalone in ~1s — run it before the full `validate.sh` when editing a skill body.
+
+- **`--next-feature` is already safe-name validated**, so the "never pass a stand-in"
+  rule in `edit-mode.md` is belt-and-braces: `--next-feature '../evil'` exits 2 with
+  `Error: unsafe name '../evil' for --next-feature`, and the literal
+  `{first-actionable-feature}` would be rejected the same way. The prose says so.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite` and
+`PASS: adapters/ matches a fresh generation (no drift)`; `ruff check scripts/ eval/` clean;
+`python3 scripts/build-adapters.py` run and the regenerated `adapters/` tree left in the
+working tree for the loop runner to commit.
+
+Also driven against the real CLI: an epic exit with no `--next-feature` emits
+`nextStage: null` / `nextCommand: /feature-forge:forge-0-epic my-epic` and no
+`{first-actionable-feature}` anywhere in the block; `--next-feature config-store` on a
+member whose PRD and tech are complete routes to `/feature-forge:forge-3-specs
+config-store` (never back to PRD); a member with malformed state emits the exact 02 §9
+warning template with `{reason}` = `malformed` and degrades to `forge-1-prd`; an unsafe
+member name exits 2 before any routing.

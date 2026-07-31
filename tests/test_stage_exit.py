@@ -299,17 +299,27 @@ def test_state_walk_behind_stage_never_wins(tmp_path: Path) -> None:
     assert d["nextStage"] == "forge-4-backlog"  # never forge-1-prd
 
 
-def test_epic_stage_handoff_placeholder_and_next_feature(tmp_path: Path) -> None:
+def test_epic_stage_handoff_dashboard_and_next_feature(tmp_path: Path) -> None:
     """INTENTIONAL CHANGE (item 016, 02 §9 epic edit-mode live member routing).
 
-    The placeholder half is unchanged. The `--next-feature` half still lands on
-    `forge-1-prd config-store` — but now because that member has no state under
-    the epic at all, which is the *named fallback*, not the old unconditional
-    PRD handoff. The warning is the observable difference (REQ-PROD-06).
+    INTENTIONAL CHANGE (item 022, 04 §8.2 no-actionable-member epic exit). The
+    no-`--next-feature` half used to emit the runtime template
+    `/feature-forge:forge-1-prd {first-actionable-feature}` for the skill to
+    substitute. Edit mode reaches this call precisely when NO member is
+    actionable, so there is nothing to substitute and the template would be
+    printed to the user verbatim; the handoff is the epic dashboard instead —
+    the same non-fabrication answer §9 gives a fully complete named member.
+    Creation mode is unaffected: Step C8 always passes a concrete member.
+
+    The `--next-feature` half still lands on `forge-1-prd config-store` — but
+    now because that member has no state under the epic at all, which is the
+    *named fallback*, not the old unconditional PRD handoff. The warning is the
+    observable difference (REQ-PROD-06).
     """
     root = _project(tmp_path, config={}, feature="my-epic")
     d = _exit(root, "--feature", "my-epic", "--stage", "forge-0-epic")["directives"]
-    assert d["nextCommand"] == "/feature-forge:forge-1-prd {first-actionable-feature}"
+    assert d["nextCommand"] == "/feature-forge:forge-0-epic my-epic"
+    assert d["nextStage"] is None
     assert d["warnings"] == []
     d2 = _exit(root, "--feature", "my-epic", "--stage", "forge-0-epic",
                "--next-feature", "config-store")["directives"]
@@ -2714,10 +2724,32 @@ def test_creation_mode_still_routes_a_brand_new_member_to_prd(tmp_path: Path) ->
     d = _edit_exit(root, "config-store")
     assert d["nextCommand"] == "/feature-forge:forge-1-prd config-store"
     assert d["warnings"] == []
-    # And the placeholder form (no member selected at all) is untouched.
+    # INTENTIONAL CHANGE (item 022, 04 §8.2): naming no member at all now hands
+    # back to the epic dashboard rather than emitting an unresolvable template.
     bare = _exit(root, "--feature", EDIT_EPIC, "--stage", "forge-0-epic")["directives"]
-    assert bare["nextCommand"] == \
-        "/feature-forge:forge-1-prd {first-actionable-feature}"
+    assert bare["nextCommand"] == f"/feature-forge:forge-0-epic {EDIT_EPIC}"
+    assert bare["nextStage"] is None
+
+
+def test_no_concrete_member_routes_to_the_dashboard_with_no_placeholder(
+    tmp_path: Path,
+) -> None:
+    """04 §8.2: edit mode with nothing actionable names no member at all.
+
+    The skill omits `--next-feature` rather than passing a literal placeholder
+    value (which `_assert_safe_name` would reject anyway), and the block it
+    prints must therefore carry no unresolved template for the user to read.
+    """
+    root = _edit_project(tmp_path, {"config-store": _edit_member_state(3)})
+    payload = _exit(root, "--feature", EDIT_EPIC, "--stage", "forge-0-epic")
+    d = payload["directives"]
+    dashboard = f"/feature-forge:forge-0-epic {EDIT_EPIC}"
+    assert d["nextStage"] is None
+    assert d["nextCommand"] == dashboard
+    assert d["primaryCommand"] == dashboard
+    assert d["warnings"] == []
+    assert _fenced_commands(payload["nextSteps"]) == [dashboard]
+    assert "{first-actionable-feature}" not in payload["nextSteps"]
 
 
 # ---- tolerant fallback: the one documented new tolerant case (02 §9) -------- #

@@ -275,6 +275,8 @@ EPIC.md patch rule, and the E6 Observability / Pipeline State & Commit machinery
 `references/edit-mode.md`. For the exact `epic-manifest.py` mutator flag surface and
 per-subcommand exit-code (`0`/`1`/`2`) handling, read `references/epic-manifest-subcommands.md`.
 
+An edit-mode mutation closes through the **same** Scripted Stage Exit command Step C8 runs — there is one scripted exit for this skill, not one per branch. Only the argument differs: edit mode re-reads live epic status **after** the mutation and its commit, passes the resulting concrete member as `--next-feature`, and **omits that flag entirely** when no member is actionable (so the router hands back to the epic dashboard instead of naming a member it cannot resolve). Those substitution rules, the `render-status` failure path, and the script's member fallback warning are all in `references/edit-mode.md` — do not improvise a closing pointer here.
+
 ---
 
 ## Error Handling

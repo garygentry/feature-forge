@@ -3255,8 +3255,8 @@ def stage_exit(
     - ``nextStage``/``nextCommand`` — from pipeline state when it already
       records this stage complete (first non-complete production stage), else
       the fixed successor. ``--next-feature`` names the first actionable
-      feature for the epic handoff; without it the runtime placeholder
-      ``{first-actionable-feature}`` passes through for the skill to resolve.
+      feature for the epic handoff; without it an epic exit hands back to the
+      epic dashboard rather than naming a member it cannot resolve (04 §8.2).
       With it, the handoff is derived from THAT member's live state via
       ``next_stage`` (02 §9): a progressed member resumes where it actually is,
       a fully complete member hands back to the epic dashboard, and a member
@@ -3506,13 +3506,20 @@ def stage_exit(
         # back to the fixed successor, never to an earlier stage.
         next_stage_id = state_next
     # Keyed off the ROUTED stage, so a branch exit that served the epic decomposition
-    # hands off the same way the epic's own exit does — naming a member to resolve
-    # rather than fabricating a member named after the epic. Identical to the previous
+    # hands off the same way the epic's own exit does. Identical to the previous
     # behavior for every production exit, where `route_stage is stage`.
-    next_arg = next_feature or (
-        "{first-actionable-feature}" if route_stage == "forge-0-epic" else feature
-    )
-    next_command = f"/feature-forge:{next_stage_id} {next_arg}" if next_stage_id else None
+    if route_stage == "forge-0-epic" and next_feature is None:
+        # An epic exit that names no concrete member has nothing to hand off to.
+        # The dashboard is the same non-fabrication answer §9 gives a named member
+        # that has finished every production stage: never invent a member, and
+        # never print a template the user cannot run (04 §8.2).
+        next_stage_id = None
+        next_command = f"/feature-forge:forge-0-epic {feature}"
+    else:
+        next_arg = next_feature or feature
+        next_command = (
+            f"/feature-forge:{next_stage_id} {next_arg}" if next_stage_id else None
+        )
 
     # ---- 02 §9 epic edit-mode live member routing (issue #175) -------------- #
     # The fixed `forge-0-epic -> forge-1-prd` successor above is a CREATION-mode

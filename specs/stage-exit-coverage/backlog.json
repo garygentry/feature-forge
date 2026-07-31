@@ -732,8 +732,8 @@
         "bash scripts/validate.sh passes",
         "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T10:09:49.920Z",
       "dependsOn": [
         "016",
         "017"
