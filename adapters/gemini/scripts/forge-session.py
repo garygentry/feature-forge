@@ -280,6 +280,16 @@ AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC: Final = (
     "is missing or malformed (legacy or hand-edited state); the debt stays "
     "outstanding — run {command} to resolve it and record a usable schedule."
 )
+#: The exact 00 §4 template for an `autoVerifyStages` key that names no
+#: verify-capable stage. A typo there silently never takes effect, so the exit
+#: says so — once per offending key, in sorted key order (02 §10), on stderr, and
+#: WITHOUT failing the exit: an ignored config key is an advisory, not a usage
+#: error. `{valid}` is derived from `VERIFY_TOKEN_BY_STAGE` so the sentence cannot
+#: drift from the domain it describes.
+INVALID_AUTO_VERIFY_KEY_WARNING: Final = (
+    'Warning: autoVerifyStages key "{key}" names no verify-capable stage; it is '
+    "ignored. Valid keys are {valid}."
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -1206,11 +1216,15 @@ def invalid_auto_verify_keys(config: dict) -> list[str]:
     An unknown/typo key (e.g. ``forge-1-prod``) would silently never take effect,
     turning an intended off-switch into a no-op. Surfacing it lets the navigator
     warn instead of failing quietly. Mirrors the schema's ``propertyNames.enum``.
+
+    Sorted, not insertion-ordered: 02 §10 requires every diagnostic list to be
+    sorted before rendering, so two configs that differ only in key order produce
+    byte-identical output.
     """
     stages = config.get("autoVerifyStages")
     if not isinstance(stages, dict):
         return []
-    return [key for key in stages if key not in VERIFY_TOKEN_BY_STAGE]
+    return sorted(key for key in stages if key not in VERIFY_TOKEN_BY_STAGE)
 
 
 def context_usage(
@@ -2038,6 +2052,45 @@ _EXIT_NEXT_STAGE: Final[dict[str, str]] = {
 }
 
 
+def _classify_verify_entry(entry: dict, verify_key: str, current: int | None) -> str:
+    """Label one ``forge-verify-*`` entry against the artifact revision it serves.
+
+    The revision-agnostic half of ``_verify_state_for``, factored out because an
+    EPIC-scoped exit compares against the epic manifest's ``revision`` held in
+    ``.epic-state.json``, not against a member production-stage ``version``
+    (03 §2.2, REQ-SEC-01). Both callers must apply identical rules, so there is
+    one implementation rather than two that can drift.
+
+    Args:
+        entry: The verify entry (``{}`` when absent).
+        verify_key: The ``forge-verify-*`` key, named in the metadata diagnostic.
+        current: The artifact's current revision, or None when it is unknown.
+
+    Returns:
+        One of fresh / stale / failing / auto-pending / never / skipped.
+    """
+    status = entry.get("status")
+    if status == "skipped":
+        return "skipped"
+    if status == "findings-reported":
+        return "failing"
+    if status == "auto-verify-pending":
+        # Ahead of the generic unresolved branch, exactly as in verify_state.
+        if _scheduled_stage_version(entry) is None:
+            _warn_auto_verify_debt_metadata(verify_key)
+        return "auto-pending"
+    if status not in _VERIFY_RESOLVED:
+        return "never"
+    verified_version = entry.get("verifiedStageVersion")
+    if (
+        isinstance(verified_version, int)
+        and current is not None
+        and verified_version == current
+    ):
+        return "fresh"
+    return "stale"
+
+
 def _verify_state_for(state: dict, stage: str) -> str:
     """Classify THIS stage's verify freshness (stage-scoped ``verify_state``).
 
@@ -2050,28 +2103,46 @@ def _verify_state_for(state: dict, stage: str) -> str:
     token = _EXIT_VERIFY_TOKEN.get(stage)
     if token is None:
         return "none"
-    entry = _verify_entry(state, f"forge-verify-{token}")
-    status = entry.get("status")
-    if status == "skipped":
-        return "skipped"
-    if status == "findings-reported":
-        return "failing"
-    if status == "auto-verify-pending":
-        # Ahead of the generic unresolved branch, exactly as in verify_state.
-        if _scheduled_stage_version(entry) is None:
-            _warn_auto_verify_debt_metadata(f"forge-verify-{token}")
-        return "auto-pending"
-    if status not in _VERIFY_RESOLVED:
-        return "never"
-    verified_version = entry.get("verifiedStageVersion")
-    stage_version = _stage_version(state, stage)
-    if (
-        isinstance(verified_version, int)
-        and stage_version is not None
-        and verified_version == stage_version
-    ):
-        return "fresh"
-    return "stale"
+    return _classify_verify_entry(
+        _verify_entry(state, f"forge-verify-{token}"),
+        f"forge-verify-{token}",
+        _stage_version(state, stage),
+    )
+
+
+def _epic_verify_context(specs_dir: Path, epic_name: str) -> tuple[dict, int | None]:
+    """Read an epic's verification entry and manifest revision — tolerantly.
+
+    An epic's verification state lives in ``{specsDir}/{epic}/.epic-state.json``
+    and its artifact revision is the sibling manifest's ``revision``. Neither ever
+    comes from a member ``.pipeline-state.json``, and a member production-stage
+    ``version`` is never the epic's revision (03 §2.1/§2.2/§4.1, REQ-SEC-01). This
+    is the READ half: it degrades to ``({}, None)`` on anything missing or
+    malformed, matching stage-exit's "never crash a stage closing" posture. The
+    strict, fail-closed resolution lives on the WRITE path
+    (``_load_epic_state_for_write``).
+
+    A legacy manifest with no ``revision`` reads as logical ``1``, matching
+    ``epic-manifest.py::load_manifest``; its bytes are not rewritten
+    (REQ-DEBT-06).
+
+    Args:
+        specs_dir: The configured specs directory.
+        epic_name: The epic — what ``--feature`` carries on an epic-scoped exit.
+
+    Returns:
+        ``(verify_entry, revision)``; ``revision`` is None when the manifest is
+        missing or its revision unusable.
+    """
+    epic_dir = specs_dir / epic_name
+    revision: int | None = None
+    manifest = _read_state(epic_dir / MANIFEST_FILENAME)
+    if manifest:
+        raw = manifest.get("revision", 1)
+        if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 1:
+            revision = raw
+    entry = _verify_entry(_read_state(epic_dir / EPIC_STATE_FILENAME), "forge-verify-epic")
+    return entry, revision
 
 
 def _resolve_feature_dir(specs_dir: Path, feature: str, epic: str | None) -> Path:
@@ -2305,7 +2376,12 @@ def resolve_served_stage(
 
 
 def _debt_metadata_warnings(
-    state: dict, stage: str, subject: str, verify_command: str
+    entry: dict,
+    verify_key: str | None,
+    stage: str,
+    subject: str,
+    verify_command: str,
+    current: int | None,
 ) -> list[str]:
     """Entries 2 and 3 of the 00 §4 ``warnings`` order, for owed automatic verification.
 
@@ -2314,13 +2390,21 @@ def _debt_metadata_warnings(
     mutually exclusive by construction — a mismatch is only detectable once the
     recorded revision is usable — but the order is fixed regardless so a later
     entry can be added without re-deriving it.
+
+    Takes the already-resolved entry and revision rather than re-deriving them
+    from a member state document: on an epic-scoped exit both come from
+    ``.epic-state.json`` and the manifest revision, which a member state cannot
+    supply (03 §4.1, REQ-SEC-01).
+
+    Args:
+        entry: The verify entry the exit routed from (``{}`` when absent).
+        verify_key: Its ``forge-verify-*`` key, or None for a tokenless stage.
+        stage: The production stage the debt is owed on.
+        subject: The feature or epic to name.
+        verify_command: The host-translated retry command.
+        current: The artifact's current revision, or None when unknown.
     """
-    token = _EXIT_VERIFY_TOKEN.get(stage)
-    if token is None:
-        return []
-    verify_key = f"forge-verify-{token}"
-    entry = _verify_entry(state, verify_key)
-    if entry.get("status") != "auto-verify-pending":
+    if verify_key is None or entry.get("status") != "auto-verify-pending":
         return []
     scheduled = _scheduled_stage_version(entry)
     if scheduled is None:
@@ -2329,12 +2413,75 @@ def _debt_metadata_warnings(
                 subject=subject, verify_key=verify_key, command=verify_command
             )
         ]
-    current = _stage_version(state, stage)
     if current is not None and scheduled != current:
         return [
             auto_pending_message(subject, stage, verify_command, scheduled, current)
         ]
     return []
+
+
+def _schedule_auto_verify_debt(
+    specs_dir: Path, feature: str, epic: str | None, stage: str, verify_key: str
+) -> None:
+    """Persist `auto-verify-pending` for `stage` — the 03 §4.1 scheduling boundary.
+
+    Called immediately BEFORE `stage_exit` returns a payload carrying
+    ``runInStageVerify: true``, never after, so there is no window in which the
+    model is told to verify while nothing on disk records that it was owed
+    (REQ-DEBT-01, REQ-REL-03). The transition itself is `cmd_state_verify`'s —
+    `_load_verify_target` selects the target and `_verify_result_entry` builds the
+    entry — so a scheduled marker is byte-identical to one written through the CLI.
+
+    Idempotent by target revision (REQ-REL-01): an entry already
+    `auto-verify-pending` at the current revision returns without calling
+    `_commit_state`, so `scheduledAt`, top-level `updatedAt`, and the file bytes
+    are all untouched. A newer revision supersedes the older marker with exactly
+    one write. The caller's `resolved` check is what keeps a fresh terminal entry
+    or an explicit `skipped` from ever reaching this function.
+
+    Unlike the `state-verify` CLI, a target whose artifact revision is unknown
+    (no recorded `version`, or an epic with no readable manifest) records the debt
+    with a null `scheduledStageVersion` rather than refusing: the obligation is
+    real either way, and 03 §5.1 already classifies an unusable schedule as
+    `auto-pending` plus a warning. Forgetting the debt because its revision is
+    unknown is the REQ-DEBT-02 conflation, and refusing would turn a routine stage
+    closing into an exit 2.
+
+    Args:
+        specs_dir: The configured specs directory.
+        feature: The feature name, or the EPIC name for an epic-scoped exit.
+        epic: The owning epic for a member, else None.
+        stage: The production stage the debt is owed on (`forge-0-epic` for an
+            epic-scoped exit).
+        verify_key: The `forge-verify-*` key to write.
+
+    Raises:
+        UsageError: Unsafe/ambiguous/unresolvable target, corrupt state, or an
+            atomic-write failure (→ exit 2, no payload and no dispatch directive).
+    """
+    is_epic_target = stage == "forge-0-epic"
+    state_path, state, epic_revision = _load_verify_target(
+        specs_dir, feature, epic, is_epic_target
+    )
+    if is_epic_target:
+        current = epic_revision
+    else:
+        version = _stage_version(state, stage)
+        current = (
+            version
+            if isinstance(version, int) and not isinstance(version, bool) and version >= 1
+            else None
+        )
+    prior = _verify_entry(state, verify_key)
+    if (
+        prior.get("status") == "auto-verify-pending"
+        and _scheduled_stage_version(prior) == current
+    ):
+        return
+    state.setdefault("stages", {})[verify_key] = _verify_result_entry(
+        "auto-verify-pending", prior, current, None, None, _now_iso()
+    )
+    _commit_state(state_path, state)
 
 
 def stage_exit(
@@ -2385,9 +2532,22 @@ def stage_exit(
       else global; strict-true) is on AND this stage's verify is not already
       resolved (fresh/skipped). The skill then dispatches the clean-room
       verify in-session (principle #2: verify before the clear).
+    - ``autoVerifyDebtRecorded`` — the ``auto-verify-pending`` marker for this
+      stage is durably on disk. Written BEFORE this payload exists (03 §4.1), so
+      a failed write raises ``UsageError`` and returns no payload at all and
+      ``runInStageVerify: True`` with ``autoVerifyDebtRecorded: False`` is
+      unreachable. Scheduling is idempotent by target revision: a repeat at the
+      same revision touches neither ``scheduledAt`` nor top-level ``updatedAt``.
     - ``autoFixEligible`` — ``autoFix`` is strict-true AND the in-stage verify
       runs AND the working tree is clean. Findings-level preconditions (zero
-      unresolved decisions) remain the skill's runtime check.
+      unresolved decisions) remain the skill's runtime check. Its clean-tree
+      snapshot is taken BEFORE the debt write, so that sanctioned control-plane
+      mutation cannot dirty its own precondition.
+    - ``verifyState``/``warnings``/``cleanTree`` — all PRE-mutation snapshots:
+      they describe the state the routing decision was made from, which is why a
+      first exit reports ``never`` while the debt it just recorded reads
+      ``auto-pending`` on the next one. Only ``autoVerifyDebtRecorded`` reports
+      the write.
     - ``verifyGate`` — ``none`` when verify is resolved (including a tokenless
       stage) or the in-stage run covers it; ``standard`` when auto-verify is off,
       verification is outstanding, and the CALLER declared
@@ -2501,9 +2661,21 @@ def stage_exit(
         )
 
     config = _load_config(config_path)
+    invalid_keys = invalid_auto_verify_keys(config)
+    for key in invalid_keys:   # already sorted (02 §10); advisory, never fatal
+        print(
+            INVALID_AUTO_VERIFY_KEY_WARNING.format(
+                key=key, valid=", ".join(VERIFY_TOKEN_BY_STAGE)
+            ),
+            file=sys.stderr,
+        )
     feature_dir = _resolve_feature_dir(specs_dir, feature, epic)
     state = _read_state(feature_dir / PIPELINE_STATE_FILENAME)
 
+    # The clean-tree snapshot is taken HERE, before the sanctioned debt write
+    # below, so the pending marker cannot dirty its own precondition (03 §4.1).
+    # Every other directive is likewise a pre-mutation snapshot; only
+    # `autoVerifyDebtRecorded` describes what the write did.
     git_repo = _git_output(["rev-parse", "--git-dir"]) is not None
     clean_tree: bool | None = None
     if git_repo:
@@ -2515,16 +2687,50 @@ def stage_exit(
     # For a production exit the two are the same stage, so stages 0-4 are unchanged.
     route_stage = resolved_served if resolved_served is not None else stage
 
-    verify_label = _verify_state_for(state, route_stage)
-    # ``none`` is a tokenless stage (forge-6-docs) — there is no verification to
-    # owe, so it is resolved for routing purposes and no verify command is
-    # promoted (07 §3.4's last matrix row).
+    # Verification context for the routed stage. An epic-scoped route reads
+    # `.epic-state.json` and the manifest revision DIRECTLY — never
+    # `_resolve_feature_dir`, never a member stage version (03 §4.1, REQ-SEC-01).
+    verify_token = _EXIT_VERIFY_TOKEN.get(route_stage)
+    verify_key = f"forge-verify-{verify_token}" if verify_token else None
+    if route_stage == "forge-0-epic":
+        verify_entry, verify_current = _epic_verify_context(specs_dir, feature)
+    elif verify_key:
+        verify_entry = _verify_entry(state, verify_key)
+        verify_current = _stage_version(state, route_stage)
+    else:
+        verify_entry, verify_current = {}, None
+    verify_label = (
+        _classify_verify_entry(verify_entry, verify_key, verify_current)
+        if verify_key
+        # ``none`` is a tokenless stage (forge-6-docs) — there is no verification
+        # to owe (07 §3.4's last matrix row).
+        else "none"
+    )
+    # ``none`` is resolved for routing purposes: no verify command is promoted.
     resolved = verify_label in ("fresh", "skipped", "none")
     effective_auto_verify = auto_verify_for(config, route_stage)
-    run_in_stage = effective_auto_verify and not resolved
+    # A BRANCH exit is already inside the verification diversion, so it never owes
+    # an in-stage verify chain and never schedules debt. Without this a
+    # `forge-verify --outcome findings` exit would both direct a re-dispatch of
+    # itself and overwrite the `findings-reported` entry it had just written with
+    # a fresh `auto-verify-pending` marker, losing the report (REQ-EXIT-04).
+    # Branch rejoin routing is 02 §6's, not this scheduling boundary's.
+    run_in_stage = (
+        effective_auto_verify and not resolved and stage not in _BRANCH_STAGES
+    )
     auto_fix_eligible = (
         config.get("autoFix") is True and run_in_stage and clean_tree is True
     )
+
+    # ---- 03 §4.1 scheduling boundary -------------------------------------- #
+    # The debt lands BEFORE the payload exists, so a crash between here and the
+    # dispatch leaves durable state exposing the obligation, and a failed write
+    # raises UsageError with no payload at all — `runInStageVerify: True` with
+    # `autoVerifyDebtRecorded: False` is therefore unreachable (00 §4).
+    auto_verify_debt_recorded = False
+    if run_in_stage and verify_key is not None:
+        _schedule_auto_verify_debt(specs_dir, feature, epic, route_stage, verify_key)
+        auto_verify_debt_recorded = True
     # 02 §4 priority table. The gate is a pure function of the verification state
     # and the caller's declared capability: `--host` selects command syntax and
     # fresh-session wording ONLY. A capable Pi session gets `standard`; an
@@ -2609,7 +2815,11 @@ def stage_exit(
     # 00 §4 fixed order. Entry 1 (the epic-member unreadable-state fallback) is not
     # emitted by this stage of the router; entries 2 and 3 are.
     warnings: list[str] = []
-    warnings.extend(_debt_metadata_warnings(state, route_stage, feature, verify_command))
+    warnings.extend(
+        _debt_metadata_warnings(
+            verify_entry, verify_key, route_stage, feature, verify_command, verify_current
+        )
+    )
 
     # `owner == "nested"` means an outer authoring stage prints the terminal block.
     # The routing directives survive; the human-facing block does not exist at all,
@@ -2633,13 +2843,14 @@ def stage_exit(
         "verifyStage": pending_verify(state),
         "verifyCommand": verify_command,
         "autoVerifyEffective": effective_auto_verify,
+        "autoVerifyDebtRecorded": auto_verify_debt_recorded,
         "nextStage": next_stage_id,
         "nextCommand": _host_command(next_command, host) if next_command else next_command,
         "primaryCommand": _host_command(primary_canonical, host),
         "deferredCommand": (
             _host_command(deferred_canonical, host) if deferred_canonical else None
         ),
-        "invalidAutoVerifyKeys": invalid_auto_verify_keys(config),
+        "invalidAutoVerifyKeys": invalid_keys,
         "warnings": warnings,
         "gitRepo": git_repo,
         "cleanTree": clean_tree,

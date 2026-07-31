@@ -69,6 +69,33 @@ def _exit(cwd: Path, *args: str) -> dict:
     return json.loads(proc.stdout)
 
 
+def _epic_project(
+    tmp_path: Path,
+    revision: int | None = 1,
+    epic_entry: dict | None = None,
+    config: dict | None = None,
+    epic: str = "my-epic",
+) -> Path:
+    """A project whose ``specs/<epic>/`` carries a manifest and ``.epic-state.json``.
+
+    Epic verification state is epic-scoped: the entry lives in
+    ``.epic-state.json`` and its artifact revision is the manifest's ``revision``
+    (03 §2.1/§2.2). Pass ``revision=None`` for a legacy manifest with no revision
+    key, which reads as logical 1.
+    """
+    root = _project(tmp_path, config=config or {}, feature=epic)
+    epic_dir = root / "specs" / epic
+    manifest: dict = {"epic": epic, "features": []}
+    if revision is not None:
+        manifest["revision"] = revision
+    (epic_dir / "epic-manifest.json").write_text(json.dumps(manifest))
+    if epic_entry is not None:
+        (epic_dir / ".epic-state.json").write_text(json.dumps(
+            {"epic": epic, "stages": {"forge-verify-epic": epic_entry}}
+        ))
+    return root
+
+
 def _state_with_verify(stage: str, verify_key: str, verify_entry: dict) -> dict:
     return {
         "pipelineStatus": "active",
@@ -280,15 +307,34 @@ def test_epic_stage_handoff_placeholder_and_next_feature(tmp_path: Path) -> None
     assert d2["nextCommand"] == "/feature-forge:forge-1-prd config-store"
 
 
-def test_epic_stage_verify_state_reads_forge_verify_epic(tmp_path: Path) -> None:
-    state = _state_with_verify(
-        "forge-0-epic", "forge-verify-epic",
-        {"status": "passed", "verifiedStageVersion": 2},
-    )
-    root = _project(tmp_path, config={}, state=state, feature="my-epic")
+def test_epic_stage_verify_state_reads_the_epic_state_file(tmp_path: Path) -> None:
+    """INTENTIONAL CHANGE (item 012, epic-scoped verification source).
+
+    This replaces the old `test_epic_stage_verify_state_reads_forge_verify_epic`,
+    which seeded `forge-verify-epic` inside the *member* `.pipeline-state.json`
+    and asserted stage-exit read it there. Since item 006 that entry's only home
+    is `{specsDir}/{epic}/.epic-state.json`, compared against the epic manifest's
+    `revision` — never a member state and never a member stage version (03 §2.1/
+    §4.1, REQ-SEC-01). The routing assertions (`fresh` → gate `none`) are
+    unchanged; only the file the label is read from moved.
+    """
+    root = _epic_project(tmp_path, revision=2, epic_entry={
+        "status": "passed", "verifiedStageVersion": 2,
+    })
     d = _exit(root, "--feature", "my-epic", "--stage", "forge-0-epic")["directives"]
     assert d["verifyState"] == "fresh"
     assert d["verifyGate"] == "none"
+
+
+def test_epic_stage_ignores_a_member_state_forge_verify_epic_entry(tmp_path: Path):
+    """A `forge-verify-epic` entry planted in member state is NOT the epic's."""
+    root = _epic_project(tmp_path, revision=2, epic_entry=None)
+    (root / "specs" / "my-epic" / ".pipeline-state.json").write_text(json.dumps(
+        _state_with_verify("forge-0-epic", "forge-verify-epic",
+                           {"status": "passed", "verifiedStageVersion": 2})
+    ))
+    d = _exit(root, "--feature", "my-epic", "--stage", "forge-0-epic")["directives"]
+    assert d["verifyState"] == "never"
 
 
 def test_nested_epic_member_resolves_state(tmp_path: Path) -> None:

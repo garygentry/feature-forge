@@ -581,3 +581,533 @@ def test_doctor_reports_auto_pending_and_the_diagnostic(tmp_path: Path) -> None:
         "run /feature-forge:forge-verify widget to resolve it." in result.stderr
     )
     assert "scheduledStageVersion" not in result.stderr
+
+
+# --------------------------------------------------------------------------- #
+# Item 012 — the 03 §4.1 stage-exit scheduling boundary
+#
+# Debt is persisted BEFORE `stage-exit` returns a payload with
+# `runInStageVerify: true`, so a dropped directive, a crash, or a compaction
+# between scheduling and dispatch still leaves the obligation on disk
+# (REQ-DEBT-01/04, REQ-REL-01/03).
+# --------------------------------------------------------------------------- #
+
+
+def _exit_project(
+    tmp_path: Path,
+    config: dict | None = None,
+    state: dict | None = None,
+    feature: str = "widget",
+    git: bool = True,
+) -> Path:
+    """A minimal project for `stage-exit`: config + specs/<feature>/ + git.
+
+    ``config`` defaults to auto-verify ON, since that is the precondition every
+    scheduling case needs. An explicit ``{}`` means "no config", not "default" —
+    hence the ``is None`` test rather than a truthiness one.
+    """
+    root = tmp_path / "proj"
+    (root / "specs" / feature).mkdir(parents=True)
+    (root / "forge.config.json").write_text(
+        json.dumps({"autoVerify": True} if config is None else config)
+    )
+    if state is not None:
+        (root / "specs" / feature / ".pipeline-state.json").write_text(json.dumps(state))
+    if git:
+        subprocess.run(["git", "init", "-qb", "main"], cwd=root, check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "t@t.invalid"],
+                       check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "t"], check=True)
+        subprocess.run(["git", "-C", str(root), "add", "-A"], cwd=root, check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", "init"], check=True)
+    return root
+
+
+def _stage_exit(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(HELPER), "stage-exit", "--json", *args],
+        capture_output=True, text=True, cwd=str(root),
+    )
+
+
+def _exit_ok(root: Path, *args: str) -> dict:
+    proc = _stage_exit(root, *args)
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
+
+def _tech_state(verify: dict | None = None, version: int = 2) -> dict:
+    stages: dict = {"forge-2-tech": {"status": "complete", "version": version}}
+    if verify is not None:
+        stages["forge-verify-tech"] = verify
+    return {"pipelineStatus": "active", "stages": stages}
+
+
+def _read_entry(root: Path, feature: str = "widget", key: str = "forge-verify-tech") -> dict:
+    state = json.loads(
+        (root / "specs" / feature / ".pipeline-state.json").read_text()
+    )
+    return state["stages"].get(key, {})
+
+
+@pytest.mark.parametrize("stage,token,version_key", [
+    ("forge-1-prd", "prd", "forge-1-prd"),
+    ("forge-2-tech", "tech", "forge-2-tech"),
+    ("forge-3-specs", "specs", "forge-3-specs"),
+    ("forge-4-backlog", "backlog", "forge-4-backlog"),
+    ("forge-5-loop", "impl", "forge-5-loop"),
+])
+def test_stage_exit_schedules_debt_for_every_verify_capable_token(
+    tmp_path: Path, stage: str, token: str, version_key: str
+) -> None:
+    """Every verify-capable production token records its own pending marker."""
+    state = {"pipelineStatus": "active",
+             "stages": {version_key: {"status": "complete", "version": 3}}}
+    root = _exit_project(tmp_path, state=state)
+    args = ["--feature", "widget", "--stage", stage]
+    if stage == "forge-5-loop":
+        args += ["--outcome", "complete"]
+
+    d = _exit_ok(root, *args)["directives"]
+
+    assert d["runInStageVerify"] is True
+    assert d["autoVerifyDebtRecorded"] is True
+    entry = _read_entry(root, key=f"forge-verify-{token}")
+    assert entry["status"] == "auto-verify-pending"
+    assert entry["scheduledStageVersion"] == 3
+    assert entry["commitHash"] is None
+    assert isinstance(entry["scheduledAt"], str) and entry["scheduledAt"].endswith("Z")
+
+
+def test_debt_is_on_disk_before_the_dispatch_directive_is_returned(
+    tmp_path: Path,
+) -> None:
+    """REQ-DEBT-01: the marker exists by the time `runInStageVerify` is emitted."""
+    root = _exit_project(tmp_path, state=_tech_state())
+    payload = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+
+    assert payload["directives"]["runInStageVerify"] is True
+    assert payload["directives"]["autoVerifyDebtRecorded"] is True
+    # The process has already exited, so anything the payload claims about the
+    # write is claimed about a file that must already be readable.
+    assert _read_entry(root)["status"] == "auto-verify-pending"
+
+
+def test_no_debt_is_recorded_when_auto_verify_is_off(tmp_path: Path) -> None:
+    root = _exit_project(tmp_path, config={}, state=_tech_state())
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert d["runInStageVerify"] is False
+    assert d["autoVerifyDebtRecorded"] is False
+    assert _read_entry(root) == {}
+
+
+def test_repeated_stage_exit_at_the_same_revision_is_byte_idempotent(
+    tmp_path: Path,
+) -> None:
+    """REQ-REL-01: no `_commit_state`, so `scheduledAt` AND `updatedAt` hold still."""
+    root = _exit_project(tmp_path, state=_tech_state())
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+
+    _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+    first = state_file.read_bytes()
+    for _ in range(2):
+        _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+        assert state_file.read_bytes() == first
+
+    written = json.loads(first)
+    assert written["stages"]["forge-verify-tech"]["scheduledStageVersion"] == 2
+    # Explicit, because a refreshed `updatedAt` is the easiest way to break this.
+    assert json.loads(state_file.read_bytes())["updatedAt"] == written["updatedAt"]
+
+
+def test_a_newer_revision_creates_exactly_one_new_schedule(tmp_path: Path) -> None:
+    root = _exit_project(tmp_path, state=_tech_state())
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+
+    _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+    scheduled_at_v2 = _read_entry(root)["scheduledAt"]
+
+    # The artifact advances; the older pending marker is superseded, once.
+    state = json.loads(state_file.read_text())
+    state["stages"]["forge-2-tech"]["version"] = 3
+    state_file.write_text(json.dumps(state))
+
+    _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+    entry = _read_entry(root)
+    assert entry["status"] == "auto-verify-pending"
+    assert entry["scheduledStageVersion"] == 3
+    after_first = state_file.read_bytes()
+
+    # A second exit at revision 3 is once again a no-op.
+    _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+    assert state_file.read_bytes() == after_first
+    assert entry["scheduledAt"] >= scheduled_at_v2
+
+
+def test_a_pending_marker_for_an_older_revision_is_superseded(tmp_path: Path) -> None:
+    """A stale schedule is replaced, and the exit warns before replacing it."""
+    root = _exit_project(tmp_path, state=_tech_state(
+        {"status": "auto-verify-pending", "scheduledAt": "2020-01-01T00:00:00Z",
+         "scheduledStageVersion": 1, "commitHash": None}
+    ))
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+
+    # The pre-mutation snapshot still reports the advance (00 §4 warnings entry 3).
+    assert any("artifact has advanced" in w for w in d["warnings"])
+    entry = _read_entry(root)
+    assert entry["scheduledStageVersion"] == 2
+    assert entry["scheduledAt"] != "2020-01-01T00:00:00Z"
+
+
+@pytest.mark.parametrize("entry,label", [
+    ({"status": "passed", "verifiedStageVersion": 2}, "fresh"),
+    ({"status": "skipped"}, "skipped"),
+], ids=["fresh-terminal", "explicit-skip"])
+def test_a_resolved_entry_prevents_rescheduling(
+    tmp_path: Path, entry: dict, label: str
+) -> None:
+    """A terminal entry fresh for the current revision, and an explicit skip,
+    are both resolved: nothing is owed, so nothing is written over them."""
+    root = _exit_project(tmp_path, state=_tech_state(entry))
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+    before = state_file.read_bytes()
+
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+
+    assert d["verifyState"] == label
+    assert d["runInStageVerify"] is False
+    assert d["autoVerifyDebtRecorded"] is False
+    assert state_file.read_bytes() == before
+
+
+def test_a_stale_terminal_entry_does_reschedule(tmp_path: Path) -> None:
+    """Negative control: only a FRESH terminal entry suppresses scheduling."""
+    root = _exit_project(tmp_path, state=_tech_state(
+        {"status": "passed", "verifiedStageVersion": 1}   # artifact is at 2
+    ))
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert d["verifyState"] == "stale"
+    assert d["autoVerifyDebtRecorded"] is True
+    assert _read_entry(root)["status"] == "auto-verify-pending"
+
+
+def test_an_injected_write_failure_exits_2_with_no_dispatch_directive(
+    tmp_path: Path,
+) -> None:
+    """REQ-DEBT-04: a crash before the write cannot falsely claim the debt landed."""
+    root = _exit_project(tmp_path, state=_tech_state())
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+    before = state_file.read_bytes()
+    # `_write_state` creates its sibling temp file in the feature directory; an
+    # unwritable directory fails `tempfile.mkstemp` before anything is replaced.
+    (root / "specs" / "widget").chmod(0o555)
+    try:
+        proc = _stage_exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+    finally:
+        (root / "specs" / "widget").chmod(0o755)
+
+    assert proc.returncode == 2
+    assert proc.stderr.startswith("Error:")
+    assert proc.stdout == ""
+    assert "runInStageVerify" not in proc.stdout
+    assert state_file.read_bytes() == before
+
+
+def test_an_interrupted_dispatch_leaves_the_marker_readable_from_a_new_process(
+    tmp_path: Path,
+) -> None:
+    """REQ-REL-03, 07 §4.1: schedule, then deliberately perform NO verify call.
+
+    The marker must survive into a separate CLI process — the only evidence that
+    survives a dropped directive, a crash, or a compaction.
+    """
+    root = _exit_project(tmp_path, state=_tech_state())
+    _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+    # No `state-verify` follows. A fresh process reads the persisted obligation.
+    rank = subprocess.run(
+        [sys.executable, str(HELPER), "rank-features",
+         "--specs-dir", str(root / "specs"), "--json"],
+        capture_output=True, text=True, cwd=str(root),
+    )
+    assert rank.returncode == 0, rank.stderr
+    (row,) = json.loads(rank.stdout)["active"]
+    assert row["verifyState"] == "auto-pending"
+    assert row["verifyPending"] is True
+    assert row["verifyStage"] == "forge-2-tech"
+    assert row["verifyCommand"] == "/feature-forge:forge-verify widget"
+    assert (
+        "widget: automatic verification is still pending for forge-2-tech; "
+        "run /feature-forge:forge-verify widget to resolve it." in rank.stderr
+    )
+    # And a second stage-exit process sees it too, without rescheduling.
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert d["verifyState"] == "auto-pending"
+    assert d["autoVerifyDebtRecorded"] is True
+
+
+def test_the_clean_tree_snapshot_predates_the_pending_write(tmp_path: Path) -> None:
+    """The sanctioned control-plane mutation must not dirty its own precondition."""
+    root = _exit_project(tmp_path, config={"autoVerify": True, "autoFix": True},
+                         state=_tech_state())
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+
+    assert d["cleanTree"] is True
+    assert d["autoFixEligible"] is True
+    # The write itself DID dirty the tree — which is exactly why the snapshot has
+    # to be taken first. The state-file modification is sanctioned, not user dirt.
+    porcelain = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert ".pipeline-state.json" in porcelain
+
+
+def test_an_unknown_artifact_revision_still_records_the_debt(tmp_path: Path) -> None:
+    """Forgetting owed debt because its revision is unknown is the REQ-DEBT-02
+    conflation; a null schedule stays `auto-pending` and warns instead."""
+    root = _exit_project(tmp_path, state=None)
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert d["autoVerifyDebtRecorded"] is True
+    entry = _read_entry(root)
+    assert entry["status"] == "auto-verify-pending"
+    assert entry["scheduledStageVersion"] is None
+
+    second = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert second["verifyState"] == "auto-pending"
+    assert any("scheduledStageVersion" in w for w in second["warnings"])
+
+
+def test_a_tokenless_stage_never_schedules(tmp_path: Path) -> None:
+    """forge-6-docs has no verification token, so there is no debt to record."""
+    root = _exit_project(tmp_path, state=_tech_state())
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+    before = state_file.read_bytes()
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-6-docs",
+                 "--outcome", "complete")["directives"]
+    assert d["verifyState"] == "none"
+    assert d["runInStageVerify"] is False
+    assert d["autoVerifyDebtRecorded"] is False
+    assert state_file.read_bytes() == before
+
+
+# --- epic-scoped scheduling (03 §4.1, REQ-SEC-01) --------------------------- #
+
+
+def _epic_exit_project(
+    tmp_path: Path,
+    revision: int | None = 1,
+    epic_entry: dict | None = None,
+    member: str | None = None,
+) -> Path:
+    """An epic with a manifest, optionally an `.epic-state.json` and one member."""
+    root = _exit_project(tmp_path, feature="my-epic")
+    epic_dir = root / "specs" / "my-epic"
+    manifest: dict = {"epic": "my-epic", "features": []}
+    if revision is not None:
+        manifest["revision"] = revision
+    (epic_dir / "epic-manifest.json").write_text(json.dumps(manifest))
+    if epic_entry is not None:
+        (epic_dir / ".epic-state.json").write_text(json.dumps(
+            {"epic": "my-epic", "stages": {"forge-verify-epic": epic_entry}}
+        ))
+    if member is not None:
+        (epic_dir / member).mkdir()
+        (epic_dir / member / ".pipeline-state.json").write_text(json.dumps(
+            {"pipelineStatus": "active",
+             "stages": {"forge-1-prd": {"status": "complete", "version": 7}}}
+        ))
+    return root
+
+
+def test_epic_scheduling_writes_epic_state_and_touches_no_member(
+    tmp_path: Path,
+) -> None:
+    root = _epic_exit_project(tmp_path, revision=4, member="alpha")
+    member_state = root / "specs" / "my-epic" / "alpha" / ".pipeline-state.json"
+    member_before = member_state.read_bytes()
+    epic_pipeline_state = root / "specs" / "my-epic" / ".pipeline-state.json"
+
+    d = _exit_ok(root, "--feature", "my-epic", "--stage", "forge-0-epic")["directives"]
+
+    assert d["runInStageVerify"] is True
+    assert d["autoVerifyDebtRecorded"] is True
+    entry = json.loads(
+        (root / "specs" / "my-epic" / ".epic-state.json").read_text()
+    )["stages"]["forge-verify-epic"]
+    assert entry["status"] == "auto-verify-pending"
+    # The manifest revision, never a member production-stage version (7 above).
+    assert entry["scheduledStageVersion"] == 4
+    assert member_state.read_bytes() == member_before
+    assert not epic_pipeline_state.exists()
+
+
+def test_epic_scheduling_is_idempotent_at_the_same_manifest_revision(
+    tmp_path: Path,
+) -> None:
+    root = _epic_exit_project(tmp_path, revision=4)
+    epic_state = root / "specs" / "my-epic" / ".epic-state.json"
+
+    _exit_ok(root, "--feature", "my-epic", "--stage", "forge-0-epic")
+    first = epic_state.read_bytes()
+    _exit_ok(root, "--feature", "my-epic", "--stage", "forge-0-epic")
+    assert epic_state.read_bytes() == first
+
+
+def test_a_manifest_edit_supersedes_the_epic_schedule(tmp_path: Path) -> None:
+    root = _epic_exit_project(tmp_path, revision=4)
+    _exit_ok(root, "--feature", "my-epic", "--stage", "forge-0-epic")
+
+    manifest = root / "specs" / "my-epic" / "epic-manifest.json"
+    manifest.write_text(json.dumps({"epic": "my-epic", "features": [], "revision": 5}))
+    _exit_ok(root, "--feature", "my-epic", "--stage", "forge-0-epic")
+
+    entry = json.loads(
+        (root / "specs" / "my-epic" / ".epic-state.json").read_text()
+    )["stages"]["forge-verify-epic"]
+    assert entry["scheduledStageVersion"] == 5
+
+
+def test_a_fresh_epic_verification_prevents_epic_scheduling(tmp_path: Path) -> None:
+    root = _epic_exit_project(tmp_path, revision=4, epic_entry={
+        "status": "passed", "verifiedStageVersion": 4,
+    })
+    epic_state = root / "specs" / "my-epic" / ".epic-state.json"
+    before = epic_state.read_bytes()
+
+    d = _exit_ok(root, "--feature", "my-epic", "--stage", "forge-0-epic")["directives"]
+
+    assert d["verifyState"] == "fresh"
+    assert d["autoVerifyDebtRecorded"] is False
+    assert epic_state.read_bytes() == before
+
+
+def test_a_legacy_epic_manifest_schedules_at_revision_1(tmp_path: Path) -> None:
+    """REQ-DEBT-06: a manifest with no `revision` reads as logical 1, unmigrated."""
+    root = _epic_exit_project(tmp_path, revision=None)
+    manifest = root / "specs" / "my-epic" / "epic-manifest.json"
+    manifest_before = manifest.read_bytes()
+
+    _exit_ok(root, "--feature", "my-epic", "--stage", "forge-0-epic")
+
+    entry = json.loads(
+        (root / "specs" / "my-epic" / ".epic-state.json").read_text()
+    )["stages"]["forge-verify-epic"]
+    assert entry["scheduledStageVersion"] == 1
+    assert manifest.read_bytes() == manifest_before
+
+
+def test_an_epic_without_a_manifest_fails_closed_with_no_directive(
+    tmp_path: Path,
+) -> None:
+    """The debt cannot be recorded, so no dispatch directive is emitted."""
+    root = _exit_project(tmp_path, feature="my-epic")   # no epic-manifest.json
+    proc = _stage_exit(root, "--feature", "my-epic", "--stage", "forge-0-epic")
+    assert proc.returncode == 2
+    assert proc.stderr.startswith("Error:")
+    assert proc.stdout == ""
+    assert not (root / "specs" / "my-epic" / ".epic-state.json").exists()
+
+
+# --- directives.autoVerifyEffective / invalidAutoVerifyKeys (00 §4) --------- #
+
+
+def test_auto_verify_effective_reports_the_per_stage_value_not_the_raw_config(
+    tmp_path: Path,
+) -> None:
+    root = _exit_project(
+        tmp_path,
+        config={"autoVerify": True, "autoVerifyStages": {"forge-2-tech": False}},
+        state=_tech_state(),
+    )
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert d["autoVerifyEffective"] is False, "the raw autoVerify value is True"
+    assert d["autoVerifyDebtRecorded"] is False
+    assert _read_entry(root) == {}
+
+
+def test_an_override_can_turn_auto_verify_on_for_one_stage_only(
+    tmp_path: Path,
+) -> None:
+    root = _exit_project(
+        tmp_path,
+        config={"autoVerify": False, "autoVerifyStages": {"forge-2-tech": True}},
+        state=_tech_state(),
+    )
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert d["autoVerifyEffective"] is True
+    assert d["autoVerifyDebtRecorded"] is True
+
+
+def test_invalid_auto_verify_keys_render_the_exact_template_in_sorted_order(
+    tmp_path: Path,
+) -> None:
+    """00 §4's template verbatim, sorted (02 §10), and never fatal."""
+    root = _exit_project(tmp_path, config={
+        "autoVerify": True,
+        # Deliberately NOT in sorted order on disk.
+        "autoVerifyStages": {"zz-nope": True, "forge-1-prod": True},
+    }, state=_tech_state())
+
+    proc = _stage_exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+
+    assert proc.returncode == 0, proc.stderr
+    d = json.loads(proc.stdout)["directives"]
+    assert d["invalidAutoVerifyKeys"] == ["forge-1-prod", "zz-nope"]
+    rendered = [
+        'Warning: autoVerifyStages key "forge-1-prod" names no verify-capable '
+        "stage; it is ignored. Valid keys are forge-1-prd, forge-2-tech, "
+        "forge-3-specs, forge-4-backlog, forge-5-loop.",
+        'Warning: autoVerifyStages key "zz-nope" names no verify-capable '
+        "stage; it is ignored. Valid keys are forge-1-prd, forge-2-tech, "
+        "forge-3-specs, forge-4-backlog, forge-5-loop.",
+    ]
+    emitted = [line for line in proc.stderr.splitlines() if line.startswith("Warning:")]
+    assert emitted == rendered
+    # An ignored key is an advisory: the exit still runs, and the valid global
+    # setting still applies.
+    assert d["autoVerifyEffective"] is True
+    assert d["autoVerifyDebtRecorded"] is True
+
+
+def test_a_valid_config_emits_no_invalid_key_warning(tmp_path: Path) -> None:
+    root = _exit_project(tmp_path, config={
+        "autoVerify": True, "autoVerifyStages": {"forge-2-tech": True},
+    }, state=_tech_state())
+    proc = _stage_exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["directives"]["invalidAutoVerifyKeys"] == []
+    assert "names no verify-capable stage" not in proc.stderr
+
+
+# --- a branch exit is inside the diversion; it never schedules -------------- #
+
+
+@pytest.mark.parametrize("stage,outcome", [
+    ("forge-verify", "findings"),
+    ("forge-fix", "applied"),
+])
+@pytest.mark.parametrize("owner", ["direct", "nested"])
+def test_a_branch_exit_never_schedules_over_the_result_it_just_wrote(
+    tmp_path: Path, stage: str, outcome: str, owner: str
+) -> None:
+    """A verify/fix exit is already inside the verification diversion.
+
+    Scheduling there would both direct a re-dispatch of the branch skill and
+    overwrite the `findings-reported` entry the skill had just recorded with a
+    fresh `auto-verify-pending` marker — losing the report and the reason for the
+    diversion (REQ-EXIT-04, REQ-DEBT-03).
+    """
+    report = {"status": "findings-reported", "findingsFile": "findings.md",
+              "findingsCount": 3, "verifiedStageVersion": 2, "commitHash": None}
+    root = _exit_project(tmp_path, state=_tech_state(report))
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+    before = state_file.read_bytes()
+
+    d = _exit_ok(root, "--feature", "widget", "--stage", stage,
+                 "--served-stage", "forge-2-tech", "--outcome", outcome,
+                 "--owner", owner)["directives"]
+
+    assert d["runInStageVerify"] is False
+    assert d["autoVerifyDebtRecorded"] is False
+    assert state_file.read_bytes() == before
+    assert _read_entry(root) == report

@@ -705,3 +705,81 @@ gate branch with `verify_capability`.
 `python3 -m pytest tests -q` -> 1248 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
 regenerated `adapters/` tree left in the working tree for the loop runner to commit.
+
+## Item 012 — auto-verify debt at the stage-exit scheduling boundary
+
+Landed `_schedule_auto_verify_debt` (the 03 §4.1 boundary), the
+`autoVerifyDebtRecorded` directive, epic-scoped verification reads via
+`_epic_verify_context`, sorted `invalidAutoVerifyKeys` + the exact 00 §4 warning
+template, and the 07 §4.1 test block.
+
+### Gotchas for later items
+
+- **A BRANCH exit must never schedule.** Found by reproduction, not by the suite:
+  before the guard, `stage-exit --stage forge-verify --served-stage forge-2-tech
+  --outcome findings` computed `run_in_stage` from the served stage's label
+  (`failing` → unresolved) and OVERWROTE the `findings-reported` entry
+  forge-verify had just written with a fresh `auto-verify-pending` marker —
+  losing the report and the reason for the diversion. `run_in_stage` now carries
+  `and stage not in _BRANCH_STAGES`. Item 013 owns branch rejoin routing and must
+  not undo it; a verify/fix exit is already inside the diversion.
+
+- **Every directive except `autoVerifyDebtRecorded` is a PRE-mutation snapshot.**
+  `verifyState`, `warnings`, and `cleanTree` describe the state the routing
+  decision was made from, so a first exit reports `never` while the debt it just
+  recorded reads `auto-pending` on the next one. That is deliberate: 02 §10's
+  determinism rule is conditioned on identical state, and item 011's recorded
+  stages 0-4 expectations (`d["verifyState"] == label` for never/stale/failing
+  with autoVerify on) stay valid. Do not "fix" it to report post-write.
+
+- **Epic exits now read `.epic-state.json`, not member state.** `route_stage ==
+  "forge-0-epic"` (either `--stage forge-0-epic` or a branch exit whose
+  `--verify-mode epic` resolves there) classifies from
+  `{specsDir}/{epic}/.epic-state.json` against the manifest `revision`, via the
+  new tolerant `_epic_verify_context`. This REPLACED
+  `test_epic_stage_verify_state_reads_forge_verify_epic`, which seeded
+  `forge-verify-epic` in the member `.pipeline-state.json` — an entry that has had
+  no home there since item 006 (REQ-SEC-01). Without the change the epic path
+  would classify from a file nothing writes, making
+  `runInStageVerify: true` + `autoVerifyDebtRecorded: false` reachable and letting
+  a fresh epic `passed` be scheduled over.
+
+- **`_verify_state_for` was split**, not rewritten: `_classify_verify_entry(entry,
+  verify_key, current)` is the revision-agnostic half both the feature and epic
+  callers share, so the two can never drift. `_debt_metadata_warnings` likewise
+  now takes `(entry, verify_key, stage, subject, verify_command, current)` instead
+  of re-deriving them from a member state document.
+
+- **The scheduler tolerates an unknown revision where the CLI refuses it.**
+  `state-verify --status auto-verify-pending` fails without a recorded artifact
+  version (03 §3.3); the stage-exit scheduler writes `scheduledStageVersion: null`
+  instead. Refusing would turn a routine stage closing into an exit 2 (several
+  pre-existing tests exit with `autoVerify: true` and no state file at all), and
+  forgetting the debt because its revision is unknown is precisely the REQ-DEBT-02
+  conflation — item 008 already classifies a null schedule as `auto-pending` plus a
+  warning. The idempotence check compares `None == None`, so a null schedule is
+  still byte-idempotent.
+
+- **A genuine write failure DOES fail closed** — `UsageError` → exit 2, empty
+  stdout, no dispatch directive. The portable injection is `chmod 0o555` on the
+  feature directory: `_write_state` creates its sibling temp file there, so
+  `tempfile.mkstemp` fails before anything is replaced. An epic with no
+  `epic-manifest.json` fails the same way through `_load_epic_state_for_write`.
+
+- **`invalid_auto_verify_keys` is now sorted** (02 §10) and `stage_exit` prints
+  one `INVALID_AUTO_VERIFY_KEY_WARNING` line per key to STDERR — advisory, never
+  fatal, and off stdout so `--json` stays parseable. The `{valid}` list is derived
+  from `VERIFY_TOKEN_BY_STAGE` so the sentence cannot drift from the domain.
+
+- **The `stage-exit` write dirties the tree it just measured**, which is exactly
+  why `cleanTree`/`autoFixEligible` are snapshotted first. The resulting
+  `.pipeline-state.json` modification is a SANCTIONED control-plane mutation;
+  `test_the_clean_tree_snapshot_predates_the_pending_write` asserts both halves.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite` and
+`PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 1281 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
+regenerated `adapters/` tree left in the working tree for the loop runner to commit.

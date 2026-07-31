@@ -386,8 +386,8 @@
         "directives.autoVerifyEffective reports the per-stage effective value after autoVerifyStages overrides, not the raw autoVerify config value",
         "an autoVerifyStages key naming no verify-capable stage appears in directives.invalidAutoVerifyKeys and renders 00-core-definitions.md §4's exact warning template in sorted key order, without failing the exit"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T06:52:58.494Z",
       "dependsOn": [
         "006",
         "010",
