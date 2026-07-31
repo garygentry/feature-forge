@@ -55,7 +55,14 @@ NARRATIVE_FILENAME: Final = "EPIC.md"
 #: NOTE: forge-session.py keeps a byte-identical copy of this constant — flat, self-
 #: contained scripts have no shared import module (each is copied verbatim into adapters).
 KNOWN_VERIFY_STATUSES: Final = frozenset(
-    {"pending", "passed", "findings-reported", "findings-applied", "skipped"}
+    {
+        "pending",
+        "auto-verify-pending",
+        "passed",
+        "findings-reported",
+        "findings-applied",
+        "skipped",
+    }
 )
 #: The subset of KNOWN_VERIFY_STATUSES that makes a member's forge-verify-impl count as
 #: complete-for-orchestration (00 §7). A STRICT subset — 'findings-reported' (unfixed),

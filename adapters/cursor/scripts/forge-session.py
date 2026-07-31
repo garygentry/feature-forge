@@ -138,12 +138,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Final, TypedDict
+from typing import Callable, Final, Literal, TypedDict, get_args
 
 
 # --------------------------------------------------------------------------- #
@@ -211,14 +212,124 @@ _DONE_STATUS: Final = "complete"
 #: NOTE: epic-manifest.py keeps a byte-identical copy — flat, self-contained scripts have
 #: no shared import module (each is copied verbatim into per-agent adapter bundles).
 KNOWN_VERIFY_STATUSES: Final = frozenset(
-    {"pending", "passed", "findings-reported", "findings-applied", "skipped"}
+    {
+        "pending",
+        "auto-verify-pending",
+        "passed",
+        "findings-reported",
+        "findings-applied",
+        "skipped",
+    }
 )
 #: Verify statuses that count as "resolved" (no outstanding verify needed). A STRICT
 #: subset of KNOWN_VERIFY_STATUSES — not collapsible into it (different meaning).
+#: `auto-verify-pending` is deliberately ABSENT: owed-but-unrun debt is not resolved.
 _VERIFY_RESOLVED: Final = frozenset({"passed", "findings-applied", "skipped"})
 #: Per-process dedupe for the unknown-verify-status diagnostic (#148) so a single
 #: bogus status is flagged once, not once per verify_state() call in a command.
 _UNKNOWN_VERIFY_WARNED: set[str] = set()
+
+
+# --------------------------------------------------------------------------- #
+# Stage-exit and verification domains
+#
+# The `Literal` aliases below are the SINGLE place each domain is written. The
+# `Final` constants underneath are DERIVED from them with `get_args`, never
+# hand-listed: `ruff check` does not verify Literal conformance, so a hand-copied
+# second list would drift silently — the failure this repository has already been
+# bitten by twice (tests/test_stage_constants_parity.py,
+# tests/test_agent_targets_parity.py). Deriving removes the second list entirely.
+# --------------------------------------------------------------------------- #
+
+#: The seven stages that produce a pipeline artifact. forge-0-epic participates in
+#: exit and verify routing but not the member production walk (PRODUCTION_STAGES).
+ProductionStage = Literal[
+    "forge-0-epic",
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+    "forge-5-loop",
+    "forge-6-docs",
+]
+#: Every skill that closes a stage through `stage-exit` — the seven production
+#: stages plus the two branch skills.
+ExitStage = Literal[
+    "forge-0-epic",
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+    "forge-5-loop",
+    "forge-6-docs",
+    "forge-verify",
+    "forge-fix",
+]
+#: forge-verify's mode, which selects the production stage a diversion served.
+VerifyMode = Literal["epic", "prd", "tech", "specs", "backlog", "impl"]
+#: Who prints the terminal block for a branch exit.
+ExitOwner = Literal["direct", "nested"]
+#: Whether the host may run an interactive verify gate + clean-room dispatch.
+VerifyCapability = Literal["interactive", "manual"]
+#: The navigator/stage-exit freshness label for an artifact's verification.
+VerifyStateLabel = Literal[
+    "fresh", "stale", "failing", "never", "auto-pending", "skipped", "none"
+]
+#: The persisted verify-entry status vocabulary; mirrors KNOWN_VERIFY_STATUSES and
+#: references/pipeline-state-schema.json's verifyEntry.status.enum.
+VerifyStatus = Literal[
+    "pending",
+    "auto-verify-pending",
+    "passed",
+    "findings-reported",
+    "findings-applied",
+    "skipped",
+]
+#: Which gate form a stage exit asks the caller to render.
+VerifyGate = Literal["none", "standard", "manual-print"]
+
+LoopOutcome = Literal["complete", "partial", "blocked", "needs-human", "deferred"]
+DocsOutcome = Literal["complete", "blocked"]
+VerifyOutcome = Literal["passed", "findings", "skipped", "failed"]
+FixOutcome = Literal[
+    "no-findings",
+    "decisions",
+    "failed",
+    "applied",
+    "reverified",
+    "reverify-findings",
+    "deferred",
+]
+
+#: Derived, never hand-listed — see the block comment above.
+EXIT_STAGES: Final[tuple[str, ...]] = get_args(ExitStage)
+#: The stages whose exit carries a multi-way outcome, and each one's legal values.
+#: Stages absent from this table take no `--outcome` at all.
+EXIT_OUTCOMES: Final[dict[str, frozenset[str]]] = {
+    "forge-5-loop": frozenset(get_args(LoopOutcome)),
+    "forge-6-docs": frozenset(get_args(DocsOutcome)),
+    "forge-verify": frozenset(get_args(VerifyOutcome)),
+    "forge-fix": frozenset(get_args(FixOutcome)),
+}
+#: The one domain still written twice, because neither side is a subset of the
+#: other: its keys MUST equal set(get_args(VerifyMode)) and its values MUST be a
+#: subset of get_args(ProductionStage). tests/test_stage_constants_parity.py
+#: asserts both. NOT collapsible into VERIFY_TOKEN_BY_STAGE's inverse — that map
+#: has no `epic` mode and exists to name state keys, not to route stages.
+VERIFY_MODE_TO_STAGE: Final[dict[str, str]] = {
+    "epic": "forge-0-epic",
+    "prd": "forge-1-prd",
+    "tech": "forge-2-tech",
+    "specs": "forge-3-specs",
+    "backlog": "forge-4-backlog",
+    "impl": "forge-5-loop",
+}
+#: The fixed final line of the NEXT-STEPS block. The stamp instructs the skill
+#: to print the block verbatim as its absolute last output — nothing after this.
+NEXT_STEPS_SENTINEL: Final = "─ forge: end of stage ─"
+#: New non-null commit hashes are full 40-hex only. Loaded legacy short hashes stay
+#: readable — this validates WRITES, and no schema constrains commitHash.
+FULL_GIT_HASH_RE: Final = re.compile(r"[0-9a-fA-F]{40}")
 
 #: Default context window when the model can't be inferred and config is silent.
 _DEFAULT_WINDOW: Final = 200_000
@@ -251,6 +362,230 @@ class FeatureRow(TypedDict):
     autoVerify: bool
     autoFix: bool
     verifyGate: str
+
+
+class EpicReconcile(TypedDict, total=False):
+    """Existing epic backflow directive retained in expanded exits.
+
+    Present only for epic members; absent entirely for a standalone feature.
+    """
+
+    # True when backflow must run before the member may advance; False when it is
+    # merely advisable. Drives whether the exit blocks or only mentions it.
+    required: bool
+    # True to surface the reminder text in the rendered block. Independent of
+    # `required`: a required reconcile with `reminder: False` still blocks silently
+    # in `--json` consumers.
+    reminder: bool
+    # Host-rendered command that performs the reconcile. Already passed through
+    # `_host_command`; consumers print it verbatim and never re-translate it.
+    command: str
+    # Number of member changes awaiting backflow. 0 is meaningful — it means
+    # reconcile was evaluated and found nothing, distinct from the key being absent
+    # because the feature is not an epic member.
+    count: int
+    # Canonical (untranslated) production command demoted behind a blocking
+    # reconcile — rendered as the unfenced "After reconciling, continue the
+    # pipeline with: …" line and passed through `_host_command` at render time.
+    # Present only when `required: True`; None/absent otherwise. It is a COMMAND,
+    # never a user-supplied reason: the live writer sets it to `next_command`
+    # (scripts/forge-session.py) and `_next_steps_block` translates it for the
+    # host. Repurposing it to carry prose would send free text through
+    # `_host_command` and strip the blocking follow-up line of its source
+    # (REQ-COMPAT-01).
+    deferred: str | None
+
+
+class StageExitDirectives(TypedDict, total=False):
+    """Machine-readable decisions emitted by `stage_exit`.
+
+    `total=False` throughout: a key's ABSENCE means "not applicable to this exit",
+    which is never the same as a present-but-null value. `servedStage: None` says
+    the exit resolved no served stage; a missing `servedStage` says the concept does
+    not apply. Consumers must distinguish the two.
+    """
+
+    # The stage whose exit this is — always one of EXIT_STAGES. Always present.
+    stage: str
+    # Human-readable noun for this stage's artifact, used by
+    # references/stage-exit-protocol.md's "{stageNoun}" slots (the auto-verify
+    # heading and the "Verify {stageNoun} now" gate label). Always present;
+    # STAGE_NOUN.get(stage, stage), so it defaults to the stage id when unmapped.
+    # Pre-existing key, retained verbatim for REQ-COMPAT-01.
+    stageNoun: str
+    # For a verify/fix branch exit, the production stage the diversion served and
+    # rejoins. None on a production-stage exit, which serves only itself.
+    servedStage: str | None
+    # Verify mode in play (`prd`, `tech`, `specs`, `backlog`, `impl`, `epic`), keyed
+    # by VERIFY_MODE_TO_STAGE. None when this exit is not a verify/fix exit.
+    verifyMode: str | None
+    # Terminal outcome for stages with a multi-way result. Must be a member of
+    # EXIT_OUTCOMES[stage] (§2) — consult that table rather than this comment,
+    # which is deliberately not a second copy of the domain. None for stages
+    # whose exit has a single outcome.
+    outcome: str | None
+    # Branch ownership for a verify/fix exit — ExitOwner, i.e. exactly "direct"
+    # (this call owns and prints the terminal block) or "nested" (an outer
+    # authoring stage owns it). REQUIRED for forge-verify/forge-fix and REJECTED
+    # for stages 0–6, which are always direct owners (§3, `02` §3.1 step 5).
+    # None only on a production-stage exit, where the concept does not apply.
+    owner: str | None
+    # Who prints the terminal block. "self" — this caller renders exactly one
+    # sentinel-terminated block. "outer" — a nested invocation that must print
+    # nothing terminal, leaving ownership with the outermost authoring stage.
+    terminalOwnedBy: Literal["self", "outer"]
+    # Feature (or epic) name this exit concerns. Always present.
+    feature: str
+    # Resolved host: "claude", "pi", or "generic". Selects command syntax and
+    # fresh-session wording; never inferred downstream, always decided here.
+    host: str
+    # Whether the host may dispatch a clean-room verifier subagent —
+    # VerifyCapability, i.e. exactly "interactive" or "manual". A manual host
+    # receives verify-first ordering with copy-paste commands instead of an
+    # interactive gate; capable Pi is interactive, not manual (REQ-EXIT-07).
+    # "May", not "has the tool": a session that bars unsolicited dispatch but
+    # offers a question tool is interactive, since the gate's prompt makes the
+    # dispatch solicited. Only no-question-tool-and-no-dispatch is manual.
+    verifyCapability: str
+    # Current verification state of the served artifact, as classified by
+    # `verify_state` — including "auto-pending" for unrun scheduled verification.
+    verifyState: str
+    # Production stage the outstanding/owed verification belongs to — the value
+    # `pending_verify()` returns; mirrors FeatureRow.verifyStage so navigator rows
+    # and stage-exit JSON report the same thing. None when nothing is outstanding.
+    # DISTINCT from `servedStage`, which is branch-exit-only: on a production-stage
+    # exit `servedStage` is None while `verifyStage` names the stage the debt is
+    # owed on (REQ-OBS-01, REQ-DEBT-05).
+    verifyStage: str | None
+    # Which gate form to render, derived from verifyState and verifyCapability.
+    verifyGate: str
+    # Host-rendered verify command. Present whenever verification is reachable,
+    # even if it is not the primary action.
+    verifyCommand: str
+    # True when the caller must run in-stage verification before returning control.
+    # When True, the auto-verify-pending debt write has already been attempted —
+    # see `autoVerifyDebtRecorded` for whether it landed.
+    runInStageVerify: bool
+    # Effective autoVerify for THIS stage after applying autoVerifyStages overrides
+    # over the autoVerify default. Not the raw config value.
+    autoVerifyEffective: bool
+    # True whenever `runInStageVerify` is True — `03-verification-state.md` §4.1
+    # persists the auto-verify-pending marker BEFORE this payload exists, and a
+    # failed debt write raises UsageError with no payload at all. So
+    # `runInStageVerify: True` with `autoVerifyDebtRecorded: False` is UNREACHABLE;
+    # the field is carried so tests and downstream tools can assert that invariant
+    # rather than infer it. False with `runInStageVerify: False` simply means no
+    # debt was owed (REQ-DEBT-01/04, REQ-REL-02).
+    autoVerifyDebtRecorded: bool
+    # True when an autoFix chain may run unattended: autoFix configured, zero
+    # unresolved decision points, and a clean tree at the pre-scheduling snapshot.
+    autoFixEligible: bool
+    # Next production stage in pipeline order, or None at the end of the pipeline.
+    # Routing introspection only — never promote it over `primaryCommand`.
+    nextStage: str | None
+    # Host-rendered command for `nextStage`. Retained for compatibility; see the
+    # promotion rule below. None when `nextStage` is None.
+    nextCommand: str | None
+    # THE authoritative single action. While verification is unresolved this is the
+    # verify command, never the downstream stage. The one fenced command in the
+    # rendered block. None only when the pipeline has no further action.
+    primaryCommand: str | None
+    # Post-verification guidance shown as prose, never fenced, so it cannot be
+    # mistaken for the primary action. None when there is nothing deferred.
+    deferredCommand: str | None
+    # Keys in autoVerifyStages that name no verify-capable stage — a config typo.
+    # Empty list means the config was checked and clean; the key is always present
+    # when config was read at all, so [] and absent differ. Each key renders as
+    # exactly:
+    #   Warning: autoVerifyStages key "{key}" names no verify-capable stage; it is
+    #   ignored. Valid keys are forge-1-prd, forge-2-tech, forge-3-specs,
+    #   forge-4-backlog, forge-5-loop.
+    # Keys are rendered in sorted order, per the `02` §10 determinism rule
+    # (REQ-OBS-02, REQ-REL-01).
+    invalidAutoVerifyKeys: list[str]
+    # Whether the working directory is a git repository at all.
+    gitRepo: bool
+    # Clean-tree snapshot taken BEFORE the pending-debt write, so the sanctioned
+    # state mutation does not dirty its own precondition. None when `gitRepo` is
+    # False — unknown, not clean.
+    cleanTree: bool | None
+    # Human-readable non-fatal advisories, in a fixed deterministic order:
+    # (1) the epic-member unreadable-state fallback (`02` §9), (2) the
+    # legacy/malformed scheduledStageVersion metadata warning (`03` §5.1),
+    # (3) the scheduled-vs-current revision mismatch note (`03` §5.3). A LIST,
+    # not a string, because these are independently triggerable and can co-occur
+    # on one call; a single string would force an implementer to drop or
+    # concatenate them, and REQ-REL-01's byte-identical-output requirement needs a
+    # defined order to assert against. Mirrors RenderStatus.warnings (`04` §2.2),
+    # which is already a list. Empty list means checked and clean; the key is
+    # always present, so [] and absent differ. Each entry names its affected
+    # feature/stage/key AND the recovery action (REQ-OBS-02).
+    warnings: list[str]
+    # Epic backflow directive; see EpicReconcile. Absent for standalone features.
+    epicReconcile: EpicReconcile
+
+
+class StageExitPayload(TypedDict):
+    """Serialized direct or nested exit result.
+
+    Total (not `total=False`): all three keys are always present, and a nested
+    exit carries explicit nulls rather than omitting them.
+    """
+
+    # Always populated, for both direct and nested exits.
+    directives: StageExitDirectives
+    # The rendered terminal block for a direct owner. MUST be None when
+    # `terminalOwnedBy == "outer"` — a nested caller has nothing to print.
+    nextSteps: str | None
+    # NEXT_STEPS_SENTINEL when this payload owns the terminal block, else None.
+    # When non-None, `nextSteps` ends with exactly this string and nothing follows
+    # it (REQ-EXIT-03). Carried explicitly so a consumer can verify termination
+    # without importing the constant.
+    sentinel: str | None
+
+
+class VerifyEntry(TypedDict, total=False):
+    """Feature or epic verification state persisted by `state-verify`.
+
+    `total=False` is load-bearing: terminal writes DELETE the scheduling keys rather
+    than nulling them (03 §3.3), so an absent `scheduledAt` means "not scheduled"
+    while a present-but-null one would be a malformed entry. Legacy entries written
+    before this feature simply lack the newer keys and load unmigrated
+    (REQ-DEBT-06).
+    """
+
+    # The entry's state. Always present on a written entry; a wholly absent entry
+    # means never verified, which is distinct from every value here.
+    status: VerifyStatus
+    # Path to the findings document, relative to the feature directory. Non-empty
+    # for `findings-reported`/`findings-applied`; absent otherwise.
+    findingsFile: str | None
+    # Findings count. 0 is legal and meaningful for `findings-reported` — verified
+    # with nothing found — and is not the same as the key being absent.
+    findingsCount: int | None
+    # UTC ISO-8601 timestamp of the terminal verification result. Absent while
+    # scheduling is pending.
+    verifiedAt: str | None
+    # UTC ISO-8601 timestamp set by `findings-applied`. Its presence alongside a
+    # deleted `verifiedStageVersion` is exactly what marks fixes-landed-but-
+    # unconfirmed.
+    fixedAt: str | None
+    # Full 40-character hash of the artifact commit for this entry, or null between
+    # commit 1 and commit 2 of the two-commit protocol. Never a short hash on a new
+    # write; legacy short hashes still READ (REQ-STATE-01/02).
+    commitHash: str | None
+    # Artifact revision this result verified — the production stage's `version` for
+    # a feature, the manifest `revision` for an epic. Deleted by `findings-applied`
+    # on purpose, so freshness stays unresolved until a later `passed` write.
+    verifiedStageVersion: int | None
+    # UTC ISO-8601 timestamp of the auto-verify schedule. Deleted (not nulled) by
+    # any terminal result.
+    scheduledAt: str | None
+    # Artifact revision current when verification was scheduled. Makes rescheduling
+    # idempotent — an identical revision does not rewrite the entry (REQ-REL-01) —
+    # and lets a read distinguish debt owed on the current artifact from debt
+    # stranded on an older one. Deleted by any terminal result.
+    scheduledStageVersion: int | None
 
 
 class UsageError(Exception):
@@ -1433,8 +1768,12 @@ def _print_check_epic_base(payload: dict) -> None:
 # Scripted Stage Exit
 # --------------------------------------------------------------------------- #
 
-#: Authoring stages whose closing runs stage-exit (the loop keeps bespoke exits).
-EXIT_STAGES: Final[tuple[str, ...]] = (
+#: The subset of ``EXIT_STAGES`` the ``stage-exit`` CLI accepts today: the authoring
+#: stages whose closing already runs the scripted exit (loop, docs, and the two
+#: branch skills still stamp bespoke terminal blocks). Widening the router to the
+#: full nine-stage ``EXIT_STAGES`` domain is a routing change, not a vocabulary one,
+#: so it stays out of the constants block above until the router can serve them.
+_STAGE_EXIT_CLI_STAGES: Final[tuple[str, ...]] = (
     "forge-0-epic",
     "forge-1-prd",
     "forge-2-tech",
@@ -1466,10 +1805,6 @@ _EXIT_NEXT_STAGE: Final[dict[str, str]] = {
     "forge-3-specs": "forge-4-backlog",
     "forge-4-backlog": "forge-5-loop",
 }
-
-#: The fixed final line of the NEXT-STEPS block. The stamp instructs the skill
-#: to print the block verbatim as its absolute last output — nothing after this.
-NEXT_STEPS_SENTINEL: Final = "─ forge: end of stage ─"
 
 
 def _verify_state_for(state: dict, stage: str) -> str:
@@ -1627,7 +1962,7 @@ def stage_exit(
     epic: str | None,
     host: str,
     next_feature: str | None,
-) -> dict:
+) -> StageExitPayload:
     """Compute the Scripted Stage Exit payload: DIRECTIVES + NEXT-STEPS block.
 
     Directive semantics (the contract in ``references/stage-exit-protocol.md``):
@@ -2711,7 +3046,7 @@ def main() -> int:
     )
     p_exit.add_argument("--feature", required=True,
                         help="Feature name (the epic name for forge-0-epic)")
-    p_exit.add_argument("--stage", required=True, choices=EXIT_STAGES,
+    p_exit.add_argument("--stage", required=True, choices=_STAGE_EXIT_CLI_STAGES,
                         help="The just-completed authoring stage")
     p_exit.add_argument("--specs-dir", default="./specs", help="Specs directory")
     p_exit.add_argument("--config", default="./forge.config.json", help="forge.config.json path")

@@ -250,16 +250,59 @@ def test_a_corrupt_state_file_exits_2_and_is_left_byte_identical(tmp_path, verb)
 
 
 # --------------------------------------------------------------------------- #
-# 5. The schema itself is unchanged by R4
+# 5. The schema changed ONLY by this feature's three additive verifyEntry fields
 # --------------------------------------------------------------------------- #
+#
+# Until this feature the guard here was a single sha256 pin over the whole
+# validating contract, asserting the schema had not moved at all since the pre-R4
+# baseline. That pin can no longer hold: `auto-verify-pending` and the two
+# scheduling fields are real, intended, additive schema changes. Re-pinning the
+# digest would have replaced a proof with a rubber stamp — the new value proves
+# only "whatever is there now is what is there now". So the guard is split:
+#
+#   * `verifyEntry` — where the change belongs — is compared as a PARSED OBJECT
+#     against its pre-feature contract with the three intended additions reversed.
+#     Any fourth edit, or a differently-shaped version of one of the three, fails.
+#   * everything else is still digest-pinned, over the contract with `verifyEntry`
+#     excised. That digest is NOT re-pinned: it is byte-for-byte the value the
+#     pre-feature schema produces, so it keeps proving the rest of the schema is
+#     untouched.
 
-#: sha256 of the VALIDATING CONTRACT of `references/pipeline-state-schema.json` at
-#: the pre-feature baseline commit 9a29e846ed510c3b245876a9bf4cc73b8cb60951 ("author
-#: backlog v1"), the last commit before any R4 work — i.e. the schema with every
-#: `description` key recursively stripped, canonicalized (sorted keys, no
-#: whitespace). R4 extracts the WRITES into verbs; it changes no schema, so this
-#: digest must never move. A real schema change (a property, type, enum, or required
-#: list) belongs to a different feature and updates this constant in the same PR.
+#: The `verifyEntry` validating contract (descriptions stripped) immediately before
+#: this feature. Reversing the intended additions must land exactly here.
+PRE_STAGE_EXIT_VERIFY_ENTRY_CONTRACT = {
+    "type": "object",
+    "required": ["status"],
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["pending", "passed", "findings-reported", "findings-applied", "skipped"],
+        },
+        "findingsFile": {"type": ["string", "null"]},
+        "findingsCount": {"type": ["integer", "null"]},
+        "verifiedAt": {"type": ["string", "null"], "format": "date-time"},
+        "fixedAt": {"type": ["string", "null"], "format": "date-time"},
+        "commitHash": {"type": ["string", "null"]},
+        "verifiedStageVersion": {"type": ["integer", "null"]},
+    },
+}
+
+#: The one new status value. Durable auto-verify debt: scheduled, never run.
+INTENDED_STATUS_ADDITION = "auto-verify-pending"
+
+#: The two new scheduling properties, as they must validate (descriptions stripped).
+INTENDED_SCHEDULING_PROPERTIES = {
+    "scheduledAt": {"type": ["string", "null"], "format": "date-time"},
+    "scheduledStageVersion": {"type": ["integer", "null"], "minimum": 1},
+}
+
+#: sha256 of the validating contract of `references/pipeline-state-schema.json` with
+#: `definitions.verifyEntry` REMOVED — descriptions recursively stripped, then
+#: canonicalized (sorted keys, no whitespace). Unchanged from the pre-feature schema:
+#: this feature touches `verifyEntry` and nothing else. A move here means a property,
+#: type, enum, or required list changed somewhere this feature has no business
+#: changing, and belongs to a different feature that updates this constant in the
+#: same PR.
 #:
 #: Why the contract and not the raw bytes: item 020 rewrote the `currentStage`
 #: description (only `state-enter` writes that field now, so the enum's `complete`
@@ -267,8 +310,8 @@ def test_a_corrupt_state_file_exits_2_and_is_left_byte_identical(tmp_path, verb)
 #: documentation fix with no effect on what validates — a raw-byte digest could only
 #: be re-pinned, which proves nothing, while this digest still proves the contract
 #: is untouched. Prose accuracy is asserted separately below.
-PRE_R4_SCHEMA_CONTRACT_SHA256 = (
-    "52887d60ee504d04b8e78a51ab4d454d7810e75ec11321d191bb4e08092c2936"
+SCHEMA_CONTRACT_OUTSIDE_VERIFY_ENTRY_SHA256 = (
+    "9c992b28296ddb59c4bd13d5af9d5d725f52f595271c01315466e61febb6fb88"
 )
 
 
@@ -281,44 +324,168 @@ def _strip_descriptions(node):
     return node
 
 
-def _schema_contract_digest() -> str:
-    contract = _strip_descriptions(json.loads(STATE_SCHEMA.read_text()))
+def _canonical_digest(contract) -> str:
     blob = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(blob).hexdigest()
 
 
-def test_the_state_schema_contract_is_unchanged_since_the_pre_r4_baseline():
-    digest = _schema_contract_digest()
-    assert digest == PRE_R4_SCHEMA_CONTRACT_SHA256, (
-        "the validating contract of references/pipeline-state-schema.json changed — "
-        "R4 changes no schema, and item 020's currentStage edit is prose-only "
-        f"(pre-R4 {PRE_R4_SCHEMA_CONTRACT_SHA256}, now {digest})"
+def _schema_contract() -> dict:
+    return _strip_descriptions(json.loads(STATE_SCHEMA.read_text()))
+
+
+def _digest_outside_verify_entry(contract: dict) -> str:
+    """Digest the contract with `definitions.verifyEntry` excised."""
+    rest = json.loads(json.dumps(contract))
+    assert "verifyEntry" in rest["definitions"], "definitions.verifyEntry disappeared"
+    rest["definitions"].pop("verifyEntry")
+    return _canonical_digest(rest)
+
+
+def _verify_entry_without_intended_additions(contract: dict) -> dict:
+    """Return `verifyEntry` with this feature's three additions reversed.
+
+    Fails loudly (rather than silently no-op'ing) if an addition is missing, so a
+    dropped field cannot make the reversal accidentally succeed.
+    """
+    entry = json.loads(json.dumps(contract["definitions"]["verifyEntry"]))
+    enum = entry["properties"]["status"]["enum"]
+    assert INTENDED_STATUS_ADDITION in enum, (
+        f"{INTENDED_STATUS_ADDITION!r} missing from the verifyEntry status enum: {enum}"
+    )
+    enum.remove(INTENDED_STATUS_ADDITION)
+    for name in INTENDED_SCHEDULING_PROPERTIES:
+        assert name in entry["properties"], f"{name} missing from verifyEntry.properties"
+        entry["properties"].pop(name)
+    return entry
+
+
+def test_verify_entry_changed_only_by_the_intended_additive_fields():
+    """Reverse the three intended edits and the pre-feature object must come back."""
+    reduced = _verify_entry_without_intended_additions(_schema_contract())
+    assert reduced == PRE_STAGE_EXIT_VERIFY_ENTRY_CONTRACT, (
+        "references/pipeline-state-schema.json's verifyEntry changed by more than the "
+        "auto-verify-pending status and the two scheduling fields"
     )
 
 
-def test_the_contract_digest_ignores_prose_but_not_structure():
-    """Negative control: the digest must be blind to descriptions, not to the schema.
+def test_the_intended_verify_entry_additions_have_the_specified_shape():
+    """The additions are nullable, correctly typed, and bounded as specified."""
+    entry = _schema_contract()["definitions"]["verifyEntry"]
+    assert INTENDED_STATUS_ADDITION in entry["properties"]["status"]["enum"]
+    for name, expected in INTENDED_SCHEDULING_PROPERTIES.items():
+        assert entry["properties"][name] == expected, f"{name}: {entry['properties'][name]}"
 
-    Without this, a `_strip_descriptions` that stripped too much (or a digest over a
-    constant) would satisfy the guard above vacuously.
+
+def test_verify_entry_stays_open_and_leaves_legacy_commit_hashes_loadable():
+    """Two things this feature must NOT do (REQ-DEBT-06, REQ-STATE-02).
+
+    `additionalProperties: false` would reject state files a later writer enriches;
+    a length or hex pattern on `commitHash` would reject the short hashes legacy
+    state already carries, which must keep loading unmigrated.
+    """
+    entry = _schema_contract()["definitions"]["verifyEntry"]
+    assert "additionalProperties" not in entry
+    commit_hash = entry["properties"]["commitHash"]
+    for banned in ("pattern", "minLength", "maxLength", "format", "enum"):
+        assert banned not in commit_hash, f"commitHash gained a {banned} constraint"
+
+
+def test_the_rest_of_the_state_schema_contract_is_unchanged():
+    digest = _digest_outside_verify_entry(_schema_contract())
+    assert digest == SCHEMA_CONTRACT_OUTSIDE_VERIFY_ENTRY_SHA256, (
+        "the validating contract of references/pipeline-state-schema.json changed "
+        "OUTSIDE definitions.verifyEntry — this feature's schema change is confined "
+        f"to verifyEntry (expected {SCHEMA_CONTRACT_OUTSIDE_VERIFY_ENTRY_SHA256}, "
+        f"now {digest})"
+    )
+
+
+def test_the_contract_comparison_ignores_prose_but_not_structure():
+    """Negative control: the guards above must be blind to prose, not to the schema.
+
+    Without this, a `_strip_descriptions` that stripped too much (or a comparison
+    against a constant) would satisfy them vacuously.
     """
     schema = json.loads(STATE_SCHEMA.read_text())
 
-    # Rewriting a description does not move the digest.
+    # Rewriting a description moves neither the digest nor the verifyEntry object.
     prose = json.loads(json.dumps(schema))
     prose["properties"]["currentStage"]["description"] = "totally different prose"
-    stripped = json.dumps(
-        _strip_descriptions(prose), sort_keys=True, separators=(",", ":")
-    ).encode()
-    assert hashlib.sha256(stripped).hexdigest() == PRE_R4_SCHEMA_CONTRACT_SHA256
+    prose["definitions"]["verifyEntry"]["properties"]["scheduledAt"]["description"] = "x"
+    prose_contract = _strip_descriptions(prose)
+    assert _digest_outside_verify_entry(prose_contract) == (
+        SCHEMA_CONTRACT_OUTSIDE_VERIFY_ENTRY_SHA256
+    )
+    assert _verify_entry_without_intended_additions(prose_contract) == (
+        PRE_STAGE_EXIT_VERIFY_ENTRY_CONTRACT
+    )
 
-    # Dropping an enum value DOES move it.
+    # Dropping an enum value outside verifyEntry DOES move the digest.
     structural = json.loads(json.dumps(schema))
     structural["properties"]["currentStage"]["enum"].remove("complete")
-    moved = json.dumps(
-        _strip_descriptions(structural), sort_keys=True, separators=(",", ":")
-    ).encode()
-    assert hashlib.sha256(moved).hexdigest() != PRE_R4_SCHEMA_CONTRACT_SHA256
+    assert _digest_outside_verify_entry(_strip_descriptions(structural)) != (
+        SCHEMA_CONTRACT_OUTSIDE_VERIFY_ENTRY_SHA256
+    )
+
+    # An unintended FOURTH edit inside verifyEntry DOES fail the object comparison.
+    extra = json.loads(json.dumps(schema))
+    extra["definitions"]["verifyEntry"]["properties"]["surprise"] = {"type": "string"}
+    assert _verify_entry_without_intended_additions(_strip_descriptions(extra)) != (
+        PRE_STAGE_EXIT_VERIFY_ENTRY_CONTRACT
+    )
+
+
+def test_a_legacy_verify_entry_still_validates_against_the_updated_schema():
+    """REQ-DEBT-06: pre-feature state files load unmigrated.
+
+    The additive change must not strand state written before it — including the
+    short `commitHash` values and the absent `verifiedStageVersion` legacy entries
+    carry, and including a `stageEntry` with no `version`.
+    """
+    legacy = {
+        "feature": "demo",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-02T00:00:00Z",
+        "currentStage": "forge-2-tech",
+        "pipelineStatus": "active",
+        "stages": {
+            "forge-1-prd": {
+                "status": "complete",
+                "version": 1,
+                "artifacts": ["PRD.md"],
+                "commitHash": "a1b2c3d",
+            },
+            "forge-verify-prd": {
+                "status": "passed",
+                "findingsFile": None,
+                "findingsCount": 0,
+                "verifiedAt": "2026-01-02T00:00:00Z",
+                "commitHash": "9f8e7d6",
+            },
+            "forge-2-tech": {"status": "in-progress"},
+        },
+    }
+    _conforms(legacy, "legacy pre-feature state")
+
+
+def test_the_new_scheduling_fields_validate_when_present():
+    """The forward-compatible half: an auto-verify-pending entry conforms too."""
+    scheduled = {
+        "feature": "demo",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-07-30T00:00:00Z",
+        "currentStage": "forge-1-prd",
+        "pipelineStatus": "active",
+        "stages": {
+            "forge-verify-prd": {
+                "status": "auto-verify-pending",
+                "scheduledAt": "2026-07-30T00:00:00Z",
+                "scheduledStageVersion": 3,
+                "commitHash": None,
+            }
+        },
+    }
+    _conforms(scheduled, "auto-verify-pending state")
 
 
 def test_complete_is_retained_in_the_enum_for_backward_compatibility():
