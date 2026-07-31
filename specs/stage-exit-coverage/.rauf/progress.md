@@ -1088,3 +1088,69 @@ computation, made the fallback warning `warnings` entry 1, and covered 07 §3.7 
 pre-existing); `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py`
 run and the regenerated `adapters/` tree left in the working tree for the loop
 runner to commit.
+
+## Item 017 — `references/stage-exit-protocol.md` as the single nine-skill contract
+
+Rewrote the reference around ONE canonical scripted stamp covering all nine covered direct
+exits, and added the four contracts specs v4 introduced: capability-as-permission, the
+`owner:` token, the consent variant on a `none` gate, and `warnings` as a list.
+
+### Gotchas for later items
+
+- **Item 017 had to re-stamp the five existing scripted sites.** The item's ACs name only
+  the reference, and its notes say "items 018-023 stamp from it" — but
+  `tests/test_stage_exit_protocol.py` renders the canonical block and asserts it appears
+  VERBATIM in `skills/forge-{0-epic,1-prd,2-tech,3-specs,4-backlog}/SKILL.md`. Changing the
+  block without mirroring it fails `bash scripts/validate.sh`, which item 017 also requires.
+  The five bodies were re-stamped mechanically (extract old block from `git show HEAD:`,
+  render per-site `{stage-exit-args}`, string-replace). **Items 022/023 will therefore find
+  `--verify-capability "{verify-capability}"` already present** — their remaining work is
+  the prose (capability recipe, immediate `state-note`, edit-mode `render-status`), not the
+  flag.
+
+- **The retired standard/warm blocks are STILL IN THE FILE, under a
+  `## Retired blocks — transitional only, NOT an advancing contract` section** with an
+  explicit disclaimer that they are not a way to close a stage and may not be stamped into
+  a new site. They could not be deleted here: `skills/forge-5-loop/SKILL.md` and
+  `skills/forge-5-loop/references/result-reporting.md` still carry them, and
+  `_extract_block` asserts the marker pair exists — deleting the blocks fails the guard,
+  and deleting the guard rows would leave the loop's two stamp sites unguarded for six
+  items. **Item 020 owns removing all three together** (both stamp sites + this section);
+  item 024 then replaces the guard wholesale. Do not leave the section behind.
+
+- **`--host claude` stayed hardcoded in the stamp; `--verify-capability` is a runtime
+  placeholder.** `--host` is a BUILD-TIME token: `_HOST_TERM_REPLACEMENTS` in
+  `scripts/build-adapters.py` rewrites `--host claude` → `--host generic` (and → `--host
+  pi` for Pi), and `tests/test_build_adapters.py::test_pi_skill_bodies_use_new_not_clear`
+  asserts `--host claude` is absent from Pi bodies. Turning it into `{host}` would break
+  that machinery. Capability is per-session, not per-adapter, so it is
+  `--verify-capability "{verify-capability}"` — a runtime placeholder the skill resolves,
+  like `{feature}` / `{specsDir}`.
+
+- **Repo-root `references/` is copied VERBATIM into every bundle, never host-translated**
+  (`build-adapters.py` stage 2 + `_fan_out_shared_references`). So this file's `/clear`
+  and `--host claude` mentions reach non-Claude adapters untranslated — that was already
+  true and is why the warm-block note forbids a literal `/clear` in `result-reporting.md`.
+  Only skill BODIES are translated. It also means one edit here regenerates ~12 copies per
+  target (bundle-root + one fan-out per citing skill); `--check` reported no drift after.
+
+- **The sentinel appears EXACTLY ONCE in the whole file** (item 017 AC 7), in the
+  sentinel-last rule. Any later edit that quotes it a second time — e.g. an example block —
+  breaks that criterion. Assert with `grep -c`.
+
+- **`{stageNoun}` slots are retained** in three places (the auto-verify heading, the
+  standard gate's "Verify {stageNoun} now" label, and the consent form's copy of it).
+  `directives.stageNoun` is always present, so all three resolve.
+
+- **check-spec-purity's body-size rules (300 lines / 5000 words) apply ONLY to
+  `skills/*/SKILL.md`**, not to `references/**`. This file is ~370 lines and that is fine.
+  Rule 6 (a shell fence using `$R` must bind it in-fence) DOES apply — both fences here
+  carry the full prelude.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with
+`PASS: epic-manifest pytest suite` and `PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 1501 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
+regenerated `adapters/` tree left in the working tree for the loop runner to commit.

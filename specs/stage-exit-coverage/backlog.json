@@ -557,8 +557,8 @@
         "the consent variant on a none gate is documented with exactly two labeled choices and its emitted verifyGate stays none",
         "the directive consumption order surfaces warnings as a list in the 00 §4 fixed order, not a singular warning field"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T09:02:22.431Z",
       "dependsOn": [
         "011",
         "012",
