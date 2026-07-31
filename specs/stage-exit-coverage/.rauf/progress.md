@@ -636,3 +636,72 @@ validation order, `resolve_served_stage`, direct/nested terminal ownership, and 
 `python3 -m pytest tests -q` -> 1160 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
 regenerated `adapters/` tree left in the working tree for the loop runner to commit.
+
+## Item 011 — verify-first primary routing + capability-aware gates
+
+Extended `_next_steps_block` to the 00 §5 five-parameter signature, added the
+`primaryCommand`/`deferredCommand` directive pair, and replaced the `host == "claude"`
+gate branch with `verify_capability`.
+
+### Gotchas for later items
+
+- **`_next_steps_block` no longer decides which command is fenced.** 02 §5.2 rule 3 says
+  it fences EXACTLY `primary_command`, so the reconcile-vs-successor promotion moved up
+  into `stage_exit`. The renderer only re-derives whether the reconcile *is* the primary
+  (`_host_command(reconcile["command"], host) == fenced_command`) to pick between the
+  "reconcile **before** the next stage" step-2 prose and the ordinary next-stage line.
+  Items 013-016 set `primary_canonical` themselves; do not add a second promotion rule
+  inside the renderer.
+
+- **`deferred_command is not None` is the renderer's ONLY signal that the primary is a
+  verification/recovery action**, and it drives the fresh-session wording ("run the
+  verification below" vs "run the next stage below"). The signature is fixed at five
+  parameters by 00 §5, so there is no explicit flag. A later item that wants verify-first
+  wording without a deferred successor has to widen the spec first, not sneak a sixth
+  parameter in.
+
+- **The caller-supplied deferred line is suppressed when the blocking reconcile already
+  demoted the SAME command.** Both sources feed the unfenced deferred chain; without the
+  dedupe, `/feature-forge:forge-3-specs widget` renders twice on the
+  outstanding-verification + blocking-reconcile path. Order is fixed (02 §5.2): the new
+  "After verification passes, reconcile the epic first — …" line, then
+  `epicReconcile["deferred"]`'s "After reconciling, continue the pipeline with: …", then
+  the caller's "After verification passes, continue with: …".
+
+- **`resolved` now includes the `none` label** (a tokenless stage — only `forge-6-docs`).
+  Before item 010 the router never saw stage 6, so a global `autoVerify: true` would have
+  made docs claim `runInStageVerify` for a verification that has no token to record it.
+  07 §3.4's last matrix row is the pin. Stages 0-4 are unaffected (all have tokens), so
+  this is not a REQ-COMPAT-01 change.
+
+- **The gate is `resolved or run_in_stage` → `none`, else capability.** `run_in_stage`
+  (not `effective_auto_verify`) is the correct guard: they differ only when verification
+  is already resolved, which the first arm covers, but writing `effective_auto_verify`
+  invites a later reader to think auto-verify suppresses the gate even when nothing is
+  owed. `tests/test_stage_exit.py::test_no_source_path_selects_the_gate_from_the_host_name`
+  slices `stage_exit`'s body from the first `verify_gate =` to `next_stage_id` and asserts
+  the substring `host` does not appear — keep the gate block free of host mentions,
+  including in comments inside that slice.
+
+- **Test fixtures had to seed a fresh verify entry to keep testing what they tested.**
+  `_FRESH_TECH_VERIFY` and `_state_with_requests(..., verified=True)` exist because
+  next-stage selection and reconcile precedence are only observable once verification is
+  resolved — otherwise verify-first ordering masks them. Every changed stages 0-4
+  expectation carries an `INTENTIONAL CHANGE (item 011, …)` comment naming verify-primary
+  ordering or capability-aware gate selection, per 07 §3.8.
+
+- **`--verify-capability` defaults to `manual` on the CLI**, so every pre-existing test
+  that expected `verifyGate == "standard"` from the default `--host claude` now has to
+  pass `--verify-capability interactive` explicitly. That is the whole point of the
+  change; a test that silently still passes is a test that stopped asserting the gate.
+
+- `outcome_text` is landed and rendered (immediately after `**Next steps**`, above the
+  numbered guidance) but no caller supplies it yet — items 013-015 do.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with
+`PASS: epic-manifest pytest suite` and `PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 1248 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
+regenerated `adapters/` tree left in the working tree for the loop runner to commit.

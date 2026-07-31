@@ -79,14 +79,28 @@ def _state_with_verify(stage: str, verify_key: str, verify_entry: dict) -> dict:
     }
 
 
+#: A `forge-2-tech` verify entry that classifies `fresh` against
+#: ``_state_with_verify``'s version 2. Tests whose subject is *production*
+#: routing (next-stage selection, epic reconcile precedence, host command
+#: rendering) seed this so verification is resolved: since item 011, an
+#: unresolved verification makes the VERIFY command primary and demotes the
+#: production successor to unfenced prose (02 §4 verify-primary ordering), which
+#: would otherwise mask the behavior those tests exist to pin.
+_FRESH_TECH_VERIFY = {"status": "passed", "verifiedStageVersion": 2}
+
+
 # --------------------------------------------------------------------------- #
 # autoVerify effectiveness × gate selection
 # --------------------------------------------------------------------------- #
 
 
 def test_auto_verify_off_outstanding_verify_gates_standard(tmp_path: Path) -> None:
+    # INTENTIONAL CHANGE (item 011, capability-aware gate selection): the gate no
+    # longer follows `--host claude`; it follows `--verify-capability`. The flag is
+    # supplied explicitly here because the CLI default is `manual`.
     root = _project(tmp_path, config={}, state=None)
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+              "--verify-capability", "interactive")["directives"]
     assert d["autoVerifyEffective"] is False
     assert d["runInStageVerify"] is False
     assert d["verifyState"] == "never"
@@ -107,7 +121,10 @@ def test_per_stage_override_beats_global(tmp_path: Path) -> None:
         "autoVerify": True,
         "autoVerifyStages": {"forge-2-tech": False},
     })
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    # INTENTIONAL CHANGE (item 011, capability-aware gate selection): `standard`
+    # now requires `--verify-capability interactive`, not `--host claude`.
+    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+              "--verify-capability", "interactive")["directives"]
     assert d["autoVerifyEffective"] is False
     assert d["runInStageVerify"] is False
     assert d["verifyGate"] == "standard"
@@ -125,10 +142,19 @@ def test_invalid_auto_verify_keys_surface(tmp_path: Path) -> None:
     assert d["invalidAutoVerifyKeys"] == ["forge-1-prod"]
 
 
-def test_generic_host_gate_degrades_to_manual_print(tmp_path: Path) -> None:
+@pytest.mark.parametrize("host", ["claude", "pi", "generic"])
+def test_a_manual_capability_gates_manual_print_on_every_host(
+    tmp_path: Path, host: str
+) -> None:
+    """INTENTIONAL CHANGE (item 011, capability-aware gate selection).
+
+    This replaces the old `test_generic_host_gate_degrades_to_manual_print`,
+    which asserted the *host name* degraded the gate. The `host == "claude"`
+    branch is gone: `manual` yields `manual-print` on Claude too (REQ-EXIT-07).
+    """
     root = _project(tmp_path, config={})
     d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
-              "--host", "generic")["directives"]
+              "--host", host, "--verify-capability", "manual")["directives"]
     assert d["verifyGate"] == "manual-print"
 
 
@@ -145,9 +171,13 @@ def test_generic_host_gate_degrades_to_manual_print(tmp_path: Path) -> None:
     ({"status": "skipped"}, "skipped", "none"),
 ], ids=["fresh", "stale-version", "stale-legacy", "failing", "skipped"])
 def test_verify_freshness_matrix(tmp_path: Path, entry, expected_state, expected_gate):
+    # INTENTIONAL CHANGE (item 011, capability-aware gate selection): the `standard`
+    # rows now require an explicit `--verify-capability interactive`; before item 011
+    # the default `--host claude` alone produced them.
     state = _state_with_verify("forge-2-tech", "forge-verify-tech", entry)
     root = _project(tmp_path, config={}, state=state)
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+              "--verify-capability", "interactive")["directives"]
     assert d["verifyState"] == expected_state
     assert d["verifyGate"] == expected_gate
 
@@ -291,8 +321,15 @@ def test_claude_next_steps_wording_and_sentinel_last(tmp_path: Path) -> None:
 
 def test_next_command_is_in_a_fenced_block_for_mobile_copy(tmp_path: Path) -> None:
     """The next-stage command is emitted inside a fenced code block (native
-    copy button on mobile/remote hosts) sitting *before* the sentinel."""
-    root = _project(tmp_path, config={})
+    copy button on mobile/remote hosts) sitting *before* the sentinel.
+
+    INTENTIONAL CHANGE (item 011, verify-primary ordering): the fixture now seeds
+    a fresh verify entry. The production successor is the fenced primary command
+    only once verification is RESOLVED; while it is outstanding the verify command
+    holds the fence instead (REQ-EXIT-06).
+    """
+    state = _state_with_verify("forge-2-tech", "forge-verify-tech", _FRESH_TECH_VERIFY)
+    root = _project(tmp_path, config={}, state=state)
     block = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["nextSteps"]
     lines = block.splitlines()
     assert "```\n/feature-forge:forge-3-specs widget\n```" in block
@@ -314,8 +351,14 @@ def test_generic_next_steps_has_no_clear_token(tmp_path: Path) -> None:
 def test_pi_next_steps_uses_new_command_and_skill_prefix(tmp_path: Path) -> None:
     """`--host pi` names Pi's real commands: `/new` for a fresh session, `/skill:` slash
     commands — never Claude's `/clear` or the `/feature-forge:` prefix (in the rendered
-    block AND the structured directives the skill reads)."""
-    root = _project(tmp_path, config={})
+    block AND the structured directives the skill reads).
+
+    INTENTIONAL CHANGE (item 011, verify-primary ordering): seeded fresh so the
+    production successor legitimately holds the fence; host translation of the
+    verify-primary form is pinned separately in the §3.4 matrix below.
+    """
+    state = _state_with_verify("forge-2-tech", "forge-verify-tech", _FRESH_TECH_VERIFY)
+    root = _project(tmp_path, config={}, state=state)
     payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech", "--host", "pi")
     block = payload["nextSteps"]
     assert "`/new`" in block
@@ -359,10 +402,23 @@ def _request(kind="add-feature", blocks=False, status="open", target="net-new") 
     }
 
 
-def _state_with_requests(requests: list[dict], epic: str | None = "my-epic") -> dict:
+def _state_with_requests(
+    requests: list[dict], epic: str | None = "my-epic", verified: bool = True
+) -> dict:
+    """Epic-backflow fixture.
+
+    ``verified`` seeds a fresh `forge-verify-tech` entry by default. INTENTIONAL
+    CHANGE (item 011, verify-primary ordering): reconcile *precedence* — which
+    command is fenced and which is demoted — is only observable once verification
+    is resolved, because an outstanding verification outranks the reconcile
+    (02 §5.2). Pass ``verified=False`` to exercise the coexistence case.
+    """
+    stages: dict = {"forge-2-tech": {"status": "complete", "version": 2}}
+    if verified:
+        stages["forge-verify-tech"] = dict(_FRESH_TECH_VERIFY)
     state = {
         "pipelineStatus": "active",
-        "stages": {"forge-2-tech": {"status": "complete", "version": 2}},
+        "stages": stages,
         "epicChangeRequests": requests,
     }
     if epic is not None:
@@ -371,8 +427,16 @@ def _state_with_requests(requests: list[dict], epic: str | None = "my-epic") -> 
 
 
 def test_no_epic_requests_is_byte_identical_and_omits_directive(tmp_path: Path) -> None:
-    """The common path: no requests → no epicReconcile key, NEXT-STEPS unchanged."""
-    plain = _project(tmp_path / "a", config={}, state=None)
+    """The common path: no requests → no epicReconcile key, NEXT-STEPS unchanged.
+
+    INTENTIONAL CHANGE (item 011, verify-primary ordering): both sides now carry
+    the same fresh verify entry, so the comparison isolates the epicChangeRequests
+    field rather than accidentally comparing a verify-primary block against a
+    production-primary one.
+    """
+    no_requests = _state_with_requests([], epic=None)
+    del no_requests["epicChangeRequests"]
+    plain = _project(tmp_path / "a", config={}, state=no_requests)
     empty = _project(tmp_path / "b", config={},
                      state=_state_with_requests([]))  # field present but empty
     p = _exit(plain, "--feature", "widget", "--stage", "forge-2-tech")
@@ -971,3 +1035,361 @@ def test_every_protocol_stage_noun_slot_has_a_directive_to_fill_it() -> None:
     for stage in EXIT_STAGES:
         filled = session.STAGE_NOUN.get(stage, stage)
         assert filled and "{" not in filled, stage
+
+
+# --------------------------------------------------------------------------- #
+# 07 §3.4 — verify-first priority, capability gates, hosts, and rendering
+#
+# This whole section is NEW for item 011. It pins the two intentional stages 0–4
+# behavior changes REQ-COMPAT-01 carves out: verify-primary ordering (the verify
+# command is the sole fenced action while verification is unresolved) and
+# capability-aware gate selection (`--verify-capability`, never `--host`, picks
+# the gate).
+# --------------------------------------------------------------------------- #
+
+
+_OUTSTANDING_ENTRIES = {
+    "never": None,
+    "stale": {"status": "passed", "verifiedStageVersion": 1},
+    "failing": {"status": "findings-reported"},
+    "auto-pending": {"status": "auto-verify-pending", "scheduledStageVersion": 2},
+}
+_RESOLVED_ENTRIES = {
+    "fresh": {"status": "passed", "verifiedStageVersion": 2},
+    "skipped": {"status": "skipped"},
+}
+
+
+def _tech_project(tmp_path: Path, entry: dict | None, config: dict | None = None) -> Path:
+    """A `forge-2-tech` project whose verify entry is exactly ``entry``."""
+    state = {"pipelineStatus": "active", "stages": {
+        "forge-2-tech": {"status": "complete", "version": 2},
+    }}
+    if entry is not None:
+        state["stages"]["forge-verify-tech"] = entry
+    return _project(tmp_path, config=config or {}, state=state)
+
+
+@pytest.mark.parametrize("label", sorted(_RESOLVED_ENTRIES))
+@pytest.mark.parametrize("capability", ["interactive", "manual"])
+@pytest.mark.parametrize("auto", [True, False])
+def test_resolved_verification_routes_to_the_production_successor(
+    tmp_path: Path, label: str, capability: str, auto: bool
+) -> None:
+    """07 §3.4 row 1: `fresh`/`skipped` → production successor, gate `none`."""
+    root = _tech_project(tmp_path, _RESOLVED_ENTRIES[label], config={"autoVerify": auto})
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+                    "--verify-capability", capability)
+    d = payload["directives"]
+    assert d["verifyState"] == label
+    assert d["verifyGate"] == "none"
+    assert d["runInStageVerify"] is False
+    assert d["primaryCommand"] == "/feature-forge:forge-3-specs widget"
+    assert d["deferredCommand"] is None
+    assert "```\n/feature-forge:forge-3-specs widget\n```" in payload["nextSteps"]
+
+
+@pytest.mark.parametrize("label", sorted(_OUTSTANDING_ENTRIES))
+@pytest.mark.parametrize("capability", ["interactive", "manual"])
+def test_auto_verify_owed_keeps_the_gate_none_and_defers_production(
+    tmp_path: Path, label: str, capability: str
+) -> None:
+    """07 §3.4 row 2: auto-verify effective and owed → nested chain, gate `none`."""
+    root = _tech_project(tmp_path, _OUTSTANDING_ENTRIES[label],
+                         config={"autoVerify": True})
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+                    "--verify-capability", capability)
+    d = payload["directives"]
+    assert d["verifyState"] == label
+    assert d["runInStageVerify"] is True
+    assert d["verifyGate"] == "none", "the in-stage run covers it; no gate is rendered"
+    assert d["primaryCommand"] == "/feature-forge:forge-verify widget"
+    assert d["deferredCommand"] == "/feature-forge:forge-3-specs widget"
+
+
+@pytest.mark.parametrize("label", sorted(_OUTSTANDING_ENTRIES))
+def test_outstanding_plus_interactive_gates_standard(tmp_path: Path, label: str) -> None:
+    """07 §3.4 row 3: outstanding + `interactive` → `standard`, verify primary."""
+    root = _tech_project(tmp_path, _OUTSTANDING_ENTRIES[label])
+    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+              "--verify-capability", "interactive")["directives"]
+    assert d["verifyGate"] == "standard"
+    assert d["primaryCommand"] == "/feature-forge:forge-verify widget"
+
+
+@pytest.mark.parametrize("label", sorted(_OUTSTANDING_ENTRIES))
+def test_outstanding_plus_manual_gates_manual_print(tmp_path: Path, label: str) -> None:
+    """07 §3.4 row 4: outstanding + `manual` → `manual-print`, verify fenced."""
+    root = _tech_project(tmp_path, _OUTSTANDING_ENTRIES[label])
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+                    "--verify-capability", "manual")
+    d = payload["directives"]
+    assert d["verifyGate"] == "manual-print"
+    assert d["primaryCommand"] == "/feature-forge:forge-verify widget"
+    assert "```\n/feature-forge:forge-verify widget\n```" in payload["nextSteps"]
+
+
+def test_a_tokenless_stage_promotes_no_verify_command(tmp_path: Path) -> None:
+    """07 §3.4 row 5: `verifyState: "none"` → production, gate `none`, no promotion."""
+    root = _project(tmp_path, config={"autoVerify": True}, state=None)
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-6-docs",
+                    "--outcome", "complete", "--verify-capability", "interactive")
+    d = payload["directives"]
+    assert d["verifyState"] == "none"
+    assert d["verifyGate"] == "none"
+    assert d["runInStageVerify"] is False
+    assert d["primaryCommand"] != d["verifyCommand"]
+    assert "forge-verify" not in payload["nextSteps"]
+
+
+# --- capability, not host, selects the gate -------------------------------- #
+
+
+def test_a_capable_pi_session_gets_standard(tmp_path: Path) -> None:
+    """REQ-EXIT-07: capable Pi is `standard`, exactly like capable Claude."""
+    root = _tech_project(tmp_path, None)
+    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+              "--host", "pi", "--verify-capability", "interactive")["directives"]
+    assert d["verifyGate"] == "standard"
+
+
+def test_an_incapable_claude_session_gets_manual_print(tmp_path: Path) -> None:
+    """REQ-EXIT-07: the `host == "claude"` gate branch is gone."""
+    root = _tech_project(tmp_path, None)
+    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+              "--host", "claude", "--verify-capability", "manual")["directives"]
+    assert d["verifyGate"] == "manual-print"
+
+
+@pytest.mark.parametrize("host", ["claude", "pi", "generic"])
+@pytest.mark.parametrize("capability", ["interactive", "manual"])
+def test_the_gate_is_a_pure_function_of_state_and_capability(
+    tmp_path: Path, host: str, capability: str
+) -> None:
+    """The same (verifyState, capability) pair yields the same gate on every host."""
+    root = _tech_project(tmp_path, None)
+    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+              "--host", host, "--verify-capability", capability)["directives"]
+    assert d["verifyGate"] == ("standard" if capability == "interactive" else
+                               "manual-print")
+
+
+def test_no_source_path_selects_the_gate_from_the_host_name() -> None:
+    """A structural guard: the retired `host == "claude"` gate branch stays retired."""
+    source = (REPO_ROOT / "scripts" / "forge-session.py").read_text(encoding="utf-8")
+    start = source.index("def stage_exit(")
+    end = source.index("def _print_stage_exit(", start)
+    body = source[start:end]
+    gate_region = body[body.index("verify_gate ="):]
+    assert 'host == "claude"' not in body, "the host-name gate branch is forbidden"
+    assert "host" not in gate_region.split("next_stage_id")[0], (
+        "gate selection must not read `host` at all"
+    )
+
+
+# --- host rendering is translation only ------------------------------------ #
+
+
+def test_claude_renders_clear_and_the_canonical_prefix(tmp_path: Path) -> None:
+    root = _tech_project(tmp_path, None)
+    block = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+                  "--host", "claude")["nextSteps"]
+    assert "`/clear`" in block
+    assert "/new" not in block
+    assert "```\n/feature-forge:forge-verify widget\n```" in block
+    assert "/skill:" not in block
+
+
+def test_pi_renders_new_and_the_skill_prefix_on_the_verify_primary(tmp_path: Path):
+    root = _tech_project(tmp_path, None)
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+                    "--host", "pi")
+    block = payload["nextSteps"]
+    assert "`/new`" in block
+    assert "/clear" not in block
+    assert "```\n/skill:forge-verify widget\n```" in block
+    assert "/feature-forge:" not in block
+    assert payload["directives"]["primaryCommand"] == "/skill:forge-verify widget"
+    assert payload["directives"]["deferredCommand"] == "/skill:forge-3-specs widget"
+
+
+def test_generic_stays_host_neutral_on_the_verify_primary(tmp_path: Path) -> None:
+    root = _tech_project(tmp_path, None)
+    block = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+                  "--host", "generic")["nextSteps"]
+    assert "/clear" not in block
+    assert "/new" not in block
+    assert "/skill:" not in block
+    assert "fresh session" in block
+    assert "```\n/feature-forge:forge-verify widget\n```" in block
+
+
+# --- REQ-EXIT-06: the deferred command is never fenced --------------------- #
+
+
+def _fenced_commands(block: str) -> list[str]:
+    """Every command line inside a ``` fence, in order."""
+    out, inside = [], False
+    for line in block.splitlines():
+        if line.strip() == "```":
+            inside = not inside
+            continue
+        if inside:
+            out.append(line)
+    return out
+
+
+@pytest.mark.parametrize("label", sorted(_OUTSTANDING_ENTRIES))
+@pytest.mark.parametrize("capability", ["interactive", "manual"])
+@pytest.mark.parametrize("host", ["claude", "pi", "generic"])
+def test_the_verify_command_is_the_only_fenced_command(
+    tmp_path: Path, label: str, capability: str, host: str
+) -> None:
+    root = _tech_project(tmp_path, _OUTSTANDING_ENTRIES[label])
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+                    "--host", host, "--verify-capability", capability)
+    d, block = payload["directives"], payload["nextSteps"]
+    assert _fenced_commands(block) == [d["primaryCommand"]]
+    assert d["primaryCommand"] == d["verifyCommand"]
+    assert d["deferredCommand"] not in _fenced_commands(block)
+    # The successor is present, but only as unfenced conditional prose.
+    assert f"After verification passes, continue with: `{d['deferredCommand']}`" in block
+
+
+def test_next_command_never_overrides_the_primary_command(tmp_path: Path) -> None:
+    """`nextCommand` stays compatibility/routing metadata (00 §4)."""
+    root = _tech_project(tmp_path, None)
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+    d = payload["directives"]
+    assert d["nextCommand"] == "/feature-forge:forge-3-specs widget"
+    assert d["primaryCommand"] == "/feature-forge:forge-verify widget"
+    assert _fenced_commands(payload["nextSteps"]) == [d["primaryCommand"]]
+
+
+def test_fresh_session_guidance_follows_the_verification_action(tmp_path: Path) -> None:
+    """REQ-EXIT-06: never 'clear, then run the production successor'."""
+    root = _tech_project(tmp_path, None)
+    block = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["nextSteps"]
+    lines = block.splitlines()
+    clear_idx = next(i for i, ln in enumerate(lines) if ln.startswith("1. "))
+    follow = lines[clear_idx + 1]
+    assert follow.startswith("2. ")
+    assert "run the verification below" in follow
+    assert "run the next stage below" not in block
+
+
+def test_a_resolved_exit_keeps_the_original_next_stage_wording(tmp_path: Path) -> None:
+    """The pre-item-011 wording is retained verbatim once verification is resolved."""
+    root = _tech_project(tmp_path, _RESOLVED_ENTRIES["fresh"])
+    block = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["nextSteps"]
+    assert (
+        "2. Then start a fresh session and run the next stage below — or "
+        "re-run `/feature-forge:forge` to let the navigator resume from disk."
+    ) in block
+
+
+# --- verification + blocking epic reconcile coexist ------------------------ #
+
+
+def test_verification_outranks_a_blocking_reconcile(tmp_path: Path) -> None:
+    """Item 011 step 5 / 02 §5.2: verify primary, reconcile FIRST deferred."""
+    state = _state_with_requests(
+        [_request(kind="move-boundary", blocks=True)], verified=False
+    )
+    root = _project(tmp_path, config={}, state=state)
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["epicReconcile"]["required"] is True
+    assert d["primaryCommand"] == "/feature-forge:forge-verify widget"
+    assert _fenced_commands(block) == ["/feature-forge:forge-verify widget"]
+    reconcile_line = (
+        "After verification passes, reconcile the epic first — 1 blocking epic "
+        "change request flagged: `/feature-forge:forge-0-epic my-epic`"
+    )
+    successor_line = (
+        "After reconciling, continue the pipeline with: "
+        "`/feature-forge:forge-3-specs widget`"
+    )
+    assert reconcile_line in block
+    assert successor_line in block
+    # The reconcile is the FIRST deferred action; the ordinary production
+    # successor stays subordinate to it.
+    assert block.index(reconcile_line) < block.index(successor_line)
+    # …and the successor is named exactly once, never duplicated by the caller's
+    # own deferred line.
+    assert block.count("/feature-forge:forge-3-specs widget") == 1
+    assert block.splitlines()[-1] == SENTINEL
+
+
+def test_a_resolved_exit_still_fences_the_blocking_reconcile(tmp_path: Path) -> None:
+    """The pre-item-011 reconcile-first precedence survives once verify resolves."""
+    state = _state_with_requests([_request(kind="move-boundary", blocks=True)])
+    root = _project(tmp_path, config={}, state=state)
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["primaryCommand"] == "/feature-forge:forge-0-epic my-epic"
+    assert _fenced_commands(block) == ["/feature-forge:forge-0-epic my-epic"]
+    assert d["deferredCommand"] is None
+
+
+def test_a_nonblocking_reminder_still_defers_to_verification(tmp_path: Path) -> None:
+    state = _state_with_requests(
+        [_request(kind="add-feature", blocks=False)], verified=False
+    )
+    root = _project(tmp_path, config={}, state=state)
+    payload = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["epicReconcile"]["reminder"] is True
+    assert _fenced_commands(block) == ["/feature-forge:forge-verify widget"]
+    assert "You also flagged 1 epic change to reconcile when convenient" in block
+    assert "After verification passes, continue with: " \
+           "`/feature-forge:forge-3-specs widget`" in block
+
+
+# --- the sentinel invariant survives every shape --------------------------- #
+
+
+@pytest.mark.parametrize("verified", [True, False])
+@pytest.mark.parametrize("host", ["claude", "pi", "generic"])
+@pytest.mark.parametrize("requests", [
+    [],
+    [_request(blocks=True)],
+    [_request(blocks=False)],
+], ids=["none", "blocking", "reminder"])
+def test_the_sentinel_is_always_the_final_line(
+    tmp_path: Path, verified: bool, host: str, requests: list[dict]
+) -> None:
+    state = _state_with_requests(requests, verified=verified)
+    root = _project(tmp_path, config={}, state=state)
+    block = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
+                  "--host", host)["nextSteps"]
+    assert block.splitlines()[-1] == SENTINEL
+    assert block.count(SENTINEL) == 1
+    assert block.startswith("**Next steps**")
+
+
+def test_next_steps_block_matches_the_00_section_5_signature() -> None:
+    """The 00 §5 target signature, positionally and by default."""
+    import inspect
+
+    session = _load_session()
+    sig = inspect.signature(session._next_steps_block)
+    assert list(sig.parameters) == [
+        "primary_command", "host", "reconcile", "deferred_command", "outcome_text",
+    ]
+    assert sig.parameters["reconcile"].default is None
+    assert sig.parameters["deferred_command"].default is None
+    assert sig.parameters["outcome_text"].default is None
+    # Rule 1 and rule 6 hold for every combination of the optional arguments,
+    # including the outcome_text items 013-015 will supply.
+    for reconcile in (None, {"required": True, "command": "/feature-forge:forge-0-epic e",
+                             "count": 1, "deferred": "/feature-forge:forge-3-specs w"}):
+        for deferred in (None, "/feature-forge:forge-3-specs w"):
+            for text in (None, "The loop stopped with 2 items pending."):
+                block = session._next_steps_block(
+                    "/feature-forge:forge-verify w", "claude", reconcile, deferred, text
+                )
+                assert block.startswith("**Next steps**")
+                assert block.splitlines()[-1] == SENTINEL
+                if text:
+                    assert text in block

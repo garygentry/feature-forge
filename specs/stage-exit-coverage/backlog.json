@@ -350,8 +350,8 @@
         "ruff check scripts/ eval/ passes",
         "The gate is a pure function of verifyState and verify_capability; no third capability value or consent-specific gate form is introduced"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T06:25:10.892Z",
       "dependsOn": [
         "008",
         "010"

@@ -2107,34 +2107,57 @@ def _host_command(command: str, host: str) -> str:
 
 
 def _next_steps_block(
-    next_command: str, host: str, reconcile: dict | None = None
+    primary_command: str,
+    host: str,
+    reconcile: dict | None = None,
+    deferred_command: str | None = None,
+    outcome_text: str | None = None,
 ) -> str:
-    """Render the sentinel-terminated NEXT-STEPS block for the given host.
+    """Render one sentinel-terminated terminal block.
+
+    Args:
+        primary_command: The sole fenced action.
+        host: Command and fresh-session wording target.
+        reconcile: Existing epic-backflow override metadata.
+        deferred_command: Optional production action allowed only after the primary
+            verification/recovery action succeeds.
+        outcome_text: Optional deterministic loop/docs/branch outcome explanation.
+
+    Returns:
+        A string whose final line is exactly `NEXT_STEPS_SENTINEL`.
 
     The Claude wording uses the literal ``/clear`` slash-command; the generic
     wording is host-neutral (matching the adapter build's host-term table, so
     a non-Claude bundle invoking ``--host generic`` never instructs a fake
     slash-command).
 
+    ``deferred_command`` is the caller's signal that ``primary_command`` is a
+    verification/recovery action standing in front of a production successor: it
+    is rendered only as unfenced conditional prose, and the fresh-session wording
+    follows the primary action instead of promising "the next stage below"
+    (02 §4, REQ-EXIT-06). It is NEVER fenced, so it cannot be mistaken for the
+    primary action.
+
     ``reconcile`` carries the epic-backflow routing (§Epic backflow in
     ``references/stage-exit-protocol.md``). When it marks a **blocking** request
-    (``required: true``), the fenced primary command becomes the epic reconcile
-    command and the normal next stage is demoted to a follow-up line. When it
-    marks only **non-blocking** requests (``reminder: true``), the fenced command
-    stays the normal next stage and a reminder line is appended. Either way the
-    added prose is host-neutral (no literal ``/clear``) so it survives verbatim
-    into a generic bundle.
+    (``required: true``) AND the caller made the reconcile command primary, the
+    fence carries it and the normal next stage is demoted to a follow-up line.
+    When verification is still outstanding the caller keeps the verify command
+    primary instead; the reconcile then becomes the FIRST deferred action, ahead
+    of the ordinary production successor (02 §5.2). When only **non-blocking**
+    requests are present (``reminder: true``), a reminder line is appended.
+    Either way the added prose is host-neutral (no literal ``/clear``) so it
+    survives verbatim into a generic bundle.
     """
+    verify_first = deferred_command is not None
     if host == "claude":
         clear_line = (
             "1. `/clear` — recommended unconditionally at this stage boundary; "
             "every artifact is on disk, so the work survives the clear. "
             "I can't `/clear` for you — you have to run it yourself."
         )
-        next_line = (
-            "2. Then start a fresh session and run the next stage below — or "
-            "re-run `/feature-forge:forge` to let the navigator resume from disk."
-        )
+        navigator = "`/feature-forge:forge`"
+        fresh_prefix = "2. Then start a fresh session and run"
     elif host == "pi":
         # Pi's fresh-session command is `/new` (not `/clear`); its slash-command
         # surface is `/skill:` (the fenced command below is rewritten to match).
@@ -2143,29 +2166,47 @@ def _next_steps_block(
             "artifact is on disk, so the work survives starting a fresh session. "
             "I can't run `/new` for you — you have to run it yourself."
         )
-        next_line = (
-            "2. Then, in the new session, run the next stage below — or re-run "
-            "`/skill:forge` to let the navigator resume from disk."
-        )
+        navigator = "`/skill:forge`"
+        fresh_prefix = "2. Then, in the new session, run"
     else:
         clear_line = (
             "1. Clear your session / start a fresh session — recommended "
             "unconditionally at this stage boundary; every artifact is on "
             "disk, so the work survives it."
         )
+        navigator = None
+        fresh_prefix = "2. Then start a fresh session and run"
+    resume = (
+        f"re-run {navigator} to let the navigator resume from disk."
+        if navigator
+        else "re-run the forge navigator skill to resume from disk."
+    )
+    if verify_first:
+        # REQ-EXIT-06: the fresh-session guidance follows the PRIMARY verification
+        # action. It must never tell the user to clear and run the production
+        # successor first.
         next_line = (
-            "2. Then start a fresh session and run the next stage below — or "
-            "re-run the forge navigator skill to resume from disk."
+            f"{fresh_prefix} the verification below — verification is still "
+            "outstanding for this stage, so it comes before the next production "
+            f"stage. Or {resume}"
         )
+    else:
+        next_line = f"{fresh_prefix} the next stage below — or {resume}"
     blocking = bool(reconcile and reconcile.get("required"))
     # The primary actionable command goes in a fenced block so mobile/remote hosts
-    # get a native copy button (inline code is not tap-to-copy). For a blocking
-    # epic-change request the primary is the reconcile command; otherwise it is the
-    # normal next-stage command. The fence sits before the sentinel, so the
-    # sentinel remains the absolute last line.
-    fenced_command = _host_command(reconcile["command"] if blocking else next_command, host)
-    lines = ["**Next steps**", clear_line]
-    if blocking:
+    # get a native copy button (inline code is not tap-to-copy). The CALLER decides
+    # which command is primary (02 §5.2 rule 3 — the renderer fences exactly what it
+    # is given); the fence sits before the sentinel, so the sentinel remains the
+    # absolute last line.
+    fenced_command = _host_command(primary_command, host)
+    reconcile_is_primary = bool(
+        blocking and _host_command(reconcile["command"], host) == fenced_command
+    )
+    lines = ["**Next steps**"]
+    if outcome_text:
+        lines.append(outcome_text)
+    lines.append(clear_line)
+    if reconcile_is_primary:
         count = reconcile["count"]
         plural = "s" if count != 1 else ""
         lines.append(
@@ -2178,6 +2219,16 @@ def _next_steps_block(
         lines.append(next_line)
     lines.append("")
     lines.append(f"```\n{fenced_command}\n```")
+    if blocking and not reconcile_is_primary:
+        # Verification outranked the reconcile, so the reconcile is the FIRST
+        # deferred action and the production successor stays subordinate to it.
+        count = reconcile["count"]
+        plural = "s" if count != 1 else ""
+        lines.append(
+            f"After verification passes, reconcile the epic first — {count} "
+            f"blocking epic change request{plural} flagged: "
+            f"`{_host_command(reconcile['command'], host)}`"
+        )
     if blocking and reconcile.get("deferred"):
         deferred_cmd = _host_command(reconcile["deferred"], host)
         lines.append(f"After reconciling, continue the pipeline with: `{deferred_cmd}`")
@@ -2187,6 +2238,16 @@ def _next_steps_block(
         lines.append(
             f"You also flagged {count} epic change{plural} to reconcile when "
             f"convenient: `{_host_command(reconcile['command'], host)}`"
+        )
+    if verify_first and _host_command(deferred_command, host) != _host_command(
+        (reconcile or {}).get("deferred") or "", host
+    ):
+        # 02 §5.2 rule 4: unfenced, conditional prose only. Suppressed when the
+        # blocking reconcile above already demoted this same command, so one
+        # command never appears twice in the deferred chain.
+        lines.append(
+            "After verification passes, continue with: "
+            f"`{_host_command(deferred_command, host)}`"
         )
     lines.append(NEXT_STEPS_SENTINEL)
     return "\n".join(lines)
@@ -2327,11 +2388,18 @@ def stage_exit(
     - ``autoFixEligible`` — ``autoFix`` is strict-true AND the in-stage verify
       runs AND the working tree is clean. Findings-level preconditions (zero
       unresolved decisions) remain the skill's runtime check.
-    - ``verifyGate`` — ``none`` when verify is resolved or the in-stage run
-      covers it; ``standard`` when auto-verify is off and verification is
-      outstanding on a host with a question mechanism + clean-room path
-      (``--host claude``); ``manual-print`` for the same state on a generic
-      host (print ``verifyCommand`` instead of presenting the gate).
+    - ``verifyGate`` — ``none`` when verify is resolved (including a tokenless
+      stage) or the in-stage run covers it; ``standard`` when auto-verify is off,
+      verification is outstanding, and the CALLER declared
+      ``--verify-capability interactive``; ``manual-print`` for the same state
+      under ``manual`` (print ``verifyCommand`` instead of presenting the gate).
+      Never a function of ``--host``: capable Pi is ``standard`` and incapable
+      Claude is ``manual-print`` (02 §4/§5.1, REQ-EXIT-07).
+    - ``primaryCommand``/``deferredCommand`` — the verify-first pair. While
+      verification is unresolved ``primaryCommand`` is the verify command and is
+      the ONLY fenced command; ``deferredCommand`` names the production successor
+      as unfenced conditional prose. ``nextCommand`` stays compatibility/routing
+      metadata and never overrides ``primaryCommand`` (REQ-EXIT-06).
     - ``nextStage``/``nextCommand`` — from pipeline state when it already
       records this stage complete (first non-complete production stage), else
       the fixed successor. ``--next-feature`` names the first actionable
@@ -2448,15 +2516,25 @@ def stage_exit(
     route_stage = resolved_served if resolved_served is not None else stage
 
     verify_label = _verify_state_for(state, route_stage)
-    resolved = verify_label in ("fresh", "skipped")
+    # ``none`` is a tokenless stage (forge-6-docs) — there is no verification to
+    # owe, so it is resolved for routing purposes and no verify command is
+    # promoted (07 §3.4's last matrix row).
+    resolved = verify_label in ("fresh", "skipped", "none")
     effective_auto_verify = auto_verify_for(config, route_stage)
     run_in_stage = effective_auto_verify and not resolved
     auto_fix_eligible = (
         config.get("autoFix") is True and run_in_stage and clean_tree is True
     )
-    if resolved or effective_auto_verify:
+    # 02 §4 priority table. The gate is a pure function of the verification state
+    # and the caller's declared capability: `--host` selects command syntax and
+    # fresh-session wording ONLY. A capable Pi session gets `standard`; an
+    # incapable Claude session gets `manual-print` (REQ-EXIT-07). Whether the
+    # caller needed user consent to dispatch is the CALLER's determination
+    # (04 §3.2) and is invisible here — a consent-required caller sends
+    # `interactive` and gets `standard`, which is the intended path.
+    if resolved or run_in_stage:
         verify_gate = "none"
-    elif host == "claude":
+    elif verify_capability == "interactive":
         verify_gate = "standard"
     else:
         verify_gate = "manual-print"
@@ -2509,7 +2587,25 @@ def stage_exit(
                 "count": len(open_requests),
             }
 
-    verify_command = _host_command(f"/feature-forge:forge-verify {feature}", host)
+    # ---- 02 §4 verify-first primary routing ------------------------------- #
+    # While verification is unresolved the verify command is THE action; the
+    # production successor is demoted to unfenced conditional prose. No path may
+    # fence or recommend the deferred production command first (REQ-EXIT-06).
+    verify_canonical = f"/feature-forge:forge-verify {feature}"
+    verify_command = _host_command(verify_canonical, host)
+    blocking_reconcile = bool(epic_reconcile and epic_reconcile.get("required"))
+    if not resolved:
+        primary_canonical: str | None = verify_canonical
+        deferred_canonical: str | None = next_command
+    elif blocking_reconcile:
+        # Verification is settled, so the blocking reconcile is the primary
+        # action and `epicReconcile["deferred"]` carries the demoted successor.
+        primary_canonical = epic_reconcile["command"]
+        deferred_canonical = None
+    else:
+        primary_canonical = next_command or "/feature-forge:forge"
+        deferred_canonical = None
+
     # 00 §4 fixed order. Entry 1 (the epic-member unreadable-state fallback) is not
     # emitted by this stage of the router; entries 2 and 3 are.
     warnings: list[str] = []
@@ -2539,6 +2635,10 @@ def stage_exit(
         "autoVerifyEffective": effective_auto_verify,
         "nextStage": next_stage_id,
         "nextCommand": _host_command(next_command, host) if next_command else next_command,
+        "primaryCommand": _host_command(primary_canonical, host),
+        "deferredCommand": (
+            _host_command(deferred_canonical, host) if deferred_canonical else None
+        ),
         "invalidAutoVerifyKeys": invalid_auto_verify_keys(config),
         "warnings": warnings,
         "gitRepo": git_repo,
@@ -2552,7 +2652,10 @@ def stage_exit(
     return {
         "directives": directives,
         "nextSteps": _next_steps_block(
-            next_command or "/feature-forge:forge", host, epic_reconcile
+            primary_canonical,
+            host,
+            epic_reconcile,
+            deferred_command=deferred_canonical,
         ),
         "sentinel": NEXT_STEPS_SENTINEL,
     }
