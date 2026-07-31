@@ -64,6 +64,12 @@ _SCRIPTED_SITES = [
      '--feature "{feature}" --stage forge-5-loop --outcome "{LoopOutcome}"'),
     ("skills/forge-6-docs/SKILL.md",
      '--feature "{feature}" --stage forge-6-docs --outcome "{DocsOutcome}"'),
+    # The branch skills stamp the same block. Ownership is a runtime placeholder, not a
+    # per-site constant: one stamp serves both the direct and the nested invocation, and
+    # the payload's `terminalOwnedBy` decides whether anything is printed.
+    ("skills/forge-verify/SKILL.md",
+     '--feature "{feature}" --stage forge-verify --owner "{owner}" '
+     '--outcome "{VerifyOutcome}" --verify-mode "{mode}"'),
 ]
 
 # The two canon surfaces that carried the loop's retired bespoke blocks. They are the

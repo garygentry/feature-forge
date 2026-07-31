@@ -100,7 +100,7 @@ any work:
 > `CLEAN_ROOM_UNAVAILABLE: forge-verifier subagent not dispatchable — verify not run.`
 
 Do not analyze artifacts, do not write a findings document, and do not touch pipeline
-state. The navigator detects this sentinel and degrades to its manual verify gate (Tier
+state. This is an **operational failure, not a user skip** — close through Step 7 with `--outcome failed`; as a nested owner that call writes no state and prints no terminal block, so the sentinel is your structured result. The navigator detects this sentinel and degrades to its manual verify gate (Tier
 2/3), so verify state stays outstanding and the stage is never marked verified on false
 assurance. **Manual / interactive invocation** (the normal `/feature-forge:forge-verify`
 path, no require-clean signal) keeps the inline fallback above unchanged.
@@ -110,6 +110,8 @@ path, no require-clean signal) keeps the inline fallback above unchanged.
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
 Resolve the feature directory via the **Feature Directory Resolution** block in `references/shared-conventions.md` (so a standalone feature resolves to its flat `{specsDir}/{feature}/` path exactly as today, and an epic member resolves to its nested `{specsDir}/{epic}/{feature}/` path). Use the resulting `{resolvedFeatureDir}` everywhere this skill reads or writes a per-feature artifact or state file — the `{specsDir}/{feature}/…` forms below are shorthand for the resolved path, not a literal flat layout. This does not apply to **epic mode**, whose paths are epic-scoped (`{specsDir}/{epic}/…`) by design.
+
+Determine branch ownership **at entry**, from the literal `owner: nested` / `owner: direct` token in the dispatching prompt (absent the token you are `direct`), and preserve that value unchanged through any re-verify — see Step 7, which passes it through as `--owner`.
 
 **Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall.
 
@@ -128,7 +130,7 @@ If a stage is specified as a second argument (e.g., `/feature-forge:forge-verify
 - **backlog mode**: If `forge-4-backlog` is complete but `forge-verify-backlog` is not `passed` or `findings-applied`
 - **impl mode**: If user explicitly requests or if implementation code exists for this feature
 
-If ambiguous, use the host's question mechanism to ask which stage to verify.
+If ambiguous, use the host's question mechanism to ask which stage to verify — **before any write**. Serialize the resolved mode as `--verify-mode` at Step 7: that mode, never conversational context and never `currentStage`, determines the served production stage.
 
 ## Step 2: Load All Relevant Artifacts
 
@@ -216,49 +218,70 @@ When building the Fix Execution Plan:
 
 Then use the host's question mechanism to ask how to proceed. Follow the **Decision Support** protocol in `references/shared-conventions.md`: recommend a path based on the findings and give each option a one-line trade-off. Let the severity and volume of findings drive the recommendation — e.g. recommend (b) **Apply fixes now** when findings are clear-cut and mechanical; recommend (a) **Review first** when findings involve design judgment or you flagged low-confidence items; recommend (c) **plan-mode workflow** when the fixes are large or interdependent enough to warrant a reviewed plan. Present:
 - **(a) Review the findings first** — read `{findings-file}` and decide per-finding; safest, but you act on nothing until you return.
-- **(b) Run `/feature-forge:forge-fix {feature}` now** — applies the fix plan immediately; fastest, best when findings are unambiguous.
+- **(b) Run `/feature-forge:forge-fix {feature} --served-stage {servedStage}` now** — applies the fix plan immediately; fastest, best when findings are unambiguous.
 - **(c) Enter plan mode and re-run `/feature-forge:forge-verify {feature}`** — produces a reviewable plan before any edits; best for large or risky fix sets.
 
 Do NOT embed this question in your text output.
 
-## Step 6: Update Pipeline State
+## Step 6: Record the Result Through `state-verify`
 
-Write pipeline state conforming to `references/pipeline-state-schema.json`.
+Never hand-author a verify entry. Every `stages.forge-verify-*` transition is written by the `state-verify` verb described in the **Pipeline State Protocol** in `references/shared-conventions.md`, which owns its full flag surface, its status matrix, and the exit-2 failure protocol. Write `findings-reported` when the report lists findings and `passed` when it lists none; never write `findings-applied` here — that belongs to the fix pass. `--stage` names the **served production stage** (Step 1's mode, mapped through the served-stage mapping in Step 7), `--findings-file` is the report path **relative to** the feature directory (`.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`), and `--verified-stage-version` is that production stage entry's current `version`, so a later revision of the artifact makes this verification read stale and re-fires. Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline State Protocol; omitting it for a member is an error and must never fall back to a same-named flat feature.
 
-> **Deliberate R4 exclusion.** This step writes a **verify entry**
-> (`stages.forge-verify-*`), and no `state-*` verb writes verify entries — the verbs
-> cover production stage entries and the two array types only. So this one step stays
-> hand-authored, and the schema citation above is retained to serve it. This skill
-> authors no production stage entry of its own; where it needs one, the owning stage
-> skill records it via a verb per the Pipeline State Protocol in
-> `references/shared-conventions.md`.
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{feature}" --stage "{servedStage}" --status "{passed|findings-reported}" \
+  --findings-file "{relative findings path}" --findings-count {n} \
+  --verified-stage-version {version} --specs-dir "{specsDir}"
+```
 
-Update `{resolvedFeatureDir}/.pipeline-state.json`:
-- Set the relevant verify entry status to `findings-reported` (or `passed` when there
-  are zero findings)
-- Record `findingsFile`, `findingsCount`, `verifiedAt`
-- Record `verifiedStageVersion` = the current `version` of the production stage entry
-  this verify covers (e.g. verifying `tech` → `stages["forge-2-tech"].version`). This
-  feeds the navigator's freshness ledger: a later revision to that artifact bumps its
-  `version`, so the recorded value no longer matches and auto-verify re-fires. Omitting
-  this leaves the verify looking stale (safe: the navigator re-verifies rather than
-  skips).
+**Two-commit provenance — never `--amend`.** The write above records `commitHash: null`. Commit 1 records the findings document and the state together (Git Commit Protocol, `references/shared-conventions.md`). Then record the provenance of that commit in Commit 2, passing the **full 40-character** hash of Commit 1 — an abbreviation is refused rather than expanded, and this call touches nothing but `commitHash`. Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline State Protocol.
 
-Do NOT mark as `findings-applied` — that happens after the fix pass.
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{feature}" --stage "{servedStage}" \
+  --commit-hash "$(git rev-parse HEAD)" --specs-dir "{specsDir}"
+```
+
+On exit 2 **nothing was recorded**: surface the `Error:` line verbatim together with the named feature (and epic), do not claim the result was persisted, and close the stage with `--outcome failed` in Step 7 — authoritative state is unknown, so no success block may be printed.
 
 ### Epic mode state (`.epic-state.json`)
 
-Epic mode is **epic-scoped**, not per-feature: record its result into the epic-level
-state file `{specsDir}/{epic}/.epic-state.json` — **never** into any member's
-`.pipeline-state.json`. Set `stages.forge-verify-epic.status` to `findings-reported`
-(or `passed` if zero findings), recording `findingsFile`, `findingsCount`, and
-`verifiedAt`. The full `.epic-state.json` schema (minimal shape) and the atomic
-temp-file + `os.replace()` **write-mechanism** detail (lazy-create, merge/replace,
-fail-intact) — including the worked Python snippet — live in
-`references/findings-template.md` under the **Epic Mode State Write Detail
-(Step 6)** section. Follow it verbatim.
+Epic mode is **epic-scoped**, not per-feature: `--stage forge-0-epic` writes `{specsDir}/{epic}/.epic-state.json` and **never** any member's `.pipeline-state.json`. It is the one exception to the member rule — `--feature` names the **epic**, and `--epic` must be absent or exactly equal to it — and its `--verified-stage-version` is the epic manifest's `revision`, never a member's stage version. The exact call and the minimal written shape live in `references/findings-template.md` under the **Epic Mode State Write Detail (Step 6)** section. Follow it verbatim.
 
-Do NOT mark as `findings-applied` — that happens after the fix pass.
+## Step 7: Close the Stage
+
+**Ownership.** Read branch ownership from the literal `owner: nested` / `owner: direct` token in the prompt that dispatched you. **Absent the token you are `direct`** — a user-typed `/feature-forge:forge-verify` is the only path that carries no dispatcher. Never infer ownership from how the invocation happened to be phrased; judge the token, not the wording. Pass the resolved value straight through as `--owner`, and preserve it through any re-verify. As a **nested** owner you return your structured result (mode, served stage, outcome, findings file, findings count) to the caller and print **no terminal block at all** — the outer authoring stage is the sole terminal owner. As a **direct** owner you print the script's NEXT-STEPS block verbatim as your absolute final output, with nothing after its sentinel line. `references/stage-exit-protocol.md` § "Branch ownership: the `owner:` token" owns this rule.
+
+**Served stage.** Pass `--verify-mode` carrying Step 1's explicit or auto-detected mode (`epic`, `prd`, `tech`, `specs`, `backlog`, `impl`); the script maps it to the served production stage. When the caller already owns a stage and states it, additionally pass that value as `--served-stage` — if the two disagree the script fails closed rather than guessing. Derive the served stage **only** from that mode argument or from authoritative pipeline state: conversational context and `currentStage` are never valid inference sources.
+
+**Capability.** Pass `--verify-capability interactive` only when **both** a question mechanism equivalent to the host's question mechanism is available **and** a clean-room `forge-verifier` may actually be dispatched right now. Clause (b) tests **permitted dispatch, not a listed tool**: a session that may dispatch only when the user asked, but does have a question mechanism, is `interactive` — the gate's affirmative choice supplies the request. Reserve `manual` for **no** question mechanism **and** **no** permitted dispatch. An auto-verify directive under a no-unsolicited-dispatch bar is presented through the gate and dispatched on the affirmative choice — never skipped, and never resolved by advancing to the production successor.
+
+**Outcome.** Invoke the exit **exactly once**, with the `--outcome` this run's result maps to:
+
+| This run's result | `--outcome` |
+|---|---|
+| Zero findings — the artifacts are clean | `passed` |
+| A findings report was written | `findings` |
+| The user explicitly chose to defer pipeline action **and** that skip was persisted via `state-verify --status skipped` | `skipped` |
+| A dispatch, a check, or a state write failed and needs intervention | `failed` |
+
+Merely **presenting** findings is `findings`, not `skipped` — all three Step 5 options are `findings`, including (a) "review the findings first", which defers *your* next action rather than the pipeline's. `skipped` is available only for an explicit user deferral of **pipeline action** whose skip has already been persisted. A `CLEAN_ROOM_UNAVAILABLE` sentinel or a non-answer from an advertised dispatch is an operational failure, not a user skip: it is `failed`. A state-write failure is `failed`, and no success block may be printed after one.
+
+Add `--epic "{epic}"` when the feature is an epic member, and `--served-stage "{servedStage}"` when the caller supplied one. Pass no other flags.
+
+**Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-verify --owner "{owner}" --outcome "{VerifyOutcome}" --verify-mode "{mode}" --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
+```
+
+Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
 
 ## Gotchas
 

@@ -96,62 +96,44 @@ violate REQ-STATE-02; per-feature status is always derived live from each member
 `.pipeline-state.json`).
 
 Set `stages.forge-verify-epic.status` to `findings-reported` (or `passed` if zero
-findings), recording `findingsFile`, `findingsCount`, and `verifiedAt`. The minimal
-shape:
+findings), recording `findingsFile`, `findingsCount`, and `verifiedAt`.
+
+**Write it with `state-verify`, never by hand.** `--stage forge-0-epic` is the sanctioned
+epic writer: it creates the file lazily, mutates only `stages.forge-verify-epic` plus the
+top-level `updatedAt`, writes atomically, and leaves any prior file intact on failure.
+This is the one `state-*` call site where the member `--epic` rule does **not** apply:
+`--feature` names the **epic**, and `--epic` must be absent or exactly equal to it. Its
+`--verified-stage-version` is the **epic manifest's `revision`** — never a member's stage
+version — which is what keeps the result reading fresh rather than stale.
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{epic}" --stage forge-0-epic \
+  --status "{passed|findings-reported}" \
+  --findings-file "{relative findings path}" --findings-count {n} \
+  --verified-stage-version {manifest revision} --specs-dir "{specsDir}"
+```
+
+On exit 2 nothing was recorded: surface the `Error:` line verbatim, name the epic, and do
+not claim the verification was persisted. The minimal shape this writes:
 
 ```jsonc
 {
-  "epic": "auth-overhaul",              // matches the manifest `epic`
+  "epic": "auth-overhaul",               // matches the manifest `epic`
+  "updatedAt": "2026-06-12T00:00:00Z",   // refreshed on every successful write
   "stages": {
     "forge-verify-epic": {
-      "status": "findings-reported",     // "findings-reported" | "passed" | "findings-applied"
+      "status": "findings-reported",     // "findings-reported" | "passed" | "findings-applied" | "skipped" | "auto-verify-pending"
       "findingsFile": ".verification/VERIFY-epic-2026-06-12.md",
       "findingsCount": 3,
-      "verifiedAt": "2026-06-12T00:00:00Z"
+      "verifiedAt": "2026-06-12T00:00:00Z",
+      "verifiedStageVersion": 3,         // the epic manifest revision this covers
+      "commitHash": null                 // filled by the Commit 2 provenance call
+      // "scheduledAt" / "scheduledStageVersion" appear only while an
+      // auto-verify-pending schedule is outstanding; a terminal result removes them
     }
   }
 }
-```
-
-**Write mechanism.** `epic-manifest.py` exposes no subcommand that writes this file, so
-the skill writes it **directly**, using an atomic temp-file + `os.replace()` pattern
-(mirroring `02-manifest-helper-cli.md §3.3`): serialize the merged state to a sibling
-temp file in `{specsDir}/{epic}/`, flush, then `os.replace()` it into place. Create the
-file **lazily on first write** (a missing file is simply created; an existing file is
-read, its `stages.forge-verify-epic` entry merged/replaced, and rewritten). On any I/O
-failure, **report the error and leave any prior `.epic-state.json` intact** (never a
-partial write). For example:
-
-```bash
-python3 - "$SPECS_DIR/$EPIC" <<'PY'
-import json, os, sys, tempfile
-from pathlib import Path
-epic_dir = Path(sys.argv[1])
-path = epic_dir / ".epic-state.json"
-state = {}
-if path.exists():
-    state = json.loads(path.read_text())
-state.setdefault("epic", epic_dir.name)
-state.setdefault("stages", {})
-state["stages"]["forge-verify-epic"] = {
-    "status": "findings-reported",   # or "passed" when findingsCount == 0
-    "findingsFile": ".verification/VERIFY-epic-2026-06-12.md",
-    "findingsCount": 3,
-    "verifiedAt": "2026-06-12T00:00:00Z",
-}
-fd, tmp = tempfile.mkstemp(dir=str(epic_dir), prefix=".epic-state.", suffix=".tmp")
-try:
-    with os.fdopen(fd, "w") as f:
-        json.dump(state, f, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
-except OSError as e:
-    try:
-        os.unlink(tmp)
-    except OSError:
-        pass
-    print(f"failed to write .epic-state.json: {e}", file=sys.stderr)
-    raise
-PY
 ```

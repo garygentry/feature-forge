@@ -594,8 +594,8 @@
         "the skill reads ownership from the literal owner: token and defaults to direct when absent; no path infers ownership from how the invocation was phrased",
         "python3 -m pytest tests/test_state_verb_call_sites.py passes with the new state-verify call sites, each carrying --epic inside the guard's window"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T10:41:32.597Z",
       "dependsOn": [
         "005",
         "006",

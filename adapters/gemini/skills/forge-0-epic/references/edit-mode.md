@@ -163,29 +163,15 @@ For the initial creation write (C5) the skill sets `createdAt == updatedAt`.
 - **Edit mode:** edits mutate the **manifest**, not member pipeline states — except the
   newly-created subdir for `add-feature`, which follows C7 (create the member subdir + back-pointer
   state). The skill does **not** rewrite existing members' `stages` on an edit.
-- **`.epic-state.json` (lazily created, written by skills — NOT the helper):** epic-*scoped* stage
+- **`.epic-state.json` (lazily created, written by `state-verify`):** epic-*scoped* stage
   entries that belong to no single member — currently only `forge-verify-epic` — are persisted in a
   dedicated `{specsDir}/{epic}/.epic-state.json`. It holds **only** epic-scoped stage entries,
   never derived per-feature status (so it does not violate REQ-STATE-02). `forge-0-epic` does
   **not** create this file — no epic-scoped stage runs during creation or edit; it appears only once
-  `forge-verify` epic mode runs. When a skill does write it (e.g. forge-verify epic mode), it writes
-  **directly** using an atomic temp-file + `os.replace` pattern — the helper exposes no subcommand
-  for it. On I/O failure the skill reports and leaves any prior file intact (never a partial write).
-  Minimal schema:
-
-  ```jsonc
-  {
-    "epic": "auth-overhaul",            // matches manifest `epic`
-    "stages": {
-      "forge-verify-epic": {
-        "status": "findings-reported",   // "findings-reported" | "passed" | "findings-applied"
-        "findingsFile": ".verification/VERIFY-epic-2026-06-12.md",
-        "findingsCount": 3,
-        "verifiedAt": "2026-06-12T00:00:00Z"
-      }
-    }
-  }
-  ```
+  `forge-verify` epic mode runs, and that skill records the result through `state-verify --stage
+  forge-0-epic` (the sanctioned epic writer, per the Pipeline State Protocol in
+  `references/shared-conventions.md`). No skill ever hand-authors this file, and its minimal shape
+  is documented once, alongside that call, in `skills/forge-verify/references/findings-template.md`.
 
   The git-commit step below stages the whole epic subtree, so `.epic-state.json` is captured
   automatically when present.

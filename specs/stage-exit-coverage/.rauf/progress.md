@@ -1426,3 +1426,84 @@ single-sourced blocks in `references/shared-conventions.md`.
 `python3 -m pytest tests -q` -> 1508 passed, 2 skipped (both pre-existing);
 `python3 scripts/build-adapters.py` run and the regenerated `adapters/` tree left in the
 working tree for the loop runner to commit.
+
+## Item 018 — forge-verify: owner capture, `state-verify` writes, scripted exit
+
+Rewrote Step 6 as two `state-verify` fences (result + Commit-2 provenance), added a new
+`## Step 7: Close the Stage` carrying the canonical stamp with `--stage forge-verify`,
+deleted the "Deliberate R4 exclusion" blockquote, and replaced the `.epic-state.json`
+hand-write recipes in BOTH `skills/forge-verify/references/findings-template.md` and
+`skills/forge-0-epic/references/edit-mode.md`.
+
+### Gotchas for later items
+
+- **The `.epic-state.json` write recipe existed in TWO places under `skills/`.** The item
+  names only `findings-template.md`, but AC 11 / 07 §6.2 scope the assertion to "anywhere
+  under `skills/`", and `skills/forge-0-epic/references/edit-mode.md` § "Pipeline state"
+  carried a second copy ("it writes **directly** using an atomic temp-file + `os.replace`
+  pattern" + a minimal-schema block). Both now point at `state-verify --stage
+  forge-0-epic`. Grep for `epic-state` before assuming one file owns a recipe.
+
+- **Two `os.replace` mentions under `skills/` are deliberately KEPT.**
+  `skills/forge-0-epic/SKILL.md:268` and `edit-mode.md:10` describe `epic-manifest.py`'s
+  own mutator atomicity — factual prose about the helper, explicitly paired with "the
+  skill never hand-rolls an in-place write". They are not a write recipe and not a
+  snippet. **Latent, out of scope here:** `edit-mode.md:63` still tells the skill to flip
+  an `epicChangeRequests` entry from `open` to `applied` "using the same atomic temp-file
+  + `os.replace` write" — a genuine hand-authored state write, but of a member's
+  `.pipeline-state.json`, not `.epic-state.json`. No verb can do it (`state-ecr` only
+  RECORDS a request; it has no status-flip flag), so closing it needs a new verb or a
+  widened `state-ecr`, not a canon reword. Item 029's invariant sweep may want to file it.
+
+- **Body-cap headroom is the binding constraint on this file.** `forge-verify/SKILL.md`
+  started at 272 body lines against the 300 cap and landed at **294 lines / 3,847 words**.
+  Every prose paragraph added here is one long unwrapped line by necessity; the three
+  bash fences cost 7 lines each (the `$R` prelude is mandatory per check-spec-purity rule
+  6). Item 019 (forge-fix, 83 body lines) has room to spare; a later edit to *this* file
+  has ~6 lines.
+
+- **One stamp serves BOTH ownerships.** `--owner "{owner}"` is a runtime placeholder like
+  `{feature}`, so `tests/test_stage_exit_protocol.py::_SCRIPTED_SITES` gains ONE row for
+  `skills/forge-verify/SKILL.md` with args
+  `--feature "{feature}" --stage forge-verify --owner "{owner}" --outcome "{VerifyOutcome}" --verify-mode "{mode}"`.
+  A second stamp for the nested path would break item 024's §2.3 rule 5 (exactly one
+  terminal-print instruction per contract surface). Item 019 should stamp forge-fix the
+  same way.
+
+- **`--served-stage` and `--epic` stay PROSE, not stamp args.** Both are conditional
+  (`--served-stage` only when the caller supplied one, `--epic` only for members), and the
+  stamp's single build-time slot is unconditional. Same split items 020–023 used.
+
+- **The CLEAN_ROOM_UNAVAILABLE sentinel is `failed`, not `skipped`.** That path's existing
+  "do not touch pipeline state" guarantee survives the new exit call: a branch stage never
+  schedules auto-verify debt (item 012's `_BRANCH_STAGES` guard) and a nested payload
+  writes and prints nothing, so closing with `--owner nested --outcome failed` is inert.
+
+- **Step 5's option (b) now carries `--served-stage`.** It read
+  `/feature-forge:forge-fix {feature}`, which no longer matches what the script fences for
+  `--outcome findings` (`/feature-forge:forge-fix widget --served-stage forge-2-tech`). A
+  pre-exit gate that names a command must name the same command the exit will fence, or
+  the user sees two different next actions.
+
+- **All three Step 5 options map to `findings`.** "Review the findings first" defers the
+  *skill's* next action, not the *pipeline's*; `skipped` needs an explicit user deferral of
+  pipeline action AND a persisted `state-verify --status skipped`. Spelled out in the Step
+  7 outcome table so the distinction cannot be re-collapsed.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with `PASS: spec-purity checker`,
+`PASS: epic-manifest pytest suite`, and `PASS: adapters/ matches a fresh generation (no
+drift)`; `python3 -m pytest tests/test_state_verb_call_sites.py` passes (call sites
+21 -> 30; `MIN_CALL_SITES` is a floor, item 029 raises it).
+
+Also driven against the real CLI rather than only the suite: the full
+`state-verify --status findings-reported` -> Commit 1 -> `state-verify --commit-hash
+$(git rev-parse HEAD)` sequence records a 40-hex hash into `forge-verify-tech` while
+`--json` echoes the written entry; the epic form writes `.epic-state.json` in exactly the
+documented minimal shape (`epic`/`updatedAt`/`stages.forge-verify-epic` with
+`verifiedStageVersion` = the manifest `revision`); and all four verify outcomes emit
+exactly one sentinel as the final line — `findings` fencing
+`/feature-forge:forge-fix widget --served-stage forge-2-tech`, `passed`/`skipped` the live
+successor, `failed` the verify retry — while the nested form returns `nextSteps: null`,
+`sentinel: null`, `terminalOwnedBy: "outer"`.
