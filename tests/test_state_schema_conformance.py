@@ -282,6 +282,158 @@ def test_the_schedule_findings_applied_sequence_conforms_after_every_step(tmp_pa
 
 
 # --------------------------------------------------------------------------- #
+# 2b. The two-commit hash boundary (07 §4.5, REQ-STATE-01..04)
+# --------------------------------------------------------------------------- #
+#
+# `commitHash` is deliberately UNCONSTRAINED in the schema (a legacy short hash
+# must keep validating), so the 40-hex rule lives only at the writer boundary.
+# That makes these the tests standing between "full hashes on new writes" and a
+# silent regression: the schema cannot catch it.
+
+#: Accepted on a new write, recorded verbatim — the regex takes either case.
+ACCEPTED_HASHES = (
+    "0123456789abcdef0123456789abcdef01234567",
+    "0123456789ABCDEF0123456789ABCDEF01234567",
+    "0123456789AbCdEf0123456789aBcDeF01234567",
+)
+
+#: Refused before any mutation. 0/7/39/41 bracket the length boundary; 7 is the
+#: legacy-looking abbreviation, which is rejected rather than Git-resolved.
+REJECTED_HASHES = ("", "a1b2c3d", "0" * 39, "0" * 41, "z" * 40, "0" * 39 + " ")
+
+FULL_HASH = ACCEPTED_HASHES[0]
+
+#: The two writers that accept `--commit-hash`, with the flags each needs to reach
+#: its provenance branch against a feature whose forge-1-prd is complete at v1.
+COMMIT_HASH_WRITERS = {
+    "state-complete": ("--stage", "forge-1-prd", "--version", "1"),
+    "state-verify": ("--stage", "forge-1-prd",),
+}
+
+
+def _prd_complete_and_verified(specs: Path) -> None:
+    """forge-1-prd complete at v1 with a passed verify entry — both Commit 1s."""
+    _verb(specs, "state-complete", "--stage", "forge-1-prd", "--version", "1",
+          "--artifact", "PRD.md")
+    _verb(specs, "state-verify", "--stage", "forge-1-prd", "--status", "passed",
+          "--verified-stage-version", "1")
+
+
+@pytest.mark.parametrize("verb", sorted(COMMIT_HASH_WRITERS))
+@pytest.mark.parametrize("value", ACCEPTED_HASHES)
+def test_a_full_hash_is_recorded_verbatim_and_still_conforms(tmp_path, verb, value):
+    specs = _feature_dir(tmp_path).parent
+    _prd_complete_and_verified(specs)
+    key = "forge-1-prd" if verb == "state-complete" else "forge-verify-prd"
+
+    state = _verb(specs, verb, *COMMIT_HASH_WRITERS[verb], "--commit-hash", value)
+    _conforms(state, f"{verb} after the Commit-2 follow-up")
+    assert state["stages"][key]["commitHash"] == value, "case was not preserved"
+
+
+@pytest.mark.parametrize("verb", sorted(COMMIT_HASH_WRITERS))
+@pytest.mark.parametrize("value", REJECTED_HASHES)
+def test_a_short_or_malformed_hash_exits_2_byte_intact(tmp_path, verb, value):
+    """Nothing but the writer boundary rejects these — the schema accepts any string."""
+    specs = _feature_dir(tmp_path).parent
+    _prd_complete_and_verified(specs)
+    state_path = specs / "demo" / STATE_FILENAME
+    before = state_path.read_bytes()
+
+    result = _run(verb, "--feature", "demo", *COMMIT_HASH_WRITERS[verb],
+                  "--commit-hash", value, "--specs-dir", str(specs))
+    assert result.returncode == 2, f"{verb} {value!r}: exit {result.returncode}"
+    assert result.stderr.startswith("Error:"), f"{verb} {value!r}: {result.stderr!r}"
+    assert state_path.read_bytes() == before, f"{verb} {value!r} mutated state"
+
+
+def test_commit_1_writes_null_and_commit_2_fills_it_in_for_both_writers(tmp_path):
+    """REQ-STATE-04, per step: null after Commit 1, the hash after Commit 2."""
+    specs = _feature_dir(tmp_path).parent
+
+    state = _verb(specs, "state-complete", "--stage", "forge-1-prd", "--version", "1",
+                  "--artifact", "PRD.md")
+    _conforms(state, "stage Commit 1")
+    assert state["stages"]["forge-1-prd"]["commitHash"] is None
+
+    state = _verb(specs, "state-verify", "--stage", "forge-1-prd", "--status", "passed",
+                  "--verified-stage-version", "1")
+    _conforms(state, "verify Commit 1")
+    assert state["stages"]["forge-verify-prd"]["commitHash"] is None
+
+    state = _verb(specs, "state-complete", "--stage", "forge-1-prd", "--version", "1",
+                  "--commit-hash", FULL_HASH)
+    _conforms(state, "stage Commit 2")
+    assert state["stages"]["forge-1-prd"]["commitHash"] == FULL_HASH
+
+    state = _verb(specs, "state-verify", "--stage", "forge-1-prd",
+                  "--commit-hash", FULL_HASH)
+    _conforms(state, "verify Commit 2")
+    entry = state["stages"]["forge-verify-prd"]
+    assert entry["commitHash"] == FULL_HASH
+    # Commit 2 records provenance and nothing else (03 §3.4).
+    assert entry["status"] == "passed" and entry["verifiedStageVersion"] == 1
+
+
+def _epic_root(tmp_path: Path, epic: str = "auth-overhaul") -> Path:
+    """An epic root carrying a minimal manifest at revision 1; return the specs dir."""
+    specs = tmp_path / "specs"
+    (specs / epic).mkdir(parents=True)
+    (specs / epic / "epic-manifest.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": "1",
+                "epic": epic,
+                "title": "Auth overhaul",
+                "revision": 1,
+                "features": [{"name": "login", "dependsOn": []}],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return specs
+
+
+@pytest.mark.parametrize("value", ACCEPTED_HASHES)
+def test_epic_commit_2_records_the_hash_in_the_documented_minimal_shape(tmp_path, value):
+    """`.epic-state.json` has no schema (03 §1), so its shape is asserted literally."""
+    specs = _epic_root(tmp_path / value[:8].lower())
+    for argv in (
+        ("--status", "passed", "--verified-stage-version", "1"),
+        ("--commit-hash", value),
+    ):
+        result = _run("state-verify", "--feature", "auth-overhaul",
+                      "--stage", "forge-0-epic", *argv, "--specs-dir", str(specs))
+        assert result.returncode == 0, f"{argv}: {result.stderr}"
+
+    state = json.loads(
+        (specs / "auth-overhaul" / ".epic-state.json").read_text(encoding="utf-8")
+    )
+    assert list(state) == ["epic", "updatedAt", "stages"]
+    assert state["epic"] == "auth-overhaul"
+    entry = state["stages"]["forge-verify-epic"]
+    assert entry["commitHash"] == value
+    assert entry["status"] == "passed" and entry["verifiedStageVersion"] == 1
+
+
+@pytest.mark.parametrize("value", REJECTED_HASHES)
+def test_epic_commit_2_rejects_a_malformed_hash_byte_intact(tmp_path, value):
+    specs = _epic_root(tmp_path)
+    assert _run("state-verify", "--feature", "auth-overhaul", "--stage", "forge-0-epic",
+                "--status", "skipped", "--specs-dir", str(specs)).returncode == 0
+    state_path = specs / "auth-overhaul" / ".epic-state.json"
+    before = state_path.read_bytes()
+
+    result = _run("state-verify", "--feature", "auth-overhaul", "--stage", "forge-0-epic",
+                  "--commit-hash", value, "--specs-dir", str(specs))
+    assert result.returncode == 2, f"{value!r}: exit {result.returncode}"
+    assert result.stderr.startswith("Error:"), f"{value!r}: {result.stderr!r}"
+    assert state_path.read_bytes() == before, f"{value!r} mutated the epic state"
+
+
+# --------------------------------------------------------------------------- #
 # 3. First-write edge cases
 # --------------------------------------------------------------------------- #
 
@@ -474,6 +626,45 @@ def test_verify_entry_stays_open_and_leaves_legacy_commit_hashes_loadable():
     commit_hash = entry["properties"]["commitHash"]
     for banned in ("pattern", "minLength", "maxLength", "format", "enum"):
         assert banned not in commit_hash, f"commitHash gained a {banned} constraint"
+
+
+#: Constraints that would reject a loaded legacy short hash (REQ-STATE-02).
+BANNED_COMMIT_HASH_KEYWORDS = ("pattern", "minLength", "maxLength", "format", "enum")
+
+
+def _commit_hash_nodes(node, trail=()):
+    """Yield every `(path, subschema)` declaring a `commitHash` property."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "commitHash" and isinstance(value, dict):
+                yield ".".join((*trail, key)), value
+            yield from _commit_hash_nodes(value, (*trail, str(key)))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _commit_hash_nodes(value, (*trail, str(index)))
+
+
+def test_no_reference_schema_constrains_commit_hash_anywhere():
+    """The 40-hex rule is a WRITE boundary, never a schema (03 §6.2).
+
+    A pattern or length here would reject the short hashes legacy state already
+    carries — the exact migration REQ-STATE-02 forbids. Every schema is walked,
+    not just `verifyEntry`, so `stageEntry` cannot pick one up unnoticed.
+    """
+    checked = 0
+    for schema_path in sorted(REFERENCES.glob("*-schema.json")):
+        schema = json.loads(read(schema_path))
+        for path, node in _commit_hash_nodes(schema):
+            checked += 1
+            for banned in BANNED_COMMIT_HASH_KEYWORDS:
+                assert banned not in node, (
+                    f"{schema_path.name}:{path} gained a {banned} constraint on "
+                    f"commitHash; loaded legacy short hashes must keep validating"
+                )
+    assert checked >= 2, (
+        f"expected at least the stageEntry and verifyEntry commitHash nodes, "
+        f"found {checked}"
+    )
 
 
 def test_the_rest_of_the_state_schema_contract_is_unchanged():

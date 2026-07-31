@@ -136,7 +136,12 @@ verification matrix — `auto-verify-pending` (durable automatic-verify debt),
 document. A terminal result DELETES the scheduling keys rather than nulling them,
 and `findings-applied` deliberately drops `verifiedStageVersion`: fixes landed but
 nothing has re-verified them, so freshness stays unresolved until a later `passed`
-write. Unlike the other verbs its `--json` echo is the written entry plus the
+write. Its second mode, `--commit-hash`, is the Commit-2 provenance follow-up for
+an entry that already exists: it changes only that entry's `commitHash`, and the
+hash must be a full 40 hex characters — an abbreviation is rejected rather than
+expanded, and no path amends a commit. Legacy short hashes already recorded in
+state keep loading unmigrated; nothing constrains `commitHash` in the schema.
+Unlike the other verbs its `--json` echo is the written entry plus the
 resolved state path, not the whole document, so a caller never re-reads state.
 
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
@@ -2836,7 +2841,8 @@ def cmd_state_complete(
        Sets ONLY ``commitHash``, leaving status/version/artifacts intact. Guarded
        on the stage already being ``complete``, so a typo'd ``--stage`` cannot
        write a lone ``{"commitHash": …}`` entry (which would violate
-       ``stageEntry``'s ``required: ["status"]``) at exit 0.
+       ``stageEntry``'s ``required: ["status"]``) at exit 0. The value must be a
+       full 40-hex object hash (REQ-STATE-01), checked before anything is loaded.
     2. ``resumable`` — the failed-Commit-1 revert (`references/shared-conventions.md`
        L245). Records ONLY ``status = "in-progress"`` plus the ``updatedAt``
        refresh: no completedAt, no version bump, no basedOnVersions/artifacts
@@ -2862,7 +2868,8 @@ def cmd_state_complete(
         based_on: Parsed ``{upstreamStage: version}`` provenance map.
         artifacts: Final canonical artifact path list for this stage.
         commit_hash: If given, record it as the stage's commitHash (Commit 2);
-            else set commitHash to None (Commit 1).
+            else set commitHash to None (Commit 1). Full 40-hex only on a new
+            write — an abbreviation is rejected rather than expanded.
         specs_dir: Specs directory.
         epic: Owning epic name, or None.
         status: Terminal status to record — "complete" (the default when the flag
@@ -2878,8 +2885,9 @@ def cmd_state_complete(
         surfaced in the --json echo / printer but NEVER written to disk.
 
     Raises:
-        UsageError: Contradictory ``--resumable --status complete``, a
-            ``--commit-hash`` follow-up against a stage that is not complete, an
+        UsageError: Contradictory ``--resumable --status complete``, a short or
+            non-hex ``--commit-hash``, a ``--commit-hash`` follow-up against a
+            stage that is not complete, an
             unknown feature directory, an unparseable state file, or a failed
             atomic write (→ exit 2).
     """
@@ -2887,6 +2895,11 @@ def cmd_state_complete(
         raise UsageError(
             "--resumable implies --status in-progress; do not pass --status complete"
         )
+    if commit_hash is not None:
+        # Branch 1's first act (03 §6.1): full 40-hex only, validated BEFORE the
+        # state file is loaded for mutation and long before _commit_state. Legacy
+        # short hashes already recorded in state keep loading unmigrated.
+        _assert_full_commit_hash(commit_hash)
     state_path, state = _load_state_for_write(specs_dir, feature, epic)
     entry = _stage_entry(state, stage)
     cascaded: list[str] = []
@@ -3195,6 +3208,66 @@ def _current_artifact_version(state: dict, stage: str) -> int:
     return _require_positive_int(version, f"{stage}.version")
 
 
+def _assert_full_commit_hash(commit_hash: object) -> None:
+    """Reject a ``--commit-hash`` that is not exactly 40 hexadecimal characters.
+
+    REQ-STATE-01 constrains WRITES, not reads (03 §6.1/§6.2). New provenance is a
+    full ``git rev-parse HEAD`` object hash; an abbreviation is rejected rather than
+    expanded, because expanding one would mean shelling out to Git from a script
+    whose whole contract is bounded local file reads. Caller case is preserved —
+    the regex accepts either case and nothing normalizes it.
+
+    Nothing constrains the schema, so a legacy short hash already recorded in state
+    keeps loading through ``_read_state``, ``_load_state_for_write``, the manifest
+    status readers, the navigator, and stage exit unmigrated (REQ-STATE-02).
+
+    Args:
+        commit_hash: The supplied value, typed loosely so a non-string reaching the
+            callable in-process is refused here rather than at serialization time.
+
+    Raises:
+        UsageError: The value is not a 40-character hex string (→ exit 2, before
+            any load-for-mutation and always before ``_commit_state``).
+    """
+    if isinstance(commit_hash, str) and FULL_GIT_HASH_RE.fullmatch(commit_hash):
+        return
+    raise UsageError(
+        f"--commit-hash must be the full 40-character Git object hash "
+        f"(`git rev-parse HEAD`); got {commit_hash!r}. An abbreviation is rejected "
+        f"rather than expanded. Nothing was written."
+    )
+
+
+def _load_verify_target(
+    specs_dir: Path, feature: str, epic: str | None, is_epic_target: bool
+) -> tuple[Path, dict, int | None]:
+    """Resolve the state document ``state-verify`` will mutate — epic or feature.
+
+    An epic target NEVER falls back to the member writer, and a member target never
+    reaches the epic root: the two resolvers are disjoint (03 §3.2 step 2,
+    REQ-SEC-01). Both result mode and commit-2 mode go through here, so neither can
+    drift onto the other's resolver.
+
+    Args:
+        specs_dir: The configured specs directory.
+        feature: The feature name, or the epic name for an epic target.
+        epic: The owning epic for a member, else None.
+        is_epic_target: True when ``--stage forge-0-epic`` selected the epic root.
+
+    Returns:
+        ``(state_path, state, revision)``. ``revision`` is the epic's manifest
+        revision for an epic target, and None for a feature target (whose artifact
+        version is read per-stage out of its own state).
+
+    Raises:
+        UsageError: Any resolution or load failure (→ exit 2, nothing written).
+    """
+    if is_epic_target:
+        return _load_epic_state_for_write(specs_dir, feature, epic)
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    return state_path, state, None
+
+
 def _verify_result_entry(
     status: str,
     prior: dict,
@@ -3321,14 +3394,23 @@ def cmd_state_verify(
             "commit-2 call"
         )
     if commit_hash is not None:
-        # Commit-2 provenance mode is a later, separate change (03 §3.4). The flag
-        # is registered now so the CLI surface matches §3.1, but a caller reaching
-        # here must be told plainly rather than have the hash silently dropped.
-        raise UsageError(
-            "--commit-hash (commit-2 provenance mode) is not implemented yet; "
-            "record the result with --status first"
-        )
-    if status not in VERIFY_RESULT_STATUSES:
+        # Commit-2 carries provenance for an entry that ALREADY exists, so every
+        # result field must be absent: a hash arriving next to findings metadata
+        # means the caller conflated the two writes (03 §3.4).
+        for label, value in (
+            ("--findings-file", findings_file),
+            ("--findings-count", findings_count),
+            ("--verified-stage-version", verified_stage_version),
+        ):
+            if value is not None:
+                raise UsageError(
+                    f"--commit-hash records provenance for an existing entry and "
+                    f"changes only its commitHash, so it does not accept {label}. "
+                    f"Record the result with --status first, commit, then re-run "
+                    f"with --commit-hash alone."
+                )
+        _assert_full_commit_hash(commit_hash)
+    elif status not in VERIFY_RESULT_STATUSES:
         known = ", ".join(VERIFY_RESULT_STATUSES)
         raise UsageError(f"unknown --status {status!r}; expected one of {known}")
 
@@ -3344,6 +3426,34 @@ def cmd_state_verify(
                 f"to write; expected one of {', '.join(VERIFY_STAGES)}"
             )
         verify_key = f"forge-verify-{token}"
+
+    # --- Commit-2 provenance mode (03 §3.4). ---------------------------------
+    # Commit 1 recorded the result with `commitHash: null`; this second, targeted
+    # write records the hash of THAT commit. Nothing here invokes Git, rewrites
+    # history, or amends — the two commits stay two commits (REQ-STATE-04).
+    if commit_hash is not None:
+        state_path, state, _ = _load_verify_target(
+            specs_dir, feature, epic, is_epic_target
+        )
+        entry = _verify_entry(state, verify_key)
+        if not entry:
+            raise UsageError(
+                f"--commit-hash records provenance for an existing {verify_key} "
+                f"entry, and {feature} has none. Record the verification result "
+                f"with --status first, commit it, then re-run with --commit-hash."
+            )
+        # In place, so status, findings metadata, scheduling metadata, timestamps
+        # and versions are all left exactly as Commit 1 wrote them.
+        entry["commitHash"] = commit_hash
+        written = _commit_state(state_path, state)
+        return {
+            "feature": feature,
+            "stage": stage,
+            "verifyKey": verify_key,
+            "statePath": str(state_path),
+            "entry": entry,
+            "updatedAt": written["updatedAt"],
+        }
 
     # --- Metadata validation that needs no state (03 §3.3). ------------------
     if verified_stage_version is not None:
@@ -3398,15 +3508,9 @@ def cmd_state_verify(
             "--status passed may record a verified revision"
         )
 
-    # An epic target NEVER falls back to the member writer, and a member target
-    # never reaches the epic root: the two resolvers are disjoint (03 §3.2 step 2).
-    epic_revision: int | None = None
-    if is_epic_target:
-        state_path, state, epic_revision = _load_epic_state_for_write(
-            specs_dir, feature, epic
-        )
-    else:
-        state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    state_path, state, epic_revision = _load_verify_target(
+        specs_dir, feature, epic, is_epic_target
+    )
     target_dir = state_path.parent
     if findings_file is not None:
         _validated_findings_file(findings_file, target_dir)
@@ -3517,14 +3621,18 @@ def _print_state_decision(state: dict) -> None:
     print(f"deferred decision recorded (raisedBy {routing})")
 
 
-def _print_state_verify(result: dict) -> None:
-    """Print the one-line human summary for `state-verify`.
+def _print_state_verify(result: dict, commit_hash: str | None = None) -> None:
+    """Print the one-line human summary for `state-verify` (one per mode).
 
     Takes the verb's RESULT dict (entry + resolved path), not a state document —
     `state-verify` is the one verb whose echo is the written entry rather than the
-    whole file.
+    whole file. Commit-2 mode gets its own line: reporting the untouched status
+    would read as if the result had just been re-written.
     """
     entry = result["entry"]
+    if commit_hash is not None:
+        print(f"recorded {result['verifyKey']} commitHash: {commit_hash}")
+        return
     detail = ""
     if entry.get("findingsFile"):
         detail = f" ({entry.get('findingsCount')} in {entry['findingsFile']})"
@@ -4005,7 +4113,11 @@ def main() -> int:
                 verified_stage_version=args.verified_stage_version,
                 commit_hash=args.commit_hash,
             )
-            _emit(payload, args.json_output, _print_state_verify)
+            _emit(
+                payload,
+                args.json_output,
+                lambda result: _print_state_verify(result, args.commit_hash),
+            )
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")

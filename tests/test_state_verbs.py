@@ -23,7 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _forge_paths import REFERENCES, SCRIPTS, read
+from _forge_paths import REFERENCES, REPO_ROOT, SCRIPTS, SKILLS, read
 from _state_schema import validate_state
 
 FORGE_SESSION = SCRIPTS / "forge-session.py"
@@ -62,6 +62,36 @@ def _state_of(tmp_path: Path, name: str = "demo") -> dict:
     )
     assert validate_state(state) == [], validate_state(state)
     return state
+
+
+#: A well-formed full Git object hash — the only shape a NEW `--commit-hash` write
+#: accepts (03 §6.1, REQ-STATE-01).
+_FULL_HASH = "9a29e846ed510c3b245876a9bf4cc73b8cb60951"
+
+#: The three casings that must all be accepted, each recorded VERBATIM: the regex
+#: accepts either case and nothing normalizes it, so a caller's case survives.
+_ACCEPTED_HASHES = (
+    ("lower", "9a29e846ed510c3b245876a9bf4cc73b8cb60951"),
+    ("upper", "9A29E846ED510C3B245876A9BF4CC73B8CB60951"),
+    ("mixed", "9a29E846eD510c3B245876A9bf4CC73b8cB60951"),
+)
+
+#: Every shape that must be refused BEFORE any mutation (07 §4.5). Lengths 0, 7,
+#: 39 and 41 bracket the boundary; 7 is the legacy-looking abbreviation, which is
+#: rejected on a WRITE rather than expanded through Git — while the same value
+#: already sitting in a loaded state file keeps reading (REQ-STATE-02).
+_REJECTED_HASHES = (
+    ("empty", ""),
+    ("legacy-7", "a1b2c3d"),
+    ("39-hex", "0" * 39),
+    ("41-hex", "0" * 41),
+    ("non-hex", "z" * 40),
+    ("hex-plus-space", "0" * 39 + " "),
+    ("leading-space", " " + "0" * 39),
+    ("trailing-newline", "0" * 40 + "\n"),
+    ("internal-space", "0" * 20 + " " + "0" * 19),
+    ("all-whitespace", " " * 40),
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -702,6 +732,44 @@ def test_commit_hash_follow_up_touches_only_commit_hash(tmp_path):
     }, "the Commit-2 follow-up must leave status/version/artifacts intact"
 
 
+def test_state_complete_accepts_every_40_hex_casing_verbatim(tmp_path):
+    """REQ-STATE-01: 40 hex characters, in any case, recorded exactly as supplied."""
+    for label, value in _ACCEPTED_HASHES:
+        root = tmp_path / f"complete-{label}"
+        _seed(root, {"forge-1-prd": {"status": "complete", "version": 1}})
+        result = _run(
+            "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+            "--version", "1", "--commit-hash", value,
+            "--specs-dir", str(root / "specs"),
+        )
+        assert result.returncode == 0, f"{label}: {result.stderr}"
+        recorded = _state_of(root)["stages"]["forge-1-prd"]["commitHash"]
+        assert recorded == value, f"{label}: case was not preserved ({recorded!r})"
+
+
+def test_state_complete_rejects_a_short_or_malformed_hash_before_mutation(tmp_path):
+    """Every non-40-hex shape fails, and the state file is left byte-identical.
+
+    The check runs before `_load_state_for_write`, so the stage-not-complete guard
+    below is never even consulted for a malformed value (03 §6.1).
+    """
+    for label, value in _REJECTED_HASHES:
+        root = tmp_path / f"reject-{label}"
+        _seed(root, {"forge-1-prd": {"status": "complete", "version": 1}})
+        state_path = root / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
+        before = state_path.read_bytes()
+        result = _run(
+            "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+            "--version", "1", "--commit-hash", value,
+            "--specs-dir", str(root / "specs"),
+        )
+        assert result.returncode == 2, f"{label}: exit {result.returncode}"
+        assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
+        assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
+        assert not result.stdout.strip(), f"{label} produced stdout"
+        assert state_path.read_bytes() == before, f"{label} mutated state"
+
+
 def test_commit_hash_against_an_incomplete_stage_exits_2(tmp_path):
     """A typo'd --stage would otherwise write a lone {"commitHash": …} at exit 0,
     violating stageEntry's required: ["status"]."""
@@ -711,7 +779,7 @@ def test_commit_hash_against_an_incomplete_stage_exits_2(tmp_path):
 
     result = _run(
         "state-complete", "--feature", "demo", "--stage", "forge-2-tech", "--version", "1",
-        "--commit-hash", "deadbeef", "--specs-dir", str(tmp_path / "specs"),
+        "--commit-hash", _FULL_HASH, "--specs-dir", str(tmp_path / "specs"),
     )
     assert result.returncode == 2, result.stdout
     assert result.stderr.strip() == (
@@ -725,7 +793,7 @@ def test_commit_hash_against_a_partial_stage_names_its_actual_status(tmp_path):
     _seed(tmp_path, {"forge-5-loop": {"status": "in-progress"}})
     result = _run(
         "state-complete", "--feature", "demo", "--stage", "forge-5-loop", "--version", "1",
-        "--commit-hash", "deadbeef", "--specs-dir", str(tmp_path / "specs"),
+        "--commit-hash", _FULL_HASH, "--specs-dir", str(tmp_path / "specs"),
     )
     assert result.returncode == 2, result.stdout
     assert "status: 'in-progress'" in result.stderr
@@ -1845,16 +1913,145 @@ def test_state_verify_writes_every_stage_token(tmp_path):
         assert _entry(specs, f"forge-verify-{key}")["status"] == "passed"
 
 
-def test_state_verify_defers_commit_2_mode(tmp_path):
-    """Commit-2 provenance lands in a later item; it may not silently drop the hash."""
+# --------------------------------------------------------------------------- #
+# state-verify — commit-2 provenance mode (03 §3.4 / §6, 07 §4.5)
+# --------------------------------------------------------------------------- #
+
+
+def _reported(specs: Path, *, name: str = "demo") -> None:
+    """Record a `findings-reported` result — the richest entry to leave undisturbed."""
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/f.md", "--findings-count", "3",
+        "--verified-stage-version", "1", name=name,
+    ).returncode == 0
+
+
+def test_state_verify_commit_2_changes_only_the_hash_and_updated_at(tmp_path):
+    """03 §3.4: status, findings metadata, timestamps and versions all survive."""
     specs = _verify_fixture(tmp_path)
+    _reported(specs)
+
+    state_path = specs / "demo" / FS.PIPELINE_STATE_FILENAME
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    # Backdated so the top-level refresh is observable inside a one-second window,
+    # and seeded so an unrelated entry can be proven untouched.
+    state["updatedAt"] = "2020-01-01T00:00:00Z"
+    state["stages"]["forge-verify-tech"] = {"status": "passed", "verifiedStageVersion": 4}
+    state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    before = json.loads(state_path.read_text(encoding="utf-8"))
+    assert before["stages"]["forge-verify-prd"]["commitHash"] is None, "Commit 1 wrote null"
+
+    result = _verify(specs, "--stage", "forge-1-prd", "--commit-hash", _FULL_HASH)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"recorded forge-verify-prd commitHash: {_FULL_HASH}"
+
+    after = json.loads(state_path.read_text(encoding="utf-8"))
+    assert validate_state(after) == [], validate_state(after)
+    assert after["stages"]["forge-verify-prd"]["commitHash"] == _FULL_HASH
+    assert after["updatedAt"] != "2020-01-01T00:00:00Z", "top-level updatedAt must refresh"
+
+    # Everything else — including the untouched sibling entry and every other
+    # top-level field — must be identical.
+    before["updatedAt"] = after["updatedAt"]
+    before["stages"]["forge-verify-prd"]["commitHash"] = _FULL_HASH
+    assert after == before, "commit-2 changed more than commitHash and updatedAt"
+
+
+def test_state_verify_commit_2_accepts_every_40_hex_casing_verbatim(tmp_path):
+    for label, value in _ACCEPTED_HASHES:
+        specs = _verify_fixture(tmp_path / f"case-{label}")
+        _reported(specs)
+        assert _verify(specs, "--stage", "forge-1-prd",
+                       "--commit-hash", value).returncode == 0, label
+        assert _entry(specs)["commitHash"] == value, f"{label}: case was not preserved"
+
+
+def test_state_verify_commit_2_rejects_a_short_or_malformed_hash_before_mutation(tmp_path):
+    for label, value in _REJECTED_HASHES:
+        specs = _verify_fixture(tmp_path / f"bad-{label}")
+        _reported(specs)
+        before = _state_bytes(specs)
+        result = _verify(specs, "--stage", "forge-1-prd", "--commit-hash", value)
+        assert result.returncode == 2, f"{label}: exit {result.returncode}"
+        assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
+        assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
+        assert not result.stdout.strip(), f"{label} produced stdout"
+        assert _state_bytes(specs) == before, f"{label} mutated state"
+
+
+def test_state_verify_commit_2_requires_an_existing_entry(tmp_path):
+    """Provenance for an entry that was never written is a fail-closed error.
+
+    Recording it anyway would persist a lone ``{"commitHash": …}`` — which
+    ``verifyEntry``'s ``required: ["status"]`` rejects — at exit 0.
+    """
+    specs = _verify_fixture(tmp_path)
+    _reported(specs)   # a DIFFERENT stage's entry must not stand in for this one
     before = _state_bytes(specs)
 
-    hash_only = _verify(specs, "--stage", "forge-1-prd",
-                        "--commit-hash", "0" * 40)
-    assert hash_only.returncode == 2
-    assert "commit-2" in hash_only.stderr
+    result = _verify(specs, "--stage", "forge-2-tech", "--commit-hash", _FULL_HASH)
+    assert result.returncode == 2
+    assert "forge-verify-tech" in result.stderr
+    assert "has none" in result.stderr
     assert _state_bytes(specs) == before
+
+
+def test_state_verify_commit_2_rejects_result_metadata(tmp_path):
+    """Mixed result/hash metadata means the caller conflated the two writes."""
+    specs = _verify_fixture(tmp_path)
+    _reported(specs)
+    before = _state_bytes(specs)
+    for extra in (
+        ("--findings-file", "verify/f.md"),
+        ("--findings-count", "3"),
+        ("--verified-stage-version", "1"),
+    ):
+        result = _verify(specs, "--stage", "forge-1-prd",
+                         "--commit-hash", _FULL_HASH, *extra)
+        assert result.returncode == 2, extra
+        assert "does not accept" in result.stderr, f"{extra}: {result.stderr!r}"
+        assert _state_bytes(specs) == before, extra
+
+
+def test_the_two_commit_protocol_writes_null_then_the_commit_1_hash(tmp_path):
+    """REQ-STATE-04, end to end: every result status starts at null and is filled in.
+
+    The hash lands in a SECOND targeted state write, never by amending the first.
+    """
+    for status, extra in (
+        ("auto-verify-pending", ()),
+        ("passed", ("--verified-stage-version", "1")),
+        (
+            "findings-reported",
+            ("--findings-file", "verify/f.md", "--findings-count", "2",
+             "--verified-stage-version", "1"),
+        ),
+        ("skipped", ()),
+    ):
+        specs = _verify_fixture(tmp_path / f"protocol-{status}")
+        assert _verify(specs, "--stage", "forge-1-prd",
+                       "--status", status, *extra).returncode == 0, status
+        assert _entry(specs)["commitHash"] is None, f"{status}: Commit 1 must write null"
+
+        assert _verify(specs, "--stage", "forge-1-prd",
+                       "--commit-hash", _FULL_HASH).returncode == 0, status
+        entry = _entry(specs)
+        assert entry["commitHash"] == _FULL_HASH, status
+        assert entry["status"] == status, f"{status}: commit-2 changed the status"
+
+
+def test_state_verify_commit_2_json_echo_reports_the_written_entry(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    _reported(specs)
+    result = _verify(specs, "--stage", "forge-1-prd",
+                     "--commit-hash", _FULL_HASH, "--json")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["verifyKey"] == "forge-verify-prd"
+    assert payload["entry"]["commitHash"] == _FULL_HASH
+    assert payload["entry"]["status"] == "findings-reported"
+    assert payload["statePath"] == str(specs / "demo" / FS.PIPELINE_STATE_FILENAME)
 
 
 def test_state_verify_rejects_an_unknown_status_at_the_callable(tmp_path):
@@ -2250,6 +2447,58 @@ def test_neither_target_falls_back_to_the_other(tmp_path):
     assert "forge-verify-epic" not in written["stages"]
 
 
+def test_epic_commit_2_changes_only_the_hash_and_updated_at(tmp_path):
+    """Commit-2 mode is valid for an epic entry and stays epic-scoped (03 §3.4)."""
+    specs = _epic_fixture(tmp_path, revision=3, members=("login", "signup"))
+    assert _epic_verify(specs, "--status", "findings-reported",
+                        "--findings-file", "verify/epic-findings.md",
+                        "--findings-count", "2",
+                        "--verified-stage-version", "3").returncode == 0
+    members_before = _member_bytes(specs)
+    state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["updatedAt"] = "2020-01-01T00:00:00Z"
+    state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    before = json.loads(state_path.read_text(encoding="utf-8"))
+    assert before["stages"]["forge-verify-epic"]["commitHash"] is None
+
+    result = _epic_verify(specs, "--commit-hash", _FULL_HASH)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"recorded forge-verify-epic commitHash: {_FULL_HASH}"
+
+    after = _epic_state(specs)
+    assert after["updatedAt"] != "2020-01-01T00:00:00Z"
+    before["updatedAt"] = after["updatedAt"]
+    before["stages"]["forge-verify-epic"]["commitHash"] = _FULL_HASH
+    assert after == before, "epic commit-2 changed more than commitHash and updatedAt"
+    assert _member_bytes(specs) == members_before, "an epic write touched a member"
+
+
+def test_epic_commit_2_requires_an_existing_entry_and_creates_no_state_file(tmp_path):
+    specs = _epic_fixture(tmp_path, revision=1)
+    state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
+    assert not state_path.exists()
+    members_before = _member_bytes(specs)
+
+    result = _epic_verify(specs, "--commit-hash", _FULL_HASH)
+    assert result.returncode == 2
+    assert "forge-verify-epic" in result.stderr and "has none" in result.stderr
+    assert not state_path.exists(), "a rejected commit-2 lazily created the epic state"
+    assert _member_bytes(specs) == members_before
+
+
+def test_epic_commit_2_rejects_a_short_or_malformed_hash_before_mutation(tmp_path):
+    for label, value in _REJECTED_HASHES:
+        specs = _epic_fixture(tmp_path / f"epic-bad-{label}", revision=1)
+        assert _epic_verify(specs, "--status", "skipped").returncode == 0
+        state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
+        before = state_path.read_bytes()
+        result = _epic_verify(specs, "--commit-hash", value)
+        assert result.returncode == 2, f"{label}: exit {result.returncode}"
+        assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
+        assert state_path.read_bytes() == before, f"{label} mutated the epic state"
+
+
 # --------------------------------------------------------------------------- #
 # Enum parity with the schema (REQ-R4-03 — the schema stays source of truth)
 # --------------------------------------------------------------------------- #
@@ -2367,3 +2616,360 @@ def test_every_verb_writes_schema_valid_state_for_a_nested_epic_member(tmp_path)
         assert result.returncode == 0, f"{verb}: {result.stderr}"
         state = json.loads((member / FS.PIPELINE_STATE_FILENAME).read_text(encoding="utf-8"))
         assert validate_state(state) == [], f"{verb}: {validate_state(state)}"
+
+
+# --------------------------------------------------------------------------- #
+# Legacy short hashes stay readable (REQ-STATE-02, 03 §6.2)
+# --------------------------------------------------------------------------- #
+
+
+EPIC_MANIFEST = SCRIPTS / "epic-manifest.py"
+
+
+def _run_manifest(*argv: str) -> subprocess.CompletedProcess[str]:
+    """Invoke `epic-manifest.py` out-of-process, the way validate.sh does."""
+    return subprocess.run(
+        [sys.executable, str(EPIC_MANIFEST), *argv], capture_output=True, text=True
+    )
+
+
+#: A 7-character abbreviation of the kind pre-feature state files carry. Rejected
+#: on a NEW write; never rejected, migrated, truncated, or Git-resolved on a READ.
+_LEGACY_HASH = "a1b2c3d"
+
+
+def _legacy_member(tmp_path: Path) -> Path:
+    """An epic member whose stage AND verify entries both carry a short hash.
+
+    The manifest is upgraded to the full renderable shape (`_epic_fixture` writes
+    the minimum `state-verify` needs, which `render-status` rejects for missing
+    `charter`/`exposes`/`consumes`).
+    """
+    specs = _epic_fixture(tmp_path, revision=1, members=("login",))
+    (specs / "auth-overhaul" / FS.MANIFEST_FILENAME).write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "revision": 1,
+                "epic": "auth-overhaul",
+                "description": "Legacy-hash compatibility fixture.",
+                "status": "active",
+                "narrativeDoc": "EPIC.md",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-01T00:00:00Z",
+                "features": [
+                    {
+                        "name": "login",
+                        "charter": "Sign-in surface for the legacy-hash fixture.",
+                        "dependsOn": [],
+                        "exposes": [],
+                        "consumes": [],
+                    }
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    state_path = specs / "auth-overhaul" / "login" / FS.PIPELINE_STATE_FILENAME
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["stages"]["forge-1-prd"]["commitHash"] = _LEGACY_HASH
+    state["stages"]["forge-verify-prd"] = {
+        "status": "passed",
+        "verifiedAt": "2026-01-02T00:00:00Z",
+        "verifiedStageVersion": 1,
+        "commitHash": "9f8e7d6",
+    }
+    assert validate_state(state) == [], validate_state(state)
+    state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    return specs
+
+
+def test_a_legacy_short_hash_survives_every_read_side_path(tmp_path):
+    """03 §6.2: the reader must not reject, migrate, truncate, or Git-resolve it.
+
+    The new write-boundary validation is exactly that — a WRITE boundary. Every
+    consumer that merely loads the document has to keep working, so the four named
+    in the spec (`_read_state`, `_load_state_for_write`, the manifest status
+    readers, the navigator) and stage exit are each exercised against the same
+    file, and the bytes are re-checked at the end.
+    """
+    specs = _legacy_member(tmp_path)
+    state_path = specs / "auth-overhaul" / "login" / FS.PIPELINE_STATE_FILENAME
+
+    # _read_state + the navigator's ranked ledger.
+    ranked = _run("rank-features", "--specs-dir", str(specs), "--json")
+    assert ranked.returncode == 0, ranked.stderr
+    rows = json.loads(ranked.stdout)
+    assert [row["name"] for row in rows["active"]] == ["login"], rows
+    # The freshness classifier read the entry rather than choking on its hash.
+    assert rows["active"][0]["verifyState"] == "fresh", rows
+
+    # Stage exit, which reads the same document to route.
+    exited = _run(
+        "stage-exit", "--feature", "login", "--epic", "auth-overhaul",
+        "--stage", "forge-1-prd", "--specs-dir", str(specs), "--json",
+    )
+    assert exited.returncode == 0, exited.stderr
+
+    # The manifest status readers.
+    status = _run_manifest(
+        "render-status", "auth-overhaul", "--specs-dir", str(specs), "--json"
+    )
+    assert status.returncode == 0, status.stderr
+    assert json.loads(status.stdout)["epic"] == "auth-overhaul"
+
+    # Nothing above may have rewritten the file.
+    reread = json.loads(state_path.read_text(encoding="utf-8"))
+    assert reread["stages"]["forge-1-prd"]["commitHash"] == _LEGACY_HASH
+    assert reread["stages"]["forge-verify-prd"]["commitHash"] == "9f8e7d6"
+
+
+def test_load_state_for_write_carries_a_legacy_short_hash_forward(tmp_path):
+    """An unrelated WRITE must not migrate or drop a short hash it did not author."""
+    specs = _legacy_member(tmp_path)
+    assert _run(
+        "state-note", "--feature", "login", "--epic", "auth-overhaul",
+        "--note", "unrelated", "--specs-dir", str(specs),
+    ).returncode == 0
+    state = json.loads(
+        (specs / "auth-overhaul" / "login" / FS.PIPELINE_STATE_FILENAME)
+        .read_text(encoding="utf-8")
+    )
+    assert state["stages"]["forge-1-prd"]["commitHash"] == _LEGACY_HASH
+    assert state["stages"]["forge-verify-prd"]["commitHash"] == "9f8e7d6"
+
+    # And commit-2 against that same entry replaces it with a full hash — the only
+    # sanctioned way a legacy value ever moves.
+    assert _verify(specs, "--stage", "forge-1-prd", "--commit-hash", _FULL_HASH,
+                   "--epic", "auth-overhaul", name="login").returncode == 0
+    entry = json.loads(
+        (specs / "auth-overhaul" / "login" / FS.PIPELINE_STATE_FILENAME)
+        .read_text(encoding="utf-8")
+    )["stages"]["forge-verify-prd"]
+    assert entry["commitHash"] == _FULL_HASH
+    assert entry["status"] == "passed" and entry["verifiedStageVersion"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# Single-writer model preserved (REQ-REL-04, 07 §4.3)
+# --------------------------------------------------------------------------- #
+#
+# REQ-REL-04 is a NEGATIVE requirement, so nothing but a guard enforces it:
+# atomicity here protects against an INTERRUPTED write, not against concurrent
+# writers, and multi-session concurrency is explicitly out of scope (issue #180).
+# A future change that adds mutual exclusion has to amend REQ-REL-04 first — these
+# tests are what force that conversation instead of letting the model widen
+# silently under a plausible-sounding "make it safe" edit.
+
+#: Tokens that would betray a lock, lease, optimistic-version check, retry, or
+#: backoff inside the writers. `O_EXCL`/`O_CREAT` are here because a hand-rolled
+#: exclusive-create lockfile is the cheapest way to smuggle one in.
+_MUTEX_TOKENS = (
+    "fcntl", "flock", "lockf", "LOCK_EX", "LOCK_NB", "msvcrt", "filelock",
+    "portalocker", "threading.", "multiprocessing", "O_EXCL", "O_CREAT",
+    ".lock", "lockfile", "lease", "backoff", "sleep", "retry", "retries",
+    "compare_and_swap", "stateVersion", "expectedVersion", "if_match",
+)
+
+
+def _function_source(source: str, name: str) -> str:
+    """Return one top-level ``def name(...)`` block, verbatim."""
+    lines = source.splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if line.startswith(f"def {name}(")), None
+    )
+    assert start is not None, f"def {name}( not found in {FORGE_SESSION}"
+    end = start + 1
+    while end < len(lines) and (
+        not lines[end].strip() or lines[end].startswith((" ", "\t", ")"))
+    ):
+        end += 1
+    return "\n".join(lines[start:end])
+
+
+#: Every function on the state write path, from the verb entrypoints down.
+_WRITER_FUNCTIONS = (
+    "_write_state",
+    "_commit_state",
+    "_load_state_for_write",
+    "_load_epic_state_for_write",
+    "_load_verify_target",
+    "cmd_state_verify",
+    "cmd_state_complete",
+)
+
+
+def test_the_state_writers_acquire_no_lock_lease_or_version_guard():
+    source = read(FORGE_SESSION)
+    for name in _WRITER_FUNCTIONS:
+        body = _function_source(source, name)
+        for token in _MUTEX_TOKENS:
+            assert token not in body, (
+                f"{name} contains {token!r}: REQ-REL-04 forbids adding a lock, "
+                f"lease, optimistic-version check, retry, or backoff to the state "
+                f"writers. Amend REQ-REL-04 before widening this."
+            )
+
+
+def test_the_single_writer_guard_can_actually_fail():
+    """Negative control: a `_function_source` returning "" would pass vacuously.
+
+    Proves the slice really carries the writer's body, stops at the next top-level
+    definition, and that the token list catches a lock smuggled into it.
+    """
+    body = _function_source(read(FORGE_SESSION), "_write_state")
+    for expected in ("def _write_state(", "tempfile.mkstemp", "os.fsync", "os.replace"):
+        assert expected in body, f"{expected} missing from the sliced body"
+    assert "def _resolve_feature_dir_for_write(" not in body, "the slice overran"
+
+    widened = body.replace(
+        "        os.replace(tmp_path, state_path)",
+        "        fcntl.flock(fd, fcntl.LOCK_EX)\n        os.replace(tmp_path, state_path)",
+    )
+    assert widened != body, "the control failed to inject a lock"
+    assert any(token in widened for token in _MUTEX_TOKENS), (
+        "the token list would not catch a flock() added to _write_state"
+    )
+
+
+def _writer_spies(monkeypatch, *, replace_fails: bool = False) -> dict:
+    """Install the only three spies 07 §4.3 permits; return the recorded calls.
+
+    Deliberately NOT a general mocking layer: patching anything else would let the
+    test assert against a writer that no longer exists.
+    """
+    record: dict = {"order": [], "temps": []}
+    real_mkstemp, real_fsync, real_replace = (
+        FS.tempfile.mkstemp, FS.os.fsync, FS.os.replace
+    )
+
+    def mkstemp(*args, **kwargs):
+        record["order"].append("mkstemp")
+        fd, name = real_mkstemp(*args, **kwargs)
+        record["temps"].append(Path(name))
+        return fd, name
+
+    def fsync(*args, **kwargs):
+        record["order"].append("fsync")
+        return real_fsync(*args, **kwargs)
+
+    def replace(*args, **kwargs):
+        record["order"].append("replace")
+        if replace_fails:
+            raise OSError("Read-only file system")
+        return real_replace(*args, **kwargs)
+
+    monkeypatch.setattr(FS.tempfile, "mkstemp", mkstemp)
+    monkeypatch.setattr(FS.os, "fsync", fsync)
+    monkeypatch.setattr(FS.os, "replace", replace)
+    return record
+
+
+def test_a_verify_write_is_exactly_temp_file_fsync_replace(tmp_path, monkeypatch):
+    """One sibling temp, one fsync, one replace — and no fourth sibling, ever."""
+    specs = _verify_fixture(tmp_path)
+    feature_dir = specs / "demo"
+    before = sorted(p.name for p in feature_dir.iterdir())
+    record = _writer_spies(monkeypatch)
+
+    FS.cmd_state_verify("demo", "forge-1-prd", specs, None, status="passed",
+                        verified_stage_version=1)
+
+    assert record["order"] == ["mkstemp", "fsync", "replace"], record["order"]
+    assert len(record["temps"]) == 1, "a second sibling file was created"
+    assert record["temps"][0].parent == feature_dir, "the temp file was not a sibling"
+    assert not record["temps"][0].exists(), "os.replace should have consumed the temp"
+    assert sorted(p.name for p in feature_dir.iterdir()) == before, (
+        "the write created or removed a sibling beyond its own temp file"
+    )
+
+
+def test_an_epic_verify_write_uses_the_same_unguarded_sequence(tmp_path, monkeypatch):
+    """The epic branch reuses `_commit_state`, so it inherits the same model."""
+    specs = _epic_fixture(tmp_path, revision=2)
+    epic_dir = specs / "auth-overhaul"
+    before = sorted(p.name for p in epic_dir.iterdir())
+    record = _writer_spies(monkeypatch)
+
+    FS.cmd_state_verify("auth-overhaul", "forge-0-epic", specs, None,
+                        status="passed", verified_stage_version=2)
+
+    assert record["order"] == ["mkstemp", "fsync", "replace"], record["order"]
+    assert len(record["temps"]) == 1
+    assert sorted(p.name for p in epic_dir.iterdir()) == sorted(
+        [*before, FS.EPIC_STATE_FILENAME]
+    ), "the epic write touched something other than .epic-state.json"
+
+
+def test_a_failed_replacement_leaves_the_original_byte_identical(tmp_path, monkeypatch):
+    """No retry, no backoff, no debris — the failure is surfaced, not worked around."""
+    specs = _verify_fixture(tmp_path)
+    feature_dir = specs / "demo"
+    state_path = feature_dir / FS.PIPELINE_STATE_FILENAME
+    original = state_path.read_bytes()
+    before = sorted(p.name for p in feature_dir.iterdir())
+    record = _writer_spies(monkeypatch, replace_fails=True)
+
+    try:
+        FS.cmd_state_verify("demo", "forge-1-prd", specs, None, status="passed",
+                            verified_stage_version=1)
+    except FS.UsageError as exc:
+        assert "atomic write to" in str(exc)
+    else:  # pragma: no cover - the assertion below reports the miss
+        raise AssertionError("a failed os.replace did not raise UsageError")
+
+    assert record["order"].count("replace") == 1, "the writer retried a failed replace"
+    assert record["order"] == ["mkstemp", "fsync", "replace"], record["order"]
+    assert state_path.read_bytes() == original, "a failed write touched the target"
+    assert not record["temps"][0].exists(), "the temp file was left behind"
+    assert sorted(p.name for p in feature_dir.iterdir()) == before, "temp debris remains"
+
+
+# --------------------------------------------------------------------------- #
+# No `git commit --amend` provenance route (REQ-STATE-04, 03 §6.3)
+# --------------------------------------------------------------------------- #
+
+
+def _canon_text_files() -> list[Path]:
+    """Every canon source/prose file a provenance route could hide in."""
+    roots = (SCRIPTS, SKILLS, REFERENCES, REPO_ROOT / "agents")
+    suffixes = {".py", ".md", ".json", ".sh"}
+    return sorted(
+        path
+        for root in roots
+        if root.is_dir()
+        for path in root.rglob("*")
+        if path.is_file() and path.suffix in suffixes
+    )
+
+
+def test_no_script_reaches_for_amend_at_all():
+    """`--amend` is not a route any executable may take (REQ-STATE-04)."""
+    for path in sorted(SCRIPTS.rglob("*.py")) + sorted(SCRIPTS.rglob("*.sh")):
+        assert "--amend" not in read(path), f"{path} references --amend"
+
+
+def test_every_canon_mention_of_amend_forbids_it():
+    """Prose may name `--amend` only to prohibit it — never as an instruction.
+
+    The two-commit protocol exists precisely because amending rewrites HEAD, so a
+    hash captured before the amend points at a commit that is not in the final
+    history. A line that mentioned `--amend` without forbidding it would be a
+    provenance route, however it was phrased.
+    """
+    files = _canon_text_files()
+    assert files, "no canon files were scanned"
+    seen = 0
+    for path in files:
+        for number, line in enumerate(read(path).splitlines(), start=1):
+            if "--amend" not in line:
+                continue
+            seen += 1
+            lowered = line.lower()
+            assert "never" in lowered or "without" in lowered, (
+                f"{path.relative_to(REPO_ROOT)}:{number} mentions --amend without "
+                f"forbidding it:\n{line.strip()}"
+            )
+    assert seen, "the prohibition itself disappeared from canon"

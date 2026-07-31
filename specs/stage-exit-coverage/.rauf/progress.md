@@ -346,3 +346,73 @@ Added `_load_epic_state_for_write` and branched `cmd_state_verify` on
 `PASS: adapters/ matches a fresh generation (no drift)`;
 `python3 -m pytest tests -q` -> 901 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean.
+
+## Item 007 — commit-2 provenance, full-hash validation, single-writer guard
+
+Landed commit-2 mode in `cmd_state_verify`, the shared `_assert_full_commit_hash` guard on
+both writers, the REQ-REL-04 single-writer guard, and the no-`--amend` canon guard. No
+schema moved — the 40-hex rule is a WRITE boundary only.
+
+### Gotchas for later items
+
+- **`_load_verify_target(specs_dir, feature, epic, is_epic_target)` is new** and is now the
+  single resolver both `cmd_state_verify` modes go through (it wraps
+  `_load_epic_state_for_write` / `_load_state_for_write` and returns
+  `(state_path, state, revision|None)`). Item 012's scheduling path should call it rather
+  than re-branching on `is_epic_target` — a third branch is how the two resolvers drift
+  into each other's targets.
+
+- **Validation order in `cmd_state_verify` is now: mode exclusivity → commit-2 metadata
+  rejection → hash → target selection → commit-2 branch (early return) → result-mode
+  metadata → load.** The commit-2 branch returns BEFORE the result-metadata block, so that
+  block still only ever sees `status is not None`. Anything inserted between target
+  selection and the commit-2 branch runs in both modes.
+
+- **`_assert_full_commit_hash` fires in `cmd_state_complete` BEFORE
+  `_load_state_for_write`**, so a malformed hash now out-ranks the older
+  "stage is not complete" error. Two pre-existing tests passed `deadbeef` to reach that
+  older message and had to be moved to a real 40-hex value. Any future test that wants the
+  stage-status error must use a well-formed hash.
+
+- **`_print_state_verify` grew a second parameter** (`commit_hash`), so `main()` dispatches
+  it through a lambda like `state-complete` does. Commit-2 prints
+  `recorded {verifyKey} commitHash: {hash}` — reporting the untouched status would read as
+  if the result had been re-written.
+
+- **The 07 §4.5 boundary tables are module constants in both test files** —
+  `_ACCEPTED_HASHES`/`_REJECTED_HASHES` in `tests/test_state_verbs.py`,
+  `ACCEPTED_HASHES`/`REJECTED_HASHES` in `tests/test_state_schema_conformance.py`. They are
+  deliberately separate: the first file asserts CLI behavior, the second asserts the result
+  still conforms. Extend both if the boundary moves.
+
+- **`_epic_fixture` writes the MINIMUM manifest `state-verify` needs, which
+  `epic-manifest.py render-status` rejects** (missing `charter`/`exposes`/`consumes`). The
+  legacy-hash read-path test therefore overwrites the manifest with the full renderable
+  shape. Any later test that runs `render-status` over an `_epic_fixture` epic needs the
+  same upgrade.
+
+- **The `--amend` guard is a NEGATION guard, not an absence guard.** Eleven canon files
+  legitimately mention `--amend` — every one of them to forbid it — so
+  `test_every_canon_mention_of_amend_forbids_it` requires each such line to also contain
+  `never` or `without`, and `test_no_script_reaches_for_amend_at_all` bans the string
+  outright under `scripts/`. A new prohibition worded differently ("do not use `--amend`")
+  will fail the guard; add the wording to the accepted set rather than dropping the check.
+
+- **`_MUTEX_TOKENS` includes `sleep`, `retry`, `O_CREAT` and `threading.`**, and is applied
+  to seven functions on the write path (`_write_state`, `_commit_state`, both
+  `_load_*_for_write`, `_load_verify_target`, `cmd_state_verify`, `cmd_state_complete`).
+  A later item that adds a legitimate `time.sleep` anywhere in that set will trip it —
+  that is the intent (REQ-REL-04 must be amended first), so route any waiting through a
+  function outside the list rather than weakening the token set.
+
+- **`_function_source(source, name)` slices one top-level `def` block** by scanning to the
+  next unindented line. It asserts the name was found, and a negative control proves the
+  slice is non-empty and stops before the next definition — a slicer returning `""` would
+  satisfy every `not in` assertion vacuously.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite` and
+`PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 950 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean.
