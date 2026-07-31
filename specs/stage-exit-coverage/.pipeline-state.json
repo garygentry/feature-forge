@@ -50,23 +50,24 @@
         "07-testing-strategy.md",
         "TRACEABILITY.md"
       ],
-      "completedAt": "2026-07-30T22:04:42Z",
-      "version": 3,
+      "completedAt": "2026-07-31T02:08:14Z",
+      "version": 4,
       "basedOnVersions": {
         "forge-1-prd": 3,
         "forge-2-tech": 3
       },
-      "commitHash": "f38383731b908eeebdb0f28d8b089ec8f28b8e52"
+      "commitHash": null
     },
     "forge-verify-specs": {
-      "status": "findings-reported",
+      "status": "findings-applied",
       "findingsFile": ".verification/VERIFY-specs-2026-07-30-round5.md",
       "findingsCount": 33,
       "verifiedAt": "2026-07-30T23:30:00Z",
-      "verifiedStageVersion": 3
+      "verifiedStageVersion": 4,
+      "fixedAt": "2026-07-30T23:55:00Z"
     },
     "forge-4-backlog": {
-      "status": "complete",
+      "status": "stale",
       "startedAt": "2026-07-30T20:44:14Z",
       "completedAt": "2026-07-30T22:04:45Z",
       "version": 2,
@@ -82,7 +83,7 @@
     }
   },
   "currentStage": "forge-4-backlog",
-  "updatedAt": "2026-07-30T23:30:00Z",
+  "updatedAt": "2026-07-30T23:55:00Z",
   "branch": "forge/stage-exit-coverage",
-  "notes": "BACKLOG CHECK (read this before generating items): the backlog must NOT contain any item creating scripts/forge_json.py. That module was specified, then deliberately dropped in f8f01c9 \u2014 the duplicate-aware JSON loader is MIRRORED into scripts/forge-session.py and scripts/forge-bootstrap.py, held in sync by a new tests/test_json_loader_parity.py, because the flat scripts share no import module by standing repo invariant (see tests/test_stage_constants_parity.py and 01-architecture-layout.md 3.4). Expect items for: both mirrored copies, their consumer wiring, the parity drift guard, and adapter regeneration of the two consumers. Expect NO item for a new file under scripts/ and NO change to RUNTIME_HELPERS (it stays at six entries). An item proposing forge_json.py means a stale spec was read \u2014 stop and re-read 01 3.4 and 05 2.1. Second check: no item may introduce locking, leasing, or optimistic versioning for state writes \u2014 PRD REQ-REL-04 forbids it; see issue #180. Basis: PRD v3, tech-spec v3, specs v2."
+  "notes": "SPECS ARE v4 as of the round-5 fix pass (33 findings applied). backlog.json is v2, authored against specs v3, and the cascade has marked forge-4-backlog STALE. Before running the loop, re-verify the backlog: the round-5 fixes added obligations it cannot cover, notably the stageNoun/verifyStage directive fields, the render-status subprocess timeout, the consent-gate variant, the auto-verify-pending pre-flight gates in forge-6-docs and forge-5-loop, the shared-conventions.md and findings-template.md edits, the falsified-canon deletions (R4 exclusion blockquote, forge-fix freshness claims), the --epic fences on the new state-verify call sites, the navigator skills/forge/SKILL.md edits, the owner: nested token, and the REQ-FOLLOW-01 runner-contract wording fix. STANDING INVARIANTS (unchanged): no item may create scripts/forge_json.py -- the duplicate-aware JSON loader is MIRRORED into scripts/forge-session.py and scripts/forge-bootstrap.py, guarded by tests/test_json_loader_parity.py, because the flat scripts share no import module (01 3.4, 05 2.1); RUNTIME_HELPERS stays at six entries. No item may introduce locking, leasing, or optimistic versioning for state writes -- PRD REQ-REL-04 forbids it, see issue #180. Basis: PRD v3, tech-spec v3, specs v4."
 }

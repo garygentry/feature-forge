@@ -278,6 +278,22 @@ terminal block. Capable Pi therefore receives the same logical gate as capable C
 incapable Claude, Pi, or generic callers receive manual verify-first output
 (REQ-EXIT-07).
 
+**Consent variant on a `none` gate.** When `runInStageVerify: true` and the caller may not
+dispatch unsolicited (`04-skill-integration.md` §3.3 step 2), the emitted `verifyGate` is
+`none` — §4's routing table sets it that way, and it stays `none`, because changing it to
+`standard` would alter directive values for the existing stages 0–4 and collide with
+REQ-COMPAT-01. The caller nevertheless needs consent before dispatching, so it **reuses
+this same gate block**, with one change: **omit choice 2**. Auto-verify is already
+effective on this path, so "enable auto-verify going forward" is a no-op, and offering a
+choice with no trade-off behind it violates REQ-A11Y-01's requirement that every label
+carry a real one. The consent form is therefore exactly two choices:
+
+1. **Verify now** (recommended).
+2. **Skip for now** — persisted as an explicit `skipped` before any advancing block.
+
+This is the only case in which a rendered gate and the emitted `verifyGate` value differ,
+and it exists because the gate here supplies *consent* rather than selecting *policy*.
+
 ### 5.2 Rendering contract
 
 Extend the exact baseline helper at `scripts/forge-session.py::_next_steps_block` to the
@@ -299,6 +315,15 @@ The renderer MUST:
 5. preserve existing blocking/non-blocking `epicReconcile` precedence without allowing a
    production reconcile action to bypass unresolved verification;
 6. append `NEXT_STEPS_SENTINEL` as the final line, with no trailing content.
+
+Rules 4 and 5 feed the same unfenced deferred line from two sources, so their precedence
+is fixed here: on a **blocking** reconcile, `epicReconcile["deferred"]` supplies that line
+(the canonical production command demoted behind the reconcile — `00` §4), and it is
+rendered **first**, as `After reconciling, continue the pipeline with: …`. A caller-passed
+`deferred_command` (`00` §5) is rendered after it, on its own line, and never replaces it.
+The two are not alternatives: `epicReconcile["deferred"]` is a command the *router*
+demoted, while `deferred_command` is post-verification guidance the *caller* supplied.
+Neither is ever fenced, so neither can be mistaken for `primary_command`.
 
 When verification and blocking epic reconciliation coexist, verification remains primary;
 reconciliation becomes the first deferred production action, and the ordinary production
@@ -376,6 +401,32 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
     ...
 ```
 
+**Invocation contract.** `<bundle-root>` is not a path the router may guess:
+`forge-session.py` is copied verbatim into six adapter bundles and runs from an arbitrary
+cwd. Resolve the helper as `Path(__file__).resolve().parent / "epic-manifest.py"` — the
+sibling `RUNTIME_HELPERS` guarantees ships beside it in every bundle, matching the
+existing `_resolve_plugin_root` convention in `scripts/forge-session.py` — invoke it with
+`sys.executable` rather than a bare `python3`, and bound it:
+
+```python
+subprocess.run(
+    [sys.executable, str(helper), "render-status", epic, "--specs-dir", str(specs_dir), "--json"],
+    capture_output=True,
+    text=True,
+    timeout=10,
+    check=False,
+)
+```
+
+The `timeout=10` bound matches every other `subprocess.run` in `scripts/forge-session.py`
+(the git call and the `forge-root.sh` resolver). A missing sibling, non-zero exit,
+`subprocess.TimeoutExpired`, `OSError`, or unparseable stdout is converted to `UsageError`
+and reported like any other manifest-command failure — naming the epic and the recovery
+command, emitting no sentinel and never a guessed member route. Without the explicit
+bound this is the one unbounded blocking call on the docs exit path, and a hung or very
+large epic would stall stage closure with no diagnostic, defeating §8's own REQ-PERF-01
+claim below.
+
 The router consumes the command result's live `nextCommand`, actionable/blocked state,
 and rollup; it MUST NOT duplicate dependency or completion derivation in
 `forge-session.py` (tech-spec §3.5):
@@ -409,7 +460,18 @@ REQ-SEC-01).
 - If state is absent, unreadable, malformed, ambiguous, escapes containment, or cannot be
   associated with the selected epic, emit a named warning directive and fall back only to
   `/feature-forge:forge-1-prd MEMBER`. Do not crash stage closure and do not infer later
-  progress (REQ-PROD-06).
+  progress (REQ-PROD-06). The warning is appended to `directives.warnings` (`00` §4) as
+  entry 1 of that list's fixed order, with exactly this text:
+
+  ```text
+  Warning: {member}: pipeline state could not be resolved under epic {epic} ({reason}); routing to forge-1-prd. Run /feature-forge:forge {member} to inspect its state.
+  ```
+
+  where `{reason}` is exactly one of `missing`, `unreadable`, `malformed`, or
+  `not a member of this epic`. The template is normative — `07-testing-strategy.md` §3
+  asserts this literal, not a paraphrase, and the trailing sentence is what satisfies
+  REQ-OBS-02's requirement that a warning name both the affected feature and the recovery
+  action.
 - Creation mode remains unchanged: a newly created member with no progress routes to PRD.
 
 Explicit unsafe member names remain `UsageError`; the tolerant PRD fallback applies to
@@ -430,6 +492,7 @@ handler (REQ-REL-01/02):
 | Strict feature/epic resolution | unsafe, missing, ambiguous, wrong epic | exit 2 without filesystem mutation or guessed route |
 | Established stage 0–4 state read | missing/corrupt | preserve fixed-successor compatibility, except named epic-member fallback in §9 |
 | Epic docs status | command/JSON/graph failure | exit 2 with epic and recovery command; no guessed member |
+| Epic docs status | subprocess timeout (10s), missing sibling helper, or spawn failure | exit 2 naming the epic and `/feature-forge:forge-0-epic EPIC`; no guessed member, no sentinel |
 | Terminal rendering | no primary route available | exit 2 rather than emit an empty fence |
 | Nested branch routing | successful nested result | structured payload with no block/sentinel; not an error |
 
@@ -486,6 +549,11 @@ Implement these specifications first:
   `StageExitPayload`, `StageExitDirectives`, sentinel, mappings, and `UsageError`.
 - `01-architecture-layout.md` — file ownership, runtime executable paths, canonical
   caller locations, and implementation sequence.
+- `03-verification-state.md` — the `state-verify` writer and the `auto-verify-pending`
+  label. §4's scheduling boundary calls `cmd_state_verify` and §4 classifies
+  `auto-pending` as outstanding, so the writer must exist first (`03` §9 states the same
+  ordering from the other side; `01` §5 sequences it at step 3, before this spec's
+  step 5).
 
 Runtime dependencies:
 

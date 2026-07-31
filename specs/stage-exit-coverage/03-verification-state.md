@@ -225,7 +225,7 @@ Apply this result-mode matrix:
 |---|---|---|---|
 | `auto-verify-pending` | none; current target revision is derived | reject findings metadata and `verified_stage_version` | replace with pending status, `scheduledAt`, `scheduledStageVersion=current`, `commitHash=null`; clear terminal timestamps/version/findings |
 | `passed` | `verified_stage_version=current` | findings count, if supplied, must be `0`; reject stale/non-positive version | replace pending; set `verifiedAt`, current `verifiedStageVersion`, `commitHash=null`; clear scheduling and fix metadata |
-| `findings-reported` | current `verified_stage_version`, non-empty `findings_file`, non-negative `findings_count` | reject stale/non-positive version | replace pending; set report metadata, `verifiedAt`, current version, `commitHash=null`; clear scheduling/fix metadata |
+| `findings-reported` | current `verified_stage_version`, non-negative `findings_count`, and a non-empty `findings_file` that is **relative** and contained by the resolved feature/epic directory | reject stale/non-positive version; reject an absolute `findings_file`, any `..` segment, and NUL/control characters — before any mutation | replace pending; set report metadata, `verifiedAt`, current version, `commitHash=null`; clear scheduling/fix metadata |
 | `findings-applied` | an existing `findings-reported` or `findings-applied` entry | reject `verified_stage_version`; supplied findings metadata must equal the existing report | preserve report metadata, set `fixedAt`, set `commitHash=null`, delete `verifiedStageVersion`, clear scheduling/`verifiedAt` |
 | `skipped` | none | reject findings metadata and `verified_stage_version` | replace pending with `skipped`, set `commitHash=null`, clear scheduling, report, verified, fixed, and version fields |
 
@@ -362,9 +362,42 @@ run <host-translated forge-verify command> to resolve it.
 ```
 
 When the recorded scheduled revision differs from current, append both revision numbers.
-Do not dump or reformat the full state file. JSON output carries the stable
-`verifyState: "auto-pending"`, served stage, and retry command; warnings stay on stderr
-unless they are an existing structured `warnings` field (REQ-OBS-01/02).
+Do not dump or reformat the full state file. JSON output carries three named keys, not
+prose: `verifyState` (the stable `"auto-pending"` label), `verifyStage` (the production
+stage the debt is owed on — `StageExitDirectives.verifyStage` in `00` §4 on the stage-exit
+side, `FeatureRow.verifyStage` on the navigator side), and `verifyCommand` (the retry
+command). Naming them here is what keeps the two emitters reporting the same thing;
+without `verifyStage` a stage-exit consumer would have to invent an undeclared key,
+because `servedStage` is branch-exit-only and is None on a production-stage exit.
+Warnings stay on stderr unless they are an existing structured `warnings` field
+(REQ-OBS-01/02).
+
+### 5.4 Downstream pre-flight parity (REQ-DEBT-05)
+
+REQ-DEBT-05 names four consumer classes, and the fourth — **downstream pre-flight
+checks** — is not covered by §5.1 (session classifiers), §5.2 (epic manifest), or §5.3
+(diagnostic text). Specify it here, because the pre-flight gates are enumerations in skill
+bodies rather than classifier functions, and an enumeration that predates
+`auto-verify-pending` does not fail loudly when it meets one — it silently takes whichever
+branch the value happens not to match.
+
+Any canon gate that reads a `stages.forge-verify-*` entry MUST treat `auto-verify-pending`
+as an **explicit third case**: outstanding, not resolved, and not the same as `never`.
+Falling into a resolved-and-proceed branch treats owed debt as discharged; falling into a
+never-scheduled branch reports it as un-attempted, which is exactly the conflation
+REQ-DEBT-02 forbids. The diagnostic wording is §5.3's — naming the served stage and the
+retry command.
+
+Two live call sites are in scope, and `04-skill-integration.md` owns their edits (§7.2 for
+docs, §6 for the loop):
+
+- `skills/forge-6-docs/SKILL.md` Step 1 branches on an explicit status enumeration — warn
+  when `stages.forge-verify-impl` is absent or `skipped`, proceed silently on
+  `findings-applied | findings-reported | passed`. `auto-verify-pending` matches neither
+  branch today, and the likely reading (not in the warn set) proceeds silently.
+- `skills/forge-5-loop/SKILL.md` Step 1b warns "Backlog hasn't been verified yet" for
+  anything outside `{passed, findings-applied}`, which reports owed-and-dropped
+  auto-verify as never-scheduled.
 
 ## 6. Hash Compatibility and Provenance
 
@@ -424,6 +457,11 @@ byte-identical. Covered failures include:
 - missing entry for commit-2;
 - short/non-hex hash on a new write;
 - unsafe name, mismatched epic identity, ambiguous member, path escape;
+- a `findings_file` that is absolute, contains a `..` segment, carries NUL/control
+  characters, or otherwise escapes the resolved feature/epic directory. `00` §6 defines
+  the field as relative to the feature directory, and downstream consumers (`forge-fix`
+  selecting the report, `04` §5.1) follow the stored value, so it gets the same
+  fail-closed containment treatment as the write target itself (REQ-SEC-01);
 - missing/corrupt/non-object state or manifest;
 - malformed `stages` objects;
 - temp creation, serialization, flush/fsync, or `os.replace` failure.

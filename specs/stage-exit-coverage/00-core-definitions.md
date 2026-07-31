@@ -42,7 +42,7 @@ Do not introduce Pydantic, dataclasses, or `jsonschema` at runtime.
 Add these exact domains in `scripts/forge-session.py`:
 
 ```python
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, TypedDict, get_args
 
 ProductionStage = Literal[
     "forge-0-epic",
@@ -93,19 +93,17 @@ FixOutcome = Literal[
     "deferred",
 ]
 
-EXIT_STAGES: Final[tuple[str, ...]] = (
-    "forge-0-epic", "forge-1-prd", "forge-2-tech", "forge-3-specs",
-    "forge-4-backlog", "forge-5-loop", "forge-6-docs",
-    "forge-verify", "forge-fix",
-)
+# Derived, never hand-listed: the Literal aliases above are the single place each
+# domain is written. `ruff check` does not verify Literal conformance, so a
+# hand-copied second list would drift silently — the failure this repository has
+# already been bitten by twice (tests/test_stage_constants_parity.py,
+# tests/test_agent_targets_parity.py). Deriving removes the second list entirely.
+EXIT_STAGES: Final[tuple[str, ...]] = get_args(ExitStage)
 EXIT_OUTCOMES: Final[dict[str, frozenset[str]]] = {
-    "forge-5-loop": frozenset({"complete", "partial", "blocked", "needs-human", "deferred"}),
-    "forge-6-docs": frozenset({"complete", "blocked"}),
-    "forge-verify": frozenset({"passed", "findings", "skipped", "failed"}),
-    "forge-fix": frozenset({
-        "no-findings", "decisions", "failed", "applied", "reverified",
-        "reverify-findings", "deferred",
-    }),
+    "forge-5-loop": frozenset(get_args(LoopOutcome)),
+    "forge-6-docs": frozenset(get_args(DocsOutcome)),
+    "forge-verify": frozenset(get_args(VerifyOutcome)),
+    "forge-fix": frozenset(get_args(FixOutcome)),
 }
 VERIFY_MODE_TO_STAGE: Final[dict[str, str]] = {
     "epic": "forge-0-epic",
@@ -118,6 +116,10 @@ VERIFY_MODE_TO_STAGE: Final[dict[str, str]] = {
 NEXT_STEPS_SENTINEL: Final = "─ forge: end of stage ─"
 FULL_GIT_HASH_RE: Final = re.compile(r"[0-9a-fA-F]{40}")
 ```
+
+`VERIFY_MODE_TO_STAGE` is the one domain still written twice, because neither side is a
+subset of the other: its keys MUST equal `set(get_args(VerifyMode))` and its values MUST
+be a subset of `get_args(ProductionStage)`. Assert both in the drift guard.
 
 `PRODUCTION_STAGES` remains the existing ordered six-stage tuple used by
 `next_stage(state: dict) -> str | None`; `forge-0-epic` participates in exit and verify
@@ -212,8 +214,15 @@ class EpicReconcile(TypedDict, total=False):
     # reconcile was evaluated and found nothing, distinct from the key being absent
     # because the feature is not an epic member.
     count: int
-    # Reconcile explicitly deferred by the user, carrying the reason; None means
-    # not deferred. A deferred reconcile never blocks, whatever `required` says.
+    # Canonical (untranslated) production command demoted behind a blocking
+    # reconcile — rendered as the unfenced "After reconciling, continue the
+    # pipeline with: …" line and passed through `_host_command` at render time.
+    # Present only when `required: True`; None/absent otherwise. It is a COMMAND,
+    # never a user-supplied reason: the live writer sets it to `next_command`
+    # (scripts/forge-session.py) and `_next_steps_block` translates it for the
+    # host. Repurposing it to carry prose would send free text through
+    # `_host_command` and strip the blocking follow-up line of its source
+    # (REQ-COMPAT-01).
     deferred: str | None
 
 
@@ -228,6 +237,12 @@ class StageExitDirectives(TypedDict, total=False):
 
     # The stage whose exit this is — always one of EXIT_STAGES. Always present.
     stage: str
+    # Human-readable noun for this stage's artifact, used by
+    # references/stage-exit-protocol.md's "{stageNoun}" slots (the auto-verify
+    # heading and the "Verify {stageNoun} now" gate label). Always present;
+    # STAGE_NOUN.get(stage, stage), so it defaults to the stage id when unmapped.
+    # Pre-existing key, retained verbatim for REQ-COMPAT-01.
+    stageNoun: str
     # For a verify/fix branch exit, the production stage the diversion served and
     # rejoins. None on a production-stage exit, which serves only itself.
     servedStage: str | None
@@ -265,6 +280,13 @@ class StageExitDirectives(TypedDict, total=False):
     # Current verification state of the served artifact, as classified by
     # `verify_state` — including "auto-pending" for unrun scheduled verification.
     verifyState: str
+    # Production stage the outstanding/owed verification belongs to — the value
+    # `pending_verify()` returns; mirrors FeatureRow.verifyStage so navigator rows
+    # and stage-exit JSON report the same thing. None when nothing is outstanding.
+    # DISTINCT from `servedStage`, which is branch-exit-only: on a production-stage
+    # exit `servedStage` is None while `verifyStage` names the stage the debt is
+    # owed on (REQ-OBS-01, REQ-DEBT-05).
+    verifyStage: str | None
     # Which gate form to render, derived from verifyState and verifyCapability.
     verifyGate: str
     # Host-rendered verify command. Present whenever verification is reachable,
@@ -277,9 +299,13 @@ class StageExitDirectives(TypedDict, total=False):
     # Effective autoVerify for THIS stage after applying autoVerifyStages overrides
     # over the autoVerify default. Not the raw config value.
     autoVerifyEffective: bool
-    # True only if the auto-verify-pending marker was durably persisted. False with
-    # `runInStageVerify: True` means the debt write failed — the caller must not
-    # treat scheduling as done (REQ-DEBT-01/04).
+    # True whenever `runInStageVerify` is True — `03-verification-state.md` §4.1
+    # persists the auto-verify-pending marker BEFORE this payload exists, and a
+    # failed debt write raises UsageError with no payload at all. So
+    # `runInStageVerify: True` with `autoVerifyDebtRecorded: False` is UNREACHABLE;
+    # the field is carried so tests and downstream tools can assert that invariant
+    # rather than infer it. False with `runInStageVerify: False` simply means no
+    # debt was owed (REQ-DEBT-01/04, REQ-REL-02).
     autoVerifyDebtRecorded: bool
     # True when an autoFix chain may run unattended: autoFix configured, zero
     # unresolved decision points, and a clean tree at the pre-scheduling snapshot.
@@ -299,7 +325,13 @@ class StageExitDirectives(TypedDict, total=False):
     deferredCommand: str | None
     # Keys in autoVerifyStages that name no verify-capable stage — a config typo.
     # Empty list means the config was checked and clean; the key is always present
-    # when config was read at all, so [] and absent differ.
+    # when config was read at all, so [] and absent differ. Each key renders as
+    # exactly:
+    #   Warning: autoVerifyStages key "{key}" names no verify-capable stage; it is
+    #   ignored. Valid keys are forge-1-prd, forge-2-tech, forge-3-specs,
+    #   forge-4-backlog, forge-5-loop.
+    # Keys are rendered in sorted order, per the `02` §10 determinism rule
+    # (REQ-OBS-02, REQ-REL-01).
     invalidAutoVerifyKeys: list[str]
     # Whether the working directory is a git repository at all.
     gitRepo: bool
@@ -307,9 +339,18 @@ class StageExitDirectives(TypedDict, total=False):
     # state mutation does not dirty its own precondition. None when `gitRepo` is
     # False — unknown, not clean.
     cleanTree: bool | None
-    # Human-readable non-fatal advisory. Present only when there is something to
-    # warn about; absence means no warning, not an empty one.
-    warning: str
+    # Human-readable non-fatal advisories, in a fixed deterministic order:
+    # (1) the epic-member unreadable-state fallback (`02` §9), (2) the
+    # legacy/malformed scheduledStageVersion metadata warning (`03` §5.1),
+    # (3) the scheduled-vs-current revision mismatch note (`03` §5.3). A LIST,
+    # not a string, because these are independently triggerable and can co-occur
+    # on one call; a single string would force an implementer to drop or
+    # concatenate them, and REQ-REL-01's byte-identical-output requirement needs a
+    # defined order to assert against. Mirrors RenderStatus.warnings (`04` §2.2),
+    # which is already a list. Empty list means checked and clean; the key is
+    # always present, so [] and absent differ. Each entry names its affected
+    # feature/stage/key AND the recovery action (REQ-OBS-02).
+    warnings: list[str]
     # Epic backflow directive; see EpicReconcile. Absent for standalone features.
     epicReconcile: EpicReconcile
 
@@ -464,6 +505,37 @@ def cmd_state_verify(
 ) -> dict:
     """Write one verify result transition or one provenance follow-up.
 
+    Args:
+        feature: The feature name, or the EPIC name when `stage == "forge-0-epic"`
+            (`03-verification-state.md` §3.2 step 2). Resolved through the same
+            path-safety and containment rules as every other state write.
+        stage: The production stage this verify entry serves — one of
+            `VERIFY_MODE_TO_STAGE`'s values, or `"forge-0-epic"` for an epic-target
+            write. Selects `stages["forge-verify-{suffix}"]`.
+        specs_dir: Root of the specs tree, as configured by `specsDir`.
+        epic: Epic name when `feature` is a member, else None. REQUIRED for members
+            so the bare name is never resolved ambiguously. For
+            `stage == "forge-0-epic"` it must be absent or equal to `feature`.
+        status: Result mode. Mutually exclusive with `commit_hash`. See the
+            `03-verification-state.md` §3.3 matrix for which metadata each status
+            requires and which it forbids — the matrix is authoritative, not this
+            docstring.
+        findings_file: Path to the findings document, relative to and contained by
+            the resolved feature/epic directory. Required by `findings-reported`;
+            rejected when absolute, containing `..`, or carrying NUL/control
+            characters (REQ-SEC-01).
+        findings_count: Number of findings in `findings_file`. Required alongside it.
+        verified_stage_version: The served stage's `version` at verification time,
+            feeding the navigator's freshness ledger. Cleared by
+            `findings-applied`, which deliberately does not claim freshness.
+        commit_hash: Commit-2 mode. Full 40-hex only, validated by
+            `FULL_GIT_HASH_RE.fullmatch`; abbreviations are rejected rather than
+            expanded. Mutually exclusive with `status`.
+
+    Returns:
+        The emitted JSON result: the written verify entry plus the resolved target
+        path, so the caller can report what landed without re-reading state.
+
     Raises:
         UsageError: Mixed modes, invalid metadata, invalid hash, missing entry,
             unsafe/ambiguous target, or atomic write failure.
@@ -580,9 +652,9 @@ numbered spec imports. Signatures live in the sections cited below and are not r
 - **Repository-internal, importable by sibling modules and tests:** the §2 literals
   `EXIT_STAGES`, `EXIT_OUTCOMES`, `VERIFY_MODE_TO_STAGE`, `NEXT_STEPS_SENTINEL`, and
   `FULL_GIT_HASH_RE`; the §4 result types `EpicReconcile`, `StageExitDirectives`, and
-  `StageExitPayload`; the §6 `VerifyEntry`; and the §7 `UsageError`. The §5
-  `stage_exit`, `next_stage`, and §6 `cmd_state_verify` entry points are declared here and
-  implemented by their owning documents.
+  `StageExitPayload`; the §6 `VerifyEntry`; and the §7 `UsageError`. The §3
+  `stage_exit`, the §5 `next_stage`, and the §6 `cmd_state_verify` entry points are declared
+  here and implemented by their owning documents.
 - **Mirrored private, per-script:** the §8 `load_json_with_duplicates` and `warn_duplicate_keys` —
   one copy in each of `forge-session.py` and `forge-bootstrap.py`, not importable as a module, and
   loadable by tests only via `importlib.util.spec_from_file_location` (both filenames are

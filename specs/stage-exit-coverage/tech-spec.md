@@ -32,9 +32,10 @@ references/
   stage-exit-protocol.md         # one scripted contract for all covered exits
   pipeline-state-schema.json     # auto-verify-pending + scheduling metadata
   epic-manifest-schema.json      # additive integer revision for epic freshness
-  shared-conventions.md          # immediate state-note recipe follow-up
+  shared-conventions.md          # register state-verify; immediate state-note recipe
 
 skills/
+  forge/SKILL.md                 # auto-pending rows + nested-owner dispatch wording
   forge-0-epic/SKILL.md
   forge-0-epic/references/edit-mode.md
   forge-1-prd/SKILL.md
@@ -46,6 +47,7 @@ skills/
   forge-5-loop/references/runner-contract.md   # stale --model wording correction (sole source)
   forge-6-docs/SKILL.md
   forge-verify/SKILL.md
+  forge-verify/references/findings-template.md  # epic-state writes move to state-verify
   forge-fix/SKILL.md             # all covered direct exits use scripted invocation
 
 eval/
@@ -165,7 +167,7 @@ The direct branch routing table is outcome-driven:
 Verification state controls the authoritative terminal action before production-stage routing is rendered:
 
 - If verification is `fresh` or explicitly `skipped`, the production successor remains the fenced primary command.
-- If auto-verify is effective, the outer stage runs the nested verify/fix chain before any terminal block; only a passed result or explicit skip permits the production successor to become primary.
+- If auto-verify is effective, the outer stage runs the nested verify/fix chain before any terminal block; only a passed result or explicit skip permits the production successor to become primary. The emitted gate on this path is `none`. Where the caller may not dispatch unsolicited but has a question mechanism, it still needs *consent* before dispatching, so it reuses the Standard Verify Gate block with **choice 2 omitted** — auto-verify is already effective, so "enable auto-verify going forward" carries no trade-off. The consent form is two choices: *Verify now* (recommended) and *Skip for now*. The emitted `verifyGate` value stays `none` rather than becoming `standard`, because changing it would alter directive values for the existing stages 0–4 (REQ-COMPAT-01). This is the only case where the rendered gate and the emitted `verifyGate` differ, and it exists because the gate here supplies consent rather than selecting policy.
 - If verification is outstanding and `--verify-capability interactive`, emit `verifyGate: "standard"` for Claude **or Pi**. The skill presents the Standard Verify Gate. Choosing verify must complete the verify/fix/re-verify path before printing an advancing block; choosing skip first records `skipped`; choosing stop emits no terminal advancement.
 - If verification is outstanding and capability is `manual`, emit `verifyGate: "manual-print"` and render `verifyCommand` as the fenced primary command. Render the production `nextCommand` only as unfenced follow-up text: "After verification passes, continue with …". The fresh-session instruction follows verification rather than preceding it.
 

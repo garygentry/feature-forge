@@ -7,8 +7,11 @@
 | REQ-EXIT-01..07 | All nine skills use one capability-aware, sentinel-safe exit contract | §2–§4, §9 |
 | REQ-ROUTE-01..06 | Direct/nested verify and fix ownership, inference, and complete outcome routing | §5 |
 | REQ-PROD-01..06 | Loop, docs, and live epic-member handoffs | §6–§8 |
-| REQ-FOLLOW-02 | Immediate sanctioned PRD/tech parking-lot persistence | §4.2 |
+| REQ-FOLLOW-01 | Correct the stale `--model` runner-contract wording, keeping the conditional load | §6.5 |
+| REQ-FOLLOW-02 | Immediate sanctioned PRD/tech parking-lot persistence | §4.2, §4.3 |
 | REQ-CAP-01 | Preserve the completed loop runner-contract split and body caps | §6.3 |
+| REQ-DEBT-05 | Downstream pre-flight gates classify `auto-verify-pending` explicitly | §6.4, §7.2 |
+| REQ-STATE-03 | Epic verify state written by `state-verify`, never hand-authored | §5.4 |
 | REQ-REL-01/02 | Deterministic outcome selection and fail-closed skill inputs | §3–§9 |
 | REQ-COMPAT-01/02 | Preserve stages 0–4, epic/standalone, nested, and host workflows | §2–§9 |
 | REQ-OBS-01/02 | Skills carry explicit routing/outcome metadata and surface actionable errors | §3–§9 |
@@ -21,10 +24,13 @@
 This document specifies the canonical prose integration between the flat Python control
 plane and these skill sources:
 
+- `skills/forge/SKILL.md` (the navigator — read-side labels and nested dispatch, §4.3);
 - `skills/forge-0-epic/SKILL.md` and `skills/forge-0-epic/references/edit-mode.md`;
 - `skills/forge-1-prd/SKILL.md` through `skills/forge-6-docs/SKILL.md`;
 - `skills/forge-5-loop/references/result-reporting.md`;
-- `skills/forge-verify/SKILL.md` and `skills/forge-fix/SKILL.md`; and
+- `skills/forge-verify/SKILL.md`, `skills/forge-verify/references/findings-template.md`
+  (§5.4), and `skills/forge-fix/SKILL.md`;
+- `references/shared-conventions.md` (§4.3); and
 - `references/stage-exit-protocol.md`.
 
 Shared literals, payloads, `UsageError`, and target Python signatures are defined in
@@ -225,14 +231,22 @@ reuse an earlier payload that promotes production advancement (REQ-REL-02).
 
 Skills consume the `StageExitPayload` from `00-core-definitions.md` in this order:
 
-1. Surface `invalidAutoVerifyKeys` and `warning` before terminal output.
+1. Surface `invalidAutoVerifyKeys` and every entry of `warnings` before terminal output,
+   each in the list's emitted order (`00` §4 fixes that order; the list may carry more
+   than one advisory on a single call).
 2. If `runInStageVerify`, execute the nested verify/fix/re-verify chain synchronously.
    This is the one directive that asks for an **unsolicited** dispatch — auto-verify is
    authorized by config, not by a live user request — so it is exactly where a standing
    no-unsolicited-dispatch instruction bites. When dispatch requires consent and a
    question tool is available, do **not** dispatch silently and do **not** treat the bar
    as a reason to skip: present the Standard Verify Gate first and dispatch on the
-   affirmative choice, then continue the chain unchanged. `autoVerifyDebtRecorded` is
+   affirmative choice, then continue the chain unchanged. The emitted `verifyGate` on this
+   path is `none` and stays `none`; the caller reuses the `standard` gate block for
+   consent, **omitting choice 2** ("enable auto-verify going forward" is a no-op when
+   auto-verify is already effective) so the consent form is exactly *Verify now
+   (recommended)* and *Skip for now* — see `02-stage-exit-routing.md` §5.1, "Consent
+   variant on a `none` gate", which owns the rendering rule.
+   `autoVerifyDebtRecorded` is
    already durable at this point (`03-verification-state.md` §4.1), so a declined or
    deferred gate leaves recorded debt rather than a silent pass. Advancing to the
    production successor is never an available response to the bar (REQ-REL-02).
@@ -291,6 +305,47 @@ On `UsageError`/exit 2, surface the named feature/epic and recovery instruction,
 stop claiming the concern was persisted. Epic decomposition changes continue through
 `epicChangeRequests`, not `notes` (REQ-OBS-02, REQ-SEC-01).
 
+### 4.3 Shared-conventions and navigator read-side (REQ-FOLLOW-02, REQ-DEBT-05, REQ-EXIT-04)
+
+Two canon files are listed as modified in `01-architecture-layout.md` §2 but were owned by
+no section. This subsection owns both.
+
+**`references/shared-conventions.md`.** Its "Pipeline State Protocol" is the normative
+statement that pipeline state is written by the `state-*` verbs and never by hand, and it
+enumerates recipes for `state-branch`, `state-complete`, `state-enter`, and
+`state-artifact`. Two edits:
+
+1. **Register `state-verify`** in that verb inventory — `03-verification-state.md` calls
+   it the eighth `state-*` verb, and leaving the protocol describing a seven-verb surface
+   while a new verb ships is precisely the drift the protocol exists to prevent. Carry the
+   `--epic` member requirement sentence that already applies to every `state-*` verb, plus
+   the exit-2 failure protocol. `tests/test_state_verb_call_sites.py::test_the_epic_mandate_itself_is_still_documented`
+   treats this file as the normative home of that mandate, so the new verb's obligation
+   belongs here rather than only in the skill bodies.
+2. **Add the immediate `state-note` recipe** as a named block, so §4.2's two skills invoke
+   it by reference instead of each carrying an inlined copy.
+
+**`skills/forge/SKILL.md` (the navigator).** tech-spec §6.2 assigns it two obligations —
+consuming the new `auto-pending` label and dispatching branch skills with nested ownership
+— and REQ-DEBT-05 names the navigator as a required consumer. The dashboard is rendered by
+the model from `rank-features --json`, so these are prose edits, not script edits:
+
+1. The documented `verifyState` value list is **closed** (`fresh`/`stale`/`failing`/
+   `never`/`none`) and becomes factually wrong once `auto-pending` is emitted. Extend it.
+2. The `verifyPending` explanation states it is true only because the producing stage
+   could not dispatch a clean-room subagent or predates the behavior. That stops being the
+   complete list once durable `auto-verify-pending` debt exists — add the debt case, and
+   make the catch-up branch fire on it. An `auto-pending` row means verification is *owed
+   and recorded*; it must never read as "never verified".
+3. Add a dashboard legend marker for owed automatic verification, using the
+   `03-verification-state.md` §5.3 obligation text.
+4. When the navigator invokes `forge-verify`/`forge-fix` in its catch-up chain it is a
+   **nested** caller: it passes the `owner: nested` token of §5.1, and those skills print
+   no terminal block, leaving the navigator the sole terminal owner (REQ-EXIT-04).
+
+Add `skills/forge/SKILL.md` to the adapter-regeneration batch in §10 along with the other
+modified skill bodies.
+
 ## 5. Verify and Fix Branch Skills
 
 ### 5.1 Served-stage and owner capture (REQ-EXIT-02/04, REQ-ROUTE-01..03)
@@ -313,6 +368,43 @@ Both skills determine `direct|nested` at entry and preserve it through re-verify
 nested fix invokes nested verify and returns to its outer stage; a direct fix remains the
 terminal owner through its optional re-verify (REQ-EXIT-04).
 
+**How ownership reaches the skill.** §3.1 forbids inferring ownership from how the
+invocation was phrased, so the carrier must be named rather than left to judgment: these
+skills are dispatched through a Skill/Agent invocation, not a CLI, so no flag arrives on
+its own. The dispatching caller states ownership in its invocation prompt using the
+literal token `owner: nested` — used by auto-verify chains, the navigator catch-up (§4.3),
+and nested re-verify — or `owner: direct`. **Absent the token the skill treats itself as
+`direct`**, because a user-typed `/feature-forge:forge-verify|forge-fix` is the only path
+that carries no dispatcher. The skill then passes that value through as `--owner`.
+
+Getting this wrong is not cosmetic: a nested verify that self-reports `direct` emits a
+second sentinel-terminated block inside an outer stage's exit, violating REQ-EXIT-03/04's
+exactly-one-terminal-block rule — and the §10 canon guard cannot catch it, because both
+wordings legitimately appear in the same file. The existing inference precedent in
+`skills/forge-fix/SKILL.md` ("Skip this gate when an `autoFix` caller invoked you as part
+of a chain") is exactly what §3.1 replaces.
+
+**Writing the result.** Both skills record transitions through `state-verify` rather than
+hand-authoring the entry:
+
+```bash
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{feature}" --stage "{servedStage}" \
+  --status "{status}" --specs-dir "{specsDir}"
+```
+
+Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline
+State Protocol in `references/shared-conventions.md`. Omission is an error and must not
+fall back to a same-named flat feature. (`--stage forge-0-epic` is the exception:
+`--feature` names the epic and `--epic` must be absent or equal to it —
+`03-verification-state.md` §3.1.) On `UsageError`/exit 2, surface the named
+feature/epic and recovery instruction and do not claim the transition was persisted.
+
+The `--epic` sentence must stay adjacent to the fence: `tests/test_state_verb_call_sites.py`
+matches `state-verify` with `CALL_RE` and requires the instruction within its
+`LOOKBEHIND`/`LOOKAHEAD` window, so a call site that separates them fails
+`bash scripts/validate.sh` even though the prose is present somewhere in the file.
+
 ### 5.2 Verify termini (REQ-ROUTE-04/06, REQ-EXIT-03)
 
 After writing through `state-verify`, invoke `stage-exit` exactly once for the applicable
@@ -330,6 +422,16 @@ chooses to defer pipeline action and the skip is persisted; merely presenting th
 findings is `findings`. A state-write failure is `failed`, and because authoritative
 state is unknown no success block may be printed (REQ-ROUTE-06, REQ-REL-02).
 
+**Canon prose this replaces.** `skills/forge-verify/SKILL.md` Step 6 currently
+hand-authors the verify entry, and its "Deliberate R4 exclusion" blockquote (the passage
+beginning "This step writes a verify entry … and no `state-*` verb writes verify entries
+… So this one step stays hand-authored") is the stated justification. `state-verify` makes
+that justification false, and leaving it in place actively instructs a model to
+hand-author verify state — the behavior REQ-STATE-03/REQ-DEBT-01 exist to remove. Replace
+Step 6's write with the §5.1 `state-verify` call and **delete the blockquote**,
+substituting a pointer to the Pipeline State Protocol in
+`references/shared-conventions.md` (which §4.3 updates to list the verb).
+
 ### 5.3 Fix termini (REQ-ROUTE-04/05, REQ-EXIT-03/04)
 
 Replace the current open-ended Step 6 with this complete matrix:
@@ -346,7 +448,23 @@ Replace the current open-ended Step 6 with this complete matrix:
 
 `findings-applied` no longer claims freshness: the targeted writer clears
 `verifiedStageVersion`, and only `reverified` after a passing verify permits advancement.
-A direct interactive “skip re-verify” is therefore `deferred`, not `reverified`. Manual
+A direct interactive “skip re-verify” is therefore `deferred`, not `reverified`.
+
+**Canon prose this contradicts, and must therefore also change.** Naming Step 6 alone is
+not enough — `skills/forge-fix/SKILL.md` asserts the opposite contract in three places
+that would survive an edit scoped to Step 6:
+
+- Step 5 instructs "Record `verifiedStageVersion` = the current `version`…". Replace it
+  with the §5.1 `state-verify --status findings-applied` call, which deliberately
+  **clears** that field.
+- Step 6's gate text asserts the stage "reads **fresh** in the navigator's ledger" and
+  that it "stays `findings-applied` (fresh in the ledger)". Both invert the new contract:
+  `findings-applied` is **not** fresh, and the ledger stays outstanding until a passing
+  re-verify. Rewrite both sentences.
+- That same gate's "Skip for now" option is the case this matrix reclassifies as
+  `deferred`, not `reverified`. Rewrite its wording to match.
+
+Manual
 capability uses a verify-first printed primary command. Nested `applied` returns to the
 outer caller, which performs mandatory nested re-verify; it does not emit its own block
 (REQ-ROUTE-04/05, REQ-EXIT-06).
@@ -355,6 +473,45 @@ Every `AskUserQuestion` decision uses the labels/trade-offs already prescribed b
 shared protocol. A cancellation, unavailable tool, or non-answer maps to `deferred` or
 `failed` according to whether it was an explicit user choice or an operational failure
 (REQ-A11Y-01, REQ-ROUTE-05).
+
+### 5.4 Epic verify state moves to `state-verify` (REQ-STATE-03, REQ-DEBT-05)
+
+`skills/forge-verify/references/findings-template.md` is loaded by `forge-verify`'s Step 6
+for epic mode, which instructs "Follow it verbatim". Its "Epic Mode State Write Detail
+(Step 6)" section carries a `python3 - <<'PY'` heredoc that hand-writes
+`.epic-state.json` via `tempfile.mkstemp` + `os.replace`, setting only `status`,
+`findingsFile`, `findingsCount`, and `verifiedAt`. `03-verification-state.md` §3.2 case 2
+makes `state-verify --stage forge-0-epic` the sanctioned epic writer, so this reference
+must change with it. Leaving it is not merely redundant:
+
+1. It violates REQ-STATE-03 on the one epic path — model-authored JSON is exactly what the
+   requirement removes.
+2. The hand-written entry carries no `verifiedStageVersion` and no top-level `updatedAt`,
+   so under `03` §5.2 **every epic verification classifies as `stale`** — a silent
+   functional regression, not a style issue.
+3. Canon would self-contradict: `skills/forge-verify/SKILL.md` says `state-verify` while
+   the reference it tells you to follow verbatim says hand-write.
+
+Delete the "Write mechanism" paragraph and its heredoc, and substitute:
+
+```bash
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{epic}" --stage forge-0-epic \
+  --status "{passed|findings-reported}" \
+  --findings-file "{path}" --findings-count {n} \
+  --verified-stage-version {manifest revision} --specs-dir "{specsDir}"
+```
+
+Here `--feature` names the **epic**, and `--epic` is absent or equal to it
+(`03-verification-state.md` §3.1) — this is the one `state-*` call site where the member
+`--epic` rule does not apply, so state that exception explicitly next to the fence rather
+than letting a reader generalize from §5.1. Keep the minimal-shape JSON example, updated
+to the `03` §2.1 shape including `updatedAt` and the scheduling keys.
+
+Because `06-compliance-and-coverage.md` §2.1's guard inspects only the nine
+`contract_paths`, this file is not covered by it; `07-testing-strategy.md` §6.2 carries
+the assertion that no `.epic-state.json` write recipe or `os.replace` snippet survives
+anywhere under `skills/`.
 
 ## 6. Loop Integration
 
@@ -409,6 +566,32 @@ most 300 lines and 5,000 words. The current file is 302 total lines/4,512 total 
 tests must count the body using the repository's existing frontmatter-aware convention,
 not use raw total lines as a false failure (REQ-CAP-01).
 
+### 6.4 Backlog pre-flight parity (REQ-DEBT-05)
+
+`skills/forge-5-loop/SKILL.md` Step 1b reads `stages.forge-verify-backlog` and warns
+"Backlog hasn't been verified yet" for any status outside `{passed, findings-applied}`.
+That treats `auto-verify-pending` as never-scheduled, which is the conflation REQ-DEBT-02
+forbids: the verification *was* scheduled, debt *was* durably recorded, and it simply has
+not run. Add `auto-verify-pending` as an explicit third case ahead of the generic branch,
+using the `03-verification-state.md` §5.3 wording — naming the served stage and the retry
+command — so the operator can tell "nobody ever asked for this" from "this was owed and
+dropped". Pass/`findings-applied` behavior and the proceed-anyway path are unchanged
+(`03-verification-state.md` §5.4).
+
+### 6.5 Runner-contract wording follow-up (REQ-FOLLOW-01)
+
+The target file is `skills/forge-5-loop/references/runner-contract.md`, the sole
+runner-contract source per `01-architecture-layout.md` §2. It carries a phrase describing
+`--model` as an "optional flag below", which became stale when the flags moved into their
+own catalog: there is no longer a list below it in that file. Replace the phrase with a
+pointer to `## Optional flags catalog (Step 2d, rauf)` in `references/agent-selection.md`.
+
+The agent-selection reference **must remain conditionally loaded** — do not make it
+always-loaded and do not inline its content into `runner-contract.md` or `SKILL.md`. That
+constraint is the whole point of the §6.3 single-sourcing rule: correcting a stale pointer
+must not undo the context saving the catalog split bought. This is a wording fix to one
+sentence, not a restructuring.
+
 ## 7. Documentation Stage Integration
 
 ### 7.1 Scripted docs exit (REQ-PROD-03/04, REQ-EXIT-03)
@@ -441,6 +624,17 @@ the docs terminal wording. An explicit “generate anyway” choice must persist
 before docs can complete. Operationally unavailable verification is not an implicit
 skip; the scripted exit remains verify-first/manual until pass or explicit skip
 (REQ-EXIT-06/07).
+
+Extend the backstop's **status enumeration** for the new label (REQ-DEBT-05, per
+`03-verification-state.md` §5.4). `skills/forge-6-docs/SKILL.md` Step 1 currently warns
+when `stages.forge-verify-impl` is absent or `skipped` and proceeds silently on
+`findings-applied | findings-reported | passed`. `auto-verify-pending` matches neither
+branch, so it falls through the enumeration and proceeds silently — treating owed debt as
+discharged. Add it to the **warn** branch with debt-specific wording (the §5.3 sentence,
+naming the served stage and the retry command), distinct from the absent-entry wording:
+absent means verification was never scheduled, `auto-verify-pending` means it was
+scheduled and never ran. The "generate anyway" path is unchanged and still persists
+`skipped`.
 
 ## 8. Epic Creation and Edit Integration
 
@@ -494,10 +688,14 @@ as an explicit user skip (REQ-REL-02, REQ-SEC-01).
 
 ## 10. Migration and Canon Guard
 
-Implementation order for canon is: update the shared protocol; update verify/fix; update
-loop result reporting/body; update docs; update epic edit/creation; add capability flags
-to stages 1–4; then regenerate every adapter. Never edit `adapters/` directly
-(REQ-COMPAT-02, tech-spec §3.10).
+Implementation order for canon is: update the shared protocol and
+`references/shared-conventions.md` (§4.3); update verify/fix, including
+`skills/forge-verify/references/findings-template.md` (§5.4); update loop result
+reporting/body; update docs; update epic edit/creation; update the navigator
+`skills/forge/SKILL.md` (§4.3); add capability flags to stages 1–4; then regenerate every
+adapter. The regeneration batch covers every canon file touched above — the navigator and
+the findings-template reference included, since both ship in the six bundles. Never edit
+`adapters/` directly (REQ-COMPAT-02, tech-spec §3.10).
 
 `tests/test_stage_exit_protocol.py` must enumerate exactly these ownership sites — and it
 already does, via `CANONICAL_EXIT_SITES` in `06-compliance-and-coverage.md` §2.1, which is the

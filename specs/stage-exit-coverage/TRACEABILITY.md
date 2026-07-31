@@ -9,10 +9,10 @@
 |---|---|---|
 | REQ-EXIT-01 | `02-stage-exit-routing.md` §2–§3 — seven production stages accepted | `07-testing-strategy.md` §3.1, §6.1 |
 | REQ-EXIT-02 | `02-stage-exit-routing.md` §2–§3 — direct verify/fix accepted | `07-testing-strategy.md` §3.1–§3.2, §6.1 |
-| REQ-EXIT-03 | `02-stage-exit-routing.md` §4, §6 — one sentinel-last direct exit | `07-testing-strategy.md` §3.3, §6.1, §7.2 |
-| REQ-EXIT-04 | `02-stage-exit-routing.md` §4 — outer/nested ownership | `07-testing-strategy.md` §3.3, §6.1, §7.2 |
+| REQ-EXIT-03 | `02-stage-exit-routing.md` §3, §5–§6 — one sentinel-last direct exit | `07-testing-strategy.md` §3.3, §6.1, §7.2 |
+| REQ-EXIT-04 | `02-stage-exit-routing.md` §3.3, §6 — outer/nested ownership; `04-skill-integration.md` §5.1 ownership carrier | `07-testing-strategy.md` §3.3, §6.1, §7.2 |
 | REQ-EXIT-05 | `02-stage-exit-routing.md` §5–§6 — Claude/Pi/generic rendering | `07-testing-strategy.md` §3.4, §6.3 |
-| REQ-EXIT-06 | `02-stage-exit-routing.md` §5–§6 — verify-first primary command | `07-testing-strategy.md` §3.4 |
+| REQ-EXIT-06 | `02-stage-exit-routing.md` §4–§5 — verify-first primary command | `07-testing-strategy.md` §3.4 |
 | REQ-EXIT-07 | `02-stage-exit-routing.md` §5 — capability-aware Standard Verify Gate | `07-testing-strategy.md` §3.4, §6.2–§6.3 |
 | REQ-ROUTE-01 | `02-stage-exit-routing.md` §3, §6 — explicit served stage | `07-testing-strategy.md` §3.2 |
 | REQ-ROUTE-02 | `02-stage-exit-routing.md` §3 — unique verify-mode inference | `07-testing-strategy.md` §3.2 |
@@ -30,16 +30,16 @@
 | REQ-DEBT-02 | `03-verification-state.md` §2.1, §5.2 — distinct auto-pending state | `07-testing-strategy.md` §4.1, §4.3 |
 | REQ-DEBT-03 | `03-verification-state.md` §3.3, §4.2 — terminal replacement writer | `07-testing-strategy.md` §4.2 |
 | REQ-DEBT-04 | `03-verification-state.md` §4.1, §7.2 — interruption preserves debt | `07-testing-strategy.md` §4.1, §4.3 |
-| REQ-DEBT-05 | `03-verification-state.md` §5 — classifier/navigator/status parity | `07-testing-strategy.md` §4.1, §4.6 |
+| REQ-DEBT-05 | `03-verification-state.md` §5 (incl. §5.4 pre-flight); `04-skill-integration.md` §4.3, §6.4, §7.2 — classifier/navigator/status/pre-flight parity | `07-testing-strategy.md` §4.1, §4.6 |
 | REQ-DEBT-06 | `03-verification-state.md` §2.1, §6.2 — additive legacy loading | `07-testing-strategy.md` §4.4, §4.6 |
 | REQ-STATE-01 | `03-verification-state.md` §3.4, §6.1 — full hashes on new writes | `07-testing-strategy.md` §4.5 |
 | REQ-STATE-02 | `03-verification-state.md` §6.2 — permissive legacy short-hash reads | `07-testing-strategy.md` §4.4–§4.5 |
-| REQ-STATE-03 | `03-verification-state.md` §3–§4, §7.1 — targeted atomic writer | `07-testing-strategy.md` §4.2–§4.3 |
+| REQ-STATE-03 | `03-verification-state.md` §3–§4, §7.1; `04-skill-integration.md` §5.4 — targeted atomic writer, epic state via state-verify | `07-testing-strategy.md` §4.2–§4.3 |
 | REQ-STATE-04 | `03-verification-state.md` §6.3 — two commits, never amend | `07-testing-strategy.md` §4.5 |
 | REQ-CONFIG-01 | `05-config-and-distribution.md` §2.2, §4 — visible duplicate warning | `07-testing-strategy.md` §5.1–§5.2 |
 | REQ-CONFIG-02 | `05-config-and-distribution.md` §3 — shared consumer path | `07-testing-strategy.md` §5.2–§5.3 |
 | REQ-CONFIG-03 | `05-config-and-distribution.md` §2.1, §3, §6.1 — warning-only last-key-wins | `07-testing-strategy.md` §5.1–§5.3 |
-| REQ-CONFIG-04 | `05-config-and-distribution.md` §2.1, §5.1 — arbitrary recursive keys | `07-testing-strategy.md` §5.1 |
+| REQ-CONFIG-04 | `05-config-and-distribution.md` §2.1, §3.3 — arbitrary recursive keys | `07-testing-strategy.md` §5.1 |
 | REQ-GUARD-01 | `06-compliance-and-coverage.md` §2 — explicit canonical set | `07-testing-strategy.md` §6.1 |
 | REQ-GUARD-02 | `06-compliance-and-coverage.md` §2.1–§2.3 — included/excluded skills | `07-testing-strategy.md` §6.1 |
 | REQ-GUARD-03 | `06-compliance-and-coverage.md` §2.4 — replace bespoke assertions | `07-testing-strategy.md` §6.1 |
@@ -47,8 +47,8 @@
 | REQ-EVAL-02 | `06-compliance-and-coverage.md` §3.2, §4–§5 — success/recovery with command evidence | `07-testing-strategy.md` §7.1–§7.2 |
 | REQ-EVAL-03 | `06-compliance-and-coverage.md` §6 — separate linear/branch reporting | `07-testing-strategy.md` §7.3 |
 | REQ-CAP-01 | `04-skill-integration.md` §6.3 — preserve completed Step 2d split/caps | `07-testing-strategy.md` §6.2 |
-| REQ-FOLLOW-01 | `04-skill-integration.md` §6.3 — correct runner wording, retain conditional load | `07-testing-strategy.md` §6.2 |
-| REQ-FOLLOW-02 | `04-skill-integration.md` §4.2 — immediate targeted state-note recipe | `07-testing-strategy.md` §6.2 |
+| REQ-FOLLOW-01 | `04-skill-integration.md` §6.5 — correct runner wording, retain conditional load | `07-testing-strategy.md` §6.2 |
+| REQ-FOLLOW-02 | `04-skill-integration.md` §4.2, §4.3 — immediate targeted state-note recipe, single-sourced in shared-conventions | `07-testing-strategy.md` §6.2 |
 | REQ-REL-01 | `02-stage-exit-routing.md` §3–§10; `03-verification-state.md` §4.1 | `07-testing-strategy.md` §3–§5, §7 |
 | REQ-REL-02 | `02-stage-exit-routing.md` §3, §10; `03-verification-state.md` §3.2, §7.1 | `07-testing-strategy.md` §3.2, §3.7, §4.3, §9 |
 | REQ-REL-03 | `03-verification-state.md` §4.1, §7.2 — durable crash recovery | `07-testing-strategy.md` §4.1–§4.3 |

@@ -100,6 +100,17 @@ INTENTIONALLY_EXCLUDED_SKILLS: Final[frozenset[str]] = frozenset(
 - no navigator/setup/bootstrap/advisory skill is added merely because its name begins with
   `forge-`.
 
+The guard obtains `EXIT_STAGES` from `scripts/forge-session.py` by the repository's
+drift-guard convention — regex-locate the assignment and `ast.literal_eval` it, exactly as
+`tests/test_stage_constants_parity.py` does — or, where the module is needed anyway, via
+`importlib.util.spec_from_file_location`, as `tests/test_auto_verify.py` does. Prefer the
+regex form here, consistent with `07-testing-strategy.md` §5.1's no-import rule for drift
+guards. It MUST NOT re-list the nine names in the test file: a hardcoded copy is precisely
+the second hand-maintained allow-list REQ-GUARD-01 forbids, and it would make the equality
+assertion vacuous — the test would then be comparing the table against itself. The
+preamble's note about using `str` at runtime concerns the *type alias* only; the equality
+assertion needs the runtime tuple and must fetch it.
+
 The exclusions are documentary and defensive, not an exhaustive list of every helper skill. They
 name the navigator (`forge`), bootstrap (`forge-bootstrap`), setup (`forge-init`), and advisory
 (`forge-guide`) skills called out by REQ-GUARD-02, and each must exist under `skills/`. A new
@@ -531,7 +542,14 @@ def score_branch_path(
         Every named criterion; compliance requires all values to be true.
 
     Raises:
-        KeyError: `expected_payload` is not a valid shared `StageExitPayload`.
+        RuntimeError: `expected_payload` is missing a required `StageExitPayload`
+            key (`directives`, `nextSteps`, or `sentinel`) or its
+            `directives.primaryCommand` — a harness defect, per §7, not a model
+            miss. Validate those keys explicitly before indexing rather than
+            letting a raw `KeyError` escape: an unguarded `KeyError` reaching
+            `_to_result`/`run_branch_probe` is indistinguishable from an ordinary
+            dict-access bug, and §7's hierarchy reserves `RuntimeError` for exactly
+            this class of fixture/schema/harness invariant failure.
     """
 
 

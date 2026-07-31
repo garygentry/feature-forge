@@ -5,9 +5,11 @@
 | REQ ID | Requirement | Section |
 |---|---|---|
 | REQ-EXIT-01..07 | Nine-stage acceptance, terminal ownership, sentinel, host translation, verify-first ordering, and capability gates | §3, §6 |
+| REQ-EXIT-07 | Capability is a permission test: clause (b) wording, consent ⇒ `interactive`, auto path through the gate | §3.4, §6.2 |
 | REQ-ROUTE-01..06 | Served-stage inference and every verify/fix terminus | §3.2–§3.4 |
 | REQ-PROD-01..06 | Loop, docs, and epic edit-mode route matrices | §3.5–§3.7 |
 | REQ-DEBT-01..06 | Durable pending scheduling, transition replacement, read parity, interruption, and legacy compatibility | §4.1–§4.4 |
+| REQ-DEBT-05 | Downstream pre-flight gates and navigator classify `auto-verify-pending` explicitly | §4.1, §6.2 |
 | REQ-STATE-01..04 | Full-hash writes, legacy hashes, targeted atomic writes, and two-commit provenance | §4.2–§4.5 |
 | REQ-CONFIG-01..04 | Recursive warnings, shared consumers, last-key-wins, and arbitrary keys | §5 |
 | REQ-GUARD-01..03 | Explicit nine-skill guard and replacement coverage for loop/docs contracts | §6.1 |
@@ -255,8 +257,18 @@ Use or add fixtures at these exact locations (REQ-DEBT-06, REQ-EVAL-01/02):
   nearly identical committed JSON.
 - `tests/fixtures/minimal-canon/scripts/` plus each
   `tests/fixtures/minimal-canon/expected-adapters/<agent>/scripts/`: generator snapshot
-  inputs/outputs for the two changed consumers. **No new fixture file** — the mirrored loader lives
-  inside scripts already snapshotted.
+  inputs/outputs for the two changed consumers. These hold **stub** helpers (66–70 bytes,
+  `print("forge-session stub")` and its bootstrap twin), so they snapshot helper *presence,
+  filename set, and mode* only. **No new fixture file** is needed — and loader byte-equality is
+  therefore **not** provable from minimal-canon: no `load_json_with_duplicates` /
+  `warn_duplicate_keys` body can ever appear in `expected-adapters/<agent>/scripts/`, so the
+  snapshot equality test (`tests/test_build_adapters.py`, `hash_tree(adapters) ==
+  hash_tree(expected-adapters)`) would pass vacuously if asked to prove it. Assert loader
+  co-distribution against the real repo helpers instead — the committed
+  `adapters/<agent>/scripts/{forge-session,forge-bootstrap}.py`, guarded by the existing
+  `skipif(not ADAPTERS.is_dir())` convention in that module, and/or `build-adapters.py --check`.
+  Reopening this hole at the distribution boundary is exactly what
+  `tests/test_json_loader_parity.py` exists to close at the source boundary.
 - `eval/fixtures/compliance/verify-fix-reverify.json`: the only committed branch compliance fixture;
   it is below a nested directory so `eval/run-eval.py`'s `fixtures/*.json` trigger glob cannot load
   it.
@@ -333,6 +345,35 @@ selection changes) (REQ-EXIT-05..07, REQ-COMPAT-01):
 | `never`, `stale`, `failing`, `auto-pending` | true and owed | either | nested verify directive; production deferred |
 | outstanding | false | `interactive` | `standard`; no advancing block before pass/skip |
 | outstanding | false | `manual` | fenced verify / `manual-print`; production inline and conditional |
+| `none` (tokenless stage, e.g. `forge-6-docs`) | either | either | production / `none`; no verify command promoted |
+
+**Consent-barred auto-verify.** With auto-verify effective and outstanding and a caller under a
+no-unsolicited-dispatch bar that *has* a question mechanism, the caller passes
+`--verify-capability interactive` (not `manual` — clause (b) is a permission test, and the gate's
+affirmative makes the dispatch solicited). Assert the payload keeps `runInStageVerify: true` and
+`verifyGate: "none"`, that the skill presents the two-choice consent form before dispatching
+(`02-stage-exit-routing.md` §5.1 — *Verify now* / *Skip for now*, choice 2 omitted), and that **no
+rendered block promotes the production successor under any gate response** (verify, skip-recorded,
+or stop). This is the routing half of the contract §6.2 pins in prose.
+
+**Advertised-then-unavailable dispatch.** After a payload with `runInStageVerify: true`, simulate
+`CLEAN_ROOM_UNAVAILABLE` or a non-answer and assert (a) the persisted `auto-verify-pending` debt is
+still readable and unresolved, (b) a fresh `stage-exit --verify-capability manual` yields a
+verify-first payload whose `primaryCommand` is the verify command, and (c) the earlier payload's
+`deferredCommand`/`nextCommand` never becomes primary (`04-skill-integration.md` §3.2,
+REQ-REL-02). The §7.2 negative for "recovery incorrectly advancing to production" does not cover
+this: per `06-compliance-and-coverage.md` §3.2 the branch fixture's `recovery` scenario is driven
+by `reverifyOutcome`, an unresolved re-verify — not a dispatch-capability failure — so the
+stale-payload-reuse mode is otherwise untested.
+
+**Render-status failure modes** for the docs route include a **timeout**, injected either with a
+stub `epic-manifest.py` that sleeps past the 10s bound or by monkeypatching `subprocess.run` to
+raise `TimeoutExpired`; assert the `UsageError`/exit-2 mapping names the epic and the recovery
+command and emits no sentinel (`02-stage-exit-routing.md` §8).
+
+**Warning literals** are asserted verbatim, not paraphrased: the epic-member PRD fallback template
+from `02` §9 (with each of its four `{reason}` values) and the `invalidAutoVerifyKeys` rendering
+from `00` §4, in sorted order.
 
 Run capability cases under all three hosts. Specifically pin capable Pi as `standard`, manual
 Claude as `manual-print`, and manual Pi/generic as verify-first. Assert host only translates
@@ -421,7 +462,16 @@ Extend `tests/test_auto_verify.py` and `tests/test_stage_exit.py` with
 - injected write failure returns exit 2 and never emits the dispatch directive;
 - `verify_state`, `_verify_state_for`, `pending_verify`, `build_rows`, rank-features/status,
   stage-exit, and epic `render-status` all classify it as `auto-pending`, pending, and retryable;
-- old/missing scheduling revision remains `auto-pending` with a warning rather than `never`.
+- old/missing scheduling revision remains `auto-pending` with a warning rather than `never`;
+- a production-stage exit with owed debt reports the stage in `directives.verifyStage` — the same
+  value `pending_verify()` returns and `FeatureRow.verifyStage` carries — while `servedStage`
+  stays None, since it is branch-exit-only (`00` §4, `03` §5.3);
+- a legacy plain `pending` entry classifies consistently across `verify_state`, `_verify_state_for`,
+  `pending_verify`, `build_rows`, and epic `render-status`, and is never silently upgraded to
+  `auto-pending` or downgraded to `never`;
+- the downstream pre-flight consumers agree with the classifiers: the `forge-6-docs` backstop and
+  the `forge-5-loop` Step 1b gate both treat `auto-verify-pending` as outstanding — neither
+  proceeding silently nor reporting it as never-scheduled (`03-verification-state.md` §5.4).
 
 Do not mock the classifier or state writer. Inject the scheduling-to-dispatch gap by executing
 stage-exit and deliberately performing no later verify call; then reopen the persisted file in a
@@ -451,6 +501,12 @@ For every status, generate contradictory metadata: stale/zero/boolean version, m
 version, negative count, empty findings path, findings metadata on passed/skipped/pending, supplied
 version on applied, applied without a prior report, neither mode, and mixed result/hash mode. Every
 case exits 2 and preserves bytes (REQ-REL-02).
+
+Include `--findings-file` containment rejections in that set: an absolute path, a path containing a
+`..` segment, and one carrying NUL/control characters. `00` §6 defines the field as relative to the
+feature directory and downstream consumers follow the stored value, so each is rejected before any
+mutation, exits 2, and leaves the target byte-identical (`03-verification-state.md` §3.3/§7.1,
+REQ-SEC-01).
 
 ### 4.3 Target isolation and atomic failures (REQ-STATE-03, REQ-SEC-01, REQ-REL-04)
 
@@ -492,9 +548,16 @@ REQ-COMPAT-02):
 Keep one explicit legacy no-revision test rather than leaving all fixtures legacy. Update any schema
 contract digest in `tests/test_state_schema_conformance.py` deliberately: the current
 `PRE_R4_SCHEMA_CONTRACT_SHA256` pins an unchanged pre-R4 contract and will correctly fail after the
-additive verify schema change. Replace it with a feature-specific baseline/structural assertion
-that proves only the intended enum and scheduling fields changed; do not blindly re-pin a digest
-without comparing the parsed schema (REQ-DEBT-06).
+additive verify schema change. Re-pin it to a new post-feature baseline **in the same PR** (renaming
+the constant accordingly), matching that guard's own documented convention — "A real schema change
+… belongs to a different feature and updates this constant in the same PR" — and **add** a
+structural assertion that diffs the parsed pre/post contract and proves the only changes are the
+`verifyEntry.status` enum gaining `auto-verify-pending` and the additive `scheduledAt` /
+`scheduledStageVersion` properties. Do not re-pin without that structural diff, and do not delete
+the digest guard: removing it permanently loses the tripwire for future *unintended* schema edits.
+Keep `test_the_contract_digest_ignores_prose_but_not_structure` intact — it is the negative control
+that makes the digest meaningful, and an implementer told merely to "replace" the digest may delete
+it alongside (REQ-DEBT-06).
 
 ### 4.5 Hash and two-commit provenance
 
@@ -588,7 +651,12 @@ that state, schema, transcript, or arbitrary answers JSON use it; that would wid
 Duplicate warnings never become `UsageError`, never alter files, never print complete config, and
 never contaminate stdout. Capture config bytes before and after each warning-only command.
 A stderr write failure may be injected with `monkeypatch` to assert `OSError` remains distinct, but
-normal warning evidence must use the real function/CLI (REQ-CONFIG-03, REQ-OBS-02).
+normal warning evidence must use the real function/CLI (REQ-CONFIG-03, REQ-OBS-02). The two
+consumers diverge deliberately on that injection and the tests must pin the split: in
+`scripts/forge-session.py`, `_load_config` swallows it (`except OSError: pass`) so the read path
+stays total — the command still succeeds, exit code unchanged, only the advisory is lost; in
+`scripts/forge-bootstrap.py`, the existing `OSError`/exit-2 policy is unchanged
+(`05-config-and-distribution.md` §3.1/§3.3).
 
 ### 5.4 Performance/common path
 
@@ -606,6 +674,15 @@ Implement the `CanonicalExitSite` and `CANONICAL_EXIT_SITES` contracts from
 `06-compliance-and-coverage.md` in `tests/test_stage_exit_protocol.py` (REQ-GUARD-01..03). The table
 must equal the nine shared `EXIT_STAGES`, in order, with unique explicit paths. It must not use a
 prefix glob to infer pipeline skills. Assert navigator/setup/bootstrap/advisory exclusions.
+
+Obtain `EXIT_STAGES` from `scripts/forge-session.py` by the drift-guard convention — regex-locate
+the assignment and `ast.literal_eval` it, as `tests/test_stage_constants_parity.py` does (preferred
+here, consistent with §5.1's no-import rule for drift guards) — or via
+`importlib.util.spec_from_file_location` where the module is needed anyway, as
+`tests/test_auto_verify.py` does. The filename is hyphenated and not importable by name, but the
+guard MUST NOT respond by re-listing the nine names in the test file: a hardcoded copy is the second
+hand-maintained allow-list REQ-GUARD-01 forbids, and the equality assertion would then compare the
+table against itself (`06-compliance-and-coverage.md` §2.1).
 
 For every site, verify exactly one direct scripted invocation/terminal-print contract, exact stage,
 applicable outcome flags, direct branch owner, nested owner/no-terminal wording, and sentinel-last
@@ -631,6 +708,37 @@ Add/retain canon tests for (REQ-CAP-01, REQ-FOLLOW-01/02, REQ-A11Y-01):
   temporary state to prove correct targeting;
 - Standard Verify Gate prose has explicit labels, descriptions, and a recommended default; capable
   Pi is not excluded by host-name wording;
+- **the capability-determination prose in every direct/outer skill's exit closure** (asserted
+  against `skills/`, never `adapters/`) states clause (b) as **permitted dispatch, not a listed
+  tool**; states that a consent-gated dispatch with a question mechanism available is
+  `interactive`, with `manual` reserved for *no question mechanism **and** no permitted dispatch*;
+  and states that an auto-verify directive under a no-unsolicited-dispatch bar is presented through
+  the gate and dispatched on the affirmative — never skipped, never resolved by advancing to the
+  production successor. Negative controls operate on copied strings and MUST fail the guard:
+  rewrite the clause to tool-presence wording; downgrade the consent case to `manual`; delete the
+  auto-path-through-gate sentence. This is the one contract in the feature that has already been
+  misread once, is prose-only, and degrades silently — a model self-reporting `manual` merely
+  prints a copy-paste command, so nothing else catches it (`04-skill-integration.md` §3.2/§3.3,
+  `02-stage-exit-routing.md` §4/§5.1, REQ-EXIT-07);
+- the new `state-verify` call sites in `skills/forge-verify/SKILL.md` and
+  `skills/forge-fix/SKILL.md` satisfy `tests/test_state_verb_call_sites.py` — its `CALL_RE` matches
+  `state-verify`, so each site needs the `--epic` instruction inside the module's
+  `LOOKBEHIND`/`LOOKAHEAD` window, and the `MIN_CALL_SITES` floor rises with them. Without this the
+  new sites red-gate `bash scripts/validate.sh` on landing;
+- no `.epic-state.json` write recipe, `tempfile.mkstemp`, or `os.replace` snippet survives anywhere
+  under `skills/` — the epic write goes through `state-verify --stage forge-0-epic`
+  (`04-skill-integration.md` §5.4);
+- the downstream pre-flight gates classify `auto-verify-pending` explicitly: the
+  `skills/forge-6-docs/SKILL.md` backstop enumeration warns on it with debt-specific wording rather
+  than proceeding silently, and `skills/forge-5-loop/SKILL.md` Step 1b names the owed debt rather
+  than reporting "hasn't been verified yet" (`03-verification-state.md` §5.4);
+- the navigator `skills/forge/SKILL.md` documents `auto-pending` in its `verifyState` value list,
+  fires its catch-up branch on it, carries a legend marker for owed automatic verification, and
+  passes the `owner: nested` token when dispatching `forge-verify`/`forge-fix`
+  (`04-skill-integration.md` §4.3);
+- `references/shared-conventions.md`'s Pipeline State Protocol lists `state-verify` among the
+  `state-*` verbs with its `--epic` member rule, and hosts the named immediate `state-note` recipe
+  the PRD/tech skills reference;
 - no canon path authors whole state JSON or appends text after the terminal sentinel.
 
 ### 6.3 Adapter generation and host outputs
@@ -640,8 +748,15 @@ REQ-COMPAT-02):
 
 - `RUNTIME_HELPERS` still has exactly six entries and no new file appears under `scripts/` in any
   of the six `AGENT_TARGETS`;
-- both emitted consumers carry the mirrored loader byte-equal to canon (including Pi), mode `0644`,
-  without a generated header;
+- both emitted consumers carry the mirrored `load_json_with_duplicates` /
+  `warn_duplicate_keys` **function bodies** byte-equal to canon for all six targets, mode `0644`,
+  without a generated header. Whole-file byte equality holds for `forge-bootstrap.py` on every
+  target and for `forge-session.py` on every target **except Pi**, whose copy legitimately differs
+  by the `/feature-forge:` → `/skill:` substitution the generator applies after the verbatim helper
+  copy — the generator's standing Pi-divergence invariant, that the substitution is its *only*
+  permitted difference. Assert the Pi copy differs *only* by that substitution, reusing the
+  generator's existing invariant; a naive whole-file assertion "including Pi" fails against the
+  real tree;
 - all nine stamp sites ship in generated adapters;
 - Claude output retains `/feature-forge:` and `/clear`; Pi output uses `/skill:` and `/new`;
   generic adapter canon remains vendor-neutral;
@@ -728,11 +843,17 @@ Acceptance requires (REQ-GUARD-01..03, REQ-REL-02):
 - **100% mode mapping coverage:** all six modes, all seven explicit production stages, matching,
   conflicting, and absent metadata.
 - **100% verify state coverage:** every shared persisted status and every shared read label,
-  including old/mismatched revisions.
+  including old/mismatched revisions. The claim is only true if the matrices enumerate all of
+  them — so the seven `VerifyStateLabel` members include `none` (the tokenless-stage label
+  `forge-6-docs` returns, §3.4) and the six `VerifyStatus` members include the legacy plain
+  `pending` (§4.1), neither of which is reachable through the ordinary scheduling paths.
 - **100% writer transition coverage:** every legal `state-verify` transition and every forbidden
   metadata/mode family for both feature and epic targets.
 - **100% host/capability behavior coverage:** Claude, Pi, generic crossed with interactive/manual
-  where behavior differs.
+  where behavior differs — including the *determination* rule itself, not only the given values.
+  Capability arrives as the `--verify-capability` input, so `stage_exit` cannot test how a caller
+  decided it; that half is canon prose and is covered by §6.2's clause-(b) assertions and §3.4's
+  consent-barred row. Without both, this line would claim coverage the suite does not have.
 - **100% canonical exit-site coverage:** exactly the explicit nine-site allow-list.
 - **100% compliance criterion coverage:** each branch scorer criterion has one positive and at least
   one targeted negative test.
@@ -763,8 +884,14 @@ ruff check scripts/ eval/
 `bash scripts/validate.sh` is the single full gate: it runs purity, adapter drift, pytest,
 installer and adapter-source verification, ruff when available, traceability, and version sync.
 The explicit ruff command remains required locally even though validation also runs it when
-installed (project constraint). No live compliance model run is required for correctness
-(REQ-EVAL-02, REQ-COMPAT-02).
+installed (project constraint). Its **pytest step is likewise conditional and non-fatal**: when
+pytest is not importable the script prints `SKIP: pytest not installed; skipping epic-manifest test
+suite (non-fatal)` and continues, so on such an interpreter the acceptance evidence for this entire
+strategy can go green while zero tests ran. Acceptance therefore requires the run to show
+`PASS: epic-manifest pytest suite` — **a `SKIP` there is not a pass** — and an explicit
+`python3 -m pytest tests -q` alongside the gate wherever that line is not `PASS`. (Traceability and
+version-sync degrade to warnings on a missing tree/script for the same reason; treat those the same
+way.) No live compliance model run is required for correctness (REQ-EVAL-02, REQ-COMPAT-02).
 
 ### 8.3 Null smoke command and CHECK-I21
 
@@ -858,6 +985,8 @@ An implementation matches this specification only when all are true:
 - [ ] Both compliance scenarios pass all criteria; every negative fixture fails its intended one.
 - [ ] `eval/README.md` reports linear and branch baselines separately.
 - [ ] `python3 scripts/build-adapters.py` completes and generated files are not hand-edited.
-- [ ] `bash scripts/validate.sh` passes with no drift or traceability gap.
+- [ ] `bash scripts/validate.sh` passes with no drift or traceability gap, **and its output shows
+      `PASS: epic-manifest pytest suite`** — a `SKIP: pytest not installed` line is not a pass, so
+      on such an interpreter run `python3 -m pytest tests -q` explicitly as well (§8.2).
 - [ ] `ruff check scripts/ eval/` passes.
 - [ ] `smokeCommand` remains null and CHECK-I21 is recorded as not-applicable by design.

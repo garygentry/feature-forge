@@ -7,7 +7,7 @@
 | REQ-CONFIG-01 | Visible warning names every duplicated object key | §2.2, §4 |
 | REQ-CONFIG-02 | Effective config, stage exit, bootstrap, and other config consumers share one read path | §3 |
 | REQ-CONFIG-03 | Duplicate keys remain warning-only and last-key-wins | §2.1, §3, §6.1 |
-| REQ-CONFIG-04 | Detection applies recursively to every JSON object and key name | §2.1, §5.1 |
+| REQ-CONFIG-04 | Detection applies recursively to every JSON object and key name | §2.1, §3.3 |
 | REQ-REL-01 | Duplicate diagnostics and generated helper output are deterministic | §2, §5, §6.2 |
 | REQ-COMPAT-02 | Existing projects require no config migration | §3.3, §6.1 |
 | REQ-PERF-01 | Diagnostics add no network, history scan, or model turn | §6.3 |
@@ -191,9 +191,25 @@ def _load_config(config_path: Path) -> dict:
         value, duplicate_keys = load_json_with_duplicates(config_path)
     except (OSError, json.JSONDecodeError):
         return {}
-    warn_duplicate_keys(config_path, duplicate_keys)
+    try:
+        warn_duplicate_keys(config_path, duplicate_keys)
+    except OSError:
+        pass  # a diagnostic write failure must not break a total read path
     return value if isinstance(value, dict) else {}
 ```
+
+The inner `try` is load-bearing, not defensive noise. §2.1 documents
+`warn_duplicate_keys` as raising `OSError` when the process cannot write to stderr, and
+`03-verification-state.md` §3.1 maps `OSError` to exit 2 in `main()`. Without the guard, a
+closed or broken stderr — the ordinary consequence of `rank-features --json | head` —
+would let a `BrokenPipeError` from a purely *diagnostic* write turn a successful
+navigator/doctor/stage-exit command into a fail-closed exit 2, contradicting the
+"return `{}` rather than fail" guarantee stated below. The duplicate-key warning is
+advisory; losing it is strictly better than losing the command.
+
+This is the session consumer only. `scripts/forge-bootstrap.py` (§3.2) has the same shape
+but already treats `OSError` as exit 2 by policy, so it keeps propagating and needs no
+guard — the split is deliberate and §3.3's matrix records it.
 
 This single adoption point automatically covers the current consumers found in source:
 
@@ -259,6 +275,7 @@ Sentinel JSON and `--answers` JSON are separate protocols and retain their curre
 | Non-object root | `{}` fallback | `UsageError`, exit 2; commit requires an object |
 | Valid object, no duplicates | Existing value; no warning | Existing value; no warning |
 | Valid object, duplicates | Last value wins; warning(s), normal exit | Last value wins; warning(s), normal exit |
+| Valid object, duplicates, stderr unwritable | Parsed value returned, exit unchanged; the warning is dropped (§3.1's `except OSError: pass`) | Existing `OSError`/exit-2 policy, unchanged |
 
 No migration, rewrite, normalization, or strict duplicate rejection is introduced. In
 particular, duplicate `autoVerify`, arbitrary top-level keys, nested `loopRunner` keys, nested
@@ -363,7 +380,8 @@ helpers use the byte-copy path, not frontmatter/canon emitters. Provenance is en
 runtime-helper list, copy assertions, deterministic generation, and drift guard. The source
 helper plus all generated adapter copies must land in the same implementation change.
 
-Update the committed `expected-adapters/<agent>/scripts/` snapshots for the two changed
+Update the committed `tests/fixtures/minimal-canon/expected-adapters/<agent>/scripts/`
+snapshots for the two changed
 consumers. No new fixture file is added. These are test fixtures, not an
 alternative production source. A full regenerate atomically replaces the adapter tree, so no
 adapter target may retain a stale consumer.

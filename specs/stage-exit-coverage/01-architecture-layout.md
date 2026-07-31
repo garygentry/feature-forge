@@ -61,22 +61,27 @@ references/
   stage-exit-protocol.md                   M  sole nine-skill terminal contract
   pipeline-state-schema.json               M  auto-verify-pending + schedule metadata
   epic-manifest-schema.json                M  required revision >= 1
-  shared-conventions.md                    M  immediate state-note recipes
+  shared-conventions.md                    M  register state-verify; immediate state-note recipe
 
 skills/
+  forge/SKILL.md                           M  auto-pending row rendering + nested-owner dispatch
   forge-0-epic/SKILL.md                    M  scripted creation/edit terminal
   forge-0-epic/references/edit-mode.md     M  live member-state handoff
   forge-1-prd/SKILL.md                     M  capability-aware stage exit + state-note
   forge-2-tech/SKILL.md                    M  capability-aware stage exit + state-note
   forge-3-specs/SKILL.md                   M  capability-aware stage exit
   forge-4-backlog/SKILL.md                 M  capability-aware stage exit
-  forge-5-loop/SKILL.md                    M  scripted result terminus; preserve body cap
+  forge-5-loop/SKILL.md                    M  scripted result terminus; preserve body cap;
+                                               auto-verify-pending in the Step 1b gate
   forge-5-loop/references/result-reporting.md
                                             M  typed loop outcomes and terminal ownership
   forge-5-loop/references/runner-contract.md
                                             M  stale --model wording correction (sole source)
-  forge-6-docs/SKILL.md                     M  scripted context-aware docs terminus
+  forge-6-docs/SKILL.md                     M  scripted context-aware docs terminus;
+                                               auto-verify-pending in the backstop gate
   forge-verify/SKILL.md                     M  direct/nested owner, state-verify, exit
+  forge-verify/references/findings-template.md
+                                            M  epic-state writes move to state-verify
   forge-fix/SKILL.md                        M  complete outcomes, state-verify, exit
 
 eval/
