@@ -1507,3 +1507,75 @@ exactly one sentinel as the final line — `findings` fencing
 `/feature-forge:forge-fix widget --served-stage forge-2-tech`, `passed`/`skipped` the live
 successor, `failed` the verify retry — while the nested form returns `nextSteps: null`,
 `sentinel: null`, `terminalOwnedBy: "outer"`.
+
+## Item 019 — forge-fix seven-outcome terminus matrix
+
+Rewrote `skills/forge-fix/SKILL.md` around a served-stage-first Step 1, a `state-verify`
+Step 5, a re-verify gate that no longer claims freshness, and a new `## Step 7: Close the
+Stage` carrying the canonical stamp with `--stage forge-fix`. Registered the site in
+`tests/test_stage_exit_protocol.py::_SCRIPTED_SITES`.
+
+### Gotchas for later items
+
+- **`--served-stage` is a real INVOCATION argument, not only a stamp slot.** 02 §6.1 routes
+  `forge-verify --outcome findings` to `/feature-forge:forge-fix FEATURE --served-stage
+  SERVED`, and forge-verify Step 5 option (b) tells the user to type exactly that. So the
+  served-stage resolution order is **explicit argument → the selected report's
+  mode/header → fail closed on disagreement**, not "header only" in the literal sense. The
+  banned sources are the ones 04 §5.1 names: conversational context, `currentStage`, and
+  the newest arbitrary feature stage. `metadata.argument-hint` was widened to
+  `"<feature-name> [--served-stage <production-stage>]"` to match (nothing pins it).
+
+- **`no-findings` still needs a served stage, and it cannot come from a report.**
+  `resolve_served_stage` refuses a branch exit with neither `--served-stage` nor
+  `--verify-mode`, so the no-report path takes the served stage from **authoritative
+  pipeline state** — the production stage whose `forge-verify-*` entry is unresolved. When
+  nothing is outstanding either there is genuinely nothing to serve, so the skill keeps
+  today's "No verification findings found. Run `/feature-forge:forge-verify {feature}`
+  first." message and does NOT call stage-exit. That is a documented terminus, not a
+  fall-through — same shape as the unestablishable-served-stage fail-closed error.
+
+- **`manual` capability maps to `applied`, NOT `deferred`.** 04 §5.3's "Manual capability
+  uses a verify-first printed primary command" is exactly the `applied` route
+  (`/feature-forge:forge-verify FEATURE --served-stage SERVED` fenced as primary). Mapping
+  it to `deferred` would invent a user choice nobody made; mapping it to `failed` would
+  claim an operation failed that was never attempted. The `deferred`/`failed` split in
+  AC 5 applies to a gate that WAS presented (explicit skip → `deferred`) and to a
+  re-verify that WAS attempted and could not run (`CLEAN_ROOM_UNAVAILABLE`, refused
+  dispatch, non-answer → `failed`).
+
+- **Unresolved decisions stay `decisions` even when the question mechanism is what
+  failed.** That row is the more specific one, and `decisions` already means "no
+  advancement, resume naming the unresolved work". The general cancellation/unavailable/
+  non-answer rule is stated once, in Step 7, so the two cannot be read as contradicting.
+
+- **One stamp serves both ownerships**, as with forge-verify: `--owner "{owner}"` is a
+  runtime placeholder, so `_SCRIPTED_SITES` gets ONE row and item 024's §2.3 rule 5
+  (exactly one terminal-print instruction per contract surface) holds. `--epic` stays
+  prose — it is conditional, and the stamp's single build-time slot is not.
+
+- **Step 5 lost the `verifiedStageVersion` write entirely**, and both surviving mentions of
+  the field in the file are negations ("never write … by hand", "deliberately **clears**").
+  Likewise every "fresh" mention is a denial. A later edit that reintroduces either as an
+  assertion breaks AC 11/12 without breaking any test — grep before editing.
+
+- Body is 130 lines / well under both caps; `state-*` call sites went 30 → 32 (both new
+  `state-verify` fences carry their `--epic` sentence in the paragraph immediately above).
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with `PASS: spec-purity checker`,
+`PASS: epic-manifest pytest suite`, and `PASS: adapters/ matches a fresh generation (no
+drift)`; `python3 -m pytest tests/test_state_verb_call_sites.py
+tests/test_stage_exit_protocol.py` passes; `python3 scripts/build-adapters.py` run and the
+regenerated `adapters/` tree left in the working tree for the loop runner to commit.
+
+Also driven against the real CLI: all seven `FixOutcome` values close successfully with
+the documented call shape, each emitting exactly one sentinel as the final line —
+`reverified` fencing the live successor `/feature-forge:forge-3-specs widget`,
+`no-findings`/`applied` fencing `/feature-forge:forge-verify widget --served-stage
+forge-2-tech`, and `decisions`/`failed`/`reverify-findings`/`deferred` fencing the fix
+resume for the same served stage; the nested form returns `nextSteps: null`,
+`sentinel: null`, `terminalOwnedBy: "outer"`. The Step 5 sequence
+(`--status findings-applied` → Commit 1 → `--commit-hash $(git rev-parse HEAD)`) writes an
+entry carrying `fixedAt` and the 40-hex hash and **no** `verifiedStageVersion`.

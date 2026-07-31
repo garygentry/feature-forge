@@ -70,6 +70,9 @@ _SCRIPTED_SITES = [
     ("skills/forge-verify/SKILL.md",
      '--feature "{feature}" --stage forge-verify --owner "{owner}" '
      '--outcome "{VerifyOutcome}" --verify-mode "{mode}"'),
+    ("skills/forge-fix/SKILL.md",
+     '--feature "{feature}" --stage forge-fix --owner "{owner}" '
+     '--outcome "{FixOutcome}" --served-stage "{servedStage}"'),
 ]
 
 # The two canon surfaces that carried the loop's retired bespoke blocks. They are the

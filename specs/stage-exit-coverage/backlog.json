@@ -633,8 +633,8 @@
         "the skill reads ownership from the literal owner: token and defaults to direct when absent; the retired autoFix-chain inference wording is gone",
         "python3 -m pytest tests/test_state_verb_call_sites.py passes with the new state-verify call sites, each carrying --epic inside the guard's window"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T11:05:04.633Z",
       "dependsOn": [
         "005",
         "007",
