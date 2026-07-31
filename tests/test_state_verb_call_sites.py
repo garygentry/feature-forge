@@ -133,8 +133,47 @@ def test_every_state_verb_call_site_carries_the_epic_instruction():
     ]
     assert not missing, (
         "`state-*` call sites with no `--epic` instruction within "
-        f"{LOOKBEHIND} lines above — epic members will write the wrong feature's "
-        "state:\n  " + "\n  ".join(missing)
+        f"{LOOKBEHIND} lines above or {LOOKAHEAD} lines below — epic members will "
+        "write the wrong feature's state:\n  " + "\n  ".join(missing)
+    )
+
+
+def test_the_window_is_no_wider_than_the_measured_maximum():
+    """The lookaround bounds are pinned, because widening them silently guts Guard 1.
+
+    The window is the guard's entire discriminating power: at 20 lines of lookbehind
+    it reached past a block's own `--epic` mandate into the PRECEDING block's, so
+    deleting the `state-artifact` mandate left Guard 1 green on the strength of an
+    unrelated `state-enter` mandate 17 lines up. Nothing else fails when these
+    numbers grow — the guard just quietly stops discriminating — so the bound is
+    asserted here rather than left to review.
+
+    12/8 is the measured maximum (10 lines above at the widest real site) plus a
+    small margin for a reworded lead-in. Raising either constant means re-measuring
+    canon and re-confirming the buried-mandate hole stays closed, not editing this
+    assertion.
+    """
+    assert LOOKBEHIND <= 12, (
+        f"LOOKBEHIND widened to {LOOKBEHIND}: the window now reaches past a block's "
+        "own `--epic` mandate into its neighbour's, which is how a deleted mandate "
+        "once passed Guard 1"
+    )
+    assert LOOKAHEAD <= 8, (
+        f"LOOKAHEAD widened to {LOOKAHEAD}: same failure mode as LOOKBEHIND, in the "
+        "other direction"
+    )
+
+
+def test_the_failure_message_describes_the_whole_window():
+    """Guard 1's message must name both limbs, or it misdirects the reader.
+
+    It described only the lookbehind while the window searched in both directions,
+    so a maintainer chasing a failure would look 12 lines up, find nothing relevant,
+    and never think to look below the call.
+    """
+    source = read(Path(__file__).resolve())
+    assert "lines above or " in source and "lines below" in source, (
+        "Guard 1's failure message no longer describes both limbs of the window"
     )
 
 

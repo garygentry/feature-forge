@@ -2359,7 +2359,7 @@ def test_loop_complete_is_verify_first_and_docs_is_not_primary(tmp_path: Path) -
     assert d["primaryCommand"] == "/feature-forge:forge-verify widget"
     assert d["deferredCommand"] == LOOP_DOCS
     block = payload["nextSteps"]
-    assert f"```\n/feature-forge:forge-verify widget\n```" in block
+    assert "```\n/feature-forge:forge-verify widget\n```" in block
     assert f"```\n{LOOP_DOCS}\n```" not in block, "the successor is never fenced"
     assert block.count("```") == 2
     assert f"continue with: `{LOOP_DOCS}`" in block

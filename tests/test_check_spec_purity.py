@@ -299,6 +299,120 @@ def test_reader_robustness(fixture_copy, fixture, expect_clean):
         assert "malformed frontmatter block" in result.stdout
 
 
+# ── Rule 7: the shipped-artifact self-containment ratchet (finding V-009) ──
+# Default-deny over scripts/, references/, skills/, eval/, with existing debt
+# grandfathered by exact path. The property that matters is the RATCHET one: a
+# file that is clean today cannot regress, and a new file starts locked. That is
+# what the blanket rule (unlandable) and a flat allowlist (no enforcement) each
+# fail to give. Driven directly against check_no_spec_citations over a tmp tree.
+
+
+def _citation_tree(tmp_path: Path, name: str, rel: str, body: str) -> Path:
+    root = tmp_path / name
+    target = root / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body, encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize(
+    "citation",
+    [
+        "see 03-verification-state.md for the matrix",  # full spec filename
+        "per 03 §5.1 the entry is cleared",  # bare numeric shorthand
+        "per `02` §3.1 step 5, owners are direct",  # BACKTICKED — the N-3 spelling
+        "the tech-spec §3.4 rules govern this",  # tech-spec coordinate
+    ],
+)
+def test_each_citation_form_trips_the_ratchet(tmp_path: Path, citation: str):
+    """All four leaked citation forms trip, including the backticked one.
+
+    The backticked case is the regression that matters: the round-1 cleanup
+    measured itself with the same space-requiring pattern that produced it, so
+    six ``\\`02\\` §3.1``-style coordinates re-entered an already-cleaned file
+    invisibly. A pattern that cannot see that spelling is not a gate.
+    """
+    m = _load_checker_module()
+    root = _citation_tree(tmp_path, "bad", "scripts/helper.py", f"# {citation}\n")
+    violations = m.check_no_spec_citations(root)
+    assert violations, f"citation form must trip rule 7: {citation}"
+    assert violations[0].rule is m.Rule.SELF_CONTAINMENT
+    assert violations[0].path == "scripts/helper.py"
+
+
+def test_new_file_starts_locked_but_grandfathered_file_is_exempt(tmp_path: Path):
+    m = _load_checker_module()
+    citation = "# see 04-pipeline-integration.md\n"
+
+    # (a) A file NOT on the grandfather list is locked from birth.
+    new = _citation_tree(tmp_path, "new", "scripts/brand-new.py", citation)
+    assert m.check_no_spec_citations(new), "a new shipped file must start locked"
+
+    # (b) A grandfathered path carries its documented debt without failing.
+    old = _citation_tree(
+        tmp_path, "old", m.CITATION_GRANDFATHERED[0], citation
+    )
+    assert m.check_no_spec_citations(old) == []
+
+
+def test_bare_section_reference_is_not_a_citation(tmp_path: Path):
+    """An intra-file ``§`` points at something that ships — it must not trip.
+
+    Rule 7 targets pointers into the specs tree, which is archived once the
+    feature ships. A bare section mark with no document coordinate is not one,
+    and flagging it would make the rule unlandable for the wrong reason.
+    """
+    m = _load_checker_module()
+    root = _citation_tree(tmp_path, "ok", "scripts/helper.py", "# see §7 above\n")
+    assert m.check_no_spec_citations(root) == []
+
+
+def test_the_ratchet_would_have_caught_the_n3_leak():
+    """The six coordinates that re-entered forge-session.py go red under rule 7.
+
+    Verified against the real file at the commit that carried them, so the claim
+    is measured rather than asserted. The current worktree copy is clean, and
+    ``scripts/forge-session.py`` is deliberately NOT grandfathered — that pairing
+    is the whole point of the ratchet.
+    """
+    m = _load_checker_module()
+    assert "scripts/forge-session.py" not in m.CITATION_GRANDFATHERED
+    leaked = subprocess.run(
+        ["git", "show", "99e63e6:scripts/forge-session.py"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if leaked.returncode != 0:
+        pytest.skip("pre-fix revision unavailable (shallow clone)")
+    assert len(m._SPEC_CITATION_RE.findall(leaked.stdout)) == 6
+
+
+def test_grandfather_list_is_sorted_deduped_and_shrinking_only():
+    """The allowlist is debt, so it must stay auditable — and every entry must exist.
+
+    A stale entry silently un-locks nothing, but it hides that the file was
+    cleaned or renamed; catching it here is what makes "delete the line" the
+    natural maintenance action and keeps the list shrinking.
+    """
+    m = _load_checker_module()
+    entries = list(m.CITATION_GRANDFATHERED)
+    assert entries == sorted(entries), "keep the grandfather list sorted"
+    assert len(entries) == len(set(entries)), "duplicate grandfather entries"
+    for rel in entries:
+        path = REPO_ROOT / rel
+        assert path.is_file(), f"grandfathered path no longer exists: {rel}"
+        text = path.read_text(encoding="utf-8", errors="replace")
+        assert m._SPEC_CITATION_RE.search(text), (
+            f"{rel} is now clean — delete its CITATION_GRANDFATHERED entry"
+        )
+
+
+def test_repo_itself_is_clean_under_rule_7():
+    m = _load_checker_module()
+    assert m.check_no_spec_citations(REPO_ROOT) == []
+
+
 def test_loaded_keysets_match_schema():
     """check-spec-purity's loaded ALLOWED/REQUIRED == the schema's properties/required.
 

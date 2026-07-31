@@ -880,8 +880,7 @@ def is_complete_for_orchestration(state: dict) -> bool:
 
     A feature whose forge-verify-impl is 'findings-reported' (unfixed) is NOT
     complete and does NOT unblock dependents (REQ-ORCH-01). This is the single
-    implementation of the predicate, reused by the dependency gate and handoff
-.
+    implementation of the predicate, reused by the dependency gate and handoff.
 
     Args:
         state: A parsed .pipeline-state.json dict (or {} if the member has none).
@@ -1294,7 +1293,7 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
         warnings.extend(_auto_verify_debt_warnings(name, member_state))
 
     # (3b) epic-root verification debt, classified against the manifest revision and
-    #      read from.epic-state.json alone — no member state participates.
+    #      read from .epic-state.json alone — no member state participates.
     warnings.extend(_epic_verify_warnings(
         manifest.get("epic", epic_dir.name),
         epic_dir,

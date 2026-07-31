@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate the feature-forge skill canon for spec purity (REQ-VER-01..03).
 
-Stdlib-only (no pyyaml), matching scripts/epic-manifest.py. Enforces the six
+Stdlib-only (no pyyaml), matching scripts/epic-manifest.py. Enforces the seven
 rules from tech-spec.md §3.4 against the canonical skill surfaces, printing a
 human-readable report (REQ-OBS-01) and exiting non-zero on any violation
 (REQ-VER-02). See spec docs 00-core-definitions.md (types/constants) and
@@ -157,6 +157,84 @@ _PRELUDE_SENTINEL: str = (
     '[ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"'
 )
 
+# ── Rule 7: the shipped-artifact self-containment ratchet ────────────────────
+#
+# skills/forge-5-loop/SKILL.md states the governing rule: artifacts the loop
+# writes into a target repo must be SELF-CONTAINED — they must not reference
+# feature-forge spec files, because specs are pre-implementation inputs that may
+# be archived or deleted once the feature ships. Nothing enforced it, which is
+# how one script grew from 0 to 118 citations across 32 unattended commits.
+#
+# This is a RATCHET, not a blanket rule. The blanket form is unlandable (most
+# files in scope match) and a flat allowlist of every current offender would gut
+# it. Instead: DEFAULT-DENY over the four shipped roots, with the existing debt
+# grandfathered by name in CITATION_GRANDFATHERED below. A file that is clean
+# today can never regress, and a NEW file starts locked — which is exactly the
+# leak that slipped through once already (six backticked coordinates re-entered
+# a file that had just been cleaned, invisible to the grep that cleaned it).
+#
+# The allowlist is expected to SHRINK. Removing an entry after cleaning its file
+# is the intended maintenance action; adding one is not — a new entry means the
+# self-containment rule was knowingly broken and needs a reason in review.
+SELF_CONTAINMENT_SURFACES: tuple[str, ...] = (
+    "scripts/**/*",
+    "references/**/*",
+    "skills/**/*",
+    "eval/**/*",
+)
+
+#: Files that carried spec citations when the ratchet landed (2026-07-31), listed
+#: with their count at that time. GRANDFATHERED, NOT SANCTIONED: each entry is
+#: outstanding debt. Clean the file, then delete its line. Never add a line to
+#: make a new violation pass. Matched by exact repo-relative POSIX path, so a
+#: rename re-locks the file rather than silently carrying the exemption along.
+CITATION_GRANDFATHERED: tuple[str, ...] = (
+    "eval/README.md",  # 1
+    "references/loop-agent-selection.py",  # 18
+    "references/ralph-loop-contract.md",  # 4
+    "references/shared-conventions.md",  # 5
+    "references/stacks/_generic.md",  # 2
+    "references/stacks/go.md",  # 2
+    "references/stacks/python.md",  # 2
+    "references/stacks/rust.md",  # 2
+    "references/stacks/typescript.md",  # 2
+    "references/vendor-construct-inventory.md",  # 8
+    "scripts/build-adapters.py",  # 83
+    "scripts/check-spec-purity.py",  # 21
+    "scripts/check-version-sync.py",  # 5
+    "scripts/forge-bootstrap.py",  # 49 — pre-existing at the feature's base
+    "scripts/forge-root.sh",  # 1
+    "scripts/requirements-adapters.txt",  # 1
+    "scripts/validate.sh",  # 1
+    "skills/forge-0-epic/SKILL.md",  # 2
+    "skills/forge-0-epic/references/epic-manifest-subcommands.md",  # 1
+    "skills/forge-3-specs/SKILL.md",  # 10 — names the NN-*.md output convention
+    "skills/forge-3-specs/references/spec-archetypes.md",  # 6 — same convention
+    "skills/forge-3-specs/references/spec-examples.md",  # 2 — same convention
+    "skills/forge-4-backlog/SKILL.md",  # 4 — reads the NN-*.md spec suite
+    "skills/forge-5-loop/SKILL.md",  # 2
+    "skills/forge-5-loop/references/agent-selection.md",  # 4
+    "skills/forge-verify/SKILL.md",  # 2
+    "skills/forge-verify/references/findings-template.md",  # 11 — cites specs by design
+    "skills/forge-verify/references/verification-checklists/impl.md",  # 2
+    "skills/forge-verify/references/verification-checklists/specs.md",  # 6
+)
+
+#: The three citation forms that leaked, as one alternation:
+#:   1. a full spec filename — ``03-verification-state.md``
+#:   2. numeric shorthand, BACKTICKED OR BARE — ``03 §5.1`` and ```002` §3.1``
+#:   3. a tech-spec coordinate — ``tech-spec §3.4``
+#: Form 2 must accept the backticked variant: a pattern requiring a literal space
+#: was blind to exactly that spelling, and six such coordinates re-entered an
+#: already-cleaned file because the check reused the pattern that had edited it.
+#: A bare ``§`` with no document coordinate is deliberately NOT matched — an
+#: intra-file section reference points at something that ships.
+_SPEC_CITATION_RE: re.Pattern[str] = re.compile(
+    r"\b0[0-9]-[a-z][a-z0-9-]*\.md\b"
+    r"|(?:`0[0-9]`|\b0[0-9])\s*§"
+    r"|\btech-spec\s*§"
+)
+
 # §5 — canonical violation reason strings (single source of truth; never
 # re-typed inline). Placeholder fields are filled with str.format() at emit time;
 # no-placeholder strings are used verbatim.
@@ -169,10 +247,14 @@ VR_BODY_LINES: str = "body {n} lines exceeds {limit}"
 VR_BODY_WORDS: str = "body {n} words exceeds {limit}"
 VR_PRELUDE_DRIFT: str = "bootstrap prelude not byte-identical to canon"
 VR_UNBOUND_ROOT: str = "shell fence uses $R with no in-fence prelude (R= assignment)"
+VR_SPEC_CITATION: str = (
+    "{n} spec-document citation(s) in a shipped surface — shipped artifacts must "
+    "be self-contained; specs may be archived once the feature ships"
+)
 
 
 class Rule(str, enum.Enum):
-    """The six spec-purity rules check-spec-purity.py enforces (tech-spec §3.4).
+    """The seven spec-purity rules check-spec-purity.py enforces (tech-spec §3.4).
 
     Uses the ``str, enum.Enum`` mixin (rather than 3.11's ``enum.StrEnum``) so the
     checker runs on the repo's Python 3.10 baseline; ``.value`` is a plain ``str``,
@@ -185,6 +267,7 @@ class Rule(str, enum.Enum):
     BODY_SIZE = "body-size"  # rule 4 — REQ-SIZE-03 (hard fail)
     PRELUDE_IDENTITY = "prelude-identity"  # rule 5 — REQ-RES-05 / REQ-MAINT-01
     PRELUDE_PRESENCE = "prelude-presence"  # rule 6 — REQ-RES-05 companion (V-002)
+    SELF_CONTAINMENT = "self-containment"  # rule 7 — shipped-artifact ratchet (V-009)
 
 
 @dataclass(frozen=True)
@@ -641,8 +724,71 @@ def check_prelude_presence(root: Path) -> list[Violation]:
     return violations
 
 
+def iter_shipped_files(root: Path) -> list[Path]:
+    """Yield every file under the four shipped roots, deterministically ordered.
+
+    Wider than ``iter_canonical_files``: rule 7 governs shipped *runtime* code
+    (``scripts/``, ``eval/``) as well as the skill canon, because the citations
+    it exists to stop leaked into runtime scripts, not into SKILL.md bodies.
+    ``__pycache__`` is skipped — generated bytecode is not a shipped surface, and
+    ``adapters/`` never appears because it is outside all four roots.
+
+    Args:
+        root: The repo root to scan.
+
+    Returns:
+        Sorted, de-duplicated list of files, for stable CI output.
+    """
+    found: set[Path] = set()
+    for pattern in SELF_CONTAINMENT_SURFACES:
+        for path in root.glob(pattern):
+            if path.is_file() and "__pycache__" not in path.parts:
+                found.add(path)
+    return sorted(found)
+
+
+def check_no_spec_citations(root: Path) -> list[Violation]:
+    """Rule 7: no spec-document citations in shipped surfaces, ratcheted (V-009).
+
+    Default-deny over ``SELF_CONTAINMENT_SURFACES``, with the debt that existed
+    when the rule landed grandfathered by exact path in ``CITATION_GRANDFATHERED``.
+    A clean file can never regress and a new file starts locked, which is the
+    property a blanket rule (unlandable — most files match) and a flat allowlist
+    (no enforcement left) both fail to provide.
+
+    Unreadable files are skipped rather than flagged: rule 7 is a prose check, and
+    a file this checker cannot decode carries no prose it could be citing.
+
+    Args:
+        root: The repo root to scan.
+
+    Returns:
+        One Violation per non-grandfathered file holding at least one citation,
+        carrying the count so a regression's size is visible in the CI log.
+    """
+    violations: list[Violation] = []
+    grandfathered = frozenset(CITATION_GRANDFATHERED)
+    for path in iter_shipped_files(root):
+        rel = path.relative_to(root).as_posix()
+        if rel in grandfathered:
+            continue
+        text = _read_text(path)
+        if text is None:
+            continue
+        count = len(_SPEC_CITATION_RE.findall(text))
+        if count:
+            violations.append(
+                Violation(
+                    rel,
+                    Rule.SELF_CONTAINMENT,
+                    VR_SPEC_CITATION.format(n=count),
+                )
+            )
+    return violations
+
+
 def collect_violations(root: Path) -> list[Violation]:
-    """Run all six rules and return their violations in deterministic order (§7).
+    """Run all seven rules and return their violations in deterministic order (§7).
 
     Args:
         root: The repo root to scan.
@@ -658,6 +804,7 @@ def collect_violations(root: Path) -> list[Violation]:
     violations += check_body_size(root)  # rule 4 — REQ-SIZE-03
     violations += check_prelude_identity(root)  # rule 5 — REQ-RES-05
     violations += check_prelude_presence(root)  # rule 6 — REQ-RES-05 companion
+    violations += check_no_spec_citations(root)  # rule 7 — self-containment ratchet
     return sorted(violations, key=lambda v: (v.path, v.rule.value, v.reason))
 
 

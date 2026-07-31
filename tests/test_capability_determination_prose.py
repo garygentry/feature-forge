@@ -66,6 +66,21 @@ CAPABILITY_LEAD_INS: Final[tuple[str, ...]] = (
 #: question mechanism and no permitted dispatch" where the authoring stages write
 #: "`interactive`, not `manual`" — and forcing one wording would be a rewrite of canon
 #: disguised as a test.
+#: Every fragment must carry the clause's MEANING, so that rewriting the sentence into
+#: the misreading the clause exists to prevent breaks the match. Two fragments failed
+#: that bar and were removed:
+#:
+#:   * `"Reserve \`manual\`"` (clause b) — a bare token with no semantic content.
+#:     `forge-verify` matched clause (b) on it alone, so rewriting its sentence to
+#:     "Reserve `manual` for any session that may not dispatch a subagent unsolicited"
+#:     — precisely the misreading §6.2 exists to prevent — left the guard green.
+#:     The accepted phrasing now requires the *conjunction*.
+#:   * `"Standard Verify Gate first when you may not dispatch unsolicited"` (clause c)
+#:     — that sentence lives in the DIRECTIVES-consumption paragraph, which is
+#:     verbatim boilerplate in all nine exit skills including the three that carry no
+#:     capability prose at all. Every surface matched it for free, and `forge-fix`
+#:     matched clause (c) on nothing else; deleting the real clause-(c) sentence from
+#:     two surfaces left the guard green both times.
 CLAUSES: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
     "a": (
         "capability is a permission test, not a tool-presence test",
@@ -73,14 +88,16 @@ CLAUSES: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
     ),
     "b": (
         "consent-gated dispatch is `interactive`; `manual` needs neither mechanism",
-        ("`interactive`, not `manual`", "Reserve `manual`"),
+        (
+            "`interactive`, not `manual`",
+            "**no** question mechanism **and** **no** permitted dispatch",
+        ),
     ),
     "c": (
         "an auto-verify directive under a dispatch bar goes through the gate",
         (
             "choice 2 omitted",
             "dispatched on the affirmative",
-            "Standard Verify Gate first when you may not dispatch unsolicited",
             "never grounds to fence the production successor",
         ),
     ),
@@ -104,16 +121,69 @@ SURFACES_WITHOUT_PROSE: Final[frozenset[str]] = frozenset(
 )
 
 
+def _capability_paragraph(text: str) -> str:
+    """The single paragraph in which this surface determines capability.
+
+    Clause matching is scoped to this paragraph rather than the whole file, because
+    a whole-file match let boilerplate elsewhere satisfy the clauses for free — the
+    DIRECTIVES-consumption paragraph is verbatim in all nine exit skills, so any
+    fragment appearing there is matched by every surface regardless of what its
+    capability prose actually says. A clause must be stated where the decision is
+    made, or the guard is asserting the existence of boilerplate.
+
+    Paragraphs are blank-line separated, matching how these skill bodies are written.
+    Returns `""` when no paragraph carries a lead-in, which fails every clause rather
+    than passing vacuously.
+    """
+    for block in text.replace("\r\n", "\n").split("\n\n"):
+        if any(lead in block for lead in CAPABILITY_LEAD_INS):
+            return block
+    return ""
+
+
+def _markdown_section(text: str, heading: str) -> str:
+    """The body of the `## {heading}` section, up to the next same-or-higher heading.
+
+    The shared rule in `references/shared-conventions.md` states the clauses across a
+    bulleted section rather than in one paragraph, so it is scoped by section instead.
+    The point of scoping is identical: keep unrelated boilerplate from satisfying a
+    clause on the strength of appearing somewhere in the same file.
+    """
+    lines = text.replace("\r\n", "\n").split("\n")
+    body: list[str] = []
+    inside = False
+    for line in lines:
+        if line.startswith("## "):
+            if inside:
+                break
+            inside = line[3:].strip() == heading
+            continue
+        if inside:
+            body.append(line)
+    return "\n".join(body)
+
+
 def _assert_capability_prose(surface: str, where: str) -> None:
     """Raise `AssertionError` unless `surface` states all three clauses.
 
     Takes the surface's **text**, not a path, so the negative controls can call it on
-    mutated copies without ever writing to the repository.
+    mutated copies without ever writing to the repository. Matching is scoped to the
+    capability paragraph — see `_capability_paragraph`.
     """
+    paragraph = _capability_paragraph(surface)
+    assert paragraph, (
+        f"{where}: no capability-determining paragraph found — the lead-in is gone, "
+        "so the clauses below cannot be located, let alone satisfied"
+    )
+    _assert_clauses_in(paragraph, where, "capability paragraph")
+
+
+def _assert_clauses_in(scope: str, where: str, scope_name: str) -> None:
+    """Assert all three clauses appear within `scope`."""
     for clause, (description, fragments) in CLAUSES.items():
-        assert any(fragment in surface for fragment in fragments), (
+        assert any(fragment in scope for fragment in fragments), (
             f"{where}: capability clause ({clause}) is gone — {description}. "
-            f"None of these phrasings survive: {list(fragments)}"
+            f"None of these phrasings survive in the {scope_name}: {list(fragments)}"
         )
 
 
@@ -147,7 +217,11 @@ def test_the_shared_capability_rule_is_documented():
     `references/`. If the shared statement rots, those two are left deferring to
     nothing and Guard 1 would not notice — it only walks the surfaces that restate.
     """
-    _assert_capability_prose(read(CONVENTIONS), "references/shared-conventions.md")
+    section = _markdown_section(read(CONVENTIONS), "Verify Capability")
+    assert section, "references/shared-conventions.md lost its Verify Capability section"
+    _assert_clauses_in(
+        section, "references/shared-conventions.md", "Verify Capability section"
+    )
     assert "Host and capability determination" in read(PROTOCOL), (
         "references/stage-exit-protocol.md lost the section the delegating skills "
         "name by title — their pointer now resolves to nothing"
@@ -197,50 +271,81 @@ def test_the_guard_is_not_vacuous():
 # --------------------------------------------------------------------------------------
 
 
-def _representative_surface() -> str:
-    """The text of one real determining surface, used as the mutation base."""
-    surfaces = _capability_surfaces()
-    assert surfaces, "no capability-determining surface to mutate"
-    for relpath, text in surfaces:
-        if relpath == "skills/forge-1-prd/SKILL.md":
-            return text
-    return surfaces[0][1]
+#: The controls run over EVERY determining surface, not one representative. A single
+#: representative hid a real hole: `forge-1-prd` satisfies clause (b) through
+#: "`interactive`, not `manual`", so the control never exercised the *other* accepted
+#: phrasing, and `forge-verify` — the only surface that uses it — was degradable
+#: undetected. A per-surface parametrization makes each roster entry its own control.
+ALL_SURFACES: Final[list[tuple[str, str]]] = _capability_surfaces()
+SURFACE_IDS: Final[list[str]] = [relpath for relpath, _ in ALL_SURFACES]
 
 
-def test_rewriting_clause_b_to_tool_presence_wording_fails_the_guard():
+@pytest.mark.parametrize("relpath,base", ALL_SURFACES, ids=SURFACE_IDS)
+def test_rewriting_clause_a_to_tool_presence_wording_fails_the_guard(
+    relpath: str, base: str
+):
     """Negative control 1: capability restated as "do I have the tool" must be caught."""
-    base = _representative_surface()
-    _assert_capability_prose(base, "control-base")  # the base really is compliant
+    _assert_capability_prose(base, f"{relpath} (control-base)")  # the base is compliant
 
     mutated = base.replace(
         "dispatch, not a listed tool",
         "dispatch, which requires the tool to be listed in my tool surface",
     )
-    assert mutated != base, "clause (a)'s wording moved — this control now mutates nothing"
+    assert mutated != base, (
+        f"{relpath}: clause (a)'s wording moved — this control now mutates nothing"
+    )
     with pytest.raises(AssertionError, match=r"clause \(a\)"):
-        _assert_capability_prose(mutated, "control-1")
+        _assert_capability_prose(mutated, f"{relpath} (control-1)")
 
 
-def test_downgrading_the_consent_case_to_manual_fails_the_guard():
-    """Negative control 2: calling a consent-gated session `manual` must be caught."""
-    base = _representative_surface()
+@pytest.mark.parametrize("relpath,base", ALL_SURFACES, ids=SURFACE_IDS)
+def test_downgrading_the_consent_case_to_manual_fails_the_guard(relpath: str, base: str):
+    """Negative control 2: calling a consent-gated session `manual` must be caught.
+
+    The `Reserve \\`manual\\`` mutation is the one N-5 measured: rewriting it to
+    "for any session that may not dispatch a subagent unsolicited" is exactly the
+    misreading the clause exists to prevent, and it used to leave the guard green.
+    """
     mutated = base.replace("`interactive`, not `manual`", "`manual`, not `interactive`")
-    mutated = mutated.replace("Reserve `manual`", "Prefer `manual`")
-    assert mutated != base, "clause (b)'s wording moved — this control now mutates nothing"
+    mutated = mutated.replace(
+        "Reserve `manual` for **no** question mechanism **and** **no** permitted dispatch",
+        "Reserve `manual` for any session that may not dispatch a subagent unsolicited",
+    )
+    assert mutated != base, (
+        f"{relpath}: clause (b)'s wording moved — this control now mutates nothing"
+    )
     with pytest.raises(AssertionError, match=r"clause \(b\)"):
-        _assert_capability_prose(mutated, "control-2")
+        _assert_capability_prose(mutated, f"{relpath} (control-2)")
 
 
-def test_deleting_the_auto_path_through_the_gate_fails_the_guard():
+@pytest.mark.parametrize("relpath,base", ALL_SURFACES, ids=SURFACE_IDS)
+def test_deleting_the_auto_path_through_the_gate_fails_the_guard(relpath: str, base: str):
     """Negative control 3: dropping the "auto directive still goes through the gate"
-    sentence must be caught."""
-    base = _representative_surface()
+    sentence must be caught.
+
+    With the shared DIRECTIVES boilerplate no longer an accepted phrasing, this
+    control now deletes only sentences that live in the capability paragraph — a
+    degradation a real edit would produce, which was not true before.
+    """
     mutated = base
     for fragment in CLAUSES["c"][1]:
         mutated = mutated.replace(fragment, "")
-    assert mutated != base, "clause (c)'s wording moved — this control now mutates nothing"
+    assert mutated != base, (
+        f"{relpath}: clause (c)'s wording moved — this control now mutates nothing"
+    )
     with pytest.raises(AssertionError, match=r"clause \(c\)"):
-        _assert_capability_prose(mutated, "control-3")
+        _assert_capability_prose(mutated, f"{relpath} (control-3)")
+
+
+def test_the_controls_cover_every_determining_surface():
+    """The control parametrization is the roster, not a sample of it."""
+    assert len(ALL_SURFACES) >= MIN_CAPABILITY_SURFACES, (
+        f"only {len(ALL_SURFACES)} surfaces parametrize the negative controls "
+        f"(floor {MIN_CAPABILITY_SURFACES})"
+    )
+    assert SURFACE_IDS == [relpath for relpath, _ in _capability_surfaces()], (
+        "the controls' roster drifted from the live derived roster"
+    )
 
 
 # --------------------------------------------------------------------------------------

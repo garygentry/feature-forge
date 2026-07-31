@@ -510,14 +510,14 @@ class StageExitDirectives(TypedDict, total=False):
     # by VERIFY_MODE_TO_STAGE. None when this exit is not a verify/fix exit.
     verifyMode: str | None
     # Terminal outcome for stages with a multi-way result. Must be a member of
-    # EXIT_OUTCOMES[stage] (§2) — consult that table rather than this comment,
+    # EXIT_OUTCOMES[stage] — consult that table rather than this comment,
     # which is deliberately not a second copy of the domain. None for stages
     # whose exit has a single outcome.
     outcome: str | None
     # Branch ownership for a verify/fix exit — ExitOwner, i.e. exactly "direct"
     # (this call owns and prints the terminal block) or "nested" (an outer
     # authoring stage owns it). REQUIRED for forge-verify/forge-fix and REJECTED
-    # for stages 0–6, which are always direct owners (§3, `02` §3.1 step 5).
+    # for stages 0–6, which are always direct owners.
     # None only on a production-stage exit, where the concept does not apply.
     owner: str | None
     # Who prints the terminal block. "self" — this caller renders exactly one
@@ -590,7 +590,7 @@ class StageExitDirectives(TypedDict, total=False):
     #   Warning: autoVerifyStages key "{key}" names no verify-capable stage; it is
     #   ignored. Valid keys are forge-1-prd, forge-2-tech, forge-3-specs,
     #   forge-4-backlog, forge-5-loop.
-    # Keys are rendered in sorted order, per the `02` §10 determinism rule
+    # Keys are rendered in sorted order, per the determinism rule
     # (REQ-OBS-02, REQ-REL-01).
     invalidAutoVerifyKeys: list[str]
     # Whether the working directory is a git repository at all.
@@ -600,13 +600,13 @@ class StageExitDirectives(TypedDict, total=False):
     # False — unknown, not clean.
     cleanTree: bool | None
     # Human-readable non-fatal advisories, in a fixed deterministic order:
-    # (1) the epic-member unreadable-state fallback (`02` §9), (2) the
-    # legacy/malformed scheduledStageVersion metadata warning (`03` §5.1),
-    # (3) the scheduled-vs-current revision mismatch note (`03` §5.3). A LIST,
+    # (1) the epic-member unreadable-state fallback, (2) the legacy/malformed
+    # scheduledStageVersion metadata warning, (3) the scheduled-vs-current
+    # revision mismatch note. A LIST,
     # not a string, because these are independently triggerable and can co-occur
     # on one call; a single string would force an implementer to drop or
     # concatenate them, and REQ-REL-01's byte-identical-output requirement needs a
-    # defined order to assert against. Mirrors RenderStatus.warnings (`04` §2.2),
+    # defined order to assert against. Mirrors RenderStatus.warnings,
     # which is already a list. Empty list means checked and clean; the key is
     # always present, so [] and absent differ. Each entry names its affected
     # feature/stage/key AND the recovery action (REQ-OBS-02).
@@ -2107,7 +2107,7 @@ _BRANCH_ROUTE_KIND: Final[dict[str, dict[str, str]]] = {
 #: The deterministic sentence each branch outcome renders inside its NEXT-STEPS block
 #: (``_next_steps_block(..., outcome_text=...)``). Every non-advancing outcome names
 #: the unresolved work explicitly, which is what is required of `decisions`,
-#: `failed`, and `deferred`, and what §6.1 requires of a `failed` verification.
+#: `failed`, and `deferred`, and what is required of a `failed` verification.
 _BRANCH_OUTCOME_TEXT: Final[dict[str, dict[str, str]]] = {
     "forge-verify": {
         "passed": (
@@ -3296,8 +3296,7 @@ def stage_exit(
             verifier dispatch capabilities exist; otherwise `manual`. Dispatch
             capability is permission, not tool presence: a dispatch permitted
             only once the user has asked is still `interactive`, because the
-            `standard` gate's own prompt supplies that request
-.
+            `standard` gate's own prompt supplies that request.
 
     Returns:
         A JSON-serializable `StageExitPayload` dictionary.
@@ -3374,8 +3373,8 @@ def stage_exit(
       ``runInStageVerify`` is False, no debt is scheduled, and ``verifyGate`` is
       ``none`` — a loop still in flight has no finished implementation to verify and
       nothing downstream may read as ready (REQ-PROD-02).
-    - ``forge-6-docs`` — the documentation terminus is decided by LIVE epic state
-, never by the successor table: for an epic member the adjacent
+    - ``forge-6-docs`` — the documentation terminus is decided by LIVE epic
+      state, never by the successor table: for an epic member the adjacent
       ``epic-manifest.py render-status`` supplies the next actionable member's own
       command, and anything else routes to the epic dashboard. A ``blocked``
       outcome routes to recovery and never claims completion. Any helper failure
@@ -3598,7 +3597,7 @@ def stage_exit(
     # behavior for every production exit, where `route_stage is stage`.
     if route_stage == "forge-0-epic" and next_feature is None:
         # An epic exit that names no concrete member has nothing to hand off to.
-        # The dashboard is the same non-fabrication answer §9 gives a named member
+        # The dashboard is the same non-fabrication answer given to a named member
         # that has finished every production stage: never invent a member, and
         # never print a template the user cannot run.
         next_stage_id = None
@@ -5009,9 +5008,9 @@ def cmd_state_verify(
     """Write one verify result transition or one provenance follow-up.
 
     Args:
-        feature: The feature name, or the EPIC name when `stage == "forge-0-epic"`
-. Resolved through the same
-            path-safety and containment rules as every other state write.
+        feature: The feature name, or the EPIC name when `stage == "forge-0-epic"`.
+            Resolved through the same path-safety and containment rules as every
+            other state write.
         stage: The production stage this verify entry serves — one of
             `VERIFY_MODE_TO_STAGE`'s values, or `"forge-0-epic"` for an epic-target
             write. Selects `stages["forge-verify-{suffix}"]`.

@@ -730,7 +730,6 @@ def test_verify_member_is_path_not_name(run_bootstrap, tmp_path: Path) -> None:
     members = [_member("worker", "packages/worker", "generic", None)]
     answers = _answers(layout="monorepo", members=members)
     _scaffold(run_bootstrap, tmp_path, answers)
-    worker = tmp_path / "packages" / "worker"
     # No manual chmod: scaffold sets the exec bit on run.sh/test.sh (REQ-STACK-03).
     result = _verify(run_bootstrap, tmp_path, answers)
     assert result.returncode == 0
