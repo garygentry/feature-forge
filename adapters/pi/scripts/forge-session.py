@@ -2985,6 +2985,93 @@ _LOOP_COMPLETE_SETTLED: Final[str] = (
     "action below."
 )
 
+#: 02 §5.2 — the outcome sentence a loop or documentation exit renders when a blocking
+#: epic change request DISPLACES its live continuation. Both route tables above name
+#: that continuation "below"; once the fence carries the reconcile instead, the claim is
+#: false, so the sentence is REPLACED rather than corrected after the fact. The displaced
+#: command is deliberately not named here — the block's own "After reconciling, continue
+#: the pipeline with" line is its single authoritative mention, so the two can never
+#: disagree. Only used when the displaced command actually differs from the reconcile:
+#: a route that already lands on the epic keeps its own accurate wording.
+_RECONCILE_FIRST_TEXT: Final[dict[str, str]] = {
+    "forge-5-loop": (
+        "Every backlog item is done for {feature} and its implementation verification "
+        "is settled, but {count} blocking epic change request{plural} recorded against "
+        "epic {epic} must be reconciled first. Proceeding would build on a "
+        "decomposition that is about to change, so the reconcile below comes before "
+        "the continuation named under it."
+    ),
+    "forge-6-docs": (
+        "Documentation is complete for {feature}, but {count} blocking epic change "
+        "request{plural} recorded against epic {epic} must be reconciled first. "
+        "Handing off would build the next member on a decomposition that is about to "
+        "change, so the reconcile below comes before the continuation named under it."
+    ),
+}
+
+
+def _promote_reconcile(
+    stage: str,
+    epic_reconcile: dict,
+    feature: str,
+    epic_name: object,
+    primary_canonical: str,
+    deferred_canonical: str | None,
+    outcome_text: str | None,
+    advancing: bool,
+) -> tuple[str, str | None, str | None]:
+    """Reconcile-first promotion for the loop and documentation routes.
+
+    Both routes compute their real primary from LIVE state (``render-status``), long
+    after ``epicReconcile["deferred"]`` was seeded from the successor table. That seed
+    is the wrong continuation for these two stages — for the loop it names this
+    feature's own documentation, which the route deliberately did not choose, and for
+    documentation it is None because the pipeline has no stage after it. So the
+    continuation is re-derived here from the route's own result, never from the
+    successor table (REQ-ROUTE-05/06: the live thread is what must survive).
+
+    Args:
+        stage: `forge-5-loop` or `forge-6-docs` — selects the replacement wording.
+        epic_reconcile: The blocking reconcile directive, MUTATED in place.
+        feature: The exiting feature.
+        epic_name: The epic the reconcile is recorded against.
+        primary_canonical: The route's own primary command.
+        deferred_canonical: The route's own deferred continuation, if any.
+        outcome_text: The route's own outcome sentence.
+        advancing: Whether the route's primary advances the pipeline.
+
+    Returns:
+        `(primary_canonical, deferred_canonical, outcome_text)` after promotion.
+
+    A route whose primary IS the epic command (the dashboard handoffs) is not
+    displaced by a reconcile that names the same command: promoting it would leave a
+    "continue the pipeline with" line pointing back at the fence, so its own accurate
+    wording and an absent continuation are kept instead.
+    """
+    reconcile_command = epic_reconcile["command"]
+    if not advancing:
+        # Verification (or a recovery action) outranks the reconcile, so the reconcile
+        # is the FIRST deferred action and the route's own continuation follows it.
+        # Handing the renderer the same command the caller deferred is what collapses
+        # the two conditional lines into one (02 §5.2 rule 4).
+        epic_reconcile["deferred"] = deferred_canonical
+        return primary_canonical, deferred_canonical, outcome_text
+    if primary_canonical == reconcile_command:
+        epic_reconcile["deferred"] = None
+        return primary_canonical, None, outcome_text
+    epic_reconcile["deferred"] = primary_canonical
+    count = epic_reconcile["count"]
+    return (
+        reconcile_command,
+        None,
+        _RECONCILE_FIRST_TEXT[stage].format(
+            feature=feature,
+            epic=epic_name,
+            count=count,
+            plural="s" if count != 1 else "",
+        ),
+    )
+
 
 def _loop_route(
     outcome: str,
@@ -3637,10 +3724,20 @@ def stage_exit(
             resolved,
             verify_canonical,
         )
-        if advancing and blocking_reconcile:
-            # Same reconcile-first rule as every other advancing route.
-            primary_canonical = epic_reconcile["command"]
-            deferred_canonical = None
+        if blocking_reconcile:
+            # Same reconcile-first rule as every other advancing route — but the
+            # continuation carried forward is the LOOP's, not the successor table's
+            # documentation stage, which this route deliberately did not choose.
+            primary_canonical, deferred_canonical, outcome_text = _promote_reconcile(
+                stage,
+                epic_reconcile,
+                feature,
+                epic_name,
+                primary_canonical,
+                deferred_canonical,
+                outcome_text,
+                advancing,
+            )
     elif stage == "forge-6-docs":
         # 02 §8: the documentation terminus is decided by LIVE epic state, not by
         # the successor table — the pipeline ends here, so there is no next stage
@@ -3652,12 +3749,22 @@ def stage_exit(
             outcome,
             host,
         )
-        if advancing and blocking_reconcile:
+        if blocking_reconcile:
             # Same reconcile-first rule as an advancing branch rejoin: handing off to
             # the next member would build it on a decomposition that is about to
-            # change. A non-advancing docs route already lands on the epic itself.
-            primary_canonical = epic_reconcile["command"]
-            deferred_canonical = None
+            # change. A non-advancing docs route already lands on the epic itself. The
+            # successor table has no entry for this stage, so its seeded continuation
+            # is None — the live route's own primary is what must be carried forward.
+            primary_canonical, deferred_canonical, outcome_text = _promote_reconcile(
+                stage,
+                epic_reconcile,
+                feature,
+                epic_name,
+                primary_canonical,
+                deferred_canonical,
+                outcome_text,
+                advancing,
+            )
     elif not resolved:
         primary_canonical = verify_canonical
         deferred_canonical = next_command

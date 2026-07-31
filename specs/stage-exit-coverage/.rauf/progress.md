@@ -2053,3 +2053,79 @@ the pytest suite reports **1723 passed, 2 skipped** (both pre-existing) in 203s;
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` no drift.
 Working tree left with exactly two modified files: the runner-owned `backlog.json` and
 `tests/test_state_verb_call_sites.py`.
+
+## Item 031 — blocking epic reconcile vs the LIVE loop/docs continuation
+
+Added `_RECONCILE_FIRST_TEXT` and `_promote_reconcile` to `scripts/forge-session.py`,
+replaced the two inline `if advancing and blocking_reconcile:` promotions in the
+`forge-5-loop` and `forge-6-docs` arms of `stage_exit` with calls to it, and added a
+regression section (11 tests) to `tests/test_stage_exit.py`.
+
+### The bug, in one sentence
+
+`epic_reconcile["deferred"]` is seeded from the SUCCESSOR TABLE (`_EXIT_NEXT_STAGE`)
+before `_loop_route`/`_docs_route` compute their real primary from live
+`render-status`, so for exactly these two stages the seed names a command the route
+deliberately did not choose (loop → this feature's own `forge-6-docs`) or nothing at
+all (docs has no successor-table entry).
+
+### Gotchas for later items
+
+- **The promotion now runs on EVERY blocking-reconcile loop/docs exit, not only the
+  advancing ones.** The non-advancing call is what fixes shape 2: it overwrites the
+  stale seed with the route's own `deferred_canonical`, and `_next_steps_block`'s
+  existing dedupe (`deferred_command != reconcile["deferred"]`) then collapses what
+  used to be TWO conflicting continuation lines into one. Do not "optimize" the
+  `not advancing` branch away because it changes no command — it changes the seed.
+
+- **`primary_canonical == reconcile_command` is a real, reachable branch**, not
+  defensive coding: `_loop_route`'s `epic-dashboard` key returns
+  `/feature-forge:forge-0-epic {epic}` as an ADVANCING handoff, which is the same
+  string the reconcile fences. Promoting it would render "After reconciling, continue
+  the pipeline with: `<the fenced command>`" — a continuation pointing at its own
+  fence. It is constructible through the real CLI via an EMPTY epic (the `total > 0`
+  guard sends 0/0 to the dashboard), which is how the test covers it.
+
+- **`_branch_route` was deliberately left alone** (REQ-COMPAT-01). Its advancing
+  primary IS `next_command`, so the successor-table seed is already the right
+  continuation there; routing it through `_promote_reconcile` would be a no-op at best
+  and a wording change at worst. Stages 0-4 likewise never enter these arms.
+
+- **Byte-identity was checked by RUNNING both scripts, not by reading the diff.**
+  `git show HEAD:scripts/forge-session.py` into `/tmp`, then a 17-invocation matrix
+  (stages 0-4 + all four verify outcomes + all seven fix outcomes + a nested verify)
+  x 3 hosts x 2 capabilities x 3 reconcile states (blocking / none / reminder-only) —
+  102 comparisons per state, all byte-identical. The four non-complete loop outcomes
+  and `docs --outcome blocked` were diffed the same way and are unchanged; only the
+  three broken shapes moved.
+
+- **AC 4's "below" claim lives in the ROUTE tables, so it had to be replaced, not
+  appended to.** `_LOOP_COMPLETE_TEXT["epic-next-member"]` and
+  `_DOCS_OUTCOME_TEXT["epic-actionable"]` both end with "…below", which is false once
+  the fence carries the reconcile. `_RECONCILE_FIRST_TEXT` substitutes a whole
+  sentence rather than appending a correction, and deliberately does NOT name the
+  displaced command — the block's own "After reconciling, continue the pipeline with"
+  line is its single authoritative mention, so the two can never disagree.
+
+- **Known pre-existing wording nit, NOT changed here:** on a non-complete loop exit
+  with a blocking reconcile the renderer still emits "After verification passes,
+  reconcile the epic first — …", because `_next_steps_block`'s `blocking and not
+  reconcile_is_primary` branch has one fixed wording. The same branch is CORRECT for
+  stages 0-4 (where the primary really is a verification), so rewording it would
+  break REQ-COMPAT-01's byte-identity. Fixing it needs the renderer to learn why the
+  primary outranked the reconcile — a 00 §5 signature question.
+
+- **Reproduction fixture recipe** (faster than reading the code): a two-member epic
+  needs the FULL renderable manifest (`description`, `narrativeDoc`, per-feature
+  `charter`/`exposes`/`consumes`), or `render-status` exits 1 and every loop/docs
+  `complete` exit converts into the actionable routing failure instead.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with `PASS: spec-purity
+checker`, `PASS: epic-manifest pytest suite`, and `PASS: adapters/ matches a fresh
+generation (no drift)`; `python3 -m pytest tests -q` -> 1734 passed, 2 skipped (both
+pre-existing); `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py`
+run and the regenerated `adapters/` tree left in the working tree for the loop runner
+to commit. The six new tests that pin the fix were confirmed to FAIL against
+`HEAD:scripts/forge-session.py` before being accepted.

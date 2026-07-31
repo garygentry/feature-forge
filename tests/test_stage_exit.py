@@ -2981,3 +2981,188 @@ def test_the_member_route_never_reads_the_epics_own_state(tmp_path: Path) -> Non
     )
     d = _edit_exit(root, "config-store")
     assert d["nextCommand"] == "/feature-forge:forge-5-loop config-store"
+
+
+# --------------------------------------------------------------------------- #
+# Blocking epic reconcile x the LIVE loop/docs continuation (02 §5.2, 02 §7/§8)
+#
+# `epicReconcile["deferred"]` is seeded from the successor TABLE, long before
+# `_loop_route`/`_docs_route` compute their real primary from live `render-status`.
+# For these two stages that seed is the wrong continuation — the loop's is this
+# feature's own documentation, which the route deliberately did not choose, and the
+# documentation stage has no successor-table entry at all — so the promotion carries
+# the ROUTE's own continuation forward instead. Regression cover for the three shapes
+# this fix repairs: a contradicted continuation, two conflicting ones, and a dropped
+# one.
+# --------------------------------------------------------------------------- #
+
+
+def _blocking_member_state(base: dict, count: int = 1) -> dict:
+    """`base` plus `count` open, blocking epic change requests."""
+    state = json.loads(json.dumps(base))
+    state["epicChangeRequests"] = [_request(blocks=True) for _ in range(count)]
+    return state
+
+
+def _reconcile_epic(
+    tmp_path: Path, states: dict[str, dict], members: list[dict] | None = None
+) -> Path:
+    return _loop_epic_project(
+        tmp_path, members if members is not None else [_member("alpha"), _member("beta")],
+        states,
+    )
+
+
+def _continuations(next_steps: str) -> list[str]:
+    """Every unfenced "continue …with" line the block renders, in order.
+
+    These are the lines that name where the pipeline goes next. More than one for a
+    single pipeline point is the self-contradiction this section exists to forbid.
+    """
+    return [
+        line for line in next_steps.splitlines()
+        if line.startswith(("After reconciling, continue the pipeline with:",
+                            "After verification passes, continue with:"))
+    ]
+
+
+def test_loop_complete_reconcile_defers_the_route_the_loop_actually_chose(
+    tmp_path: Path,
+) -> None:
+    """Shape 1: the reconcile is fenced and the ONE deferred line names the command
+    the route selects with no reconcile present — not this feature's own docs stage,
+    which the successor table seeded and the loop route deliberately did not pick."""
+    states = {"alpha": _loop_member_state(), "beta": None}
+    clean = _reconcile_epic(tmp_path / "clean", states)
+    live_primary = _loop(clean, "complete", "alpha", "--epic", DOCS_EPIC)
+    assert live_primary["directives"]["primaryCommand"] == "/feature-forge:forge-1-prd beta"
+
+    blocking = _reconcile_epic(
+        tmp_path / "blocking",
+        {"alpha": _blocking_member_state(_loop_member_state()), "beta": None},
+    )
+    payload = _loop(blocking, "complete", "alpha", "--epic", DOCS_EPIC)
+    d = payload["directives"]
+    assert d["primaryCommand"] == DASHBOARD
+    assert d["epicReconcile"]["deferred"] == "/feature-forge:forge-1-prd beta"
+    assert _continuations(payload["nextSteps"]) == [
+        "After reconciling, continue the pipeline with: `/feature-forge:forge-1-prd beta`"
+    ]
+    # The pre-fix bug in one assertion: the successor table's seed must not survive.
+    assert "forge-6-docs alpha" not in payload["nextSteps"]
+
+
+def test_loop_complete_with_outstanding_verification_renders_one_continuation(
+    tmp_path: Path,
+) -> None:
+    """Shape 2: verification outranks the reconcile, so the reconcile is the FIRST
+    deferred action — but only ONE continuation may follow it for the same point."""
+    state = _loop_member_state()
+    del state["stages"]["forge-verify-impl"]
+    root = _reconcile_epic(
+        tmp_path, {"alpha": _blocking_member_state(state), "beta": None},
+    )
+    payload = _loop(root, "complete", "alpha", "--epic", DOCS_EPIC)
+    d = payload["directives"]
+    assert d["primaryCommand"] == "/feature-forge:forge-verify alpha"
+    assert d["deferredCommand"] == d["epicReconcile"]["deferred"]
+    assert _continuations(payload["nextSteps"]) == [
+        "After reconciling, continue the pipeline with: "
+        f"`{d['deferredCommand']}`"
+    ]
+    assert "After verification passes, reconcile the epic first" in payload["nextSteps"]
+
+
+def test_docs_complete_reconcile_keeps_its_live_continuation(tmp_path: Path) -> None:
+    """Shape 3: `forge-6-docs` has no successor-table entry, so the seeded deferred is
+    None — the live route's own handoff is what must be carried forward, not dropped."""
+    states = {"alpha": _loop_member_state(), "beta": None}
+    clean = _reconcile_epic(tmp_path / "clean", states)
+    assert _docs(clean, "alpha", "complete", "--epic", DOCS_EPIC)["directives"][
+        "primaryCommand"
+    ] == "/feature-forge:forge-1-prd beta"
+
+    blocking = _reconcile_epic(
+        tmp_path / "blocking",
+        {"alpha": _blocking_member_state(_loop_member_state()), "beta": None},
+    )
+    payload = _docs(blocking, "alpha", "complete", "--epic", DOCS_EPIC)
+    d = payload["directives"]
+    assert d["primaryCommand"] == DASHBOARD
+    assert d["epicReconcile"]["deferred"] == "/feature-forge:forge-1-prd beta"
+    assert _continuations(payload["nextSteps"]) == [
+        "After reconciling, continue the pipeline with: `/feature-forge:forge-1-prd beta`"
+    ]
+
+
+@pytest.mark.parametrize("stage", ["forge-5-loop", "forge-6-docs"])
+def test_a_promoted_reconcile_never_puts_the_next_member_below(
+    tmp_path: Path, stage: str
+) -> None:
+    """The rendered outcome sentence may not claim the next actionable member is
+    "below" once the fence carries the epic reconcile instead of that member."""
+    root = _reconcile_epic(
+        tmp_path,
+        {"alpha": _blocking_member_state(_loop_member_state(), count=2), "beta": None},
+    )
+    payload = (
+        _loop(root, "complete", "alpha", "--epic", DOCS_EPIC)
+        if stage == "forge-5-loop"
+        else _docs(root, "alpha", "complete", "--epic", DOCS_EPIC)
+    )
+    steps = payload["nextSteps"]
+    assert payload["directives"]["primaryCommand"] == DASHBOARD
+    assert "puts the next actionable work below" not in steps
+    assert "continues with the next actionable member below" not in steps
+    assert f"2 blocking epic change requests recorded against epic {DOCS_EPIC}" in steps
+    assert "the reconcile below comes before the continuation named under it" in steps
+
+
+def test_a_route_that_already_lands_on_the_epic_is_not_self_deferred(
+    tmp_path: Path,
+) -> None:
+    """The dashboard handoff IS the reconcile command, so nothing was displaced:
+    promoting it would render a continuation pointing back at its own fence."""
+    root = _loop_epic_project(tmp_path, [], {})
+    member = root / "specs" / DOCS_EPIC / "alpha"
+    member.mkdir()
+    (member / ".pipeline-state.json").write_text(
+        json.dumps(_blocking_member_state(_loop_member_state()))
+    )
+    payload = _loop(root, "complete", "alpha", "--epic", DOCS_EPIC)
+    assert payload["directives"]["primaryCommand"] == DASHBOARD
+    assert payload["directives"]["epicReconcile"]["deferred"] is None
+    assert _continuations(payload["nextSteps"]) == []
+    # Its own accurate wording survives — there is no continuation to promise.
+    assert f"no member of epic {DOCS_EPIC} is actionable right now (0/0" in \
+        payload["nextSteps"]
+
+
+@pytest.mark.parametrize("outcome", ["partial", "deferred", "blocked", "needs-human"])
+def test_a_non_complete_loop_outcome_still_offers_no_continuation(
+    tmp_path: Path, outcome: str
+) -> None:
+    """`loop_incomplete` already stripped the successor; the reconcile must not
+    reintroduce one through the deferred chain (REQ-PROD-02)."""
+    root = _reconcile_epic(
+        tmp_path, {"alpha": _blocking_member_state(_loop_member_state()), "beta": None},
+    )
+    payload = _loop(root, outcome, "alpha", "--epic", DOCS_EPIC)
+    assert payload["directives"]["epicReconcile"]["deferred"] is None
+    assert _continuations(payload["nextSteps"]) == []
+    assert "forge-6-docs" not in payload["nextSteps"]
+
+
+def test_docs_blocked_with_a_blocking_reconcile_claims_no_completion(
+    tmp_path: Path,
+) -> None:
+    """A blocked docs route already lands on the epic, so nothing is displaced and
+    its recovery wording — which never claims completion — is kept verbatim."""
+    root = _reconcile_epic(
+        tmp_path, {"alpha": _blocking_member_state(_loop_member_state()), "beta": None},
+    )
+    payload = _docs(root, "alpha", "blocked", "--epic", DOCS_EPIC)
+    assert payload["directives"]["primaryCommand"] == DASHBOARD
+    assert payload["directives"]["epicReconcile"]["deferred"] is None
+    assert _continuations(payload["nextSteps"]) == []
+    assert f"neither this feature nor epic {DOCS_EPIC} is complete" in payload["nextSteps"]
