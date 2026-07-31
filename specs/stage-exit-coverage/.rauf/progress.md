@@ -1802,3 +1802,55 @@ drift)`; `python3 -m pytest tests -q` -> 1640 passed, 2 skipped (both pre-existi
 `python3 -m pytest tests/test_compliance_eval.py` -> 165 passed; `ruff check scripts/ eval/`
 clean. No `scripts/`, `skills/`, or `references/` file changed, so no adapter regeneration was
 required.
+
+## Item 028 — linear baseline documented separately from branch compliance
+
+Doc-only. `eval/README.md` gained a Probe 3 section, an explicit
+`### The linear baseline is not evidence for branch compliance` section, a per-cell cost
+table, and a CI-coverage note. Nothing under `scripts/`, `skills/`, `references/`, or
+`eval/*.py` changed, so no adapter regeneration was required.
+
+### Gotchas for later items
+
+- **`--probe`'s help text already named `branch-path`** — item 027 wrote it, so step 4 of
+  this item was already satisfied. Verified by running `--help`, not by reading the source.
+  Same pattern items 018/023 hit with `--verify-capability`: check the artifact before
+  assuming the edit is outstanding.
+
+- **This README carries NO recorded result numbers.** The only figures in it are the
+  per-run cost/latency estimates and the default-sweep total. "Do not change a historical
+  recorded number" therefore binds on the *per-run* figures ($0.70–$1.00, ~60s), which are
+  preserved verbatim; the 3-cell sweep total ($22 / 40 min) had to move because the item
+  requires the formula to cover five cells, so it is retained as an explicit parenthetical
+  naming it as the pre-`branch-path` figure rather than silently overwritten. If real
+  branch-path costs get measured later, replace the `$1.00–$1.50 / ~90s` estimate — it is
+  labelled "an estimate, not a recorded measurement" precisely so it is not mistaken for one.
+
+- **The criterion counts in the prose are load-bearing and were checked, not assumed**:
+  `score_stage_exit` returns 5 keys, `BRANCH_CRITERIA` has 8. The README's "a different
+  criterion set (eight, not five)" is the argument for why the cells cannot be averaged, so
+  a later item that adds a criterion to either scorer must update that sentence.
+
+- **One adjacent staleness was fixed**: the "What this probe cannot see" list still named
+  "the `forge-5-loop` bespoke exits", which item 020 retired. It now reads
+  `forge-5-loop` / `forge-6-docs` scripted exits and notes the verify/fix diversion has left
+  that list because Probe 3 covers it. Out of the item's literal scope but wrong next to the
+  new text.
+
+- **The top table's "Runs in CI" cell now distinguishes the two things.** The live harness is
+  still local-only; `tests/test_compliance_eval.py` (165 tests — fixture loader, transcript
+  pairing, evidence matcher, `score_branch_path`) runs in CI via `validate.sh`. Item 029's
+  sweep should not read "local only, by design" as meaning the branch scorer is unguarded.
+
+- **`validate.sh` takes ~6 minutes here** (the pytest suite alone is 210s). Two concurrent
+  runs are wasteful, and piping it through `tail` buffers the whole log until exit — write to
+  a file and read that if you want progress. Also: grepping a validate log for `FAIL`/`FAILURE`
+  gives false positives, because installer test NAMES contain `EXIT.FAILURE`.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with `PASS: spec-purity checker`,
+`PASS: epic-manifest pytest suite`, and `PASS: adapters/ matches a fresh generation (no
+drift)`; the pytest suite reports 1640 passed, 2 skipped (both pre-existing);
+`python3 -m pytest tests/test_compliance_eval.py` -> 165 passed; `ruff check scripts/ eval/`
+clean; `python3 scripts/build-adapters.py --check` reports no drift.
