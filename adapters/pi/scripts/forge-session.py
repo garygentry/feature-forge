@@ -2792,6 +2792,171 @@ def _docs_route(
     return dashboard, None, _DOCS_OUTCOME_TEXT[key].format(**fields), False
 
 
+#: 02 §7 — the route each loop outcome takes. A COMPLETE map over
+#: ``EXIT_OUTCOMES["forge-5-loop"]``: REQ-PROD-01/02 require a deterministic resume or
+#: recovery action for every result, so a missing key is a bug, not a default.
+#:
+#:   ``handoff``  verify-first implementation routing, then the live docs/epic handoff
+#:   ``resume``   ``/skill:forge-5-loop FEATURE`` — state remains resumable
+#:   ``recover``  ``/skill:forge FEATURE`` — the deterministic diagnostic action
+#:
+#: Only ``handoff`` (i.e. ``complete``) may reach a production stage. A runner's
+#: successful process exit is NOT by itself ``complete``: the final backlog state
+#: selects the outcome, and that selection is the skill's job (04 §6.1).
+_LOOP_ROUTE_KIND: Final[dict[str, str]] = {
+    "complete": "handoff",
+    "partial": "resume",
+    "deferred": "resume",
+    "blocked": "recover",
+    "needs-human": "recover",
+}
+
+#: The deterministic sentence each NON-complete loop outcome renders inside its
+#: NEXT-STEPS block. Every one names the resume or recovery action and states that
+#: nothing downstream is ready — no wording here may imply that documentation, or any
+#: other downstream production stage, can start (REQ-PROD-02).
+_LOOP_OUTCOME_TEXT: Final[dict[str, str]] = {
+    "partial": (
+        "The loop stopped for {feature} with backlog items still pending — the "
+        "iteration limit was reached before every item was done. The recorded state "
+        "is resumable and nothing downstream is ready: run the loop again below to "
+        "continue from where it stopped."
+    ),
+    "deferred": (
+        "The loop explicitly deferred items for {feature} — the runner gave up on "
+        "them after retries rather than finishing them, so they were left for "
+        "another pass. The recorded state is resumable and nothing downstream is "
+        "ready: run the loop again below to pick the deferred items back up."
+    ),
+    "blocked": (
+        "The loop is blocked for {feature} — one or more backlog items could not be "
+        "completed. Nothing downstream is ready. Run the navigator below to see the "
+        "live pipeline state from disk and choose how to recover."
+    ),
+    "needs-human": (
+        "The loop stopped for {feature} on a decision only a human can make — one or "
+        "more items asked a question it could not answer, and they were set aside. "
+        "Nothing downstream is ready until those decisions are made. Run the "
+        "navigator below to see the live pipeline state from disk and recover from "
+        "there."
+    ),
+}
+
+#: The `complete` preamble, selected by where the handoff actually lands. The epic
+#: rows name the epic and its live rollup, so the operator can see WHY the handoff is
+#: this member's own documentation rather than another member (or vice versa).
+_LOOP_COMPLETE_TEXT: Final[dict[str, str]] = {
+    "standalone": "Every backlog item is done for {feature}.",
+    "epic-next-member": (
+        "Every backlog item is done for {feature}, and the live status of epic "
+        "{epic} ({complete}/{total} members complete) puts the next actionable work "
+        "below."
+    ),
+    "epic-complete-docs": (
+        "Every backlog item is done for {feature}, and every member of epic {epic} "
+        "is now complete ({complete}/{total}) — documentation is the next step below."
+    ),
+    "epic-dashboard": (
+        "Every backlog item is done for {feature}, and no member of epic {epic} is "
+        "actionable right now ({complete}/{total} members complete). Open the epic "
+        "dashboard below for its live state."
+    ),
+}
+
+#: Appended to the `complete` preamble. REQ-EXIT-06/REQ-PROD-02: while implementation
+#: verification is unresolved it is THE action and the handoff is demoted to unfenced
+#: prose, so documentation never becomes primary before a pass or an explicit skip.
+_LOOP_COMPLETE_OUTSTANDING: Final[str] = (
+    " Implementation verification is still outstanding, so it comes first — nothing "
+    "downstream becomes the primary action until it passes or is explicitly skipped."
+)
+_LOOP_COMPLETE_SETTLED: Final[str] = (
+    " Its implementation verification is settled, so the pipeline continues with the "
+    "action below."
+)
+
+
+def _loop_route(
+    outcome: str,
+    feature: str,
+    epic: str | None,
+    specs_dir: Path,
+    successor_command: str | None,
+    resolved: bool,
+    verify_canonical: str,
+) -> tuple[str, str | None, str, bool]:
+    """Route one loop result — the 02 §7 outcome table.
+
+    Every outcome lands on a deterministic action. Only ``complete`` may reach a
+    production stage, and even then documentation is not primary until implementation
+    verification passes or is explicitly skipped (REQ-PROD-02, REQ-EXIT-06). The four
+    non-complete outcomes route to the loop resume (``partial``/``deferred``) or to
+    the navigator (``blocked``/``needs-human``); their caller has already stripped the
+    production successor, so no directive and no rendered line can imply that
+    documentation is ready.
+
+    Args:
+        outcome: A member of `EXIT_OUTCOMES["forge-5-loop"]`, already validated.
+        feature: The feature whose loop stage is closing.
+        epic: The owning epic, or None for a standalone feature.
+        specs_dir: Configured specs directory.
+        successor_command: Canonical live-successor command (documentation), or None.
+        resolved: Whether the implementation verification is settled.
+        verify_canonical: Canonical implementation-verify command.
+
+    Returns:
+        `(primary_canonical, deferred_canonical, outcome_text, advancing)`, matching
+        `_branch_route` and `_docs_route`.
+
+    For a completed EPIC MEMBER the handoff is delegated to the live
+    ``render-status`` payload rather than re-deriving dependency or completion logic
+    here (tech-spec §3.5), preserving the epic handoff this stage already performed:
+    an actionable member routes to the epic's own live next command; nothing
+    actionable with every member complete routes to this member's documentation; and
+    anything else opens the epic dashboard. The ``total > 0`` guard is what stops an
+    EMPTY epic's ``0/0`` from reading as complete. A helper failure is the same
+    actionable ``UsageError`` the documentation exit raises, so a broken epic graph
+    surfaces instead of being guessed around. A NON-complete outcome never calls the
+    helper: a resume or recovery action must stay reachable exactly when the epic's
+    own state is the thing that is broken.
+    """
+    kind = _LOOP_ROUTE_KIND[outcome]
+    if kind != "handoff":
+        primary = (
+            f"/skill:forge-5-loop {feature}"
+            if kind == "resume"
+            else f"/skill:forge {feature}"
+        )
+        return primary, None, _LOOP_OUTCOME_TEXT[outcome].format(feature=feature), False
+
+    handoff = successor_command or f"/skill:forge {feature}"
+    fields: dict[str, object] = {"feature": feature, "epic": epic}
+    key = "standalone"
+    if epic is not None:
+        status = _render_status(specs_dir, epic)
+        rollup = status["rollup"]
+        fields["complete"] = rollup["complete"]
+        fields["total"] = rollup["total"]
+        next_command = status["nextCommand"]
+        if status["actionable"] and next_command:
+            handoff, key = next_command, "epic-next-member"
+        elif rollup["total"] > 0 and rollup["complete"] >= rollup["total"]:
+            # Nothing left to start and every member complete: the epic's remaining
+            # work is this member's documentation, which `handoff` already names.
+            key = "epic-complete-docs"
+        else:
+            handoff, key = f"/skill:forge-0-epic {epic}", "epic-dashboard"
+
+    text = _LOOP_COMPLETE_TEXT[key].format(**fields) + (
+        _LOOP_COMPLETE_SETTLED if resolved else _LOOP_COMPLETE_OUTSTANDING
+    )
+    if resolved:
+        return handoff, None, text, True
+    # 02 §4 verify-first ordering, applied to the loop's own handoff rather than to
+    # the fixed successor: the verification is fenced and the handoff is demoted.
+    return verify_canonical, handoff, text, False
+
+
 def _debt_metadata_warnings(
     entry: dict,
     verify_key: str | None,
@@ -2997,6 +3162,15 @@ def stage_exit(
       verify-first ordering — supplies ``primaryCommand``: a diversion rejoins
       the production stage it served, and every recovery/defer route carries
       ``--served-stage`` forward so the thread is never dropped (issue #176).
+    - ``forge-5-loop`` — routed by its required ``--outcome`` (02 §7). ``complete``
+      keeps verify-first ordering in front of the documentation/epic-member handoff,
+      which for a member is delegated to the live ``render-status`` payload rather
+      than re-derived here. The other four outcomes route to the loop resume
+      (``partial``/``deferred``) or the navigator (``blocked``/``needs-human``) and
+      suppress every downstream signal: ``nextStage``/``nextCommand`` are None,
+      ``runInStageVerify`` is False, no debt is scheduled, and ``verifyGate`` is
+      ``none`` — a loop still in flight has no finished implementation to verify and
+      nothing downstream may read as ready (REQ-PROD-02).
     - ``forge-6-docs`` — the documentation terminus is decided by LIVE epic state
       (02 §8), never by the successor table: for an epic member the adjacent
       ``epic-manifest.py render-status`` supplies the next actionable member's own
@@ -3088,6 +3262,14 @@ def stage_exit(
             f"--next-feature is accepted only for forge-0-epic, not {stage}"
         )
 
+    # 02 §7: a loop that did not complete has NO production successor and owes no
+    # implementation verification yet. Everything downstream is suppressed below —
+    # `nextStage`/`nextCommand`, the epic-reconcile deferred line, the in-stage
+    # verify chain, its debt write, and the verify gate — because each of them
+    # would assert that the implementation is finished enough to move on, which is
+    # exactly the readiness claim REQ-PROD-02 forbids.
+    loop_incomplete = stage == "forge-5-loop" and outcome != "complete"
+
     config = _load_config(config_path)
     invalid_keys = invalid_auto_verify_keys(config)
     for key in invalid_keys:   # already sorted (02 §10); advisory, never fatal
@@ -3144,7 +3326,10 @@ def stage_exit(
     # a fresh `auto-verify-pending` marker, losing the report (REQ-EXIT-04).
     # Branch rejoin routing is 02 §6's, not this scheduling boundary's.
     run_in_stage = (
-        effective_auto_verify and not resolved and stage not in _BRANCH_STAGES
+        effective_auto_verify
+        and not resolved
+        and stage not in _BRANCH_STAGES
+        and not loop_incomplete
     )
     auto_fix_eligible = (
         config.get("autoFix") is True and run_in_stage and clean_tree is True
@@ -3171,7 +3356,12 @@ def stage_exit(
     # names the one action to take, so there is nothing left to gate: offering
     # "verify now?" beside a fenced fix command would be a second, contradictory
     # ask. The table's `verify` routes ARE the verification prompt.
-    if resolved or run_in_stage or stage in _BRANCH_STAGES:
+    #
+    # A non-complete loop outcome is gateless for the same reason it never
+    # schedules debt: there is no finished implementation to verify, so offering
+    # "verify now?" beside a fenced loop resume would ask for a verification of
+    # work that is still in flight (02 §7).
+    if resolved or run_in_stage or stage in _BRANCH_STAGES or loop_incomplete:
         verify_gate = "none"
     elif verify_capability == "interactive":
         verify_gate = "standard"
@@ -3198,6 +3388,13 @@ def stage_exit(
         "{first-actionable-feature}" if route_stage == "forge-0-epic" else feature
     )
     next_command = f"/skill:{next_stage_id} {next_arg}" if next_stage_id else None
+    if loop_incomplete:
+        # The pipeline has no next production stage from here, exactly as it has
+        # none after `forge-6-docs`. Cleared BEFORE the epic-backflow block below,
+        # so a blocking reconcile's `deferred` line cannot re-introduce
+        # `/skill:forge-6-docs` as text the loop resume did not earn.
+        next_stage_id = None
+        next_command = None
 
     # Epic backflow routing: an exiting member may carry epic-level change requests
     # (recorded by forge-1-prd/forge-2-tech). A `blocksCurrent: true` request means
@@ -3207,12 +3404,13 @@ def stage_exit(
     # The epic name comes from the `--epic` arg or the state's `epic` back-pointer.
     epic_reconcile: dict | None = None
     epic_name = epic or state.get("epic")
-    # The epic a documentation exit routes against (02 §8): the explicit `--epic`,
-    # else the state's back-pointer. A back-pointer is untrusted on-disk data, so it
-    # is name-checked here rather than reaching the helper's argv (REQ-SEC-01); an
-    # unusable value degrades to the standalone route rather than crashing a stage
-    # closing. `--epic` itself was already validated in step 1.
-    docs_epic = (
+    # The epic a documentation (02 §8) or completed-loop (02 §7) exit routes against:
+    # the explicit `--epic`, else the state's back-pointer. A back-pointer is
+    # untrusted on-disk data, so it is name-checked here rather than reaching the
+    # helper's argv (REQ-SEC-01); an unusable value degrades to the standalone route
+    # rather than crashing a stage closing. `--epic` itself was already validated in
+    # step 1.
+    route_epic = (
         epic_name if isinstance(epic_name, str) and SAFE_NAME_RE.match(epic_name) else None
     )
     open_requests = [
@@ -3264,13 +3462,30 @@ def stage_exit(
             # production exit; a non-advancing one already outranks the reconcile.
             primary_canonical = epic_reconcile["command"]
             deferred_canonical = None
+    elif stage == "forge-5-loop":
+        # 02 §7: every loop result gets a deterministic resume or recovery action.
+        # `complete` keeps verify-first ordering (the table applies it to its own
+        # handoff); the other four never reach a production stage at all.
+        primary_canonical, deferred_canonical, outcome_text, advancing = _loop_route(
+            outcome,
+            feature,
+            route_epic,
+            specs_dir,
+            next_command,
+            resolved,
+            verify_canonical,
+        )
+        if advancing and blocking_reconcile:
+            # Same reconcile-first rule as every other advancing route.
+            primary_canonical = epic_reconcile["command"]
+            deferred_canonical = None
     elif stage == "forge-6-docs":
         # 02 §8: the documentation terminus is decided by LIVE epic state, not by
         # the successor table — the pipeline ends here, so there is no next stage
         # to fence and no verification to put first (docs is tokenless).
         primary_canonical, deferred_canonical, outcome_text, advancing = _docs_route(
             feature,
-            docs_epic,
+            route_epic,
             specs_dir,
             outcome,
             host,

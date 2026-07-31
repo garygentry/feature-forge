@@ -2209,3 +2209,351 @@ def test_docs_never_reimplements_the_epic_dependency_derivation() -> None:
     source = HELPER.read_text()
     for forbidden in ("unmet_deps", "parallelEligible", "is_complete_for_orchestration"):
         assert forbidden not in source, forbidden
+
+
+# --------------------------------------------------------------------------- #
+# 07 §3.5 — loop outcome routing (02 §7)
+# --------------------------------------------------------------------------- #
+
+LOOP_OUTCOMES = EXIT_OUTCOMES["forge-5-loop"]
+NON_COMPLETE_LOOP_OUTCOMES = tuple(o for o in LOOP_OUTCOMES if o != "complete")
+#: The exact primary command each non-complete outcome must fence (02 §7).
+LOOP_RESUME = "/feature-forge:forge-5-loop widget"
+LOOP_RECOVERY = "/feature-forge:forge widget"
+#: The one production successor no non-complete outcome may name, anywhere.
+LOOP_DOCS = "/feature-forge:forge-6-docs widget"
+
+#: A loop-complete feature whose implementation verification is already settled, so
+#: verify-first ordering has nothing to put in front of the handoff. Tests whose
+#: subject is the HANDOFF seed this; tests whose subject is verify-first ordering
+#: deliberately do not.
+_LOOP_VERIFIED = _state_with_verify(
+    "forge-5-loop", "forge-verify-impl", {"status": "passed", "verifiedStageVersion": 2}
+)
+
+
+def _loop(cwd: Path, outcome: str, feature: str = "widget", *extra: str) -> dict:
+    return _exit(cwd, "--feature", feature, "--stage", "forge-5-loop",
+                 "--outcome", outcome, *extra)
+
+
+def test_loop_requires_its_own_outcome_and_rejects_any_other(tmp_path: Path) -> None:
+    """A missing or foreign outcome exits 2 BEFORE any output (REQ-EXIT-03)."""
+    root = _project(tmp_path, config={})
+    err = _rejected(root, "--feature", "widget", "--stage", "forge-5-loop")
+    assert "forge-5-loop requires --outcome" in err
+    for value in sorted(LOOP_OUTCOMES):
+        assert value in err, "the error must enumerate the accepted domain"
+    for value in ("passed", "applied", "no-findings", "reverified", "", "COMPLETE",
+                  "done", "success"):
+        err = _rejected(root, "--feature", "widget", "--stage", "forge-5-loop",
+                        "--outcome", value)
+        assert f"--outcome {value!r} is not valid for forge-5-loop" in err
+
+
+@pytest.mark.parametrize("outcome", LOOP_OUTCOMES, ids=LOOP_OUTCOMES)
+def test_loop_accepts_exactly_the_five_loop_outcomes(tmp_path: Path, outcome: str):
+    root = _project(tmp_path, config={})
+    d = _loop(root, outcome)["directives"]
+    assert d["outcome"] == outcome
+    assert d["stage"] == "forge-5-loop"
+
+
+@pytest.mark.parametrize("outcome", ["partial", "deferred"])
+def test_loop_partial_and_deferred_fence_the_loop_resume(tmp_path: Path, outcome: str):
+    """02 §7: state remains resumable, so the loop itself is the primary action."""
+    root = _project(tmp_path, config={})
+    payload = _loop(root, outcome)
+    assert payload["directives"]["primaryCommand"] == LOOP_RESUME
+    assert f"```\n{LOOP_RESUME}\n```" in payload["nextSteps"]
+    assert payload["nextSteps"].count("```") == 2, "exactly one fenced command"
+
+
+@pytest.mark.parametrize("outcome", ["blocked", "needs-human"])
+def test_loop_blocked_and_needs_human_fence_the_navigator(tmp_path: Path, outcome: str):
+    """02 §7: the navigator is the deterministic diagnostic/recovery action."""
+    root = _project(tmp_path, config={})
+    payload = _loop(root, outcome)
+    assert payload["directives"]["primaryCommand"] == LOOP_RECOVERY
+    assert f"```\n{LOOP_RECOVERY}\n```" in payload["nextSteps"]
+    assert payload["nextSteps"].count("```") == 2
+
+
+@pytest.mark.parametrize("outcome", NON_COMPLETE_LOOP_OUTCOMES,
+                         ids=NON_COMPLETE_LOOP_OUTCOMES)
+@pytest.mark.parametrize("config", [{}, {"autoVerify": True, "autoFix": True}],
+                         ids=["auto-verify-off", "auto-verify-on"])
+def test_no_non_complete_loop_outcome_claims_downstream_readiness(
+    tmp_path: Path, outcome: str, config: dict
+) -> None:
+    """REQ-PROD-02: no directive and no rendered line may imply docs is ready.
+
+    Every downstream signal is checked, not just the fenced command: `forge-6-docs`
+    must not appear ANYWHERE in the payload, and the in-stage verify chain — which
+    would assert the implementation is finished enough to audit — stays off even
+    when `autoVerify` is on.
+    """
+    root = _project(tmp_path, config=config)
+    payload = _loop(root, outcome, "widget", "--verify-capability", "interactive")
+    d = payload["directives"]
+    assert "forge-6-docs" not in json.dumps(payload)
+    assert LOOP_DOCS not in payload["nextSteps"]
+    assert d["nextStage"] is None
+    assert d["nextCommand"] is None
+    assert d["deferredCommand"] is None
+    assert d["runInStageVerify"] is False
+    assert d["autoVerifyDebtRecorded"] is False
+    assert d["autoFixEligible"] is False
+    assert d["verifyGate"] == "none"
+    assert d["primaryCommand"] in (LOOP_RESUME, LOOP_RECOVERY)
+
+
+@pytest.mark.parametrize("outcome", NON_COMPLETE_LOOP_OUTCOMES,
+                         ids=NON_COMPLETE_LOOP_OUTCOMES)
+def test_a_non_complete_loop_schedules_no_auto_verify_debt(
+    tmp_path: Path, outcome: str
+) -> None:
+    """A loop still in flight has no finished implementation to owe a verify for."""
+    root = _project(tmp_path, config={"autoVerify": True})
+    state_path = root / "specs" / "widget" / ".pipeline-state.json"
+    assert not state_path.exists()
+    _loop(root, outcome)
+    assert not state_path.exists(), "no auto-verify-pending marker may be written"
+
+
+def test_a_complete_loop_still_schedules_auto_verify_debt(tmp_path: Path) -> None:
+    """The negative control for the suppression above — `complete` still owes it."""
+    root = _project(tmp_path, config={"autoVerify": True})
+    d = _loop(root, "complete")["directives"]
+    assert d["runInStageVerify"] is True
+    assert d["autoVerifyDebtRecorded"] is True
+    written = json.loads((root / "specs" / "widget" / ".pipeline-state.json").read_text())
+    assert written["stages"]["forge-verify-impl"]["status"] == "auto-verify-pending"
+
+
+def test_loop_complete_is_verify_first_and_docs_is_not_primary(tmp_path: Path) -> None:
+    """REQ-EXIT-06: docs never leads while implementation verification is unresolved."""
+    root = _project(tmp_path, config={})
+    payload = _loop(root, "complete", "widget", "--verify-capability", "interactive")
+    d = payload["directives"]
+    assert d["primaryCommand"] == "/feature-forge:forge-verify widget"
+    assert d["deferredCommand"] == LOOP_DOCS
+    block = payload["nextSteps"]
+    assert f"```\n/feature-forge:forge-verify widget\n```" in block
+    assert f"```\n{LOOP_DOCS}\n```" not in block, "the successor is never fenced"
+    assert block.count("```") == 2
+    assert f"continue with: `{LOOP_DOCS}`" in block
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [{"status": "passed", "verifiedStageVersion": 2}, {"status": "skipped"}],
+    ids=["passed", "explicitly-skipped"],
+)
+def test_loop_complete_advances_to_docs_once_verification_settles(
+    tmp_path: Path, entry: dict
+) -> None:
+    """02 §7: docs becomes primary only after a pass or an explicit skip."""
+    root = _project(
+        tmp_path, config={},
+        state=_state_with_verify("forge-5-loop", "forge-verify-impl", entry),
+    )
+    payload = _loop(root, "complete")
+    assert payload["directives"]["primaryCommand"] == LOOP_DOCS
+    assert payload["directives"]["deferredCommand"] is None
+    assert f"```\n{LOOP_DOCS}\n```" in payload["nextSteps"]
+
+
+@pytest.mark.parametrize("outcome", LOOP_OUTCOMES, ids=LOOP_OUTCOMES)
+def test_loop_outcome_text_sits_inside_the_block_above_the_sentinel(
+    tmp_path: Path, outcome: str
+) -> None:
+    """02 §7: explanatory text is rendered INSIDE NEXT-STEPS; nothing follows the
+    sentinel, which stays the single final line."""
+    root = _project(tmp_path, config={}, state=_LOOP_VERIFIED)
+    block = _loop(root, outcome)["nextSteps"]
+    lines = block.splitlines()
+    assert lines[0] == "**Next steps**"
+    # The outcome text is line 2 — above the numbered guidance and the fence.
+    assert lines[1].startswith(("Every backlog item is done", "The loop"))
+    assert "widget" in lines[1]
+    assert block.count(SENTINEL) == 1
+    assert lines[-1] == SENTINEL
+    assert block.endswith(SENTINEL)
+
+
+@pytest.mark.parametrize("outcome", NON_COMPLETE_LOOP_OUTCOMES,
+                         ids=NON_COMPLETE_LOOP_OUTCOMES)
+def test_a_non_complete_loop_outcome_states_nothing_downstream_is_ready(
+    tmp_path: Path, outcome: str
+) -> None:
+    root = _project(tmp_path, config={})
+    block = _loop(root, outcome)["nextSteps"]
+    assert "nothing downstream is ready" in block.lower()
+
+
+def test_loop_routing_is_byte_deterministic(tmp_path: Path) -> None:
+    """02 §10: identical state and inputs produce identical output."""
+    root = _project(tmp_path, config={}, state=_LOOP_VERIFIED)
+    for outcome in LOOP_OUTCOMES:
+        first = _loop(root, outcome)
+        second = _loop(root, outcome)
+        assert first == second, outcome
+
+
+@pytest.mark.parametrize("outcome", LOOP_OUTCOMES, ids=LOOP_OUTCOMES)
+def test_loop_routes_are_host_translated(tmp_path: Path, outcome: str) -> None:
+    root = _project(tmp_path, config={}, state=_LOOP_VERIFIED)
+    block = _loop(root, outcome, "widget", "--host", "pi")["nextSteps"]
+    assert "/feature-forge:" not in block
+    assert "/skill:" in block
+
+
+# --- epic-member handoff, delegated to live render-status (tech-spec §3.5) --- #
+
+def _loop_member_state() -> dict:
+    """A member whose loop is complete: docs still owed, impl verify already passed.
+
+    That combination is `is_complete_for_orchestration` (00 §7 does NOT require
+    documentation), so this member is complete for the epic's purposes and therefore
+    NOT actionable — which is exactly what makes the epic handoff observable.
+    """
+    stages: dict = {
+        stage: {"status": "complete", "version": 1}
+        for stage in PRODUCTION_STAGES[1:6]  # forge-1-prd .. forge-5-loop
+    }
+    stages["forge-verify-impl"] = {"status": "passed", "verifiedStageVersion": 1}
+    return {"pipelineStatus": "active", "epic": DOCS_EPIC, "stages": stages}
+
+
+def _loop_epic_project(tmp_path: Path, members: list[dict],
+                       states: dict[str, dict]) -> Path:
+    """A REAL epic whose member state is written verbatim, so `render-status` runs
+    over the same tree the router does (07 §3.5/§3.6 forbid mocking it)."""
+    root = _docs_epic_project(tmp_path, members)
+    for name, state in states.items():
+        member_dir = root / "specs" / DOCS_EPIC / name
+        (member_dir / ".pipeline-state.json").write_text(json.dumps(state))
+        (member_dir / "PRD.md").write_text("# prd\n")
+    return root
+
+
+def test_loop_complete_epic_member_routes_to_the_live_next_actionable_member(
+    tmp_path: Path,
+) -> None:
+    """The epic handoff comes from `render-status`, not from a re-derivation here."""
+    root = _loop_epic_project(
+        tmp_path,
+        [_member("beta"), _member("alpha")],
+        {"alpha": _loop_member_state(), "beta": None},
+    )
+    live = json.loads(subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "epic-manifest.py"),
+         "render-status", DOCS_EPIC, "--specs-dir", str(root / "specs"), "--json"],
+        capture_output=True, text=True, check=True).stdout)
+    assert live["nextCommand"] == "/feature-forge:forge-1-prd beta"
+
+    payload = _loop(root, "complete", "alpha", "--epic", DOCS_EPIC)
+    assert payload["directives"]["primaryCommand"] == live["nextCommand"]
+    assert "puts the next actionable work below" in payload["nextSteps"]
+    assert f"epic {DOCS_EPIC} (1/2 members complete)" in payload["nextSteps"]
+
+
+def test_loop_complete_epic_member_routes_to_its_docs_once_the_epic_is_complete(
+    tmp_path: Path,
+) -> None:
+    """Nothing actionable AND every member complete: this member's documentation is
+    what remains — the same handoff this stage made before it was scripted."""
+    root = _loop_epic_project(
+        tmp_path, [_member("alpha")], {"alpha": _loop_member_state()},
+    )
+    payload = _loop(root, "complete", "alpha", "--epic", DOCS_EPIC)
+    assert payload["directives"]["primaryCommand"] == "/feature-forge:forge-6-docs alpha"
+    assert f"every member of epic {DOCS_EPIC} is now complete (1/1)" in payload["nextSteps"]
+
+
+def test_loop_complete_in_an_empty_epic_opens_the_dashboard(tmp_path: Path) -> None:
+    """An empty epic's 0/0 must not read as complete (the `total > 0` guard)."""
+    root = _loop_epic_project(tmp_path, [], {})
+    (root / "specs" / DOCS_EPIC / "alpha").mkdir()
+    (root / "specs" / DOCS_EPIC / "alpha" / ".pipeline-state.json").write_text(
+        json.dumps(_loop_member_state())
+    )
+    payload = _loop(root, "complete", "alpha", "--epic", DOCS_EPIC)
+    assert payload["directives"]["primaryCommand"] == DASHBOARD
+    assert f"no member of epic {DOCS_EPIC} is actionable right now (0/0" in \
+        payload["nextSteps"]
+
+
+def test_loop_complete_epic_member_stays_verify_first(tmp_path: Path) -> None:
+    """The epic handoff is DEFERRED while implementation verification is unresolved."""
+    state = _loop_member_state()
+    del state["stages"]["forge-verify-impl"]
+    root = _loop_epic_project(tmp_path, [_member("alpha")], {"alpha": state})
+    d = _loop(root, "complete", "alpha", "--epic", DOCS_EPIC)["directives"]
+    assert d["primaryCommand"] == "/feature-forge:forge-verify alpha"
+    # Unresolved verification keeps the member actionable, so the live epic status
+    # names its own next production stage — deferred, never fenced.
+    assert d["deferredCommand"] == "/feature-forge:forge-6-docs alpha"
+
+
+def test_loop_complete_routes_on_the_state_epic_back_pointer(tmp_path: Path) -> None:
+    """`--epic` is optional: the member state's back-pointer resolves the same epic."""
+    root = _loop_epic_project(
+        tmp_path, [_member("alpha")], {"alpha": _loop_member_state()},
+    )
+    with_flag = _loop(root, "complete", "alpha", "--epic", DOCS_EPIC)
+    without = _loop(root, "complete", "alpha")
+    assert without == with_flag
+
+
+def test_loop_complete_in_a_broken_epic_is_an_actionable_routing_failure(
+    tmp_path: Path,
+) -> None:
+    """A guessed member command is never emitted: the invalid graph surfaces."""
+    root = _loop_epic_project(
+        tmp_path, [_member("alpha", depends_on=("ghost",))],
+        {"alpha": _loop_member_state()},
+    )
+    err = _rejected(root, "--feature", "alpha", "--stage", "forge-5-loop",
+                    "--outcome", "complete", "--epic", DOCS_EPIC)
+    assert "render-status exited 1" in err
+    assert DOCS_EPIC in err and DASHBOARD in err
+
+
+@pytest.mark.parametrize("outcome", NON_COMPLETE_LOOP_OUTCOMES,
+                         ids=NON_COMPLETE_LOOP_OUTCOMES)
+def test_a_non_complete_loop_closes_even_when_the_epic_graph_is_broken(
+    tmp_path: Path, outcome: str
+) -> None:
+    """A resume or recovery action must stay reachable exactly when the epic's own
+    state is what is broken — so no non-complete outcome consults render-status."""
+    root = _loop_epic_project(
+        tmp_path, [_member("alpha", depends_on=("ghost",))],
+        {"alpha": _loop_member_state()},
+    )
+    d = _loop(root, outcome, "alpha", "--epic", DOCS_EPIC)["directives"]
+    assert d["primaryCommand"] in (
+        "/feature-forge:forge-5-loop alpha", "/feature-forge:forge alpha"
+    )
+
+
+def test_loop_never_reimplements_the_epic_handoff_derivation() -> None:
+    """tech-spec §3.5: `_loop_route` consumes `_render_status`; it derives nothing."""
+    source = HELPER.read_text()
+    body = source[source.index("def _loop_route("):]
+    body = body[: body.index("\ndef _debt_metadata_warnings")]
+    assert "_render_status(" in body
+    for forbidden in ("dependsOn", "epic-manifest.json", "PIPELINE_STATE_FILENAME"):
+        assert forbidden not in body, forbidden
+
+
+def test_every_loop_outcome_has_a_route_and_a_sentence() -> None:
+    """REQ-ROUTE-05/06: complete maps, no fall-through (06 §2.4's positive test)."""
+    session = _load_session()
+    assert set(session._LOOP_ROUTE_KIND) == set(LOOP_OUTCOMES)
+    assert set(session._LOOP_OUTCOME_TEXT) == set(NON_COMPLETE_LOOP_OUTCOMES)
+    assert set(session._LOOP_ROUTE_KIND.values()) == {"handoff", "resume", "recover"}
+    # Only `complete` may reach a production stage.
+    assert [o for o, k in session._LOOP_ROUTE_KIND.items() if k == "handoff"] == \
+        ["complete"]

@@ -943,3 +943,79 @@ Added `_render_status` (the bounded sibling subprocess), `_render_status_failure
 `python3 -m pytest tests -q` -> 1405 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
 regenerated `adapters/` tree left in the working tree for the loop runner to commit.
+
+## Item 014 — loop outcome routing for all five `LoopOutcome` values
+
+Landed the 02 §7 table (`_LOOP_ROUTE_KIND`, `_LOOP_OUTCOME_TEXT`, `_LOOP_COMPLETE_TEXT`,
+`_LOOP_COMPLETE_OUTSTANDING`/`_SETTLED`) and `_loop_route`, wired an
+`elif stage == "forge-5-loop"` arm into `stage_exit`'s primary-routing chain ahead of the
+docs arm, added the `loop_incomplete` suppression, and covered 07 §3.5 in
+`tests/test_stage_exit.py`.
+
+### Gotchas for later items
+
+- **A loop-complete epic member is NOT actionable.** `is_complete_for_orchestration`
+  (00 §7) does not require documentation, so a member with `forge-5-loop` complete and a
+  passing `forge-verify-impl` is already complete for the epic's purposes and drops out of
+  `render-status`'s `actionable` list. A first draft routed on `feature in actionable` to
+  pick "this member's own docs"; that branch is unreachable once verification passes. The
+  landed mapping instead mirrors today's Step 6 handoff exactly: **actionable non-empty →
+  the live `nextCommand`; nothing actionable AND `total > 0` AND `complete == total` →
+  this member's own docs; else → the epic dashboard.** Item 020's canon must not promise a
+  different order. Consequence worth knowing: a member's docs stage is not reached until
+  the epic's other members are done — which is the behavior that was already there.
+
+- **`loop_incomplete` suppresses FIVE things, and the order matters.** For any outcome
+  other than `complete`: `next_stage_id`/`next_command` are cleared (before the
+  epic-backflow block, so a blocking reconcile's `deferred` line cannot re-introduce
+  `/feature-forge:forge-6-docs` as text), `run_in_stage` is false, no debt is scheduled,
+  `autoFixEligible` follows, and `verifyGate` is `none`. Without the debt suppression a
+  `--outcome partial` exit with `autoVerify: true` wrote an `auto-verify-pending` marker
+  for `forge-verify-impl` — owing a clean-room audit of a half-implemented backlog, and
+  leaving the feature reading `auto-pending` until the loop actually finished.
+
+- **The gate guard still bans `host` in its slice.**
+  `test_no_source_path_selects_the_gate_from_the_host_name` slices from the FIRST
+  `verify_gate =` to `next_stage_id`, so `loop_incomplete` had to go on the `if` line
+  (above the first assignment) and its explanatory comment above that. Same constraint
+  item 013 hit.
+
+- **Only `complete` consults `render-status`.** A `blocked`/`partial` loop in an epic
+  whose manifest is broken must still be able to close — a recovery action has to stay
+  reachable exactly when the epic's own state is what is broken. `complete` keeps item
+  015's fail-closed contract (exit 2 naming the epic and the dashboard).
+
+- **`docs_epic` was renamed `route_epic`** — the loop's `complete` route consumes the same
+  resolved-and-name-checked epic (explicit `--epic`, else the state back-pointer).
+
+- **Known wording nit (not fixed here).** For a non-complete outcome `deferred_command` is
+  None, so `_next_steps_block`'s `verify_first` is false and its stock line still reads
+  "Then start a fresh session and run **the next stage** below" while the fence carries the
+  loop resume or the navigator. The outcome text immediately above states the real action,
+  and 00 §5 fixes the renderer at five parameters, so widening it was out of scope. Same
+  class of nit item 015 recorded for the standalone docs terminus.
+
+- **Test-fixture note:** `_docs_epic_project` writes member state only for members named in
+  its `complete` tuple; `_loop_epic_project` layers arbitrary per-member state on top, which
+  is how the loop tests get "loop complete, docs owed".
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with
+`PASS: epic-manifest pytest suite` and `PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 1458 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` reports no
+drift, with the regenerated `adapters/` tree left in the working tree for the loop runner
+to commit.
+
+Re-verified in a second iteration by driving the real CLI rather than only the suite: a
+missing `--outcome` and a foreign one (`applied`) each exit 2 with an `Error:` line, no
+stdout, and no sentinel; `partial`/`deferred` fence `/feature-forge:forge-5-loop widget`
+and `blocked`/`needs-human` fence `/feature-forge:forge widget`, all four with
+`nextStage`/`nextCommand`/`deferredCommand` null, `runInStageVerify` false,
+`verifyGate: "none"`, and ZERO occurrences of `forge-6-docs` or "document" anywhere in the
+rendered block; `complete` with implementation verification outstanding fences
+`/feature-forge:forge-verify` and demotes docs to `deferredCommand`, then fences
+`/feature-forge:forge-6-docs` once a `passed` entry is recorded. Every block carries its
+outcome sentence immediately under `**Next steps**` and exactly one sentinel as the final
+line.
