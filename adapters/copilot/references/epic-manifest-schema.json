@@ -4,12 +4,17 @@
   "title": "Feature Forge Epic Manifest",
   "description": "Canonical record of an epic's membership, dependency edges, charters, and contracts. Lives at {specsDir}/{epic}/epic-manifest.json. Carries NO per-feature status field (REQ-STATE-02); status is derived live from each member's .pipeline-state.json.",
   "type": "object",
-  "required": ["schemaVersion", "epic", "description", "status", "narrativeDoc", "createdAt", "updatedAt", "features"],
+  "required": ["schemaVersion", "revision", "epic", "description", "status", "narrativeDoc", "createdAt", "updatedAt", "features"],
   "additionalProperties": false,
   "properties": {
     "schemaVersion": {
       "const": 1,
       "description": "Schema evolution guard."
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Canonical artifact revision for epic-scoped verification freshness."
     },
     "epic": {
       "type": "string",

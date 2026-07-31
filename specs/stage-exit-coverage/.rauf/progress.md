@@ -59,3 +59,54 @@ guards that pinned the old vocabulary.
 `python3 -m pytest tests -q` → 730 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` reports no
 drift.
+
+## Item 002 — canonical epic manifest revision
+
+Added the required top-level `revision` to `references/epic-manifest-schema.json` and
+`scripts/epic-manifest.py`, made `load_manifest` synthesize logical `1` for legacy files,
+and moved the single increment into `_bump_and_write`.
+
+### Gotchas for later items
+
+- **`load_manifest` now MUTATES the dict it returns** (inserts `revision: 1` when the key
+  is absent). It still never writes. Any later item that compares "what load_manifest
+  returned" against "what is on disk" must ignore `revision` — that is exactly what the
+  new `_semantic_manifest(manifest)` helper does (it drops `updatedAt` and `revision`).
+  Item 006/009 read the revision via `load_manifest`, so legacy epics classify at
+  revision 1 rather than erroring.
+
+- **`_bump_and_write` re-reads the manifest from disk** to run the no-op comparison, then
+  takes `current` revision from that read (falling back to 1 for a legacy/malformed
+  predecessor). Order is deliberate and spec-fixed (03 §2.2): **no-op check → validate →
+  bump → single `atomic_write`**. A semantic no-op therefore returns `[]` with exit 0 and
+  does *not* refresh `updatedAt`; a test asserts byte equality, so do not "helpfully" add
+  a timestamp refresh.
+
+- **`bool` is an `int` subclass.** The validator explicitly rejects `True`/`False` before
+  the `isinstance(int)` test — otherwise `True` validates as revision 1 and then
+  arithmetic-increments to `2`. The same guard is duplicated in `_bump_and_write`'s
+  `current` computation.
+
+- **`_TOP_REQUIRED` doubles as the unknown-top-level-key allow-list**, so adding
+  `revision` there covers both the required-key check and the `unknown key` check in one
+  edit. No separate list exists.
+
+- **Epic creation has no subcommand** — the manifest is composed by
+  `skills/forge-0-epic/SKILL.md` Step C5, so "creation writes `revision: 1`" is a canon
+  edit (a bullet in the C5 field list), pinned by a test that greps the skill body.
+
+- **`fixture_copy` can only be called ONCE per test** (it copytrees into
+  `tmp_path/<name>`; a second call raises `FileExistsError`). Loop over bad values by
+  rewriting the one copied manifest in place, not by re-copying.
+
+- Fixtures `tests/fixtures/valid-epic/auth-overhaul` and
+  `tests/fixtures/status-derivation/lifecycle` now carry `revision: 1`. The other epic
+  fixtures (`cyclic-epic`, `path-escape`) were deliberately left legacy — they are
+  already-invalid fixtures and the synthesized-1 path keeps them producing exactly the
+  findings their tests assert.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite`;
+`python3 -m pytest tests -q` → 747 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` no drift.

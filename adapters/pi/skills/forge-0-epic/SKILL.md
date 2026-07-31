@@ -164,6 +164,7 @@ sequence, **not** a dependency ordering). Preserve the C2 order unless the user 
 Compose the full `epic-manifest.json` per the 00 §2 schema, setting:
 
 - `schemaVersion`: `1`
+- `revision`: `1` — the canonical artifact revision epic-scoped verification freshness compares against. Creation always writes `1`; every later mutation bumps it exactly once via the helper mutators. Never hand-edit it.
 - `epic`: `"{epic}"`
 - `description`: from C1
 - `status`: `"active"`

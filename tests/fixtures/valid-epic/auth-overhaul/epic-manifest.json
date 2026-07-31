@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "revision": 1,
   "epic": "auth-overhaul",
   "description": "Replace the legacy session system with a JWT-based auth stack.",
   "status": "active",

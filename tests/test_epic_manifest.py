@@ -1062,3 +1062,263 @@ def test_a_finished_member_reports_complete_without_a_next_command(
     assert out["rollup"]["complete"] == out["rollup"]["total"] == 1
     assert out["actionable"] == []
     assert out["nextCommand"] is None
+
+
+# ---------------------------------------------------------------------------
+# Item 002 — canonical epic manifest revision (03 §2.2; 07 §4.4 rows 1-6)
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+#: Every mutator subcommand, as (argv-tail, "what it changes") pairs. Each must
+#: increment `revision` exactly once per successful mutation (03 §2.2). The
+#: adopt-feature row is the epic edit-mode mutation path present in source.
+_INCREMENTING_MUTATIONS: list[tuple[str, list[str]]] = [
+    ("add-feature", ["add-feature", "auth-overhaul", "metrics",
+                     "--charter", "Metrics collection leaf."]),
+    ("remove-feature", ["remove-feature", "auth-overhaul", "audit-log"]),
+    ("reorder", ["reorder", "auth-overhaul",
+                 "--order", "audit-log,config-store,token-service,api-gateway"]),
+    ("set-dep", ["set-dep", "auth-overhaul", "audit-log",
+                 "--depends-on", "config-store"]),
+    ("set-status", ["set-status", "auth-overhaul", "--status", "paused"]),
+    ("adopt-feature", ["adopt-feature", "auth-overhaul", "flat-only",
+                       "--charter", "Adopted leaf."]),
+]
+
+
+def _revision(specs: Path) -> object:
+    """Read the on-disk revision of the valid-epic fixture's manifest."""
+    return json.loads(_manifest_path(specs).read_text()).get("revision")
+
+
+def _make_flat_standalone(specs: Path) -> None:
+    """Give the fixture's `flat-only` dir a state file so adopt-feature can run."""
+    flat = specs / "flat-only"
+    flat.mkdir(parents=True, exist_ok=True)
+    (flat / ".pipeline-state.json").write_text(
+        json.dumps({"currentStage": "forge-1-prd", "stages": {}}), encoding="utf-8"
+    )
+
+
+# --- Row 1: a newly created manifest starts at revision 1 ------------------- #
+
+
+def test_revision_creation_writes_revision_1(run_cli, tmp_path) -> None:
+    """A freshly composed manifest carries revision 1 and validates clean (03 §2.2)."""
+    specs = tmp_path / "specs"
+    epic_dir = specs / "brand-new"
+    epic_dir.mkdir(parents=True)
+    (epic_dir / "EPIC.md").write_text("# brand-new\n")
+    (epic_dir / "epic-manifest.json").write_text(json.dumps({
+        "schemaVersion": 1,
+        "revision": 1,
+        "epic": "brand-new",
+        "description": "x",
+        "status": "active",
+        "narrativeDoc": "EPIC.md",
+        "createdAt": "2026-07-30T00:00:00Z",
+        "updatedAt": "2026-07-30T00:00:00Z",
+        "features": [],
+    }))
+
+    result = run_cli("validate", "brand-new", "--specs-dir", str(specs), "--json")
+    assert result.returncode == 0
+    assert result.json() == {"valid": True, "findings": []}
+
+
+def test_revision_creation_canon_instructs_revision_1() -> None:
+    """forge-0-epic's compose step tells the skill to write `revision`: `1`.
+
+    Creation is skill-authored (there is no `create` subcommand), so the canon
+    instruction IS the creation-time contract the script can only validate after
+    the fact.
+    """
+    body = (REPO_ROOT / "skills" / "forge-0-epic" / "SKILL.md").read_text(encoding="utf-8")
+    assert "- `revision`: `1`" in body
+
+
+# --- Row 2: committed current-format fixtures carry revision 1 -------------- #
+
+
+def test_revision_committed_fixtures_carry_revision_1(fixtures_dir) -> None:
+    """Both epic fixtures are kept in the CURRENT format, not the legacy one."""
+    for rel in ("valid-epic/auth-overhaul", "status-derivation/lifecycle"):
+        manifest = json.loads((fixtures_dir / rel / "epic-manifest.json").read_text())
+        assert manifest["revision"] == 1, rel
+
+
+def test_revision_must_be_an_integer_at_least_one(run_cli, fixture_copy) -> None:
+    """A boolean or a below-1 revision is a schema finding (exit 1), never accepted.
+
+    `bool` is an `int` subclass, so an unguarded check would let `True` through as
+    revision 1 and then arithmetic-increment it to 2.
+    """
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    pristine = json.loads(manifest.read_text())
+    for bad in (True, False, 0, -1, "1", 1.5, None):
+        manifest.write_text(json.dumps({**pristine, "revision": bad}))
+
+        result = run_cli("validate", "auth-overhaul", "--specs-dir", str(specs), "--json")
+        assert result.returncode == 1, f"{bad!r} was accepted"
+        messages = " ".join(f["message"] for f in result.json()["findings"])
+        assert "revision" in messages
+
+
+# --- Rows 3-4: legacy load-as-1, then first mutation writes 2 --------------- #
+
+
+def test_revision_legacy_manifest_loads_as_1_without_rewriting_bytes(
+    helper_module, fixture_copy
+) -> None:
+    """A copied fixture with `revision` removed loads logically as 1, bytes untouched.
+
+    REQ-DEBT-06: legacy manifests must keep loading, validating, and rendering with
+    no eager migration write.
+    """
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    data = json.loads(manifest.read_text())
+    del data["revision"]
+    manifest.write_text(json.dumps(data, indent=2) + "\n")
+    legacy_bytes = manifest.read_bytes()
+
+    loaded = helper_module.load_manifest(specs / "auth-overhaul")
+    assert loaded["revision"] == 1
+    assert manifest.read_bytes() == legacy_bytes
+
+
+def test_revision_legacy_manifest_still_validates_and_renders(
+    run_cli, fixture_copy
+) -> None:
+    """The legacy shape passes validate and render-status unchanged (REQ-COMPAT-02)."""
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    data = json.loads(manifest.read_text())
+    del data["revision"]
+    manifest.write_text(json.dumps(data, indent=2) + "\n")
+    legacy_bytes = manifest.read_bytes()
+
+    assert run_cli("validate", "auth-overhaul", "--specs-dir", str(specs),
+                   "--json").returncode == 0
+    assert run_cli("render-status", "auth-overhaul", "--specs-dir", str(specs),
+                   "--json").returncode == 0
+    assert manifest.read_bytes() == legacy_bytes  # read paths never migrate
+
+
+def test_revision_legacy_first_semantic_mutation_writes_2(run_cli, fixture_copy) -> None:
+    """A legacy manifest's first real edit persists revision 2 (03 §2.2)."""
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    data = json.loads(manifest.read_text())
+    del data["revision"]
+    manifest.write_text(json.dumps(data, indent=2) + "\n")
+
+    result = run_cli("set-status", "auth-overhaul", "--status", "paused",
+                     "--specs-dir", str(specs))
+    assert result.returncode == 0
+    assert _revision(specs) == 2
+
+
+# --- Row 5: every mutator increments exactly once --------------------------- #
+
+
+@pytest.mark.parametrize(
+    "label,argv", _INCREMENTING_MUTATIONS, ids=[m[0] for m in _INCREMENTING_MUTATIONS]
+)
+def test_revision_every_mutator_increments_exactly_once(
+    run_cli, fixture_copy, label: str, argv: list[str]
+) -> None:
+    """One successful mutation advances revision by exactly 1 — never 0, never 2."""
+    specs = fixture_copy("valid-epic")
+    _make_flat_standalone(specs)
+    before = _revision(specs)
+    assert before == 1
+
+    result = run_cli(*argv, "--specs-dir", str(specs))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _revision(specs) == before + 1, label
+
+
+def test_revision_repeated_distinct_mutations_increment_monotonically(
+    run_cli, fixture_copy
+) -> None:
+    """Three distinct edits in sequence produce 2, 3, 4 — one bump per mutation."""
+    specs = fixture_copy("valid-epic")
+    seen = []
+    for status in ("paused", "active", "complete"):
+        assert run_cli("set-status", "auth-overhaul", "--status", status,
+                       "--specs-dir", str(specs)).returncode == 0
+        seen.append(_revision(specs))
+    assert seen == [2, 3, 4]
+
+
+# --- Row 6: validation failure / I/O failure / semantic no-op change nothing - #
+
+
+def test_revision_validation_failure_leaves_revision_and_bytes_unchanged(
+    run_cli, fixture_copy
+) -> None:
+    """A refused mutation (cycle) writes nothing at all (REQ-ROBUST-03)."""
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    before_bytes = manifest.read_bytes()
+
+    # config-store <- token-service <- api-gateway; this closes the loop.
+    result = run_cli("set-dep", "auth-overhaul", "config-store",
+                     "--depends-on", "api-gateway", "--specs-dir", str(specs), "--json")
+    assert result.returncode == 1
+    assert {f["code"] for f in result.json()["findings"]} == {"cycle"}
+    assert manifest.read_bytes() == before_bytes
+    assert _revision(specs) == 1
+
+
+def test_revision_io_failure_leaves_revision_and_bytes_unchanged(
+    helper_module, fixture_copy, monkeypatch
+) -> None:
+    """A failed atomic write raises and leaves the previous revision on disk."""
+    import os
+
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    before_bytes = manifest.read_bytes()
+
+    def boom(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", boom)
+    with pytest.raises(helper_module.UsageError):
+        helper_module.set_status(specs / "auth-overhaul", specs, "paused")
+
+    assert manifest.read_bytes() == before_bytes
+    assert _revision(specs) == 1
+    leftovers = [p.name for p in (specs / "auth-overhaul").iterdir()
+                 if p.name.startswith(".epic-manifest.json.")]
+    assert leftovers == []
+
+
+def test_revision_semantic_no_op_leaves_revision_and_bytes_unchanged(
+    run_cli, fixture_copy
+) -> None:
+    """An edit that changes nothing semantic writes nothing — updatedAt included.
+
+    The byte-equality assertion is the point: refreshing `updatedAt` on a no-op
+    would make an epic's verification look stale for an edit that did not happen.
+    """
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    before_bytes = manifest.read_bytes()
+
+    # The fixture is already `active`, already in this order, and audit-log already
+    # has no dependencies — three separate no-op shapes.
+    for argv in (
+        ["set-status", "auth-overhaul", "--status", "active"],
+        ["reorder", "auth-overhaul",
+         "--order", "config-store,token-service,api-gateway,audit-log"],
+        ["set-dep", "auth-overhaul", "audit-log", "--depends-on", ""],
+    ):
+        result = run_cli(*argv, "--specs-dir", str(specs))
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert manifest.read_bytes() == before_bytes, argv[0]
+        assert _revision(specs) == 1

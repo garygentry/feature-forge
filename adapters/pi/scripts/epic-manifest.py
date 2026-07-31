@@ -303,6 +303,12 @@ def load_manifest(epic_dir: Path) -> dict:
         epic_dir: The epic subtree directory (must already be contained within
             {specsDir} via contained_path).
 
+    A legacy manifest written before the canonical ``revision`` field existed is
+    presented as logical ``revision: 1`` in the returned dict WITHOUT rewriting the
+    file (03 §2.2). Legacy validation and rendering therefore keep working, and the
+    file's bytes only change on its first genuine semantic mutation — which writes
+    ``revision: 2`` (REQ-DEBT-06, REQ-COMPAT-02).
+
     Returns:
         The parsed manifest as a plain dict. Structural validation (schema,
         cycles, dangling refs) is performed separately by ``validate`` — this
@@ -323,7 +329,7 @@ def load_manifest(epic_dir: Path) -> dict:
     except OSError as exc:
         raise UsageError(f"cannot read manifest {path}: {exc}")
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError as exc:
         raise FindingsError([
             {
@@ -332,6 +338,9 @@ def load_manifest(epic_dir: Path) -> dict:
                 "feature": None,
             }
         ])
+    if isinstance(parsed, dict) and "revision" not in parsed:
+        parsed["revision"] = 1  # synthesized only — never written back here.
+    return parsed
 
 
 def atomic_write(path: Path, data: dict) -> None:
@@ -577,9 +586,10 @@ def check_name(name: str, specs_dir: Path) -> list[Finding]:
 # --------------------------------------------------------------------------- #
 
 
-#: Top-level required keys (00 §2.1, mirrors epic-manifest-schema.json).
+#: Top-level required keys (00 §2.1, mirrors epic-manifest-schema.json). Doubles as
+#: the allow-list for the unknown-top-level-key check below.
 _TOP_REQUIRED: Final = (
-    "schemaVersion", "epic", "description", "status",
+    "schemaVersion", "revision", "epic", "description", "status",
     "narrativeDoc", "createdAt", "updatedAt", "features",
 )
 #: Required keys on each Feature object (00 §2.2).
@@ -622,6 +632,12 @@ def _schema_findings(manifest: dict) -> list[Finding]:
 
     if "schemaVersion" in manifest and manifest["schemaVersion"] != 1:
         findings.append(_schema(f"schemaVersion must be 1, got {manifest['schemaVersion']!r}"))
+    if "revision" in manifest:
+        revision = manifest["revision"]
+        # `bool` is a subclass of `int`, so `True` would otherwise pass as revision 1
+        # and then silently arithmetic-increment to 2 (03 §2.2).
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+            findings.append(_schema(f"revision must be an integer >= 1, got {revision!r}"))
     if "narrativeDoc" in manifest and manifest["narrativeDoc"] != NARRATIVE_FILENAME:
         findings.append(_schema(f"narrativeDoc must be {NARRATIVE_FILENAME!r}, got {manifest['narrativeDoc']!r}"))  # noqa: E501
     for key in ("epic", "description", "createdAt", "updatedAt"):
@@ -1113,17 +1129,38 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
 # --------------------------------------------------------------------------- #
 
 
+def _semantic_manifest(manifest: dict) -> dict:
+    """Return a manifest copy carrying only its semantic fields (03 §2.2).
+
+    Drops exactly the two bookkeeping fields a mutation is allowed to change on its
+    own: ``updatedAt`` (a timestamp) and ``revision`` (the counter this function's
+    caller maintains, and which ``load_manifest`` synthesizes for legacy files). What
+    remains is the content an epic's verification freshness is actually about.
+    """
+    return {k: v for k, v in manifest.items() if k not in ("updatedAt", "revision")}
+
+
 def _bump_and_write(
     epic_dir: Path, specs_dir: Path, manifest: dict
 ) -> list[Finding]:
-    """Re-validate, bump updatedAt, and atomically persist a manifest (02 §7).
+    """Re-validate, bump revision + updatedAt, and atomically persist (02 §7, 03 §2.2).
 
-    The shared tail of every mutator (REQ-ROBUST-03, REQ-OBS-01, REQ-EPIC-05).
-    Re-runs ``_validate_dict`` on the EDITED manifest; if any blocking finding is
-    present (cycle, dangling-ref, duplicate-name, schema, ...), the on-disk file
-    is left byte-identical and the findings are returned so the caller exits 1.
-    Otherwise ``updatedAt`` is set to now (UTC, ISO-8601) and the manifest is
-    written via ``atomic_write``.
+    The shared tail of every mutator (REQ-ROBUST-03, REQ-OBS-01, REQ-EPIC-05,
+    REQ-REL-01) and the SINGLE place ``revision`` is incremented — no mutator bumps
+    it itself, so every successful mutation advances it exactly once.
+
+    Order of operations:
+
+    1. Compare the proposed manifest with the on-disk one, ignoring only
+       ``updatedAt`` and the (possibly synthesized) ``revision``. If every semantic
+       field matches this is a no-op: return ``[]`` WITHOUT writing, so an edit that
+       changes nothing leaves the file byte-identical — including ``updatedAt``.
+    2. Re-run ``_validate_dict`` on the EDITED manifest; if any blocking finding is
+       present (cycle, dangling-ref, duplicate-name, schema, ...), the on-disk file
+       is left byte-identical and the findings are returned so the caller exits 1.
+    3. Set ``revision`` to ``current + 1`` and ``updatedAt`` to now (UTC, ISO-8601),
+       then write once via ``atomic_write``. A failed write raises, so a torn
+       mutation leaves the previous revision and bytes intact.
 
     Args:
         epic_dir: The epic subtree directory.
@@ -1131,17 +1168,33 @@ def _bump_and_write(
         manifest: The already-edited in-memory manifest dict.
 
     Returns:
-        An empty list on success (write performed); the blocking findings on
-        refusal (no write performed).
+        An empty list on success (write performed) OR on a semantic no-op (no write);
+        the blocking findings on refusal (no write performed).
 
     Raises:
         UsageError: If the atomic write itself fails (exit 2).
     """
+    path = epic_dir / MANIFEST_FILENAME
+    try:
+        on_disk: dict | None = load_manifest(epic_dir)
+    except (UsageError, FindingsError):
+        # No readable predecessor (first write, or a corrupt file the caller is
+        # replacing wholesale) — treat every field as changed.
+        on_disk = None
+
+    if on_disk is not None and _semantic_manifest(on_disk) == _semantic_manifest(manifest):
+        return []
+
     findings = _validate_dict(manifest, epic_dir, specs_dir)
     if findings:
         return findings
+
+    current = on_disk.get("revision") if isinstance(on_disk, dict) else None
+    if isinstance(current, bool) or not isinstance(current, int) or current < 1:
+        current = 1  # legacy / malformed predecessor: logical revision 1 (03 §2.2).
+    manifest["revision"] = current + 1
     manifest["updatedAt"] = datetime.now(timezone.utc).isoformat()
-    atomic_write(epic_dir / MANIFEST_FILENAME, manifest)
+    atomic_write(path, manifest)
     return []
 
 
