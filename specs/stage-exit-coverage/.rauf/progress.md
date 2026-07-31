@@ -416,3 +416,61 @@ schema moved — the 40-hex rule is a WRITE boundary only.
 `PASS: adapters/ matches a fresh generation (no drift)`;
 `python3 -m pytest tests -q` -> 950 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean.
+
+## Item 008 — auto-pending classification in the session read-side paths
+
+Ordered an `auto-verify-pending` branch ahead of the generic unresolved handling in both
+`verify_state` and `_verify_state_for`, added `_scheduled_stage_version`,
+`_warn_auto_verify_debt_metadata`, `AUTO_PENDING_DIAGNOSTIC`, and `auto_pending_message`,
+and made `build_rows` emit the named 03 §5.3 sentence. All four signatures unchanged;
+`_VERIFY_RESOLVED` untouched.
+
+### Gotchas for later items
+
+- **`pending_verify` and `build_rows` needed NO logic change** to report the debt: both
+  already test `label not in ("fresh", "none", "skipped")`, so a new non-resolved label
+  falls through correctly. The only `build_rows` edit was hoisting `verify_command` into a
+  local so the diagnostic and the row share one string. Items 011/012 should check the same
+  tuple before adding a branch — it is the de-facto "outstanding" predicate.
+
+- **Two DIFFERENT diagnostics, on purpose.** `_warn_auto_verify_debt_metadata` (classifier
+  level, deduped via `_AUTO_VERIFY_DEBT_WARNED`, mirrors `_warn_unknown_verify_status`)
+  fires only for unusable `scheduledStageVersion` and can NOT name the feature — the
+  classifiers take only `state`. The named 03 §5.3 sentence is emitted by `build_rows`,
+  the one read-side emitter that knows the feature name. Item 009's epic parity and item
+  030's navigator prose should reuse the WORDING, not import the function
+  (`epic-manifest.py` stays self-contained).
+
+- **The §5.3 sentence goes to STDERR, not stdout.** 03 §5.3: "Warnings stay on stderr
+  unless they are an existing structured `warnings` field", and JSON output carries the
+  three named keys (`verifyState`, `verifyStage`, `verifyCommand`) and no prose. That is
+  what makes `rank-features --json | ...` still parse. `doctor` and `reconcile-branch` and
+  `discover-feature` all call `build_rows`, so they inherit the diagnostic for free —
+  which is the parity REQ-DEBT-05 asks for. Any later emitter should follow the same
+  split rather than adding a prose key to `FeatureRow`.
+
+- **`_scheduled_stage_version` rejects `bool` before `int`** (same trap as item 002's
+  manifest revision: `True` is an `int` and would compare equal to version 1). A missing
+  or malformed value keeps the row `auto-pending` — degrading to `never` is the exact
+  conflation REQ-DEBT-02 forbids.
+
+- **The revision clause is only appended when BOTH numbers are usable ints and differ.**
+  A completed stage with no recorded `version` therefore gets the bare sentence, not a
+  half-filled "advanced" claim.
+
+- **`_print_rank_table` now says `(automatic verification owed: …)`** for an `auto-pending`
+  row instead of `(verify available: …)`. Existing non-auto rows keep the old wording
+  verbatim; `tests/test_rank_features.py` pins both branches.
+
+- **Signature-stability tests must strip quotes.** `scripts/forge-session.py` has
+  `from __future__ import annotations`, so `inspect.signature()` renders every annotation
+  as a quoted string (`(state: 'dict') -> 'tuple[str | None, str]'`) and the return
+  annotation shows `Path`, not `pathlib.Path`. `tests/test_auto_verify.py::sig` normalizes
+  by removing `'`.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite` and
+`PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 976 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean.

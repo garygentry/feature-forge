@@ -262,6 +262,15 @@ _VERIFY_RESOLVED: Final = frozenset({"passed", "findings-applied", "skipped"})
 #: Per-process dedupe for the unknown-verify-status diagnostic (#148) so a single
 #: bogus status is flagged once, not once per verify_state() call in a command.
 _UNKNOWN_VERIFY_WARNED: set[str] = set()
+#: Per-process dedupe for the auto-verify debt-metadata diagnostic, same reason.
+_AUTO_VERIFY_DEBT_WARNED: set[str] = set()
+#: The single normative sentence every read-side emitter uses for owed-but-unrun
+#: automatic verification (03-verification-state.md §5.3). One line naming the
+#: subject, the served stage, and the retry command — never a state-file dump.
+AUTO_PENDING_DIAGNOSTIC: Final = (
+    "{subject}: automatic verification is still pending for {stage}; "
+    "run {command} to resolve it."
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -752,6 +761,77 @@ def _warn_unknown_verify_status(stage_name: str, status: object) -> None:
     )
 
 
+def _scheduled_stage_version(entry: dict) -> int | None:
+    """Return an ``auto-verify-pending`` entry's usable ``scheduledStageVersion``.
+
+    ``None`` when the field is absent, a bool, a non-integer, or below 1 — i.e.
+    legacy state written before the scheduling fields existed, or hand-edited
+    state. The caller stays ``auto-pending`` either way: unusable metadata is a
+    reason to warn, never a reason to forget the debt (03 §5.1).
+    """
+    version = entry.get("scheduledStageVersion")
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        return None
+    return version
+
+
+def _warn_auto_verify_debt_metadata(verify_key: str) -> None:
+    """Flag an ``auto-verify-pending`` entry whose scheduled revision is unusable.
+
+    Without a recorded revision the debt cannot be compared against the current
+    artifact, so it can be neither discharged as fresh nor described as advanced.
+    It REMAINS outstanding — the alternative (degrading to ``never``) is exactly
+    the conflation REQ-DEBT-02 forbids — but the operator needs to know why the
+    row carries no revision detail, so say it once per process (03 §5.1).
+    """
+    if verify_key in _AUTO_VERIFY_DEBT_WARNED:
+        return
+    _AUTO_VERIFY_DEBT_WARNED.add(verify_key)
+    print(
+        f"feature-forge: {verify_key} is auto-verify-pending but its "
+        "scheduledStageVersion is missing or malformed (legacy or hand-edited "
+        "state); the debt stays outstanding — re-run forge-verify to resolve it "
+        "and record a usable schedule",
+        file=sys.stderr,
+    )
+
+
+def auto_pending_message(
+    subject: str,
+    stage: str,
+    command: str,
+    scheduled_version: int | None = None,
+    current_version: int | None = None,
+) -> str:
+    """Render the 03 §5.3 diagnostic for owed-but-unrun automatic verification.
+
+    Args:
+        subject: The feature or epic the debt belongs to.
+        stage: The served production stage the debt is owed on.
+        command: The host-translated forge-verify retry command.
+        scheduled_version: Revision the debt was recorded against, if usable.
+        current_version: The artifact's current revision, if known.
+
+    Returns:
+        One sentence, with both revision numbers appended when the recorded
+        schedule predates the current artifact. Never a state-file dump.
+    """
+    message = AUTO_PENDING_DIAGNOSTIC.format(
+        subject=subject, stage=stage, command=command
+    )
+    if (
+        scheduled_version is not None
+        and current_version is not None
+        and scheduled_version != current_version
+    ):
+        message += (
+            f" The artifact has advanced since it was scheduled "
+            f"(scheduled at revision {scheduled_version}, now at revision "
+            f"{current_version})."
+        )
+    return message
+
+
 def verify_state(state: dict) -> tuple[str | None, str]:
     """Classify verify freshness for the most-recently-completed stage.
 
@@ -764,6 +844,13 @@ def verify_state(state: dict) -> tuple[str | None, str]:
       ``verifiedStageVersion``). A revised artifact must be re-verified.
     - ``failing`` — verify ran and reported findings that are not yet applied
       (``findings-reported``).
+    - ``auto-pending`` — effective configuration scheduled unattended in-stage
+      verification and nothing has discharged it: the obligation is RECORDED and
+      owed. Deliberately distinct from ``never`` (nobody ever asked for it), from
+      manual ``pending`` work, and from every resolved label — a dropped
+      ``runInStageVerify`` directive is precisely what this makes visible (#163,
+      REQ-DEBT-02). Classified BEFORE the generic unresolved handling below, and
+      never downgraded when its scheduling metadata is missing or malformed.
     - ``never``   — the stage completed but verify has not run at all.
     - ``skipped`` — the user explicitly chose to proceed without verifying. A
       resolved, non-pending state: it is deliberately NOT re-offered or
@@ -791,6 +878,13 @@ def verify_state(state: dict) -> tuple[str | None, str]:
             # decision. It never goes stale (no recorded version to compare), so
             # the freshness check below deliberately does not apply.
             return stage, "skipped"
+        if status == "auto-verify-pending":
+            # Ordered ahead of the generic unresolved branch so recorded debt can
+            # never fall through to "never". Unusable metadata warns and stays
+            # owed; a superseded revision stays owed too (03 §5.1).
+            if _scheduled_stage_version(entry) is None:
+                _warn_auto_verify_debt_metadata(f"forge-verify-{token}")
+            return stage, "auto-pending"
         if status not in _VERIFY_RESOLVED:
             if status == "findings-reported":
                 return stage, "failing"
@@ -817,8 +911,11 @@ def pending_verify(state: dict) -> str | None:
     """Return the production stage whose verify is outstanding, if any.
 
     Outstanding means the most-recently-completed production stage's verify is not
-    ``fresh`` (never run, reported findings, or gone stale after an artifact
-    revision). An explicit ``skipped`` is treated as resolved (never outstanding).
+    ``fresh`` (never run, scheduled-but-unrun automatic verification, reported
+    findings, or gone stale after an artifact revision). An ``auto-pending`` stage
+    is returned like any other outstanding one — recorded debt is owed work, and
+    ``_VERIFY_RESOLVED`` deliberately excludes it.
+    An explicit ``skipped`` is treated as resolved (never outstanding).
     Surfaced so the navigator can offer "verify before continuing" as an
     alternative to advancing. Returns ``None`` when the latest stage is fresh,
     skipped, or there is nothing to verify.
@@ -850,6 +947,13 @@ def build_rows(specs_dir: Path, config: dict | None = None) -> list[FeatureRow]:
     ``config`` is the loaded forge.config.json (or ``{}``); it drives the effective
     ``autoVerify``/``autoFix`` per stage so the navigator can branch without
     re-reading config.
+
+    A row whose verify classifies ``auto-pending`` carries recorded-but-undischarged
+    automatic verification: ``verifyPending`` is True, ``verifyState`` is
+    ``auto-pending``, and ``verifyCommand`` is non-null, so no consumer can read it
+    as verification-complete. The named 03 §5.3 sentence goes to stderr (this is the
+    one emitter that knows the feature name); stdout keeps the three stable JSON
+    keys — ``verifyState``, ``verifyStage``, ``verifyCommand`` — and no prose.
     """
     config = config or {}
     # Fail closed: only a literal JSON ``true`` enables artifact-mutating autoFix.
@@ -863,6 +967,20 @@ def build_rows(specs_dir: Path, config: dict | None = None) -> list[FeatureRow]:
         vstage, vlabel = verify_state(state)
         verify_pending = vstage is not None and vlabel not in ("fresh", "none", "skipped")
         effective_auto_verify = auto_verify_for(config, vstage) if vstage else False
+        verify_command = f"/feature-forge:forge-verify {name}" if verify_pending else None
+        if vlabel == "auto-pending" and vstage is not None and verify_command:
+            token = VERIFY_TOKEN_BY_STAGE.get(vstage)
+            entry = _verify_entry(state, f"forge-verify-{token}") if token else {}
+            print(
+                auto_pending_message(
+                    name,
+                    vstage,
+                    verify_command,
+                    _scheduled_stage_version(entry),
+                    _stage_version(state, vstage),
+                ),
+                file=sys.stderr,
+            )
         branch = state.get("branch")
         updated = state.get("updatedAt")
         rows.append({
@@ -878,7 +996,7 @@ def build_rows(specs_dir: Path, config: dict | None = None) -> list[FeatureRow]:
             "nextStage": nxt,
             "nextCommand": f"/feature-forge:{nxt} {name}" if nxt else None,
             "verifyPending": verify_pending,
-            "verifyCommand": f"/feature-forge:forge-verify {name}" if verify_pending else None,
+            "verifyCommand": verify_command,
             "verifyStage": vstage,
             "verifyState": vlabel,
             "autoVerify": effective_auto_verify,
@@ -1901,9 +2019,11 @@ _EXIT_NEXT_STAGE: Final[dict[str, str]] = {
 def _verify_state_for(state: dict, stage: str) -> str:
     """Classify THIS stage's verify freshness (stage-scoped ``verify_state``).
 
-    Same labels as ``verify_state`` — fresh / stale / failing / never /
-    skipped / none — but for the given stage rather than the most-recently
-    completed one, because stage-exit runs inside the stage that just closed.
+    Same labels as ``verify_state`` — fresh / stale / failing / auto-pending /
+    never / skipped / none — but for the given stage rather than the
+    most-recently completed one, because stage-exit runs inside the stage that
+    just closed. ``auto-pending`` is classified identically here so stage-exit
+    routing and the navigator ledger never disagree about owed debt (REQ-DEBT-05).
     """
     token = _EXIT_VERIFY_TOKEN.get(stage)
     if token is None:
@@ -1914,6 +2034,11 @@ def _verify_state_for(state: dict, stage: str) -> str:
         return "skipped"
     if status == "findings-reported":
         return "failing"
+    if status == "auto-verify-pending":
+        # Ahead of the generic unresolved branch, exactly as in verify_state.
+        if _scheduled_stage_version(entry) is None:
+            _warn_auto_verify_debt_metadata(f"forge-verify-{token}")
+        return "auto-pending"
     if status not in _VERIFY_RESOLVED:
         return "never"
     verified_version = entry.get("verifiedStageVersion")
@@ -3690,7 +3815,15 @@ def _print_rank_table(rows: list[FeatureRow], counts: dict[str, int]) -> None:
         nxt = row["nextCommand"] or "complete"
         print(f"  {marker} {label}: {row['currentStage']} — next: {nxt}")
         if row["verifyPending"]:
-            print(f"      (verify available: {row['verifyCommand']})")
+            # Owed automatic verification is an obligation, not an offer — the
+            # full 03 §5.3 sentence went to stderr, so keep this line honest
+            # rather than repeating it (REQ-DEBT-02).
+            offer = (
+                "automatic verification owed"
+                if row["verifyState"] == "auto-pending"
+                else "verify available"
+            )
+            print(f"      ({offer}: {row['verifyCommand']})")
 
 
 def _print_context(usage: dict) -> None:
