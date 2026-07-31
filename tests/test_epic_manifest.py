@@ -1332,6 +1332,111 @@ def test_revision_semantic_no_op_leaves_revision_and_bytes_unchanged(
         assert _revision(specs) == 1
 
 
+# --- Item 032: a no-op mutation still re-validates (REQ-ROBUST-03) --------- #
+#
+# `_bump_and_write` used to run the semantic no-op comparison BEFORE
+# `_validate_dict`, so a semantically idempotent mutation against a manifest that
+# was already invalid on disk exited 0 in silence — while the very same mutator
+# with a *different* value exited 1 with the blocking findings. A caller reading
+# exit 0 as "the epic is well-formed" was misled. The order is now
+# validate -> no-op check, which restores the diagnostic without writing.
+
+
+def _corrupt_manifest(specs: Path, kind: str) -> None:
+    """Make the copied `valid-epic` fixture invalid in place, without a mutator.
+
+    Writing the corruption directly (rather than via a refused mutation, which by
+    design leaves the file untouched) is the only way to reach the state these
+    tests are about: an epic that is ALREADY invalid on disk when a mutator runs.
+    """
+    path = _manifest_path(specs)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    by_name = {f["name"]: f for f in manifest["features"]}
+    if kind == "dangling-ref":
+        by_name["audit-log"]["dependsOn"] = ["ghost"]
+    else:  # cycle: config-store <- token-service <- api-gateway <- config-store
+        by_name["config-store"]["dependsOn"] = ["api-gateway"]
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def _no_op_argv(mutator: str, kind: str) -> list[str]:
+    """Argv for a mutation that changes nothing semantic on the corrupted fixture."""
+    if mutator == "set-status":
+        return ["set-status", "auth-overhaul", "--status", "active"]  # already active
+    if mutator == "reorder":
+        return ["reorder", "auth-overhaul",
+                "--order", "config-store,token-service,api-gateway,audit-log"]
+    # set-dep: re-assert exactly the dependency the corruption installed.
+    if kind == "dangling-ref":
+        return ["set-dep", "auth-overhaul", "audit-log", "--depends-on", "ghost"]
+    return ["set-dep", "auth-overhaul", "config-store", "--depends-on", "api-gateway"]
+
+
+@pytest.mark.parametrize("mutator", ["set-status", "set-dep", "reorder"])
+@pytest.mark.parametrize("kind", ["dangling-ref", "cycle"])
+def test_no_op_mutation_on_an_invalid_manifest_reports_the_findings(
+    run_cli, fixture_copy, mutator, kind
+) -> None:
+    """Every no-op mutator path re-validates and exits 1 on an invalid manifest."""
+    specs = fixture_copy("valid-epic")
+    _corrupt_manifest(specs, kind)
+    manifest = _manifest_path(specs)
+    before_bytes = manifest.read_bytes()
+
+    result = run_cli(*_no_op_argv(mutator, kind), "--specs-dir", str(specs), "--json")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert {f["code"] for f in result.json()["findings"]} == {kind}
+    # Refusing still writes nothing: no bytes, no updatedAt refresh, no bump.
+    assert manifest.read_bytes() == before_bytes
+    assert _revision(specs) == 1
+
+
+@pytest.mark.parametrize("kind", ["dangling-ref", "cycle"])
+def test_no_op_and_real_mutation_report_the_same_findings(
+    run_cli, fixture_copy, kind
+) -> None:
+    """The no-op path matches the non-no-op path exactly — that is the whole bug."""
+    specs = fixture_copy("valid-epic")
+    _corrupt_manifest(specs, kind)
+    manifest = _manifest_path(specs)
+    before_bytes = manifest.read_bytes()
+
+    no_op = run_cli("set-status", "auth-overhaul", "--status", "active",
+                    "--specs-dir", str(specs), "--json")
+    real = run_cli("set-status", "auth-overhaul", "--status", "paused",
+                   "--specs-dir", str(specs), "--json")
+
+    assert no_op.returncode == real.returncode == 1
+    assert no_op.json()["findings"] == real.json()["findings"]
+    assert manifest.read_bytes() == before_bytes
+
+
+@pytest.mark.parametrize("mutator", ["set-status", "set-dep", "reorder"])
+def test_no_op_mutation_on_a_valid_manifest_still_succeeds_silently(
+    run_cli, fixture_copy, mutator
+) -> None:
+    """Negative control: validating first did not turn every no-op into a write or a refusal.
+
+    Pins item 002's byte-equality requirement explicitly on `updatedAt` and
+    `revision`, the two fields a spurious write would move.
+    """
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    before_bytes = manifest.read_bytes()
+    before_updated_at = json.loads(before_bytes)["updatedAt"]
+
+    # `set-dep audit-log --depends-on ""` is the no-op on the pristine fixture.
+    argv = (["set-dep", "auth-overhaul", "audit-log", "--depends-on", ""]
+            if mutator == "set-dep" else _no_op_argv(mutator, "dangling-ref"))
+    result = run_cli(*argv, "--specs-dir", str(specs))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert manifest.read_bytes() == before_bytes
+    assert json.loads(manifest.read_text())["updatedAt"] == before_updated_at
+    assert _revision(specs) == 1
+
+
 # ---------------------------------------------------------------------------
 # Item 009 — verify-status parity + epic-root freshness (03 §5.2; 07 §4.4 rows 7-8)
 # ---------------------------------------------------------------------------

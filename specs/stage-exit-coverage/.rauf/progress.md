@@ -2129,3 +2129,60 @@ pre-existing); `ruff check scripts/ eval/` clean; `python3 scripts/build-adapter
 run and the regenerated `adapters/` tree left in the working tree for the loop runner
 to commit. The six new tests that pin the fix were confirmed to FAIL against
 `HEAD:scripts/forge-session.py` before being accepted.
+
+## Item 032 — a no-op mutation must still re-validate (REQ-ROBUST-03)
+
+Two-line reorder inside `_bump_and_write` (`scripts/epic-manifest.py`): `_validate_dict`
+now runs BEFORE the semantic no-op comparison, so an idempotent mutation against a
+manifest that is already invalid on disk reports the blocking findings and exits 1
+instead of exiting 0 in silence. Plus 12 tests and the docstring's order-of-operations
+list.
+
+### Gotchas for later items
+
+- **Item 002's docstring explicitly SPECIFIED the buggy order** ("1. Compare … 2. Re-run
+  `_validate_dict`"), so the order was deliberate-looking, not an oversight — item 002's
+  own AC only required that a no-op change nothing, and validating first satisfies that
+  identically. The docstring is now the normative record of the corrected order; a future
+  reader tempted to "restore" the cheap-check-first ordering as an optimization must
+  amend it. The validation is in-memory and small, so there is no cost argument.
+
+- **Only the no-op paths changed behavior.** Every non-no-op path already validated, so
+  the swap is invisible to `add-feature` / `remove-feature` / `edit-mode` and to any
+  mutation whose value actually differs. Confirmed: the 4 valid-manifest negative-control
+  tests pass against BOTH the pre-fix and post-fix script, while all 8 invalid-manifest
+  tests fail against `HEAD:scripts/epic-manifest.py`.
+
+- **Every finding `_validate_dict` returns is blocking** — the callers exit 1 on any
+  non-empty list, and there is no severity field. The item's "return its findings when
+  blocking" therefore needs no filter; a later item that introduces an advisory finding
+  code must add one here, or a warning would start refusing writes.
+
+- **The corruption has to be written DIRECTLY, not produced by a refused mutation.** A
+  refused mutator leaves the file byte-identical by design, so there is no mutator path
+  that puts an invalid manifest on disk. `_corrupt_manifest(specs, kind)` rewrites the
+  copied fixture in place; that is the only way to reach the state under test.
+
+- **`set-dep`'s no-op argv depends on the corruption shape** (re-assert exactly the
+  dependency the corruption installed), while `set-status --status active` and the
+  identity `reorder` are no-ops under both shapes. `_no_op_argv(mutator, kind)` carries
+  that asymmetry so the parametrization stays a clean 3x2.
+
+- **`tests/fixtures/valid-epic` is the right base for an invalid-manifest test**, not
+  `cyclic-epic`: the latter is a legacy no-`revision` fixture whose existing tests assert
+  exact `validate` findings, and mutating it would couple two unrelated suites.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with `PASS: spec-purity checker`,
+`PASS: epic-manifest pytest suite`, `PASS: ruff lint`, and `PASS: adapters/ matches a fresh
+generation (no drift)`; the pytest suite reports **1745 passed, 2 skipped** (both
+pre-existing); `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run
+and the regenerated `adapters/` tree (all six copies of `epic-manifest.py`) left in the
+working tree for the loop runner to commit.
+
+Also driven against the real CLI rather than only the suite: on an epic carrying a dangling
+`dependsOn`, all three no-op paths (`set-status --status active`, `set-dep audit-log
+--depends-on ghost`, `reorder` to the current order) now print
+`dangling-ref: feature 'audit-log' dependsOn unknown feature 'ghost'` and exit 1 with the
+manifest bytes unchanged — matching what the non-no-op `--status paused` already did.

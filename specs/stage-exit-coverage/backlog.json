@@ -1055,8 +1055,8 @@
         "ruff check scripts/ eval/ passes",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T13:37:41.461Z",
       "source": "review",
       "reviewBatch": "2026-07-31T13:06:38.432Z"
     }

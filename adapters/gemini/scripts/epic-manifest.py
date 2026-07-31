@@ -1385,13 +1385,18 @@ def _bump_and_write(
 
     Order of operations:
 
-    1. Compare the proposed manifest with the on-disk one, ignoring only
+    1. Re-run ``_validate_dict`` on the EDITED manifest; if any blocking finding is
+       present (cycle, dangling-ref, duplicate-name, schema, ...), the on-disk file
+       is left byte-identical and the findings are returned so the caller exits 1.
+       This runs FIRST, ahead of the no-op comparison, so that EVERY mutator
+       re-validates (REQ-ROBUST-03): a semantically idempotent edit against a
+       manifest that is already invalid on disk must report the same blocking
+       findings a non-idempotent edit would, instead of exiting 0 in silence and
+       letting a caller read that as "the epic is well-formed".
+    2. Compare the proposed manifest with the on-disk one, ignoring only
        ``updatedAt`` and the (possibly synthesized) ``revision``. If every semantic
        field matches this is a no-op: return ``[]`` WITHOUT writing, so an edit that
        changes nothing leaves the file byte-identical — including ``updatedAt``.
-    2. Re-run ``_validate_dict`` on the EDITED manifest; if any blocking finding is
-       present (cycle, dangling-ref, duplicate-name, schema, ...), the on-disk file
-       is left byte-identical and the findings are returned so the caller exits 1.
     3. Set ``revision`` to ``current + 1`` and ``updatedAt`` to now (UTC, ISO-8601),
        then write once via ``atomic_write``. A failed write raises, so a torn
        mutation leaves the previous revision and bytes intact.
@@ -1416,12 +1421,12 @@ def _bump_and_write(
         # replacing wholesale) — treat every field as changed.
         on_disk = None
 
-    if on_disk is not None and _semantic_manifest(on_disk) == _semantic_manifest(manifest):
-        return []
-
     findings = _validate_dict(manifest, epic_dir, specs_dir)
     if findings:
         return findings
+
+    if on_disk is not None and _semantic_manifest(on_disk) == _semantic_manifest(manifest):
+        return []
 
     current = on_disk.get("revision") if isinstance(on_disk, dict) else None
     if isinstance(current, bool) or not isinstance(current, int) or current < 1:
