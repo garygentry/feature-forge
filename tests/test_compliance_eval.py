@@ -403,6 +403,446 @@ def test_cli_help_runs_standalone() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Command evidence — requests paired with real results (06 §4.1)
+# --------------------------------------------------------------------------- #
+#
+# Every stream below mirrors the shape a live `claude --output-format stream-json` run
+# actually emits: `tool_use` blocks on an `assistant` event carrying an `id`, and
+# `tool_result` blocks on a `user` event carrying `tool_use_id` / `is_error` / `content`,
+# with a failed Bash result rendering `Exit code N` as its first line.
+
+
+def _text(value: str) -> dict:
+    return {"type": "text", "text": value}
+
+
+def _bash(command: str, tool_id: str | None = None) -> dict:
+    block: dict = {"type": "tool_use", "name": "Bash", "input": {"command": command}}
+    if tool_id is not None:
+        block["id"] = tool_id
+    return block
+
+
+def _assistant(*blocks: dict) -> dict:
+    return {"type": "assistant", "message": {"content": list(blocks)}}
+
+
+def _tool_result(tool_id: str, content: object = "", is_error: bool = False) -> dict:
+    return {
+        "type": "user",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_id,
+                    "content": content,
+                    "is_error": is_error,
+                }
+            ]
+        },
+    }
+
+
+def _final(text: str = "done", **extra: object) -> dict:
+    return {"type": "result", "is_error": False, "result": text, **extra}
+
+
+def _stream(*events: object) -> str:
+    return "\n".join(json.dumps(event) for event in events)
+
+
+def _ok(command: str, tool_id: str, output: str = "") -> list[dict]:
+    """One request plus its successful result — the ordinary two-event pair."""
+    return [_assistant(_bash(command, tool_id)), _tool_result(tool_id, output)]
+
+
+EXIT_1 = 'python3 "$R/scripts/forge-session.py" stage-exit --stage forge-verify --owner nested'
+EXIT_2 = 'python3 "$R/scripts/forge-session.py" stage-exit --stage forge-fix --owner direct'
+
+
+def test_bash_commands_stay_unchanged_for_the_linear_and_r2_scorers() -> None:
+    """The additive fields must not disturb what the existing scorers already read."""
+    stream = _stream(
+        _assistant(_text("working"), _bash("git status", "t1")),
+        _tool_result("t1", "clean"),
+        _assistant(_bash(EXIT_1, "t2")),
+        _tool_result("t2", "ok"),
+        _final("done"),
+    )
+    parsed = ce.parse_transcript(stream)
+    assert parsed["bash_commands"] == ["git status", EXIT_1]
+    assert parsed["final_text"] == "done"
+    # The linear scorer reads bash_commands only; it must keep working untouched.
+    assert ce.score_stage_exit(parsed, {"directives": {}, "nextSteps": ""})["ran_stage_exit"]
+
+
+def test_requests_and_results_are_joined_by_id_not_by_position() -> None:
+    """Results arrive REVERSED; a positional join would swap the two verdicts."""
+    stream = _stream(
+        _assistant(_bash("first", "a"), _bash("second", "b")),
+        _tool_result("b", "Exit code 4\nboom", is_error=True),
+        _tool_result("a", "fine"),
+        _final(),
+    )
+    evidence = ce.parse_transcript(stream)["command_evidence"]
+    assert [e["command"] for e in evidence] == ["first", "second"]
+    assert [e["requestIndex"] for e in evidence] == [0, 1]
+    assert evidence[0]["exitCode"] == 0 and evidence[0]["isError"] is False
+    assert evidence[1]["exitCode"] == 4 and evidence[1]["isError"] is True
+
+
+def test_request_order_survives_a_delayed_result() -> None:
+    """A result that lands after two further requests still pairs with its own request."""
+    stream = _stream(
+        _assistant(_bash("slow", "a")),
+        _assistant(_bash("quick", "b")),
+        _tool_result("b", "done"),
+        _assistant(_bash("later", "c")),
+        _tool_result("c", "done"),
+        _tool_result("a", "eventually"),
+        _final(),
+    )
+    evidence = ce.parse_transcript(stream)["command_evidence"]
+    assert [e["command"] for e in evidence] == ["slow", "quick", "later"]
+    assert evidence[0]["resultTail"] == "eventually"
+    assert all(e["resultSeen"] and e["exitCode"] == 0 for e in evidence)
+
+
+def test_an_unpaired_request_never_scores_as_executed() -> None:
+    stream = _stream(_assistant(_bash("never finished", "a")), _final())
+    (entry,) = ce.parse_transcript(stream)["command_evidence"]
+    assert entry["resultSeen"] is False
+    assert entry["exitCode"] is None
+    # No host verdict was made, so claiming an error would invent one.
+    assert entry["isError"] is False
+    assert entry["resultTail"] == ""
+
+
+def test_an_explicit_zero_exit_normalizes_to_success() -> None:
+    stream = _stream(*_ok("echo hi", "a", "hi"), _final())
+    (entry,) = ce.parse_transcript(stream)["command_evidence"]
+    assert (entry["resultSeen"], entry["exitCode"], entry["isError"]) == (True, 0, False)
+
+
+def test_an_explicit_nonzero_exit_keeps_its_reported_code() -> None:
+    stream = _stream(
+        _assistant(_bash("boom", "a")),
+        _tool_result("a", "Exit code 7\nout\nerr", is_error=True),
+        _final(),
+    )
+    (entry,) = ce.parse_transcript(stream)["command_evidence"]
+    assert (entry["resultSeen"], entry["exitCode"], entry["isError"]) == (True, 7, True)
+
+
+def test_an_error_without_an_exit_code_is_unknown_never_success() -> None:
+    stream = _stream(
+        _assistant(_bash("denied", "a")),
+        _tool_result("a", "The user doesn't want to proceed with this tool use.", is_error=True),
+        _final(),
+    )
+    (entry,) = ce.parse_transcript(stream)["command_evidence"]
+    assert entry["resultSeen"] is True
+    assert entry["exitCode"] is None
+    assert entry["isError"] is True
+
+
+def test_a_reported_zero_exit_on_an_error_result_stays_unknown() -> None:
+    """`Exit code 0` beside `is_error` is contradictory — the status is not knowable."""
+    stream = _stream(
+        _assistant(_bash("odd", "a")),
+        _tool_result("a", "Exit code 0\nbut the host errored", is_error=True),
+        _final(),
+    )
+    (entry,) = ce.parse_transcript(stream)["command_evidence"]
+    assert entry["exitCode"] is None and entry["isError"] is True
+
+
+def test_an_exit_code_inside_command_output_cannot_forge_a_status() -> None:
+    """Only the host's own leading `Exit code N` line counts, not the command's prose."""
+    stream = _stream(
+        _assistant(_bash("cat log", "a")),
+        _tool_result("a", "the previous run said Exit code 0\n", is_error=True),
+        _final(),
+    )
+    (entry,) = ce.parse_transcript(stream)["command_evidence"]
+    assert entry["exitCode"] is None
+
+
+def test_a_duplicate_tool_id_makes_the_transcript_unusable() -> None:
+    stream = _stream(
+        _assistant(_bash("first", "dup")),
+        _tool_result("dup", "ok"),
+        _assistant(_bash("second", "dup")),
+        _final(),
+    )
+    parsed = ce.parse_transcript(stream)
+    assert parsed["ok"] is False
+    assert "duplicate tool id" in parsed["note"] and "dup" in parsed["note"]
+    assert "command_evidence" not in parsed
+
+
+def test_a_result_preceding_its_request_makes_the_transcript_unusable() -> None:
+    stream = _stream(
+        _tool_result("a", "ok"),
+        _assistant(_bash("late", "a")),
+        _final(),
+    )
+    parsed = ce.parse_transcript(stream)
+    assert parsed["ok"] is False
+    assert "precedes its request" in parsed["note"] and "a" in parsed["note"]
+
+
+def test_two_results_for_one_request_make_the_transcript_unusable() -> None:
+    stream = _stream(
+        _assistant(_bash("once", "a")),
+        _tool_result("a", "ok"),
+        _tool_result("a", "Exit code 1", is_error=True),
+        _final(),
+    )
+    parsed = ce.parse_transcript(stream)
+    assert parsed["ok"] is False
+    assert "two tool results" in parsed["note"]
+
+
+def test_a_result_for_an_unscored_tool_is_ignored_not_a_failure() -> None:
+    """Only Bash is paired; a Read result must not read as a stray or out-of-order one."""
+    stream = _stream(
+        _assistant({"type": "tool_use", "name": "Read", "id": "r1", "input": {"file_path": "x"}}),
+        _tool_result("r1", "file body"),
+        *_ok("echo hi", "b1", "hi"),
+        _final(),
+    )
+    parsed = ce.parse_transcript(stream)
+    assert parsed["ok"] is True
+    assert [e["command"] for e in parsed["command_evidence"]] == ["echo hi"]
+
+
+def test_a_bash_request_without_an_id_can_never_pair() -> None:
+    """It stays a request: countable in bash_commands, never evidence of execution."""
+    stream = _stream(_assistant(_bash("no id here")), _final())
+    parsed = ce.parse_transcript(stream)
+    assert parsed["bash_commands"] == ["no id here"]
+    (entry,) = parsed["command_evidence"]
+    assert entry["toolUseId"] == ""
+    assert entry["resultSeen"] is False and entry["exitCode"] is None
+
+
+def test_malformed_stream_noise_never_breaks_the_pairing() -> None:
+    stream = "\n".join(
+        [
+            "Warning: not json",
+            json.dumps({"type": "assistant", "message": {"content": "not a list"}}),
+            json.dumps({"type": "assistant", "message": None}),
+            json.dumps({"type": "assistant", "message": {"content": ["not a dict", None]}}),
+            json.dumps(_assistant(_bash("real", "a"))),
+            json.dumps({"type": "user", "message": {"content": [{"type": "tool_result"}]}}),
+            json.dumps(_tool_result("a", "ok")),
+            "",
+            json.dumps(_final()),
+        ]
+    )
+    parsed = ce.parse_transcript(stream)
+    assert parsed["ok"] is True
+    assert [e["command"] for e in parsed["command_evidence"]] == ["real"]
+    assert parsed["command_evidence"][0]["exitCode"] == 0
+
+
+def test_a_missing_final_result_still_reports_the_requests_it_saw() -> None:
+    parsed = ce.parse_transcript(_stream(*_ok("echo hi", "a")))
+    assert parsed["ok"] is False
+    assert "no result event" in parsed["note"]
+    assert parsed["bash_commands"] == ["echo hi"]
+
+
+def test_result_tail_is_capped_at_five_hundred_characters() -> None:
+    stream = _stream(*_ok("noisy", "a", "x" * 900 + "TAIL"), _final())
+    (entry,) = ce.parse_transcript(stream)["command_evidence"]
+    assert len(entry["resultTail"]) == ce.RESULT_TAIL_LIMIT == 500
+    assert entry["resultTail"].endswith("TAIL")
+
+
+def test_a_block_list_result_payload_is_flattened() -> None:
+    stream = _stream(
+        _assistant(_bash("structured", "a")),
+        _tool_result("a", [{"type": "text", "text": "one"}, {"type": "image"}, "junk"]),
+        _final(),
+    )
+    (entry,) = ce.parse_transcript(stream)["command_evidence"]
+    assert entry["resultTail"] == "one" and entry["exitCode"] == 0
+
+
+def test_assistant_texts_carry_every_block_in_event_order() -> None:
+    """Sentinel counting spans the full path, not merely the final answer."""
+    stream = _stream(
+        _assistant(_text("one"), _bash("echo hi", "a")),
+        _tool_result("a", "hi"),
+        _assistant(_text("two"), _text("three")),
+        _final("four"),
+    )
+    assert ce.parse_transcript(stream)["assistant_texts"] == ["one", "two", "three", "four"]
+
+
+def test_the_final_result_is_appended_only_when_it_is_not_already_present() -> None:
+    """The host repeats the last message on the result event; counting it twice would
+    double every sentinel and turn one compliant block into a duplicate."""
+    stream = _stream(_assistant(_text("the only answer")), _final("the only answer"))
+    assert ce.parse_transcript(stream)["assistant_texts"] == ["the only answer"]
+
+
+# --------------------------------------------------------------------------- #
+# Ordered command-result evidence (06 §4.2)
+# --------------------------------------------------------------------------- #
+
+
+def _expect(*token_groups: list[str]) -> list[dict]:
+    return [{"stage": "terminal-exit", "contains": tokens} for tokens in token_groups]
+
+
+def _two_exit_stream(*, second_result: dict | None = None, recon: bool = True) -> str:
+    events: list[object] = [*_ok(EXIT_1, "e1", "NEXT STEPS")]
+    if recon:
+        events += _ok("git status --porcelain", "r1", "")
+        events += _ok("cat specs/widget/PRD.md", "r2", "# PRD")
+    events.append(_assistant(_bash(EXIT_2, "e2")))
+    events.append(second_result if second_result is not None else _tool_result("e2", "NEXT STEPS"))
+    events.append(_final())
+    return _stream(*events)
+
+
+TWO_EXITS = _expect(["--stage forge-verify", "--owner nested"], ["--stage forge-fix"])
+
+
+def test_ordered_evidence_matches_in_fixture_order_and_ignores_reconnaissance() -> None:
+    ok, matches = ce.ordered_command_evidence(ce.parse_transcript(_two_exit_stream()), TWO_EXITS)
+    assert ok is True
+    assert [m["command"] for m in matches] == [EXIT_1, EXIT_2]
+
+
+def test_ordered_evidence_requires_all_tokens_of_one_entry_in_one_command() -> None:
+    """AND, not OR: two tokens satisfied by two different commands is not a match."""
+    parsed = ce.parse_transcript(_two_exit_stream())
+    ok, _ = ce.ordered_command_evidence(parsed, _expect(["--stage forge-verify", "--owner direct"]))
+    assert ok is False
+
+
+def test_ordered_evidence_treats_contains_values_as_literal_tokens() -> None:
+    parsed = ce.parse_transcript(_two_exit_stream())
+    ok, _ = ce.ordered_command_evidence(parsed, _expect(["--stage forge-.*"]))
+    assert ok is False
+
+
+def test_ordered_evidence_rejects_a_missing_result() -> None:
+    stream = _stream(
+        *_ok(EXIT_1, "e1"),
+        _assistant(_bash(EXIT_2, "e2")),  # requested, never observed to complete
+        _final(),
+    )
+    ok, matches = ce.ordered_command_evidence(ce.parse_transcript(stream), TWO_EXITS)
+    assert ok is False
+    # The successful prefix survives for diagnostics.
+    assert [m["command"] for m in matches] == [EXIT_1]
+
+
+def test_ordered_evidence_rejects_a_nonzero_result() -> None:
+    stream = _two_exit_stream(second_result=_tool_result("e2", "Exit code 2\nboom", is_error=True))
+    ok, matches = ce.ordered_command_evidence(ce.parse_transcript(stream), TWO_EXITS)
+    assert ok is False and len(matches) == 1
+
+
+def test_ordered_evidence_rejects_an_error_result_without_an_exit_code() -> None:
+    stream = _two_exit_stream(second_result=_tool_result("e2", "permission denied", is_error=True))
+    ok, _ = ce.ordered_command_evidence(ce.parse_transcript(stream), TWO_EXITS)
+    assert ok is False
+
+
+def test_ordered_evidence_rejects_a_reordered_exit() -> None:
+    stream = _stream(*_ok(EXIT_2, "e2"), *_ok(EXIT_1, "e1"), _final())
+    ok, matches = ce.ordered_command_evidence(ce.parse_transcript(stream), TWO_EXITS)
+    assert ok is False and matches == []
+
+
+def test_ordered_evidence_rejects_a_duplicate_exit_between_expectations() -> None:
+    stream = _stream(*_ok(EXIT_1, "e1"), *_ok(EXIT_1, "e1b"), *_ok(EXIT_2, "e2"), _final())
+    ok, _ = ce.ordered_command_evidence(ce.parse_transcript(stream), TWO_EXITS)
+    assert ok is False
+
+
+def test_ordered_evidence_rejects_a_duplicate_exit_after_the_last_expectation() -> None:
+    """A trailing extra exit is the same defect seen from the other side."""
+    stream = _stream(*_ok(EXIT_1, "e1"), *_ok(EXIT_2, "e2"), *_ok(EXIT_2, "e2b"), _final())
+    ok, matches = ce.ordered_command_evidence(ce.parse_transcript(stream), TWO_EXITS)
+    assert ok is False and len(matches) == 2
+
+
+def test_ordered_evidence_ignores_a_repeated_reconnaissance_command() -> None:
+    """Only a REAL exit may not be skipped; recon repeats freely between exits."""
+    events = [
+        *_ok(EXIT_1, "e1"),
+        *_ok("git status", "r1"),
+        *_ok("git status", "r2"),
+        *_ok('python3 "$R/scripts/forge-session.py" state-verify --status passed', "s1"),
+        *_ok(EXIT_2, "e2"),
+        _final(),
+    ]
+    ok, _ = ce.ordered_command_evidence(ce.parse_transcript(_stream(*events)), TWO_EXITS)
+    assert ok is True
+
+
+def test_a_command_counts_as_an_exit_only_with_both_tokens() -> None:
+    assert ce._is_exit_command(EXIT_1) is True
+    assert ce._is_exit_command('python3 "$R/scripts/forge-session.py" state-verify') is False
+    assert ce._is_exit_command("stage-exit was run for forge-verify") is False
+
+
+def test_ordered_evidence_rejects_a_prose_only_claim_with_no_bash_evidence() -> None:
+    stream = _stream(
+        _assistant(_text(f"I ran `{EXIT_1}` and then `{EXIT_2}`.")),
+        _final("Both exits were invoked."),
+    )
+    ok, matches = ce.ordered_command_evidence(ce.parse_transcript(stream), TWO_EXITS)
+    assert ok is False and matches == []
+
+
+def test_ordered_evidence_never_matches_against_the_result_tail() -> None:
+    """The tail is for READING a failure; a token echoed there is not a command."""
+    stream = _stream(
+        _assistant(_bash("cat transcript.log", "a")),
+        _tool_result("a", f"the docs say to run: {EXIT_1}"),
+        _final(),
+    )
+    parsed = ce.parse_transcript(stream)
+    assert EXIT_1 in parsed["command_evidence"][0]["resultTail"]
+    ok, _ = ce.ordered_command_evidence(parsed, _expect(["--stage forge-verify"]))
+    assert ok is False
+
+
+def test_ordered_evidence_rejects_an_unparsed_transcript() -> None:
+    ok, matches = ce.ordered_command_evidence(ce.parse_transcript("Warning: nothing"), TWO_EXITS)
+    assert ok is False and matches == []
+
+
+def test_ordered_evidence_rejects_an_empty_token_list() -> None:
+    """An empty list matches every command and would pass a scenario nobody drove."""
+    ok, _ = ce.ordered_command_evidence(ce.parse_transcript(_two_exit_stream()), _expect([]))
+    assert ok is False
+
+
+def test_ordered_evidence_accepts_the_shipped_fixture_token_shape(branch_fixture: dict) -> None:
+    """A synthetic transcript built from the real fixture's own tokens scores clean —
+    proving the matcher and the shipped `expectedCommands` agree on shape."""
+    for scenario in branch_fixture["scenarios"]:
+        events: list[object] = []
+        for index, expected in enumerate(scenario["expectedCommands"]):
+            command = 'python3 "$R/scripts/forge-session.py" ' + " ".join(expected["contains"])
+            events += _ok(command, f"t{index}", "ran")
+        ok, matches = ce.ordered_command_evidence(
+            ce.parse_transcript(_stream(*events, _final())), scenario["expectedCommands"]
+        )
+        assert ok is True, scenario["name"]
+        assert len(matches) == len(scenario["expectedCommands"])
+
+
+# --------------------------------------------------------------------------- #
 # Probe 3 — branch fixture, loader, and ground truth
 # --------------------------------------------------------------------------- #
 

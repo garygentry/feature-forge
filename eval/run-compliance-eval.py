@@ -220,12 +220,11 @@ def driver_path() -> str | None:
     return shutil.which("claude")
 
 
-def run_session(cwd: Path, prompt: str, model: str) -> dict:
+def run_session(cwd: Path, prompt: str, model: str) -> ParsedTranscript:
     """Run one fresh headless session and return a flattened transcript.
 
-    Returns a dict with `ok`, `final_text`, `bash_commands`, `cost_usd`, `turns`,
-    `duration_ms`, and on failure a `note`. A driver-level failure is reported as data —
-    it degrades the run to unscored, it does not raise.
+    Returns a `ParsedTranscript`, and on failure `ok: False` plus a `note`. A driver-level
+    failure is reported as data — it degrades the run to unscored, it does not raise.
 
     `--permission-mode bypassPermissions` is required because a headless session has no
     way to answer a permission prompt, and the probe is worthless if the model's Bash
@@ -262,8 +261,132 @@ def run_session(cwd: Path, prompt: str, model: str) -> dict:
     return parse_transcript(proc.stdout)
 
 
-def parse_transcript(stdout: str) -> dict:
-    """Flatten a `--output-format stream-json` stream into the fields the scorers need."""
+#: Cap on `CommandEvidence.resultTail` (06 §4.1). The tail exists to make a failure
+#: READABLE in a bounded report; nothing scores against it, so a generous-but-finite slice
+#: is the whole requirement.
+RESULT_TAIL_LIMIT: Final[int] = 500
+
+#: The host renders a failed Bash result with `Exit code N` as the FIRST line, ahead of the
+#: captured output — verified against a live `--output-format stream-json` run, not assumed.
+#: Anchored at the start (`re.match`) so a command whose own output happens to mention an
+#: exit code cannot forge a status for itself.
+_EXIT_CODE_RE: Final = re.compile(r"\s*Exit code (\d+)\b")
+
+#: Both tokens must appear for a command to count as a real scripted exit (06 §4.2). A
+#: `state-verify` call carries the first token only, and hand-authored prose carries
+#: neither — which is exactly the distinction ordered matching has to make.
+EXIT_COMMAND_TOKENS: Final[tuple[str, ...]] = ("forge-session.py", "stage-exit")
+
+
+def _is_exit_command(command: str) -> bool:
+    """True when `command` is a real `forge-session.py stage-exit` invocation."""
+    return all(token in command for token in EXIT_COMMAND_TOKENS)
+
+
+def _content_blocks(event: object, event_type: str) -> list[dict]:
+    """Message content blocks of `event`, or `[]` when the stream shape is not that."""
+    if not isinstance(event, dict) or event.get("type") != event_type:
+        return []
+    message = event.get("message")
+    if not isinstance(message, dict):
+        return []
+    content = message.get("content")
+    if not isinstance(content, list):
+        return []
+    return [block for block in content if isinstance(block, dict)]
+
+
+def _result_text(content: object) -> str:
+    """Render a `tool_result` payload as text — the host sends a str or a block list."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            block["text"]
+            for block in content
+            if isinstance(block, dict) and isinstance(block.get("text"), str)
+        )
+    return "" if content is None else str(content)
+
+
+def _unusable(note: str, bash_commands: list[str]) -> ParsedTranscript:
+    """A transcript we refuse to guess about: `ok=False` plus an actionable diagnostic."""
+    return {"ok": False, "note": note, "bash_commands": bash_commands}
+
+
+class CommandEvidence(TypedDict):
+    """A Bash request paired with its actual host tool result.
+
+    Total. The whole point of this type is that a REQUESTED command is not a RUN
+    command: scoring on requests alone would credit a command the host rejected or
+    that failed. `resultSeen` plus `isError` is what makes the evidence real.
+    """
+
+    # 0-based position among Bash requests in the transcript. Establishes the
+    # ordering that ordered-subsequence matching consumes.
+    requestIndex: int
+    # Host tool-use id linking request to result. The join key — never positional,
+    # since results can interleave.
+    toolUseId: str
+    # Verbatim requested command string, unnormalized.
+    command: str
+    # Whether a matching tool RESULT was found. False means the command was
+    # requested but never observed to complete — a request without evidence, which
+    # never scores as executed.
+    resultSeen: bool
+    # Parsed exit status, or None when the host did not report one (including every
+    # `resultSeen: False` case). None is unknown, never success.
+    exitCode: int | None
+    # Host-reported error flag. True fails the evidence even with exitCode 0, since
+    # the host may error out before the command's own status is meaningful.
+    isError: bool
+    # Trailing slice of result output, bounded for diagnostics. Never matched
+    # against — it is for reading a failure, not for scoring.
+    resultTail: str
+
+
+class ParsedTranscript(TypedDict, total=False):
+    """Normalized fields shared by compliance scorers.
+
+    `total=False` because a malformed or truncated transcript yields a partial
+    parse: `ok: False` plus `note`, with the content fields absent. A scorer must
+    check `ok` before reading anything else — a missing `bash_commands` means "not
+    parsed", never "no commands were run".
+    """
+
+    # Whether the transcript parsed. False means every content field below may be
+    # absent and the run must not be scored as a compliance failure.
+    ok: bool
+    # The assistant's final user-facing message — where the terminal NEXT-STEPS
+    # block and its sentinel must appear.
+    final_text: str
+    # All assistant messages in order, for asserting no content follows the
+    # sentinel and no competing terminal block was emitted.
+    assistant_texts: list[str]
+    # Every requested Bash command, in order. Requests only — pair with
+    # `command_evidence` for what actually ran.
+    bash_commands: list[str]
+    # Requests joined to results; the evidence scoring consumes.
+    command_evidence: list[CommandEvidence]
+    # Run cost in USD, None when the host did not report it. Advisory telemetry —
+    # never a scoring criterion.
+    cost_usd: float | None
+    # Assistant turn count, None when unreported. Advisory.
+    turns: int | None
+    # Wall-clock duration in ms, None when unreported. Advisory.
+    duration_ms: int | None
+    # Human-readable parse diagnostic. Present on `ok: False`; may also carry a
+    # non-fatal advisory on a successful parse.
+    note: str
+
+
+def parse_transcript(stdout: str) -> ParsedTranscript:
+    """Pair ordered Bash tool requests with results and retain all assistant text.
+
+    Raises:
+        No exception for malformed stream lines or missing result events; those are
+        returned as `ok=False` with an actionable `note`.
+    """
     events = []
     for line in stdout.splitlines():
         line = line.strip()
@@ -274,37 +397,184 @@ def parse_transcript(stdout: str) -> dict:
         except json.JSONDecodeError:
             continue  # a non-JSON warning line on the stream is not a harness failure
 
+    # Pre-pass: every Bash tool-use id anywhere on the stream. Without it a result that
+    # ARRIVES BEFORE its request is indistinguishable from a result for a tool this
+    # harness does not score (Read, Edit, a subagent) — and the two must not share a fate.
+    bash_ids = {
+        block["id"]
+        for event in events
+        for block in _content_blocks(event, "assistant")
+        if block.get("type") == "tool_use"
+        and block.get("name") == "Bash"
+        and isinstance(block.get("id"), str)
+        and block["id"]
+    }
+
     bash_commands: list[str] = []
+    command_evidence: list[CommandEvidence] = []
+    assistant_texts: list[str] = []
+    #: Bash tool-use id -> index into `command_evidence`. The join key is the id, never
+    #: the position: results interleave, and a positional join would credit one command's
+    #: request with a different command's result.
+    evidence_by_id: dict[str, int] = {}
+    seen_tool_ids: set[str] = set()
+    resulted_ids: set[str] = set()
+
     for event in events:
-        if event.get("type") != "assistant":
-            continue
-        for block in event.get("message", {}).get("content", []):
-            if block.get("type") == "tool_use" and block.get("name") == "Bash":
-                command = block.get("input", {}).get("command")
-                if isinstance(command, str):
-                    bash_commands.append(command)
+        for block in _content_blocks(event, "assistant"):
+            block_type = block.get("type")
+            if block_type == "text":
+                text = block.get("text")
+                if isinstance(text, str):
+                    assistant_texts.append(text)
+                continue
+            if block_type != "tool_use":
+                continue
+            tool_id = block.get("id") if isinstance(block.get("id"), str) else ""
+            if tool_id:
+                if tool_id in seen_tool_ids:
+                    return _unusable(
+                        f"duplicate tool id {tool_id!r} on the stream; "
+                        "requests and results cannot be joined unambiguously",
+                        bash_commands,
+                    )
+                seen_tool_ids.add(tool_id)
+            if block.get("name") != "Bash":
+                continue
+            payload = block.get("input")
+            command = payload.get("command") if isinstance(payload, dict) else None
+            if not isinstance(command, str):
+                continue
+            if tool_id:
+                evidence_by_id[tool_id] = len(command_evidence)
+            command_evidence.append(
+                # An unpaired request carries no host verdict at all: `resultSeen: False`
+                # is what fails it, and claiming `isError` would invent a report the host
+                # never made.
+                {
+                    "requestIndex": len(bash_commands),
+                    "toolUseId": tool_id,
+                    "command": command,
+                    "resultSeen": False,
+                    "exitCode": None,
+                    "isError": False,
+                    "resultTail": "",
+                }
+            )
+            bash_commands.append(command)
+
+        for block in _content_blocks(event, "user"):
+            if block.get("type") != "tool_result":
+                continue
+            tool_id = block.get("tool_use_id")
+            if not isinstance(tool_id, str) or not tool_id:
+                continue
+            if tool_id not in evidence_by_id:
+                if tool_id in bash_ids:
+                    return _unusable(
+                        f"tool result for {tool_id!r} precedes its request; "
+                        "the stream is out of order and cannot be scored",
+                        bash_commands,
+                    )
+                continue  # a result for a tool this harness does not score
+            if tool_id in resulted_ids:
+                return _unusable(
+                    f"two tool results for request {tool_id!r}; "
+                    "the command's real outcome is ambiguous",
+                    bash_commands,
+                )
+            resulted_ids.add(tool_id)
+            is_error = bool(block.get("is_error"))
+            text = _result_text(block.get("content"))
+            reported = _EXIT_CODE_RE.match(text)
+            entry = command_evidence[evidence_by_id[tool_id]]
+            entry["resultSeen"] = True
+            entry["isError"] = is_error
+            entry["resultTail"] = text[-RESULT_TAIL_LIMIT:]
+            # A success needs no reported code; an error uses its reported NON-zero code
+            # where present and stays unknown (None) otherwise. None never means success.
+            if not is_error:
+                entry["exitCode"] = 0
+            elif reported and int(reported.group(1)):
+                entry["exitCode"] = int(reported.group(1))
+            else:
+                entry["exitCode"] = None
 
     result = next((e for e in reversed(events) if e.get("type") == "result"), None)
     if result is None:
-        return {
-            "ok": False,
-            "note": "no result event on the stream",
-            "bash_commands": bash_commands,
-        }
+        return _unusable("no result event on the stream", bash_commands)
     if result.get("is_error") or not isinstance(result.get("result"), str):
-        return {
-            "ok": False,
-            "note": f"result event reported an error: {str(result.get('result'))[:200]}",
-            "bash_commands": bash_commands,
-        }
+        return _unusable(
+            f"result event reported an error: {str(result.get('result'))[:200]}",
+            bash_commands,
+        )
+    final_text = result["result"]
+    # The result event repeats the last assistant message on most runs, so append it only
+    # when it is genuinely absent — a duplicate would double every sentinel count.
+    if final_text not in assistant_texts:
+        assistant_texts.append(final_text)
     return {
         "ok": True,
-        "final_text": result["result"],
+        "final_text": final_text,
+        "assistant_texts": assistant_texts,
         "bash_commands": bash_commands,
+        "command_evidence": command_evidence,
         "cost_usd": result.get("total_cost_usd"),
         "turns": result.get("num_turns"),
         "duration_ms": result.get("duration_ms"),
     }
+
+
+def ordered_command_evidence(
+    transcript: ParsedTranscript,
+    expected: list[ExpectedCommand],
+) -> tuple[bool, list[CommandEvidence]]:
+    """Match expected real commands to successful results in strict order.
+
+    Args:
+        transcript: Normalized session transcript.
+        expected: Scenario commands and required literal tokens in expected order.
+
+    Returns:
+        `(True, matches)` only when each expectation matches exactly one later Bash
+        request with a seen, non-error, zero exit result. Otherwise `(False, matches)`
+        contains the successful prefix for diagnostics.
+    """
+    evidence = transcript.get("command_evidence") or []
+    matches: list[CommandEvidence] = []
+    cursor = 0
+    for entry in expected:
+        tokens = entry["contains"]
+        if not tokens:
+            # An empty token list matches every command; treating it as satisfied would
+            # score a scenario nobody actually drove. The loader rejects it too.
+            return False, matches
+        found: int | None = None
+        for index in range(cursor, len(evidence)):
+            item = evidence[index]
+            # Literal tokens, ALL of them, in ONE command — an AND, never a regex.
+            if all(token in item["command"] for token in tokens):
+                found = index
+                break
+            if _is_exit_command(item["command"]):
+                # A real exit standing between two matched entries is a reordered or
+                # duplicated exit, not reconnaissance — the one thing that may NOT be
+                # skipped over (06 §4.2).
+                return False, matches
+        if found is None:
+            return False, matches
+        item = evidence[found]
+        # Requested is not run: only a seen, non-error, zero-exit result is evidence.
+        if not (item["resultSeen"] and not item["isError"] and item["exitCode"] == 0):
+            return False, matches
+        matches.append(item)
+        cursor = found + 1
+    for item in evidence[cursor:]:
+        if _is_exit_command(item["command"]):
+            # A trailing extra exit is the same defect seen from the other side: the run
+            # fired a scripted exit the fixture never expected.
+            return False, matches
+    return True, matches
 
 
 # --------------------------------------------------------------------------- #

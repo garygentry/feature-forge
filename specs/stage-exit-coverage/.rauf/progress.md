@@ -1648,3 +1648,83 @@ tests in `tests/test_compliance_eval.py`.
 `bash scripts/validate.sh` exit 0, "All checks passed!"; `python3 -m pytest tests -q` ->
 1555 passed, 2 skipped (both pre-existing); `python3 -m pytest
 tests/test_compliance_eval.py` -> 80 passed; `ruff check scripts/ eval/` clean.
+
+## Item 026 — paired command evidence + ordered matching
+
+Rewrote `parse_transcript` in `eval/run-compliance-eval.py` around id-joined request/result
+pairing, added the 06 §4.1 `CommandEvidence`/`ParsedTranscript` TypedDicts (comments
+verbatim), the `_is_exit_command`/`_content_blocks`/`_result_text`/`_unusable` helpers, and
+`ordered_command_evidence`. 36 new offline tests in `tests/test_compliance_eval.py`.
+
+### The live stream shape (verified, not assumed — 06 §4.1's WARNING)
+
+Two throwaway headless `claude --output-format stream-json --verbose` runs were driven and
+their raw streams inspected. Confirmed shape:
+
+- `{"type":"assistant","message":{"content":[{"type":"text",...},{"type":"tool_use","id":"toolu_…","name":"Bash","input":{"command":…}}]}}`
+- `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_…","content":…,"is_error":bool}]}}`
+- **There is NO numeric exit-code field.** A failed Bash result is signalled by
+  `is_error: true` plus a `content` string whose FIRST line is `Exit code N`, with the
+  captured stdout/stderr following (`"Exit code 7\nout\nerr"`). A success carries
+  `is_error: false` and the bare output with no status line.
+- `result.result` was byte-equal to the last assistant text block in both runs, which is
+  why `assistant_texts` appends it only when absent — appending unconditionally would
+  double every sentinel count and turn one compliant block into a "duplicate".
+- Results interleave: `hook_response` and `rate_limit_event` events land between a request
+  and its result, so nothing about adjacency can be assumed.
+
+Captured streams live at `/tmp/shapeprobe/` for this session only. Re-probe rather than
+trusting this note if the CLI major version moves.
+
+### Gotchas for later items (027 especially)
+
+- **`_EXIT_CODE_RE` is `re.match`-anchored, deliberately.** A `MULTILINE` search would let a
+  command whose own output contains `Exit code 0` forge a success for itself. Only the
+  host's leading line counts, and a reported `0` on an `is_error` result yields `None`
+  (unknown), never success — `test_a_reported_zero_exit_on_an_error_result_stays_unknown`.
+
+- **An unpaired request gets `isError: False`, not True.** `resultSeen: False` is what
+  fails it; claiming an error would invent a host verdict that was never made. Item 027's
+  scorer must test `resultSeen and not isError and exitCode == 0`, never `not isError`
+  alone.
+
+- **Duplicate-id detection spans ALL tool_use ids, not just Bash.** A Read and a Bash
+  sharing an id makes the result ambiguous just as badly. A pre-pass collects Bash ids
+  first, so a result arriving BEFORE its request (`ok=False`) is distinguishable from a
+  result for a tool this harness does not score (ignored). Those two must not share a fate
+  — conflating them would make every Read/Edit result kill the transcript.
+
+- **`ordered_command_evidence` guards exits EVERYWHERE, not only "between matched
+  entries".** The spec sentence covers the interior; the implementation also fails on an
+  exit before the first expectation and on a trailing exit after the last, because a run
+  that fires an unexpected scripted exit has violated the contract wherever it happened —
+  and 07 §7.2 negative 4 (duplicate stage-exit) is otherwise invisible when the duplicate
+  is last. Non-exit reconnaissance is skipped freely; a `state-verify` call carries
+  `forge-session.py` but not `stage-exit`, so it is correctly recon.
+
+- **`bash_commands` is untouched by design** and still fed to `score_stage_exit`/
+  `score_prelude`; a test asserts the linear scorer's `ran_stage_exit` still works off the
+  new parse. `command_evidence` and `assistant_texts` are ADDITIVE.
+
+- **Failure paths return `bash_commands` only** (matching the pre-existing convention), so
+  `"command_evidence" not in parsed` is a live assertion on the unusable-transcript rows.
+  A scorer MUST check `ok` first — `ordered_command_evidence` degrades safely
+  (`transcript.get("command_evidence") or []` → False), but nothing else should rely on it.
+
+- **Empty `contains` returns False** rather than matching everything. The loader already
+  rejects it; this is belt-and-braces for a caller that builds expectations in code.
+
+- **Mutation-checked, not just green.** Five deliberate breakages were injected and the
+  suite caught each: positional pairing instead of id pairing, dropping the trailing-exit
+  guard, dropping the exit-between guard, inferring success from an error result, and an
+  uncapped `resultTail`. Worth repeating for item 027's eight criteria — a scorer that
+  passes its own positives is not evidence.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with `PASS: spec-purity checker`,
+`PASS: epic-manifest pytest suite`, and `PASS: adapters/ matches a fresh generation (no
+drift)`; `python3 -m pytest tests -q` -> 1591 passed, 2 skipped (both pre-existing);
+`python3 -m pytest tests/test_compliance_eval.py` -> 116 passed; `ruff check scripts/ eval/`
+clean. No `scripts/`, `skills/`, or `references/` file changed, so no adapter regeneration
+was required.
