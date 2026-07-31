@@ -488,8 +488,8 @@
         "ruff check scripts/ eval/ passes",
         "the render-status subprocess resolves epic-manifest.py as a sibling of forge-session.py via Path(__file__) and invokes it with sys.executable, never a guessed bundle root and never a bare python3"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T07:47:50.593Z",
       "dependsOn": [
         "009",
         "010",

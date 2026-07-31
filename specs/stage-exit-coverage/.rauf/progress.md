@@ -868,3 +868,78 @@ emits `/feature-forge:forge <feature>` with `nextStage: null`; a fresh productio
 taken after a `findings-applied` write makes the verify command primary rather than the
 successor; and the two nested payloads contain ZERO sentinels while the final direct call
 contains exactly one, as its last line.
+
+## Item 015 — docs routing from live epic status via `render-status`
+
+Added `_render_status` (the bounded sibling subprocess), `_render_status_failure_detail`,
+`_DOCS_OUTCOME_TEXT`, and `_docs_route` to `scripts/forge-session.py`, wired a
+`elif stage == "forge-6-docs"` arm into `stage_exit`'s primary-routing chain, and covered
+07 §3.6 in `tests/test_stage_exit.py`.
+
+### Gotchas for later items
+
+- **`actionable == []` is EQUIVALENT to "every member complete"** under the current
+  `epic-manifest.py` derivation, so 02 §8's "no actionable member because remaining
+  work is blocked" bullet is not constructible through the real helper: `validate`
+  rejects cycles, so any DAG with an incomplete member has an incomplete member whose
+  deps are all complete, and that member is actionable. Both cases route to the SAME
+  epic command, so the acceptance criterion holds either way; the two wordings are
+  selected on `rollup["complete"] < rollup["total"]`, which is the observable that
+  would distinguish them if a future derivation ever admits an unactionable incomplete
+  member. Item 021's canon must not promise the operator a distinction the data cannot
+  currently make.
+
+- **`render-status --json` reports an INVALID GRAPH on stdout, not stderr** (exit 1
+  with `{"valid": false, "findings": [...]}` and a silent stderr). Quoting stderr alone
+  produced `render-status exited 1 ({)`. `_render_status_failure_detail` prefers the
+  first stderr line and falls back to the first finding's `message`, so the operator is
+  told *which* dangling ref/cycle broke the routing (REQ-OBS-02).
+
+- **A `blocked` docs outcome deliberately does NOT call `render-status`.** Its route is
+  fixed at the epic dashboard whatever the live graph says, and a broken epic graph is
+  precisely the state in which the recovery route must stay reachable rather than
+  converting into a second exit-2. Item 021's skill can therefore always close a blocked
+  docs stage.
+
+- **The epic is taken from `--epic` OR the member state's `epic` back-pointer**, name-checked
+  through `SAFE_NAME_RE` before it reaches the helper's argv (untrusted on-disk data,
+  REQ-SEC-01). An unusable value degrades to the STANDALONE route rather than crashing.
+  Consequence: a flat feature whose state carries a stale `epic` back-pointer now exits 2
+  at docs. That is the intended fail-closed behavior — the alternative is guessing.
+
+- **The secondary new-feature/new-epic mentions are host-translated inside `_docs_route`**,
+  because `outcome_text` is passed through `_next_steps_block` verbatim and the renderer
+  only `_host_command`s the *primary*. Without it a Pi block would carry a live
+  `/feature-forge:` command that Pi cannot run. Any later item adding a command mention to
+  an `outcome_text` must translate it at construction time.
+
+- **`_stub_bundle` is the honest way to test the sibling contract.** It copies
+  `forge-session.py` into a fresh `scripts/` dir next to a stub `epic-manifest.py`, so the
+  REAL resolution path runs and only the helper's body is replaced. That covers missing
+  sibling / malformed JSON / missing field / malformed rollup / non-object payload without
+  mocking `subprocess.run`. Only the timeout and spawn-failure rows use `monkeypatch`, which
+  07 §3.6 permits once the real success and nonzero cases exist.
+
+- **`test_docs_resolves_the_helper_beside_itself_and_never_a_bare_python3` slices the
+  DOCSTRING off before asserting `"python3" not in ...`** — the docstring legitimately
+  explains why a bare `python3` is wrong, and a prose mention must not decide a behavioral
+  guard. Same trick will be needed by any later source-level guard on this function.
+
+- **`test_docs_never_reimplements_the_epic_dependency_derivation`** bans `unmet_deps`,
+  `parallelEligible`, and `is_complete_for_orchestration` from `scripts/forge-session.py`
+  entirely (tech-spec §3.5). A later item that wants one of those answers must consume
+  `render-status`, not re-derive it.
+
+- **Pre-existing wording note (not changed here):** a standalone docs `complete` block still
+  renders `2. Then start a fresh session and run the next stage below`, because
+  `deferred_command is None` and 00 §5 fixes `_next_steps_block` at five parameters. The
+  fenced command and the outcome text are both correct; only that stock line reads oddly at
+  the end of the pipeline. Item 021 may want to raise it.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with
+`PASS: epic-manifest pytest suite` and `PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 1405 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
+regenerated `adapters/` tree left in the working tree for the loop runner to commit.

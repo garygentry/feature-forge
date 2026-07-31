@@ -1786,3 +1786,426 @@ def test_the_branch_route_table_has_a_terminus_for_every_outcome() -> None:
     assert set(BRANCH_ROUTES) == {
         (stage, outcome) for stage in BRANCH_STAGES for outcome in EXIT_OUTCOMES[stage]
     }
+
+
+# --------------------------------------------------------------------------- #
+# 07 §3.6 — documentation live-state routing (02 §8)
+# --------------------------------------------------------------------------- #
+
+DOCS_EPIC = "my-epic"
+#: The epic dashboard command every non-member docs route lands on, and the recovery
+#: command every docs routing failure must name.
+DASHBOARD = f"/feature-forge:forge-0-epic {DOCS_EPIC}"
+
+
+def _member(name: str, depends_on: tuple[str, ...] = ()) -> dict:
+    return {
+        "name": name,
+        "charter": f"Charter for {name}, long enough to satisfy the manifest schema.",
+        "dependsOn": list(depends_on),
+        "exposes": [],
+        "consumes": [],
+    }
+
+
+def _member_state(complete: bool) -> dict | None:
+    """Real member state: every production stage complete, verification passed."""
+    if not complete:
+        return None
+    return {
+        "pipelineStatus": "active",
+        "epic": DOCS_EPIC,
+        "stages": {
+            **{
+                stage: {"status": "complete", "version": 1}
+                for stage in PRODUCTION_STAGES[1:]
+            },
+            "forge-verify-impl": {"status": "passed", "verifiedStageVersion": 1},
+        },
+    }
+
+
+def _docs_epic_project(
+    tmp_path: Path, members: list[dict], complete: tuple[str, ...] = ()
+) -> Path:
+    """A REAL epic: schema-valid manifest plus real member state on disk.
+
+    07 §3.6 forbids mocking `render-status` for the routing cases — the live helper
+    must actually run over this tree, so the manifest carries every required key and
+    each complete member gets the state that makes `is_complete_for_orchestration`
+    true (a completed `forge-5-loop` plus a passing `forge-verify-impl`).
+    """
+    root = tmp_path / "proj"
+    epic_dir = root / "specs" / DOCS_EPIC
+    epic_dir.mkdir(parents=True)
+    (root / "forge.config.json").write_text("{}")
+    (epic_dir / "EPIC.md").write_text("# epic\n")
+    (epic_dir / "epic-manifest.json").write_text(json.dumps({
+        "schemaVersion": 1,
+        "revision": 1,
+        "epic": DOCS_EPIC,
+        "description": "A real epic used to exercise live documentation routing.",
+        "status": "active",
+        "narrativeDoc": "EPIC.md",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "features": members,
+    }))
+    for entry in members:
+        name = entry["name"]
+        member_dir = epic_dir / name
+        member_dir.mkdir()
+        state = _member_state(name in complete)
+        if state is not None:
+            (member_dir / ".pipeline-state.json").write_text(json.dumps(state))
+            (member_dir / "PRD.md").write_text("# prd\n")
+    subprocess.run(["git", "init", "-qb", "main"], cwd=root, check=True)
+    return root
+
+
+def _docs(cwd: Path, feature: str, outcome: str = "complete", *extra: str) -> dict:
+    return _exit(cwd, "--feature", feature, "--stage", "forge-6-docs",
+                 "--outcome", outcome, *extra)
+
+
+def test_docs_requires_its_own_outcome_and_rejects_any_other(tmp_path: Path) -> None:
+    """02 §8: `forge-6-docs` always uses stage-exit and takes `complete` or `blocked`."""
+    root = _project(tmp_path, config={})
+    err = _rejected(root, "--feature", "widget", "--stage", "forge-6-docs")
+    assert "forge-6-docs requires --outcome" in err
+    for value in ("partial", "passed", "applied", "needs-human", "", "COMPLETE"):
+        err = _rejected(root, "--feature", "widget", "--stage", "forge-6-docs",
+                        "--outcome", value)
+        assert f"--outcome {value!r} is not valid for forge-6-docs" in err
+
+
+def test_docs_epic_member_routes_to_the_live_next_member_command(tmp_path: Path) -> None:
+    """An actionable next member routes to that member's LIVE render-status command."""
+    root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    # Ground truth from the real helper, not a hand-written expectation.
+    proc = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "epic-manifest.py"),
+         "render-status", DOCS_EPIC, "--specs-dir", str(root / "specs"), "--json"],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    live = json.loads(proc.stdout)
+    assert live["actionable"] == ["beta"] and live["nextCommand"]
+
+    payload = _docs(root, "alpha", "complete", "--epic", DOCS_EPIC)
+    d = payload["directives"]
+    assert d["primaryCommand"] == live["nextCommand"] == "/feature-forge:forge-1-prd beta"
+    assert d["deferredCommand"] is None
+    assert f"```\n{live['nextCommand']}\n```" in payload["nextSteps"]
+    assert payload["nextSteps"].rstrip().splitlines()[-1] == SENTINEL
+
+
+def test_docs_routes_from_live_state_not_a_stale_snapshot(tmp_path: Path) -> None:
+    """The status read happens at EXIT time: advancing a member changes the route."""
+    root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    assert _docs(root, "alpha", "complete", "--epic", DOCS_EPIC)[
+        "directives"]["primaryCommand"] == "/feature-forge:forge-1-prd beta"
+    # Beta really progresses on disk; the very next exit must follow it.
+    beta = root / "specs" / DOCS_EPIC / "beta"
+    (beta / ".pipeline-state.json").write_text(json.dumps({
+        "pipelineStatus": "active", "epic": DOCS_EPIC,
+        "stages": {"forge-1-prd": {"status": "complete", "version": 1}},
+    }))
+    (beta / "PRD.md").write_text("# prd\n")
+    assert _docs(root, "alpha", "complete", "--epic", DOCS_EPIC)[
+        "directives"]["primaryCommand"] == "/feature-forge:forge-2-tech beta"
+
+
+def test_docs_with_every_member_complete_routes_to_the_epic_dashboard(tmp_path: Path):
+    """All members complete → the dashboard completion view, same epic command."""
+    root = _docs_epic_project(
+        tmp_path,
+        [_member("alpha"), _member("beta", ("alpha",))],
+        complete=("alpha", "beta"),
+    )
+    payload = _docs(root, "beta", "complete", "--epic", DOCS_EPIC)
+    d = payload["directives"]
+    assert d["primaryCommand"] == DASHBOARD
+    assert f"```\n{DASHBOARD}\n```" in payload["nextSteps"]
+    assert "every member of epic my-epic is now complete (2/2)" in payload["nextSteps"]
+
+
+def test_docs_with_no_actionable_member_routes_to_the_same_epic_command(tmp_path: Path):
+    """No actionable member and all-complete share one route (02 §8)."""
+    root = _docs_epic_project(tmp_path, [_member("alpha")], complete=("alpha",))
+    proc = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "epic-manifest.py"),
+         "render-status", DOCS_EPIC, "--specs-dir", str(root / "specs"), "--json"],
+        capture_output=True, text=True,
+    )
+    live = json.loads(proc.stdout)
+    assert live["actionable"] == [] and live["nextCommand"] is None
+    d = _docs(root, "alpha", "complete", "--epic", DOCS_EPIC)["directives"]
+    assert d["primaryCommand"] == DASHBOARD
+
+
+def test_docs_blocked_in_an_epic_recovers_and_never_claims_completion(tmp_path: Path):
+    """A blocked docs outcome routes to dashboard recovery, never to completion."""
+    root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    payload = _docs(root, "alpha", "blocked", "--epic", DOCS_EPIC)
+    d = payload["directives"]
+    assert d["outcome"] == "blocked"
+    assert d["primaryCommand"] == DASHBOARD
+    block = payload["nextSteps"]
+    assert "could not be completed" in block
+    # It must not advance to the actionable member, and must not claim completion.
+    assert "/feature-forge:forge-1-prd beta" not in block
+    assert "is now complete" not in block and "with it the pipeline" not in block
+
+
+def test_docs_standalone_complete_fences_only_the_navigator(tmp_path: Path) -> None:
+    """02 §8: `/feature-forge:forge FEATURE` is THE completion action; new-feature
+    guidance is secondary text and is never fenced."""
+    root = _project(tmp_path, config={})
+    payload = _docs(root, "widget", "complete")
+    block = payload["nextSteps"]
+    assert payload["directives"]["primaryCommand"] == "/feature-forge:forge widget"
+    assert block.count("```") == 2, "exactly one fence"
+    fenced = block.split("```")[1].strip()
+    assert fenced == "/feature-forge:forge widget"
+    # The new-feature/new-epic mentions exist, outside the fence.
+    for secondary in ("/feature-forge:forge-1-prd <new-feature>",
+                      "/feature-forge:forge-0-epic <new-epic>"):
+        assert secondary in block
+        assert secondary not in fenced
+
+
+def test_docs_standalone_blocked_routes_to_navigator_recovery(tmp_path: Path) -> None:
+    root = _project(tmp_path, config={})
+    payload = _docs(root, "widget", "blocked")
+    assert payload["directives"]["primaryCommand"] == "/feature-forge:forge widget"
+    assert "the pipeline is NOT complete" in payload["nextSteps"]
+    assert "<new-feature>" not in payload["nextSteps"]
+
+
+def test_docs_routes_on_the_state_epic_back_pointer_without_an_explicit_flag(
+    tmp_path: Path,
+) -> None:
+    """A member's own state names its epic, so `--epic` is a confirmation, not a key."""
+    root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    d = _docs(root, "alpha", "complete")["directives"]
+    assert d["primaryCommand"] == "/feature-forge:forge-1-prd beta"
+
+
+def test_docs_pi_translates_both_the_route_and_the_secondary_mentions(
+    tmp_path: Path,
+) -> None:
+    """REQ-EXIT-05: nothing in a Pi block may keep the `/feature-forge:` surface."""
+    epic_root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    payload = _docs(epic_root, "alpha", "complete", "--epic", DOCS_EPIC, "--host", "pi")
+    assert payload["directives"]["primaryCommand"] == "/skill:forge-1-prd beta"
+    assert "/feature-forge:" not in payload["nextSteps"]
+
+    standalone = _project(tmp_path / "flat", config={})
+    block = _docs(standalone, "widget", "complete", "--host", "pi")["nextSteps"]
+    assert "/skill:forge-1-prd <new-feature>" in block
+    assert "/feature-forge:" not in block
+
+
+def test_docs_routing_is_byte_deterministic(tmp_path: Path) -> None:
+    """02 §10: identical state, identical output — including the live epic read."""
+    root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    first = _docs(root, "alpha", "complete", "--epic", DOCS_EPIC)
+    second = _docs(root, "alpha", "complete", "--epic", DOCS_EPIC)
+    assert first == second
+
+
+# --- routing failures: exit 2, no sentinel, no guessed member --------------- #
+
+
+def _docs_rejected(root: Path, feature: str = "alpha") -> str:
+    err = _rejected(root, "--feature", feature, "--stage", "forge-6-docs",
+                    "--outcome", "complete", "--epic", DOCS_EPIC)
+    assert DOCS_EPIC in err, "the failure must name the epic"
+    assert DASHBOARD in err, "the failure must name the recovery command"
+    # No guessed member route may appear anywhere in the failure output.
+    assert "forge-1-prd beta" not in err and "forge-6-docs beta" not in err
+    return err
+
+
+def test_docs_invalid_graph_is_an_actionable_routing_failure(tmp_path: Path) -> None:
+    """An invalid graph exits 1 from the real helper with findings on stdout only."""
+    root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    manifest = root / "specs" / DOCS_EPIC / "epic-manifest.json"
+    data = json.loads(manifest.read_text())
+    data["features"][1]["dependsOn"] = ["ghost"]
+    manifest.write_text(json.dumps(data))
+    err = _docs_rejected(root)
+    assert "render-status exited 1" in err
+    assert "unknown feature 'ghost'" in err, "the first finding must be named"
+
+
+def test_docs_render_status_nonzero_exit_is_a_routing_failure(tmp_path: Path) -> None:
+    """A missing manifest makes the real helper exit 2; the router does not guess."""
+    root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    (root / "specs" / DOCS_EPIC / "epic-manifest.json").unlink()
+    err = _docs_rejected(root)
+    assert "render-status exited 2" in err
+
+
+# The stub cases below still execute a REAL sibling helper through the REAL
+# resolution path — only the helper's own body is replaced, so the contract under
+# test (sibling resolution, `sys.executable`, exit/JSON handling) is unmocked.
+
+def _stub_bundle(tmp_path: Path, body: str | None) -> Path:
+    """Copy `forge-session.py` into a fresh `scripts/` dir beside a stub helper.
+
+    This is how the sibling-resolution contract is exercised honestly: the copied
+    script must find (or fail to find) `epic-manifest.py` next to ITSELF, not next
+    to the repository it came from. Pass `body=None` to omit the sibling entirely.
+    """
+    bundle = tmp_path / "bundle" / "scripts"
+    bundle.mkdir(parents=True)
+    (bundle / "forge-session.py").write_text(HELPER.read_text())
+    if body is not None:
+        (bundle / "epic-manifest.py").write_text(body)
+    return bundle / "forge-session.py"
+
+
+def _stub_rejected(tmp_path: Path, body: str | None) -> str:
+    root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    proc = subprocess.run(
+        [sys.executable, str(_stub_bundle(tmp_path, body)), "stage-exit", "--json",
+         "--feature", "alpha", "--stage", "forge-6-docs", "--outcome", "complete",
+         "--epic", DOCS_EPIC],
+        capture_output=True, text=True, cwd=str(root),
+    )
+    assert proc.returncode == 2, (proc.returncode, proc.stdout, proc.stderr)
+    assert proc.stdout == ""
+    assert SENTINEL not in proc.stdout + proc.stderr
+    assert "Traceback" not in proc.stderr, proc.stderr
+    assert DOCS_EPIC in proc.stderr and DASHBOARD in proc.stderr
+    assert "forge-1-prd beta" not in proc.stderr
+    return proc.stderr
+
+
+def test_docs_missing_sibling_epic_manifest_is_a_routing_failure(tmp_path: Path) -> None:
+    err = _stub_rejected(tmp_path, None)
+    assert "sibling epic-manifest.py is missing" in err
+    assert str(tmp_path / "bundle" / "scripts" / "epic-manifest.py") in err
+
+
+def test_docs_malformed_json_is_a_routing_failure(tmp_path: Path) -> None:
+    err = _stub_rejected(tmp_path, "print('{not json')\n")
+    assert "did not emit parseable JSON" in err
+
+
+@pytest.mark.parametrize(
+    "omit", ["epic", "features", "actionable", "rollup", "nextCommand"]
+)
+def test_docs_a_missing_required_field_is_a_routing_failure(
+    tmp_path: Path, omit: str
+) -> None:
+    """`RenderStatus` is TOTAL, so an absent key is a broken contract, not 'none'."""
+    body = (
+        "import json\n"
+        "payload = {'epic': 'my-epic', 'features': [], 'actionable': ['beta'],\n"
+        "           'rollup': {'complete': 1, 'total': 2},\n"
+        "           'nextCommand': '/feature-forge:forge-1-prd beta'}\n"
+        f"payload.pop({omit!r})\n"
+        "print(json.dumps(payload))\n"
+    )
+    err = _stub_rejected(tmp_path, body)
+    assert f"omitted required field(s): {omit}" in err
+
+
+@pytest.mark.parametrize("bad_rollup", ["null", '{"complete": 1}', '{"complete": true, "total": 2}'])
+def test_docs_a_malformed_rollup_is_a_routing_failure(
+    tmp_path: Path, bad_rollup: str
+) -> None:
+    body = (
+        "print('''{\"epic\": \"my-epic\", \"features\": [], \"actionable\": [],\n"
+        f"  \"rollup\": {bad_rollup}, \"nextCommand\": null}}''')\n"
+    )
+    assert "malformed rollup" in _stub_rejected(tmp_path, body)
+
+
+def test_docs_a_non_object_payload_is_a_routing_failure(tmp_path: Path) -> None:
+    assert "non-object JSON payload" in _stub_rejected(tmp_path, "print('[]')\n")
+
+
+def test_docs_a_timeout_at_the_ten_second_bound_is_a_routing_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """07 §3.6's narrowly injected failure — allowed only alongside the real cases
+    above, and asserting the BOUND that is actually passed to `subprocess.run`."""
+    session = _load_session()
+    assert session._RENDER_STATUS_TIMEOUT == 10, "02 §8 fixes the bound at 10 seconds"
+    seen: dict = {}
+
+    def fake_run(cmd, **kwargs):
+        seen.update(kwargs)
+        seen["cmd"] = cmd
+        raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+    monkeypatch.setattr(session.subprocess, "run", fake_run)
+    with pytest.raises(session.UsageError) as excinfo:
+        session._render_status(tmp_path, DOCS_EPIC)
+    message = str(excinfo.value)
+    assert "did not finish within 10 seconds" in message
+    assert DOCS_EPIC in message and DASHBOARD in message
+    assert seen["timeout"] == 10 and seen["check"] is False
+    # The invocation contract itself: sys.executable, never a bare python3.
+    assert seen["cmd"][0] == sys.executable
+    assert seen["cmd"][1].endswith("epic-manifest.py")
+    assert seen["cmd"][2:4] == ["render-status", DOCS_EPIC]
+    assert "--json" in seen["cmd"]
+
+
+def test_docs_a_spawn_failure_is_a_routing_failure(tmp_path: Path, monkeypatch) -> None:
+    session = _load_session()
+
+    def fake_run(cmd, **kwargs):
+        raise OSError("Exec format error")
+
+    monkeypatch.setattr(session.subprocess, "run", fake_run)
+    with pytest.raises(session.UsageError) as excinfo:
+        session._render_status(tmp_path, DOCS_EPIC)
+    message = str(excinfo.value)
+    assert "could not be started" in message and "Exec format error" in message
+    assert DOCS_EPIC in message and DASHBOARD in message
+
+
+def test_docs_resolves_the_helper_beside_itself_and_never_a_bare_python3() -> None:
+    """The invocation contract 02 §8 makes normative, asserted on the source."""
+    source = HELPER.read_text()
+    body = source[source.index("def _render_status(specs_dir"):]
+    body = body[: body.index("\n_DOCS_OUTCOME_TEXT")]
+    # Executable lines only: the docstring legitimately explains why a bare `python3`
+    # is wrong, and a prose mention must not satisfy (or fail) a behavioral guard.
+    code = body[body.index('"""', body.index('"""') + 3) + 3:]
+    assert 'Path(__file__).resolve().parent / "epic-manifest.py"' in code
+    assert "sys.executable" in code
+    assert "python3" not in code, "a bare python3 may be absent or a different runtime"
+    assert "<bundle-root>" not in code
+    assert "_RENDER_STATUS_TIMEOUT" in code
+
+
+def test_docs_never_reimplements_the_epic_dependency_derivation() -> None:
+    """tech-spec §3.5: the router consumes render-status; it does not re-derive."""
+    source = HELPER.read_text()
+    for forbidden in ("unmet_deps", "parallelEligible", "is_complete_for_orchestration"):
+        assert forbidden not in source, forbidden

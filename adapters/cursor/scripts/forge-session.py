@@ -2543,6 +2543,255 @@ def _branch_route(
     )
 
 
+#: Keys `_render_status` requires before it will route on a `render-status --json`
+#: payload. `RenderStatus` is TOTAL (04 §2.2): every key is always present, so an
+#: empty `actionable` list is the answer "nothing is actionable" and a MISSING key
+#: means the helper is not the contract this router was built against — an
+#: actionable routing failure, never a silently-skipped check.
+_RENDER_STATUS_REQUIRED: Final[tuple[str, ...]] = (
+    "epic",
+    "features",
+    "actionable",
+    "rollup",
+    "nextCommand",
+)
+
+#: The bound on the one subprocess the docs exit path makes. Matches every other
+#: `subprocess.run` in this file (the git reads and the `forge-root.sh` resolver);
+#: without it a hung or pathological epic would stall stage closure with no
+#: diagnostic, defeating REQ-PERF-01 (02 §8).
+_RENDER_STATUS_TIMEOUT: Final = 10
+
+
+def _render_status_failure_detail(proc: subprocess.CompletedProcess) -> str:
+    """Name WHY a nonzero ``render-status --json`` failed, in one deterministic line.
+
+    Its first stderr line when it wrote one (a missing/unreadable manifest exits 2
+    that way), else the first validation finding from the JSON on stdout — which is
+    the only place an invalid graph reports itself (it exits 1 with
+    ``{"valid": false, "findings": [...]}`` and a silent stderr).
+
+    Args:
+        proc: The completed ``render-status`` process.
+
+    Returns:
+        A single-line detail, or ``""`` when the helper said nothing usable.
+    """
+    lines = proc.stderr.strip().splitlines()
+    if lines:
+        return lines[0]
+    try:
+        payload = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return ""
+    findings = payload.get("findings") if isinstance(payload, dict) else None
+    if isinstance(findings, list) and findings and isinstance(findings[0], dict):
+        message = findings[0].get("message")
+        if isinstance(message, str):
+            return f"first finding: {message}"
+    return ""
+
+
+def _render_status(specs_dir: Path, epic: str) -> dict:
+    """Read LIVE epic status from the sibling ``epic-manifest.py`` (02 §8).
+
+    The docs exit routes on the epic's real dependency/completion graph rather than
+    re-deriving it here: dependency and completion derivation belong to
+    ``epic-manifest.py`` and duplicating them in this file is exactly what
+    tech-spec §3.5 forbids.
+
+    ``<bundle-root>`` is NOT a path this router may guess. ``forge-session.py`` is
+    copied verbatim into six adapter bundles and runs from an arbitrary cwd, so the
+    helper is resolved as a SIBLING of this file — the ``RUNTIME_HELPERS`` guarantee
+    that ships them together, matching the existing ``_resolve_plugin_root``
+    convention — and invoked with ``sys.executable`` rather than a bare ``python3``,
+    which may be absent or a different interpreter than the one running this script.
+
+    Args:
+        specs_dir: Configured specs directory, passed through to the helper.
+        epic: The epic name; also the subject of every failure message.
+
+    Returns:
+        The parsed ``RenderStatus`` dict (04 §2.2).
+
+    Raises:
+        UsageError: A missing sibling helper, a non-zero exit (which covers an
+            invalid graph — ``render-status`` refuses to render one), a spawn
+            failure, a timeout at the bound, unparseable stdout, or a missing or
+            malformed required field. Every one is an actionable exit-2 routing
+            failure that names the epic and the recovery command, so the caller
+            emits no guessed member route and no sentinel (02 §10, REQ-REL-02).
+
+    Reads only the bounded local manifest/member-state set — no network call and no
+    repository-history scan (REQ-PERF-01).
+    """
+    helper = Path(__file__).resolve().parent / "epic-manifest.py"
+
+    def fail(reason: str) -> NoReturn:
+        raise UsageError(
+            f"cannot route the documentation exit for epic {epic!r}: {reason}. "
+            f"Run /feature-forge:forge-0-epic {epic} to inspect the epic and "
+            "resolve it, then re-run this exit."
+        )
+
+    if not helper.is_file():
+        fail(f"the sibling epic-manifest.py is missing at {helper}")
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(helper),
+                "render-status",
+                epic,
+                "--specs-dir",
+                str(specs_dir),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_RENDER_STATUS_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        fail(f"render-status did not finish within {_RENDER_STATUS_TIMEOUT} seconds")
+    except OSError as exc:
+        fail(f"render-status could not be started ({exc})")
+    if proc.returncode != 0:
+        # An INVALID GRAPH exits 1 with its findings as JSON on stdout and nothing on
+        # stderr, so quoting stderr alone would report a bare exit code for the one
+        # failure the operator most needs named (REQ-OBS-02).
+        detail = _render_status_failure_detail(proc)
+        fail(f"render-status exited {proc.returncode}{f' ({detail})' if detail else ''}")
+    try:
+        status = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        fail(f"render-status did not emit parseable JSON ({exc})")
+    if not isinstance(status, dict):
+        fail("render-status emitted a non-object JSON payload")
+    missing = [key for key in _RENDER_STATUS_REQUIRED if key not in status]
+    if missing:
+        fail(f"render-status omitted required field(s): {', '.join(missing)}")
+    rollup = status["rollup"]
+    if not isinstance(rollup, dict) or any(
+        not isinstance(rollup.get(key), int) or isinstance(rollup.get(key), bool)
+        for key in ("complete", "total")
+    ):
+        fail("render-status emitted a malformed rollup")
+    if not isinstance(status["actionable"], list):
+        fail("render-status emitted a malformed actionable list")
+    if status["nextCommand"] is not None and not isinstance(status["nextCommand"], str):
+        fail("render-status emitted a malformed nextCommand")
+    return status
+
+
+#: 02 §8 — the deterministic sentence each documentation terminus renders inside its
+#: NEXT-STEPS block. Every epic route names the epic; no `blocked` route claims the
+#: pipeline is complete. `{new_feature}`/`{new_epic}` are host-translated INLINE
+#: mentions: 02 §8 allows starting a new feature only as secondary unfenced text, and
+#: `_next_steps_block` fences exactly the primary command and nothing else.
+_DOCS_OUTCOME_TEXT: Final[dict[str, str]] = {
+    "standalone-complete": (
+        "Documentation is complete for {feature}, and with it the pipeline. The "
+        "navigator command below is the authoritative completion action — it "
+        "confirms the finished state from disk. Optionally, you can start a new "
+        "feature with `{new_feature}` or group related work into an epic with "
+        "`{new_epic}`; neither is required to finish here."
+    ),
+    "standalone-blocked": (
+        "Documentation could not be completed for {feature}, so the pipeline is NOT "
+        "complete. Only valid partial state was persisted. Run the navigator below "
+        "to see what remains and recover from there."
+    ),
+    "epic-actionable": (
+        "Documentation is complete for {feature}. Epic {epic} has more work that can "
+        "be started now ({complete}/{total} members complete), so the pipeline "
+        "continues with the next actionable member below."
+    ),
+    "epic-blocked-members": (
+        "Documentation is complete for {feature}, but no member of epic {epic} is "
+        "actionable right now ({complete}/{total} members complete) — the remaining "
+        "work is blocked by unmet dependencies. Open the epic dashboard below to see "
+        "what is holding it up."
+    ),
+    "epic-complete": (
+        "Documentation is complete for {feature}, and every member of epic {epic} is "
+        "now complete ({complete}/{total}). Open the epic dashboard below for its "
+        "completion view."
+    ),
+    "epic-blocked": (
+        "Documentation could not be completed for {feature}, so neither this feature "
+        "nor epic {epic} is complete. Only valid partial state was persisted. Open "
+        "the epic dashboard below to see the epic's live state and recover from there."
+    ),
+}
+
+
+def _docs_route(
+    feature: str, epic: str | None, specs_dir: Path, outcome: str, host: str
+) -> tuple[str, str | None, str, bool]:
+    """Route the documentation exit — the 02 §8 live-state table.
+
+    For an epic member the route comes from the live ``render-status`` payload, so a
+    Step-1 snapshot taken before docs state changed is never trusted: an actionable
+    next member routes to that member's own live command, and anything else (blocked
+    remaining work, or every member complete) routes to the epic dashboard, which is
+    also the dashboard's completion view. A ``blocked`` docs outcome routes to
+    recovery and NEVER claims pipeline completion.
+
+    Args:
+        feature: The feature whose documentation stage is closing.
+        epic: The owning epic, or None for a standalone feature.
+        specs_dir: Configured specs directory.
+        outcome: `complete` or `blocked`, already validated.
+        host: Host surface, used only to translate the INLINE secondary mentions —
+            the primary command is translated by the renderer.
+
+    Returns:
+        `(primary_canonical, deferred_canonical, outcome_text, advancing)`, matching
+        `_branch_route`. `deferred_canonical` is always None: a docs terminus has no
+        production successor to demote, because the pipeline ends here.
+
+    A ``blocked`` epic exit deliberately does NOT call ``render-status``: its route is
+    fixed at the epic dashboard regardless of what the live graph says, and a broken
+    epic graph is precisely the state in which the recovery route must stay reachable
+    rather than converting into a second failure.
+    """
+    if epic is None:
+        text = _DOCS_OUTCOME_TEXT[
+            "standalone-complete" if outcome == "complete" else "standalone-blocked"
+        ].format(
+            feature=feature,
+            new_feature=_host_command("/feature-forge:forge-1-prd <new-feature>", host),
+            new_epic=_host_command("/feature-forge:forge-0-epic <new-epic>", host),
+        )
+        return f"/feature-forge:forge {feature}", None, text, False
+
+    dashboard = f"/feature-forge:forge-0-epic {epic}"
+    if outcome == "blocked":
+        text = _DOCS_OUTCOME_TEXT["epic-blocked"].format(feature=feature, epic=epic)
+        return dashboard, None, text, False
+
+    status = _render_status(specs_dir, epic)
+    rollup = status["rollup"]
+    fields = {
+        "feature": feature,
+        "epic": epic,
+        "complete": rollup["complete"],
+        "total": rollup["total"],
+    }
+    next_command = status["nextCommand"]
+    if status["actionable"] and next_command:
+        return next_command, None, _DOCS_OUTCOME_TEXT["epic-actionable"].format(**fields), True
+    # Nothing actionable. Under the current derivation that coincides with "every
+    # member complete" (a valid graph is acyclic, so an incomplete member always has
+    # an actionable ancestor), but 02 §8 names the two cases separately and the
+    # rollup is the observable that tells them apart — so the blocked wording stays
+    # reachable if a future derivation admits an unactionable incomplete member. Both
+    # route to the same epic command either way; only the explanation differs.
+    key = "epic-complete" if rollup["complete"] >= rollup["total"] else "epic-blocked-members"
+    return dashboard, None, _DOCS_OUTCOME_TEXT[key].format(**fields), False
+
+
 def _debt_metadata_warnings(
     entry: dict,
     verify_key: str | None,
@@ -2748,6 +2997,13 @@ def stage_exit(
       verify-first ordering — supplies ``primaryCommand``: a diversion rejoins
       the production stage it served, and every recovery/defer route carries
       ``--served-stage`` forward so the thread is never dropped (issue #176).
+    - ``forge-6-docs`` — the documentation terminus is decided by LIVE epic state
+      (02 §8), never by the successor table: for an epic member the adjacent
+      ``epic-manifest.py render-status`` supplies the next actionable member's own
+      command, and anything else routes to the epic dashboard. A ``blocked``
+      outcome routes to recovery and never claims completion. Any helper failure
+      is an actionable ``UsageError`` — exit 2 with no payload, so no guessed
+      member command and no sentinel can escape (REQ-REL-02).
     - ``warnings`` — non-fatal advisories in the 00 §4 fixed order. Always
       present; ``[]`` means checked-and-clean, which is not the same as absent.
 
@@ -2951,6 +3207,14 @@ def stage_exit(
     # The epic name comes from the `--epic` arg or the state's `epic` back-pointer.
     epic_reconcile: dict | None = None
     epic_name = epic or state.get("epic")
+    # The epic a documentation exit routes against (02 §8): the explicit `--epic`,
+    # else the state's back-pointer. A back-pointer is untrusted on-disk data, so it
+    # is name-checked here rather than reaching the helper's argv (REQ-SEC-01); an
+    # unusable value degrades to the standalone route rather than crashing a stage
+    # closing. `--epic` itself was already validated in step 1.
+    docs_epic = (
+        epic_name if isinstance(epic_name, str) and SAFE_NAME_RE.match(epic_name) else None
+    )
     open_requests = [
         r
         for r in state.get("epicChangeRequests", [])
@@ -2998,6 +3262,23 @@ def stage_exit(
         if advancing and blocking_reconcile:
             # An advancing rejoin is subject to the same reconcile-first rule as a
             # production exit; a non-advancing one already outranks the reconcile.
+            primary_canonical = epic_reconcile["command"]
+            deferred_canonical = None
+    elif stage == "forge-6-docs":
+        # 02 §8: the documentation terminus is decided by LIVE epic state, not by
+        # the successor table — the pipeline ends here, so there is no next stage
+        # to fence and no verification to put first (docs is tokenless).
+        primary_canonical, deferred_canonical, outcome_text, advancing = _docs_route(
+            feature,
+            docs_epic,
+            specs_dir,
+            outcome,
+            host,
+        )
+        if advancing and blocking_reconcile:
+            # Same reconcile-first rule as an advancing branch rejoin: handing off to
+            # the next member would build it on a decomposition that is about to
+            # change. A non-advancing docs route already lands on the epic itself.
             primary_canonical = epic_reconcile["command"]
             deferred_canonical = None
     elif not resolved:
