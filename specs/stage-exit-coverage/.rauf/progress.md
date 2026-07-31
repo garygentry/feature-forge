@@ -285,3 +285,64 @@ signature included.
 `PASS: adapters/ matches a fresh generation (no drift)`;
 `python3 -m pytest tests -q` -> 885 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` no drift.
+
+## Item 006 — state-verify epic target (`.epic-state.json`)
+
+Added `_load_epic_state_for_write` and branched `cmd_state_verify` on
+`stage == "forge-0-epic"` BEFORE the `VERIFY_TOKEN_BY_STAGE` lookup. Two new constants in
+`scripts/forge-session.py`: `EPIC_STATE_FILENAME` and `SAFE_NAME_RE` (plus a private
+`_assert_safe_name`).
+
+### Gotchas for later items
+
+- **`forge-session.py` had NO name-safety check before this item.** `SAFE_NAME_RE` /
+  `_assert_safe_name` are new here and are applied ONLY on the epic branch — the
+  feature/member write path is unchanged, because widening it would change behavior for
+  existing standalone/member names outside this item's scope. Item 016's "unsafe member
+  name remains a `UsageError`" can reuse `_assert_safe_name` rather than adding a third
+  copy of the predicate.
+
+- **`_commit_state` is target-agnostic and is reused for the epic write.** It is not "the
+  member-feature writer" — that is `_load_state_for_write`/`_resolve_feature_dir_for_write`,
+  and the epic branch never calls either. Its docstring was widened by one `Args:` entry to
+  say so. Item 007's commit-2 mode and item 012's scheduling should reuse
+  `_load_epic_state_for_write` + `_commit_state` the same way.
+
+- **`_load_epic_state_for_write` seeds `updatedAt: None`** so a freshly created
+  `.epic-state.json` serializes in 03 §2.1's documented key order (`epic`, `updatedAt`,
+  `stages`). Every caller must stamp it via `_commit_state` before writing — the null is a
+  placeholder that never reaches disk. A future caller that writes through raw
+  `_write_state` would persist it.
+
+- **The revision is read inline, NOT via `epic-manifest.py::load_manifest`.**
+  `forge-session.py` stays self-contained (no cross-script import; item 015's `render-status`
+  subprocess is the only sanctioned crossing). The legacy rule is duplicated behaviorally:
+  a manifest with no `revision` key reads as logical `1` and its bytes are NOT rewritten.
+  A present `revision` goes through `_require_positive_int`, so `true`/`0` are rejected.
+
+- **Epic freshness compares against the MANIFEST revision, never a member stage version.**
+  The stale-version error message branches on the target so it names
+  "`{epic}`'s manifest is at revision N" instead of "`{stage}` is at version N". The
+  feature-target wording is byte-unchanged.
+
+- **`--epic` is accepted on the epic branch when it EQUALS `--feature`** (03 §3.2 step 2
+  says "None or exactly equal"), and rejected otherwise. Skills stamping the epic fence
+  may therefore pass either form.
+
+- **07 §4.3 restricts `monkeypatch` to `tempfile.mkstemp` / `os.fsync` / `os.replace`.** A
+  first draft proved epic/member disjointness by patching `_load_state_for_write` to raise;
+  that was replaced with an on-disk test (`test_neither_target_falls_back_to_the_other`)
+  using a directory that is BOTH an epic root and a feature — the adversarial fixture that
+  makes a wrong-file write observable without any mock. Prefer that shape for the remaining
+  isolation items.
+
+- **`.epic-state.json` has no JSON Schema** (03 §1 warning), so `tests/_state_schema.py`'s
+  `validate_state` must NOT be pointed at it. The epic tests assert the literal minimal
+  shape instead.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite` and
+`PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 901 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean.

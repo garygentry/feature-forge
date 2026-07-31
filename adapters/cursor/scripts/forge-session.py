@@ -169,6 +169,15 @@ from typing import Callable, Final, Literal, TypedDict, get_args
 PIPELINE_STATE_FILENAME: Final = ".pipeline-state.json"
 #: Epic roots hold this (and no .pipeline-state.json) — never a feature.
 MANIFEST_FILENAME: Final = "epic-manifest.json"
+#: Epic-scoped verification state, sibling to the manifest. NEVER a member's
+#: .pipeline-state.json: epic verification is epic-scoped (03 §2.1, REQ-SEC-01).
+EPIC_STATE_FILENAME: Final = ".epic-state.json"
+
+#: A safe bare name: one kebab-case token, no separator, no traversal. Same pattern
+#: epic-manifest.py applies (the flat scripts share no import module), so the epic
+#: target of a state write fails closed exactly where the canonical resolver does
+#: (REQ-SEC-01).
+SAFE_NAME_RE: Final = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 #: The ordered production stages. This is the ONE place stage order lives.
 PRODUCTION_STAGES: Final[tuple[str, ...]] = (
@@ -2478,6 +2487,135 @@ def _load_state_for_write(
     return state_path, state
 
 
+def _assert_safe_name(name: str, label: str) -> None:
+    """Reject a name that could steer a write outside ``{specsDir}/{name}``.
+
+    Args:
+        name: The bare name supplied on the command line.
+        label: The flag to name in the error (e.g. ``--feature``).
+
+    Raises:
+        UsageError: Empty, absolute, separator-bearing, ``..``, or not a single
+            kebab-case token (→ exit 2, nothing read or written).
+    """
+    if (
+        not name
+        or name == ".."
+        or "/" in name
+        or "\\" in name
+        or os.path.isabs(name)
+        or not SAFE_NAME_RE.match(name)
+    ):
+        raise UsageError(f"unsafe name {name!r} for {label}")
+
+
+def _load_epic_state_for_write(
+    specs_dir: Path, epic_name: str, epic: str | None
+) -> tuple[Path, dict, int]:
+    """Resolve an EPIC's ``.epic-state.json`` and its manifest revision, for mutation.
+
+    The epic counterpart of ``_load_state_for_write``, and deliberately NOT a
+    variant of it: epic verification is epic-scoped and must never resolve, read,
+    create, or write a member's ``.pipeline-state.json`` (03 §2.1/§3.2,
+    REQ-SEC-01). There is no fallback in either direction — an epic whose manifest
+    is missing or whose identity disagrees is an error, not a feature lookup.
+
+    Resolution is strict where the member resolver is tolerant: the name must be a
+    safe single token, the joined path must stay inside ``specs_dir`` after symlink
+    resolution, ``epic-manifest.json`` must exist, and the manifest's own ``epic``
+    value must equal ``epic_name``. The revision comes from the manifest, which is
+    the canonical artifact version for epic freshness — never a member's
+    production-stage version (03 §2.2). A legacy manifest with no ``revision`` is
+    presented as logical ``1`` here, matching ``epic-manifest.py::load_manifest``,
+    and its bytes are not rewritten.
+
+    Args:
+        specs_dir: The configured specs directory (``--specs-dir``).
+        epic_name: The epic name — what ``--feature`` carries for this stage.
+        epic: The ``--epic`` value, which must be absent or equal to ``epic_name``.
+
+    Returns:
+        A ``(state_path, state, revision)`` tuple. ``state`` is the lazily created
+        minimal shell (``epic`` + ``stages``) when no epic state exists yet.
+
+    Raises:
+        UsageError: Conflicting ``--feature``/``--epic``, unsafe name, containment
+            escape, missing/unparseable/non-object/identity-mismatched manifest,
+            invalid manifest revision, or an unparseable/non-object epic state or
+            ``stages`` value (→ exit 2, nothing written).
+    """
+    if epic is not None and epic != epic_name:
+        raise UsageError(
+            f"--stage forge-0-epic writes epic-scoped state, so --feature names the "
+            f"epic: --feature {epic_name!r} and --epic {epic!r} disagree. Drop --epic "
+            f"or make it match."
+        )
+    _assert_safe_name(epic_name, "--feature")
+    base_real = specs_dir.resolve()
+    epic_dir = (base_real / epic_name).resolve()
+    if epic_dir != base_real and base_real not in epic_dir.parents:
+        raise UsageError(
+            f"resolved epic path escapes the specs dir: {specs_dir / epic_name}"
+        )
+
+    manifest_path = epic_dir / MANIFEST_FILENAME
+    if not manifest_path.is_file():
+        raise UsageError(
+            f"no epic manifest at {manifest_path} — --stage forge-0-epic verifies an "
+            f"epic, and {epic_name!r} is not one. Nothing was written."
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"{manifest_path} is not valid JSON ({exc})") from exc
+    if not isinstance(manifest, dict):
+        raise UsageError(f"{manifest_path} is not a JSON object")
+    if manifest.get("epic") != epic_name:
+        raise UsageError(
+            f"{manifest_path} declares epic {manifest.get('epic')!r}, not "
+            f"{epic_name!r}; refusing to write verification state for a mismatched "
+            f"epic identity"
+        )
+    revision = _require_positive_int(
+        manifest.get("revision", 1), f"{epic_name}/{MANIFEST_FILENAME} revision"
+    )
+
+    state_path = epic_dir / EPIC_STATE_FILENAME
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise UsageError(
+                f"{state_path} exists but is not valid JSON ({exc}); refusing to "
+                f"overwrite it. Fix or move the file, then re-run."
+            ) from exc
+        if not isinstance(state, dict):
+            raise UsageError(
+                f"{state_path} is not a JSON object; refusing to overwrite it."
+            )
+        recorded = state.get("epic")
+        if recorded is not None and recorded != epic_name:
+            raise UsageError(
+                f"{state_path} records epic {recorded!r}, not {epic_name!r}; "
+                f"refusing to overwrite it."
+            )
+        stages = state.get("stages")
+        if stages is not None and not isinstance(stages, dict):
+            raise UsageError(
+                f"{state_path} has a non-object 'stages' value ({type(stages).__name__}); "
+                f"refusing to overwrite it."
+            )
+    else:
+        state = {}
+    # Seed 03 §2.1's minimal shape in its documented key order. ``updatedAt`` is
+    # a placeholder: every caller stamps it through ``_commit_state`` immediately
+    # before the single atomic replacement, so the null never reaches disk.
+    state.setdefault("epic", epic_name)
+    state.setdefault("updatedAt", None)
+    state.setdefault("stages", {})
+    return state_path, state, revision
+
+
 def _commit_state(state_path: Path, state: dict) -> dict:
     """Refresh ``updatedAt`` and write ``state`` atomically; return it for echo.
 
@@ -2485,7 +2623,11 @@ def _commit_state(state_path: Path, state: dict) -> dict:
     always refreshed on a successful write and the write is atomic.
 
     Args:
-        state_path: The resolved ``.pipeline-state.json`` path.
+        state_path: The resolved state-file path — a feature's
+            ``.pipeline-state.json``, or an epic's ``.epic-state.json``. The helper
+            is target-agnostic: it stamps and writes whatever document it is given,
+            so an epic write reuses the same atomic mechanism (03 §3.2) without
+            going anywhere near the member resolver.
         state: The mutated state dict.
 
     Returns:
@@ -3191,19 +3333,17 @@ def cmd_state_verify(
         raise UsageError(f"unknown --status {status!r}; expected one of {known}")
 
     # --- Target selection: epic before the token map (03 §3.2). --------------
-    if stage == "forge-0-epic":
-        raise UsageError(
-            "state-verify --stage forge-0-epic is not implemented yet; epic-scoped "
-            "verification writes {specsDir}/{epic}/.epic-state.json and must never "
-            "fall back to a member's .pipeline-state.json"
-        )
-    token = VERIFY_TOKEN_BY_STAGE.get(stage)
-    if token is None:
-        raise UsageError(
-            f"{stage} has no verification token, so it has no forge-verify-* entry "
-            f"to write; expected one of {', '.join(VERIFY_STAGES)}"
-        )
-    verify_key = f"forge-verify-{token}"
+    is_epic_target = stage == "forge-0-epic"
+    if is_epic_target:
+        verify_key = "forge-verify-epic"
+    else:
+        token = VERIFY_TOKEN_BY_STAGE.get(stage)
+        if token is None:
+            raise UsageError(
+                f"{stage} has no verification token, so it has no forge-verify-* entry "
+                f"to write; expected one of {', '.join(VERIFY_STAGES)}"
+            )
+        verify_key = f"forge-verify-{token}"
 
     # --- Metadata validation that needs no state (03 §3.3). ------------------
     if verified_stage_version is not None:
@@ -3258,16 +3398,36 @@ def cmd_state_verify(
             "--status passed may record a verified revision"
         )
 
-    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    # An epic target NEVER falls back to the member writer, and a member target
+    # never reaches the epic root: the two resolvers are disjoint (03 §3.2 step 2).
+    epic_revision: int | None = None
+    if is_epic_target:
+        state_path, state, epic_revision = _load_epic_state_for_write(
+            specs_dir, feature, epic
+        )
+    else:
+        state_path, state = _load_state_for_write(specs_dir, feature, epic)
     target_dir = state_path.parent
     if findings_file is not None:
         _validated_findings_file(findings_file, target_dir)
 
-    current = None if status == "skipped" else _current_artifact_version(state, stage)
+    if status == "skipped":
+        current = None
+    elif is_epic_target:
+        # The epic's artifact revision is the manifest revision — never a member's
+        # production-stage version (03 §2.2).
+        current = epic_revision
+    else:
+        current = _current_artifact_version(state, stage)
     if status in ("passed", "findings-reported") and verified_stage_version != current:
+        at = (
+            f"{feature}'s manifest is at revision {current}"
+            if is_epic_target
+            else f"{stage} is at version {current}"
+        )
         raise UsageError(
-            f"--verified-stage-version {verified_stage_version} is stale: {stage} is "
-            f"at version {current}. Re-run verification against the current artifact."
+            f"--verified-stage-version {verified_stage_version} is stale: {at}. "
+            f"Re-run verification against the current artifact."
         )
 
     prior = _verify_entry(state, verify_key)

@@ -1845,14 +1845,10 @@ def test_state_verify_writes_every_stage_token(tmp_path):
         assert _entry(specs, f"forge-verify-{key}")["status"] == "passed"
 
 
-def test_state_verify_defers_the_epic_target_and_commit_2_mode(tmp_path):
-    """Both land in later items; neither may silently write a member state file."""
+def test_state_verify_defers_commit_2_mode(tmp_path):
+    """Commit-2 provenance lands in a later item; it may not silently drop the hash."""
     specs = _verify_fixture(tmp_path)
     before = _state_bytes(specs)
-
-    epic = _verify(specs, "--stage", "forge-0-epic", "--status", "skipped")
-    assert epic.returncode == 2
-    assert ".epic-state.json" in epic.stderr
 
     hash_only = _verify(specs, "--stage", "forge-1-prd",
                         "--commit-hash", "0" * 40)
@@ -1870,6 +1866,388 @@ def test_state_verify_rejects_an_unknown_status_at_the_callable(tmp_path):
         assert "unknown --status" in str(exc)
     else:
         raise AssertionError("--status pending was accepted as a result")
+
+
+# --------------------------------------------------------------------------- #
+# state-verify — the epic target (03 §3.2 step 2 / §2.1, 07 §4.3)
+# --------------------------------------------------------------------------- #
+
+
+def _epic_fixture(
+    tmp_path: Path,
+    revision: int | None = 1,
+    epic: str = "auth-overhaul",
+    members: tuple[str, ...] = ("login",),
+) -> Path:
+    """Create an epic root with a manifest and completed members; return the specs dir.
+
+    ``revision=None`` writes a LEGACY manifest with no ``revision`` key, which
+    ``load_manifest`` presents as logical 1 (03 §2.2) — the compatibility row.
+    Each member gets a real, complete ``.pipeline-state.json`` so an epic write can
+    be proven not to touch one.
+    """
+    specs = tmp_path / "specs"
+    epic_dir = specs / epic
+    epic_dir.mkdir(parents=True)
+    manifest = {
+        "schemaVersion": "1",
+        "epic": epic,
+        "title": "Auth overhaul",
+        "features": [{"name": m, "dependsOn": []} for m in members],
+    }
+    if revision is not None:
+        manifest["revision"] = revision
+    (epic_dir / FS.MANIFEST_FILENAME).write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    for member in members:
+        (epic_dir / member).mkdir()
+        result = _run(
+            "state-complete", "--feature", member, "--epic", epic,
+            "--stage", "forge-1-prd", "--version", "1", "--artifact", "PRD.md",
+            "--specs-dir", str(specs),
+        )
+        assert result.returncode == 0, result.stderr
+    return specs
+
+
+def _epic_verify(
+    specs: Path, *extra: str, epic: str = "auth-overhaul"
+) -> subprocess.CompletedProcess[str]:
+    """Run ``state-verify --stage forge-0-epic`` against ``specs``."""
+    return _run(
+        "state-verify", "--feature", epic, "--stage", "forge-0-epic",
+        *extra, "--specs-dir", str(specs),
+    )
+
+
+def _epic_state(specs: Path, epic: str = "auth-overhaul") -> dict:
+    """Read the epic's `.epic-state.json` back off disk."""
+    return json.loads(
+        (specs / epic / FS.EPIC_STATE_FILENAME).read_text(encoding="utf-8")
+    )
+
+
+def _member_bytes(specs: Path, epic: str = "auth-overhaul") -> dict[str, bytes]:
+    """Snapshot every member state file under ``epic``, for byte-equality checks."""
+    return {
+        str(p.relative_to(specs)): p.read_bytes()
+        for p in sorted((specs / epic).glob(f"*/{FS.PIPELINE_STATE_FILENAME}"))
+    }
+
+
+def test_epic_verify_writes_only_the_epic_state_file(tmp_path):
+    """REQ-SEC-01: an epic write never creates or changes a member state file."""
+    specs = _epic_fixture(tmp_path, revision=3, members=("login", "signup"))
+    members_before = _member_bytes(specs)
+    assert members_before, "fixture should carry member state to compare against"
+
+    assert _epic_verify(specs, "--status", "auto-verify-pending").returncode == 0
+
+    assert (specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME).is_file()
+    assert _member_bytes(specs) == members_before, "a member state file moved"
+    assert not (specs / "auth-overhaul" / FS.PIPELINE_STATE_FILENAME).exists()
+
+
+def test_a_new_epic_state_matches_the_minimal_documented_shape(tmp_path):
+    """03 §2.1's minimal shape, exactly — no member rollup, no cached manifest data."""
+    specs = _epic_fixture(tmp_path, revision=3)
+    assert _epic_verify(specs, "--status", "auto-verify-pending").returncode == 0
+
+    state = _epic_state(specs)
+    assert set(state) == {"epic", "updatedAt", "stages"}
+    assert state["epic"] == "auth-overhaul"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", state["updatedAt"])
+    assert set(state["stages"]) == {"forge-verify-epic"}
+    assert state["stages"]["forge-verify-epic"] == {
+        "status": "auto-verify-pending",
+        "scheduledAt": state["updatedAt"],
+        "scheduledStageVersion": 3,
+        "commitHash": None,
+    }
+
+
+def test_epic_versions_carry_the_manifest_revision_not_a_member_version(tmp_path):
+    """03 §2.2: `current` for an epic is the manifest revision, full stop."""
+    specs = _epic_fixture(tmp_path, revision=7)
+    member_version = json.loads(
+        (specs / "auth-overhaul" / "login" / FS.PIPELINE_STATE_FILENAME)
+        .read_text(encoding="utf-8")
+    )["stages"]["forge-1-prd"]["version"]
+    assert member_version == 1, "the member sits at a DIFFERENT version by design"
+
+    assert _epic_verify(specs, "--status", "auto-verify-pending").returncode == 0
+    assert _epic_state(specs)["stages"]["forge-verify-epic"]["scheduledStageVersion"] == 7
+
+    assert _epic_verify(specs, "--status", "passed",
+                        "--verified-stage-version", "7").returncode == 0
+    assert _epic_state(specs)["stages"]["forge-verify-epic"]["verifiedStageVersion"] == 7
+
+    stale = _epic_verify(specs, "--status", "passed",
+                         "--verified-stage-version", str(member_version))
+    assert stale.returncode == 2
+    assert "revision 7" in stale.stderr
+
+
+def test_a_legacy_manifest_without_a_revision_verifies_at_revision_1(tmp_path):
+    """REQ-DEBT-06/REQ-COMPAT-02: the synthesized 1 is a read, not a rewrite."""
+    specs = _epic_fixture(tmp_path, revision=None)
+    manifest_path = specs / "auth-overhaul" / FS.MANIFEST_FILENAME
+    before = manifest_path.read_bytes()
+
+    assert _epic_verify(specs, "--status", "passed",
+                        "--verified-stage-version", "1").returncode == 0
+    assert _epic_state(specs)["stages"]["forge-verify-epic"]["verifiedStageVersion"] == 1
+    assert manifest_path.read_bytes() == before, "state-verify rewrote the manifest"
+
+
+def test_every_result_status_works_against_the_epic_target(tmp_path):
+    """pass / findings-reported / findings-applied / skipped, same as a feature."""
+    specs = _epic_fixture(tmp_path, revision=2)
+    key = "forge-verify-epic"
+
+    assert _epic_verify(specs, "--status", "passed",
+                        "--verified-stage-version", "2").returncode == 0
+    assert _epic_state(specs)["stages"][key]["status"] == "passed"
+
+    assert _epic_verify(
+        specs, "--status", "findings-reported", "--verified-stage-version", "2",
+        "--findings-file", "verify/epic-findings.md", "--findings-count", "3",
+    ).returncode == 0
+    reported = _epic_state(specs)["stages"][key]
+    assert reported["findingsFile"] == "verify/epic-findings.md"
+    assert reported["findingsCount"] == 3
+
+    assert _epic_verify(specs, "--status", "findings-applied").returncode == 0
+    applied = _epic_state(specs)["stages"][key]
+    assert applied["status"] == "findings-applied"
+    assert applied["findingsFile"] == "verify/epic-findings.md"
+    assert "fixedAt" in applied
+    assert "verifiedStageVersion" not in applied, "applied deliberately clears freshness"
+
+    assert _epic_verify(specs, "--status", "skipped").returncode == 0
+    skipped = _epic_state(specs)["stages"][key]
+    assert skipped == {"status": "skipped", "commitHash": None}
+
+
+def test_an_epic_write_touches_only_its_own_entry_and_updated_at(tmp_path):
+    """Unrelated epic-state keys and entries survive (03 §3.2)."""
+    specs = _epic_fixture(tmp_path, revision=2)
+    state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
+    state_path.write_text(
+        json.dumps(
+            {
+                "epic": "auth-overhaul",
+                "updatedAt": "2020-01-01T00:00:00Z",
+                "unknownTopLevel": {"kept": True},
+                "stages": {
+                    "forge-0-epic": {"status": "complete"},
+                    "forge-verify-epic": {"status": "pending"},
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert _epic_verify(specs, "--status", "skipped").returncode == 0
+    state = _epic_state(specs)
+    assert state["unknownTopLevel"] == {"kept": True}
+    assert state["stages"]["forge-0-epic"] == {"status": "complete"}
+    assert state["stages"]["forge-verify-epic"]["status"] == "skipped"
+    assert state["updatedAt"] != "2020-01-01T00:00:00Z"
+
+
+def test_the_epic_result_echo_names_the_epic_state_path(tmp_path):
+    """The --json echo reports what landed, so no caller re-reads the file."""
+    specs = _epic_fixture(tmp_path, revision=4)
+    result = _epic_verify(specs, "--status", "auto-verify-pending", "--json")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["verifyKey"] == "forge-verify-epic"
+    assert payload["statePath"] == str(specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME)
+    assert payload["entry"]["scheduledStageVersion"] == 4
+
+
+def test_an_epic_findings_file_is_contained_by_the_epic_dir(tmp_path):
+    """The containment target is the epic root, never a member directory."""
+    specs = _epic_fixture(tmp_path, revision=1)
+    for bad in ("/etc/passwd", "../login/f.md", "verify/../../escape.md"):
+        result = _epic_verify(
+            specs, "--status", "findings-reported", "--verified-stage-version", "1",
+            "--findings-file", bad, "--findings-count", "1",
+        )
+        assert result.returncode == 2, f"{bad!r} was accepted"
+        assert "--findings-file" in result.stderr, f"{bad!r}: {result.stderr!r}"
+        assert not (specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME).exists()
+
+
+def test_epic_metadata_validation_matches_the_feature_target(tmp_path):
+    """Same forbidden-metadata matrix as a feature write (03 §3.3)."""
+    specs = _epic_fixture(tmp_path, revision=1)
+    rejected = (
+        ("--status", "auto-verify-pending", "--verified-stage-version", "1"),
+        ("--status", "skipped", "--findings-count", "1"),
+        ("--status", "passed", "--verified-stage-version", "1",
+         "--findings-file", "verify/f.md"),
+        ("--status", "passed", "--verified-stage-version", "1",
+         "--findings-count", "2"),
+        ("--status", "passed",),
+        ("--status", "findings-reported", "--verified-stage-version", "1",
+         "--findings-count", "1"),
+        ("--status", "findings-applied", "--verified-stage-version", "1"),
+        ("--status", "findings-applied",),
+        (),
+    )
+    for extra in rejected:
+        result = _epic_verify(specs, *extra)
+        assert result.returncode == 2, extra
+        assert result.stderr.startswith("Error:"), extra
+        assert not (specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME).exists(), extra
+
+
+def test_a_conflicting_feature_epic_pair_fails_before_mutation(tmp_path):
+    specs = _epic_fixture(tmp_path, revision=1)
+    members_before = _member_bytes(specs)
+
+    result = _epic_verify(specs, "--epic", "other-epic", "--status", "skipped")
+    assert result.returncode == 2
+    assert "disagree" in result.stderr
+    assert not (specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME).exists()
+    assert _member_bytes(specs) == members_before
+
+    # The matching pair is legal — `--epic` may repeat the epic's own name.
+    assert _epic_verify(specs, "--epic", "auth-overhaul",
+                        "--status", "skipped").returncode == 0
+
+
+def test_an_unsafe_epic_name_or_path_escape_fails_before_mutation(tmp_path):
+    specs = _epic_fixture(tmp_path, revision=1)
+    for bad in ("../escape", "..", "/absolute", "Bad_Name", "nested/name", ""):
+        result = _run(
+            "state-verify", "--feature", bad, "--stage", "forge-0-epic",
+            "--status", "skipped", "--specs-dir", str(specs),
+        )
+        assert result.returncode == 2, f"{bad!r} was accepted"
+        assert "unsafe name" in result.stderr, f"{bad!r}: {result.stderr!r}"
+
+
+def test_an_epic_name_reached_through_a_symlink_out_of_specs_is_refused(tmp_path):
+    specs = _epic_fixture(tmp_path, revision=1)
+    outside = tmp_path / "outside"
+    (outside / "epic-manifest.json").parent.mkdir()
+    (outside / FS.MANIFEST_FILENAME).write_text(
+        json.dumps({"schemaVersion": "1", "epic": "elsewhere", "features": []}),
+        encoding="utf-8",
+    )
+    (specs / "elsewhere").symlink_to(outside, target_is_directory=True)
+
+    result = _run(
+        "state-verify", "--feature", "elsewhere", "--stage", "forge-0-epic",
+        "--status", "skipped", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 2, result.stdout
+    assert "escapes the specs dir" in result.stderr
+    assert not (outside / FS.EPIC_STATE_FILENAME).exists()
+
+
+def test_a_missing_or_mismatched_manifest_fails_before_mutation(tmp_path):
+    specs = _epic_fixture(tmp_path, revision=1)
+    manifest_path = specs / "auth-overhaul" / FS.MANIFEST_FILENAME
+    original = manifest_path.read_bytes()
+
+    # A plain feature directory is not an epic — and must not fall back to it.
+    plain = _verify_fixture(tmp_path / "flat")
+    missing = _run(
+        "state-verify", "--feature", "demo", "--stage", "forge-0-epic",
+        "--status", "skipped", "--specs-dir", str(plain),
+    )
+    assert missing.returncode == 2
+    assert "no epic manifest" in missing.stderr
+    assert not (plain / "demo" / FS.EPIC_STATE_FILENAME).exists()
+    assert _state_bytes(plain), "the member state file must be left in place"
+
+    for mutation, needle in (
+        ('{"schemaVersion": "1", "epic": "other-epic", "features": []}', "declares epic"),
+        ("not json at all", "not valid JSON"),
+        ("[]", "not a JSON object"),
+        ('{"epic": "auth-overhaul", "revision": 0}', "positive integer"),
+        ('{"epic": "auth-overhaul", "revision": true}', "positive integer"),
+    ):
+        manifest_path.write_text(mutation, encoding="utf-8")
+        result = _epic_verify(specs, "--status", "skipped")
+        assert result.returncode == 2, mutation
+        assert needle in result.stderr, f"{mutation}: {result.stderr!r}"
+        assert not (specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME).exists()
+    manifest_path.write_bytes(original)
+
+
+def test_a_corrupt_or_malformed_epic_state_is_refused_byte_intact(tmp_path):
+    specs = _epic_fixture(tmp_path, revision=1)
+    state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
+    for content, needle in (
+        ("{ not json", "not valid JSON"),
+        ("[]", "not a JSON object"),
+        ('{"epic": "auth-overhaul", "stages": []}', "non-object 'stages'"),
+        ('{"epic": "auth-overhaul", "stages": "nope"}', "non-object 'stages'"),
+        ('{"epic": "some-other-epic"}', "records epic"),
+    ):
+        state_path.write_text(content, encoding="utf-8")
+        before = state_path.read_bytes()
+        result = _epic_verify(specs, "--status", "skipped")
+        assert result.returncode == 2, content
+        assert needle in result.stderr, f"{content}: {result.stderr!r}"
+        assert state_path.read_bytes() == before, f"{content}: mutated on a refusal"
+
+
+def test_a_legacy_epic_state_without_epic_or_stages_is_enriched(tmp_path):
+    """REQ-DEBT-06: a sparse legacy file loads and is filled in on its next write."""
+    specs = _epic_fixture(tmp_path, revision=1)
+    state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
+    state_path.write_text("{}", encoding="utf-8")
+
+    assert _epic_verify(specs, "--status", "skipped").returncode == 0
+    state = _epic_state(specs)
+    assert state["epic"] == "auth-overhaul"
+    assert state["stages"]["forge-verify-epic"]["status"] == "skipped"
+    assert state["updatedAt"]
+
+
+def test_neither_target_falls_back_to_the_other(tmp_path):
+    """No fallback in either direction, proven on disk (03 §3.2 step 3).
+
+    The fixture is the adversarial one: a directory that is BOTH an epic root and
+    carries a ``.pipeline-state.json``. If either branch reached the other's
+    resolver, one of these writes would land in the wrong file — so the two target
+    files are asserted independently, byte-for-byte, across both writes.
+    """
+    specs = _epic_fixture(tmp_path, revision=5)
+    epic_dir = specs / "auth-overhaul"
+    assert _run(
+        "state-complete", "--feature", "auth-overhaul", "--stage", "forge-1-prd",
+        "--version", "9", "--artifact", "PRD.md", "--specs-dir", str(specs),
+    ).returncode == 0
+    member_state = epic_dir / FS.PIPELINE_STATE_FILENAME
+    epic_state = epic_dir / FS.EPIC_STATE_FILENAME
+    member_before = member_state.read_bytes()
+
+    # Epic target: writes .epic-state.json at the MANIFEST revision, and the
+    # same-named feature state beside it does not move.
+    assert _epic_verify(specs, "--status", "passed",
+                        "--verified-stage-version", "5").returncode == 0
+    assert member_state.read_bytes() == member_before
+    assert _epic_state(specs)["stages"]["forge-verify-epic"]["verifiedStageVersion"] == 5
+
+    # Feature target on the very same name: writes .pipeline-state.json at the
+    # STAGE version, and the epic state does not move.
+    epic_before = epic_state.read_bytes()
+    assert _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                   "--verified-stage-version", "9", name="auth-overhaul").returncode == 0
+    assert epic_state.read_bytes() == epic_before
+    written = json.loads(member_state.read_text(encoding="utf-8"))
+    assert written["stages"]["forge-verify-prd"]["verifiedStageVersion"] == 9
+    assert "forge-verify-epic" not in written["stages"]
 
 
 # --------------------------------------------------------------------------- #
