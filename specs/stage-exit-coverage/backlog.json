@@ -316,8 +316,8 @@
         "directives.warnings is always present, is a list, and its entries appear in the 00-core-definitions.md §4 fixed order",
         "directives.stageNoun is retained verbatim from the existing implementation and still resolves every {stageNoun} slot in references/stage-exit-protocol.md"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T06:03:49.980Z",
       "dependsOn": [
         "001"
       ],

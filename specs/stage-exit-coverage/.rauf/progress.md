@@ -544,3 +544,95 @@ of `forge-session.py`.
 `python3 -m pytest tests -q` -> 1006 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; adapters/ regenerated (all six copies of
 epic-manifest.py).
+
+## Item 010 — nine-stage stage-exit surface, typed CLI inputs, owner semantics
+
+Widened the router to all nine `EXIT_STAGES`, added the five new flags, the 02 §3.1
+validation order, `resolve_served_stage`, direct/nested terminal ownership, and the
+`verifyStage` / `warnings` directives.
+
+### Gotchas for later items
+
+- **`_STAGE_EXIT_CLI_STAGES` is GONE** (item 001 flagged this as item 010's job).
+  `stage-exit --stage` now reads `choices=EXIT_STAGES` directly. The interim subset
+  test in `tests/test_stage_constants_parity.py` was REPLACED — not deleted — by
+  `test_the_cli_stage_choices_are_the_whole_exit_domain`, which also asserts the old
+  name is absent so it cannot come back.
+
+- **argparse errors now start with `Error:` CLI-WIDE.** 02 §2.2 demands BOTH typed
+  `choices` on the enum flags AND `Error: <actionable message>` on every invalid
+  input; stock argparse leads with `usage:`. `parse_args()` runs OUTSIDE `main()`'s
+  `UsageError` handler, so the reconciliation is a `_ErrorPrefixParser`
+  (`ArgumentParser.error` → `self.exit(2, "Error: …\nTry '<prog> --help' for
+  usage.")`). `add_subparsers` defaults `parser_class` to `type(self)`, so setting it
+  on the TOP-LEVEL parser was the whole change — **every** subcommand inherits it.
+  Existing `"invalid choice" in stderr` assertions still pass (the argparse message
+  is preserved verbatim after the prefix). If a later item wants a bespoke argparse
+  message, override `error()` on that subparser, do not re-add `usage:`.
+
+- **`route_stage` is the new routing pivot.** A branch exit routes from the stage it
+  SERVED (`forge-verify` has no artifact, no verify token, and no successor of its
+  own); a production exit routes from itself, so stages 0–4 are unchanged. It drives
+  `_verify_state_for`, `auto_verify_for`, `_EXIT_NEXT_STAGE`, the `next_stage(state)`
+  walk, and the debt warnings. Items 013–016 should branch on `outcome` INSIDE this
+  derivation rather than adding a second successor computation.
+
+- **`_EXIT_NEXT_STAGE` gained `forge-5-loop -> forge-6-docs`** and deliberately still
+  has NO `forge-6-docs` entry — the pipeline ends there, so a docs (or docs-served)
+  exit yields `nextStage: None` and the block falls back to
+  `/feature-forge:forge`. That is the "completion action, never a nonexistent stage 7"
+  rule; item 015 makes it context-aware, it does not need to add a key.
+
+- **This item did NOT add `primaryCommand` / `deferredCommand`, and did NOT change
+  `_next_steps_block`.** Item 011 owns both (it owns the verify-first ordering that
+  makes them meaningful). Nested payloads today preserve routing directives and
+  return `nextSteps: None` / `sentinel: None`, which is the full §3.3 contract.
+
+- **Strict resolution for the new stages is still DEFERRED.** 02 §3.1 says loop, docs,
+  branch, and explicit member-routing paths use strict resolution; none of item 010's
+  15 acceptance criteria covers it, and the owning paths are items 013/015/016. All
+  nine stages currently share the tolerant `_resolve_feature_dir` read. The
+  §3.2 negatives "ambiguous same-named feature" and "explicit wrong epic" are
+  therefore NOT yet asserted in `tests/test_stage_exit.py` — add them with the strict
+  path, not before.
+
+- **`--next-feature` is now safe-name validated**, so the literal placeholder
+  `{first-actionable-feature}` can no longer be PASSED as a value. Omitting the flag
+  still produces that placeholder in `nextCommand` (unchanged). 02 §9 / item 022 say
+  the epic skill must pass a concrete member or nothing — never a placeholder — so
+  the canon edit in item 022 is what closes this loop. `skills/forge-0-epic/SKILL.md`
+  Step C8 currently stamps `--next-feature "{first-actionable-feature}"` as a
+  template the model substitutes; if a model ever passed it through verbatim it now
+  exits 2 instead of silently echoing it.
+
+- **`warnings` entries 2 and 3 are mutually exclusive by construction** — a
+  revision mismatch is only detectable once `scheduledStageVersion` is usable, and
+  entry 2 fires exactly when it is not. `_debt_metadata_warnings` keeps the fixed
+  order anyway so item 016 can insert entry 1 ahead of it without re-deriving.
+  Entry 2 uses the new `AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC` constant (the
+  directive-facing twin of `_warn_auto_verify_debt_metadata`'s stderr line, plus the
+  subject and the host-translated retry command, per REQ-OBS-02); entry 3 reuses
+  `auto_pending_message(...)` with both revisions.
+
+- **`verifyStage` is `pending_verify(state)` verbatim** (00 §4: "the value
+  `pending_verify()` returns"), NOT `_verify_state_for`'s stage. The two can disagree:
+  `pending_verify` classifies the most-recently-COMPLETED stage while stage-exit runs
+  inside the stage that just closed. The spec is explicit that this key mirrors
+  `FeatureRow.verifyStage` so navigator rows and stage-exit JSON report the same
+  thing — do not "fix" it to follow `route_stage`.
+
+- **The nine new directive keys are additive**, so stages 0–4 keep every prior key
+  and value. `test_no_epic_requests_is_byte_identical_and_omits_directive` still
+  passes unchanged, which is the REQ-COMPAT-01 signal.
+
+- **zsh does not word-split unquoted `$var`.** A `for a in "--stage X --outcome Y"`
+  loop that works in bash passes the whole string as ONE argv entry here and every
+  case reports "the following arguments are required: --stage". Use a shell function
+  with `"$@"`, or an array.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite`;
+`python3 -m pytest tests -q` -> 1160 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
+regenerated `adapters/` tree left in the working tree for the loop runner to commit.

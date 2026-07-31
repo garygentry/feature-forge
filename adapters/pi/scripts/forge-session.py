@@ -163,7 +163,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Final, Literal, TypedDict, get_args
+from typing import Callable, Final, Literal, NoReturn, TypedDict, get_args
 
 
 # --------------------------------------------------------------------------- #
@@ -270,6 +270,15 @@ _AUTO_VERIFY_DEBT_WARNED: set[str] = set()
 AUTO_PENDING_DIAGNOSTIC: Final = (
     "{subject}: automatic verification is still pending for {stage}; "
     "run {command} to resolve it."
+)
+#: The directive-facing form of the debt-metadata advisory (00 §4 `warnings` entry 2,
+#: 03 §5.1). The stderr twin lives in `_warn_auto_verify_debt_metadata`; this one also
+#: names the subject and the host-translated retry command, because a `warnings` entry
+#: must carry both the affected feature/stage/key AND the recovery action (REQ-OBS-02).
+AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC: Final = (
+    "{subject}: {verify_key} is auto-verify-pending but its scheduledStageVersion "
+    "is missing or malformed (legacy or hand-edited state); the debt stays "
+    "outstanding — run {command} to resolve it and record a usable schedule."
 )
 
 
@@ -1977,18 +1986,27 @@ def _print_check_epic_base(payload: dict) -> None:
 # Scripted Stage Exit
 # --------------------------------------------------------------------------- #
 
-#: The subset of ``EXIT_STAGES`` the ``stage-exit`` CLI accepts today: the authoring
-#: stages whose closing already runs the scripted exit (loop, docs, and the two
-#: branch skills still stamp bespoke terminal blocks). Widening the router to the
-#: full nine-stage ``EXIT_STAGES`` domain is a routing change, not a vocabulary one,
-#: so it stays out of the constants block above until the router can serve them.
-_STAGE_EXIT_CLI_STAGES: Final[tuple[str, ...]] = (
-    "forge-0-epic",
-    "forge-1-prd",
-    "forge-2-tech",
-    "forge-3-specs",
-    "forge-4-backlog",
+#: The seven production stages as a ROUTING domain. Deliberately not
+#: ``PRODUCTION_STAGES``, which is the six-stage member walk that excludes
+#: ``forge-0-epic``; derived from the shared ``ProductionStage`` alias so the two
+#: cannot drift (00 §2).
+_EXIT_PRODUCTION_STAGES: Final[tuple[str, ...]] = get_args(ProductionStage)
+
+#: The two direct branch skills — every exit stage that is not a production stage.
+#: Derived, so adding a branch skill to ``ExitStage`` lands here automatically.
+_BRANCH_STAGES: Final[tuple[str, ...]] = tuple(
+    stage for stage in EXIT_STAGES if stage not in _EXIT_PRODUCTION_STAGES
 )
+
+#: Inverse of ``VERIFY_MODE_TO_STAGE``. The mapping is injective, so the inverse is
+#: total over its values; stages with no mode (``forge-6-docs``) are simply absent.
+_STAGE_TO_VERIFY_MODE: Final[dict[str, str]] = {
+    stage: mode for mode, stage in VERIFY_MODE_TO_STAGE.items()
+}
+
+#: The `--host` domain: command syntax and fresh-session wording only. A host NEVER
+#: implies a verification capability (02 §3.1 step 6, REQ-EXIT-07).
+EXIT_HOSTS: Final[tuple[str, ...]] = ("claude", "generic", "pi")
 
 #: Stage id -> the noun phrase gate wording uses (the old {stage} stamp slot).
 STAGE_NOUN: Final[dict[str, str]] = {
@@ -2006,13 +2024,17 @@ _EXIT_VERIFY_TOKEN: Final[dict[str, str]] = {
     "forge-0-epic": "epic",
 }
 
-#: The stage each exit hands off to when pipeline state cannot say better.
+#: The stage each exit hands off to when pipeline state cannot say better. Also the
+#: production-successor table a branch exit walks from its RESOLVED SERVED stage:
+#: ``forge-6-docs`` is absent because the pipeline ends there — a docs exit routes to
+#: a completion action, never to a nonexistent stage 7.
 _EXIT_NEXT_STAGE: Final[dict[str, str]] = {
     "forge-0-epic": "forge-1-prd",
     "forge-1-prd": "forge-2-tech",
     "forge-2-tech": "forge-3-specs",
     "forge-3-specs": "forge-4-backlog",
     "forge-4-backlog": "forge-5-loop",
+    "forge-5-loop": "forge-6-docs",
 }
 
 
@@ -2170,6 +2192,90 @@ def _next_steps_block(
     return "\n".join(lines)
 
 
+def resolve_served_stage(
+    served_stage: str | None,
+    verify_mode: str | None,
+) -> str:
+    """Resolve one unambiguous production stage for a branch exit.
+
+    Args:
+        served_stage: Explicit production stage supplied by the branch caller.
+        verify_mode: Optional authoritative mode mapped by VERIFY_MODE_TO_STAGE.
+
+    Returns:
+        A member of the shared ProductionStage domain.
+
+    Raises:
+        UsageError: The explicit stage is invalid, mode is invalid, both inputs
+            disagree, or neither input identifies a stage.
+    """
+    if served_stage is not None and served_stage not in _EXIT_PRODUCTION_STAGES:
+        raise UsageError(
+            f"--served-stage {served_stage!r} is not a production stage; expected "
+            f"one of {', '.join(_EXIT_PRODUCTION_STAGES)}"
+        )
+    if verify_mode is not None and verify_mode not in VERIFY_MODE_TO_STAGE:
+        raise UsageError(
+            f"--verify-mode {verify_mode!r} is not a known verify mode; expected "
+            f"one of {', '.join(VERIFY_MODE_TO_STAGE)}"
+        )
+    if served_stage is not None and verify_mode is not None:
+        mapped = VERIFY_MODE_TO_STAGE[verify_mode]
+        if mapped != served_stage:
+            # Both were supplied and they disagree. Name both flags and both
+            # resolutions — picking one silently is exactly the guess REQ-ROUTE-03
+            # forbids (02 §3.2, §10).
+            raise UsageError(
+                f"--served-stage {served_stage} conflicts with --verify-mode "
+                f"{verify_mode} (which maps to {mapped}); supply one, or supply "
+                "values that agree"
+            )
+        return served_stage
+    if served_stage is not None:
+        # Explicit stage takes precedence, and accepts any ProductionStage —
+        # including forge-6-docs, which no verify mode maps to.
+        return served_stage
+    if verify_mode is not None:
+        return VERIFY_MODE_TO_STAGE[verify_mode]
+    raise UsageError(
+        "forge-verify requires --served-stage or an unambiguous --verify-mode; "
+        "rerun with the production stage this verification served"
+    )
+
+
+def _debt_metadata_warnings(
+    state: dict, stage: str, subject: str, verify_command: str
+) -> list[str]:
+    """Entries 2 and 3 of the 00 §4 ``warnings`` order, for owed automatic verification.
+
+    Entry 2 is the legacy/malformed ``scheduledStageVersion`` advisory (03 §5.1);
+    entry 3 is the scheduled-vs-current revision mismatch note (03 §5.3). They are
+    mutually exclusive by construction — a mismatch is only detectable once the
+    recorded revision is usable — but the order is fixed regardless so a later
+    entry can be added without re-deriving it.
+    """
+    token = _EXIT_VERIFY_TOKEN.get(stage)
+    if token is None:
+        return []
+    verify_key = f"forge-verify-{token}"
+    entry = _verify_entry(state, verify_key)
+    if entry.get("status") != "auto-verify-pending":
+        return []
+    scheduled = _scheduled_stage_version(entry)
+    if scheduled is None:
+        return [
+            AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC.format(
+                subject=subject, verify_key=verify_key, command=verify_command
+            )
+        ]
+    current = _stage_version(state, stage)
+    if current is not None and scheduled != current:
+        return [
+            auto_pending_message(subject, stage, verify_command, scheduled, current)
+        ]
+    return []
+
+
 def stage_exit(
     feature: str,
     stage: str,
@@ -2178,8 +2284,39 @@ def stage_exit(
     epic: str | None,
     host: str,
     next_feature: str | None,
+    served_stage: str | None = None,
+    verify_mode: str | None = None,
+    outcome: str | None = None,
+    owner: str | None = None,
+    verify_capability: str = "manual",
 ) -> StageExitPayload:
-    """Compute the Scripted Stage Exit payload: DIRECTIVES + NEXT-STEPS block.
+    """Compute a deterministic stage-exit payload.
+
+    Args:
+        feature: Safe feature name, or epic name for an epic-scoped exit.
+        stage: One member of `EXIT_STAGES`.
+        specs_dir: Configured specs directory.
+        config_path: Path to `forge.config.json`.
+        epic: Owning epic for a nested member, otherwise None.
+        host: Command-rendering host: `claude`, `pi`, or `generic`.
+        next_feature: Explicit epic handoff member, when applicable.
+        served_stage: Production stage served by direct verify/fix.
+        verify_mode: Verify mode used to infer `served_stage` when unique.
+        outcome: Required stage-specific outcome for loop/docs/verify/fix.
+        owner: Required for verify/fix: `direct` or `nested`.
+        verify_capability: `interactive` only when both question and clean-room
+            verifier dispatch capabilities exist; otherwise `manual`. Dispatch
+            capability is permission, not tool presence: a dispatch permitted
+            only once the user has asked is still `interactive`, because the
+            `standard` gate's own prompt supplies that request
+            (`04-skill-integration.md` §3.2).
+
+    Returns:
+        A JSON-serializable `StageExitPayload` dictionary.
+
+    Raises:
+        UsageError: Unsafe or ambiguous identity, unsupported stage/outcome,
+            missing ownership/served-stage metadata, or conflicting inference.
 
     Directive semantics (the contract in ``references/stage-exit-protocol.md``):
 
@@ -2207,10 +2344,94 @@ def stage_exit(
       and the normal next stage is deferred. Only non-blocking requests set
       ``reminder: true`` and append a non-blocking reminder line. Absent when
       there are no open requests (common path) or the epic name is unresolvable.
+    - ``servedStage``/``verifyMode``/``outcome``/``owner``/``terminalOwnedBy`` —
+      branch metadata. A production exit serves only itself, so ``servedStage``
+      is None there; ``verifyStage`` is the DISTINCT value ``pending_verify``
+      returns, naming the stage outstanding verification is owed on (00 §4).
+    - ``warnings`` — non-fatal advisories in the 00 §4 fixed order. Always
+      present; ``[]`` means checked-and-clean, which is not the same as absent.
 
-    Read-only, deterministic, exit 0 — errors degrade to defaults, never
-    crash a stage closing.
+    Read-only and deterministic. Syntactic validation fails closed with
+    ``UsageError`` (exit 2, no payload and no sentinel); everything after it
+    degrades to defaults rather than crashing a stage closing.
     """
+    # ---- 02 §3.1 deterministic validation order --------------------------- #
+    # 1. Safe names and containment, before any strict filesystem access.
+    _assert_safe_name(feature, "--feature")
+    if epic is not None:
+        _assert_safe_name(epic, "--epic")
+    if next_feature is not None:
+        _assert_safe_name(next_feature, "--next-feature")
+
+    # 2. The stage domain itself.
+    if stage not in EXIT_STAGES:
+        raise UsageError(
+            f"unsupported --stage {stage!r}; expected one of {', '.join(EXIT_STAGES)}"
+        )
+
+    # 3./4. Stages 0-4 reject an outcome; loop/docs/verify/fix require their own.
+    # argparse cannot express a different enum per stage, so the domain check is here.
+    allowed_outcomes = EXIT_OUTCOMES.get(stage)
+    if allowed_outcomes is None:
+        if outcome is not None:
+            raise UsageError(
+                f"--outcome is not accepted for {stage}; its exit is state-driven "
+                "and has a single outcome"
+            )
+    elif outcome is None:
+        raise UsageError(
+            f"{stage} requires --outcome; expected one of "
+            f"{', '.join(sorted(allowed_outcomes))}"
+        )
+    elif outcome not in allowed_outcomes:
+        raise UsageError(
+            f"--outcome {outcome!r} is not valid for {stage}; expected one of "
+            f"{', '.join(sorted(allowed_outcomes))}"
+        )
+
+    # 5. Ownership: required for the branch skills, rejected for stages 0-6.
+    if stage in _BRANCH_STAGES:
+        if owner is None:
+            raise UsageError(
+                f"{stage} requires --owner direct (this call prints the terminal "
+                "block) or --owner nested (an outer stage owns it)"
+            )
+        if owner not in get_args(ExitOwner):
+            raise UsageError(
+                f"--owner {owner!r} is not valid; expected direct or nested"
+            )
+    elif owner is not None:
+        raise UsageError(
+            f"--owner is not accepted for {stage}; only forge-verify and forge-fix "
+            "carry branch ownership, and stages 0-6 are always direct owners"
+        )
+
+    # 6. Host and capability, independently. A host NEVER implies a capability.
+    if host not in EXIT_HOSTS:
+        raise UsageError(
+            f"unknown --host {host!r}; expected one of {', '.join(EXIT_HOSTS)}"
+        )
+    if verify_capability not in get_args(VerifyCapability):
+        raise UsageError(
+            f"unknown --verify-capability {verify_capability!r}; expected "
+            f"{' or '.join(get_args(VerifyCapability))}"
+        )
+
+    # 7./8. Served stage for branch exits; branch-only flags rejected elsewhere.
+    if stage in _BRANCH_STAGES:
+        resolved_served: str | None = resolve_served_stage(served_stage, verify_mode)
+    else:
+        if served_stage is not None or verify_mode is not None:
+            raise UsageError(
+                "--served-stage and --verify-mode are branch-only; "
+                f"{stage} is a production stage and serves only itself"
+            )
+        resolved_served = None
+    if next_feature is not None and stage != "forge-0-epic":
+        raise UsageError(
+            f"--next-feature is accepted only for forge-0-epic, not {stage}"
+        )
+
     config = _load_config(config_path)
     feature_dir = _resolve_feature_dir(specs_dir, feature, epic)
     state = _read_state(feature_dir / PIPELINE_STATE_FILENAME)
@@ -2221,9 +2442,14 @@ def stage_exit(
         porcelain = _git_output(["status", "--porcelain"])
         clean_tree = porcelain is None or porcelain == ""
 
-    verify_label = _verify_state_for(state, stage)
+    # A branch exit routes from the production stage it SERVED, never from itself:
+    # `forge-verify` has no artifact, no verify token, and no successor of its own.
+    # For a production exit the two are the same stage, so stages 0-4 are unchanged.
+    route_stage = resolved_served if resolved_served is not None else stage
+
+    verify_label = _verify_state_for(state, route_stage)
     resolved = verify_label in ("fresh", "skipped")
-    effective_auto_verify = auto_verify_for(config, stage)
+    effective_auto_verify = auto_verify_for(config, route_stage)
     run_in_stage = effective_auto_verify and not resolved
     auto_fix_eligible = (
         config.get("autoFix") is True and run_in_stage and clean_tree is True
@@ -2235,12 +2461,12 @@ def stage_exit(
     else:
         verify_gate = "manual-print"
 
-    next_stage_id = _EXIT_NEXT_STAGE.get(stage)
+    next_stage_id = _EXIT_NEXT_STAGE.get(route_stage)
     state_next = next_stage(state)
     if (
-        stage in PRODUCTION_STAGES
+        route_stage in PRODUCTION_STAGES
         and state_next is not None
-        and PRODUCTION_STAGES.index(state_next) > PRODUCTION_STAGES.index(stage)
+        and PRODUCTION_STAGES.index(state_next) > PRODUCTION_STAGES.index(route_stage)
     ):
         # State records this stage complete AND its walk lands beyond it —
         # trust it (it skips stages already completed out of order). A missing
@@ -2283,25 +2509,46 @@ def stage_exit(
                 "count": len(open_requests),
             }
 
+    verify_command = _host_command(f"/skill:forge-verify {feature}", host)
+    # 00 §4 fixed order. Entry 1 (the epic-member unreadable-state fallback) is not
+    # emitted by this stage of the router; entries 2 and 3 are.
+    warnings: list[str] = []
+    warnings.extend(_debt_metadata_warnings(state, route_stage, feature, verify_command))
+
+    # `owner == "nested"` means an outer authoring stage prints the terminal block.
+    # The routing directives survive; the human-facing block does not exist at all,
+    # so a nested chain can never emit a second sentinel (REQ-EXIT-03/04).
+    nested = owner == "nested"
+
     directives = {
         "stage": stage,
         "stageNoun": STAGE_NOUN.get(stage, stage),
+        "servedStage": resolved_served,
+        "verifyMode": _STAGE_TO_VERIFY_MODE.get(resolved_served or ""),
+        "outcome": outcome,
+        "owner": owner,
+        "terminalOwnedBy": "outer" if nested else "self",
         "feature": feature,
         "runInStageVerify": run_in_stage,
         "verifyGate": verify_gate,
+        "verifyCapability": verify_capability,
         "autoFixEligible": auto_fix_eligible,
         "verifyState": verify_label,
-        "verifyCommand": _host_command(f"/skill:forge-verify {feature}", host),
+        "verifyStage": pending_verify(state),
+        "verifyCommand": verify_command,
         "autoVerifyEffective": effective_auto_verify,
         "nextStage": next_stage_id,
         "nextCommand": _host_command(next_command, host) if next_command else next_command,
         "invalidAutoVerifyKeys": invalid_auto_verify_keys(config),
+        "warnings": warnings,
         "gitRepo": git_repo,
         "cleanTree": clean_tree,
         "host": host,
     }
     if epic_reconcile is not None:
         directives["epicReconcile"] = epic_reconcile
+    if nested:
+        return {"directives": directives, "nextSteps": None, "sentinel": None}
     return {
         "directives": directives,
         "nextSteps": _next_steps_block(
@@ -2312,9 +2559,17 @@ def stage_exit(
 
 
 def _print_stage_exit(payload: dict) -> None:
-    """Print DIRECTIVES then the NEXT-STEPS block (the skill-facing form)."""
+    """Print DIRECTIVES then the NEXT-STEPS block (the skill-facing form).
+
+    A NESTED branch payload carries ``nextSteps is None``: an outer authoring stage
+    owns the terminal block, so this printer emits the directives and stops. Printing
+    a terminal section here — even an empty one — is the ownership leak REQ-EXIT-04
+    forbids.
+    """
     print("DIRECTIVES:")
     print(json.dumps(payload["directives"], indent=2, ensure_ascii=False))
+    if payload.get("nextSteps") is None:
+        return
     print(
         "NEXT-STEPS (print this block verbatim as your absolute last output — "
         "nothing after the sentinel):"
@@ -3839,8 +4094,29 @@ def _print_context(usage: dict) -> None:
     )
 
 
+class _ErrorPrefixParser(argparse.ArgumentParser):
+    """An argparse parser whose failures use this CLI's ``Error: ...`` exit-2 form.
+
+    ``stage-exit`` carries two contracts that argparse cannot satisfy together out
+    of the box: its enum flags MUST be registered with typed ``choices`` drawn from
+    the shared literal domains, AND any invalid input must print
+    ``Error: <actionable message>`` to stderr and return exit 2 with no payload and
+    no sentinel. Stock argparse leads with ``usage:``, so the reconciliation lives
+    here rather than in a hand-rolled second validation pass that would drift from
+    the ``choices`` it duplicates.
+
+    ``parse_args`` runs before ``main``'s ``UsageError`` handler, so this exits
+    directly instead of raising. ``add_subparsers`` defaults ``parser_class`` to
+    ``type(self)``, so every subcommand inherits the same form — matching the
+    ``UsageError`` path they already share.
+    """
+
+    def error(self, message: str) -> NoReturn:  # noqa: D102 - argparse override
+        self.exit(2, f"Error: {message}\nTry '{self.prog} --help' for usage.\n")
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="forge-session.py", description=__doc__)
+    parser = _ErrorPrefixParser(prog="forge-session.py", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_rank = sub.add_parser("rank-features", help="Rank active features by recency")
@@ -3894,14 +4170,30 @@ def main() -> int:
     )
     p_exit.add_argument("--feature", required=True,
                         help="Feature name (the epic name for forge-0-epic)")
-    p_exit.add_argument("--stage", required=True, choices=_STAGE_EXIT_CLI_STAGES,
-                        help="The just-completed authoring stage")
+    p_exit.add_argument("--stage", required=True, choices=EXIT_STAGES,
+                        help="The just-completed stage (or branch skill)")
+    p_exit.add_argument("--served-stage", default=None, dest="served_stage",
+                        choices=_EXIT_PRODUCTION_STAGES,
+                        help="Production stage a verify/fix diversion served")
+    p_exit.add_argument("--verify-mode", default=None, dest="verify_mode",
+                        choices=tuple(VERIFY_MODE_TO_STAGE),
+                        help="Verify mode; maps to --served-stage when unique")
+    # No argparse `choices`: the accepted outcome domain differs per stage, which
+    # argparse cannot express. `stage_exit` validates it against EXIT_OUTCOMES.
+    p_exit.add_argument("--outcome", default=None,
+                        help="Stage-specific outcome (loop/docs/verify/fix only)")
+    p_exit.add_argument("--owner", default=None, choices=get_args(ExitOwner),
+                        help="Branch terminal ownership (forge-verify/forge-fix only)")
+    p_exit.add_argument("--verify-capability", default="manual",
+                        dest="verify_capability", choices=get_args(VerifyCapability),
+                        help="interactive only with BOTH a question mechanism and "
+                             "permitted clean-room verifier dispatch")
     p_exit.add_argument("--specs-dir", default="./specs", help="Specs directory")
     p_exit.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
     p_exit.add_argument("--epic", default=None, help="Epic name for a nested member")
     p_exit.add_argument("--next-feature", default=None, dest="next_feature",
                         help="First actionable feature (epic handoff next-command arg)")
-    p_exit.add_argument("--host", default="claude", choices=("claude", "generic", "pi"),
+    p_exit.add_argument("--host", default="claude", choices=EXIT_HOSTS,
                         help="Host wording for the NEXT-STEPS block")
     p_exit.add_argument("--json", action="store_true", dest="json_output")
 
@@ -4136,6 +4428,11 @@ def main() -> int:
                 args.epic,
                 args.host,
                 args.next_feature,
+                args.served_stage,
+                args.verify_mode,
+                args.outcome,
+                args.owner,
+                args.verify_capability,
             )
             if args.json_output:
                 print(json.dumps(payload, indent=2, ensure_ascii=False))

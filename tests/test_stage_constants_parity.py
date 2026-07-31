@@ -272,16 +272,45 @@ def test_each_shared_constant_is_assigned_exactly_once():
         "FULL_GIT_HASH_RE",
         "PRODUCTION_STAGES",
         "KNOWN_VERIFY_STATUSES",
-        "_STAGE_EXIT_CLI_STAGES",
+        "EXIT_HOSTS",
     ):
         found = re.findall(rf"^{re.escape(name)}\s*(?::[^=\n]+)?=", source, re.MULTILINE)
         assert len(found) == 1, f"{name} assigned {len(found)}x at module scope"
 
 
-def test_the_cli_stage_choices_are_a_subset_of_the_exit_domain():
-    """`stage-exit --stage` may serve fewer stages than EXIT_STAGES, never more."""
+def test_the_cli_stage_choices_are_the_whole_exit_domain():
+    """`stage-exit --stage` now serves every EXIT_STAGES id, from the derived tuple.
+
+    Replaces the interim subset guard: the router served only the five authoring
+    stages while loop, docs, verify, and fix still stamped bespoke terminal blocks.
+    The registration must read the shared constant, not a hand-listed copy — a copy
+    is the second list `00-core-definitions.md` §2 exists to eliminate.
+    """
+    source = read(SESSION)
+    assert "choices=EXIT_STAGES" in source, "stage-exit --stage must use EXIT_STAGES"
+    assert "_STAGE_EXIT_CLI_STAGES" not in source, "the interim subset must be gone"
+
+
+def test_the_branch_and_production_routing_domains_are_derived():
+    """`_BRANCH_STAGES` and `_EXIT_PRODUCTION_STAGES` partition `EXIT_STAGES`."""
     session = _load_session_module()
-    assert set(session._STAGE_EXIT_CLI_STAGES) <= set(session.EXIT_STAGES)
+    assert set(session._EXIT_PRODUCTION_STAGES) == set(get_args(session.ProductionStage))
+    assert set(session._BRANCH_STAGES) == {"forge-verify", "forge-fix"}
+    assert (
+        set(session._BRANCH_STAGES) | set(session._EXIT_PRODUCTION_STAGES)
+        == set(session.EXIT_STAGES)
+    )
+    assert not set(session._BRANCH_STAGES) & set(session._EXIT_PRODUCTION_STAGES)
+
+
+def test_the_verify_mode_inverse_is_a_faithful_inverse():
+    """`_STAGE_TO_VERIFY_MODE` is derived, so it cannot drift from the forward map."""
+    session = _load_session_module()
+    assert session._STAGE_TO_VERIFY_MODE == {
+        stage: mode for mode, stage in session.VERIFY_MODE_TO_STAGE.items()
+    }
+    # Injective forward map ⇒ the inverse loses nothing.
+    assert len(session._STAGE_TO_VERIFY_MODE) == len(session.VERIFY_MODE_TO_STAGE)
 
 
 def test_the_verify_status_alias_matches_the_status_constant():
