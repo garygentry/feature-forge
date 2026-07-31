@@ -67,30 +67,31 @@
       "fixedAt": "2026-07-30T23:55:00Z"
     },
     "forge-4-backlog": {
-      "status": "stale",
+      "status": "complete",
       "startedAt": "2026-07-30T20:44:14Z",
-      "completedAt": "2026-07-30T22:04:45Z",
-      "version": 2,
+      "completedAt": "2026-07-31T02:27:12Z",
+      "version": 3,
       "basedOnVersions": {
         "forge-1-prd": 3,
         "forge-2-tech": 3,
-        "forge-3-specs": 3
+        "forge-3-specs": 4
       },
       "artifacts": [
         "backlog.json"
       ],
-      "commitHash": "f38383731b908eeebdb0f28d8b089ec8f28b8e52"
+      "commitHash": null
     },
     "forge-verify-backlog": {
-      "status": "findings-reported",
+      "status": "findings-applied",
       "findingsFile": ".verification/VERIFY-backlog-2026-07-30.md",
       "findingsCount": 32,
       "verifiedAt": "2026-07-31T00:20:00Z",
-      "verifiedStageVersion": 2
+      "verifiedStageVersion": 3,
+      "fixedAt": "2026-07-31T00:45:00Z"
     }
   },
   "currentStage": "forge-4-backlog",
-  "updatedAt": "2026-07-31T00:20:00Z",
+  "updatedAt": "2026-07-31T02:27:12Z",
   "branch": "forge/stage-exit-coverage",
-  "notes": "SPECS ARE v4 as of the round-5 fix pass (33 findings applied). backlog.json is v2, authored against specs v3, and the cascade has marked forge-4-backlog STALE. Before running the loop, re-verify the backlog: the round-5 fixes added obligations it cannot cover, notably the stageNoun/verifyStage directive fields, the render-status subprocess timeout, the consent-gate variant, the auto-verify-pending pre-flight gates in forge-6-docs and forge-5-loop, the shared-conventions.md and findings-template.md edits, the falsified-canon deletions (R4 exclusion blockquote, forge-fix freshness claims), the --epic fences on the new state-verify call sites, the navigator skills/forge/SKILL.md edits, the owner: nested token, and the REQ-FOLLOW-01 runner-contract wording fix. STANDING INVARIANTS (unchanged): no item may create scripts/forge_json.py -- the duplicate-aware JSON loader is MIRRORED into scripts/forge-session.py and scripts/forge-bootstrap.py, guarded by tests/test_json_loader_parity.py, because the flat scripts share no import module (01 3.4, 05 2.1); RUNTIME_HELPERS stays at six entries. No item may introduce locking, leasing, or optimistic versioning for state writes -- PRD REQ-REL-04 forbids it, see issue #180. Basis: PRD v3, tech-spec v3, specs v4."
+  "notes": "Specs v4, backlog v3 (30 items, 001-030). Both verify gates are findings-applied; the backlog now traces to the amended v4 specs and is ready for forge-5-loop. STANDING INVARIANTS (assert on every item): no item may create scripts/forge_json.py -- the duplicate-aware JSON loader is MIRRORED into scripts/forge-session.py and scripts/forge-bootstrap.py, guarded by tests/test_json_loader_parity.py, because the flat scripts share no import module (01 3.4, 05 2.1); RUNTIME_HELPERS stays at six entries. No item may introduce locking, leasing, or optimistic versioning for state writes -- PRD REQ-REL-04 forbids it, see issue #180. TWO TRAPS the backlog verification closed, worth re-checking if items are ever regenerated: (1) item 024's guard must fetch EXIT_STAGES from scripts/forge-session.py by regex + ast.literal_eval -- a hardcoded copy of the nine names passes its AC while making the assertion vacuous; (2) every state-verify bash fence must carry the --epic sentence inside tests/test_state_verb_call_sites.py's 12/8-line window or validate.sh red-gates. NOTE: stageNoun already exists in the live directives dict -- retain it, do not re-add it."
 }

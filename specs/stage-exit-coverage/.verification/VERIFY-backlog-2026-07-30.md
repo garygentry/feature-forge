@@ -285,6 +285,13 @@ describe the whole job.
 
 ### User Decisions Required
 
+> **All three decisions were resolved by the user on 2026-07-30, each taking the recommended
+> option. They are RESOLVED — apply the recommended path and do not re-ask.**
+>
+> - **D1 → Land the four `TypedDict`s as code** (amend item 001).
+> - **D2 → New item 030** for the navigator, with `"030"` added to items 024 and 029.
+> - **D3 → Leave item 023 bundled** and raise its `estimatedIterations` to 2.
+
 **D1 (V-011) — are the `00` §4/§6 `TypedDict`s in scope as code, or documentation-only?**
 *Recommended: land them as code* (amend item 001). `00`'s Public API declares them
 "repository-internal, importable", and several carry normative invariants that otherwise live
@@ -357,3 +364,15 @@ Everything else is a direct amendment to `backlog.json`.
 - **Files:** `backlog.json`, `.pipeline-state.json`
 - **Action:** Re-run `rauf-stable backlog validate . --backlog specs/stage-exit-coverage --specs-dir specs/stage-exit-coverage --json` and confirm `{"valid": true, "findings": []}`. Confirm three properties the runner does not check: the graph is still acyclic (the new `014 → 015` edge is safe — 015's closure contains no path back to 014); no dependency carries a numerically larger `priority` than its dependent; and item 029's transitive closure now contains every other item id. Then bump `forge-4-backlog`'s `version` to 3 with `basedOnVersions.forge-3-specs = 4` via `state-complete`, clearing the `stale` status so the freshness ledger reflects the amended backlog.
 - **Depends on:** Step 8
+
+## Fix Progress
+
+- Step 1: [APPLIED] 2026-07-30 — item 001 switched to `get_args` derivation with the `VERIFY_MODE_TO_STAGE` parity AC (V-013) and given the four `00` §4/§6 `TypedDict`s per D1 (V-011); item 010 given `verifyStage` and `warnings: list[str]`, with `stageNoun` explicitly marked pre-existing and retained (V-008); item 013 AC 6 extended with `verifyStage`.
+- Step 2: [APPLIED] 2026-07-30 — item 005 given `--findings-file` containment validation and the verbatim `00` §6 docstring (V-010, V-029); item 015's banned `<bundle-root>` invocation replaced with sibling resolution + `sys.executable` + `timeout=10`, AC 6 rewritten to seven failure modes, `dependsOn` → 009,010,011 (V-012, V-021).
+- Step 3: [APPLIED] 2026-07-30 — item 017 retyped `feature`, estimate 2, given the ownership-token and consent-variant contracts and the `warnings`-is-a-list correction (V-014, V-007, V-009, V-008, V-031); item 012 given the two step-6 ACs, the exact `invalidAutoVerifyKeys` template, and `dependsOn` → 006,010,011 (V-025, V-026, V-018); item 016 given the verbatim `02` §9 template with its four reasons (V-026); item 022 AC aligned.
+- Step 4: [APPLIED] 2026-07-30 — item 023 given the `shared-conventions.md` `state-verify` registration, the consent-variant mirror, the fence-adjacency rule, estimate 2, `dependsOn` +005 (V-002, V-006, V-032/D3); item 018 given the `findings-template.md` conversion, the R4-blockquote deletion, the owner token, and the fence rule, `dependsOn` +006,007,023 (V-003, V-005, V-006, V-007, V-017); item 019 given the Step 5 replacement, both freshness rewrites, the "Skip for now" reclassification, the retired-inference deletion, the owner token, and the fence rule, `dependsOn` +007,023 (V-005, V-006, V-007, V-017).
+- Step 5: [APPLIED] 2026-07-30 — item 020 given the `04` §6.4 Step 1b third case and the named REQ-FOLLOW-01 pointer, `dependsOn` +008 (V-004, V-015); item 021 given the `04` §7.2 backstop extension, `dependsOn` +008 (V-004); item 014 `dependsOn` +015 (V-019).
+- Step 6: [APPLIED] 2026-07-30 — item **030** added for the navigator per D2, `dependsOn` 008,017; added to items 024 and 029 (V-001).
+- Step 7: [APPLIED] 2026-07-30 — item 024 given the `EXIT_STAGES` regex + `ast.literal_eval` convention and the no-hardcoded-list AC (V-024); item 027 given the `RuntimeError` contract, `dependsOn` → 018,019,025,026 (V-027, V-022); item 003 AC 5 extended and item 004 given the stderr-unwritable row (V-028); item 026 estimate 2, item 028 priority 1 (V-031, V-020); item 029 given the `MIN_CALL_SITES` raise and `dependsOn` → 004,007,009,024,028,030 (V-006, V-016).
+- Step 8: [APPLIED] 2026-07-30 — the `PASS: epic-manifest pytest suite` criterion added to all 30 items; item 004's vacuous `ruff check scripts/ eval/` criterion replaced with a targeted pytest run; items 025/026 given targeted pytest criteria; `Files:` lines added to items 011–016 (V-023, V-030).
+- Step 9: [APPLIED] 2026-07-30 — `rauf backlog validate` → `{"valid": true, "findings": []}`. Graph properties confirmed beyond the runner: 30 items (001–030), all `dependsOn` resolve, **acyclic**, **no priority inversions** (uniform priority 1), single root (001), and item **029's transitive closure covers all 29 other items**. Types: 25 feature / 2 chore / 2 test / 1 bugfix. Total `estimatedIterations` 37.
