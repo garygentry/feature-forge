@@ -1908,3 +1908,78 @@ navigator dispatch, and the Epic Dashboard indicator list.
 drift)`; `python3 scripts/build-adapters.py` run and the regenerated `adapters/` tree (all
 six bundles carry `skills/forge/SKILL.md`) left in the working tree for the loop runner to
 commit.
+
+## Item 024 — explicit nine-skill canonical exit coverage guard
+
+Rewrote `tests/test_stage_exit_protocol.py` around the 06 §2.1 table: `CanonicalExitSite`,
+`CANONICAL_EXIT_SITES`, `INTENTIONALLY_EXCLUDED_SKILLS`, `_read_contract_surface`, one
+`_assert_exit_contract(site, surface)` carrying every §2.3 rule, and a copied-string
+negative matrix. 102 tests (was 12). Test-only — nothing under `scripts/`, `skills/`, or
+`references/` changed, so no adapter regeneration was needed.
+
+### Gotchas for later items
+
+- **`EXIT_STAGES` is NOT `ast.literal_eval`-able** — it is `get_args(ExitStage)`. The
+  drift-guard extraction therefore targets the `ExitStage = Literal[...]` alias and
+  `ast.literal_eval`s the bracket body as a tuple (`f"({body})"`; a one-member Literal
+  parses as a bare `str`, so it is re-wrapped). A separate assertion pins
+  `EXIT_STAGES = get_args(ExitStage)` in the source, which is what makes the equality
+  assertion about the RUNTIME tuple rather than only about the alias. Same trick works for
+  `ProductionStage` / `LoopOutcome` / `DocsOutcome` / `VerifyOutcome` / `FixOutcome`, and
+  `EXIT_OUTCOMES` is derived by regexing its `"stage": frozenset(get_args(Alias))` rows —
+  so which stages carry an outcome is nowhere written down in the test file either.
+
+- **The literal `--owner direct` does NOT exist in canon, by design.** 06 §2.3 rule 2
+  reads as if it should, but items 018/019 landed ONE stamp per branch skill with
+  `--owner "{owner}"` — a second stamp for the nested path would break rule 5 (exactly one
+  terminal-print instruction per surface). The guard therefore asserts the ownership
+  contract in the form canon implements it: both literal `owner: direct` / `owner: nested`
+  tokens present, `--owner` in the invocation, and the nested "print no terminal block at
+  all" return. Production stages must NOT carry `--owner`.
+
+- **Three markers, three different counting rules.** `_SCRIPTED_INVOCATION`
+  (`python3 "$R/scripts/forge-session.py" stage-exit`) and `_TERMINAL_PRINT_MARKER`
+  (`print the NEXT-STEPS block verbatim as your absolute last output`) are counted and must
+  be exactly 1 per surface. `_NO_TRAILING_CONTENT_MARKER` (`nothing after its sentinel
+  line`) is presence-only — forge-verify and forge-fix legitimately repeat that phrase in
+  their ownership prose. Do NOT count `--stage <skill>`: `--served-stage forge-1-prd` and
+  the `state-verify --stage forge-1-prd` fences make it 2–3 per file.
+
+- **Canon must never contain the literal sentinel.** Verified 0 occurrences under
+  `skills/` and exactly 1 in `references/stage-exit-protocol.md`. That absence check is
+  what implements "a nested branch surface containing a sentinel makes the test fail" —
+  the script owns the terminal block, so a hand-typed sentinel anywhere is an ownership
+  leak, not just on a nested path.
+
+- **`_NESTED_NO_BLOCK_MARKER` lives INSIDE the stamp**, so removing it trips the
+  verbatim-stamp assertion before the dedicated one. Its negative test accepts either
+  message; the dedicated assertion still covers a surface that reworded the rule outside
+  the stamp.
+
+- **`_STAGE_EXIT_ARGS` is zipped positionally onto `CANONICAL_EXIT_SITES`
+  (`zip(..., strict=True)`)**, not keyed by hand, so it cannot become the second
+  hand-maintained allow-list REQ-GUARD-01 forbids. A pairing test asserts each arg string
+  names its own stage, since `strict=True` catches a length change but not a mis-pairing.
+  `_BRANCH_SITES` is likewise derived (`EXIT_STAGES - ProductionStage - forge-0-epic`).
+
+- **Verified by real mutation, not only by the copied-string negatives.** Deleting the
+  scripted invocation from `skills/forge-3-specs/SKILL.md` produced 8 failures; adding a
+  tenth member to `ExitStage` in `scripts/forge-session.py` failed
+  `test_the_covered_table_equals_the_shared_exit_stage_domain`. Both files were restored
+  with `command cp -f` (plain `cp` is aliased to `cp -i` here and hangs on the prompt) and
+  `git diff` confirmed clean.
+
+- **Replaced, not deleted** (06 §2.4): `test_every_authoring_stage_is_covered` (the
+  inferred authoring-stage set + empty terminal allow-list) → the explicit table tests;
+  `test_authoring_stages_do_not_stamp_standard_block` → the per-site retired-block rule
+  inside `_assert_exit_contract`; `test_scripted_stamp_stamped_verbatim` now parametrizes
+  over `CANONICAL_EXIT_SITES` instead of its own `_SCRIPTED_SITES` list. The loop/docs
+  positive tests survive but now read their outcome domains from `EXIT_OUTCOMES`.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with `PASS: spec-purity checker`,
+`PASS: epic-manifest pytest suite`, and `PASS: adapters/ matches a fresh generation (no
+drift)`; `python3 -m pytest tests/test_stage_exit_protocol.py` -> 102 passed;
+`python3 -m pytest tests -q` -> 1723 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean.

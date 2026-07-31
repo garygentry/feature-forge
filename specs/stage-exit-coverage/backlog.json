@@ -803,8 +803,8 @@
         "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
         "tests/test_stage_exit_protocol.py contains no hardcoded copy of the nine EXIT_STAGES names; it extracts them from scripts/forge-session.py by regex + ast.literal_eval, and editing EXIT_STAGES there without editing CANONICAL_EXIT_SITES makes the test fail"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T12:50:21.300Z",
       "dependsOn": [
         "018",
         "019",
