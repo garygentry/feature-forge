@@ -110,3 +110,53 @@ and moved the single increment into `_bump_and_write`.
 `bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite`;
 `python3 -m pytest tests -q` → 747 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` no drift.
+
+## Item 003 — mirrored duplicate-aware JSON loader
+
+Copied the 05 §2.1 `load_json_with_duplicates`/`warn_duplicate_keys` pair verbatim into
+`scripts/forge-session.py` (above `_load_config`) and `scripts/forge-bootstrap.py` (above
+`commit`), rewrote `_load_config` per 05 §3.1 and the bootstrap config read per 05 §3.2, and
+added the `tests/test_json_loader_parity.py` drift guard. **No shared module was created** —
+`RUNTIME_HELPERS` is still six entries and no new file exists under any `scripts/`.
+
+### Gotchas for later items
+
+- **Nested duplicates report BEFORE their container.** `object_pairs_hook` completes inner
+  objects first, so `{"commitPrefix":"a","commitPrefix":"b","loopRunner":{"bin":"x","bin":"y"}}`
+  warns about `bin` on the FIRST line and `commitPrefix` on the second. Item 004's ordering
+  assertions must expect decoder-hook order, not source order. Do not sort or dedupe.
+
+- **The two `#: mirrors …` comments are single-line in source but wrap in the spec.** The spec
+  renders them across two lines; in both scripts they are one physical line (ruff's 100-char
+  limit is not exceeded — they are 94 and 92 chars). The parity guard asserts the literal
+  comment string and requires it to sit on the line immediately preceding
+  `def load_json_with_duplicates(`.
+
+- **The guard compares only from the `def` line onward** and dedents the whole block as a unit
+  (`textwrap.dedent(block)`), never per line — per-line stripping would flatten the nested
+  `object_from_pairs` closure and mask a real divergence. Verified by hand that inserting a
+  trailing comment into ONE copy fails `test_the_two_copies_are_identical` and nothing else.
+
+- **The `except OSError: pass` around `warn_duplicate_keys` in `_load_config` is load-bearing,
+  and the two consumers diverge deliberately** (05 §3.3): session swallows the stderr write
+  failure and still returns the parsed dict (so `rank-features --json | head` cannot turn a
+  `BrokenPipeError` from a *diagnostic* write into exit 2), while `forge-bootstrap.py commit`
+  keeps propagating it under its existing exit-2 policy. Item 004 must pin both sides.
+
+- **`from exc` was added to the bootstrap `raise UsageError(...)`** per 05 §3.2 (the pre-existing
+  line had a bare `raise`). Ruff did not require it; the spec text does.
+
+- **Confirmed behavior matrix** (checked directly, not just via the suite): `_load_config`
+  returns `{}` for missing / unreadable (chmod 0) / malformed / scalar-root / array-root, and
+  returns the dict after warning otherwise; `commit` raises `UsageError` for malformed,
+  unreadable, and non-object roots, and uses the LAST `commitPrefix` on a duplicate.
+
+- **Shell gotcha for future iterations:** `cp` is aliased to `cp -i` in this environment, so a
+  `cp backup original` restore hangs waiting for a prompt. Use `command cp -f`.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite`;
+`python3 -m pytest tests -q` → 753 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` no drift (all 12
+adapter copies of the two scripts regenerated).

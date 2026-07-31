@@ -946,17 +946,67 @@ def _infer_window(model: str | None) -> int:
     return _DEFAULT_WINDOW
 
 
-def _load_config(config_path: Path) -> dict:
-    """Read forge.config.json into a dict, tolerating missing/corrupt files.
+#: mirrors ``load_json_with_duplicates``/``warn_duplicate_keys`` in scripts/forge-bootstrap.py
+def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
+    """Load JSON with last-key-wins values and ordered duplicate key names.
 
-    A missing, unreadable, or non-object config downgrades to ``{}`` so callers
-    read every key through absent-safe ``.get`` defaults.
+    Args:
+        path: UTF-8 JSON file to read.
+
+    Returns:
+        The parsed JSON value and duplicate key names in deterministic decoder-hook
+        order. A repeated occurrence is appended whenever its key was already seen
+        in that same object. Objects at every nesting depth use the hook.
+
+    Raises:
+        OSError: The path cannot be read as UTF-8 text.
+        json.JSONDecodeError: The file is not valid JSON.
     """
+    duplicate_keys: list[str] = []
+
+    def object_from_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                duplicate_keys.append(key)
+            result[key] = value
+        return result
+
+    text = path.read_text(encoding="utf-8")
+    value = json.loads(text, object_pairs_hook=object_from_pairs)
+    return value, duplicate_keys
+
+
+def warn_duplicate_keys(path: Path, duplicate_keys: list[str]) -> None:
+    """Write one deterministic warning for each reported duplicate occurrence.
+
+    Args:
+        path: Source file whose duplicate key was accepted.
+        duplicate_keys: Ordered names returned by `load_json_with_duplicates`.
+
+    Raises:
+        OSError: The process cannot write to stderr.
+    """
+    for key in duplicate_keys:
+        rendered_key = json.dumps(key, ensure_ascii=False)
+        print(
+            f"Warning: duplicate JSON key {rendered_key} in {path}; "
+            "using the last value.",
+            file=sys.stderr,
+        )
+
+
+def _load_config(config_path: Path) -> dict:
+    """Read config into a dict, warning on duplicates and tolerating bad input."""
     try:
-        config = json.loads(config_path.read_text(encoding="utf-8"))
+        value, duplicate_keys = load_json_with_duplicates(config_path)
     except (OSError, json.JSONDecodeError):
         return {}
-    return config if isinstance(config, dict) else {}
+    try:
+        warn_duplicate_keys(config_path, duplicate_keys)
+    except OSError:
+        pass  # a diagnostic write failure must not break a total read path
+    return value if isinstance(value, dict) else {}
 
 
 def _config_value(config_path: Path, key: str):
