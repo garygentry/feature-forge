@@ -895,8 +895,15 @@ def _make_single_member_epic(
     current_stage: str,
     stages: dict,
     prd: bool = True,
+    revision: int | None = None,
 ) -> str:
-    """Build a one-member epic whose member carries the given state; return the epic."""
+    """Build a one-member epic whose member carries the given state; return the epic.
+
+    ``revision`` defaults to None, which writes the LEGACY manifest shape (no
+    ``revision`` key) that ``load_manifest`` presents as logical 1 — the pre-item-002
+    callers of this helper depend on that. Item 009's epic-freshness tests pass an
+    explicit revision because the number they compare against is the point.
+    """
     epic = "nextcmd-epic"
     member_dir = specs / epic / "m1"
     member_dir.mkdir(parents=True, exist_ok=True)
@@ -913,6 +920,7 @@ def _make_single_member_epic(
     }))
     (specs / epic / "epic-manifest.json").write_text(json.dumps({
         "schemaVersion": 1,
+        **({"revision": revision} if revision is not None else {}),
         "epic": epic,
         "description": "x",
         "status": "active",
@@ -1322,3 +1330,387 @@ def test_revision_semantic_no_op_leaves_revision_and_bytes_unchanged(
         assert result.returncode == 0, result.stdout + result.stderr
         assert manifest.read_bytes() == before_bytes, argv[0]
         assert _revision(specs) == 1
+
+
+# ---------------------------------------------------------------------------
+# Item 009 — verify-status parity + epic-root freshness (03 §5.2; 07 §4.4 rows 7-8)
+# ---------------------------------------------------------------------------
+
+#: The five production stages that carry a member verify token, plus one that does not.
+_ALL_STAGES_COMPLETE = (
+    "forge-1-prd", "forge-2-tech", "forge-3-specs",
+    "forge-4-backlog", "forge-5-loop", "forge-6-docs",
+)
+
+
+def _auto_pending(version: int | None = 1) -> dict:
+    """An `auto-verify-pending` verify entry as `state-verify` writes it (03 §3.3)."""
+    entry: dict = {
+        "status": "auto-verify-pending",
+        "scheduledAt": "2026-07-30T00:00:00Z",
+        "commitHash": None,
+    }
+    if version is not None:
+        entry["scheduledStageVersion"] = version
+    return entry
+
+
+def _write_epic_state(specs: Path, epic: str, entry: object) -> Path:
+    """Write the epic's own `.epic-state.json` carrying one `forge-verify-epic` entry."""
+    path = specs / epic / ".epic-state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "epic": epic,
+        "updatedAt": "2026-07-30T00:00:00Z",
+        "stages": {"forge-verify-epic": entry},
+    }), encoding="utf-8")
+    return path
+
+
+def _production_complete_epic(specs: Path, verify_impl: dict, **kwargs) -> str:
+    """A one-member epic whose member finished every production stage."""
+    stages = {s: _complete() for s in _ALL_STAGES_COMPLETE}
+    stages["forge-verify-impl"] = verify_impl
+    return _make_single_member_epic(
+        specs, current_stage="forge-6-docs", stages=stages, **kwargs
+    )
+
+
+# --- Parity: auto-verify-pending is a KNOWN status, not an unknown one ------ #
+
+
+def test_009_auto_verify_pending_is_not_flagged_as_an_unknown_status(
+    helper_module, run_cli, tmp_path
+) -> None:
+    """`_verify_status_warnings` recognizes the status, so it emits no unknown warning.
+
+    The misleading alternative — "unknown forge-verify-impl status
+    'auto-verify-pending' (treated as incomplete...)" — would tell an operator the
+    state file was corrupt when it is in fact valid and simply owes work (03 §5.2).
+    """
+    state = {"stages": {"forge-5-loop": _complete(), "forge-verify-impl": _auto_pending()}}
+    assert helper_module._verify_status_warnings("m1", state) == []
+
+    specs = tmp_path / "specs"
+    epic = _production_complete_epic(specs, _auto_pending())
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert not any("unknown" in w for w in out["warnings"])
+
+
+def test_009_a_genuinely_unknown_status_is_still_flagged(helper_module) -> None:
+    """Negative control: the unknown-status guard did not become a no-op."""
+    state = {"stages": {"forge-verify-impl": {"status": "auto-verify-pendign"}}}
+    warnings = helper_module._verify_status_warnings("m1", state)
+    assert len(warnings) == 1
+    assert "unknown forge-verify-impl status" in warnings[0]
+
+
+# --- Parity: completion predicates treat the debt as outstanding ------------ #
+
+
+def test_009_auto_verify_pending_is_not_complete_for_orchestration(
+    helper_module,
+) -> None:
+    """A member owing automatic implementation verification does not unblock dependents."""
+    owed = {"stages": {"forge-5-loop": _complete(), "forge-verify-impl": _auto_pending()}}
+    assert helper_module.is_complete_for_orchestration(owed) is False
+
+    discharged = {
+        "stages": {
+            "forge-5-loop": _complete(),
+            "forge-verify-impl": {"status": "passed", "verifiedStageVersion": 1},
+        }
+    }
+    assert helper_module.is_complete_for_orchestration(discharged) is True
+
+
+def test_009_derive_status_reports_in_progress_for_auto_verify_pending(
+    helper_module, tmp_path
+) -> None:
+    """The debt keeps the member in-progress — never complete, never not-started."""
+    member = tmp_path / "m1"
+    member.mkdir()
+    (member / ".pipeline-state.json").write_text(json.dumps({
+        "currentStage": "forge-5-loop",
+        "stages": {"forge-5-loop": _complete(), "forge-verify-impl": _auto_pending()},
+    }))
+    assert helper_module.derive_status(member)["status"] == "in-progress"
+
+
+# --- Parity: _next_command routes debt to verify, findings to fix ----------- #
+
+
+def test_009_next_command_splits_auto_pending_from_findings_reported(
+    run_cli, tmp_path
+) -> None:
+    """forge-verify for owed automatic debt; forge-fix reserved for a written report.
+
+    Recommending forge-fix for `auto-verify-pending` sends the operator looking for
+    a findings document that was never produced, because the scheduled verification
+    never ran (03 §5.2).
+    """
+    cases = {
+        "verify": (_auto_pending(), "/feature-forge:forge-verify m1"),
+        "fix": ({"status": "findings-reported"}, "/feature-forge:forge-fix m1"),
+    }
+    for label, (entry, expected) in cases.items():
+        specs = tmp_path / f"specs-{label}"
+        epic = _production_complete_epic(specs, entry)
+        out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+        assert out["actionable"] == ["m1"], label
+        assert out["nextCommand"] == expected, label
+
+
+# --- render_status obligation warnings (JSON + human) ----------------------- #
+
+
+_MEMBER_DEBT_SENTENCE = (
+    "m1: automatic verification is still pending for forge-5-loop; "
+    "run /feature-forge:forge-verify m1 to resolve it."
+)
+
+
+def test_009_render_status_emits_the_member_obligation_warning(run_cli, tmp_path) -> None:
+    """The 03 §5.3 sentence appears in JSON warnings AND in the human status output."""
+    specs = tmp_path / "specs"
+    epic = _production_complete_epic(specs, _auto_pending())
+
+    as_json = run_cli("render-status", epic, "--specs-dir", str(specs), "--json")
+    assert as_json.returncode == 0
+    assert _MEMBER_DEBT_SENTENCE in as_json.json()["warnings"]
+
+    human = run_cli("render-status", epic, "--specs-dir", str(specs))
+    assert human.returncode == 0
+    assert "Warnings:" in human.stdout
+    assert _MEMBER_DEBT_SENTENCE in human.stdout
+
+
+def test_009_the_member_obligation_warning_is_deterministic(run_cli, tmp_path) -> None:
+    """Two debts on one member render in pipeline order, identically on every run."""
+    specs = tmp_path / "specs"
+    stages = {s: _complete() for s in _ALL_STAGES_COMPLETE}
+    # Deliberately serialized impl-before-prd so key order cannot drive the output.
+    stages["forge-verify-impl"] = _auto_pending()
+    stages["forge-verify-prd"] = _auto_pending()
+    epic = _make_single_member_epic(specs, current_stage="forge-6-docs", stages=stages)
+
+    first = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    second = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert first["warnings"] == second["warnings"]
+    assert [w.split(" for ")[1].split(";")[0] for w in first["warnings"]] == [
+        "forge-1-prd", "forge-5-loop",
+    ]
+
+
+def test_009_the_member_warning_names_both_revisions_when_the_artifact_advanced(
+    run_cli, tmp_path
+) -> None:
+    """Debt scheduled against an older artifact version stays owed and says so."""
+    specs = tmp_path / "specs"
+    stages = {s: _complete() for s in _ALL_STAGES_COMPLETE}
+    stages["forge-5-loop"] = _complete(version=3)
+    stages["forge-verify-impl"] = _auto_pending(version=1)
+    epic = _make_single_member_epic(specs, current_stage="forge-6-docs", stages=stages)
+
+    warnings = run_cli(
+        "render-status", epic, "--specs-dir", str(specs), "--json"
+    ).json()["warnings"]
+    assert warnings == [
+        _MEMBER_DEBT_SENTENCE
+        + " The artifact has advanced since it was scheduled "
+        + "(scheduled at revision 1, now at revision 3)."
+    ]
+
+
+def test_009_a_clean_epic_still_reports_no_warnings(run_cli, tmp_path) -> None:
+    """Negative control: the obligation warning does not fire on ordinary members."""
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs, current_stage="forge-1-prd", stages={"forge-1-prd": _complete()}
+    )
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert out["warnings"] == []
+
+
+# --- Epic-root freshness against the manifest revision (03 §5.2) ------------ #
+
+
+_EPIC_FRESHNESS_ROWS: list[tuple[str, object, str]] = [
+    ("null-status", {"status": None}, "never"),
+    ("unknown-status", {"status": "findings-resolved"}, "never"),
+    ("manual-pending", {"status": "pending"}, "never"),
+    ("auto-pending-matching", _auto_pending(2), "auto-pending"),
+    ("auto-pending-older", _auto_pending(1), "auto-pending"),
+    ("auto-pending-no-version", _auto_pending(None), "auto-pending"),
+    ("auto-pending-bool-version", _auto_pending(True), "auto-pending"),
+    ("passed-matching", {"status": "passed", "verifiedStageVersion": 2}, "fresh"),
+    ("passed-mismatched", {"status": "passed", "verifiedStageVersion": 1}, "stale"),
+    ("passed-no-version", {"status": "passed"}, "stale"),
+    ("findings-reported", {"status": "findings-reported",
+                           "verifiedStageVersion": 2}, "failing"),
+    ("findings-applied", {"status": "findings-applied", "fixedAt": "x"}, "stale"),
+    ("skipped", {"status": "skipped"}, "skipped"),
+    ("not-a-dict", "passed", "never"),
+]
+
+
+@pytest.mark.parametrize(
+    "label,entry,expected", _EPIC_FRESHNESS_ROWS, ids=[r[0] for r in _EPIC_FRESHNESS_ROWS]
+)
+def test_009_epic_verify_state_matrix(
+    helper_module, tmp_path, label: str, entry: object, expected: str
+) -> None:
+    """Every 03 §5.2 epic-root classification, compared against manifest revision 2."""
+    epic_dir = tmp_path / "an-epic"
+    _write_epic_state(tmp_path, "an-epic", entry)
+    assert helper_module.epic_verify_state(epic_dir, 2) == expected, label
+
+
+def test_009_epic_verify_state_is_never_without_state(helper_module, tmp_path) -> None:
+    """Missing, corrupt, non-object, and malformed-`stages` epic state all read `never`."""
+    epic_dir = tmp_path / "an-epic"
+    epic_dir.mkdir()
+    assert helper_module.epic_verify_state(epic_dir, 1) == "never"
+
+    path = epic_dir / ".epic-state.json"
+    for text in ("{not json", '"a string"', "[]", '{"stages": []}', '{"stages": {}}'):
+        path.write_text(text, encoding="utf-8")
+        assert helper_module.epic_verify_state(epic_dir, 1) == "never", text
+
+
+def test_009_epic_verification_never_reads_a_member_pipeline_state(
+    helper_module, tmp_path
+) -> None:
+    """A `forge-verify-epic` entry hidden in a member's state does not count (REQ-SEC-01).
+
+    Adversarial on purpose: the member sits inside the epic dir and carries a
+    perfectly-formed passing epic entry at the current revision. Reading it would
+    make an unverified epic report `fresh`.
+    """
+    epic_dir = tmp_path / "an-epic"
+    member = epic_dir / "m1"
+    member.mkdir(parents=True)
+    (member / ".pipeline-state.json").write_text(json.dumps({
+        "stages": {"forge-verify-epic": {"status": "passed", "verifiedStageVersion": 2}}
+    }), encoding="utf-8")
+
+    assert helper_module.epic_verify_state(epic_dir, 2) == "never"
+
+
+# --- 07 §4.4 row 7: a manifest edit moves epic freshness ------------------- #
+
+
+def test_009_a_manifest_edit_makes_a_prior_epic_pass_stale(
+    helper_module, run_cli, tmp_path
+) -> None:
+    """Revision 1 pass reads `fresh`; one semantic edit (revision 2) makes it `stale`.
+
+    This is what the manifest revision is FOR: the epic's artifact changed, so the
+    verification that approved the previous shape no longer speaks for it.
+    """
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs, current_stage="forge-1-prd",
+        stages={"forge-1-prd": _complete()}, revision=1,
+    )
+    state_path = _write_epic_state(
+        specs, epic, {"status": "passed", "verifiedStageVersion": 1}
+    )
+    before_bytes = state_path.read_bytes()
+    epic_dir = specs / epic
+    assert helper_module.epic_verify_state(epic_dir, 1) == "fresh"
+
+    assert run_cli("set-status", epic, "--status", "paused",
+                   "--specs-dir", str(specs)).returncode == 0
+    revision = json.loads((epic_dir / "epic-manifest.json").read_text())["revision"]
+    assert revision == 2
+    assert helper_module.epic_verify_state(epic_dir, revision) == "stale"
+    # The mutation touches the manifest only — epic verification state is untouched.
+    assert state_path.read_bytes() == before_bytes
+
+
+def test_009_a_manifest_edit_leaves_a_pending_marker_visibly_owed(
+    helper_module, run_cli, tmp_path
+) -> None:
+    """A superseded schedule stays `auto-pending` and the dashboard names both revisions.
+
+    Owed work is not erased by a later edit (REQ-DEBT-02) — the alternative reading,
+    "the revision moved, so forget the debt", is exactly how a dropped
+    `runInStageVerify` directive becomes invisible.
+    """
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs, current_stage="forge-1-prd",
+        stages={"forge-1-prd": _complete()}, revision=1,
+    )
+    _write_epic_state(specs, epic, _auto_pending(1))
+    epic_dir = specs / epic
+    assert helper_module.epic_verify_state(epic_dir, 1) == "auto-pending"
+
+    assert run_cli("set-status", epic, "--status", "paused",
+                   "--specs-dir", str(specs)).returncode == 0
+    assert helper_module.epic_verify_state(epic_dir, 2) == "auto-pending"
+
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert out["warnings"] == [
+        f"{epic}: automatic verification is still pending for forge-0-epic; "
+        f"run /feature-forge:forge-verify {epic} to resolve it."
+        " The artifact has advanced since it was scheduled "
+        "(scheduled at revision 1, now at revision 2)."
+    ]
+
+
+def test_009_the_epic_obligation_warning_reaches_human_output(run_cli, tmp_path) -> None:
+    """The epic-root obligation is visible without --json too."""
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs, current_stage="forge-1-prd",
+        stages={"forge-1-prd": _complete()}, revision=1,
+    )
+    _write_epic_state(specs, epic, _auto_pending(1))
+
+    human = run_cli("render-status", epic, "--specs-dir", str(specs))
+    assert human.returncode == 0
+    assert f"run /feature-forge:forge-verify {epic} to resolve it." in human.stdout
+
+
+def test_009_a_resolved_epic_verification_emits_no_obligation_warning(
+    run_cli, tmp_path
+) -> None:
+    """Negative control: only owed debt warns — `passed`, `stale`, and `never` do not."""
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs, current_stage="forge-1-prd",
+        stages={"forge-1-prd": _complete()}, revision=1,
+    )
+    for entry in (
+        {"status": "passed", "verifiedStageVersion": 1},
+        {"status": "passed", "verifiedStageVersion": 99},
+        {"status": "skipped"},
+    ):
+        _write_epic_state(specs, epic, entry)
+        out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+        assert out["warnings"] == [], entry
+
+
+# --- 07 §4.4 row 8: epic metadata is the manifest revision ----------------- #
+
+
+def test_009_epic_freshness_uses_the_manifest_revision_not_a_member_stage_version(
+    helper_module, tmp_path
+) -> None:
+    """A member stage version that happens to match must not make the epic look fresh."""
+    specs = tmp_path / "specs"
+    stages = {"forge-1-prd": _complete(version=7)}
+    epic = _make_single_member_epic(
+        specs, current_stage="forge-1-prd", stages=stages, revision=2
+    )
+    epic_dir = specs / epic
+
+    # verifiedStageVersion carrying the MEMBER's stage version (7) is stale...
+    _write_epic_state(specs, epic, {"status": "passed", "verifiedStageVersion": 7})
+    assert helper_module.epic_verify_state(epic_dir, 2) == "stale"
+
+    # ...and only the manifest revision (2) reads fresh.
+    _write_epic_state(specs, epic, {"status": "passed", "verifiedStageVersion": 2})
+    assert helper_module.epic_verify_state(epic_dir, 2) == "fresh"

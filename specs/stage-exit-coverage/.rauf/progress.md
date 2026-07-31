@@ -474,3 +474,73 @@ and made `build_rows` emit the named 03 §5.3 sentence. All four signatures unch
 `PASS: adapters/ matches a fresh generation (no drift)`;
 `python3 -m pytest tests -q` -> 976 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean.
+
+## Item 009 — epic-manifest verify parity + epic-root freshness
+
+Added `_auto_verify_debt_warnings` (member obligations), `epic_verify_state` +
+`_read_epic_state_safely` + `_epic_verify_warnings` (epic-root freshness), the shared
+`_positive_int`/`_auto_pending_message` helpers, and split `_next_command`'s
+production-complete terminus. `scripts/epic-manifest.py` stays self-contained — no import
+of `forge-session.py`.
+
+### Gotchas for later items
+
+- **Three of the five parity bullets were already satisfied by item 001's constant
+  change** and needed only tests: `_verify_status_warnings` stops warning because
+  `auto-verify-pending` is in `KNOWN_VERIFY_STATUSES`; `is_complete_for_orchestration`
+  already excludes it via `_VERIFY_ORCH_COMPLETE`; `derive_status`'s `started` test is
+  `status not in (None, "pending")`, and `"auto-verify-pending" != "pending"`, so it
+  already classified in-progress. Each now has a named test plus a negative control
+  (`test_009_a_genuinely_unknown_status_is_still_flagged`) so a later refactor cannot
+  quietly turn the guard into a no-op.
+
+- **`_next_command`'s `nxt is None` default flipped from `forge-fix` to `forge-verify`.**
+  Only `findings-reported` still routes to `forge-fix` (03 §5.2: "reserving forge-fix for
+  findings-reported"). Reachable statuses there are the non-orchestration-complete ones —
+  `findings-reported`, `auto-verify-pending`, `pending`, `skipped`, unknown — because
+  `passed`/`findings-applied`/absent make the member complete and therefore not
+  actionable. Item 015 consumes this `nextCommand` verbatim.
+
+- **`RenderStatus` gained NO new key.** 04 §2.2 documents the shape as total and item 015
+  routes on it, so epic freshness is exposed as the standalone `epic_verify_state(epic_dir,
+  revision)` plus an entry in the existing `warnings` list. If item 015 or a later item
+  wants the label in the payload, adding `epicVerifyState` is additive — but 04 §2.2 has to
+  move with it.
+
+- **Only `auto-pending` warns.** `never` is the ordinary state of every epic nobody has
+  verified (every existing fixture), so warning on it would fire on the whole suite;
+  `stale`/`failing` are already reachable through the epic's own verify run. Owed-and-
+  dropped debt is the case that is otherwise invisible, which is REQ-DEBT-02's whole point.
+
+- **Warning order is driven by `_VERIFY_STAGE_BY_TOKEN`, not the state file's key order.**
+  A member serialized with `forge-verify-impl` before `forge-verify-prd` still renders
+  prd-then-impl. `test_009_the_member_obligation_warning_is_deterministic` writes them in
+  the wrong order on purpose.
+
+- **`_auto_pending_message` and `AUTO_PENDING_DIAGNOSTIC` are hand-mirrored** from
+  forge-session.py's `auto_pending_message`/`AUTO_PENDING_DIAGNOSTIC` (no shared import
+  module). `tests/test_stage_constants_parity.py` guards only `KNOWN_VERIFY_STATUSES`, so
+  a divergence here is caught by the epic tests' exact-sentence assertions and by
+  `tests/test_auto_verify.py` on the session side — edit both copies together.
+
+- **`_positive_int` rejects `bool` before `int`** (the recurring trap: `True` is an `int`
+  and would compare equal to revision 1). Applied to both `scheduledStageVersion` and
+  `verifiedStageVersion` and to the manifest `revision` read in `render_status`.
+
+- **`_make_single_member_epic` grew `revision: int | None = None`.** The default keeps the
+  LEGACY (no-key) manifest shape its pre-existing callers were written against;
+  `load_manifest` synthesizes 1 for them. Item 009's freshness tests pass an explicit
+  revision because the compared number is the point.
+
+- **Epic verification never touches member state.**
+  `test_009_epic_verification_never_reads_a_member_pipeline_state` plants a perfectly-formed
+  passing `forge-verify-epic` entry inside `m1/.pipeline-state.json` and asserts the epic
+  still classifies `never` — the adversarial-fixture shape item 006 established, rather
+  than a mock.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!";
+`python3 -m pytest tests -q` -> 1006 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; adapters/ regenerated (all six copies of
+epic-manifest.py).

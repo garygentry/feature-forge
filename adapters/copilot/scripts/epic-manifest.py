@@ -84,6 +84,41 @@ _PRODUCTION_STAGES: Final = (
     "forge-6-docs",
 )
 
+#: The served production stage behind each ``forge-verify-{token}`` member entry, in
+#: pipeline order — the inverse of ``VERIFY_TOKEN_BY_STAGE`` in forge-session.py. Used
+#: to NAME the stage owed automatic verification (03 §5.3), and iterated (rather than
+#: iterating the state file's own key order) so the warning order is deterministic
+#: regardless of how a member's state document happens to be serialized (02 §10).
+_VERIFY_STAGE_BY_TOKEN: Final[dict[str, str]] = {
+    "prd": "forge-1-prd",
+    "tech": "forge-2-tech",
+    "specs": "forge-3-specs",
+    "backlog": "forge-4-backlog",
+    "impl": "forge-5-loop",
+}
+
+#: Epic-scoped verification state lives beside the manifest, NEVER in a member's
+#: .pipeline-state.json (03 §2.1, REQ-SEC-01). Mirrors ``EPIC_STATE_FILENAME`` in
+#: forge-session.py.
+EPIC_STATE_FILENAME: Final = ".epic-state.json"
+#: The single verify entry an epic root carries.
+EPIC_VERIFY_KEY: Final = "forge-verify-epic"
+#: The stage identifier epic verification is served for — used in diagnostics only.
+EPIC_VERIFY_STAGE: Final = "forge-0-epic"
+
+#: The statuses that count as a RESOLVED verification for freshness classification.
+#: Mirrors ``_VERIFY_RESOLVED`` in forge-session.py. ``auto-verify-pending`` is
+#: deliberately absent: recorded debt is owed, not resolved (REQ-DEBT-02).
+_VERIFY_RESOLVED: Final = frozenset({"passed", "findings-applied", "skipped"})
+
+#: The 03 §5.3 obligation sentence. Mirrors ``AUTO_PENDING_DIAGNOSTIC`` in
+#: forge-session.py so the navigator ledger and the epic dashboard say the same thing
+#: about the same debt; the two scripts share no import module.
+AUTO_PENDING_DIAGNOSTIC: Final = (
+    "{subject}: automatic verification is still pending for {stage}; "
+    "run {command} to resolve it."
+)
+
 
 # --------------------------------------------------------------------------- #
 # Type Definitions (00-core-definitions.md §4, §5; 02 §8.4)
@@ -177,9 +212,14 @@ class RenderStatus(TypedDict):
         nextCommand: Recommended next command for the first actionable feature, or
             None when nothing is actionable (all complete, empty epic, or paused).
         warnings: Human-readable diagnostics that do NOT invalidate the graph but
-            need surfacing — currently, members carrying a ``forge-verify-*.status``
-            outside ``KNOWN_VERIFY_STATUSES`` (treated as incomplete, but silently so
-            would poison the rollup + dependency gates, #148). Empty in the common case.
+            need surfacing. Two kinds, in this order: members carrying a
+            ``forge-verify-*.status`` outside ``KNOWN_VERIFY_STATUSES`` (treated as
+            incomplete, but silently so would poison the rollup + dependency gates,
+            #148), then OBLIGATION warnings for owed automatic verification — first
+            per member in pipeline-stage order, then the epic root (03 §5.2/§5.3).
+            The two are deliberately distinct: an unknown status is a corrupt value,
+            owed debt is a valid value naming work that has not happened. Empty in
+            the common case.
     """
 
     epic: str
@@ -874,6 +914,11 @@ def _verify_status_warnings(name: str, state: dict) -> list[str]:
 
     Non-string / malformed status values (a list, an int) are also flagged, and the
     membership test is guarded so an unhashable value never raises.
+
+    ``auto-verify-pending`` is a KNOWN status and is therefore silent here (03 §5.2).
+    Owed automatic verification is an OBLIGATION, not a corrupt value, so it is
+    surfaced separately by ``_auto_verify_debt_warnings`` with actionable wording —
+    reporting it as an unknown status would be actively misleading.
     """
     stages = state.get("stages", {})
     if not isinstance(stages, dict):
@@ -895,6 +940,176 @@ def _verify_status_warnings(name: str, state: dict) -> list[str]:
             f"(treated as incomplete; expected one of {known})"
         )
     return warnings
+
+
+def _positive_int(value: object) -> int | None:
+    """Return ``value`` when it is a usable artifact revision, else None.
+
+    A bool is rejected before the int test on purpose: ``True`` is an ``int`` and
+    would otherwise compare equal to revision 1 (the same trap the manifest
+    ``revision`` validator guards). Absent, non-integer, and sub-1 values are
+    unusable — the caller keeps the debt owed rather than guessing (03 §5.1).
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return None
+    return value
+
+
+def _auto_pending_message(
+    subject: str,
+    stage: str,
+    command: str,
+    scheduled_version: int | None = None,
+    current_version: int | None = None,
+) -> str:
+    """Render the 03 §5.3 obligation sentence for owed automatic verification.
+
+    Mirrors ``auto_pending_message`` in forge-session.py — one sentence naming the
+    subject, the served stage, and the retry command, with both revision numbers
+    appended when the recorded schedule predates the current artifact. Never a
+    state-file dump (REQ-OBS-02).
+    """
+    message = AUTO_PENDING_DIAGNOSTIC.format(
+        subject=subject, stage=stage, command=command
+    )
+    if (
+        scheduled_version is not None
+        and current_version is not None
+        and scheduled_version != current_version
+    ):
+        message += (
+            f" The artifact has advanced since it was scheduled "
+            f"(scheduled at revision {scheduled_version}, now at revision "
+            f"{current_version})."
+        )
+    return message
+
+
+def _auto_verify_debt_warnings(name: str, state: dict) -> list[str]:
+    """Surface every ``auto-verify-pending`` member entry as an obligation (03 §5.2).
+
+    A member carrying recorded-but-undischarged automatic verification is neither
+    "never verified" nor done: the directive that should have run it was dropped,
+    crashed, or was interrupted, and the epic dashboard is where an operator notices
+    (#163, REQ-DEBT-02/05). Emitted in pipeline-stage order — not the state file's key
+    order — so repeated renders are byte-identical (02 §10).
+
+    Args:
+        name: The member feature name.
+        state: The member's parsed .pipeline-state.json (or {}).
+
+    Returns:
+        Zero or more 03 §5.3 sentences naming the member, the served production
+        stage, and the ``forge-verify`` retry command.
+    """
+    stages = state.get("stages", {})
+    if not isinstance(stages, dict):
+        return []
+    warnings: list[str] = []
+    for token, served_stage in _VERIFY_STAGE_BY_TOKEN.items():
+        entry = stages.get(f"forge-verify-{token}")
+        if not isinstance(entry, dict) or entry.get("status") != "auto-verify-pending":
+            continue
+        production = stages.get(served_stage)
+        warnings.append(_auto_pending_message(
+            name,
+            served_stage,
+            f"/feature-forge:forge-verify {name}",
+            _positive_int(entry.get("scheduledStageVersion")),
+            _positive_int(production.get("version")) if isinstance(production, dict) else None,
+        ))
+    return warnings
+
+
+def _read_epic_state_safely(epic_dir: Path) -> dict:
+    """Read an epic's own ``.epic-state.json``, tolerating absence and corruption.
+
+    Epic verification state is epic-scoped: this reads the sibling of the manifest
+    and NEVER a member's ``.pipeline-state.json`` (REQ-SEC-01). A missing, unreadable,
+    unparseable, or non-object file downgrades to ``{}``, which classifies as
+    ``never`` — the dashboard must not crash on one torn file (02 §8.2).
+    """
+    path = epic_dir / EPIC_STATE_FILENAME
+    if not path.is_file():
+        return {}
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def epic_verify_state(epic_dir: Path, revision: int | None) -> str:
+    """Classify epic-root verification freshness against the manifest revision.
+
+    The epic mirror of ``verify_state`` in forge-session.py, with the manifest
+    ``revision`` (03 §2.2) standing in for a production stage's ``version``. It reads
+    ``.epic-state.json`` and the supplied revision ONLY — no member state participates
+    in epic verification (REQ-SEC-01).
+
+    Args:
+        epic_dir: The epic subtree directory.
+        revision: The manifest's canonical revision, or None when unusable.
+
+    Returns:
+        One of (03 §5.2):
+
+        - ``never``       — no epic state, no ``forge-verify-epic`` entry, or a
+          status outside the known vocabulary. Verification was never scheduled.
+        - ``auto-pending``— ``auto-verify-pending``: scheduled and owed. Classified
+          ahead of every other rule and never downgraded to ``never``, even when its
+          ``scheduledStageVersion`` is missing or names an older revision — a later
+          manifest edit does not erase owed work (REQ-DEBT-02).
+        - ``failing``     — ``findings-reported``: verification ran and its findings
+          are not yet applied.
+        - ``skipped``     — an explicit human decision, resolved under the existing
+          compatibility rule: it records no version and so never goes stale.
+        - ``fresh``       — ``passed`` whose ``verifiedStageVersion`` equals the
+          current manifest revision.
+        - ``stale``       — a resolved terminal entry whose recorded revision is
+          absent or does not match. ``findings-applied`` lands here in practice: the
+          writer deliberately deletes ``verifiedStageVersion``, so an interruption
+          between fix and re-verify cannot read as verified (03 §3.3).
+    """
+    entry = _read_epic_state_safely(epic_dir).get("stages", {})
+    entry = entry.get(EPIC_VERIFY_KEY) if isinstance(entry, dict) else None
+    if not isinstance(entry, dict):
+        return "never"
+    status = entry.get("status")
+    if status == "auto-verify-pending":
+        return "auto-pending"
+    if status == "findings-reported":
+        return "failing"
+    if status == "skipped":
+        return "skipped"
+    if status not in _VERIFY_RESOLVED:
+        return "never"
+    verified = _positive_int(entry.get("verifiedStageVersion"))
+    if verified is not None and revision is not None and verified == revision:
+        return "fresh"
+    return "stale"
+
+
+def _epic_verify_warnings(epic: str, epic_dir: Path, revision: int | None) -> list[str]:
+    """Surface owed epic-root automatic verification as an obligation (03 §5.2/§5.3).
+
+    Only ``auto-pending`` warrants a dashboard warning: ``never`` is the ordinary
+    state of an epic nobody has verified, and ``stale``/``failing`` are already
+    reachable through the epic's own verify run. Owed-and-dropped debt is the case
+    that is otherwise invisible.
+    """
+    if epic_verify_state(epic_dir, revision) != "auto-pending":
+        return []
+    # Reaching here means the entry classified auto-pending, so it IS a dict.
+    stages = _read_epic_state_safely(epic_dir)["stages"]
+    scheduled = _positive_int(stages[EPIC_VERIFY_KEY].get("scheduledStageVersion"))
+    return [_auto_pending_message(
+        epic,
+        EPIC_VERIFY_STAGE,
+        f"/feature-forge:forge-verify {epic}",
+        scheduled,
+        revision,
+    )]
 
 
 def _read_state_safely(state_path: Path) -> dict:
@@ -1012,9 +1227,14 @@ def _next_command(feature_dir: Path, status_row: FeatureStatus) -> str:
     reading it here recommended re-running the stage the member had just finished
     for the whole window before the next stage was entered).
 
-    When every production stage is complete but the member is still actionable, the
-    only thing holding it back is unapplied verify findings (``forge-verify-impl``
-    is ``findings-reported``), so ``forge-fix`` is the accurate recommendation.
+    When every production stage is complete but the member is still actionable, its
+    ``forge-verify-impl`` entry is what holds it back, and the two cases need
+    different commands (03 §5.2): ``findings-reported`` means a report exists and is
+    unapplied, so ``forge-fix`` is accurate; anything else outstanding — notably
+    ``auto-verify-pending``, where the scheduled run never happened — has nothing to
+    fix and needs the verification itself, so ``forge-verify`` is. Recommending
+    ``forge-fix`` for owed automatic debt sends the operator looking for a findings
+    document that was never written (REQ-DEBT-02/05).
     """
     name = status_row["name"]
     state = _read_state_safely(feature_dir / PIPELINE_STATE_FILENAME)
@@ -1023,7 +1243,12 @@ def _next_command(feature_dir: Path, status_row: FeatureStatus) -> str:
     if not prd_present or nxt == "forge-1-prd":
         return f"/feature-forge:forge-1-prd {name}"
     if nxt is None:
-        return f"/feature-forge:forge-fix {name}"
+        stages = state.get("stages")
+        impl = stages.get("forge-verify-impl") if isinstance(stages, dict) else None
+        status = impl.get("status") if isinstance(impl, dict) else None
+        if status == "findings-reported":
+            return f"/feature-forge:forge-fix {name}"
+        return f"/feature-forge:forge-verify {name}"
     return f"/feature-forge:{nxt} {name}"
 
 
@@ -1066,6 +1291,15 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
         member_state = _read_state_safely(member_dir / PIPELINE_STATE_FILENAME)
         complete[name] = is_complete_for_orchestration(member_state)
         warnings.extend(_verify_status_warnings(name, member_state))
+        warnings.extend(_auto_verify_debt_warnings(name, member_state))
+
+    # (3b) epic-root verification debt, classified against the manifest revision and
+    #      read from .epic-state.json alone — no member state participates (03 §5.2).
+    warnings.extend(_epic_verify_warnings(
+        manifest.get("epic", epic_dir.name),
+        epic_dir,
+        _positive_int(manifest.get("revision")),
+    ))
 
     # (4) per-feature unmetDeps + blocked. A feature that is itself complete is
     #     never "blocked" — unmet deps only matter for work not yet finished.
