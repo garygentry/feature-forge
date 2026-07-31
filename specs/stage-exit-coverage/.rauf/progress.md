@@ -1231,3 +1231,65 @@ Also driven against the real CLI rather than only the suite: all five outcomes e
 documented call shape successfully, each with exactly one sentinel as the final line —
 `needs-human`/`blocked` fencing `/feature-forge:forge widget`, `partial`/`deferred`
 fencing the loop resume, and `complete` routing verify-first.
+
+## Item 021 — forge-6-docs scripted context-aware terminus
+
+Replaced Step 5's hand-written hand-off paragraph with a new `## Step 6: Close the Stage`
+carrying the canonical scripted stamp, rewrote Step 1's Impl-Verify Backstop as a
+three-case enumeration with an explicit `state-verify --status skipped` write, and
+REPLACED the two guards that pinned docs as terminal.
+
+### Gotchas for later items
+
+- **The stamp uses `--outcome "{DocsOutcome}"`, not the literal `complete` 04 §7.1
+  shows.** §7.1's fence is the complete-path example; §7.1's next paragraph says the
+  blocked path "invoke[s] the same call with `--outcome blocked`". A literal `complete`
+  in the fence would either need a SECOND fence for blocked (two invocations — item 024
+  counts them) or leave a blocked run staring at a fence that says `complete`. The
+  placeholder is the same call shape with the outcome varying, matches the loop's
+  `"{LoopOutcome}"` precedent, and keeps `surface.count("--stage forge-6-docs --outcome")
+  == 1` true. Item 024's `CANONICAL_EXIT_SITES` row for docs should expect this form.
+
+- **`state-verify --stage forge-5-loop` is how docs persists the impl skip.** The token
+  is `forge-verify-impl` but the CLI takes the PRODUCTION stage, and `forge-6-docs` is
+  explicitly rejected by `VERIFY_STAGES` (docs has no verification token). `skipped` is
+  also the one status that works with no recorded artifact version (item 005), so the
+  write succeeds even on a feature whose loop stage never recorded one.
+
+- **The docs exit's own `verifyGate` is ALWAYS `none`** — `forge-6-docs` is tokenless, so
+  `_verify_state_for` returns `none` and item 011's verify-first ordering never fires
+  here. A first draft of the backstop prose claimed "Step 6's scripted exit stays
+  verify-first"; that is false at this stage. REQ-EXIT-06/07 is enforced at docs by the
+  Step 1 backstop itself (no `skipped` write ⇒ no completion) and upstream by the
+  `forge-5-loop --outcome complete` exit, not by the docs gate. Do not re-add the claim.
+
+- **Two guards were REPLACED, not deleted** (06 §2.4): `test_forge_6_docs_is_terminal` →
+  `test_the_docs_surface_covers_both_docs_outcomes` (both outcomes documented + exactly
+  one invocation) plus `test_the_docs_surface_routes_epic_members_from_live_status`, and
+  `test_every_authoring_stage_is_covered`'s `terminal` allow-list is now EMPTY — every
+  production stage closes through the script. Item 024 rewrites this file wholesale;
+  those are the positive assertions to carry forward.
+
+- **Step 1 still runs `render-status`, and that is fine** — it feeds the epic-level
+  *documentation offer*, not routing. The skill now says explicitly not to reuse that
+  snapshot at exit time (the script re-reads live status after this stage's own state
+  write and commit), and a guard pins that sentence.
+
+- **`--outcome blocked` never calls `render-status`** (item 015's design), so a docs stage
+  can always be closed for recovery even when the epic graph is what is broken. The
+  `complete` path fails closed: a manifest missing any required key exits 2 naming the
+  epic and the dashboard, with no sentinel. Confirmed by driving the real CLI.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with
+`PASS: epic-manifest pytest suite` and `PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 1507 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py` run and the
+regenerated `adapters/` tree left in the working tree for the loop runner to commit.
+
+Also driven against the real CLI: standalone `complete` fences `/feature-forge:forge widget`
+with the new-feature and new-epic suggestions as unfenced prose; standalone `blocked` says
+the pipeline is NOT complete and routes to the navigator; both end with exactly one
+sentinel as the final line; the `state-verify --stage forge-5-loop --status skipped` fence
+writes `forge-verify-impl = skipped` at exit 0.

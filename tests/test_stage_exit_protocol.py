@@ -62,6 +62,8 @@ _SCRIPTED_SITES = [
     ("skills/forge-4-backlog/SKILL.md", '--feature "{feature}" --stage forge-4-backlog'),
     ("skills/forge-5-loop/SKILL.md",
      '--feature "{feature}" --stage forge-5-loop --outcome "{LoopOutcome}"'),
+    ("skills/forge-6-docs/SKILL.md",
+     '--feature "{feature}" --stage forge-6-docs --outcome "{DocsOutcome}"'),
 ]
 
 # The two canon surfaces that carried the loop's retired bespoke blocks. They are the
@@ -172,12 +174,28 @@ def test_authoring_stages_do_not_stamp_standard_block():
         )
 
 
-def test_forge_6_docs_is_terminal():
-    """forge-6-docs stamps NO exit block yet — it is the loop's routing target, not a site."""
+def test_the_docs_surface_covers_both_docs_outcomes():
+    """forge-6-docs closes through the script, with `complete` and `blocked` both documented.
+
+    Replaces the assertion that forge-6-docs is terminal: it is now the ninth covered
+    exit, so the positive obligations are a single scripted invocation plus a documented
+    selection rule for each `DocsOutcome`.
+    """
     body = (REPO_ROOT / "skills/forge-6-docs/SKILL.md").read_text(encoding="utf-8")
-    assert "walk the user through the Stage Exit Protocol" not in body
-    assert "Close this stage with the Scripted Stage Exit" not in body, (
-        "forge-6-docs must stay terminal (no exit block of any kind)"
+    for outcome in ("complete", "blocked"):
+        assert f"`{outcome}`" in body, (
+            f"DocsOutcome {outcome!r} has no selection rule on the forge-6-docs surface"
+        )
+    assert body.count("--stage forge-6-docs --outcome") == 1, (
+        "forge-6-docs must emit exactly one stage-exit invocation per run"
+    )
+
+
+def test_the_docs_surface_routes_epic_members_from_live_status():
+    """The docs terminus must not route from Step 1's pre-mutation render-status snapshot."""
+    body = (REPO_ROOT / "skills/forge-6-docs/SKILL.md").read_text(encoding="utf-8")
+    assert "Do **not** reuse Step 1's `render-status` snapshot" in body, (
+        "forge-6-docs may only route an epic member from live status read at exit time"
     )
 
 
@@ -186,9 +204,12 @@ def test_every_authoring_stage_is_covered():
 
     If someone adds a forge-N authoring stage skill, they must either stamp a block
     or explicitly add it to the terminal allow-list below — this fails until they do.
+
+    The allow-list is empty since forge-6-docs was converted: every production stage
+    now closes through the scripted exit.
     """
     stamped = {relpath for relpath, _ in _SCRIPTED_SITES}
-    terminal = {"skills/forge-6-docs/SKILL.md"}
+    terminal: set[str] = set()
     authoring = {
         f"skills/{name}/SKILL.md"
         for name in (

@@ -36,7 +36,26 @@ Also check `.pipeline-state.json` for `stages.forge-5-loop`. If it exists and ha
 
 ### Impl-Verify Backstop
 
-Check `.pipeline-state.json` for `stages.forge-verify-impl`. If it is **absent** or has status `"skipped"`, use `AskUserQuestion` to warn with the cost of skipping: "Implementation hasn't been verified yet. Recommended: run `/skill:forge-verify {feature} impl` first to audit the loop's output — docs generated over unverified code can document bugs or gaps as if they were intended behavior, and readers will trust them. Generate docs anyway?" Offer **Verify first (recommended)** · **Generate docs anyway**. This mirrors `forge-4-backlog`'s pre-stage verification check and backstops a skipped impl-verify regardless of how the loop ended. If `stages.forge-verify-impl` shows it already ran (`findings-applied`, `findings-reported`, or `passed`), proceed with no warning.
+Read `stages.forge-verify-impl` from `.pipeline-state.json` and branch on its status — **three** cases, in this order (the pending case must be tested *before* the absent/`skipped` one, or owed-and-dropped debt gets reported as never-scheduled):
+
+1. **`findings-applied`, `findings-reported`, or `passed`** — verification already ran; proceed with no warning.
+2. **`auto-verify-pending`** — automatic verification *was* scheduled for the implementation stage and the debt *was* durably recorded; it simply has not run. Say exactly that, naming the served stage and the retry command: *"{feature}: automatic verification is still pending for forge-5-loop; run `/skill:forge-verify {feature} impl` to resolve it."* Then use `AskUserQuestion` to offer the same two choices as case 3. Never report this as "hasn't been verified yet" — an **absent** entry means verification was never scheduled, `auto-verify-pending` means it was scheduled and never ran, and the operator acts on those two facts differently.
+3. **Absent, or `skipped`** — use `AskUserQuestion` to warn with the cost of skipping: "Implementation hasn't been verified yet. Recommended: run `/skill:forge-verify {feature} impl` first to audit the loop's output — docs generated over unverified code can document bugs or gaps as if they were intended behavior, and readers will trust them. Generate docs anyway?"
+
+Cases 2 and 3 offer the same choices: **Verify first (recommended)** · **Generate docs anyway**. This mirrors `forge-4-backlog`'s pre-stage verification check and backstops a skipped impl-verify regardless of how the loop ended.
+
+**"Generate docs anyway" must persist the skip before docs can complete.** An explicit choice to proceed without verification is recorded as `skipped` through `state-verify` — never by hand — **before** Step 2, so an unresolved result cannot be bypassed by this stage's terminal wording. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{feature}" --stage forge-5-loop --status skipped --specs-dir "{specsDir}"
+```
+
+If that verb exits 2, surface its plain `Error:` line verbatim and stop — the skip is not persisted, so docs may not complete.
+
+**Verification that is operationally unavailable is not an implicit skip.** If the user chose **Verify first** and the clean-room verifier could not be dispatched, returned `CLEAN_ROOM_UNAVAILABLE`, or returned a non-answer, then verification did **not** run: write nothing, follow the *Clean-room unavailable, or a non-answer* path in `references/stage-exit-protocol.md` (leave the debt unresolved and print the verify command for the user to run), and never read the failed attempt as consent to proceed. Docs may complete only after verification passes or after the user makes the explicit "Generate docs anyway" choice above, which persists `skipped` — an unavailable tool is neither.
 
 ### Epic-Level Documentation (epic members only)
 
@@ -182,10 +201,33 @@ python3 "$R/scripts/forge-session.py" state-complete \
 
 1. Record completion by running the `state-complete` call above with `--version`, one `--artifact` per doc file this stage produced, and one `--based-on STAGE=<version>` per completed upstream stage. Always include forge-1-prd, forge-2-tech, forge-3-specs. Include forge-4-backlog and forge-5-loop ONLY if they have status `complete`. The verb sets `status: "complete"`, `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`.
 2. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files (`git add {docsDir}/{feature}/ {resolvedFeatureDir}/` — and **also** `{docsDir}/{epic}/` when an epic-level doc was written in Step 1), attempt commit with message `"{commitPrefix}({feature}): complete architecture docs"` (marking `stages.forge-6-docs.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
-4. Tell user: "Documentation complete. Feature pipeline for '{feature}' is finished!\n  `/skill:forge {feature}` to see the final pipeline status." Then **hand off to the next unit of work** — do not dead-end here (Issue #124):
+3. Say that the docs are written — "Documentation complete for '{feature}'." — and stop there. The hand-off is Step 6's, and it is the script's to decide.
 
-   - **Epic member** (the resolved feature has an `epic` back-pointer in its `.pipeline-state.json`): reuse the `render-status "{epic}" --specs-dir "{specsDir}" --json` output from Step 1's Epic-Level Documentation block (re-run it if you skipped that block). If `actionable` is non-empty, point at the next member: "Epic '{epic}' has {total−complete} feature(s) left — next up: **{actionable[0].name}**. Start it with `{actionable[0].nextCommand}`." (Offer to start it now if the host can invoke it — honor `autoInvokeNextStage` + `Skill`-tool availability; else just print the command.) If `actionable` is empty but the epic is not fully complete, note the remaining members are blocked on dependencies. If the epic is fully complete (`rollup.complete == rollup.total`, `total > 0`), congratulate on the whole epic — the epic-level architecture doc was already offered in Step 1 — and point at `/skill:forge {epic}` for the finished dashboard.
-   - **Standalone** (no `epic` back-pointer): offer the next feature — "Start a new feature: `/skill:forge-1-prd <feature-name>` (or group several with `/skill:forge-0-epic <epic-name>`). Run `/skill:forge` to see any other active pipelines." Defer the full recency-ranked list of other pipelines to the navigator (`/skill:forge`) rather than duplicating it here.
+## Step 6: Close the Stage
+
+Every docs run ends here, and ends here **exactly once** — standalone or epic member, complete or not.
+
+Select `{DocsOutcome}` first, from what actually landed:
+
+- **`complete`** — the docs were written and Step 5's state (and commit, when `gitCommitAfterStage` is true) succeeded.
+- **`blocked`** — docs work could not complete. Persist only valid partial state, then run the same call with `blocked`; it routes to navigator/recovery and never claims the pipeline is finished. If the failure happened **before** a safe state write, report the failure and its recovery and run **no** exit at all — there is nothing durable for an exit to close over.
+
+**Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-6-docs --outcome "{DocsOutcome}" --specs-dir "{specsDir}" --host pi --verify-capability "{verify-capability}"
+```
+
+Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
+
+Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`. Determine `{verify-capability}` per the **Host and capability determination** section of `references/stage-exit-protocol.md`: `interactive` needs both a question mechanism and *permission* to dispatch the clean-room `forge-verifier`, and a session that merely needs consent first is still `interactive`.
+
+The script owns the routing for both outcomes, so append nothing to its block — no hand-off paragraph, no "start a new feature" list, no second command:
+
+- **Epic member** — the script reads live epic status **at exit time**, after this stage's own state write and commit. Do **not** reuse Step 1's `render-status` snapshot and do **not** pass a member you picked yourself: that snapshot predates the docs state it would be routing from. An actionable member gets its own live command fenced; nothing actionable routes to the epic dashboard; every member complete routes to the dashboard completion view.
+- **Standalone** — `complete` fences `/skill:forge {feature}` as the authoritative completion action, and leaves starting a new feature (or grouping several with `/skill:forge-0-epic`) as secondary unfenced text.
 
 ## Gotchas
 

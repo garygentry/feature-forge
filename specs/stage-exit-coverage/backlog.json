@@ -701,8 +701,8 @@
         "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
         "skills/forge-6-docs/SKILL.md Step 1's backstop warns on auto-verify-pending with debt-specific wording distinct from the absent-entry wording, rather than proceeding silently"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T09:45:11.768Z",
       "dependsOn": [
         "008",
         "015",
