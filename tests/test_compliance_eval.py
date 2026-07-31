@@ -400,3 +400,429 @@ def test_cli_help_runs_standalone() -> None:
     )
     assert proc.returncode == 0
     assert "--probe" in proc.stdout
+
+
+# --------------------------------------------------------------------------- #
+# Probe 3 — branch fixture, loader, and ground truth
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture()
+def branch_fixture() -> dict:
+    return ce.load_branch_fixture(ce.BRANCH_FIXTURE_PATH)
+
+
+def _scenario(fixture: dict, name: str) -> dict:
+    return next(s for s in fixture["scenarios"] if s["name"] == name)
+
+
+def _branch_repo(tmp_path: Path, fixture: dict, name: str = "proj") -> Path:
+    root = tmp_path / name
+    root.mkdir()
+    ce.build_branch_fixture(root, fixture)
+    return root
+
+
+def _write_fixture(tmp_path: Path, data: object) -> Path:
+    path = tmp_path / "verify-fix-reverify.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def _fixture_dict() -> dict:
+    """A mutable deep copy of the shipped fixture, for negative-case edits."""
+    return json.loads(ce.BRANCH_FIXTURE_PATH.read_text(encoding="utf-8"))
+
+
+def test_branch_fixture_lives_at_the_exact_nested_path() -> None:
+    assert ce.BRANCH_FIXTURE_PATH.is_file()
+    assert ce.BRANCH_FIXTURE_PATH.relative_to(REPO_ROOT) == Path(
+        "eval/fixtures/compliance/verify-fix-reverify.json"
+    )
+
+
+def test_trigger_eval_never_discovers_the_compliance_fixture() -> None:
+    """The `compliance/` nesting is load-bearing, not cosmetic (06 §3.1).
+
+    `eval/run-eval.py::load_fixtures()` globs non-recursively, so a compliance fixture at
+    `eval/fixtures/` level would be parsed as a trigger fixture and corrupt that baseline.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "_forge_trigger_eval", REPO_ROOT / "eval" / "run-eval.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    fixtures = module.load_fixtures()
+    assert [f["skill"] for f in fixtures] == ["forge-1-prd", "forge-5-loop"]
+    for fixture in fixtures:
+        assert "scenarios" not in fixture
+        assert "schemaVersion" not in fixture
+
+
+def test_existing_trigger_fixtures_keep_their_schema() -> None:
+    for name in ("forge-1-prd.json", "forge-5-loop.json"):
+        data = json.loads((REPO_ROOT / "eval" / "fixtures" / name).read_text(encoding="utf-8"))
+        assert set(data) == {"skill", "shouldTrigger", "shouldNotTrigger"}
+
+
+def test_branch_fixture_loads_with_two_ordered_scenarios(branch_fixture: dict) -> None:
+    assert branch_fixture["schemaVersion"] == 1
+    assert [s["name"] for s in branch_fixture["scenarios"]] == [
+        "successful-rejoin",
+        "recovery",
+    ]
+    assert branch_fixture["servedStage"] == "forge-1-prd"
+    assert branch_fixture["verifyMode"] == "prd"
+
+
+def test_served_stage_and_verify_mode_agree_under_the_real_mapping(branch_fixture: dict) -> None:
+    session = ce._load_session_module()
+    mode, served = branch_fixture["verifyMode"], branch_fixture["servedStage"]
+    assert session.VERIFY_MODE_TO_STAGE[mode] == served
+
+
+def test_the_shipped_fixture_orders_nested_calls_before_one_direct_terminal(
+    branch_fixture: dict,
+) -> None:
+    """AC 6: intermediate calls are nested; only the final call is terminal owner."""
+    for scenario in branch_fixture["scenarios"]:
+        commands = scenario["expectedCommands"]
+        assert len(commands) == 4
+        for entry in commands[:-1]:
+            assert "--owner nested" in entry["contains"]
+            assert entry["stage"] != "terminal-exit"
+        assert commands[-1]["stage"] == "terminal-exit"
+        assert "--owner direct" in commands[-1]["contains"]
+        for entry in commands:
+            assert "forge-session.py" in entry["contains"]
+            assert "stage-exit" in entry["contains"]
+
+
+def test_the_shipped_fixture_carries_the_served_stage_on_every_branch_command(
+    branch_fixture: dict,
+) -> None:
+    served = branch_fixture["servedStage"]
+    for scenario in branch_fixture["scenarios"]:
+        for entry in scenario["expectedCommands"]:
+            carried = [
+                t
+                for t in entry["contains"]
+                if t.startswith(("--served-stage", "--verify-mode"))
+            ]
+            assert carried, f"{scenario['name']}/{entry['stage']} drops the served stage"
+            for token in carried:
+                if token.startswith("--served-stage"):
+                    assert token == f"--served-stage {served}"
+
+
+def test_no_next_steps_prose_is_hard_coded_in_the_fixture() -> None:
+    raw = ce.BRANCH_FIXTURE_PATH.read_text(encoding="utf-8")
+    assert "nextSteps" not in raw
+    assert ce.SENTINEL not in raw
+    assert "Next steps" not in raw
+
+
+# --- loader rejections -------------------------------------------------------
+
+
+def test_loader_rejects_an_unknown_schema_version(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["schemaVersion"] = 2
+    with pytest.raises(RuntimeError, match="schemaVersion"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_boolean_schema_version(tmp_path: Path) -> None:
+    """`bool` is an `int` subclass, so True would otherwise validate as version 1."""
+    data = _fixture_dict()
+    data["schemaVersion"] = True
+    with pytest.raises(RuntimeError, match="schemaVersion"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_missing_scenario(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["scenarios"] = data["scenarios"][:1]
+    with pytest.raises(RuntimeError, match="in that order"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_duplicate_scenario(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["scenarios"] = [data["scenarios"][0], data["scenarios"][0]]
+    with pytest.raises(RuntimeError, match="unique"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_the_wrong_scenario_order(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["scenarios"] = list(reversed(data["scenarios"]))
+    with pytest.raises(RuntimeError, match="in that order"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+@pytest.mark.parametrize("feature", ["../escape", "Widget Search", "", "widget_search"])
+def test_loader_rejects_an_unsafe_feature(tmp_path: Path, feature: str) -> None:
+    data = _fixture_dict()
+    data["feature"] = feature
+    with pytest.raises(RuntimeError):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_an_empty_command_token_list(tmp_path: Path) -> None:
+    """An empty token list matches every command, so it would pass silently."""
+    data = _fixture_dict()
+    data["scenarios"][0]["expectedCommands"][0]["contains"] = []
+    with pytest.raises(RuntimeError, match="non-empty list"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_duplicate_evidence_stage(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    commands = data["scenarios"][0]["expectedCommands"]
+    commands[1]["stage"] = commands[0]["stage"]
+    with pytest.raises(RuntimeError, match="repeats an evidence stage"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_an_unknown_top_level_key(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["notes"] = "helpful"
+    with pytest.raises(RuntimeError, match="unknown top-level key"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_an_unknown_scenario_key(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["scenarios"][0]["expectedNextSteps"] = "..."
+    with pytest.raises(RuntimeError, match="unknown key"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_an_unknown_command_key(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["scenarios"][0]["expectedCommands"][0]["optional"] = True
+    with pytest.raises(RuntimeError, match="unknown key"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_missing_top_level_key(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    del data["verifyMode"]
+    with pytest.raises(RuntimeError, match="missing top-level key"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_mode_that_disagrees_with_the_served_stage(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["verifyMode"] = "tech"
+    with pytest.raises(RuntimeError, match="maps to"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_command_that_could_be_satisfied_by_prose(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["scenarios"][0]["expectedCommands"][0]["contains"] = ["verification reported findings"]
+    with pytest.raises(RuntimeError, match="marker"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_an_intermediate_command_claiming_direct_ownership(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    tokens = data["scenarios"][0]["expectedCommands"][0]["contains"]
+    tokens[tokens.index("--owner nested")] = "--owner direct"
+    with pytest.raises(RuntimeError, match="--owner nested"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_terminal_command_that_is_not_last(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["scenarios"][0]["expectedCommands"][0]["stage"] = "terminal-exit"
+    with pytest.raises(RuntimeError, match="terminal-exit"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_foreign_served_stage_token(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    tokens = data["scenarios"][0]["expectedCommands"][1]["contains"]
+    tokens[tokens.index("--served-stage forge-1-prd")] = "--served-stage forge-3-specs"
+    with pytest.raises(RuntimeError, match="served stage other than"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_a_primary_command_naming_another_feature(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["scenarios"][0]["expectedPrimaryCommand"] = "/feature-forge:forge-2-tech other-feature"
+    with pytest.raises(RuntimeError, match="does not name"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_preserves_os_error(tmp_path: Path) -> None:
+    with pytest.raises(OSError):
+        ce.load_branch_fixture(tmp_path / "absent.json")
+
+
+def test_loader_preserves_json_decode_error(tmp_path: Path) -> None:
+    path = tmp_path / "broken.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(json.JSONDecodeError):
+        ce.load_branch_fixture(path)
+
+
+def test_loader_uses_runtime_error_only_for_fixture_invariants(tmp_path: Path) -> None:
+    """RuntimeError is reserved for invariants — it must not swallow OSError/JSONDecodeError."""
+    with pytest.raises(OSError) as os_exc:
+        ce.load_branch_fixture(tmp_path / "absent.json")
+    assert not isinstance(os_exc.value, RuntimeError)
+    path = tmp_path / "broken.json"
+    path.write_text("[", encoding="utf-8")
+    with pytest.raises(json.JSONDecodeError) as json_exc:
+        ce.load_branch_fixture(path)
+    assert not isinstance(json_exc.value, RuntimeError)
+
+
+# --- fixture construction and ground truth -----------------------------------
+
+
+def test_branch_repo_state_is_schema_valid(tmp_path: Path, branch_fixture: dict) -> None:
+    root = _branch_repo(tmp_path, branch_fixture)
+    schema = json.loads((REPO_ROOT / "references" / "pipeline-state-schema.json").read_text())
+    state = json.loads(
+        (root / "specs" / branch_fixture["feature"] / ".pipeline-state.json").read_text()
+    )
+    for key in schema["required"]:
+        assert key in state
+    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema.validate(state, schema)
+
+
+def test_branch_repo_is_parked_before_the_diversion(tmp_path: Path, branch_fixture: dict) -> None:
+    """The verify entry must be ABSENT: every transition is one the run performs."""
+    root = _branch_repo(tmp_path, branch_fixture)
+    feature_dir = root / "specs" / branch_fixture["feature"]
+    state = json.loads((feature_dir / ".pipeline-state.json").read_text())
+    assert state["stages"]["forge-1-prd"]["status"] == "complete"
+    assert state["stages"]["forge-1-prd"]["version"] == 1
+    assert "forge-verify-prd" not in state["stages"]
+    assert (feature_dir / "PRD.md").is_file()
+    assert (feature_dir / ce.BRANCH_FINDINGS_FILE).is_file()
+
+
+def test_branch_repo_is_a_clean_committed_git_repo(tmp_path: Path, branch_fixture: dict) -> None:
+    root = _branch_repo(tmp_path, branch_fixture)
+    proc = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"], capture_output=True, text=True
+    )
+    assert proc.returncode == 0
+    assert proc.stdout.strip() == ""
+
+
+def test_build_branch_fixture_rejects_an_unsafe_feature(
+    tmp_path: Path, branch_fixture: dict
+) -> None:
+    hostile = {**branch_fixture, "feature": "../escape"}
+    root = tmp_path / "proj"
+    root.mkdir()
+    with pytest.raises(RuntimeError, match="safe name"):
+        ce.build_branch_fixture(root, hostile)
+
+
+@pytest.mark.parametrize("name", ["successful-rejoin", "recovery"])
+def test_expected_branch_exit_matches_the_fixture_primary_command(
+    tmp_path: Path, branch_fixture: dict, name: str
+) -> None:
+    """Ground truth comes from the real CLI; the fixture only asserts which route wins."""
+    scenario = _scenario(branch_fixture, name)
+    root = _branch_repo(tmp_path, branch_fixture, name)
+    payload = ce.expected_branch_exit(root, branch_fixture, scenario)
+    directives = payload["directives"]
+    assert directives["primaryCommand"] == scenario["expectedPrimaryCommand"]
+    assert directives["servedStage"] == branch_fixture["servedStage"]
+    assert directives["terminalOwnedBy"] == "self"
+    assert payload["nextSteps"].rstrip().endswith(ce.SENTINEL)
+    assert payload["nextSteps"].count(ce.SENTINEL) == 1
+
+
+def test_successful_rejoin_advances_and_recovery_does_not(
+    tmp_path: Path, branch_fixture: dict
+) -> None:
+    rejoin = ce.expected_branch_exit(
+        _branch_repo(tmp_path, branch_fixture, "a"),
+        branch_fixture,
+        _scenario(branch_fixture, "successful-rejoin"),
+    )["directives"]
+    recovery = ce.expected_branch_exit(
+        _branch_repo(tmp_path, branch_fixture, "b"),
+        branch_fixture,
+        _scenario(branch_fixture, "recovery"),
+    )["directives"]
+    assert rejoin["primaryCommand"] == "/feature-forge:forge-2-tech widget-search"
+    assert recovery["primaryCommand"].startswith("/feature-forge:forge-fix ")
+    assert "--served-stage forge-1-prd" in recovery["primaryCommand"]
+    assert "forge-2-tech" not in recovery["primaryCommand"]
+
+
+def test_expected_branch_exit_runs_the_real_state_transition(
+    tmp_path: Path, branch_fixture: dict
+) -> None:
+    """`findings-applied` clears freshness, so the recorded status must be the real one."""
+    root = _branch_repo(tmp_path, branch_fixture)
+    ce.expected_branch_exit(root, branch_fixture, _scenario(branch_fixture, "recovery"))
+    entry = json.loads(
+        (root / "specs" / branch_fixture["feature"] / ".pipeline-state.json").read_text()
+    )["stages"]["forge-verify-prd"]
+    assert entry["status"] == "findings-reported"
+    assert entry["findingsFile"] == ce.BRANCH_FINDINGS_FILE
+
+
+def test_no_state_leaks_between_scenarios(tmp_path: Path, branch_fixture: dict) -> None:
+    """Each scenario gets a fresh throwaway repo; one run must not colour another."""
+    first = _branch_repo(tmp_path, branch_fixture, "first")
+    ce.expected_branch_exit(first, branch_fixture, _scenario(branch_fixture, "recovery"))
+    second = _branch_repo(tmp_path, branch_fixture, "second")
+    state = json.loads(
+        (second / "specs" / branch_fixture["feature"] / ".pipeline-state.json").read_text()
+    )
+    assert "forge-verify-prd" not in state["stages"]
+    assert second != first
+
+
+def test_terminal_exit_args_come_from_the_fixture(branch_fixture: dict) -> None:
+    args = ce.terminal_exit_args(_scenario(branch_fixture, "successful-rejoin"))
+    assert args == [
+        "--stage", "forge-fix",
+        "--owner", "direct",
+        "--outcome", "reverified",
+        "--served-stage", "forge-1-prd",
+    ]
+
+
+def test_branch_prompt_carries_the_ownership_tokens_and_real_paths(branch_fixture: dict) -> None:
+    """Ownership is never inferred from phrasing — the prompt is the carrier (04 §3.1)."""
+    for scenario in branch_fixture["scenarios"]:
+        prompt = ce.branch_prompt(branch_fixture, scenario)
+        assert prompt.count("owner: nested") == 3
+        assert prompt.count("owner: direct") == 1
+        assert branch_fixture["feature"] in prompt
+        assert str(REPO_ROOT / "skills" / "forge-verify" / "SKILL.md") in prompt
+        assert str(REPO_ROOT / "skills" / "forge-fix" / "SKILL.md") in prompt
+        assert str(REPO_ROOT / "references" / "stage-exit-protocol.md") in prompt
+        assert ce.BRANCH_FINDINGS_FILE in prompt
+
+
+def test_branch_prompt_distinguishes_the_two_reverify_outcomes(branch_fixture: dict) -> None:
+    rejoin = ce.branch_prompt(branch_fixture, _scenario(branch_fixture, "successful-rejoin"))
+    recovery = ce.branch_prompt(branch_fixture, _scenario(branch_fixture, "recovery"))
+    assert "PASSES" in rejoin and "FURTHER findings" not in rejoin
+    assert "FURTHER findings" in recovery and "PASSES" not in recovery
+
+
+def test_branch_prompt_never_dictates_the_expected_output(branch_fixture: dict) -> None:
+    """A prompt that quotes the answer measures transcription, not compliance."""
+    for scenario in branch_fixture["scenarios"]:
+        prompt = ce.branch_prompt(branch_fixture, scenario)
+        assert ce.SENTINEL not in prompt
+        assert scenario["expectedPrimaryCommand"] not in prompt
+        assert "stage-exit --stage" not in prompt

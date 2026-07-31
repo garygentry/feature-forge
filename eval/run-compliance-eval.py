@@ -63,6 +63,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Final, Literal, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent  # eval/ -> feature-forge/
 HELPER = REPO_ROOT / "scripts" / "forge-session.py"
@@ -506,6 +507,544 @@ def _in_fenced_block(text: str, needle: str) -> bool:
         if needle in body:
             return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+# Probe 3 — branch path compliance (verify -> fix -> re-verify)
+# --------------------------------------------------------------------------- #
+
+
+#: The exact branch fixture. Deliberately nested under `compliance/`, BELOW
+#: `eval/run-eval.py::load_fixtures()`'s non-recursive `eval/fixtures/*.json` glob, so a
+#: compliance fixture can never be picked up as a trigger fixture (06 §3.1). This file is
+#: read by path; the branch probe never globs.
+BRANCH_FIXTURE_PATH = REPO_ROOT / "eval" / "fixtures" / "compliance" / "verify-fix-reverify.json"
+
+#: Required scenario names, in required file order. Cardinality and order are validated
+#: rather than inferred: a fixture that silently lost the recovery scenario would still
+#: report a rate, and a rate over half the matrix is worse than no rate.
+BRANCH_SCENARIO_ORDER: Final[tuple[str, ...]] = ("successful-rejoin", "recovery")
+
+#: The evidence steps a branch scenario may attribute a command to (`EvidenceStage`).
+EVIDENCE_STAGES: Final[tuple[str, ...]] = (
+    "verify-findings",
+    "fix-applied",
+    "reverify-passed",
+    "reverify-recovery",
+    "terminal-exit",
+)
+
+#: The one evidence step that owns the terminal block. Exactly one per scenario, and it
+#: must be last: everything before it is a nested link in the chain (REQ-EXIT-04).
+TERMINAL_EVIDENCE_STAGE = "terminal-exit"
+
+#: Findings report path, RELATIVE to the feature directory — the form `state-verify
+#: --findings-file` requires and the form `forge-verify` writes.
+BRANCH_FINDINGS_FILE = ".verification/VERIFY-prd-2026-01-01.md"
+BRANCH_FINDINGS_COUNT = 3
+
+#: A findings report with enough substance to act on. A stub invites the model to
+#: question the fixture instead of driving the diversion, which scores as a compliance
+#: miss it is not — the same lesson the linear fixture's PRD encodes.
+BRANCH_FINDINGS_DOC = """# Verification findings — widget-search (PRD)
+
+Mode: prd
+Served stage: forge-1-prd
+Verdict: findings
+
+## F1 — REQ-PERF-01 has no measurement point (severity: medium)
+
+The 200ms p95 budget names no surface to measure at, so it cannot be verified.
+Fix: state that the budget is measured server-side at the search endpoint.
+
+## F2 — REQ-SEARCH-02 leaves ties undefined (severity: medium)
+
+"Ranked by relevance, exact-prefix first" does not say how equal-relevance results
+order. Fix: state that ties break by name, ascending.
+
+## F3 — Success criterion SC-2 has no baseline (severity: low)
+
+"Fall by half" has no starting number recorded. Fix: name the current quarterly ticket
+count as the baseline.
+"""
+
+#: Capability passed when deriving ground truth. A branch exit's gate is `none` whatever
+#: the caller's capability is (the outcome table names the one action), so this cannot
+#: skew the block a live run is scored against.
+BRANCH_VERIFY_CAPABILITY = "manual"
+
+BranchScenarioName = Literal["successful-rejoin", "recovery"]
+EvidenceStage = Literal[
+    "verify-findings",
+    "fix-applied",
+    "reverify-passed",
+    "reverify-recovery",
+    "terminal-exit",
+]
+
+
+class ExpectedCommand(TypedDict):
+    """One ordered command that must have a successful tool result.
+
+    Total. Ordering is positional: an ExpectedCommand's index in
+    `BranchScenario.expectedCommands` IS its required order, which is why matching
+    is ordered-subsequence rather than set membership (§4.2).
+    """
+
+    # Which branch step this command belongs to (verify, fix, re-verify). Groups
+    # evidence so a scorer can attribute a miss to a step, not just to the run.
+    stage: EvidenceStage
+    # Substrings that must ALL appear in one command string — an AND, not an OR,
+    # and substring matching rather than equality so incidental flag ordering and
+    # absolute paths do not make the fixture brittle. Non-empty; an empty list
+    # would match every command and silently pass.
+    contains: list[str]
+
+
+class BranchScenario(TypedDict):
+    """One deterministic branch-path compliance scenario.
+
+    Total. The three outcome fields are the fixture's INPUTS — the branch results
+    being simulated — while `expected*` are the ground truth being scored. The
+    narrow Literals are deliberate: this fixture exercises the findings->fix->
+    re-verify path only, and a widened value belongs in a new scenario rather than
+    a loosened type.
+    """
+
+    # Stable scenario id, used in scorer output and to select a single scenario.
+    name: BranchScenarioName
+    # Initial verify result being simulated. Always "findings" — a passing initial
+    # verify produces no fix step and so exercises no branch path.
+    initialVerifyOutcome: Literal["findings"]
+    # Fix result being simulated. Always "applied": a fix that applies nothing has
+    # no rejoin to verify.
+    fixOutcome: Literal["applied"]
+    # Re-verify result being simulated. This is the branch: "passed" rejoins the
+    # served production stage, while "findings"/"failed" must keep verification
+    # authoritative instead of advancing.
+    reverifyOutcome: Literal["passed", "findings", "failed"]
+    # The single command that MUST be primary at the terminus for this outcome —
+    # the assertion that catches a dropped pipeline thread (#176).
+    expectedPrimaryCommand: str
+    # Ordered commands that must each appear with a successful tool result.
+    expectedCommands: list[ExpectedCommand]
+
+
+class BranchFixture(TypedDict):
+    """Versioned offline input for the branch compliance probe.
+
+    Total. Deliberately isolated from the existing linear fixtures (§3.1): this
+    file is loaded only by the branch probe, so a change here cannot move the
+    linear baseline.
+    """
+
+    # Fixture schema version. Literal[1] — a shape change bumps this rather than
+    # mutating v1 in place, so an older probe fails loudly instead of
+    # misinterpreting new fields.
+    schemaVersion: Literal[1]
+    # Synthetic feature name built into the scratch repo. Never a real repo feature.
+    feature: str
+    # Production stage the simulated verify/fix diversion serves and rejoins.
+    servedStage: Literal["forge-1-prd"]
+    # Verify mode paired with `servedStage`; must agree with it under
+    # VERIFY_MODE_TO_STAGE, and the fixture validator checks that agreement.
+    verifyMode: Literal["prd"]
+    # The scenarios to run. Exactly two in the shipped fixture (successful rejoin
+    # and unresolved re-verify); non-empty, and names must be unique.
+    scenarios: list[BranchScenario]
+
+
+_BRANCH_TOP_KEYS: Final[frozenset[str]] = frozenset(
+    {"schemaVersion", "feature", "servedStage", "verifyMode", "scenarios"}
+)
+_BRANCH_SCENARIO_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "name",
+        "initialVerifyOutcome",
+        "fixOutcome",
+        "reverifyOutcome",
+        "expectedPrimaryCommand",
+        "expectedCommands",
+    }
+)
+_BRANCH_COMMAND_KEYS: Final[frozenset[str]] = frozenset({"stage", "contains"})
+
+#: Both markers a command must carry to count as a REAL scripted exit rather than a
+#: prose claim or a reconnaissance call (§3.2's "never accepts a prose claim").
+_EXIT_MARKERS: Final[tuple[str, ...]] = ("forge-session.py", "stage-exit")
+
+
+def _load_session_module():
+    """Import `scripts/forge-session.py` for its shared domain constants.
+
+    The filename is hyphenated, so it is not importable by name; this mirrors
+    `_load_upstream_prelude`. Reading the real `VERIFY_MODE_TO_STAGE` and
+    `SAFE_NAME_RE` is the point — a second copy here could drift into a fixture check
+    that agrees with itself and with nothing else.
+    """
+    spec = importlib.util.spec_from_file_location("_forge_session_for_eval", HELPER)
+    if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        raise RuntimeError(f"cannot load {HELPER}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _fail(message: str) -> None:
+    """Raise the fixture-invariant error, keeping every call site one line."""
+    raise RuntimeError(f"{BRANCH_FIXTURE_PATH.name}: {message}")
+
+
+def _require_str(value: object, what: str) -> str:
+    if not isinstance(value, str) or not value:
+        _fail(f"{what} must be a non-empty string, got {value!r}")
+    return value  # type: ignore[return-value]
+
+
+def _validate_command(entry: object, index: int, scenario: str, fixture_served: str,
+                      fixture_mode: str, terminal: bool) -> None:
+    where = f"scenario {scenario!r} command {index}"
+    if not isinstance(entry, dict):
+        _fail(f"{where} must be an object, got {type(entry).__name__}")
+    unknown = sorted(set(entry) - _BRANCH_COMMAND_KEYS)
+    if unknown:
+        _fail(f"{where} has unknown key(s) {unknown}")
+    missing = sorted(_BRANCH_COMMAND_KEYS - set(entry))
+    if missing:
+        _fail(f"{where} is missing key(s) {missing}")
+    stage = _require_str(entry["stage"], f"{where} stage")
+    if stage not in EVIDENCE_STAGES:
+        _fail(f"{where} stage {stage!r} is not one of {list(EVIDENCE_STAGES)}")
+    if terminal and stage != TERMINAL_EVIDENCE_STAGE:
+        _fail(f"{where} is last and must be stage {TERMINAL_EVIDENCE_STAGE!r}, got {stage!r}")
+    if not terminal and stage == TERMINAL_EVIDENCE_STAGE:
+        _fail(f"{where} is stage {TERMINAL_EVIDENCE_STAGE!r} but is not the final command")
+    tokens = entry["contains"]
+    # An empty token list matches EVERY command, so it would pass silently rather than
+    # fail — the one shape a substring matcher cannot defend itself against.
+    if not isinstance(tokens, list) or not tokens:
+        _fail(f"{where} contains must be a non-empty list, got {tokens!r}")
+    for token in tokens:
+        _require_str(token, f"{where} token")
+    for marker in _EXIT_MARKERS:
+        if not any(marker in t for t in tokens):
+            _fail(f"{where} must require the marker {marker!r} so prose cannot satisfy it")
+    owner = "--owner direct" if terminal else "--owner nested"
+    if owner not in tokens:
+        _fail(f"{where} must require {owner!r}")
+    for token in tokens:
+        if token.startswith("--served-stage ") and token != f"--served-stage {fixture_served}":
+            _fail(f"{where} names a served stage other than {fixture_served!r}: {token!r}")
+        if token.startswith("--verify-mode ") and token != f"--verify-mode {fixture_mode}":
+            _fail(f"{where} names a verify mode other than {fixture_mode!r}: {token!r}")
+        if token.startswith("--") and len(token.split(" ")) != 2:
+            _fail(f"{where} flag token {token!r} must be exactly '--flag value'")
+
+
+def load_branch_fixture(path: Path) -> BranchFixture:
+    """Load and validate the branch compliance fixture.
+
+    Args:
+        path: Exact JSON fixture path.
+
+    Returns:
+        A validated version-1 fixture with scenarios in file order.
+
+    Raises:
+        OSError: The fixture cannot be read.
+        json.JSONDecodeError: The fixture is malformed JSON.
+        RuntimeError: Its version, keys, literals, scenario cardinality, ordering,
+            command tokens, or safe feature identity violate this specification.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        _fail(f"root must be an object, got {type(data).__name__}")
+    unknown = sorted(set(data) - _BRANCH_TOP_KEYS)
+    if unknown:
+        _fail(f"unknown top-level key(s) {unknown}")
+    missing = sorted(_BRANCH_TOP_KEYS - set(data))
+    if missing:
+        _fail(f"missing top-level key(s) {missing}")
+
+    version = data["schemaVersion"]
+    # `bool` is an `int` subclass, so True would otherwise validate as version 1.
+    if isinstance(version, bool) or version != 1:
+        _fail(f"unsupported schemaVersion {version!r}; this probe reads version 1")
+
+    session = _load_session_module()
+    feature = _require_str(data["feature"], "feature")
+    if not session.SAFE_NAME_RE.match(feature):
+        _fail(f"feature {feature!r} is not a safe name")
+    served = _require_str(data["servedStage"], "servedStage")
+    mode = _require_str(data["verifyMode"], "verifyMode")
+    if session.VERIFY_MODE_TO_STAGE.get(mode) != served:
+        _fail(
+            f"verifyMode {mode!r} maps to "
+            f"{session.VERIFY_MODE_TO_STAGE.get(mode)!r}, not servedStage {served!r}"
+        )
+
+    scenarios = data["scenarios"]
+    if not isinstance(scenarios, list) or not scenarios:
+        _fail(f"scenarios must be a non-empty list, got {scenarios!r}")
+    names = [s.get("name") if isinstance(s, dict) else None for s in scenarios]
+    if len(names) != len(set(names)):
+        _fail(f"scenario names must be unique, got {names}")
+    if tuple(names) != BRANCH_SCENARIO_ORDER:
+        _fail(f"scenarios must be exactly {list(BRANCH_SCENARIO_ORDER)} in that order, got {names}")
+
+    for scenario in scenarios:
+        name = scenario["name"]
+        unknown = sorted(set(scenario) - _BRANCH_SCENARIO_KEYS)
+        if unknown:
+            _fail(f"scenario {name!r} has unknown key(s) {unknown}")
+        missing = sorted(_BRANCH_SCENARIO_KEYS - set(scenario))
+        if missing:
+            _fail(f"scenario {name!r} is missing key(s) {missing}")
+        if scenario["initialVerifyOutcome"] != "findings":
+            _fail(f"scenario {name!r} initialVerifyOutcome must be 'findings'")
+        if scenario["fixOutcome"] != "applied":
+            _fail(f"scenario {name!r} fixOutcome must be 'applied'")
+        if scenario["reverifyOutcome"] not in ("passed", "findings", "failed"):
+            _fail(f"scenario {name!r} reverifyOutcome {scenario['reverifyOutcome']!r} is invalid")
+        primary = _require_str(scenario["expectedPrimaryCommand"], f"scenario {name!r} primary")
+        if feature not in primary:
+            _fail(f"scenario {name!r} expectedPrimaryCommand does not name {feature!r}")
+        commands = scenario["expectedCommands"]
+        if not isinstance(commands, list) or not commands:
+            _fail(f"scenario {name!r} expectedCommands must be a non-empty list")
+        last = len(commands) - 1
+        for index, entry in enumerate(commands):
+            _validate_command(entry, index, name, served, mode, terminal=index == last)
+        stages = [entry["stage"] for entry in commands]
+        if len(stages) != len(set(stages)):
+            _fail(f"scenario {name!r} repeats an evidence stage: {stages}")
+
+    return data  # type: ignore[return-value]
+
+
+def build_branch_fixture(root: Path, fixture: BranchFixture) -> None:
+    """Build a schema-valid throwaway repository before branch diversion.
+
+    The repository is parked exactly where the diversion begins: the PRD is authored and
+    committed at version 1, a findings report is already on disk, and no
+    `forge-verify-prd` entry exists yet — so every verification transition the scenario
+    needs is one the run (or `expected_branch_exit`) actually performs.
+
+    Raises:
+        OSError: Fixture files cannot be created.
+        RuntimeError: Fixture values are invalid or the repository cannot initialize.
+    """
+    feature = fixture["feature"]
+    session = _load_session_module()
+    if not isinstance(feature, str) or not session.SAFE_NAME_RE.match(feature):
+        raise RuntimeError(f"branch fixture feature {feature!r} is not a safe name")
+    if fixture["servedStage"] != FIXTURE_STAGE:
+        raise RuntimeError(
+            f"branch fixture servedStage {fixture['servedStage']!r} is not {FIXTURE_STAGE!r}; "
+            "the scratch repository only models the PRD close"
+        )
+
+    feature_dir = root / "specs" / feature
+    (feature_dir / BRANCH_FINDINGS_FILE).parent.mkdir(parents=True)
+    (root / "forge.config.json").write_text(
+        json.dumps(
+            {"specsDir": "specs", "gitCommitAfterStage": True, "commitPrefix": "feat"},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (feature_dir / "PRD.md").write_text(FIXTURE_PRD, encoding="utf-8")
+    (feature_dir / BRANCH_FINDINGS_FILE).write_text(BRANCH_FINDINGS_DOC, encoding="utf-8")
+    (feature_dir / PIPELINE_STATE).write_text(
+        json.dumps(
+            {
+                "feature": feature,
+                "createdAt": FIXTURE_TIMESTAMP,
+                "updatedAt": FIXTURE_TIMESTAMP,
+                "pipelineStatus": "active",
+                "currentStage": "forge-2-tech",
+                "stages": {
+                    FIXTURE_STAGE: {
+                        "status": "complete",
+                        "version": 1,
+                        "artifacts": ["PRD.md"],
+                        "startedAt": FIXTURE_TIMESTAMP,
+                        "completedAt": FIXTURE_TIMESTAMP,
+                        "commitHash": None,
+                        "basedOnVersions": {},
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _git_init(root)
+
+
+def branch_prompt(fixture: BranchFixture, scenario: BranchScenario) -> str:
+    """Return the user turn that drives one complete branch scenario.
+
+    The branch results are SUPPLIED rather than discovered: a live clean-room dispatch
+    would make the outcome non-deterministic, and what is under test is whether the model
+    closes each step through the scripted contract, not whether a verifier finds the
+    findings this fixture already wrote.
+
+    Ownership is stated with the literal `owner:` token because the shared protocol
+    forbids inferring it from how an invocation is phrased — the dispatching prompt IS
+    the ownership carrier, so this prompt has to carry it.
+    """
+    feature = fixture["feature"]
+    served = fixture["servedStage"]
+    mode = fixture["verifyMode"]
+    verify_skill = REPO_ROOT / "skills" / "forge-verify" / "SKILL.md"
+    fix_skill = REPO_ROOT / "skills" / "forge-fix" / "SKILL.md"
+    protocol = REPO_ROOT / "references" / "stage-exit-protocol.md"
+    if scenario["reverifyOutcome"] == "passed":
+        reverify = (
+            "the re-verification finds nothing further — it PASSES for the same served "
+            "stage"
+        )
+    elif scenario["reverifyOutcome"] == "findings":
+        reverify = (
+            "the re-verification reports FURTHER findings for the same served stage, so "
+            "the fix work is not resolved"
+        )
+    else:
+        reverify = (
+            "the re-verification could not run to a result at all — it FAILED "
+            "operationally"
+        )
+    return (
+        f"You are the agent driving the feature-forge pipeline in this repository. "
+        f"Feature: `{feature}`. Specs dir: `specs`.\n\n"
+        f"`{served}` is complete at version 1 and its verification is outstanding. You "
+        f"are driving one verify -> fix -> re-verify diversion end to end in this "
+        f"session, and you are its sole terminal owner: only the LAST step prints a "
+        f"terminal block.\n\n"
+        f"Carry out these four steps in order, following {verify_skill}, {fix_skill}, "
+        f"and {protocol} exactly as written.\n\n"
+        f"1. Verification of the {mode} artifact has already run and reported "
+        f"{BRANCH_FINDINGS_COUNT} findings, written to "
+        f"`specs/{feature}/{BRANCH_FINDINGS_FILE}`. Close that verification step. "
+        f"owner: nested\n"
+        f"2. Apply those findings. The fix work itself is done — treat the report's "
+        f"three fixes as applied to `specs/{feature}/PRD.md`. Close that fix step. "
+        f"owner: nested\n"
+        f"3. Run the mandatory re-verification for `{served}`: {reverify}. Close that "
+        f"re-verification step. owner: nested\n"
+        f"4. Close the diversion for the user. owner: direct\n\n"
+        f"Print the final NEXT-STEPS block byte-for-byte as your absolute last output, "
+        f"with nothing whatsoever after its final line."
+    )
+
+
+def _reverify_status(scenario: BranchScenario) -> str | None:
+    """The verify status the scenario's re-verification records, or None for a failure.
+
+    A re-verification that never ran to a result resolves nothing, so it writes no
+    transition — the entry stays at the `findings-applied` the fix step left behind,
+    which is exactly the unresolved-freshness state the fix writer deliberately creates.
+    """
+    return {"passed": "passed", "findings": "findings-reported"}.get(scenario["reverifyOutcome"])
+
+
+def _state_verify(root: Path, feature: str, served: str, *args: str) -> None:
+    """Run the real `state-verify` writer against the scratch repo."""
+    proc = subprocess.run(
+        [
+            sys.executable, str(HELPER), "state-verify",
+            "--feature", feature, "--stage", served, "--specs-dir", "specs", *args,
+        ],
+        cwd=str(root), capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"state-verify {args} failed on the branch fixture: {proc.stderr}")
+
+
+def _apply_branch_state(root: Path, fixture: BranchFixture, scenario: BranchScenario) -> None:
+    """Walk the scratch repo through the scenario's real verification transitions.
+
+    Every write goes through the real `state-verify` verb rather than being hand-authored
+    here, so the state the terminal exit routes from is the state the pipeline would
+    actually be in — including `findings-applied` clearing `verifiedStageVersion`.
+    """
+    feature, served = fixture["feature"], fixture["servedStage"]
+    findings_args = (
+        "--findings-file", BRANCH_FINDINGS_FILE,
+        "--findings-count", str(BRANCH_FINDINGS_COUNT),
+        "--verified-stage-version", "1",
+    )
+    _state_verify(root, feature, served, "--status", "findings-reported", *findings_args)
+    _state_verify(root, feature, served, "--status", "findings-applied")
+    status = _reverify_status(scenario)
+    if status == "passed":
+        _state_verify(root, feature, served, "--status", "passed", "--verified-stage-version", "1")
+    elif status == "findings-reported":
+        _state_verify(root, feature, served, "--status", "findings-reported", *findings_args)
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, env=env)
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-qm", "verify state"], check=True, env=env
+    )
+
+
+def terminal_exit_args(scenario: BranchScenario) -> list[str]:
+    """Derive the final `stage-exit` argv from the fixture's terminal expectation.
+
+    The fixture's terminal tokens ARE the command the run is scored for producing, so
+    ground truth is generated by executing those same tokens. A second hand-written argv
+    here could disagree with the expectation and neither side would notice.
+    """
+    terminal = scenario["expectedCommands"][-1]
+    args: list[str] = []
+    for token in terminal["contains"]:
+        if token.startswith("--"):
+            flag, value = token.split(" ", 1)
+            args.extend([flag, value])
+    return args
+
+
+def expected_branch_exit(
+    root: Path,
+    fixture: BranchFixture,
+    scenario: BranchScenario,
+) -> dict:
+    """Run the real final `stage-exit` command and return scorer ground truth.
+
+    `root` is walked through the scenario's verification transitions first, so this
+    MUTATES the repository it is given — call it against a dedicated expectation repo,
+    never against one a live run is about to drive.
+
+    Raises:
+        RuntimeError: The command exits non-zero or emits invalid JSON.
+    """
+    _apply_branch_state(root, fixture, scenario)
+    proc = subprocess.run(
+        [
+            sys.executable, str(HELPER), "stage-exit",
+            "--feature", fixture["feature"],
+            *terminal_exit_args(scenario),
+            "--specs-dir", "specs",
+            "--host", "claude",
+            "--verify-capability", BRANCH_VERIFY_CAPABILITY,
+            "--json",
+        ],
+        cwd=str(root), capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"terminal stage-exit failed for scenario {scenario['name']!r}: {proc.stderr}"
+        )
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"terminal stage-exit emitted invalid JSON for {scenario['name']!r}: {exc}"
+        ) from exc
 
 
 # --------------------------------------------------------------------------- #

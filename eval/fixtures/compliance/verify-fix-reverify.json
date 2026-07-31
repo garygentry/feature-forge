@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "feature": "widget-search",
+  "servedStage": "forge-1-prd",
+  "verifyMode": "prd",
+  "scenarios": [
+    {
+      "name": "successful-rejoin",
+      "initialVerifyOutcome": "findings",
+      "fixOutcome": "applied",
+      "reverifyOutcome": "passed",
+      "expectedPrimaryCommand": "/feature-forge:forge-2-tech widget-search",
+      "expectedCommands": [
+        {
+          "stage": "verify-findings",
+          "contains": [
+            "forge-session.py",
+            "stage-exit",
+            "--stage forge-verify",
+            "--owner nested",
+            "--outcome findings",
+            "--verify-mode prd"
+          ]
+        },
+        {
+          "stage": "fix-applied",
+          "contains": [
+            "forge-session.py",
+            "stage-exit",
+            "--stage forge-fix",
+            "--owner nested",
+            "--outcome applied",
+            "--served-stage forge-1-prd"
+          ]
+        },
+        {
+          "stage": "reverify-passed",
+          "contains": [
+            "forge-session.py",
+            "stage-exit",
+            "--stage forge-verify",
+            "--owner nested",
+            "--outcome passed",
+            "--served-stage forge-1-prd"
+          ]
+        },
+        {
+          "stage": "terminal-exit",
+          "contains": [
+            "forge-session.py",
+            "stage-exit",
+            "--stage forge-fix",
+            "--owner direct",
+            "--outcome reverified",
+            "--served-stage forge-1-prd"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "recovery",
+      "initialVerifyOutcome": "findings",
+      "fixOutcome": "applied",
+      "reverifyOutcome": "findings",
+      "expectedPrimaryCommand": "/feature-forge:forge-fix widget-search --served-stage forge-1-prd",
+      "expectedCommands": [
+        {
+          "stage": "verify-findings",
+          "contains": [
+            "forge-session.py",
+            "stage-exit",
+            "--stage forge-verify",
+            "--owner nested",
+            "--outcome findings",
+            "--verify-mode prd"
+          ]
+        },
+        {
+          "stage": "fix-applied",
+          "contains": [
+            "forge-session.py",
+            "stage-exit",
+            "--stage forge-fix",
+            "--owner nested",
+            "--outcome applied",
+            "--served-stage forge-1-prd"
+          ]
+        },
+        {
+          "stage": "reverify-recovery",
+          "contains": [
+            "forge-session.py",
+            "stage-exit",
+            "--stage forge-verify",
+            "--owner nested",
+            "--outcome findings",
+            "--served-stage forge-1-prd"
+          ]
+        },
+        {
+          "stage": "terminal-exit",
+          "contains": [
+            "forge-session.py",
+            "stage-exit",
+            "--stage forge-fix",
+            "--owner direct",
+            "--outcome reverify-findings",
+            "--served-stage forge-1-prd"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1579,3 +1579,72 @@ resume for the same served stage; the nested form returns `nextSteps: null`,
 `sentinel: null`, `terminalOwnedBy: "outer"`. The Step 5 sequence
 (`--status findings-applied` → Commit 1 → `--commit-hash $(git rev-parse HEAD)`) writes an
 entry carrying `fixedAt` and the 40-hex hash and **no** `verifiedStageVersion`.
+
+## Item 025 — branch compliance fixture + strict loader
+
+Added `eval/fixtures/compliance/verify-fix-reverify.json`, the five 06 §3.2 `TypedDict`s,
+`load_branch_fixture`, `build_branch_fixture`, `branch_prompt`, `expected_branch_exit`
+(plus `terminal_exit_args`, `_apply_branch_state`, `_load_session_module`), and 41 offline
+tests in `tests/test_compliance_eval.py`.
+
+### Gotchas for later items
+
+- **The four-call chain the fixture pins is: nested verify (`findings`) -> nested fix
+  (`applied`) -> nested re-verify (`passed`|`findings`) -> DIRECT `forge-fix` terminal
+  (`reverified`|`reverify-findings`).** That is the only assignment of the five
+  `EvidenceStage` values that satisfies all of 06 §3.2 at once: exactly one sentinel
+  needs the first three nested, and the two stated primaries
+  (`/feature-forge:forge-2-tech <feature>` and `/feature-forge:forge-fix <feature>
+  --served-stage forge-1-prd`) are only reachable from `forge-fix`'s `reverified` /
+  `reverify-findings` rows. A production-stage terminal cannot produce the recovery one —
+  item 011's verify-first path fences the bare `verifyCommand`, which carries no
+  `--served-stage`. Item 027's scorer should not assume the terminal is a verify exit.
+
+- **Ownership comes from the PROMPT, by design.** `branch_prompt` emits the literal
+  `owner: nested` three times and `owner: direct` once, because 04 §3.1 forbids inferring
+  ownership from phrasing — the dispatching prompt IS the carrier. A test pins the counts.
+  The prompt also SUPPLIES the branch results (findings already written, fix applied,
+  re-verify passes / reports further findings) rather than letting a live clean-room
+  dispatch decide them; otherwise the scenario is not deterministic and REQ-REL-01 fails.
+
+- **`expected_branch_exit` MUTATES the root it is given.** It walks the repo through the
+  real `state-verify` transitions (findings-reported -> findings-applied ->
+  passed|findings-reported) and commits, then runs the terminal `stage-exit`. Item 027's
+  `run_branch_probe` must give it a DEDICATED expectation repo, not the one the model is
+  about to drive. `_reverify_status` returns None for `failed` on purpose: a re-verify
+  that never ran resolves nothing, so the entry stays at the `findings-applied` the fix
+  writer deliberately left un-fresh.
+
+- **The terminal argv is DERIVED from the fixture's own terminal tokens**
+  (`terminal_exit_args`), so ground truth executes exactly the command the run is scored
+  for producing. A second hand-written argv would be free to disagree with the
+  expectation with nobody noticing. This is also why the loader requires every flag token
+  to be exactly `--flag value` (one space).
+
+- **`--verify-capability` cannot skew the block.** A branch exit's `verifyGate` is `none`
+  whatever the caller passes (item 013), and the rendered `nextSteps` is byte-identical
+  under `manual` and `interactive` — checked directly. `BRANCH_VERIFY_CAPABILITY` is
+  `manual` and documented as inert.
+
+- **The loader mechanically enforces AC 6 rather than trusting the JSON**: every entry
+  must carry BOTH `forge-session.py` and `stage-exit` (so prose can never satisfy it),
+  every non-final entry `--owner nested`, the final entry `--owner direct` AND stage
+  `terminal-exit`, and no `--served-stage`/`--verify-mode` token may name anything other
+  than the fixture's own. `VERIFY_MODE_TO_STAGE` and `SAFE_NAME_RE` are read from the real
+  `scripts/forge-session.py` via `_load_session_module()` (importlib, mirroring
+  `_load_upstream_prelude`) — a local copy could drift into a check that agrees only with
+  itself.
+
+- **`eval/fixtures/*.json` trigger fixtures use keys `skill`/`shouldTrigger`/
+  `shouldNotTrigger`**, not `positive`/`negative`. The isolation test executes the real
+  `run-eval.py::load_fixtures()` and asserts it still returns exactly the two trigger
+  fixtures with no `scenarios`/`schemaVersion` key.
+
+- Nothing under `skills/`, `references/`, or `scripts/` changed, so no adapter
+  regeneration was required (`build-adapters.py --check` reports no drift).
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!"; `python3 -m pytest tests -q` ->
+1555 passed, 2 skipped (both pre-existing); `python3 -m pytest
+tests/test_compliance_eval.py` -> 80 passed; `ruff check scripts/ eval/` clean.
