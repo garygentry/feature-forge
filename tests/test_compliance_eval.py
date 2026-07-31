@@ -1266,3 +1266,689 @@ def test_branch_prompt_never_dictates_the_expected_output(branch_fixture: dict) 
         assert ce.SENTINEL not in prompt
         assert scenario["expectedPrimaryCommand"] not in prompt
         assert "stage-exit --stage" not in prompt
+
+
+# --------------------------------------------------------------------------- #
+# Branch scorer — the eight criteria and the negative matrix (06 §5.2, 07 §7.2)
+# --------------------------------------------------------------------------- #
+#
+# Every transcript below is a pure dictionary stream: no live model, no network, and no
+# API key. The one subprocess is the real `forge-session.py` CLI deriving ground truth,
+# which is exactly what keeps the expectation the script's own output rather than prose.
+
+#: The eight keys 06 §5.2 fixes, spelled out here rather than imported. Comparing the
+#: module constant against itself would be vacuous; this is the second, independent copy
+#: that makes a silently added or dropped criterion fail.
+SPEC_BRANCH_CRITERIA = (
+    "ordered_command_results",
+    "all_commands_succeeded",
+    "exactly_one_sentinel",
+    "nested_steps_emitted_no_sentinel",
+    "nothing_after_sentinel",
+    "next_command_fenced",
+    "block_verbatim",
+    "correct_rejoin_or_recovery",
+)
+
+
+@pytest.fixture(scope="module")
+def branch_truth(tmp_path_factory) -> dict[str, dict]:
+    """Real `StageExitPayload` ground truth per scenario, derived once for the module.
+
+    Each scenario gets its own throwaway repository: `expected_branch_exit` walks the
+    repo through the scenario's real verification transitions, so sharing one would let
+    the first scenario colour the second.
+    """
+    fixture = ce.load_branch_fixture(ce.BRANCH_FIXTURE_PATH)
+    base = tmp_path_factory.mktemp("branch-truth")
+    truth: dict[str, dict] = {}
+    for scenario in fixture["scenarios"]:
+        root = base / scenario["name"]
+        root.mkdir()
+        ce.build_branch_fixture(root, fixture)
+        truth[scenario["name"]] = ce.expected_branch_exit(root, fixture, scenario)
+    return truth
+
+
+def _branch_command(expected: dict) -> str:
+    """A plausible real invocation carrying every literal token the fixture requires."""
+    flags = " ".join(token for token in expected["contains"] if token.startswith("--"))
+    return (
+        'python3 "$R/scripts/forge-session.py" stage-exit '
+        f'--feature widget-search {flags} --specs-dir specs --host claude'
+    )
+
+
+def _branch_commands(scenario: dict) -> list[str]:
+    return [_branch_command(entry) for entry in scenario["expectedCommands"]]
+
+
+def _branch_stream(
+    commands: list[str],
+    final_text: str,
+    *,
+    pre_texts: tuple[str, ...] = (),
+    drop_last_result: bool = False,
+    fail_last_result: bool = False,
+) -> str:
+    events: list[object] = []
+    for index, command in enumerate(commands):
+        events.append(_assistant(_text(f"closing step {index + 1}"), _bash(command, f"b{index}")))
+        last = index == len(commands) - 1
+        if last and drop_last_result:
+            continue  # requested, never observed to complete
+        if last and fail_last_result:
+            events.append(_tool_result(f"b{index}", "Exit code 2\nrefused", is_error=True))
+            continue
+        events.append(_tool_result(f"b{index}", "ran"))
+    for text in pre_texts:
+        events.append(_assistant(_text(text)))
+    events.append(_assistant(_text(final_text)))
+    events.append(_final(final_text))
+    return _stream(*events)
+
+
+def _score_run(
+    branch_fixture: dict,
+    branch_truth: dict[str, dict],
+    name: str,
+    final_text: str | None = None,
+    *,
+    commands: list[str] | None = None,
+    **stream_kwargs: object,
+) -> dict[str, bool]:
+    """Score one synthetic run of `name`, defaulting to a fully compliant one."""
+    scenario = _scenario(branch_fixture, name)
+    truth = branch_truth[name]
+    stream = _branch_stream(
+        _branch_commands(scenario) if commands is None else commands,
+        truth["nextSteps"] if final_text is None else final_text,
+        **stream_kwargs,  # type: ignore[arg-type]
+    )
+    return ce.score_branch_path(ce.parse_transcript(stream), truth, scenario)
+
+
+def _assert_true(criteria: dict[str, bool], *keys: str) -> None:
+    """Assert the named UNRELATED criteria survived, so one defect cannot mask another."""
+    for key in keys:
+        assert criteria[key] is True, f"{key} should have stayed true"
+
+
+# --- the criteria set and the two positives ----------------------------------
+
+
+def test_the_scorer_returns_exactly_the_eight_specified_criteria(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    criteria = _score_run(branch_fixture, branch_truth, "successful-rejoin")
+    assert tuple(criteria) == SPEC_BRANCH_CRITERIA
+    assert ce.BRANCH_CRITERIA == SPEC_BRANCH_CRITERIA
+
+
+@pytest.mark.parametrize("name", ["successful-rejoin", "recovery"])
+def test_a_compliant_branch_run_satisfies_every_criterion(
+    branch_fixture: dict, branch_truth: dict[str, dict], name: str
+) -> None:
+    criteria = _score_run(branch_fixture, branch_truth, name)
+    assert all(criteria.values()), [key for key, value in criteria.items() if not value]
+
+
+@pytest.mark.parametrize("name", ["successful-rejoin", "recovery"])
+def test_compliance_requires_all_eight(
+    branch_fixture: dict, branch_truth: dict[str, dict], name: str
+) -> None:
+    """`_to_result` treats the scorer's dict as an AND, which is what makes each key bind."""
+    criteria = _score_run(branch_fixture, branch_truth, name)
+    assert all(criteria.values())
+    for key in criteria:
+        assert not all({**criteria, key: False}.values()), key
+
+
+# --- negative 1: missing tool result -----------------------------------------
+
+
+@pytest.mark.parametrize("name", ["successful-rejoin", "recovery"])
+def test_negative_1_a_missing_tool_result_fails_ordered_command_results(
+    branch_fixture: dict, branch_truth: dict[str, dict], name: str
+) -> None:
+    criteria = _score_run(branch_fixture, branch_truth, name, drop_last_result=True)
+    assert criteria["ordered_command_results"] is False
+    _assert_true(
+        criteria,
+        "all_commands_succeeded",  # the successful prefix is intact
+        "exactly_one_sentinel",
+        "nothing_after_sentinel",
+        "next_command_fenced",
+        "block_verbatim",
+        "correct_rejoin_or_recovery",
+    )
+
+
+# --- negative 2: non-zero / error result -------------------------------------
+
+
+def test_negative_2_a_failed_tool_result_fails_ordered_command_results(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    criteria = _score_run(branch_fixture, branch_truth, "successful-rejoin", fail_last_result=True)
+    assert criteria["ordered_command_results"] is False
+    _assert_true(criteria, "exactly_one_sentinel", "block_verbatim", "correct_rejoin_or_recovery")
+
+
+# --- negative 3: reordered fix and re-verify ---------------------------------
+
+
+def test_negative_3_reordering_the_fix_and_reverify_fails_ordered_command_results(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    scenario = _scenario(branch_fixture, "successful-rejoin")
+    commands = _branch_commands(scenario)
+    commands[1], commands[2] = commands[2], commands[1]
+    criteria = _score_run(branch_fixture, branch_truth, "successful-rejoin", commands=commands)
+    assert criteria["ordered_command_results"] is False
+    _assert_true(criteria, "exactly_one_sentinel", "block_verbatim", "next_command_fenced")
+
+
+# --- negative 4: duplicate stage-exit request --------------------------------
+
+
+def test_negative_4_a_duplicate_stage_exit_fails_ordered_command_results(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    scenario = _scenario(branch_fixture, "successful-rejoin")
+    commands = _branch_commands(scenario)
+    criteria = _score_run(
+        branch_fixture, branch_truth, "successful-rejoin", commands=[*commands, commands[-1]]
+    )
+    assert criteria["ordered_command_results"] is False
+    _assert_true(criteria, "exactly_one_sentinel", "nothing_after_sentinel", "block_verbatim")
+
+
+# --- negative 5: duplicate terminal sentinel ---------------------------------
+
+
+def test_negative_5_a_duplicate_terminal_sentinel_fails_the_count_and_the_tail(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    block = branch_truth["successful-rejoin"]["nextSteps"]
+    criteria = _score_run(branch_fixture, branch_truth, "successful-rejoin", block + "\n" + block)
+    assert criteria["exactly_one_sentinel"] is False
+    assert criteria["nothing_after_sentinel"] is False
+    _assert_true(
+        criteria,
+        "ordered_command_results",
+        "nested_steps_emitted_no_sentinel",  # the leak check is about EARLIER texts
+        "block_verbatim",
+        "next_command_fenced",
+    )
+
+
+def test_nothing_after_sentinel_fails_an_earlier_duplicate_despite_a_correct_tail(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """A suffix check alone would pass this: the final line IS the sentinel (06 §5.2)."""
+    block = branch_truth["recovery"]["nextSteps"]
+    final_text = block + "\n" + block
+    assert final_text.rstrip().endswith(ce.SENTINEL)
+    criteria = _score_run(branch_fixture, branch_truth, "recovery", final_text)
+    assert criteria["nothing_after_sentinel"] is False
+
+
+# --- negative 6: sentinel emitted during a nested call -----------------------
+
+
+@pytest.mark.parametrize("name", ["successful-rejoin", "recovery"])
+def test_negative_6_a_nested_step_printing_a_sentinel_fails_the_ownership_check(
+    branch_fixture: dict, branch_truth: dict[str, dict], name: str
+) -> None:
+    """REQ-EXIT-04: a nested verify/fix that prints its own terminal block leaks ownership."""
+    leak = f"Verification closed.\n\n```\n/feature-forge:forge-fix widget-search\n```\n{ce.SENTINEL}"
+    criteria = _score_run(branch_fixture, branch_truth, name, pre_texts=(leak,))
+    assert criteria["nested_steps_emitted_no_sentinel"] is False
+    assert criteria["exactly_one_sentinel"] is False  # two across all assistant texts
+    _assert_true(
+        criteria,
+        "ordered_command_results",
+        "nothing_after_sentinel",  # the FINAL block is still clean
+        "block_verbatim",
+    )
+
+
+def test_the_terminal_block_itself_is_never_counted_as_a_nested_leak(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """Negative control: the compliant run's own sentinel must not trip the leak check."""
+    criteria = _score_run(branch_fixture, branch_truth, "successful-rejoin")
+    assert criteria["nested_steps_emitted_no_sentinel"] is True
+
+
+# --- negative 7: correct sentinel followed by prose --------------------------
+
+
+@pytest.mark.parametrize("name", ["successful-rejoin", "recovery"])
+def test_negative_7_trailing_prose_after_the_sentinel_fails_nothing_after_sentinel(
+    branch_fixture: dict, branch_truth: dict[str, dict], name: str
+) -> None:
+    block = branch_truth[name]["nextSteps"]
+    criteria = _score_run(
+        branch_fixture, branch_truth, name, block + "\n\nLet me know if you want anything else."
+    )
+    assert criteria["nothing_after_sentinel"] is False
+    _assert_true(
+        criteria,
+        "ordered_command_results",
+        "exactly_one_sentinel",
+        "nested_steps_emitted_no_sentinel",
+        "next_command_fenced",
+        "block_verbatim",
+        "correct_rejoin_or_recovery",
+    )
+
+
+# --- negative 8: prose-only claim with no Bash evidence ----------------------
+
+
+def test_negative_8_a_prose_only_claim_fails_ordered_command_results(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """A perfect-looking block proves nothing when no command was ever run."""
+    claim = "I closed the verification, the fix, and the re-verification through the script."
+    criteria = _score_run(
+        branch_fixture, branch_truth, "successful-rejoin", commands=[], pre_texts=(claim,)
+    )
+    assert criteria["ordered_command_results"] is False
+    _assert_true(
+        criteria,
+        "exactly_one_sentinel",
+        "nothing_after_sentinel",
+        "next_command_fenced",
+        "block_verbatim",
+        "correct_rejoin_or_recovery",
+    )
+
+
+# --- negative 9: verbatim-looking block without the real terminal command ----
+
+
+def test_negative_9_a_verbatim_block_without_the_terminal_command_fails_evidence(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    scenario = _scenario(branch_fixture, "recovery")
+    criteria = _score_run(
+        branch_fixture, branch_truth, "recovery", commands=_branch_commands(scenario)[:-1]
+    )
+    assert criteria["ordered_command_results"] is False
+    _assert_true(
+        criteria,
+        "block_verbatim",  # the block really is byte-identical — and still not earned
+        "next_command_fenced",
+        "exactly_one_sentinel",
+        "correct_rejoin_or_recovery",
+    )
+
+
+# --- negative 10: wrong feature or served stage ------------------------------
+
+
+@pytest.mark.parametrize(
+    ("wrong", "why"),
+    [
+        ("/feature-forge:forge-fix other-feature --served-stage forge-1-prd", "wrong feature"),
+        ("/feature-forge:forge-fix widget-search --served-stage forge-3-specs", "wrong served"),
+    ],
+)
+def test_negative_10_a_wrong_feature_or_served_stage_fails_the_route(
+    branch_fixture: dict, branch_truth: dict[str, dict], wrong: str, why: str
+) -> None:
+    truth = branch_truth["recovery"]
+    primary = truth["directives"]["primaryCommand"]
+    criteria = _score_run(
+        branch_fixture, branch_truth, "recovery", truth["nextSteps"].replace(primary, wrong)
+    )
+    assert criteria["correct_rejoin_or_recovery"] is False, why
+    # The block carries the sentinel but is no longer the script's own bytes.
+    assert criteria["block_verbatim"] is False
+    _assert_true(
+        criteria,
+        "ordered_command_results",
+        "all_commands_succeeded",
+        "exactly_one_sentinel",
+        "nothing_after_sentinel",
+        "nested_steps_emitted_no_sentinel",
+    )
+
+
+@pytest.mark.parametrize(
+    ("doctored", "why"),
+    [
+        ("/feature-forge:forge-fix widget-search", "no served stage carried forward"),
+        ("/feature-forge:forge-fix --served-stage forge-1-prd", "no feature named"),
+        ("/feature-forge:forge-2-tech widget-search", "recovery route equals the successor"),
+    ],
+)
+def test_a_recovery_route_that_loses_its_context_is_not_correct(
+    branch_fixture: dict, branch_truth: dict[str, dict], doctored: str, why: str
+) -> None:
+    """The recovery command must keep the same feature and served stage (06 §5.2).
+
+    Driven through a doctored expectation because a transcript cannot express it: the
+    guard is on the ROUTE the payload names, which a live run never gets to choose.
+    """
+    truth = branch_truth["recovery"]
+    payload = {
+        **truth,
+        "directives": {**truth["directives"], "primaryCommand": doctored},
+        "nextSteps": truth["nextSteps"].replace(truth["directives"]["primaryCommand"], doctored),
+    }
+    criteria = ce.score_branch_path(
+        ce.parse_transcript(
+            _branch_stream(
+                _branch_commands(_scenario(branch_fixture, "recovery")), payload["nextSteps"]
+            )
+        ),
+        payload,
+        _scenario(branch_fixture, "recovery"),
+    )
+    assert criteria["correct_rejoin_or_recovery"] is False, why
+
+
+def test_a_rejoin_route_that_is_not_the_production_successor_is_not_correct(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """The resolved diversion must hand back to the successor, not to another diversion."""
+    truth = branch_truth["successful-rejoin"]
+    doctored = "/feature-forge:forge-fix widget-search --served-stage forge-1-prd"
+    payload = {
+        **truth,
+        "directives": {**truth["directives"], "primaryCommand": doctored},
+        "nextSteps": truth["nextSteps"].replace(truth["directives"]["primaryCommand"], doctored),
+    }
+    criteria = ce.score_branch_path(
+        ce.parse_transcript(
+            _branch_stream(
+                _branch_commands(_scenario(branch_fixture, "successful-rejoin")),
+                payload["nextSteps"],
+            )
+        ),
+        payload,
+        _scenario(branch_fixture, "successful-rejoin"),
+    )
+    assert criteria["correct_rejoin_or_recovery"] is False
+
+
+def test_all_commands_succeeded_rejects_a_matched_command_that_did_not_succeed(
+    branch_fixture: dict, branch_truth: dict[str, dict], monkeypatch
+) -> None:
+    """The matcher refuses to match a failed result today; this pins the second guard.
+
+    Driven through a stubbed matcher on purpose — it is the only way to reach the
+    criterion, and it is exactly the future relaxation the guard exists to survive.
+    """
+    failed: dict = {
+        "requestIndex": 0,
+        "toolUseId": "b0",
+        "command": "stage-exit",
+        "resultSeen": True,
+        "exitCode": 2,
+        "isError": True,
+        "resultTail": "boom",
+    }
+    monkeypatch.setattr(ce, "ordered_command_evidence", lambda *_: (True, [failed]))
+    criteria = _score_run(branch_fixture, branch_truth, "recovery")
+    assert criteria["ordered_command_results"] is True
+    assert criteria["all_commands_succeeded"] is False
+
+
+def test_a_paraphrased_block_fails_block_verbatim_while_keeping_the_sentinel(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """Byte-for-byte, not sentinel-shaped: a summary that ends correctly is still a summary."""
+    truth = branch_truth["successful-rejoin"]
+    primary = truth["directives"]["primaryCommand"]
+    paraphrase = f"**Next steps**\nThe diversion is resolved.\n\n```\n{primary}\n```\n{ce.SENTINEL}"
+    criteria = _score_run(branch_fixture, branch_truth, "successful-rejoin", paraphrase)
+    assert criteria["block_verbatim"] is False
+    _assert_true(
+        criteria,
+        "exactly_one_sentinel",
+        "nothing_after_sentinel",
+        "next_command_fenced",
+        "correct_rejoin_or_recovery",
+        "ordered_command_results",
+    )
+
+
+# --- negative 11: recovery incorrectly advancing to production ---------------
+
+
+def test_negative_11_recovery_that_fences_the_production_successor_fails_the_route(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """The deferred successor may be MENTIONED; fencing it offers an advance (REQ-EXIT-06)."""
+    truth = branch_truth["recovery"]
+    successor = truth["directives"]["nextCommand"]
+    advance = f"```\n{successor}\n```\n{ce.SENTINEL}"
+    criteria = _score_run(
+        branch_fixture, branch_truth, "recovery", truth["nextSteps"].replace(ce.SENTINEL, advance)
+    )
+    assert criteria["correct_rejoin_or_recovery"] is False
+    _assert_true(
+        criteria,
+        "ordered_command_results",
+        "next_command_fenced",  # the real recovery command is STILL fenced
+        "exactly_one_sentinel",
+        "nothing_after_sentinel",
+    )
+
+
+def test_the_recovery_block_mentions_the_successor_without_fencing_it(
+    branch_truth: dict[str, dict]
+) -> None:
+    """Negative control for the rule above: the real block would otherwise trip it."""
+    truth = branch_truth["recovery"]
+    successor = truth["directives"]["nextCommand"]
+    assert successor in truth["nextSteps"]
+    assert ce._in_fenced_block(truth["nextSteps"], successor) is False
+
+
+# --- negative 12: successful commands but the wrong fenced primary command ---
+
+
+def test_negative_12_a_substituted_fenced_command_fails_next_command_fenced(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    truth = branch_truth["successful-rejoin"]
+    primary = truth["directives"]["primaryCommand"]
+    criteria = _score_run(
+        branch_fixture,
+        branch_truth,
+        "successful-rejoin",
+        truth["nextSteps"].replace(primary, "/feature-forge:forge widget-search"),
+    )
+    assert criteria["next_command_fenced"] is False
+    assert criteria["block_verbatim"] is False
+    _assert_true(
+        criteria,
+        "ordered_command_results",
+        "all_commands_succeeded",
+        "exactly_one_sentinel",
+        "nothing_after_sentinel",
+        "nested_steps_emitted_no_sentinel",
+    )
+
+
+def test_an_unfenced_primary_command_fails_only_the_fencing_criterion(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """Fencing is the tap-to-copy surface — naming the command in prose is not enough."""
+    truth = branch_truth["successful-rejoin"]
+    primary = truth["directives"]["primaryCommand"]
+    criteria = _score_run(
+        branch_fixture,
+        branch_truth,
+        "successful-rejoin",
+        truth["nextSteps"].replace(f"```\n{primary}\n```", f"Next, run `{primary}` when ready."),
+    )
+    assert criteria["next_command_fenced"] is False
+    # Routing is right, presentation is not — the two criteria are genuinely independent.
+    _assert_true(criteria, "correct_rejoin_or_recovery", "ordered_command_results")
+
+
+# --- required-payload validation (06 §5.1) -----------------------------------
+
+
+@pytest.mark.parametrize("missing", ["directives", "nextSteps", "sentinel"])
+def test_a_missing_payload_key_raises_runtime_error_not_key_error(
+    branch_fixture: dict, branch_truth: dict[str, dict], missing: str
+) -> None:
+    payload = {k: v for k, v in branch_truth["recovery"].items() if k != missing}
+    with pytest.raises(RuntimeError, match=missing):
+        ce.score_branch_path(
+            ce.parse_transcript(_stream(_final("x"))), payload, _scenario(branch_fixture, "recovery")
+        )
+
+
+def test_a_missing_primary_command_raises_runtime_error_not_key_error(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    truth = branch_truth["recovery"]
+    directives = {k: v for k, v in truth["directives"].items() if k != "primaryCommand"}
+    with pytest.raises(RuntimeError, match="primaryCommand"):
+        ce.score_branch_path(
+            ce.parse_transcript(_stream(_final("x"))),
+            {**truth, "directives": directives},
+            _scenario(branch_fixture, "recovery"),
+        )
+
+
+@pytest.mark.parametrize("payload", [None, [], "nextSteps"])
+def test_a_non_payload_expectation_raises_runtime_error(
+    branch_fixture: dict, payload: object
+) -> None:
+    with pytest.raises(RuntimeError, match="StageExitPayload"):
+        ce.score_branch_path(
+            ce.parse_transcript(_stream(_final("x"))),
+            payload,  # type: ignore[arg-type]
+            _scenario(branch_fixture, "recovery"),
+        )
+
+
+@pytest.mark.parametrize("key", ["nextSteps", "sentinel"])
+def test_an_empty_required_string_raises_runtime_error(
+    branch_fixture: dict, branch_truth: dict[str, dict], key: str
+) -> None:
+    with pytest.raises(RuntimeError, match="non-empty"):
+        ce.score_branch_path(
+            ce.parse_transcript(_stream(_final("x"))),
+            {**branch_truth["recovery"], key: ""},
+            _scenario(branch_fixture, "recovery"),
+        )
+
+
+def test_a_nested_payload_is_rejected_rather_than_scored(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """A nested exit has `nextSteps`/`sentinel` None — never valid terminal ground truth."""
+    nested = {**branch_truth["recovery"], "nextSteps": None, "sentinel": None}
+    with pytest.raises(RuntimeError, match="non-empty"):
+        ce.score_branch_path(
+            ce.parse_transcript(_stream(_final("x"))),
+            nested,
+            _scenario(branch_fixture, "recovery"),
+        )
+
+
+def test_a_drifted_sentinel_is_a_harness_defect_not_a_model_miss(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    with pytest.raises(RuntimeError, match="drifted"):
+        ce.score_branch_path(
+            ce.parse_transcript(_stream(_final("x"))),
+            {**branch_truth["recovery"], "sentinel": "- forge: end -"},
+            _scenario(branch_fixture, "recovery"),
+        )
+
+
+# --- probe registration and advisory behavior (07 §7.3) ----------------------
+
+
+def test_branch_path_is_a_distinct_probe_choice_included_in_all(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(ce, "driver_path", lambda: "/usr/bin/claude")
+    monkeypatch.setattr(ce, "_assert_prelude_in_sync", lambda: None)
+    for name in ("run_stage_exit_probe", "run_prelude_probe", "run_branch_probe"):
+        monkeypatch.setattr(
+            ce, name, (lambda label: lambda *a, **k: (calls.append(label), [])[1])(name)
+        )
+    assert ce.main(["--probe", "all", "--n", "1"]) == 0
+    assert calls == ["run_stage_exit_probe", "run_prelude_probe", "run_branch_probe"]
+    calls.clear()
+    assert ce.main(["--probe", "branch-path", "--n", "1"]) == 0
+    assert calls == ["run_branch_probe"]
+
+
+def test_branch_path_is_rejected_by_neither_argparse_nor_the_help() -> None:
+    proc = subprocess.run(
+        [sys.executable, str(EVAL_SCRIPT), "--help"], capture_output=True, text=True
+    )
+    assert proc.returncode == 0
+    assert "branch-path" in proc.stdout
+
+
+def test_branch_probe_reports_the_two_scenarios_as_separate_variants() -> None:
+    """Never averaged into stage-exit/cold or /warm — they are their own cells."""
+    reports = ce.run_branch_probe(["model-x"], 0)  # n=0 drives no session
+    assert [(r.probe, r.variant) for r in reports] == [
+        ("branch-path", "successful-rejoin"),
+        ("branch-path", "recovery"),
+    ]
+    assert all(report.runs == 0 and report.rate is None for report in reports)
+
+
+def test_the_offline_branch_path_never_reaches_a_live_driver(
+    branch_fixture: dict, branch_truth: dict[str, dict], monkeypatch
+) -> None:
+    """CI hard-tests the fixture, parser, matcher, and scorer with no model in the loop."""
+
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("the offline suite must not start a live session")
+
+    monkeypatch.setattr(ce, "run_session", boom)
+    monkeypatch.setattr(ce, "driver_path", boom)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    for name in ("successful-rejoin", "recovery"):
+        assert all(_score_run(branch_fixture, branch_truth, name).values())
+    assert len(ce.run_branch_probe(["model-x"], 0)) == 2
+
+
+def test_a_missing_driver_still_skips_at_exit_zero_for_the_branch_probe(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(ce, "driver_path", lambda: None)
+    assert ce.main(["--probe", "branch-path"]) == 0
+    assert "skipped" in capsys.readouterr().out
+
+
+def test_a_model_miss_is_a_scored_non_compliant_result_not_a_process_failure(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    scenario = _scenario(branch_fixture, "successful-rejoin")
+    truth = branch_truth["successful-rejoin"]
+    stream = _branch_stream(_branch_commands(scenario), "I finished the diversion.")
+    result = ce._to_result(
+        "branch-path", "model-x", scenario["name"], 0, ce.parse_transcript(stream),
+        lambda t: ce.score_branch_path(t, truth, scenario),
+    )
+    assert result.ok is True and result.compliant is False
+    assert result.criteria["block_verbatim"] is False
+
+
+def test_an_unusable_transcript_is_unscored_rather_than_non_compliant(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    scenario = _scenario(branch_fixture, "recovery")
+    result = ce._to_result(
+        "branch-path", "model-x", scenario["name"], 0, ce.parse_transcript("Warning: nothing"),
+        lambda t: ce.score_branch_path(t, branch_truth["recovery"], scenario),
+    )
+    assert result.ok is False and result.criteria == {}

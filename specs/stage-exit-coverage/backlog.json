@@ -908,8 +908,8 @@
         "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
         "score_branch_path raises RuntimeError, not KeyError, for an expected_payload missing directives, nextSteps, sentinel, or directives.primaryCommand, and each case is covered offline"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T12:18:18.944Z",
       "dependsOn": [
         "018",
         "019",

@@ -1728,3 +1728,77 @@ drift)`; `python3 -m pytest tests -q` -> 1591 passed, 2 skipped (both pre-existi
 `python3 -m pytest tests/test_compliance_eval.py` -> 116 passed; `ruff check scripts/ eval/`
 clean. No `scripts/`, `skills/`, or `references/` file changed, so no adapter regeneration
 was required.
+
+## Item 027 — branch scorer, probe registration, offline negative matrix
+
+Added `score_branch_path` + `_branch_ground_truth` + `BRANCH_CRITERIA` and
+`run_branch_probe` to `eval/run-compliance-eval.py`, registered `branch-path` as a distinct
+`--probe` choice included in `all`, and added 49 offline tests (the twelve 07 §7.2 negatives,
+both positives, the payload-validation matrix, and the probe-registration/advisory rows).
+
+### Gotchas for later items
+
+- **`all_commands_succeeded` is VACUOUS as the spec literally defines it.** 06 §5.2 defines it
+  over the *matched* set, and `ordered_command_evidence` only appends an entry AFTER its
+  success check — so it can never be False while that holds. It is implemented literally and
+  documented as a defensive restatement that survives a future matcher relaxation, and its
+  only test drives it through a stubbed matcher returning a failed entry. Do not "fix" it by
+  re-deriving matches leniently: that would make negatives 1 and 2 fail two criteria each and
+  destroy their targeting.
+
+- **Negatives 5 and 6 are the pair that pins the two sentinel rules apart.** 5 (duplicate
+  block inside `final_text`) → `exactly_one_sentinel` AND `nothing_after_sentinel` false,
+  `nested_steps_emitted_no_sentinel` TRUE. 6 (sentinel in an earlier assistant text) →
+  `nested_steps_emitted_no_sentinel` false, `nothing_after_sentinel` TRUE. If a later edit
+  makes both fail the same set, one of the two rules has been collapsed into the other.
+
+- **`nested_texts = texts[:-1] if texts[-1] == final_text else list(texts)`.** `parse_transcript`
+  appends `final_text` only when absent, so the terminal block is normally the last entry.
+  The `else` branch is deliberately strict: if the final block is NOT last, nothing is exempt
+  from the leak check.
+
+- **Two guards in `correct_rejoin_or_recovery` are GROUND-TRUTH sanity, not transcript
+  checks** (`feature in primary`, `--served-stage {served}` in primary, `primary == successor`
+  on the rejoin branch). No live transcript can falsify them, so they are tested by doctoring
+  the `expected_payload` — three parametrized rows for recovery plus one for rejoin. Two
+  mutation survivors (M5, M10) were found exactly this way.
+
+- **`_branch_ground_truth` also rejects a drifted `sentinel`.** 06 §5.1 only requires the
+  missing-key checks, but §7 lists constant drift among the harness defects that must exit
+  non-zero, and scoring against an unrecognised sentinel would silently pass nothing. A
+  NESTED payload (`nextSteps`/`sentinel` both None) is rejected by the same non-empty-string
+  check — a nested exit is never valid terminal ground truth.
+
+- **`run_branch_probe(models, 0)` is the offline way to exercise probe registration.** n=0
+  builds no repository and starts no session, so the two `ProbeReport`s (variants
+  `successful-rejoin` / `recovery`) can be asserted without a driver. `main`'s `--probe all`
+  dispatch is tested by monkeypatching the three `run_*_probe` module globals and asserting
+  the call order — behavioral, not a source grep.
+
+- **The probe needs TWO throwaway repos per run.** `expected_branch_exit` mutates and commits
+  the repo it is given (item 025's note), so `run_branch_probe` builds `run/` for the model
+  and `truth/` for the expectation. Sharing one hands the model a diversion already closed.
+
+- **Mutation-checked, not just green.** Eleven deliberate scorer breakages were injected and
+  every one is now caught: final-text-only sentinel counting, suffix-only `nothing_after`,
+  a leak check that includes the terminal block, dropping the fenced-successor / served-stage
+  / feature / rejoin-successor guards, scoring requests instead of results, `block_verbatim`
+  relaxed to sentinel presence, `next_command_fenced` relaxed to plain presence, and
+  `all_commands_succeeded` ignoring `isError`. Two of them (M5, M7) survived the first pass
+  and are the reason the doctored-payload and paraphrased-block tests exist.
+
+- **Shell reminder (cost 2 minutes here):** `cp` is aliased to `cp -i`, so an unattended
+  backup/restore in a mutation loop hangs on the overwrite prompt. Use `command cp -f`.
+
+- **`eval/README.md` was deliberately NOT touched** — item 028 owns it, including the cost
+  table for the two new cells. The `--probe` help text already names `branch-path` and states
+  that its variants are never averaged into the linear stage-exit cells.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with `PASS: spec-purity checker`,
+`PASS: epic-manifest pytest suite`, and `PASS: adapters/ matches a fresh generation (no
+drift)`; `python3 -m pytest tests -q` -> 1640 passed, 2 skipped (both pre-existing);
+`python3 -m pytest tests/test_compliance_eval.py` -> 165 passed; `ruff check scripts/ eval/`
+clean. No `scripts/`, `skills/`, or `references/` file changed, so no adapter regeneration was
+required.

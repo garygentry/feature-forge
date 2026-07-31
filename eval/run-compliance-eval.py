@@ -6,7 +6,7 @@ catalog of descriptions. It cannot see what happens once a skill is driving, whi
 behavior the Claude 5 adaptation program is about. This harness measures that, over N runs
 per model, and reports a RATE rather than pass/fail.
 
-Two probes:
+Three probes:
 
 PROBE 1 — stage-exit compliance (`--probe stage-exit`)
     Drives a forge authoring stage to its close in a fresh headless session against a
@@ -29,6 +29,14 @@ PROBE 2 — R2 prelude re-expansion (`--probe r2-prelude`)
     model to execute a later call site and checks whether the command it actually runs
     reconstructs the resolver BYTE-IDENTICALLY.
 
+PROBE 3 — branch path compliance (`--probe branch-path`)
+    Drives a whole verify -> fix -> re-verify diversion and scores whether the model
+    closed every step through the scripted contract and rejoined the production stage the
+    diversion served. Its two scenarios — `successful-rejoin` and `recovery` — are
+    reported as SEPARATE variants and are never averaged into the linear
+    `stage-exit/cold`|`warm` cells: that baseline only ever measured the already-scripted
+    linear authoring path and is not evidence for diversion compliance.
+
 Driver
 ------
 Both probes need the real host harness (system prompt, skill loading, tool loop), not a
@@ -42,7 +50,7 @@ driver prints "skipped" and exits 0. The only non-zero exit is a harness bug. Lo
 by default — this is deliberately NOT wired into `.github/workflows/eval.yml`.
 
 Usage:
-    python3 eval/run-compliance-eval.py [--probe stage-exit|r2-prelude|all]
+    python3 eval/run-compliance-eval.py [--probe stage-exit|r2-prelude|branch-path|all]
                                         [--models A,B] [--n N] [--json] [--out FILE]
 
 Each run costs real tokens (roughly $0.30–$1.00 at time of writing). The default N is
@@ -1317,6 +1325,149 @@ def expected_branch_exit(
         ) from exc
 
 
+#: The exact criteria `score_branch_path` reports (06 §5.2). Declared once so the scorer,
+#: the report, and the tests all name the same set — a criterion silently added or dropped
+#: would change what "compliant" means without changing any assertion.
+BRANCH_CRITERIA: Final[tuple[str, ...]] = (
+    "ordered_command_results",
+    "all_commands_succeeded",
+    "exactly_one_sentinel",
+    "nested_steps_emitted_no_sentinel",
+    "nothing_after_sentinel",
+    "next_command_fenced",
+    "block_verbatim",
+    "correct_rejoin_or_recovery",
+)
+
+
+def _branch_ground_truth(expected_payload: dict) -> tuple[dict, str, str, str]:
+    """Validate the required `StageExitPayload` keys before anything indexes them.
+
+    An unguarded `KeyError` escaping to `_to_result`/`run_branch_probe` is
+    indistinguishable from an ordinary dict-access bug, and §7's hierarchy reserves
+    `RuntimeError` for exactly this class of harness invariant failure — so every key
+    is checked explicitly rather than indexed hopefully.
+
+    Raises:
+        RuntimeError: A required key is missing, or the payload's sentinel has drifted
+            from the pinned constant.
+    """
+    if not isinstance(expected_payload, dict):
+        raise RuntimeError(
+            f"expected_payload must be a StageExitPayload dict, "
+            f"got {type(expected_payload).__name__}"
+        )
+    for key in ("directives", "nextSteps", "sentinel"):
+        if key not in expected_payload:
+            raise RuntimeError(
+                f"expected_payload is missing the required StageExitPayload key {key!r}"
+            )
+    directives = expected_payload["directives"]
+    if not isinstance(directives, dict):
+        raise RuntimeError(
+            f"expected_payload['directives'] must be a dict, got {type(directives).__name__}"
+        )
+    if "primaryCommand" not in directives:
+        raise RuntimeError(
+            "expected_payload['directives'] is missing the required key 'primaryCommand'"
+        )
+    next_steps = expected_payload["nextSteps"]
+    sentinel = expected_payload["sentinel"]
+    primary = directives["primaryCommand"]
+    named = (
+        ("nextSteps", next_steps),
+        ("sentinel", sentinel),
+        ("directives.primaryCommand", primary),
+    )
+    for name, value in named:
+        if not isinstance(value, str) or not value:
+            raise RuntimeError(
+                f"expected_payload {name} must be a non-empty string for a terminal "
+                f"branch exit, got {value!r}"
+            )
+    if sentinel != SENTINEL:
+        # Constant drift is a harness defect, not a model miss (§7): scoring against a
+        # sentinel the rest of the harness does not recognise would silently pass nothing.
+        raise RuntimeError(
+            f"expected_payload sentinel {sentinel!r} has drifted from the pinned {SENTINEL!r}"
+        )
+    return directives, next_steps, sentinel, primary
+
+
+def score_branch_path(
+    transcript: ParsedTranscript,
+    expected_payload: dict,
+    scenario: BranchScenario,
+) -> dict[str, bool]:
+    """Score one full branch path against command evidence and terminal output.
+
+    Args:
+        transcript: Normalized tool and assistant transcript.
+        expected_payload: Real final `StageExitPayload` ground truth.
+        scenario: Ordered fixture expectations.
+
+    Returns:
+        Every named criterion; compliance requires all values to be true.
+
+    Raises:
+        RuntimeError: `expected_payload` is missing a required `StageExitPayload`
+            key (`directives`, `nextSteps`, or `sentinel`) or its
+            `directives.primaryCommand` — a harness defect, per §7, not a model
+            miss.
+    """
+    directives, next_steps, sentinel, primary = _branch_ground_truth(expected_payload)
+    final_text = transcript.get("final_text") or ""
+    texts = transcript.get("assistant_texts") or []
+    matched, matches = ordered_command_evidence(transcript, scenario["expectedCommands"])
+
+    # Everything before the terminal block is a NESTED link in the chain, and a nested
+    # step that prints a sentinel has taken ownership that belongs to the outer stage
+    # (REQ-EXIT-04). The terminal block is the last assistant text when it is the run's
+    # final output; anything else means the block was not last, so nothing is exempt.
+    nested_texts = texts[:-1] if texts and texts[-1] == final_text else list(texts)
+    successor = directives.get("nextCommand") or ""
+    feature = directives.get("feature") or ""
+    served = directives.get("servedStage") or ""
+
+    if scenario["reverifyOutcome"] == "passed":
+        # Rejoin: the diversion resolved, so the terminal action IS the production
+        # successor the served stage hands off to — the dropped-thread check (#176).
+        correct_route = bool(successor) and primary == successor and primary in final_text
+    else:
+        # Recovery: verification stays authoritative. The recovery command must name the
+        # same feature and served stage, and production must not be offered as the fenced
+        # action — the deferred mention in the block's prose is not an advance.
+        correct_route = (
+            primary != successor
+            and bool(feature)
+            and feature in primary
+            and bool(served)
+            and f"--served-stage {served}" in primary
+            and primary in final_text
+            and not (successor and _in_fenced_block(final_text, successor))
+        )
+
+    return {
+        "ordered_command_results": matched,
+        # A defensive restatement over the matched set: the matcher already refuses to
+        # match a failed result, so this stays true while that holds. It exists so a
+        # future relaxation of the matcher cannot silently admit an unexecuted command.
+        "all_commands_succeeded": all(
+            m["resultSeen"] and not m["isError"] and m["exitCode"] == 0 for m in matches
+        ),
+        "exactly_one_sentinel": sum(t.count(sentinel) for t in texts) == 1,
+        "nested_steps_emitted_no_sentinel": not any(sentinel in t for t in nested_texts),
+        # A suffix check alone is not enough: a final block preceded by its own earlier
+        # duplicate still ends with the sentinel while carrying content after one (§5.2).
+        "nothing_after_sentinel": (
+            final_text.count(sentinel) == 1 and final_text.rstrip().endswith(sentinel)
+        ),
+        "next_command_fenced": _in_fenced_block(final_text, primary),
+        "block_verbatim": next_steps in final_text,
+        "correct_rejoin_or_recovery": correct_route,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Probe 2 — R2 prelude re-expansion
 # --------------------------------------------------------------------------- #
@@ -1537,6 +1688,41 @@ def run_prelude_probe(models: list[str], n: int) -> list[ProbeReport]:
     return reports
 
 
+def run_branch_probe(models: list[str], n: int) -> list[ProbeReport]:
+    """Run both branch scenarios in fresh repositories for every model/run.
+
+    Each run gets TWO throwaway repositories: one the model drives, and a separate one
+    `expected_branch_exit` walks through the scenario's real verification transitions to
+    derive ground truth. They must not be the same repository — deriving the expectation
+    mutates state and commits, which would hand the model a diversion already closed.
+    """
+    fixture = load_branch_fixture(BRANCH_FIXTURE_PATH)
+    reports: list[ProbeReport] = []
+    for scenario in fixture["scenarios"]:
+        prompt = branch_prompt(fixture, scenario)
+        for model in models:
+            results: list[RunResult] = []
+            for index in range(n):
+                with tempfile.TemporaryDirectory(prefix="forge-eval-") as tmp:
+                    run_root = Path(tmp) / "run"
+                    run_root.mkdir()
+                    build_branch_fixture(run_root, fixture)
+                    truth_root = Path(tmp) / "truth"
+                    truth_root.mkdir()
+                    build_branch_fixture(truth_root, fixture)
+                    expected = expected_branch_exit(truth_root, fixture, scenario)
+                    transcript = run_session(run_root, prompt, model)
+                results.append(
+                    _to_result(
+                        "branch-path", model, scenario["name"], index, transcript,
+                        lambda t, e=expected, s=scenario: score_branch_path(t, e, s),
+                    )
+                )
+                _tick(results[-1])
+            reports.append(_probe_report("branch-path", model, scenario["name"], results))
+    return reports
+
+
 def _to_result(
     probe: str,
     model: str,
@@ -1605,7 +1791,14 @@ def print_human(report: Report) -> None:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--probe", choices=("stage-exit", "r2-prelude", "all"), default="all"
+        "--probe",
+        choices=("stage-exit", "r2-prelude", "branch-path", "all"),
+        default="all",
+        help=(
+            "which probe to run; `branch-path` drives the verify -> fix -> re-verify "
+            "diversion and reports successful-rejoin and recovery as separate variants, "
+            "never averaged into the linear stage-exit cells"
+        ),
     )
     parser.add_argument("--models", default=",".join(DEFAULT_MODELS))
     parser.add_argument("--n", type=int, default=DEFAULT_RUNS)
@@ -1641,6 +1834,8 @@ def main(argv: list[str]) -> int:
         report.probes.extend(run_stage_exit_probe(models, args.n, variants))
     if args.probe in ("r2-prelude", "all"):
         report.probes.extend(run_prelude_probe(models, args.n))
+    if args.probe in ("branch-path", "all"):
+        report.probes.extend(run_branch_probe(models, args.n))
     report.total_cost_usd = round(sum(p.cost_usd for p in report.probes), 4)
 
     payload = asdict(report)
