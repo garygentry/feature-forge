@@ -153,8 +153,8 @@
         "--findings-file values that are absolute, contain a .. segment, carry NUL/control characters, or otherwise escape the resolved feature/epic directory each exit 2 before mutation and leave the state file byte-identical",
         "cmd_state_verify's --json result contains the written verify entry and the resolved target path, so a caller need not re-read state"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T04:08:18.605Z",
       "dependsOn": [
         "001"
       ],

@@ -480,8 +480,8 @@ def test_stage_entry_accepts_every_state_verb_stage():
 # Registration (item 008's four verbs)
 # --------------------------------------------------------------------------- #
 
-#: All seven state verbs — items 008 (enter/artifact/branch/note), 009 (complete)
-#: and 010 (decision/ecr).
+#: All eight state verbs — R4 items 008 (enter/artifact/branch/note), 009
+#: (complete) and 010 (decision/ecr), plus `state-verify`.
 REGISTERED_STATE_VERBS = (
     "state-enter",
     "state-artifact",
@@ -490,6 +490,7 @@ REGISTERED_STATE_VERBS = (
     "state-note",
     "state-decision",
     "state-ecr",
+    "state-verify",
 )
 
 
@@ -1384,6 +1385,494 @@ def test_state_ecr_prints_a_one_line_summary_without_json(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# state-verify (the eighth verb)
+# --------------------------------------------------------------------------- #
+
+
+def _verify_fixture(
+    tmp_path: Path, stage: str = "forge-1-prd", version: int = 1, name: str = "demo"
+) -> Path:
+    """Create a feature whose ``stage`` is complete at ``version``; return specs dir."""
+    specs = _feature_dir(tmp_path, name).parent
+    result = _run(
+        "state-complete", "--feature", name, "--stage", stage,
+        "--version", str(version), "--artifact", "PRD.md", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 0, result.stderr
+    return specs
+
+
+def _verify(specs: Path, *extra: str, name: str = "demo") -> subprocess.CompletedProcess[str]:
+    """Run ``state-verify`` against ``specs`` for feature ``name``."""
+    return _run("state-verify", "--feature", name, *extra, "--specs-dir", str(specs))
+
+
+def _entry(specs: Path, key: str = "forge-verify-prd", name: str = "demo") -> dict:
+    """Read one verify entry back off disk, asserting the whole file stays valid."""
+    state = json.loads((specs / name / FS.PIPELINE_STATE_FILENAME).read_text(encoding="utf-8"))
+    assert validate_state(state) == [], validate_state(state)
+    return state["stages"][key]
+
+
+def test_state_verify_registers_exactly_the_spec_flags_and_excludes_docs():
+    """03 §3.1's surface: forge-6-docs has no verification token, so no entry."""
+    help_text = _run("state-verify", "--help").stdout
+    for flag in (
+        "--feature", "--stage", "--status", "--findings-file", "--findings-count",
+        "--verified-stage-version", "--commit-hash", "--epic", "--specs-dir", "--json",
+    ):
+        assert flag in help_text, f"{flag} is not registered"
+    assert list(FS.VERIFY_STAGES) == [
+        "forge-0-epic", "forge-1-prd", "forge-2-tech",
+        "forge-3-specs", "forge-4-backlog", "forge-5-loop",
+    ]
+    assert "forge-6-docs" not in FS.VERIFY_STAGES
+    assert list(FS.VERIFY_RESULT_STATUSES) == [
+        "auto-verify-pending", "passed", "findings-reported",
+        "findings-applied", "skipped",
+    ]
+
+
+def test_state_verify_rejects_the_docs_stage(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    result = _verify(specs, "--stage", "forge-6-docs", "--status", "skipped")
+    assert result.returncode == 2
+    assert "invalid choice" in result.stderr
+
+
+def test_state_verify_schedules_auto_verify_debt(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    assert _verify(specs, "--stage", "forge-1-prd",
+                   "--status", "auto-verify-pending").returncode == 0
+    entry = _entry(specs)
+    assert entry["status"] == "auto-verify-pending"
+    assert entry["scheduledStageVersion"] == 1
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", entry["scheduledAt"])
+    assert entry["commitHash"] is None
+    assert "verifiedAt" not in entry and "verifiedStageVersion" not in entry
+
+
+def test_state_verify_passed_records_the_current_version(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    assert _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                   "--verified-stage-version", "1").returncode == 0
+    entry = _entry(specs)
+    assert entry["status"] == "passed"
+    assert entry["verifiedStageVersion"] == 1
+    assert entry["commitHash"] is None, "Commit 1 records a null hash"
+    assert "findingsFile" not in entry and "fixedAt" not in entry
+
+
+def test_state_verify_passed_accepts_a_zero_findings_count(tmp_path):
+    """'verified with nothing found' is legal; a non-zero count is not."""
+    specs = _verify_fixture(tmp_path)
+    assert _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                   "--verified-stage-version", "1",
+                   "--findings-count", "0").returncode == 0
+    assert _entry(specs)["status"] == "passed"
+
+    result = _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                     "--verified-stage-version", "1", "--findings-count", "2")
+    assert result.returncode == 2
+    assert "findings-reported" in result.stderr
+
+
+def test_state_verify_findings_reported_records_the_report(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/prd-findings.md", "--findings-count", "0",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    entry = _entry(specs)
+    assert entry["findingsFile"] == "verify/prd-findings.md"
+    # 0 is meaningful for findings-reported and is NOT the same as an absent key.
+    assert entry["findingsCount"] == 0
+    assert entry["verifiedStageVersion"] == 1
+
+
+def test_state_verify_terminal_writes_delete_the_scheduling_keys(tmp_path):
+    """DELETE, not null — `VerifyEntry` is total=False, so absent means unscheduled."""
+    for status, extra in (
+        ("passed", ("--verified-stage-version", "1")),
+        ("skipped", ()),
+        (
+            "findings-reported",
+            ("--findings-file", "verify/f.md", "--findings-count", "1",
+             "--verified-stage-version", "1"),
+        ),
+    ):
+        specs = _verify_fixture(tmp_path / status)
+        assert _verify(specs, "--stage", "forge-1-prd",
+                       "--status", "auto-verify-pending").returncode == 0
+        assert "scheduledAt" in _entry(specs)
+        assert _verify(specs, "--stage", "forge-1-prd",
+                       "--status", status, *extra).returncode == 0
+        entry = _entry(specs)
+        assert "scheduledAt" not in entry, f"{status} nulled rather than deleted"
+        assert "scheduledStageVersion" not in entry, status
+
+
+def test_state_verify_skipped_clears_every_result_field(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/f.md", "--findings-count", "3",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    assert _verify(specs, "--stage", "forge-1-prd", "--status", "skipped").returncode == 0
+    assert _entry(specs) == {"status": "skipped", "commitHash": None}
+
+
+def test_state_verify_findings_applied_preserves_the_report_and_clears_freshness(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/f.md", "--findings-count", "3",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    assert _verify(specs, "--stage", "forge-1-prd",
+                   "--status", "findings-applied").returncode == 0
+
+    entry = _entry(specs)
+    assert entry["status"] == "findings-applied"
+    assert entry["findingsFile"] == "verify/f.md" and entry["findingsCount"] == 3
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", entry["fixedAt"])
+    assert entry["commitHash"] is None
+    # The whole point (03 §3.3): an interruption between fix and re-verify must not
+    # be able to advance the pipeline, so freshness is left UNRESOLVED.
+    assert "verifiedStageVersion" not in entry
+    assert "verifiedAt" not in entry
+
+
+def test_state_verify_findings_applied_accepts_matching_metadata_and_rejects_drift(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    reported = (
+        "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/f.md", "--findings-count", "3",
+        "--verified-stage-version", "1",
+    )
+    assert _verify(specs, *reported).returncode == 0
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-applied",
+        "--findings-file", "verify/f.md", "--findings-count", "3",
+    ).returncode == 0
+
+    assert _verify(specs, *reported).returncode == 0
+    for bad in (("--findings-count", "4"), ("--findings-file", "verify/other.md")):
+        result = _verify(specs, "--stage", "forge-1-prd",
+                         "--status", "findings-applied", *bad)
+        assert result.returncode == 2, bad
+        assert "does not match the recorded report" in result.stderr, bad
+
+
+def test_state_verify_findings_applied_requires_a_prior_report(tmp_path):
+    for prior in (None, "passed", "skipped", "auto-verify-pending"):
+        specs = _verify_fixture(tmp_path / str(prior))
+        if prior is not None:
+            extra = ("--verified-stage-version", "1") if prior == "passed" else ()
+            assert _verify(specs, "--stage", "forge-1-prd",
+                           "--status", prior, *extra).returncode == 0
+        before = _state_bytes(specs)
+        result = _verify(specs, "--stage", "forge-1-prd", "--status", "findings-applied")
+        assert result.returncode == 2, prior
+        assert "requires an existing forge-verify-prd entry" in result.stderr, prior
+        assert _state_bytes(specs) == before, f"{prior}: mutated on a rejected write"
+
+
+def test_state_verify_findings_applied_rejects_a_verified_stage_version(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/f.md", "--findings-count", "1",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    before = _state_bytes(specs)
+    result = _verify(specs, "--stage", "forge-1-prd", "--status", "findings-applied",
+                     "--verified-stage-version", "1")
+    assert result.returncode == 2
+    assert "deliberately CLEARS freshness" in result.stderr
+    assert _state_bytes(specs) == before
+
+
+def _state_bytes(specs: Path, name: str = "demo") -> bytes:
+    """Raw bytes of a feature's state file (b"" when it does not exist yet)."""
+    path = specs / name / FS.PIPELINE_STATE_FILENAME
+    return path.read_bytes() if path.exists() else b""
+
+
+def test_state_verify_rejects_a_stale_zero_or_negative_version(tmp_path):
+    for status, extra in (
+        ("passed", ()),
+        ("findings-reported", ("--findings-file", "verify/f.md", "--findings-count", "1")),
+    ):
+        specs = _verify_fixture(tmp_path / status, version=2)
+        before = _state_bytes(specs)
+        for bad in ("1", "3", "0", "-1"):
+            result = _verify(specs, "--stage", "forge-1-prd", "--status", status,
+                             *extra, "--verified-stage-version", bad)
+            assert result.returncode == 2, f"{status} {bad}"
+            assert result.stderr.startswith("Error:"), f"{status} {bad}: {result.stderr!r}"
+            assert _state_bytes(specs) == before, f"{status} {bad} mutated state"
+        assert _verify(specs, "--stage", "forge-1-prd", "--status", status, *extra,
+                       "--verified-stage-version", "2").returncode == 0
+
+
+def test_state_verify_rejects_a_boolean_version_at_the_callable(tmp_path):
+    """argparse's `type=int` never yields a bool; the callable still must refuse one.
+
+    `bool` is an `int` subclass, so an unguarded check would record `True` as
+    version 1 — a freshness ledger entry for a revision that never existed.
+    """
+    specs = _verify_fixture(tmp_path)
+    before = _state_bytes(specs)
+    try:
+        FS.cmd_state_verify(
+            "demo", "forge-1-prd", specs, None, status="passed",
+            verified_stage_version=True,
+        )
+    except FS.UsageError as exc:
+        assert "positive integer" in str(exc)
+    else:
+        raise AssertionError("a boolean --verified-stage-version was accepted")
+    assert _state_bytes(specs) == before
+
+
+def test_state_verify_requires_a_recorded_artifact_version(tmp_path):
+    """Everything but `skipped` needs an artifact revision to verify against."""
+    specs = _feature_dir(tmp_path).parent
+    for status, extra in (
+        ("auto-verify-pending", ()),
+        ("passed", ("--verified-stage-version", "1")),
+    ):
+        result = _verify(specs, "--stage", "forge-1-prd", "--status", status, *extra)
+        assert result.returncode == 2, status
+        assert "no recorded version" in result.stderr, status
+    assert _verify(specs, "--stage", "forge-1-prd", "--status", "skipped").returncode == 0
+
+
+def test_state_verify_rejects_findings_metadata_on_pending_and_skipped(tmp_path):
+    for status in ("auto-verify-pending", "skipped"):
+        specs = _verify_fixture(tmp_path / status)
+        before = _state_bytes(specs)
+        for bad in (
+            ("--findings-file", "verify/f.md"),
+            ("--findings-count", "1"),
+            ("--verified-stage-version", "1"),
+        ):
+            result = _verify(specs, "--stage", "forge-1-prd", "--status", status, *bad)
+            assert result.returncode == 2, f"{status} {bad}"
+            assert "does not accept" in result.stderr, f"{status} {bad}"
+            assert _state_bytes(specs) == before, f"{status} {bad}"
+
+
+def test_state_verify_rejects_findings_metadata_on_passed(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    before = _state_bytes(specs)
+    result = _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                     "--verified-stage-version", "1", "--findings-file", "verify/f.md")
+    assert result.returncode == 2
+    assert "does not accept --findings-file" in result.stderr
+    assert _state_bytes(specs) == before
+
+
+def test_state_verify_findings_reported_requires_its_full_metadata(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    before = _state_bytes(specs)
+    for extra in (
+        ("--findings-file", "verify/f.md", "--findings-count", "1"),   # no version
+        ("--findings-count", "1", "--verified-stage-version", "1"),    # no file
+        ("--findings-file", "verify/f.md", "--verified-stage-version", "1"),  # no count
+        ("--findings-file", "verify/f.md", "--findings-count", "-1",
+         "--verified-stage-version", "1"),                             # negative count
+    ):
+        result = _verify(specs, "--stage", "forge-1-prd",
+                         "--status", "findings-reported", *extra)
+        assert result.returncode == 2, extra
+        assert result.stderr.startswith("Error:"), extra
+        assert _state_bytes(specs) == before, extra
+
+
+#: `--findings-file` values that must be refused before any mutation (03 §7.1,
+#: REQ-SEC-01). The stored value is followed verbatim by forge-fix, so it gets the
+#: same containment treatment as the write target itself.
+#: A NUL byte is absent here on purpose: `subprocess` cannot put one in argv at all
+#: (ValueError before the process starts), so that row is exercised at the callable
+#: level below, where stage-exit will also reach this writer.
+_UNSAFE_FINDINGS_FILES = (
+    "/etc/passwd",
+    "../../escape.md",
+    "verify/../../escape.md",
+    "verify/bell\x07.md",
+    "verify/newline\n.md",
+    "",
+)
+
+
+def test_state_verify_rejects_an_unsafe_findings_file_before_mutation(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    before = _state_bytes(specs)
+    for bad in _UNSAFE_FINDINGS_FILES:
+        result = _verify(
+            specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+            "--findings-file", bad, "--findings-count", "1",
+            "--verified-stage-version", "1",
+        )
+        assert result.returncode == 2, f"{bad!r} was accepted"
+        assert result.stderr.startswith("Error:"), f"{bad!r}: {result.stderr!r}"
+        assert "--findings-file" in result.stderr, f"{bad!r}: {result.stderr!r}"
+        assert _state_bytes(specs) == before, f"{bad!r} mutated state"
+
+
+def test_state_verify_rejects_a_nul_bearing_findings_file_at_the_callable(tmp_path):
+    """subprocess refuses a NUL in argv, so this row can only be reached in-process."""
+    specs = _verify_fixture(tmp_path)
+    before = _state_bytes(specs)
+    try:
+        FS.cmd_state_verify(
+            "demo", "forge-1-prd", specs, None, status="findings-reported",
+            findings_file="verify/\x00truncated.md", findings_count=1,
+            verified_stage_version=1,
+        )
+    except FS.UsageError as exc:
+        assert "control character" in str(exc)
+    else:
+        raise AssertionError("a NUL-bearing --findings-file was accepted")
+    assert _state_bytes(specs) == before
+
+
+def test_state_verify_rejects_a_findings_file_that_escapes_through_a_symlink(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (specs / "demo" / "elsewhere").symlink_to(outside, target_is_directory=True)
+    before = _state_bytes(specs)
+
+    result = _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "elsewhere/f.md", "--findings-count", "1",
+        "--verified-stage-version", "1",
+    )
+    assert result.returncode == 2, result.stdout
+    assert "escapes the feature directory" in result.stderr
+    assert _state_bytes(specs) == before
+
+
+def test_state_verify_accepts_a_findings_file_that_does_not_exist_yet(tmp_path):
+    """The verb records the path the skill asserts it wrote — it never stats it."""
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/not-written-yet.md", "--findings-count", "2",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    assert _entry(specs)["findingsFile"] == "verify/not-written-yet.md"
+
+
+def test_state_verify_rejects_neither_mode_and_mixed_mode(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    before = _state_bytes(specs)
+    full_hash = "0123456789abcdef0123456789abcdef01234567"
+
+    neither = _verify(specs, "--stage", "forge-1-prd")
+    assert neither.returncode == 2
+    assert neither.stderr.startswith("Error:")
+    assert "exactly one mode" in neither.stderr
+    assert _state_bytes(specs) == before
+
+    mixed = _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                    "--verified-stage-version", "1", "--commit-hash", full_hash)
+    assert mixed.returncode == 2
+    assert mixed.stderr.startswith("Error:")
+    assert "mutually exclusive" in mixed.stderr
+    assert _state_bytes(specs) == before
+    assert not neither.stdout.strip() and not mixed.stdout.strip()
+
+
+def test_state_verify_leaves_unrelated_entries_and_unknown_fields_alone(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    state_path = specs / "demo" / FS.PIPELINE_STATE_FILENAME
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["stages"]["forge-verify-tech"] = {"status": "passed", "verifiedStageVersion": 9}
+    state["stages"]["forge-2-tech"] = {"status": "complete", "version": 9}
+    state["someFutureField"] = {"kept": True}
+    # Backdated so the refresh is observable even inside a one-second write window.
+    state["updatedAt"] = "2020-01-01T00:00:00Z"
+    state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+    assert _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                   "--verified-stage-version", "1").returncode == 0
+
+    after = json.loads(state_path.read_text(encoding="utf-8"))
+    assert after["stages"]["forge-verify-tech"] == {
+        "status": "passed", "verifiedStageVersion": 9,
+    }
+    assert after["stages"]["forge-2-tech"] == {"status": "complete", "version": 9}
+    assert after["someFutureField"] == {"kept": True}
+    assert after["stages"]["forge-1-prd"] == state["stages"]["forge-1-prd"]
+    # Only the selected verify entry plus top-level updatedAt moved.
+    changed = {k for k in after if after[k] != state.get(k)}
+    assert changed == {"updatedAt", "stages"}
+
+
+def test_state_verify_json_carries_the_entry_and_the_resolved_path(tmp_path):
+    """A caller must not have to re-read state to report what landed (00 §6)."""
+    specs = _verify_fixture(tmp_path)
+    result = _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                     "--verified-stage-version", "1", "--json")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["statePath"] == str(specs / "demo" / FS.PIPELINE_STATE_FILENAME)
+    assert payload["verifyKey"] == "forge-verify-prd"
+    assert payload["feature"] == "demo" and payload["stage"] == "forge-1-prd"
+    assert payload["entry"] == _entry(specs)
+
+
+def test_state_verify_prints_a_one_line_summary_without_json(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    result = _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                     "--verified-stage-version", "1")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "recorded forge-verify-prd = passed for demo (v1)"
+
+
+def test_state_verify_writes_every_stage_token(tmp_path):
+    for stage, key in FS.VERIFY_TOKEN_BY_STAGE.items():
+        specs = _verify_fixture(tmp_path / stage, stage=stage)
+        assert _verify(specs, "--stage", stage, "--status", "passed",
+                       "--verified-stage-version", "1").returncode == 0
+        assert _entry(specs, f"forge-verify-{key}")["status"] == "passed"
+
+
+def test_state_verify_defers_the_epic_target_and_commit_2_mode(tmp_path):
+    """Both land in later items; neither may silently write a member state file."""
+    specs = _verify_fixture(tmp_path)
+    before = _state_bytes(specs)
+
+    epic = _verify(specs, "--stage", "forge-0-epic", "--status", "skipped")
+    assert epic.returncode == 2
+    assert ".epic-state.json" in epic.stderr
+
+    hash_only = _verify(specs, "--stage", "forge-1-prd",
+                        "--commit-hash", "0" * 40)
+    assert hash_only.returncode == 2
+    assert "commit-2" in hash_only.stderr
+    assert _state_bytes(specs) == before
+
+
+def test_state_verify_rejects_an_unknown_status_at_the_callable(tmp_path):
+    """argparse pins the CLI; the callable is reachable from stage-exit too."""
+    specs = _verify_fixture(tmp_path)
+    try:
+        FS.cmd_state_verify("demo", "forge-1-prd", specs, None, status="pending")
+    except FS.UsageError as exc:
+        assert "unknown --status" in str(exc)
+    else:
+        raise AssertionError("--status pending was accepted as a result")
+
+
+# --------------------------------------------------------------------------- #
 # Enum parity with the schema (REQ-R4-03 — the schema stays source of truth)
 # --------------------------------------------------------------------------- #
 
@@ -1436,6 +1925,9 @@ _VERB_INVOCATIONS = {
         "--rationale", "R7 emerged as a distinct feature",
         "--raised-by", "forge-2-tech", "--blocks-current", "false",
     ),
+    # `skipped` is the one result that needs no completed artifact behind it, so it
+    # is the only invocation that works against a never-written state file.
+    "state-verify": ("--stage", "forge-1-prd", "--status", "skipped"),
 }
 
 

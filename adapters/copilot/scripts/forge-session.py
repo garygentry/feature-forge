@@ -36,6 +36,9 @@ has to hand-write the JSON (and therefore no stage has to read the state schema)
         [--rationale R] [--target-stage S] [--specs-dir DIR] [--epic E] [--json]
     python3 forge-session.py state-ecr --feature F --kind K --target T --rationale R \
         --raised-by S --blocks-current true|false [--specs-dir DIR] [--epic E] [--json]
+    python3 forge-session.py state-verify --feature F --stage S [--status ST] \
+        [--findings-file P] [--findings-count N] [--verified-stage-version N] \
+        [--commit-hash H] [--specs-dir DIR] [--epic E] [--json]
 
 `rank-features` scans the specs tree for feature-shaped directories (those that
 directly contain a `.pipeline-state.json`, in both the flat
@@ -125,6 +128,17 @@ record `status: "open"` — resolving an item is the target stage's job, never t
 recorder's — and both emit exactly the schema keys, because those two array item
 shapes set `additionalProperties: false`.
 
+`state-verify` is the eighth verb and the one that stops forge-verify/forge-fix
+hand-authoring a `forge-verify-*` entry. It writes exactly one transition of the
+verification matrix — `auto-verify-pending` (durable automatic-verify debt),
+`passed`, `findings-reported`, `findings-applied`, or `skipped` — against the
+`forge-verify-{token}` key the `--stage` selects, and touches nothing else in the
+document. A terminal result DELETES the scheduling keys rather than nulling them,
+and `findings-applied` deliberately drops `verifiedStageVersion`: fixes landed but
+nothing has re-verified them, so freshness stays unresolved until a later `passed`
+write. Unlike the other verbs its `--json` echo is the written entry plus the
+resolved state path, not the whole document, so a caller never re-reads state.
+
 3.10 baseline, Google-style docstrings, full type annotations, stdlib only —
 matching the conventions of `scripts/epic-manifest.py`.
 
@@ -203,6 +217,12 @@ VERIFY_TOKEN_BY_STAGE: Final[dict[str, str]] = {
     "forge-4-backlog": "backlog",
     "forge-5-loop": "impl",
 }
+
+#: The `--stage` domain for `state-verify`: forge-0-epic (whose verification lives
+#: in the epic's own `.epic-state.json`) plus the five stages that carry a verify
+#: token. forge-6-docs is excluded on purpose — it has no verification token, so
+#: there is no `forge-verify-*` key for it to write.
+VERIFY_STAGES: Final[tuple[str, ...]] = ("forge-0-epic", *VERIFY_TOKEN_BY_STAGE)
 
 #: A production stage status that counts as "done" for next-stage selection.
 _DONE_STATUS: Final = "complete"
@@ -303,6 +323,13 @@ FixOutcome = Literal[
 
 #: Derived, never hand-listed — see the block comment above.
 EXIT_STAGES: Final[tuple[str, ...]] = get_args(ExitStage)
+#: The `state-verify --status` domain: every VerifyStatus a result write may record.
+#: `pending` is excluded — it is the pre-existing generic/manual pending marker, not
+#: a verification RESULT, and `auto-verify-pending` is the value that carries owed
+#: automatic debt. Derived so the two lists cannot drift.
+VERIFY_RESULT_STATUSES: Final[tuple[str, ...]] = tuple(
+    status for status in get_args(VerifyStatus) if status != "pending"
+)
 #: The stages whose exit carries a multi-way outcome, and each one's legal values.
 #: Stages absent from this table take no `--outcome` at all.
 EXIT_OUTCOMES: Final[dict[str, frozenset[str]]] = {
@@ -2927,6 +2954,355 @@ def cmd_state_ecr(
     return _commit_state(state_path, state)
 
 
+def _require_positive_int(value: object, label: str) -> int:
+    """Return ``value`` as a positive int, or raise ``UsageError``.
+
+    ``bool`` is rejected explicitly: it is an ``int`` subclass, so ``True`` would
+    otherwise sail through as version 1 and record a freshness ledger entry for an
+    artifact revision that never existed.
+
+    Args:
+        value: The candidate revision/version.
+        label: The flag or field name to name in the error.
+
+    Returns:
+        The validated positive integer.
+
+    Raises:
+        UsageError: Not an int, a bool, or below 1 (→ exit 2).
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise UsageError(f"{label} must be a positive integer; got {value!r}")
+    return value
+
+
+def _validated_findings_file(value: str, target_dir: Path) -> str:
+    """Return ``value`` if it is a safe relative path inside ``target_dir``.
+
+    ``00-core-definitions.md`` §6 defines ``findingsFile`` as relative to the
+    feature directory, and downstream consumers (forge-fix selecting the report)
+    follow the stored value verbatim. So it gets the same fail-closed containment
+    treatment as the write target itself (REQ-SEC-01): an absolute path, a ``..``
+    segment, a NUL/control character, or a symlinked escape is rejected BEFORE any
+    mutation rather than persisted for a later reader to resolve.
+
+    Args:
+        value: The ``--findings-file`` value.
+        target_dir: The resolved feature (or epic) directory it must sit inside.
+
+    Returns:
+        The value unchanged, once validated.
+
+    Raises:
+        UsageError: Empty, absolute, ``..``-bearing, control-character-bearing, or
+            escaping the target directory (→ exit 2).
+    """
+    if not value:
+        raise UsageError("--findings-file must not be empty")
+    bad = next((ch for ch in value if ord(ch) < 32 or ord(ch) == 127), None)
+    if bad is not None:
+        raise UsageError(
+            f"--findings-file contains a control character ({bad!r}); "
+            f"expected a plain relative path"
+        )
+    candidate = Path(value)
+    if candidate.is_absolute():
+        raise UsageError(
+            f"--findings-file {value!r} is absolute; it must be relative to the "
+            f"feature directory ({target_dir})"
+        )
+    if ".." in candidate.parts:
+        raise UsageError(
+            f"--findings-file {value!r} contains a '..' segment; it must stay inside "
+            f"the feature directory ({target_dir})"
+        )
+    root = target_dir.resolve()
+    resolved = (target_dir / candidate).resolve()
+    if resolved == root or root not in resolved.parents:
+        raise UsageError(
+            f"--findings-file {value!r} escapes the feature directory ({target_dir}); "
+            f"refusing to record it"
+        )
+    return value
+
+
+def _current_artifact_version(state: dict, stage: str) -> int:
+    """Return the artifact revision a verify result is being recorded against.
+
+    For a feature target that is the selected production stage's ``version``. A
+    result other than ``skipped`` cannot be recorded without it: `passed` and
+    `findings-reported` write it into the freshness ledger, and
+    `auto-verify-pending` writes it as the revision the debt is owed on.
+
+    Args:
+        state: The loaded state document.
+        stage: The production stage the verify entry serves.
+
+    Returns:
+        The stage's current positive-integer version.
+
+    Raises:
+        UsageError: The stage has no recorded (or no valid) ``version`` (→ exit 2).
+    """
+    version = _stage_version(state, stage)
+    if version is None:
+        raise UsageError(
+            f"{stage} has no recorded version in this feature's state, so there is no "
+            f"artifact revision to verify against; run state-complete for {stage} first"
+        )
+    return _require_positive_int(version, f"{stage}.version")
+
+
+def _verify_result_entry(
+    status: str,
+    prior: dict,
+    current: int | None,
+    findings_file: str | None,
+    findings_count: int | None,
+    now: str,
+) -> dict:
+    """Build the replacement ``forge-verify-*`` entry for one result transition.
+
+    Each status REPLACES the entry rather than patching it, which is what makes the
+    03 §3.3 "clear …" columns exact: a terminal write cannot leave a stale
+    ``scheduledAt``/``scheduledStageVersion`` behind, and the keys are DELETED
+    rather than nulled (``VerifyEntry`` is ``total=False``, so absent means "not
+    scheduled" while present-but-null would be malformed). ``findings-applied`` is
+    the one status that carries prior state forward — the report metadata — and it
+    deliberately writes no ``verifiedStageVersion``: fixes landed, nothing
+    re-verified them, so freshness stays unresolved until a later ``passed``.
+
+    Args:
+        status: The validated result status.
+        prior: The existing entry (``{}`` when absent).
+        current: The current artifact revision, or None for ``skipped``.
+        findings_file: Validated relative report path, when supplied.
+        findings_count: Validated non-negative count, when supplied.
+        now: The shared ISO-8601 timestamp for this write.
+
+    Returns:
+        The complete new entry dict.
+    """
+    if status == "auto-verify-pending":
+        return {
+            "status": status,
+            "scheduledAt": now,
+            "scheduledStageVersion": current,
+            "commitHash": None,
+        }
+    if status == "passed":
+        return {
+            "status": status,
+            "verifiedAt": now,
+            "verifiedStageVersion": current,
+            "commitHash": None,
+        }
+    if status == "findings-reported":
+        return {
+            "status": status,
+            "findingsFile": findings_file,
+            "findingsCount": findings_count,
+            "verifiedAt": now,
+            "verifiedStageVersion": current,
+            "commitHash": None,
+        }
+    if status == "findings-applied":
+        entry: dict = {"status": status}
+        for key in ("findingsFile", "findingsCount"):
+            if key in prior:
+                entry[key] = prior[key]
+        entry["fixedAt"] = now
+        entry["commitHash"] = None
+        return entry
+    return {"status": status, "commitHash": None}   # skipped
+
+
+def cmd_state_verify(
+    feature: str,
+    stage: str,
+    specs_dir: Path,
+    epic: str | None,
+    status: str | None = None,
+    findings_file: str | None = None,
+    findings_count: int | None = None,
+    verified_stage_version: int | None = None,
+    commit_hash: str | None = None,
+) -> dict:
+    """Write one verify result transition or one provenance follow-up.
+
+    Args:
+        feature: The feature name, or the EPIC name when `stage == "forge-0-epic"`
+            (`03-verification-state.md` §3.2 step 2). Resolved through the same
+            path-safety and containment rules as every other state write.
+        stage: The production stage this verify entry serves — one of
+            `VERIFY_MODE_TO_STAGE`'s values, or `"forge-0-epic"` for an epic-target
+            write. Selects `stages["forge-verify-{suffix}"]`.
+        specs_dir: Root of the specs tree, as configured by `specsDir`.
+        epic: Epic name when `feature` is a member, else None. REQUIRED for members
+            so the bare name is never resolved ambiguously. For
+            `stage == "forge-0-epic"` it must be absent or equal to `feature`.
+        status: Result mode. Mutually exclusive with `commit_hash`. See the
+            `03-verification-state.md` §3.3 matrix for which metadata each status
+            requires and which it forbids — the matrix is authoritative, not this
+            docstring.
+        findings_file: Path to the findings document, relative to and contained by
+            the resolved feature/epic directory. Required by `findings-reported`;
+            rejected when absolute, containing `..`, or carrying NUL/control
+            characters (REQ-SEC-01).
+        findings_count: Number of findings in `findings_file`. Required alongside it.
+        verified_stage_version: The served stage's `version` at verification time,
+            feeding the navigator's freshness ledger. Cleared by
+            `findings-applied`, which deliberately does not claim freshness.
+        commit_hash: Commit-2 mode. Full 40-hex only, validated by
+            `FULL_GIT_HASH_RE.fullmatch`; abbreviations are rejected rather than
+            expanded. Mutually exclusive with `status`.
+
+    Returns:
+        The emitted JSON result: the written verify entry plus the resolved target
+        path, so the caller can report what landed without re-reading state.
+
+    Raises:
+        UsageError: Mixed modes, invalid metadata, invalid hash, missing entry,
+            unsafe/ambiguous target, or atomic write failure.
+    """
+    # --- Mode exclusivity, before anything is resolved or loaded. -------------
+    if status is None and commit_hash is None:
+        raise UsageError(
+            "state-verify needs exactly one mode: --status <result> to record a "
+            "verification transition, or --commit-hash <40-hex> to record Commit-2 "
+            "provenance for an existing entry"
+        )
+    if status is not None and commit_hash is not None:
+        raise UsageError(
+            "--status and --commit-hash are mutually exclusive: a result write "
+            "records commitHash null (Commit 1), and the hash lands in a separate "
+            "commit-2 call"
+        )
+    if commit_hash is not None:
+        # Commit-2 provenance mode is a later, separate change (03 §3.4). The flag
+        # is registered now so the CLI surface matches §3.1, but a caller reaching
+        # here must be told plainly rather than have the hash silently dropped.
+        raise UsageError(
+            "--commit-hash (commit-2 provenance mode) is not implemented yet; "
+            "record the result with --status first"
+        )
+    if status not in VERIFY_RESULT_STATUSES:
+        known = ", ".join(VERIFY_RESULT_STATUSES)
+        raise UsageError(f"unknown --status {status!r}; expected one of {known}")
+
+    # --- Target selection: epic before the token map (03 §3.2). --------------
+    if stage == "forge-0-epic":
+        raise UsageError(
+            "state-verify --stage forge-0-epic is not implemented yet; epic-scoped "
+            "verification writes {specsDir}/{epic}/.epic-state.json and must never "
+            "fall back to a member's .pipeline-state.json"
+        )
+    token = VERIFY_TOKEN_BY_STAGE.get(stage)
+    if token is None:
+        raise UsageError(
+            f"{stage} has no verification token, so it has no forge-verify-* entry "
+            f"to write; expected one of {', '.join(VERIFY_STAGES)}"
+        )
+    verify_key = f"forge-verify-{token}"
+
+    # --- Metadata validation that needs no state (03 §3.3). ------------------
+    if verified_stage_version is not None:
+        _require_positive_int(verified_stage_version, "--verified-stage-version")
+    if findings_count is not None and (
+        isinstance(findings_count, bool) or not isinstance(findings_count, int)
+    ):
+        raise UsageError(f"--findings-count must be an integer; got {findings_count!r}")
+
+    if status in ("auto-verify-pending", "skipped"):
+        for label, value in (
+            ("--findings-file", findings_file),
+            ("--findings-count", findings_count),
+            ("--verified-stage-version", verified_stage_version),
+        ):
+            if value is not None:
+                raise UsageError(f"--status {status} does not accept {label}")
+    elif status == "passed":
+        if findings_file is not None:
+            raise UsageError("--status passed does not accept --findings-file")
+        if findings_count is not None and findings_count != 0:
+            raise UsageError(
+                f"--status passed requires --findings-count 0 when supplied; "
+                f"got {findings_count!r} — record findings with "
+                f"--status findings-reported instead"
+            )
+        if verified_stage_version is None:
+            raise UsageError(
+                "--status passed requires --verified-stage-version <current version>"
+            )
+    elif status == "findings-reported":
+        if verified_stage_version is None:
+            raise UsageError(
+                "--status findings-reported requires --verified-stage-version "
+                "<current version>"
+            )
+        if findings_file is None:
+            raise UsageError(
+                "--status findings-reported requires --findings-file <path relative "
+                "to the feature directory>"
+            )
+        if findings_count is None:
+            raise UsageError("--status findings-reported requires --findings-count N")
+        if findings_count < 0:
+            raise UsageError(
+                f"--findings-count must not be negative; got {findings_count!r}"
+            )
+    elif verified_stage_version is not None:   # findings-applied
+        raise UsageError(
+            "--status findings-applied does not accept --verified-stage-version: "
+            "applying fixes deliberately CLEARS freshness, so only a later "
+            "--status passed may record a verified revision"
+        )
+
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    target_dir = state_path.parent
+    if findings_file is not None:
+        _validated_findings_file(findings_file, target_dir)
+
+    current = None if status == "skipped" else _current_artifact_version(state, stage)
+    if status in ("passed", "findings-reported") and verified_stage_version != current:
+        raise UsageError(
+            f"--verified-stage-version {verified_stage_version} is stale: {stage} is "
+            f"at version {current}. Re-run verification against the current artifact."
+        )
+
+    prior = _verify_entry(state, verify_key)
+    if status == "findings-applied":
+        if prior.get("status") not in ("findings-reported", "findings-applied"):
+            raise UsageError(
+                f"--status findings-applied requires an existing {verify_key} entry "
+                f"with status findings-reported (or findings-applied); found "
+                f"{prior.get('status')!r}"
+            )
+        for label, key, supplied in (
+            ("--findings-file", "findingsFile", findings_file),
+            ("--findings-count", "findingsCount", findings_count),
+        ):
+            if supplied is not None and supplied != prior.get(key):
+                raise UsageError(
+                    f"{label} {supplied!r} does not match the recorded report "
+                    f"({key}: {prior.get(key)!r}); fix the value or omit the flag"
+                )
+
+    entry = _verify_result_entry(
+        status, prior, current, findings_file, findings_count, _now_iso()
+    )
+    state.setdefault("stages", {})[verify_key] = entry
+    written = _commit_state(state_path, state)
+    return {
+        "feature": feature,
+        "stage": stage,
+        "verifyKey": verify_key,
+        "statePath": str(state_path),
+        "entry": entry,
+        "updatedAt": written["updatedAt"],
+    }
+
+
 def _print_state_enter(state: dict) -> None:
     """Print the one-line human summary for `state-enter`."""
     print(f"entered {state['currentStage']} (in-progress) for {state['feature']}")
@@ -2979,6 +3355,27 @@ def _print_state_decision(state: dict) -> None:
     target = item.get("targetStage")
     routing = f"{item['raisedBy']} → {target}" if target else f"{item['raisedBy']}, no target stage"
     print(f"deferred decision recorded (raisedBy {routing})")
+
+
+def _print_state_verify(result: dict) -> None:
+    """Print the one-line human summary for `state-verify`.
+
+    Takes the verb's RESULT dict (entry + resolved path), not a state document —
+    `state-verify` is the one verb whose echo is the written entry rather than the
+    whole file.
+    """
+    entry = result["entry"]
+    detail = ""
+    if entry.get("findingsFile"):
+        detail = f" ({entry.get('findingsCount')} in {entry['findingsFile']})"
+    elif entry.get("scheduledStageVersion") is not None:
+        detail = f" (scheduled at v{entry['scheduledStageVersion']})"
+    elif entry.get("verifiedStageVersion") is not None:
+        detail = f" (v{entry['verifiedStageVersion']})"
+    print(
+        f"recorded {result['verifyKey']} = {entry['status']} for "
+        f"{result['feature']}{detail}"
+    )
 
 
 def _print_state_ecr(state: dict) -> None:
@@ -3227,6 +3624,34 @@ def main() -> int:
     p_ecr.add_argument("--epic", default=None, help="Epic name for a nested member")
     p_ecr.add_argument("--json", action="store_true", dest="json_output")
 
+    p_ver = sub.add_parser(
+        "state-verify", help="Write one forge-verify-* transition (result or provenance)"
+    )
+    p_ver.add_argument("--feature", required=True,
+                       help="Feature name (the EPIC name for --stage forge-0-epic)")
+    p_ver.add_argument("--stage", required=True, choices=VERIFY_STAGES,
+                       help="The production stage this verify entry serves "
+                            "(forge-6-docs has no verification token)")
+    p_ver.add_argument("--status", default=None, choices=VERIFY_RESULT_STATUSES,
+                       help="Result mode: the transition to record "
+                            "(mutually exclusive with --commit-hash)")
+    p_ver.add_argument("--findings-file", default=None, dest="findings_file",
+                       metavar="PATH",
+                       help="Findings document, relative to and contained by the "
+                            "feature directory (required by findings-reported)")
+    p_ver.add_argument("--findings-count", type=int, default=None,
+                       dest="findings_count", metavar="N",
+                       help="Number of findings in --findings-file (0 is meaningful)")
+    p_ver.add_argument("--verified-stage-version", type=int, default=None,
+                       dest="verified_stage_version", metavar="N",
+                       help="The served stage's current version, for the freshness "
+                            "ledger (rejected by findings-applied)")
+    p_ver.add_argument("--commit-hash", default=None, dest="commit_hash",
+                       help="Commit-2 provenance mode: the full 40-hex Commit-1 hash")
+    p_ver.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_ver.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_ver.add_argument("--json", action="store_true", dest="json_output")
+
     args = parser.parse_args()
 
     try:
@@ -3406,6 +3831,21 @@ def main() -> int:
                 args.epic,
             )
             _emit(payload, args.json_output, _print_state_ecr)
+            return 0
+
+        if args.cmd == "state-verify":
+            payload = cmd_state_verify(
+                args.feature,
+                args.stage,
+                Path(args.specs_dir),
+                args.epic,
+                status=args.status,
+                findings_file=args.findings_file,
+                findings_count=args.findings_count,
+                verified_stage_version=args.verified_stage_version,
+                commit_hash=args.commit_hash,
+            )
+            _emit(payload, args.json_output, _print_state_verify)
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")

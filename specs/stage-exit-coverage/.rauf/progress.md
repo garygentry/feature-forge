@@ -217,3 +217,71 @@ rows, and the distribution-boundary loader assertions.
 `python3 -m pytest tests -q` -> 852 passed, 2 skipped (both pre-existing);
 `python3 -m pytest tests/test_effective_config.py tests/test_forge_bootstrap.py
 tests/test_build_adapters.py -q` -> 234 passed, 2 skipped; `ruff check scripts/ eval/` clean.
+
+## Item 005 — state-verify writer (feature-target result mode)
+
+Landed the eighth `state-*` verb: `cmd_state_verify` plus three private helpers
+(`_require_positive_int`, `_validated_findings_file`, `_current_artifact_version`,
+`_verify_result_entry`), the 03 §3.1 argparse surface, dispatch, and a `_print_state_verify`
+one-liner. The 00 §6 docstring is byte-identical to the spec (verified with a diff script),
+signature included.
+
+### Gotchas for later items
+
+- **`state-verify`'s `--json` echo is NOT the state document.** Every other verb returns the
+  mutated state dict; this one returns `{feature, stage, verifyKey, statePath, entry,
+  updatedAt}` per 00 §6's `Returns:`. Its printer therefore takes the RESULT, not a state
+  dict — do not "fix" it to match the other `_print_state_*` signatures. Items 006/007 must
+  keep the same shape (epic writes should report the `.epic-state.json` path in `statePath`).
+
+- **Two deliberate not-yet-implemented `UsageError`s live in `cmd_state_verify`**, both
+  reachable from the registered CLI: `--stage forge-0-epic` (item 006 replaces it with the
+  epic branch) and `--commit-hash` (item 007 replaces it with commit-2 mode). Both are
+  covered by `test_state_verify_defers_the_epic_target_and_commit_2_mode` — that test must be
+  REPLACED, not deleted, when each branch lands. The mode-exclusivity checks around them
+  (neither-mode / mixed-mode) are already final and must survive.
+
+- **`--stage` choices come from the new derived `VERIFY_STAGES`** (`("forge-0-epic",
+  *VERIFY_TOKEN_BY_STAGE)`) and `--status` from the new derived `VERIFY_RESULT_STATUSES`
+  (`get_args(VerifyStatus)` minus `pending`). Both are derived, per item 001's no-second-copy
+  rule — do not hand-list either.
+
+- **A NUL byte cannot travel through `subprocess` argv** (`ValueError: embedded null byte`
+  before the process even starts), so the NUL row of the `--findings-file` containment matrix
+  is exercised IN-PROCESS against `FS.cmd_state_verify`, not through `_run`. The other control
+  characters (`\x07`, `\n`) do go through argv fine. Any later containment matrix needs the
+  same split.
+
+- **`updatedAt` refresh assertions need a backdated `updatedAt`.** `_now_iso` is
+  second-precision, so a test that writes state and immediately re-writes it inside the same
+  second sees an unchanged timestamp and a "nothing moved" assertion passes vacuously (it
+  cost one real failure here). Seed the pre-state with `"2020-01-01T00:00:00Z"` — the same
+  trick the pre-existing cross-verb `updatedAt` test uses.
+
+- **`skipped` is the only status that works against a never-written state file** (everything
+  else needs the served stage's recorded `version`, per 03 §3.3's "result statuses other than
+  `skipped` fail if that artifact version is absent"). That is why both `_VERB_INVOCATIONS`
+  tables register `--stage forge-1-prd --status skipped` — the cross-verb guards run against
+  an empty feature dir. Do not "improve" it to `passed`.
+
+- **`passed` accepts `--findings-count 0` but rejects `--findings-file`.** 03 §3.3's forbidden
+  column says only "findings count, if supplied, must be `0`", while 07 §4.2 lists "findings
+  metadata on passed" among the contradictory-metadata rejections. The reconciliation
+  implemented here: file always rejected on `passed`, count rejected unless it is exactly 0.
+
+- **Each status REPLACES the entry rather than patching it** (`_verify_result_entry` builds a
+  fresh dict). That is what makes the matrix's "clear …" columns exact and the scheduling keys
+  DELETED rather than nulled. `findings-applied` is the one status that copies anything
+  forward — `findingsFile`/`findingsCount` from the prior entry.
+
+- `_stage_version` returns a raw `isinstance(x, int)` value, so a `True` recorded in state
+  would pass it; `_current_artifact_version` funnels it through `_require_positive_int`, which
+  rejects `bool` explicitly. Item 012's scheduling path should reuse
+  `_current_artifact_version`, not re-read `version` itself.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0 with `PASS: epic-manifest pytest suite` and
+`PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 885 passed, 2 skipped (both pre-existing);
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` no drift.

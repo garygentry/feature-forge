@@ -3,7 +3,7 @@
 `references/pipeline-state-schema.json` stays the source of truth for
 `.pipeline-state.json` even though R4 removed the per-stage instruction to *read*
 it — no skill body loads the schema to author state any more, so nothing but a
-test keeps the seven `state-*` verbs honest. This module is that test.
+test keeps the eight `state-*` verbs honest. This module is that test.
 
 It differs from `tests/test_state_verbs.py` on purpose: that file asserts each
 verb's CLI contract (which fields it writes, which flags it rejects); this one
@@ -56,6 +56,9 @@ VERB_INVOCATIONS: dict[str, tuple[str, ...]] = {
         "--raised-by", "forge-2-tech",
         "--blocks-current", "false",
     ),
+    # `skipped` is the one result that needs no completed artifact behind it, so it
+    # is the only invocation that works against a never-written state file.
+    "state-verify": ("--stage", "forge-1-prd", "--status", "skipped"),
 }
 
 
@@ -97,7 +100,7 @@ def test_the_guard_covers_every_registered_state_verb():
     assert registered == set(VERB_INVOCATIONS), (
         f"registered {sorted(registered)} != covered {sorted(VERB_INVOCATIONS)}"
     )
-    assert len(registered) == 7, f"expected seven state verbs, found {len(registered)}"
+    assert len(registered) == 8, f"expected eight state verbs, found {len(registered)}"
 
 
 @pytest.mark.parametrize("verb", sorted(VERB_INVOCATIONS))
@@ -193,6 +196,89 @@ def test_a_full_pipeline_sequence_across_verbs_conforms(tmp_path):
     assert len(state["deferredDecisions"]) == 1
     assert len(state["epicChangeRequests"]) == 1
     assert state["stages"]["forge-2-tech"]["basedOnVersions"] == {"forge-1-prd": 1}
+
+
+def test_the_schedule_then_passed_sequence_conforms_after_every_step(tmp_path):
+    """complete -> auto-verify-pending -> passed, validated at each step.
+
+    The scheduling marker and the terminal result are two DIFFERENT shapes of the
+    same `verifyEntry` — a terminal write deletes the scheduling keys rather than
+    nulling them, so only a per-step check catches an entry that kept both.
+    """
+    specs = _feature_dir(tmp_path).parent
+    stage, key = "forge-1-prd", "forge-verify-prd"
+
+    _conforms(
+        _verb(specs, "state-complete", "--stage", stage, "--version", "1",
+              "--artifact", "PRD.md"),
+        "before scheduling",
+    )
+
+    state = _verb(specs, "state-verify", "--stage", stage,
+                  "--status", "auto-verify-pending")
+    _conforms(state, "after the auto-verify schedule")
+    entry = state["stages"][key]
+    assert entry["status"] == "auto-verify-pending"
+    assert entry["scheduledStageVersion"] == 1
+    assert entry["commitHash"] is None
+    assert "verifiedStageVersion" not in entry
+
+    state = _verb(specs, "state-verify", "--stage", stage, "--status", "passed",
+                  "--verified-stage-version", "1")
+    _conforms(state, "after the passed result")
+    entry = state["stages"][key]
+    assert entry["status"] == "passed"
+    assert entry["verifiedStageVersion"] == 1
+    # Deleted, not nulled: `VerifyEntry` is total=False, so absent means "not
+    # scheduled" while present-but-null would be a malformed entry (00 §6).
+    assert "scheduledAt" not in entry and "scheduledStageVersion" not in entry
+
+
+def test_the_schedule_findings_applied_sequence_conforms_after_every_step(tmp_path):
+    """complete -> auto-verify-pending -> findings-reported -> findings-applied.
+
+    `findings-applied` is the only status that carries prior state forward (the
+    report metadata) while DELETING `verifiedStageVersion` — fixes landed, nothing
+    re-verified them, so freshness stays unresolved (03 §3.3).
+    """
+    specs = _feature_dir(tmp_path).parent
+    stage, key = "forge-4-backlog", "forge-verify-backlog"
+
+    _verb(specs, "state-complete", "--stage", stage, "--version", "2",
+          "--artifact", "backlog.json")
+    _conforms(
+        _verb(specs, "state-verify", "--stage", stage,
+              "--status", "auto-verify-pending"),
+        "after the auto-verify schedule",
+    )
+
+    state = _verb(
+        specs, "state-verify", "--stage", stage, "--status", "findings-reported",
+        "--findings-file", "verify/backlog-findings.md", "--findings-count", "4",
+        "--verified-stage-version", "2",
+    )
+    _conforms(state, "after the findings report")
+    entry = state["stages"][key]
+    assert entry["findingsFile"] == "verify/backlog-findings.md"
+    assert entry["findingsCount"] == 4
+    assert entry["verifiedStageVersion"] == 2
+    assert "scheduledAt" not in entry
+
+    state = _verb(specs, "state-verify", "--stage", stage,
+                  "--status", "findings-applied")
+    _conforms(state, "after the fixes were applied")
+    entry = state["stages"][key]
+    assert entry["status"] == "findings-applied"
+    assert entry["findingsFile"] == "verify/backlog-findings.md"
+    assert entry["findingsCount"] == 4
+    assert "fixedAt" in entry
+    assert "verifiedStageVersion" not in entry, "applied must not claim freshness"
+
+    # Only a later passed write restores it.
+    state = _verb(specs, "state-verify", "--stage", stage, "--status", "passed",
+                  "--verified-stage-version", "2")
+    _conforms(state, "after the re-verify passed")
+    assert state["stages"][key]["verifiedStageVersion"] == 2
 
 
 # --------------------------------------------------------------------------- #
