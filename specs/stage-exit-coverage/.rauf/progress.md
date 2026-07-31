@@ -1854,3 +1854,57 @@ table, and a CI-coverage note. Nothing under `scripts/`, `skills/`, `references/
 drift)`; the pytest suite reports 1640 passed, 2 skipped (both pre-existing);
 `python3 -m pytest tests/test_compliance_eval.py` -> 165 passed; `ruff check scripts/ eval/`
 clean; `python3 scripts/build-adapters.py --check` reports no drift.
+
+## Item 030 — navigator: `auto-pending` label + nested-owner dispatch
+
+Prose-only edits to `skills/forge/SKILL.md` (the dashboard is model-rendered from
+`rank-features --json`, so there was no script side left to do — item 008 landed it).
+Five edits: the `verifyState` value list, a new ⏳ legend entry carrying the obligation
+sentence, step 2b's three-cause `verifyPending` explanation, `owner: nested` on every
+navigator dispatch, and the Epic Dashboard indicator list.
+
+### Gotchas for later items
+
+- **`skills/forge/SKILL.md` is NOT a `CANONICAL_EXIT_SITES` member.** The navigator never
+  calls `stage-exit` — it is the outer terminal owner for its own catch-up chain, but it
+  closes with its own `AskUserQuestion` gate, not a scripted block. Item 024 must keep it
+  out of the covered table AND out of `INTENTIONALLY_EXCLUDED_SKILLS` (that set is exactly
+  `forge`, `forge-bootstrap`, `forge-guide`, `forge-init` per 06 §2.1 — `forge` IS in the
+  excluded set, so `skills/forge/SKILL.md` must exist, which it does). No stamp was added
+  here and none should be.
+
+- **The `owner: nested` token was added at FOUR sites, not one.** The AC names "the
+  catch-up chain", but the navigator dispatches `forge-verify`/`forge-fix` from three
+  places: step 2b's unattended auto-verify, step 2b's `autoFix` fix + mandatory re-verify,
+  and step 4's gate action (which also serves the findings-digest "Apply fixes now"
+  choice). Step 4 carries the general sentence covering all of them, so a later edit that
+  adds a fifth dispatch site should extend that sentence rather than adding a sixth copy.
+
+- **⏳ is the new indicator and it is deliberately NOT ⬜.** `⬜` means pending/never; an
+  `auto-pending` row is owed-and-recorded, which is the exact REQ-DEBT-02 conflation. Both
+  the per-feature legend and the Epic Dashboard's indicator list say "never ⬜" explicitly,
+  because the epic rows reuse the same legend by reference.
+
+- **The Epic Dashboard now surfaces `render-status --json`'s `warnings` verbatim.** Item
+  009 added the member obligation warning to that array; without this edit the navigator
+  had no instruction to render it, so the one emitter that names the member would have
+  been dropped on the floor. It says "surface verbatim rather than restating" so the
+  wording cannot drift from the script's.
+
+- **Body caps are comfortable here** — 234 body lines / 4,486 body words against 300/5,000,
+  even after five prose additions. This file has real headroom, unlike `forge-5-loop` and
+  `forge-0-epic`, which sit at the cap. House convention still applied: one long unwrapped
+  line per addition.
+
+- **The `verifyGate` value list (`none`/`auto`/`standard`) was left alone.** That is the
+  *ranker's* resolved gate, a different domain from `stage_exit`'s
+  `none`/`standard`/`manual-print`. Do not "harmonize" them — the navigator reads
+  `rank-features`, not a stage-exit payload.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with `PASS: spec-purity checker`,
+`PASS: epic-manifest pytest suite`, and `PASS: adapters/ matches a fresh generation (no
+drift)`; `python3 scripts/build-adapters.py` run and the regenerated `adapters/` tree (all
+six bundles carry `skills/forge/SKILL.md`) left in the working tree for the loop runner to
+commit.
