@@ -147,7 +147,7 @@ Pipeline state is written by the `state-*` verbs — see the Pipeline State Prot
 1. Record completion by running `state-complete` (below) with `--version`, `--artifact backlog.json`, and `--based-on forge-1-prd=<current version> --based-on forge-2-tech=<current version> --based-on forge-3-specs=<current version>`. It sets `status: "complete"`, `completedAt`, the version and `basedOnVersions`, and applies the downstream staleness cascade deterministically, so no downstream status is set by hand.
 2. **Offer a note — don't force one.** As a statement (not a blocking question), let the user know they can jot anything worth preserving across sessions and you'll store it in the `notes` field. If they volunteer something, store it; otherwise proceed.
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol: stage files, attempt commit (marking `stages.forge-4-backlog.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
-4. If verification was available but the user chose to skip it, record `stages.forge-verify-backlog.status` as `"skipped"` in pipeline state.
+4. If verification was available but the user chose to skip it, persist that skip through `state-verify` using the fence below — never by hand. The choice to proceed unverified is durable state owned by the scripted writer.
 5. **Close with the Stage Exit Protocol** (single-sourced in `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Lead with the item count ("Backlog complete with {N} items."), then:
 
 The `state-complete` call for item 1 — and the `state-note` call only when the user volunteered a note in item 2 — with the portable plugin-root prelude. Add `--epic "{epic}"` to each call when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
@@ -163,6 +163,17 @@ python3 "$R/scripts/forge-session.py" state-complete \
 python3 "$R/scripts/forge-session.py" state-note \
   --feature "{feature}" --note "<what the user volunteered>" --specs-dir "{specsDir}"
 ```
+
+The `state-verify` call for item 4 — **only** when verification was available and the user explicitly chose to skip it. A verifier that could not be dispatched is not a skip, so do not run this on an unavailable-tool path. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{feature}" --stage forge-4-backlog --status skipped --specs-dir "{specsDir}"
+```
+
+If that verb exits 2, surface its plain `Error:` line verbatim and stop — the skip is not persisted, so the exit below would route on state that does not exist on disk.
 
 **Determine `--verify-capability` before running the exit** (full rule: `references/stage-exit-protocol.md`; summary: **Verify Capability** in `references/shared-conventions.md`). Pass `interactive` only when a question mechanism equivalent to `AskUserQuestion` is available **and** a clean-room `forge-verifier` may be dispatched; otherwise pass `manual`. Dispatch capability means **permitted** dispatch, not a listed tool — the test is "may I dispatch `forge-verifier` right now", not "is a dispatch tool in my tool surface". A session that bars *unsolicited* dispatch while offering a question mechanism is therefore **`interactive`, not `manual`**: the gate's affirmative choice is the user request that authorizes the dispatch. Such a bar is never grounds to skip verification, and never grounds to fence the production successor while verification is unresolved — on the `runInStageVerify: true` path the emitted `verifyGate` stays `none`, so reuse the Standard Verify Gate block for consent with **choice 2 omitted**, leaving exactly two choices: *Verify now* (recommended) and *Skip for now*, the latter persisted as an explicit `skipped` before any advancing block. Add `--epic "{epic}"` to the call below when this feature is an epic member.
 

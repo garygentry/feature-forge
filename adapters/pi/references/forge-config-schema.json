@@ -75,7 +75,7 @@
     "autoVerifyStages": {
       "type": "object",
       "default": {},
-      "description": "Per-stage overrides for autoVerify. Maps a production stage id to a boolean; the effective value for a stage is autoVerifyStages[stage] if present, else autoVerify. Keys are constrained to the five verify-capable stages so a typo (e.g. 'forge-1-prod') is a schema error, not a silent no-op. forge-6-docs has no verify step and is not a valid key.",
+      "description": "Per-stage overrides for autoVerify. Maps a production stage id to a boolean; the effective value for a stage is autoVerifyStages[stage] if present, else autoVerify. Keys are constrained to the five verify-capable stages, so a typo (e.g. 'forge-1-prod') is reported as an ignored key rather than silently taking no effect. It does not fail the command. forge-6-docs has no verify step and is not a valid key.",
       "propertyNames": {
         "enum": ["forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop"]
       },

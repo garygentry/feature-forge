@@ -7,16 +7,9 @@ metadata:
 
 # forge-5-loop — Autonomous Loop Executor
 
-Execute the autonomous coding loop against a forge feature's backlog. The loop
-spawns a fresh agent session per backlog item, implementing each task with full
-verification.
+Execute the autonomous coding loop against a forge feature's backlog. The loop spawns a fresh agent session per backlog item, implementing each task with full verification.
 
-The loop **runner** is configured, not hardcoded. feature-forge talks to it
-through the `loopRunner` block in `forge.config.json`; rauf is the default and
-reference implementation (see `references/ralph-loop-contract.md`). Every command
-below is rendered from `loopRunner` with token substitution — there are no
-hardcoded `rauf …` commands in this skill, and even the human log filename is
-tokenized as `{loopRunner.logFile}`.
+The loop **runner** is configured, not hardcoded. feature-forge talks to it through the `loopRunner` block in `forge.config.json`; rauf is the default and reference implementation (see `references/ralph-loop-contract.md`). Every command below is rendered from `loopRunner` with token substitution — there are no hardcoded `rauf …` commands in this skill, and even the human log filename is tokenized as `{loopRunner.logFile}`.
 
 ## Resolve the loop runner
 
@@ -35,8 +28,7 @@ Token substitution applies to every `*Command` string. Substitute:
 - `{specsDir}` → `specsDir` from config
 - `{iterations}` → the computed iteration count (Step 2a)
 
-Whenever this skill says "run the **run command**" / "**status command**" /
-etc., it means the corresponding substituted `loopRunner.*Command`.
+Whenever this skill says "run the **run command**" / "**status command**" / etc., it means the corresponding substituted `loopRunner.*Command`.
 
 **Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
 
@@ -228,11 +220,7 @@ rules, read `references/runner-contract.md`.
 
 ### 3f. Reach completion
 
-Step 4 is reached when the backgrounded process exits (its completion notification is
-authoritative); the `loop_completed` / `loop_error` / `loop_cancelled` event is the live
-heads-up that it's imminent. Stop the Monitor (it ends on its own when `tail` sees the
-process-ended log, or via `TaskStop`) and proceed to Step 4. Do NOT foreground-sleep
-or poll — the harness drives both the Monitor events and the completion notification.
+Step 4 is reached when the backgrounded process exits (its completion notification is authoritative); the `loop_completed` / `loop_error` / `loop_cancelled` event is the live heads-up that it's imminent. Stop the Monitor (it ends on its own when `tail` sees the process-ended log, or via `TaskStop`) and proceed to Step 4. Do NOT foreground-sleep or poll — the harness drives both the Monitor events and the completion notification.
 
 ## Step 4: Check Results
 
@@ -265,7 +253,15 @@ python3 "$R/scripts/forge-session.py" state-complete --feature "{feature}" --sta
 
 ## Step 5b: Offer Impl-Verify (standalone path)
 
-**Gate:** run only if (a) the feature's `.pipeline-state.json` has **no** `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete`. Otherwise **skip** straight to Step 7 — a non-complete run has nothing to verify yet, and epic members get the equivalent offer in Step 6.1 (do **not** prompt twice). This standalone counterpart to Step 6.1 nudges verification interactively rather than via the easily-missed "Next steps" text. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is complete. Recommended: run `/feature-forge:forge-verify {feature} impl` to audit the implementation before generating docs. Run it now, or skip to forge-6-docs?"* On **run**, hand off to `/feature-forge:forge-verify {feature} impl`. On **skip**, record `stages.forge-verify-impl.status` as `"skipped"` (mirrors `forge-4-backlog`'s skip handling) — the forge-6-docs backstop re-surfaces the skip. Either way, do **not** name a next command here: Step 7 routes, and it routes differently depending on what this step recorded.
+**Gate:** run only if (a) the feature's `.pipeline-state.json` has **no** `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete`. Otherwise **skip** straight to Step 7 — a non-complete run has nothing to verify yet, and epic members get the equivalent offer in Step 6.1 (do **not** prompt twice). This standalone counterpart to Step 6.1 nudges verification interactively rather than via the easily-missed "Next steps" text. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is complete. Recommended: run `/feature-forge:forge-verify {feature} impl` to audit the implementation before generating docs. Run it now, or skip to forge-6-docs?"* On **run**, hand off to `/feature-forge:forge-verify {feature} impl`. On **skip**, persist the skip through `state-verify` using the fence below (mirrors `forge-4-backlog`'s skip handling) — the forge-6-docs backstop re-surfaces the skip. Either way, do **not** name a next command here: Step 7 routes, and it routes differently depending on what this step recorded.
+
+**The skip is written by `state-verify`, never by hand.** Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`. On exit 2, surface the plain `Error:` line verbatim and stop: the skip is not persisted, so Step 7 would route on state that is not on disk.
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify --feature "{feature}" --stage forge-5-loop --status skipped --specs-dir "{specsDir}"
+```
 
 ## Step 6: Epic Handoff
 

@@ -36,10 +36,10 @@ from typing import Final, Literal, TypedDict
 
 
 # --------------------------------------------------------------------------- #
-# Constants (00-core-definitions.md §6)
+# Constants
 # --------------------------------------------------------------------------- #
 
-#: A safe feature/epic name: one kebab-case token (00 §6).
+#: A safe feature/epic name: one kebab-case token.
 SAFE_NAME_RE: Final = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 #: A directory is "feature-shaped" iff it directly contains this file.
 PIPELINE_STATE_FILENAME: Final = ".pipeline-state.json"
@@ -65,7 +65,7 @@ KNOWN_VERIFY_STATUSES: Final = frozenset(
     }
 )
 #: The subset of KNOWN_VERIFY_STATUSES that makes a member's forge-verify-impl count as
-#: complete-for-orchestration (00 §7). A STRICT subset — 'findings-reported' (unfixed),
+#: complete-for-orchestration. A STRICT subset — 'findings-reported' (unfixed),
 #: 'skipped', and 'pending' do NOT unblock dependents. Not collapsible into the set above.
 _VERIFY_ORCH_COMPLETE: Final = frozenset({"passed", "findings-applied"})
 
@@ -86,9 +86,9 @@ _PRODUCTION_STAGES: Final = (
 
 #: The served production stage behind each ``forge-verify-{token}`` member entry, in
 #: pipeline order — the inverse of ``VERIFY_TOKEN_BY_STAGE`` in forge-session.py. Used
-#: to NAME the stage owed automatic verification (03 §5.3), and iterated (rather than
+#: to NAME the stage owed automatic verification, and iterated (rather than
 #: iterating the state file's own key order) so the warning order is deterministic
-#: regardless of how a member's state document happens to be serialized (02 §10).
+#: regardless of how a member's state document happens to be serialized.
 _VERIFY_STAGE_BY_TOKEN: Final[dict[str, str]] = {
     "prd": "forge-1-prd",
     "tech": "forge-2-tech",
@@ -98,7 +98,7 @@ _VERIFY_STAGE_BY_TOKEN: Final[dict[str, str]] = {
 }
 
 #: Epic-scoped verification state lives beside the manifest, NEVER in a member's
-#: .pipeline-state.json (03 §2.1, REQ-SEC-01). Mirrors ``EPIC_STATE_FILENAME`` in
+#: .pipeline-state.json (REQ-SEC-01). Mirrors ``EPIC_STATE_FILENAME`` in
 #: forge-session.py.
 EPIC_STATE_FILENAME: Final = ".epic-state.json"
 #: The single verify entry an epic root carries.
@@ -111,7 +111,7 @@ EPIC_VERIFY_STAGE: Final = "forge-0-epic"
 #: deliberately absent: recorded debt is owed, not resolved (REQ-DEBT-02).
 _VERIFY_RESOLVED: Final = frozenset({"passed", "findings-applied", "skipped"})
 
-#: The 03 §5.3 obligation sentence. Mirrors ``AUTO_PENDING_DIAGNOSTIC`` in
+#: The obligation sentence. Mirrors ``AUTO_PENDING_DIAGNOSTIC`` in
 #: forge-session.py so the navigator ledger and the epic dashboard say the same thing
 #: about the same debt; the two scripts share no import module.
 AUTO_PENDING_DIAGNOSTIC: Final = (
@@ -121,7 +121,7 @@ AUTO_PENDING_DIAGNOSTIC: Final = (
 
 
 # --------------------------------------------------------------------------- #
-# Type Definitions (00-core-definitions.md §4, §5; 02 §8.4)
+# Type Definitions
 # --------------------------------------------------------------------------- #
 
 FindingCode = Literal[
@@ -156,12 +156,12 @@ class Finding(TypedDict):
 DerivedStatus = Literal[
     "not-started",   # no .pipeline-state.json, or all stages pending
     "in-progress",   # at least one stage started, loop not complete-for-orchestration
-    "complete",      # complete-for-orchestration per 00 §7
+    "complete",      # complete-for-orchestration
 ]
 
 
 class FeatureStatus(TypedDict):
-    """Live per-feature status derived from its own pipeline state (00 §5).
+    """Live per-feature status derived from its own pipeline state.
 
     Attributes:
         name: Feature name.
@@ -171,7 +171,7 @@ class FeatureStatus(TypedDict):
             navigator status semantics for display.
         blocked: True if any entry in unmetDeps is non-empty.
         unmetDeps: Names of this feature's direct dependencies that are not yet
-            complete-for-orchestration (00 §7). Empty when actionable or complete.
+            complete-for-orchestration. Empty when actionable or complete.
         openEpicChangeRequests: Count of this member's ``epicChangeRequests``
             entries with ``status == "open"`` — epic-level change requests raised
             by a member stage that forge-0-epic edit mode has not yet reconciled.
@@ -191,23 +191,23 @@ class FeatureStatus(TypedDict):
 
 
 class Rollup(TypedDict):
-    """Aggregate completion counts for the epic dashboard (00 §8)."""
+    """Aggregate completion counts for the epic dashboard."""
 
-    complete: int  #: Number of member features complete-for-orchestration (00 §7).
+    complete: int  #: Number of member features complete-for-orchestration.
     total: int     #: Total member features in the manifest (0 for an empty epic).
 
 
 class RenderStatus(TypedDict):
-    """The full live dashboard payload returned by render_status (00 §5, §8).
+    """The full live dashboard payload returned by render_status.
 
     Attributes:
         epic: The epic name (manifest `epic`).
-        status: The epic lifecycle status (00 §2.1).
+        status: The epic lifecycle status.
         features: Per-member status rows, one per manifest feature (may be empty).
         actionable: Names of features whose dependsOn are all complete and that
-            are not themselves complete (00 §8).
+            are not themselves complete.
         parallelEligible: Subset of `actionable` with no mutual (transitive)
-            dependency — surfaced for future parallel execution (00 §8).
+            dependency — surfaced for future parallel execution.
         rollup: Aggregate {complete, total} counts.
         nextCommand: Recommended next command for the first actionable feature, or
             None when nothing is actionable (all complete, empty epic, or paused).
@@ -216,7 +216,7 @@ class RenderStatus(TypedDict):
             ``forge-verify-*.status`` outside ``KNOWN_VERIFY_STATUSES`` (treated as
             incomplete, but silently so would poison the rollup + dependency gates,
             #148), then OBLIGATION warnings for owed automatic verification — first
-            per member in pipeline-stage order, then the epic root (03 §5.2/§5.3).
+            per member in pipeline-stage order, then the epic root.
             The two are deliberately distinct: an unknown status is a corrupt value,
             owed debt is a valid value naming work that has not happened. Empty in
             the common case.
@@ -233,7 +233,7 @@ class RenderStatus(TypedDict):
 
 
 # --------------------------------------------------------------------------- #
-# Internal Exceptions (02 §2)
+# Internal Exceptions
 # --------------------------------------------------------------------------- #
 
 
@@ -256,7 +256,7 @@ class UsageError(Exception):
 class FindingsError(Exception):
     """A non-fatal validation outcome that must exit 1.
 
-    Raised when an operation produces one or more Findings (00 §4) that block a
+    Raised when an operation produces one or more Findings that block a
     gating operation: a cycle, a dangling ref, an ambiguous/not-found name, etc.
     Maps to exit code 1. Carries the structured findings so the dispatch layer
     can emit them as JSON or human lines.
@@ -271,7 +271,7 @@ class FindingsError(Exception):
 
 
 # --------------------------------------------------------------------------- #
-# Safety & I/O Layer (02 §3)
+# Safety & I/O Layer
 # --------------------------------------------------------------------------- #
 
 
@@ -290,7 +290,7 @@ def assert_safe_name(name: str) -> None:
             equals '..', or fails SAFE_NAME_RE. The message embeds the
             offending name (e.g. ``unsafe name '../escape'``) so the caller can
             surface it verbatim. Corresponds to the 'unsafe-name' Finding code
-            (00 §4) but is raised as a usage error because it is detected before
+ but is raised as a usage error because it is detected before
             any manifest is read.
     """
     if (
@@ -325,7 +325,7 @@ def contained_path(base: Path, *parts: str) -> Path:
         UsageError: If the resolved path escapes ``base`` (message:
             ``resolved path escapes specs dir: …``). Containment violations
             surface only as exit-2 usage errors per the error model in
-            tech-spec §6 (there is no dedicated Finding code for them).
+            the manifest contract (there is no dedicated Finding code for them).
     """
     base_real = base.resolve()
     target = (base_real / Path(*parts)).resolve()
@@ -345,7 +345,7 @@ def load_manifest(epic_dir: Path) -> dict:
 
     A legacy manifest written before the canonical ``revision`` field existed is
     presented as logical ``revision: 1`` in the returned dict WITHOUT rewriting the
-    file (03 §2.2). Legacy validation and rendering therefore keep working, and the
+    file. Legacy validation and rendering therefore keep working, and the
     file's bytes only change on its first genuine semantic mutation — which writes
     ``revision: 2`` (REQ-DEBT-06, REQ-COMPAT-02).
 
@@ -357,7 +357,7 @@ def load_manifest(epic_dir: Path) -> dict:
     Raises:
         UsageError: If the manifest file is missing or unreadable (exit 2).
         FindingsError: If the file exists but is not parseable JSON — emits a
-            single 'corrupt-json' Finding (00 §4) with the JSON error position,
+            single 'corrupt-json' Finding with the JSON error position,
             so a hand-corrupted manifest fails with an actionable message rather
             than a traceback (REQ-ROBUST-02). Exit 1.
     """
@@ -429,12 +429,12 @@ def atomic_write(path: Path, data: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Graph Algorithms (02 §4) — implemented in item 004
+# Graph Algorithms — implemented in item 004
 # --------------------------------------------------------------------------- #
 
 
 def find_cycle(features: list[dict]) -> list[str] | None:
-    """Return a cycle in the dependsOn graph, or None if acyclic (02 §4).
+    """Return a cycle in the dependsOn graph, or None if acyclic.
 
     Iterative DFS over the directed graph whose edges are ``feature -> dep``.
     On the first back-edge into a GRAY node, reconstructs and returns the cycle
@@ -485,7 +485,7 @@ def find_cycle(features: list[dict]) -> list[str] | None:
 def unmet_deps(
     name: str, features: list[dict], complete: dict[str, bool]
 ) -> list[str]:
-    """Return a feature's direct dependencies that are not complete (02 §4).
+    """Return a feature's direct dependencies that are not complete.
 
     Names of this feature's direct ``dependsOn`` entries whose value in
     ``complete`` is False, preserving manifest order. Empty when the feature is
@@ -497,15 +497,15 @@ def unmet_deps(
 
 
 # --------------------------------------------------------------------------- #
-# Resolution & Uniqueness (02 §5) — implemented in item 005
+# Resolution & Uniqueness — implemented in item 005
 # --------------------------------------------------------------------------- #
 
 
 def feature_dirs(specs_dir: Path) -> dict[str, list[Path]]:
-    """Map every feature name in the specs tree to the dirs that bear it (02 §5).
+    """Map every feature name in the specs tree to the dirs that bear it.
 
     Scans both layouts to a fixed depth, treating a directory as a feature iff
-    it directly contains a ``.pipeline-state.json`` (00 §6, REQ-DIR-03):
+    it directly contains a ``.pipeline-state.json`` (REQ-DIR-03):
       * flat:   {specsDir}/{name}/.pipeline-state.json
       * nested: {specsDir}/{epic}/{name}/.pipeline-state.json
 
@@ -513,7 +513,7 @@ def feature_dirs(specs_dir: Path) -> dict[str, list[Path]]:
     entry is a uniqueness violation (REQ-DIR-04) surfaced as 'ambiguous' or
     'duplicate-name' by the caller. Epic directories themselves (which hold
     ``epic-manifest.json`` but no ``.pipeline-state.json``) are skipped, so an
-    epic name never collides with a feature name (01 §4.3).
+    epic name never collides with a feature name.
 
     Args:
         specs_dir: The configured specs directory (already verified to exist).
@@ -536,9 +536,9 @@ def feature_dirs(specs_dir: Path) -> dict[str, list[Path]]:
 
 
 def resolve(name: str, specs_dir: Path) -> Path:
-    """Resolve a bare feature/epic name to its absolute directory (02 §5).
+    """Resolve a bare feature/epic name to its absolute directory.
 
-    Implements the 5-step algorithm (tech-spec §3.4):
+    Implements the 5-step algorithm:
       1. reject unsafe names (assert_safe_name) — exit 2 before any FS access;
       2. flat match: {specsDir}/{name}/.pipeline-state.json wins outright;
       3. exactly one nested match resolves cleanly;
@@ -558,7 +558,7 @@ def resolve(name: str, specs_dir: Path) -> Path:
     Raises:
         UsageError: Unsafe name or missing specs dir (exit 2).
         FindingsError: 'ambiguous' (lists every matching path) or 'not-found'
-            (exit 1). 00 §4.2 gives the canonical message shapes.
+            (exit 1).
     """
     assert_safe_name(name)
     if not specs_dir.is_dir():
@@ -586,10 +586,10 @@ def resolve(name: str, specs_dir: Path) -> Path:
 
 
 def check_name(name: str, specs_dir: Path) -> list[Finding]:
-    """Return a duplicate-name finding if the name is already taken (02 §6.3).
+    """Return a duplicate-name finding if the name is already taken.
 
     Used by forge-0-epic before creating a new member feature so no NEW global
-    name collision can be introduced (REQ-DIR-04, tech-spec §3.4). Any single
+    name collision can be introduced (REQ-DIR-04). Any single
     existing occurrence is enough to reject — unlike ``resolve``, which tolerates
     a uniquely-matching name and only errors on genuine multi-match.
 
@@ -622,44 +622,44 @@ def check_name(name: str, specs_dir: Path) -> list[Finding]:
 
 
 # --------------------------------------------------------------------------- #
-# Validation (02 §6.2, §10) — implemented in item 006
+# Validation — implemented in item 006
 # --------------------------------------------------------------------------- #
 
 
-#: Top-level required keys (00 §2.1, mirrors epic-manifest-schema.json). Doubles as
+#: Top-level required keys (mirrors epic-manifest-schema.json). Doubles as
 #: the allow-list for the unknown-top-level-key check below.
 _TOP_REQUIRED: Final = (
     "schemaVersion", "revision", "epic", "description", "status",
     "narrativeDoc", "createdAt", "updatedAt", "features",
 )
-#: Required keys on each Feature object (00 §2.2).
+#: Required keys on each Feature object.
 _FEATURE_REQUIRED: Final = ("name", "charter", "dependsOn", "exposes", "consumes")
 #: Optional keys on each Feature object. `mutatesShared` is the #144 precision
 #: hint for cross-member coupling (array of project-root-relative path strings);
 #: schema-legal when present, ignored when absent (mirrors
 #: epic-manifest-schema.json definitions.feature.properties.mutatesShared).
 _FEATURE_OPTIONAL: Final = ("mutatesShared",)
-#: Required keys on each Contract (exposes[]) object (00 §2.3).
+#: Required keys on each Contract (exposes[]) object.
 _CONTRACT_REQUIRED: Final = ("name", "kind", "summary")
-#: Required keys on each ConsumedContract (consumes[]) object (00 §2.4).
+#: Required keys on each ConsumedContract (consumes[]) object.
 _CONSUMED_REQUIRED: Final = ("from", "name", "summary")
-#: Allowed epic lifecycle states (00 §2.1).
+#: Allowed epic lifecycle states.
 _EPIC_STATUSES: Final = ("active", "paused", "abandoned", "complete")
-#: Allowed Contract kinds (00 §2.3).
+#: Allowed Contract kinds.
 _CONTRACT_KINDS: Final = ("function", "type", "endpoint", "module", "event")
 
 
 def _schema(message: str, feature: str | None = None) -> Finding:
-    """Construct a 'schema' Finding (00 §4)."""
+    """Construct a 'schema' Finding."""
     return {"code": "schema", "message": message, "feature": feature}
 
 
 def _schema_findings(manifest: dict) -> list[Finding]:
-    """Hand-rolled stdlib schema checker over the manifest (02 §6.2, 00 §2.6).
+    """Hand-rolled stdlib schema checker over the manifest.
 
-    Asserts required keys/types/enums/consts from 00 §2 and explicitly rejects
+    Asserts the required keys/types/enums/consts and explicitly rejects
     any ``features[].status`` key (REQ-STATE-02 -> 'cached-status'). No
-    third-party ``jsonschema`` (01 §2.1). Returns 'schema' findings plus, for a
+    third-party ``jsonschema``. Returns 'schema' findings plus, for a
     per-feature status key, a 'cached-status' finding.
     """
     findings: list[Finding] = []
@@ -675,7 +675,7 @@ def _schema_findings(manifest: dict) -> list[Finding]:
     if "revision" in manifest:
         revision = manifest["revision"]
         # `bool` is a subclass of `int`, so `True` would otherwise pass as revision 1
-        # and then silently arithmetic-increment to 2 (03 §2.2).
+        # and then silently arithmetic-increment to 2.
         if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
             findings.append(_schema(f"revision must be an integer >= 1, got {revision!r}"))
     if "narrativeDoc" in manifest and manifest["narrativeDoc"] != NARRATIVE_FILENAME:
@@ -761,9 +761,9 @@ def _schema_findings(manifest: dict) -> list[Finding]:
 def _validate_dict(
     manifest: dict, epic_dir: Path, specs_dir: Path
 ) -> list[Finding]:
-    """Validate an already-parsed manifest dict, returning findings (02 §6.2).
+    """Validate an already-parsed manifest dict, returning findings.
 
-    Runs the invariant checks of 00 §2.6 in order, short-circuiting only where a
+    Runs the invariant checks in order, short-circuiting only where a
     later check cannot run. Reused by the item-008 mutators on the EDITED dict
     before writing. Does not parse JSON (that is ``validate``'s job) — operates
     purely in memory.
@@ -851,7 +851,7 @@ def _validate_dict(
 
 
 def validate(epic_dir: Path, specs_dir: Path) -> list[Finding]:
-    """Validate a single epic manifest, returning all findings (02 §6.2).
+    """Validate a single epic manifest, returning all findings.
 
     Parses the manifest (folding any corrupt-json finding from load_manifest
     into the returned list) then delegates to ``_validate_dict``. Raises
@@ -865,12 +865,12 @@ def validate(epic_dir: Path, specs_dir: Path) -> list[Finding]:
 
 
 # --------------------------------------------------------------------------- #
-# Live Status Derivation (02 §8) — implemented in item 007
+# Live Status Derivation — implemented in item 007
 # --------------------------------------------------------------------------- #
 
 
 def is_complete_for_orchestration(state: dict) -> bool:
-    """Apply the completion-for-orchestration predicate (00 §7, 02 §8.1).
+    """Apply the completion-for-orchestration predicate.
 
     A feature is complete-for-orchestration iff::
 
@@ -881,7 +881,7 @@ def is_complete_for_orchestration(state: dict) -> bool:
     A feature whose forge-verify-impl is 'findings-reported' (unfixed) is NOT
     complete and does NOT unblock dependents (REQ-ORCH-01). This is the single
     implementation of the predicate, reused by the dependency gate and handoff
-    (04-pipeline-integration.md).
+.
 
     Args:
         state: A parsed .pipeline-state.json dict (or {} if the member has none).
@@ -915,7 +915,7 @@ def _verify_status_warnings(name: str, state: dict) -> list[str]:
     Non-string / malformed status values (a list, an int) are also flagged, and the
     membership test is guarded so an unhashable value never raises.
 
-    ``auto-verify-pending`` is a KNOWN status and is therefore silent here (03 §5.2).
+    ``auto-verify-pending`` is a KNOWN status and is therefore silent here.
     Owed automatic verification is an OBLIGATION, not a corrupt value, so it is
     surfaced separately by ``_auto_verify_debt_warnings`` with actionable wording —
     reporting it as an unknown status would be actively misleading.
@@ -948,7 +948,7 @@ def _positive_int(value: object) -> int | None:
     A bool is rejected before the int test on purpose: ``True`` is an ``int`` and
     would otherwise compare equal to revision 1 (the same trap the manifest
     ``revision`` validator guards). Absent, non-integer, and sub-1 values are
-    unusable — the caller keeps the debt owed rather than guessing (03 §5.1).
+    unusable — the caller keeps the debt owed rather than guessing.
     """
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         return None
@@ -962,7 +962,7 @@ def _auto_pending_message(
     scheduled_version: int | None = None,
     current_version: int | None = None,
 ) -> str:
-    """Render the 03 §5.3 obligation sentence for owed automatic verification.
+    """Render the obligation sentence for owed automatic verification.
 
     Mirrors ``auto_pending_message`` in forge-session.py — one sentence naming the
     subject, the served stage, and the retry command, with both revision numbers
@@ -986,20 +986,20 @@ def _auto_pending_message(
 
 
 def _auto_verify_debt_warnings(name: str, state: dict) -> list[str]:
-    """Surface every ``auto-verify-pending`` member entry as an obligation (03 §5.2).
+    """Surface every ``auto-verify-pending`` member entry as an obligation.
 
     A member carrying recorded-but-undischarged automatic verification is neither
     "never verified" nor done: the directive that should have run it was dropped,
     crashed, or was interrupted, and the epic dashboard is where an operator notices
     (#163, REQ-DEBT-02/05). Emitted in pipeline-stage order — not the state file's key
-    order — so repeated renders are byte-identical (02 §10).
+    order — so repeated renders are byte-identical.
 
     Args:
         name: The member feature name.
         state: The member's parsed .pipeline-state.json (or {}).
 
     Returns:
-        Zero or more 03 §5.3 sentences naming the member, the served production
+        Zero or more sentences naming the member, the served production
         stage, and the ``forge-verify`` retry command.
     """
     stages = state.get("stages", {})
@@ -1027,7 +1027,7 @@ def _read_epic_state_safely(epic_dir: Path) -> dict:
     Epic verification state is epic-scoped: this reads the sibling of the manifest
     and NEVER a member's ``.pipeline-state.json`` (REQ-SEC-01). A missing, unreadable,
     unparseable, or non-object file downgrades to ``{}``, which classifies as
-    ``never`` — the dashboard must not crash on one torn file (02 §8.2).
+    ``never`` — the dashboard must not crash on one torn file.
     """
     path = epic_dir / EPIC_STATE_FILENAME
     if not path.is_file():
@@ -1043,7 +1043,7 @@ def epic_verify_state(epic_dir: Path, revision: int | None) -> str:
     """Classify epic-root verification freshness against the manifest revision.
 
     The epic mirror of ``verify_state`` in forge-session.py, with the manifest
-    ``revision`` (03 §2.2) standing in for a production stage's ``version``. It reads
+    ``revision`` standing in for a production stage's ``version``. It reads
     ``.epic-state.json`` and the supplied revision ONLY — no member state participates
     in epic verification (REQ-SEC-01).
 
@@ -1052,7 +1052,7 @@ def epic_verify_state(epic_dir: Path, revision: int | None) -> str:
         revision: The manifest's canonical revision, or None when unusable.
 
     Returns:
-        One of (03 §5.2):
+        One of:
 
         - ``never``       — no epic state, no ``forge-verify-epic`` entry, or a
           status outside the known vocabulary. Verification was never scheduled.
@@ -1069,7 +1069,7 @@ def epic_verify_state(epic_dir: Path, revision: int | None) -> str:
         - ``stale``       — a resolved terminal entry whose recorded revision is
           absent or does not match. ``findings-applied`` lands here in practice: the
           writer deliberately deletes ``verifiedStageVersion``, so an interruption
-          between fix and re-verify cannot read as verified (03 §3.3).
+          between fix and re-verify cannot read as verified.
     """
     entry = _read_epic_state_safely(epic_dir).get("stages", {})
     entry = entry.get(EPIC_VERIFY_KEY) if isinstance(entry, dict) else None
@@ -1091,7 +1091,7 @@ def epic_verify_state(epic_dir: Path, revision: int | None) -> str:
 
 
 def _epic_verify_warnings(epic: str, epic_dir: Path, revision: int | None) -> list[str]:
-    """Surface owed epic-root automatic verification as an obligation (03 §5.2/§5.3).
+    """Surface owed epic-root automatic verification as an obligation.
 
     Only ``auto-pending`` warrants a dashboard warning: ``never`` is the ordinary
     state of an epic nobody has verified, and ``stale``/``failing`` are already
@@ -1116,7 +1116,7 @@ def _read_state_safely(state_path: Path) -> dict:
     """Read and parse a member's .pipeline-state.json, tolerating corruption.
 
     A missing, unreadable, unparseable, or torn (partially-written) member state
-    downgrades to ``{}`` rather than crashing the dashboard (02 §8.2). Member
+    downgrades to ``{}`` rather than crashing the dashboard. Member
     state writes are made by forge-1..5 skills outside the helper's atomicity
     scope, so a torn read is expected and simply renders that one feature as
     ``not-started``.
@@ -1131,7 +1131,7 @@ def _read_state_safely(state_path: Path) -> dict:
 
 
 def derive_status(feature_dir: Path) -> FeatureStatus:
-    """Derive a feature's live status from its own pipeline state (00 §5, 02 §8).
+    """Derive a feature's live status from its own pipeline state.
 
     Reads ``{feature_dir}/.pipeline-state.json`` and maps it to a FeatureStatus:
     missing/unparseable/all-pending -> ``not-started``; complete-for-
@@ -1144,7 +1144,7 @@ def derive_status(feature_dir: Path) -> FeatureStatus:
         feature_dir: The member feature's directory.
 
     Returns:
-        A FeatureStatus (00 §5) with name, stage, coarse status, and placeholder
+        A FeatureStatus with name, stage, coarse status, and placeholder
         blocked/unmetDeps.
     """
     name = feature_dir.name
@@ -1187,7 +1187,7 @@ def derive_status(feature_dir: Path) -> FeatureStatus:
 
 
 def _transitive_deps(name: str, adjacency: dict[str, list[str]]) -> set[str]:
-    """Return all features reachable from ``name`` via dependsOn edges (00 §8)."""
+    """Return all features reachable from ``name`` via dependsOn edges."""
     seen: set[str] = set()
     stack = list(adjacency.get(name, []))
     while stack:
@@ -1218,7 +1218,7 @@ def _next_production_stage(state: dict) -> str | None:
 
 
 def _next_command(feature_dir: Path, status_row: FeatureStatus) -> str:
-    """Recommend the next forge command for an actionable feature (02 §8.3).
+    """Recommend the next forge command for an actionable feature.
 
     ``/feature-forge:forge-1-prd <name>`` when the feature's PRD is absent (or the
     member has not progressed past epic creation), else the command for its next
@@ -1229,7 +1229,7 @@ def _next_command(feature_dir: Path, status_row: FeatureStatus) -> str:
 
     When every production stage is complete but the member is still actionable, its
     ``forge-verify-impl`` entry is what holds it back, and the two cases need
-    different commands (03 §5.2): ``findings-reported`` means a report exists and is
+    different commands: ``findings-reported`` means a report exists and is
     unapplied, so ``forge-fix`` is accurate; anything else outstanding — notably
     ``auto-verify-pending``, where the scheduled run never happened — has nothing to
     fix and needs the verification itself, so ``forge-verify`` is. Recommending
@@ -1253,7 +1253,7 @@ def _next_command(feature_dir: Path, status_row: FeatureStatus) -> str:
 
 
 def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
-    """Build the full live dashboard payload for an epic (00 §5, §8; 02 §8.3).
+    """Build the full live dashboard payload for an epic.
 
     Validates first (refusing to render over an invalid graph), then derives each
     member's live status from its own state file, computes blocked/unmetDeps,
@@ -1264,7 +1264,7 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
         specs_dir: The configured specs directory.
 
     Returns:
-        The RenderStatus dict (02 §8.4).
+        The RenderStatus dict.
 
     Raises:
         UsageError: Missing/unreadable manifest (exit 2).
@@ -1294,7 +1294,7 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
         warnings.extend(_auto_verify_debt_warnings(name, member_state))
 
     # (3b) epic-root verification debt, classified against the manifest revision and
-    #      read from .epic-state.json alone — no member state participates (03 §5.2).
+    #      read from.epic-state.json alone — no member state participates.
     warnings.extend(_epic_verify_warnings(
         manifest.get("epic", epic_dir.name),
         epic_dir,
@@ -1359,12 +1359,12 @@ def render_status(epic_dir: Path, specs_dir: Path) -> RenderStatus:
 
 
 # --------------------------------------------------------------------------- #
-# Mutators (02 §7) — implemented in item 008
+# Mutators — implemented in item 008
 # --------------------------------------------------------------------------- #
 
 
 def _semantic_manifest(manifest: dict) -> dict:
-    """Return a manifest copy carrying only its semantic fields (03 §2.2).
+    """Return a manifest copy carrying only its semantic fields.
 
     Drops exactly the two bookkeeping fields a mutation is allowed to change on its
     own: ``updatedAt`` (a timestamp) and ``revision`` (the counter this function's
@@ -1377,7 +1377,7 @@ def _semantic_manifest(manifest: dict) -> dict:
 def _bump_and_write(
     epic_dir: Path, specs_dir: Path, manifest: dict
 ) -> list[Finding]:
-    """Re-validate, bump revision + updatedAt, and atomically persist (02 §7, 03 §2.2).
+    """Re-validate, bump revision + updatedAt, and atomically persist.
 
     The shared tail of every mutator (REQ-ROBUST-03, REQ-OBS-01, REQ-EPIC-05,
     REQ-REL-01) and the SINGLE place ``revision`` is incremented — no mutator bumps
@@ -1430,7 +1430,7 @@ def _bump_and_write(
 
     current = on_disk.get("revision") if isinstance(on_disk, dict) else None
     if isinstance(current, bool) or not isinstance(current, int) or current < 1:
-        current = 1  # legacy / malformed predecessor: logical revision 1 (03 §2.2).
+        current = 1  # legacy / malformed predecessor: logical revision 1.
     manifest["revision"] = current + 1
     manifest["updatedAt"] = datetime.now(timezone.utc).isoformat()
     atomic_write(path, manifest)
@@ -1444,7 +1444,7 @@ def add_feature(
     charter: str,
     deps: list[str],
 ) -> list[Finding]:
-    """Append a new member feature to the manifest (02 §7.1).
+    """Append a new member feature to the manifest.
 
     Appends a ``Feature`` with the given name/charter/dependsOn and EMPTY
     exposes/consumes. Re-validation surfaces a duplicate name (within the
@@ -1480,7 +1480,7 @@ def add_feature(
 
 
 def remove_feature(epic_dir: Path, specs_dir: Path, name: str) -> list[Finding]:
-    """Remove a member feature from the manifest (02 §7.2).
+    """Remove a member feature from the manifest.
 
     Drops the named feature from ``features[]``. After removal, re-validation
     surfaces any now-dangling ``dependsOn`` / ``consumes.from`` that pointed at
@@ -1512,10 +1512,10 @@ def remove_feature(epic_dir: Path, specs_dir: Path, name: str) -> list[Finding]:
 
 
 def reorder(epic_dir: Path, specs_dir: Path, order: list[str]) -> list[Finding]:
-    """Reorder the manifest features[] to a given permutation (02 §7.3).
+    """Reorder the manifest features[] to a given permutation.
 
     ``order`` must be an exact permutation of the current member names (purely a
-    display sequence, not a dependency ordering — 00 §2.1). If it is not, a
+    display sequence, not a dependency ordering). If it is not, a
     ``schema`` finding is returned and the manifest is left unchanged.
 
     Args:
@@ -1545,7 +1545,7 @@ def reorder(epic_dir: Path, specs_dir: Path, order: list[str]) -> list[Finding]:
 def set_dep(
     epic_dir: Path, specs_dir: Path, name: str, deps: list[str]
 ) -> list[Finding]:
-    """Replace a member feature's dependsOn list (02 §7.4, §7.6).
+    """Replace a member feature's dependsOn list.
 
     Re-validation enforces every new dependency exists (``dangling-ref``) and the
     resulting graph is acyclic (``cycle``). An empty ``deps`` clears the
@@ -1581,7 +1581,7 @@ def set_dep(
 
 
 def set_status(epic_dir: Path, specs_dir: Path, status: str) -> list[Finding]:
-    """Set the epic-level lifecycle status (02 §7.5).
+    """Set the epic-level lifecycle status.
 
     Sets the epic-level ``status`` (the value is constrained to the allowed
     lifecycle states by ``argparse`` ``choices`` before reaching here). Never
@@ -1779,7 +1779,7 @@ def adopt_feature(
 
 
 # --------------------------------------------------------------------------- #
-# CLI Dispatch (02 §9)
+# CLI Dispatch
 # --------------------------------------------------------------------------- #
 
 
@@ -1808,7 +1808,7 @@ def _emit_findings(findings: list[Finding], as_json: bool) -> None:
 
 
 def _print_status_table(status: RenderStatus) -> None:
-    """Print a readable epic dashboard plus the recommended next command (02 §8)."""
+    """Print a readable epic dashboard plus the recommended next command."""
     rollup = status["rollup"]
     print(f"Epic: {status['epic']}  [{status['status']}]")
     print(f"Progress: {rollup['complete']}/{rollup['total']} complete")
@@ -1917,7 +1917,7 @@ def _dispatch(args: argparse.Namespace, specs_dir: Path) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """Build the argparse parser with one subparser per subcommand (02 §9)."""
+    """Build the argparse parser with one subparser per subcommand."""
     parser = argparse.ArgumentParser(prog="epic-manifest.py", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -843,6 +844,64 @@ def test_an_interrupted_dispatch_leaves_the_marker_readable_from_a_new_process(
     d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
     assert d["verifyState"] == "auto-pending"
     assert d["autoVerifyDebtRecorded"] is True
+
+
+def test_an_advertised_but_unavailable_dispatch_never_promotes_the_deferred_command(
+    tmp_path: Path,
+) -> None:
+    """07 §3.4 (b) and (c): a dispatch that was advertised and then failed to happen.
+
+    The scenario: a payload announces `runInStageVerify: true`, the clean-room verifier
+    then returns `CLEAN_ROOM_UNAVAILABLE` or a non-answer, and the agent re-enters the
+    exit. Verification did **not** run, so the recovery payload must still lead with the
+    verify command — and the *previous* payload's `deferredCommand` (the production
+    successor) must never be promoted into its place. Promoting it is the
+    dropped-pipeline-thread failure this feature exists to prevent: the stage would
+    advance on the strength of a verification that silently never happened.
+
+    The sibling test above covers (a), that the debt survives into a new process. This
+    covers the two halves it leaves unproven, under the specified `manual` capability.
+
+    One deviation from the finding that proposed this test: it expected
+    `verifyGate == "manual-print"`. The contract emits `"none"` here, and that is
+    correct — `manual-print` is for the *gate* path, while `runInStageVerify: true`
+    keeps the gate at `none` and routes consent through the Standard Verify Gate
+    instead. Asserting `manual-print` would have pinned a bug into the suite, so the
+    real invariant is asserted and the gate value is pinned as `none`.
+    """
+    root = _exit_project(tmp_path, state=_tech_state())
+    first = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert first["runInStageVerify"] is True, "precondition: the dispatch was advertised"
+    assert first["deferredCommand"] == "/feature-forge:forge-3-specs widget"
+
+    # The dispatch failed: no `state-verify` call follows, so the debt stays unresolved.
+    payload = _exit_ok(
+        root, "--feature", "widget", "--stage", "forge-2-tech",
+        "--verify-capability", "manual",
+    )
+    second = payload["directives"]
+
+    # (b) the recovery payload still leads with verification.
+    assert second["primaryCommand"] == "/feature-forge:forge-verify widget"
+    assert second["verifyState"] == "auto-pending"
+    assert second["verifyGate"] == "none"  # see the docstring — not `manual-print`
+
+    # (c) the earlier payload's deferred production command is never promoted.
+    assert second["primaryCommand"] != first["deferredCommand"]
+    assert second["deferredCommand"] == first["deferredCommand"], (
+        "the production successor should stay deferred, not change identity"
+    )
+
+    # The fenced command the user is told to run is the verify command, not the
+    # successor. The successor may still appear in prose ("after verification passes,
+    # continue with …"); what must never happen is it being the thing in the fence.
+    fenced = re.findall(r"```\n(.*?)\n```", payload["nextSteps"], re.DOTALL)
+    assert fenced, f"no fenced command in nextSteps: {payload['nextSteps']!r}"
+    assert any("/feature-forge:forge-verify widget" in block for block in fenced)
+    assert not any(first["deferredCommand"] in block for block in fenced), (
+        "the deferred production command was promoted into the actionable fence while "
+        "verification is still outstanding"
+    )
 
 
 def test_the_clean_tree_snapshot_predates_the_pending_write(tmp_path: Path) -> None:

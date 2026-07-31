@@ -104,6 +104,8 @@ tests/
   test_json_loader_parity.py                N  mirrored loader drift guard
   test_compliance_eval.py                   M  branch fixture/scorer validity
   test_build_adapters.py                    M  runtime helper and translated stamps
+  test_doctor.py                            M  auto-pending label in doctor output
+  test_rank_features.py                     M  auto-pending obligation in rank rows
   <existing epic manifest tests>            M  revision mutation/freshness matrix
 
 adapters/{claude,codex,copilot,cursor,gemini,pi}/

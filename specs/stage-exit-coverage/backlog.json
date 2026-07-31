@@ -19,7 +19,7 @@
         "PRE_R4_SCHEMA_CONTRACT_SHA256 is replaced by a structural assertion that fails if any field other than the status enum and the two scheduling fields changed",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes",
         "scripts/forge-session.py declares EpicReconcile, StageExitDirectives, StageExitPayload, and VerifyEntry matching 00-core-definitions.md §4/§6, with field comments carried verbatim",
         "the drift guard asserts set(VERIFY_MODE_TO_STAGE) == set(get_args(VerifyMode)) and that its values are a subset of get_args(ProductionStage)"
@@ -51,7 +51,7 @@
         "tests/fixtures/valid-epic/auth-overhaul/epic-manifest.json and tests/fixtures/status-derivation/lifecycle/epic-manifest.json carry revision 1",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -83,7 +83,7 @@
         "tests/test_json_loader_parity.py fails when either copy is edited independently, has no skip gate, and does not import the hyphenated scripts by name",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -115,7 +115,7 @@
         "tests/test_build_adapters.py asserts RUNTIME_HELPERS has six entries, no new file under any adapters/*/scripts/, and byte-identical mirrored loaders in both emitted consumers for all six targets",
         "Config file bytes are captured before and after each warning-only command and are unchanged",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "python3 -m pytest tests/test_effective_config.py tests/test_forge_bootstrap.py tests/test_build_adapters.py passes",
         "a duplicate-key config read with unwritable stderr leaves forge-session.py's exit code unchanged and returns the parsed dict, while forge-bootstrap.py commit still exits 2"
       ],
@@ -148,7 +148,7 @@
         "test_state_schema_conformance.py expects eight state verbs and validates state after each transition in the sequences schedule→passed and schedule→findings→applied",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes",
         "--findings-file values that are absolute, contain a .. segment, carry NUL/control characters, or otherwise escape the resolved feature/epic directory each exit 2 before mutation and leave the state file byte-identical",
         "cmd_state_verify's --json result contains the written verify entry and the resolved target path, so a caller need not re-read state"
@@ -181,7 +181,7 @@
         "pass, findings-reported, findings-applied, and skipped all work against the epic target with the same metadata validation as feature targets",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -213,7 +213,7 @@
         "No source or canon path introduces a git commit --amend provenance route",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -246,7 +246,7 @@
         "The signatures of verify_state, pending_verify, _verify_state_for, and build_rows are unchanged",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -277,7 +277,7 @@
         "Epic verification reads .epic-state.json and the manifest revision only — no member .pipeline-state.json is read for epic verification state",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -310,7 +310,7 @@
         "Repeated identical requests produce byte-identical directives and NEXT-STEPS output",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes",
         "directives.verifyStage names the production stage outstanding verification is owed on and is None when nothing is outstanding, distinct from servedStage which is None on a production-stage exit",
         "directives.warnings is always present, is a list, and its entries appear in the 00-core-definitions.md §4 fixed order",
@@ -346,7 +346,7 @@
         "Claude renders /clear and /feature-forge:, Pi renders /new and /skill:, and generic output stays host-neutral",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes",
         "The gate is a pure function of verifyState and verify_capability; no third capability value or consent-specific gate form is introduced"
       ],
@@ -381,7 +381,7 @@
         "forge-0-epic scheduling reads .epic-state.json and the manifest revision, and touches no member state",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes",
         "directives.autoVerifyEffective reports the per-stage effective value after autoVerifyStages overrides, not the raw autoVerify config value",
         "an autoVerifyStages key naming no verify-capable stage appears in directives.invalidAutoVerifyKeys and renders 00-core-definitions.md §4's exact warning template in sorted key order, without failing the exit"
@@ -418,7 +418,7 @@
         "Live successor derivation uses current production position, and a completed stage 6 routes to a completion action rather than a nonexistent stage 7",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -451,7 +451,7 @@
         "A missing or foreign outcome exits 2 before any output is produced",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -484,7 +484,7 @@
         "The docs routing tests construct real manifest and member state and execute the real render-status CLI rather than mocking it",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes",
         "the render-status subprocess resolves epic-manifest.py as a sibling of forge-session.py via Path(__file__) and invokes it with sys.executable, never a guessed bundle root and never a bare python3"
       ],
@@ -519,7 +519,7 @@
         "No candidate state file is modified by any epic edit-mode exit",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -551,7 +551,7 @@
         "The exact sentinel value appears once in the scripted contract",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "references/stage-exit-protocol.md states that dispatch capability is permission rather than tool presence, and that a consent-required session routes the auto-verify directive through the Standard Verify Gate instead of skipping or advancing",
         "references/stage-exit-protocol.md documents the literal owner: nested / owner: direct token and the absent-token-means-direct default, and states ownership is never inferred from invocation phrasing",
         "the consent variant on a none gate is documented with exactly two labeled choices and its emitted verifyGate stays none",
@@ -587,8 +587,8 @@
         "A state-write failure maps to failed and no success block is printed",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
-        "no .epic-state.json write recipe, tempfile.mkstemp call, or os.replace snippet survives anywhere under skills/",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
+        "no .epic-state.json write recipe, tempfile.mkstemp call, or os.replace snippet survives under skills/forge-verify/ or skills/forge-fix/ (the scope this item owns; pre-existing os.replace prose elsewhere under skills/ belongs to the epic-orchestration feature)",
         "skills/forge-verify/references/findings-template.md is included in the regenerated adapter batch",
         "no passage in skills/forge-verify/SKILL.md justifies hand-authoring a verify entry",
         "the skill reads ownership from the literal owner: token and defaults to direct when absent; no path infers ownership from how the invocation was phrased",
@@ -627,7 +627,7 @@
         "The skill invokes stage-exit with --stage forge-fix, an explicit --owner, an outcome, and the served stage",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "skills/forge-fix/SKILL.md contains no claim that findings-applied reads fresh in the navigator's ledger",
         "no verifiedStageVersion value is written by hand anywhere in skills/forge-fix/SKILL.md",
         "the skill reads ownership from the literal owner: token and defaults to direct when absent; the retired autoFix-chain inference wording is gone",
@@ -665,7 +665,7 @@
         "skills/forge-5-loop/SKILL.md is at or below 300 body lines and 5,000 body words using the existing frontmatter-aware helpers",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "skills/forge-5-loop/SKILL.md Step 1b names owed auto-verify debt using 03-verification-state.md §5.3's wording rather than reporting 'hasn't been verified yet'",
         "the runner-contract --model phrase points at '## Optional flags catalog (Step 2d, rauf)' in references/agent-selection.md, which remains conditionally loaded and is not inlined"
       ],
@@ -698,7 +698,7 @@
         "Operationally unavailable verification is not treated as an implicit skip",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "skills/forge-6-docs/SKILL.md Step 1's backstop warns on auto-verify-pending with debt-specific wording distinct from the absent-entry wording, rather than proceeding silently"
       ],
       "status": "done",
@@ -730,7 +730,7 @@
         "A failed or invalid render-status routes to epic dashboard recovery rather than an arbitrary member",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed"
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\""
       ],
       "status": "done",
       "completedAt": "2026-07-31T10:09:49.920Z",
@@ -761,7 +761,7 @@
         "references/shared-conventions.md carries the matching immediate state-note recipe",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "Each stage's --verify-capability recipe states that dispatch capability means permitted dispatch, not a listed tool, and that a consent-required session is interactive rather than manual",
         "No stage treats a no-unsolicited-dispatch instruction as grounds to skip verification or to fence the production successor",
         "references/shared-conventions.md's Pipeline State Protocol lists state-verify among the state-* verbs with its --epic member rule and exit-2 failure protocol"
@@ -800,7 +800,7 @@
         "Negative tests operate on copied strings and mutate no repository file",
         "python3 -m pytest tests/test_stage_exit_protocol.py passes",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "tests/test_stage_exit_protocol.py contains no hardcoded copy of the nine EXIT_STAGES names; it extracts them from scripts/forge-session.py by regex + ast.literal_eval, and editing EXIT_STAGES there without editing CANONICAL_EXIT_SITES makes the test fail"
       ],
       "status": "done",
@@ -839,7 +839,7 @@
         "expected_branch_exit derives ground truth by executing the real forge-session.py stage-exit, and no nextSteps value is hard-coded in the fixture",
         "ruff check scripts/ eval/ passes",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "python3 -m pytest tests/test_compliance_eval.py passes"
       ],
       "status": "done",
@@ -872,7 +872,7 @@
         "A missing result, a non-zero or error result, a reordered exit, and a duplicate exit each return False",
         "ruff check scripts/ eval/ passes",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "python3 -m pytest tests/test_compliance_eval.py passes"
       ],
       "status": "done",
@@ -905,7 +905,7 @@
         "python3 -m pytest tests/test_compliance_eval.py passes",
         "ruff check scripts/ eval/ passes",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "score_branch_path raises RuntimeError, not KeyError, for an expected_payload missing directives, nextSteps, sentinel, or directives.primaryCommand, and each case is covered offline"
       ],
       "status": "done",
@@ -937,7 +937,7 @@
         "The absent-driver skip behavior, model pins, rate-over-N interpretation, and the low-score-is-not-a-correctness-failure statement are preserved",
         "No historical recorded result number is altered",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed"
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\""
       ],
       "status": "done",
       "completedAt": "2026-07-31T12:28:16.209Z",
@@ -967,7 +967,7 @@
         "All nine skills in CANONICAL_EXIT_SITES invoke the scripted stage-exit contract and tests/test_stage_exit_protocol.py passes",
         "Requirement traceability passes for specs/stage-exit-coverage/",
         "bash scripts/validate.sh passes with no errors",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed",
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"",
         "ruff check scripts/ eval/ passes"
       ],
       "status": "done",
@@ -1001,7 +1001,7 @@
         "the navigator's catch-up dispatch of forge-verify/forge-fix passes the literal owner: nested token",
         "python3 scripts/build-adapters.py was run and the regenerated adapters/ tree is committed",
         "bash scripts/validate.sh passes",
-        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\"; if it shows \"SKIP: pytest not installed\", python3 -m pytest tests -q was run explicitly and passed"
+        "bash scripts/validate.sh output shows \"PASS: epic-manifest pytest suite\""
       ],
       "status": "done",
       "completedAt": "2026-07-31T12:34:53.578Z",

@@ -93,9 +93,23 @@ def hash_tree(root: Path) -> dict[str, str]:
     Path-keyed and content-hashed so two trees compare byte-for-byte AND
     structurally (a missing/extra file shows as a key diff). Used to assert
     determinism (REQ-DET-01) and idempotency (REQ-DET-03).
+
+    Bytecode caches are excluded. The fixture tree ships real ``.py`` helpers
+    under ``scripts/`` and ``expected-adapters/*/scripts/``; any run that
+    imports or byte-compiles one drops a ``__pycache__/`` beside it. Those
+    directories are gitignored, so they are invisible to ``git status`` while
+    still being copied by ``fixture_copy`` into the comparison tree. Counting
+    them would make this a *stateful* hash: a freshly generated ``adapters/``
+    never has them, so the first suite run would poison the fixture and every
+    later run would fail with phantom ``.pyc`` key diffs against
+    ``expected-adapters/``. Ignoring them keeps the comparison a function of
+    the generator's output alone, which is the only thing these tests are
+    about.
     """
     out: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
         if path.is_file():
             rel = path.relative_to(root).as_posix()
             out[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -139,6 +153,42 @@ def test_matches_committed_snapshot(fixture_copy):
     """A fresh build of `minimal-canon` equals its committed expected snapshot (REQ-DET-01)."""
     root = fixture_copy("minimal-canon")
     assert run_build(root).returncode == 0
+    assert hash_tree(root / "adapters") == hash_tree(root / "expected-adapters")
+
+
+def test_hash_tree_ignores_bytecode_caches(fixture_copy):
+    """Planting `__pycache__` debris cannot change a `hash_tree` comparison.
+
+    Regression guard for the suite's own idempotency: importing or
+    byte-compiling a fixture helper leaves `__pycache__/` beside it, which
+    `fixture_copy` then carries into the comparison tree. Before this was
+    fixed, that made `bash scripts/validate.sh` pass exactly once per clean
+    checkout — the first run poisoned `expected-adapters/*/scripts/` and every
+    later run failed on phantom `.pyc` keys.
+
+    Everything here happens under a COPIED fixture; the committed tree is
+    never written to.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    clean = hash_tree(root / "adapters")
+    assert clean, "fixture built nothing — the guard below would be vacuous"
+
+    # Plant debris on one side only, mimicking what a real import leaves behind.
+    planted = 0
+    for scripts_dir in sorted((root / "adapters").rglob("scripts")):
+        if not scripts_dir.is_dir():
+            continue
+        cache = scripts_dir / "__pycache__"
+        cache.mkdir(exist_ok=True)
+        (cache / "forge-session.cpython-310.pyc").write_bytes(b"\x00\x0f\x0d\x0a not real bytecode")
+        planted += 1
+    assert planted, "no scripts/ dir under adapters/ — nowhere to plant debris"
+
+    assert hash_tree(root / "adapters") == clean, (
+        "hash_tree counted bytecode-cache debris; the suite is no longer idempotent"
+    )
+    # And the comparison the debris actually broke stays green.
     assert hash_tree(root / "adapters") == hash_tree(root / "expected-adapters")
 
 

@@ -197,6 +197,8 @@ If a `state-*` verb exits 2, surface the plain `Error:` line from stderr verbati
 
 `state-verify` writes exactly one `stages.forge-verify-{token}` entry — the verification result for the production stage named by `--stage` — plus the top-level `updatedAt`, and nothing else. `--stage` takes the **served production stage** (`forge-0-epic` through `forge-5-loop`; `forge-6-docs` has no verification token and is rejected). Add `--epic "{epic}"` when the feature is an epic member — required, per the member rule above. Result mode passes `--status` (`auto-verify-pending`, `passed`, `findings-reported`, `findings-applied`, or `skipped`) with whatever `--findings-file`, `--findings-count`, and `--verified-stage-version` that status requires; contradictory metadata is refused before any write:
 
+**`auto-verify-pending` is not a skill-facing status.** It is written by `stage-exit`'s scheduling boundary, which records the debt automatically when auto-verify is effective for a stage. The value is accepted on this CLI so the entry stays inspectable and repairable, not so a skill can hand-schedule verification: no skill body and no reference passes it, and none should. Every other status in the list is the recorded *result* of a verification that ran (or was explicitly skipped); this one records that one was *owed*.
+
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }

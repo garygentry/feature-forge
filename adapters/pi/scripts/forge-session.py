@@ -13,8 +13,10 @@ root navigator:
         [--config FILE] [--epic E] [--json]
     python3 forge-session.py check-epic-base --feature F [--specs-dir DIR] \
         [--config FILE] [--epic E] [--json]
-    python3 forge-session.py stage-exit --feature F --stage S [--specs-dir DIR] \
-        [--config FILE] [--epic E] [--next-feature N] [--host claude|generic] [--json]
+    python3 forge-session.py stage-exit --feature F --stage S [--owner direct|nested] \
+        [--outcome O] [--verify-mode M] [--served-stage S] \
+        [--verify-capability interactive|manual] [--specs-dir DIR] [--config FILE] \
+        [--epic E] [--next-feature N] [--host claude|generic|pi] [--json]
     python3 forge-session.py effective-config [--config FILE] [--schema PATH] [--json]
 
 Plus the `state-*` write verbs, which author `.pipeline-state.json` so no stage
@@ -175,7 +177,7 @@ PIPELINE_STATE_FILENAME: Final = ".pipeline-state.json"
 #: Epic roots hold this (and no .pipeline-state.json) — never a feature.
 MANIFEST_FILENAME: Final = "epic-manifest.json"
 #: Epic-scoped verification state, sibling to the manifest. NEVER a member's
-#: .pipeline-state.json: epic verification is epic-scoped (03 §2.1, REQ-SEC-01).
+#: .pipeline-state.json: epic verification is epic-scoped (REQ-SEC-01).
 EPIC_STATE_FILENAME: Final = ".epic-state.json"
 
 #: A safe bare name: one kebab-case token, no separator, no traversal. Same pattern
@@ -265,14 +267,14 @@ _UNKNOWN_VERIFY_WARNED: set[str] = set()
 #: Per-process dedupe for the auto-verify debt-metadata diagnostic, same reason.
 _AUTO_VERIFY_DEBT_WARNED: set[str] = set()
 #: The single normative sentence every read-side emitter uses for owed-but-unrun
-#: automatic verification (03-verification-state.md §5.3). One line naming the
+#: automatic verification. One line naming the
 #: subject, the served stage, and the retry command — never a state-file dump.
 AUTO_PENDING_DIAGNOSTIC: Final = (
     "{subject}: automatic verification is still pending for {stage}; "
     "run {command} to resolve it."
 )
-#: The directive-facing form of the debt-metadata advisory (00 §4 `warnings` entry 2,
-#: 03 §5.1). The stderr twin lives in `_warn_auto_verify_debt_metadata`; this one also
+#: The directive-facing form of the debt-metadata advisory (`warnings` entry 2).
+#: The stderr twin lives in `_warn_auto_verify_debt_metadata`; this one also
 #: names the subject and the host-translated retry command, because a `warnings` entry
 #: must carry both the affected feature/stage/key AND the recovery action (REQ-OBS-02).
 AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC: Final = (
@@ -280,9 +282,9 @@ AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC: Final = (
     "is missing or malformed (legacy or hand-edited state); the debt stays "
     "outstanding — run {command} to resolve it and record a usable schedule."
 )
-#: The exact 00 §4 template for an `autoVerifyStages` key that names no
+#: The exact template for an `autoVerifyStages` key that names no
 #: verify-capable stage. A typo there silently never takes effect, so the exit
-#: says so — once per offending key, in sorted key order (02 §10), on stderr, and
+#: says so — once per offending key, in sorted key order, on stderr, and
 #: WITHOUT failing the exit: an ignored config key is an advisory, not a usage
 #: error. `{valid}` is derived from `VERIFY_TOKEN_BY_STAGE` so the sentence cannot
 #: drift from the domain it describes.
@@ -290,8 +292,8 @@ INVALID_AUTO_VERIFY_KEY_WARNING: Final = (
     'Warning: autoVerifyStages key "{key}" names no verify-capable stage; it is '
     "ignored. Valid keys are {valid}."
 )
-#: The exact 02 §9 template for an epic edit-mode member whose live pipeline state
-#: cannot be resolved. It is `warnings` entry 1 (00 §4 fixed order) and the router's
+#: The exact template for an epic edit-mode member whose live pipeline state
+#: cannot be resolved. It is `warnings` entry 1 and the router's
 #: ONE tolerant new case: the exit degrades DOWN to `forge-1-prd <member>` rather
 #: than fabricating progress it could not read (REQ-PROD-06). The trailing sentence
 #: is what makes the warning name both the affected feature and the recovery action
@@ -301,8 +303,8 @@ EPIC_MEMBER_FALLBACK_WARNING: Final = (
     "({reason}); routing to forge-1-prd. Run /skill:forge {member} to "
     "inspect its state."
 )
-#: The closed reason domain for `EPIC_MEMBER_FALLBACK_WARNING` (02 §9). No other
-#: value may be substituted — `07-testing-strategy.md` §3 asserts the literal.
+#: The closed reason domain for `EPIC_MEMBER_FALLBACK_WARNING`. No other
+#: value may be substituted — `tests/test_stage_exit.py` asserts the literal.
 EPIC_MEMBER_FALLBACK_REASONS: Final[tuple[str, ...]] = (
     "missing",
     "unreadable",
@@ -557,7 +559,7 @@ class StageExitDirectives(TypedDict, total=False):
     # Effective autoVerify for THIS stage after applying autoVerifyStages overrides
     # over the autoVerify default. Not the raw config value.
     autoVerifyEffective: bool
-    # True whenever `runInStageVerify` is True — `03-verification-state.md` §4.1
+    # True whenever `runInStageVerify` is True — the scheduling boundary
     # persists the auto-verify-pending marker BEFORE this payload exists, and a
     # failed debt write raises UsageError with no payload at all. So
     # `runInStageVerify: True` with `autoVerifyDebtRecorded: False` is UNREACHABLE;
@@ -636,7 +638,7 @@ class VerifyEntry(TypedDict, total=False):
     """Feature or epic verification state persisted by `state-verify`.
 
     `total=False` is load-bearing: terminal writes DELETE the scheduling keys rather
-    than nulling them (03 §3.3), so an absent `scheduledAt` means "not scheduled"
+    than nulling them, so an absent `scheduledAt` means "not scheduled"
     while a present-but-null one would be a malformed entry. Legacy entries written
     before this feature simply lack the newer keys and load unmigrated
     (REQ-DEBT-06).
@@ -805,7 +807,7 @@ def _scheduled_stage_version(entry: dict) -> int | None:
     ``None`` when the field is absent, a bool, a non-integer, or below 1 — i.e.
     legacy state written before the scheduling fields existed, or hand-edited
     state. The caller stays ``auto-pending`` either way: unusable metadata is a
-    reason to warn, never a reason to forget the debt (03 §5.1).
+    reason to warn, never a reason to forget the debt.
     """
     version = entry.get("scheduledStageVersion")
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
@@ -820,7 +822,7 @@ def _warn_auto_verify_debt_metadata(verify_key: str) -> None:
     artifact, so it can be neither discharged as fresh nor described as advanced.
     It REMAINS outstanding — the alternative (degrading to ``never``) is exactly
     the conflation REQ-DEBT-02 forbids — but the operator needs to know why the
-    row carries no revision detail, so say it once per process (03 §5.1).
+    row carries no revision detail, so say it once per process.
     """
     if verify_key in _AUTO_VERIFY_DEBT_WARNED:
         return
@@ -841,7 +843,7 @@ def auto_pending_message(
     scheduled_version: int | None = None,
     current_version: int | None = None,
 ) -> str:
-    """Render the 03 §5.3 diagnostic for owed-but-unrun automatic verification.
+    """Render the diagnostic for owed-but-unrun automatic verification.
 
     Args:
         subject: The feature or epic the debt belongs to.
@@ -919,7 +921,7 @@ def verify_state(state: dict) -> tuple[str | None, str]:
         if status == "auto-verify-pending":
             # Ordered ahead of the generic unresolved branch so recorded debt can
             # never fall through to "never". Unusable metadata warns and stays
-            # owed; a superseded revision stays owed too (03 §5.1).
+            # owed; a superseded revision stays owed too.
             if _scheduled_stage_version(entry) is None:
                 _warn_auto_verify_debt_metadata(f"forge-verify-{token}")
             return stage, "auto-pending"
@@ -989,7 +991,7 @@ def build_rows(specs_dir: Path, config: dict | None = None) -> list[FeatureRow]:
     A row whose verify classifies ``auto-pending`` carries recorded-but-undischarged
     automatic verification: ``verifyPending`` is True, ``verifyState`` is
     ``auto-pending``, and ``verifyCommand`` is non-null, so no consumer can read it
-    as verification-complete. The named 03 §5.3 sentence goes to stderr (this is the
+    as verification-complete. The named sentence goes to stderr (this is the
     one emitter that knows the feature name); stdout keeps the three stable JSON
     keys — ``verifyState``, ``verifyStage``, ``verifyCommand`` — and no prose.
     """
@@ -1236,7 +1238,7 @@ def invalid_auto_verify_keys(config: dict) -> list[str]:
     turning an intended off-switch into a no-op. Surfacing it lets the navigator
     warn instead of failing quietly. Mirrors the schema's ``propertyNames.enum``.
 
-    Sorted, not insertion-ordered: 02 §10 requires every diagnostic list to be
+    Sorted, not insertion-ordered: every diagnostic list must be
     sorted before rendering, so two configs that differ only in key order produce
     byte-identical output.
     """
@@ -2022,7 +2024,7 @@ def _print_check_epic_base(payload: dict) -> None:
 #: The seven production stages as a ROUTING domain. Deliberately not
 #: ``PRODUCTION_STAGES``, which is the six-stage member walk that excludes
 #: ``forge-0-epic``; derived from the shared ``ProductionStage`` alias so the two
-#: cannot drift (00 §2).
+#: cannot drift.
 _EXIT_PRODUCTION_STAGES: Final[tuple[str, ...]] = get_args(ProductionStage)
 
 #: The two direct branch skills — every exit stage that is not a production stage.
@@ -2038,7 +2040,7 @@ _STAGE_TO_VERIFY_MODE: Final[dict[str, str]] = {
 }
 
 #: The `--host` domain: command syntax and fresh-session wording only. A host NEVER
-#: implies a verification capability (02 §3.1 step 6, REQ-EXIT-07).
+#: implies a verification capability (REQ-EXIT-07).
 EXIT_HOSTS: Final[tuple[str, ...]] = ("claude", "generic", "pi")
 
 #: Stage id -> the noun phrase gate wording uses (the old {stage} stamp slot).
@@ -2070,7 +2072,7 @@ _EXIT_NEXT_STAGE: Final[dict[str, str]] = {
     "forge-5-loop": "forge-6-docs",
 }
 
-#: 02 §6 — the route each branch outcome takes. Every value is a COMPLETE map over
+#: The route each branch outcome takes. Every value is a COMPLETE map over
 #: ``EXIT_OUTCOMES[stage]``: REQ-ROUTE-05/06 require a terminus for every outcome and
 #: forbid a fall-through, so a missing key is a bug, not a default. The four kinds:
 #:
@@ -2104,7 +2106,7 @@ _BRANCH_ROUTE_KIND: Final[dict[str, dict[str, str]]] = {
 
 #: The deterministic sentence each branch outcome renders inside its NEXT-STEPS block
 #: (``_next_steps_block(..., outcome_text=...)``). Every non-advancing outcome names
-#: the unresolved work explicitly, which is what 02 §6.2 requires of `decisions`,
+#: the unresolved work explicitly, which is what is required of `decisions`,
 #: `failed`, and `deferred`, and what §6.1 requires of a `failed` verification.
 _BRANCH_OUTCOME_TEXT: Final[dict[str, dict[str, str]]] = {
     "forge-verify": {
@@ -2164,7 +2166,7 @@ _BRANCH_OUTCOME_TEXT: Final[dict[str, dict[str, str]]] = {
 }
 
 #: `no-findings` is the one outcome whose terminus depends on live state, so it has a
-#: second sentence for the already-resolved case (02 §6.2).
+#: second sentence for the already-resolved case.
 _NO_FINDINGS_RESOLVED_TEXT: Final[str] = (
     "No applicable findings were found for {served}, and its verification is already "
     "resolved — the pipeline rejoins where the diversion left it."
@@ -2177,7 +2179,7 @@ def _classify_verify_entry(entry: dict, verify_key: str, current: int | None) ->
     The revision-agnostic half of ``_verify_state_for``, factored out because an
     EPIC-scoped exit compares against the epic manifest's ``revision`` held in
     ``.epic-state.json``, not against a member production-stage ``version``
-    (03 §2.2, REQ-SEC-01). Both callers must apply identical rules, so there is
+    (REQ-SEC-01). Both callers must apply identical rules, so there is
     one implementation rather than two that can drift.
 
     Args:
@@ -2235,7 +2237,7 @@ def _epic_verify_context(specs_dir: Path, epic_name: str) -> tuple[dict, int | N
     An epic's verification state lives in ``{specsDir}/{epic}/.epic-state.json``
     and its artifact revision is the sibling manifest's ``revision``. Neither ever
     comes from a member ``.pipeline-state.json``, and a member production-stage
-    ``version`` is never the epic's revision (03 §2.1/§2.2/§4.1, REQ-SEC-01). This
+    ``version`` is never the epic's revision (REQ-SEC-01). This
     is the READ half: it degrades to ``({}, None)`` on anything missing or
     malformed, matching stage-exit's "never crash a stage closing" posture. The
     strict, fail-closed resolution lives on the WRITE path
@@ -2290,7 +2292,7 @@ def _same_named_candidates(specs_dir: Path, epic: str, member: str) -> list[Path
 
     Read-only, and used only to tell "no such feature anywhere" apart from "that
     name belongs to someone else" when the selected epic does not contain the
-    member. Sorted, so the ambiguity error it feeds is deterministic (02 §10).
+    member. Sorted, so the ambiguity error it feeds is deterministic.
     """
     contained = specs_dir / epic / member
     out: list[Path] = []
@@ -2309,7 +2311,7 @@ def _same_named_candidates(specs_dir: Path, epic: str, member: str) -> list[Path
 
 
 def _epic_member_state(specs_dir: Path, epic: str, member: str) -> tuple[dict, str | None]:
-    """Resolve ONE epic member's live pipeline state for edit-mode routing (02 §9).
+    """Resolve ONE epic member's live pipeline state for edit-mode routing.
 
     Identity containment comes first: the member is read from
     ``{specsDir}/{epic}/{member}`` and nowhere else, so a same-named flat feature
@@ -2320,12 +2322,12 @@ def _epic_member_state(specs_dir: Path, epic: str, member: str) -> tuple[dict, s
     malformed, or foreign-epic state yields a reason instead of an exception, so
     the caller can degrade DOWN to ``forge-1-prd`` with a named warning rather
     than crash a stage closing or infer progress it could not read (REQ-PROD-06).
-    This is the one documented new tolerant case (02 §9, 07 §3.7).
+    This is the one documented new tolerant case.
 
     Identity itself still fails closed: a member that is not under the selected
     epic at all and whose bare name matches more than one other candidate cannot
     be pinned to a single feature, and guessing would route a DIFFERENT feature's
-    pipeline (REQ-REL-02, 02 §10 "Strict feature/epic resolution").
+    pipeline (REQ-REL-02).
 
     Args:
         specs_dir: The configured specs directory.
@@ -2416,7 +2418,7 @@ def _next_steps_block(
     verification/recovery action standing in front of a production successor: it
     is rendered only as unfenced conditional prose, and the fresh-session wording
     follows the primary action instead of promising "the next stage below"
-    (02 §4, REQ-EXIT-06). It is NEVER fenced, so it cannot be mistaken for the
+    (REQ-EXIT-06). It is NEVER fenced, so it cannot be mistaken for the
     primary action.
 
     ``reconcile`` carries the epic-backflow routing (§Epic backflow in
@@ -2425,7 +2427,7 @@ def _next_steps_block(
     fence carries it and the normal next stage is demoted to a follow-up line.
     When verification is still outstanding the caller keeps the verify command
     primary instead; the reconcile then becomes the FIRST deferred action, ahead
-    of the ordinary production successor (02 §5.2). When only **non-blocking**
+    of the ordinary production successor. When only **non-blocking**
     requests are present (``reminder: true``), a reminder line is appended.
     Either way the added prose is host-neutral (no literal ``/clear``) so it
     survives verbatim into a generic bundle.
@@ -2464,7 +2466,7 @@ def _next_steps_block(
     )
     # The primary actionable command goes in a fenced block so mobile/remote hosts
     # get a native copy button (inline code is not tap-to-copy). The CALLER decides
-    # which command is primary (02 §5.2 rule 3 — the renderer fences exactly what it
+    # which command is primary (the renderer fences exactly what it
     # is given); the fence sits before the sentinel, so the sentinel remains the
     # absolute last line.
     fenced_command = _host_command(primary_command, host)
@@ -2472,7 +2474,7 @@ def _next_steps_block(
         # REQ-EXIT-06: the fresh-session guidance follows the PRIMARY action, and
         # must never tell the user to clear and run the production successor first.
         # It names what is actually FENCED: on a branch exit that is the fix standing
-        # between recorded findings and the re-verification (02 §6), not a verify
+        # between recorded findings and the re-verification, not a verify
         # command. Every other case keeps the wording verbatim.
         action_noun = "fix" if "forge-fix " in fenced_command else "verification"
         next_line = (
@@ -2526,7 +2528,7 @@ def _next_steps_block(
     if verify_first and _host_command(deferred_command, host) != _host_command(
         (reconcile or {}).get("deferred") or "", host
     ):
-        # 02 §5.2 rule 4: unfenced, conditional prose only. Suppressed when the
+        # Unfenced, conditional prose only. Suppressed when the
         # blocking reconcile above already demoted this same command, so one
         # command never appears twice in the deferred chain.
         lines.append(
@@ -2569,7 +2571,7 @@ def resolve_served_stage(
         if mapped != served_stage:
             # Both were supplied and they disagree. Name both flags and both
             # resolutions — picking one silently is exactly the guess REQ-ROUTE-03
-            # forbids (02 §3.2, §10).
+            # forbids.
             raise UsageError(
                 f"--served-stage {served_stage} conflicts with --verify-mode "
                 f"{verify_mode} (which maps to {mapped}); supply one, or supply "
@@ -2596,7 +2598,7 @@ def _branch_route(
     successor_command: str | None,
     resolved: bool,
 ) -> tuple[str, str | None, str, bool]:
-    """Route one verify/fix outcome back into the pipeline — the 02 §6 rejoin tables.
+    """Route one verify/fix outcome back into the pipeline — the rejoin tables.
 
     A verify or fix diversion must rejoin the production stage it SERVED rather than
     dropping the pipeline thread (issue #176), so the served stage is carried forward
@@ -2625,8 +2627,8 @@ def _branch_route(
 
     Two rows carry a precondition this router does NOT re-check: `skipped` is valid
     only after the skip is persisted and `reverified` only after a passing state is
-    recorded (02 §6.1/§6.2). Both are the CALLER's obligation — the branch skills
-    write through `state-verify` before invoking this exit (04 §5.2/§5.3), and a fix
+    recorded. Both are the CALLER's obligation — the branch skills
+    write through `state-verify` before invoking this exit, and a fix
     that merely skips re-verification reports `deferred`, not `reverified`. Rejecting
     the outcome here would make a valid member of `EXIT_OUTCOMES[stage]` exit 2, which
     is a different contract from the one `stage_exit` validates.
@@ -2654,7 +2656,7 @@ def _branch_route(
 
 
 #: Keys `_render_status` requires before it will route on a `render-status --json`
-#: payload. `RenderStatus` is TOTAL (04 §2.2): every key is always present, so an
+#: payload. `RenderStatus` is TOTAL: every key is always present, so an
 #: empty `actionable` list is the answer "nothing is actionable" and a MISSING key
 #: means the helper is not the contract this router was built against — an
 #: actionable routing failure, never a silently-skipped check.
@@ -2669,7 +2671,7 @@ _RENDER_STATUS_REQUIRED: Final[tuple[str, ...]] = (
 #: The bound on the one subprocess the docs exit path makes. Matches every other
 #: `subprocess.run` in this file (the git reads and the `forge-root.sh` resolver);
 #: without it a hung or pathological epic would stall stage closure with no
-#: diagnostic, defeating REQ-PERF-01 (02 §8).
+#: diagnostic, defeating REQ-PERF-01.
 _RENDER_STATUS_TIMEOUT: Final = 10
 
 
@@ -2703,12 +2705,11 @@ def _render_status_failure_detail(proc: subprocess.CompletedProcess) -> str:
 
 
 def _render_status(specs_dir: Path, epic: str) -> dict:
-    """Read LIVE epic status from the sibling ``epic-manifest.py`` (02 §8).
+    """Read LIVE epic status from the sibling ``epic-manifest.py``.
 
     The docs exit routes on the epic's real dependency/completion graph rather than
     re-deriving it here: dependency and completion derivation belong to
-    ``epic-manifest.py`` and duplicating them in this file is exactly what
-    tech-spec §3.5 forbids.
+    ``epic-manifest.py``; duplicating them in this file is forbidden.
 
     ``<bundle-root>`` is NOT a path this router may guess. ``forge-session.py`` is
     copied verbatim into six adapter bundles and runs from an arbitrary cwd, so the
@@ -2722,7 +2723,7 @@ def _render_status(specs_dir: Path, epic: str) -> dict:
         epic: The epic name; also the subject of every failure message.
 
     Returns:
-        The parsed ``RenderStatus`` dict (04 §2.2).
+        The parsed ``RenderStatus`` dict.
 
     Raises:
         UsageError: A missing sibling helper, a non-zero exit (which covers an
@@ -2730,7 +2731,7 @@ def _render_status(specs_dir: Path, epic: str) -> dict:
             failure, a timeout at the bound, unparseable stdout, or a missing or
             malformed required field. Every one is an actionable exit-2 routing
             failure that names the epic and the recovery command, so the caller
-            emits no guessed member route and no sentinel (02 §10, REQ-REL-02).
+            emits no guessed member route and no sentinel (REQ-REL-02).
 
     Reads only the bounded local manifest/member-state set — no network call and no
     repository-history scan (REQ-PERF-01).
@@ -2794,10 +2795,10 @@ def _render_status(specs_dir: Path, epic: str) -> dict:
     return status
 
 
-#: 02 §8 — the deterministic sentence each documentation terminus renders inside its
+#: The deterministic sentence each documentation terminus renders inside its
 #: NEXT-STEPS block. Every epic route names the epic; no `blocked` route claims the
 #: pipeline is complete. `{new_feature}`/`{new_epic}` are host-translated INLINE
-#: mentions: 02 §8 allows starting a new feature only as secondary unfenced text, and
+#: mentions: starting a new feature is allowed only as secondary unfenced text, and
 #: `_next_steps_block` fences exactly the primary command and nothing else.
 _DOCS_OUTCOME_TEXT: Final[dict[str, str]] = {
     "standalone-complete": (
@@ -2839,7 +2840,7 @@ _DOCS_OUTCOME_TEXT: Final[dict[str, str]] = {
 def _docs_route(
     feature: str, epic: str | None, specs_dir: Path, outcome: str, host: str
 ) -> tuple[str, str | None, str, bool]:
-    """Route the documentation exit — the 02 §8 live-state table.
+    """Route the documentation exit — the live-state table.
 
     For an epic member the route comes from the live ``render-status`` payload, so a
     Step-1 snapshot taken before docs state changed is never trusted: an actionable
@@ -2894,7 +2895,7 @@ def _docs_route(
         return next_command, None, _DOCS_OUTCOME_TEXT["epic-actionable"].format(**fields), True
     # Nothing actionable. Under the current derivation that coincides with "every
     # member complete" (a valid graph is acyclic, so an incomplete member always has
-    # an actionable ancestor), but 02 §8 names the two cases separately and the
+    # an actionable ancestor), but the two cases are named separately and the
     # rollup is the observable that tells them apart — so the blocked wording stays
     # reachable if a future derivation admits an unactionable incomplete member. Both
     # route to the same epic command either way; only the explanation differs.
@@ -2902,7 +2903,7 @@ def _docs_route(
     return dashboard, None, _DOCS_OUTCOME_TEXT[key].format(**fields), False
 
 
-#: 02 §7 — the route each loop outcome takes. A COMPLETE map over
+#: The route each loop outcome takes. A COMPLETE map over
 #: ``EXIT_OUTCOMES["forge-5-loop"]``: REQ-PROD-01/02 require a deterministic resume or
 #: recovery action for every result, so a missing key is a bug, not a default.
 #:
@@ -2912,7 +2913,7 @@ def _docs_route(
 #:
 #: Only ``handoff`` (i.e. ``complete``) may reach a production stage. A runner's
 #: successful process exit is NOT by itself ``complete``: the final backlog state
-#: selects the outcome, and that selection is the skill's job (04 §6.1).
+#: selects the outcome, and that selection is the skill's job.
 _LOOP_ROUTE_KIND: Final[dict[str, str]] = {
     "complete": "handoff",
     "partial": "resume",
@@ -2985,7 +2986,7 @@ _LOOP_COMPLETE_SETTLED: Final[str] = (
     "action below."
 )
 
-#: 02 §5.2 — the outcome sentence a loop or documentation exit renders when a blocking
+#: The outcome sentence a loop or documentation exit renders when a blocking
 #: epic change request DISPLACES its live continuation. Both route tables above name
 #: that continuation "below"; once the fence carries the reconcile instead, the claim is
 #: false, so the sentence is REPLACED rather than corrected after the fact. The displaced
@@ -3053,7 +3054,7 @@ def _promote_reconcile(
         # Verification (or a recovery action) outranks the reconcile, so the reconcile
         # is the FIRST deferred action and the route's own continuation follows it.
         # Handing the renderer the same command the caller deferred is what collapses
-        # the two conditional lines into one (02 §5.2 rule 4).
+        # the two conditional lines into one.
         epic_reconcile["deferred"] = deferred_canonical
         return primary_canonical, deferred_canonical, outcome_text
     if primary_canonical == reconcile_command:
@@ -3082,7 +3083,7 @@ def _loop_route(
     resolved: bool,
     verify_canonical: str,
 ) -> tuple[str, str | None, str, bool]:
-    """Route one loop result — the 02 §7 outcome table.
+    """Route one loop result — the outcome table.
 
     Every outcome lands on a deterministic action. Only ``complete`` may reach a
     production stage, and even then documentation is not primary until implementation
@@ -3107,7 +3108,7 @@ def _loop_route(
 
     For a completed EPIC MEMBER the handoff is delegated to the live
     ``render-status`` payload rather than re-deriving dependency or completion logic
-    here (tech-spec §3.5), preserving the epic handoff this stage already performed:
+    here, preserving the epic handoff this stage already performed:
     an actionable member routes to the epic's own live next command; nothing
     actionable with every member complete routes to this member's documentation; and
     anything else opens the epic dashboard. The ``total > 0`` guard is what stops an
@@ -3149,7 +3150,7 @@ def _loop_route(
     )
     if resolved:
         return handoff, None, text, True
-    # 02 §4 verify-first ordering, applied to the loop's own handoff rather than to
+    # Verify-first ordering, applied to the loop's own handoff rather than to
     # the fixed successor: the verification is fenced and the handoff is demoted.
     return verify_canonical, handoff, text, False
 
@@ -3162,10 +3163,10 @@ def _debt_metadata_warnings(
     verify_command: str,
     current: int | None,
 ) -> list[str]:
-    """Entries 2 and 3 of the 00 §4 ``warnings`` order, for owed automatic verification.
+    """Entries 2 and 3 of the ``warnings`` order, for owed automatic verification.
 
-    Entry 2 is the legacy/malformed ``scheduledStageVersion`` advisory (03 §5.1);
-    entry 3 is the scheduled-vs-current revision mismatch note (03 §5.3). They are
+    Entry 2 is the legacy/malformed ``scheduledStageVersion`` advisory;
+    entry 3 is the scheduled-vs-current revision mismatch note. They are
     mutually exclusive by construction — a mismatch is only detectable once the
     recorded revision is usable — but the order is fixed regardless so a later
     entry can be added without re-deriving it.
@@ -3173,7 +3174,7 @@ def _debt_metadata_warnings(
     Takes the already-resolved entry and revision rather than re-deriving them
     from a member state document: on an epic-scoped exit both come from
     ``.epic-state.json`` and the manifest revision, which a member state cannot
-    supply (03 §4.1, REQ-SEC-01).
+    supply (REQ-SEC-01).
 
     Args:
         entry: The verify entry the exit routed from (``{}`` when absent).
@@ -3202,7 +3203,7 @@ def _debt_metadata_warnings(
 def _schedule_auto_verify_debt(
     specs_dir: Path, feature: str, epic: str | None, stage: str, verify_key: str
 ) -> None:
-    """Persist `auto-verify-pending` for `stage` — the 03 §4.1 scheduling boundary.
+    """Persist `auto-verify-pending` for `stage` — the scheduling boundary.
 
     Called immediately BEFORE `stage_exit` returns a payload carrying
     ``runInStageVerify: true``, never after, so there is no window in which the
@@ -3221,7 +3222,7 @@ def _schedule_auto_verify_debt(
     Unlike the `state-verify` CLI, a target whose artifact revision is unknown
     (no recorded `version`, or an epic with no readable manifest) records the debt
     with a null `scheduledStageVersion` rather than refusing: the obligation is
-    real either way, and 03 §5.1 already classifies an unusable schedule as
+    real either way, and an unusable schedule is already classified as
     `auto-pending` plus a warning. Forgetting the debt because its revision is
     unknown is the REQ-DEBT-02 conflation, and refusing would turn a routine stage
     closing into an exit 2.
@@ -3296,7 +3297,7 @@ def stage_exit(
             capability is permission, not tool presence: a dispatch permitted
             only once the user has asked is still `interactive`, because the
             `standard` gate's own prompt supplies that request
-            (`04-skill-integration.md` §3.2).
+.
 
     Returns:
         A JSON-serializable `StageExitPayload` dictionary.
@@ -3312,7 +3313,7 @@ def stage_exit(
       resolved (fresh/skipped). The skill then dispatches the clean-room
       verify in-session (principle #2: verify before the clear).
     - ``autoVerifyDebtRecorded`` — the ``auto-verify-pending`` marker for this
-      stage is durably on disk. Written BEFORE this payload exists (03 §4.1), so
+      stage is durably on disk. Written BEFORE this payload exists, so
       a failed write raises ``UsageError`` and returns no payload at all and
       ``runInStageVerify: True`` with ``autoVerifyDebtRecorded: False`` is
       unreachable. Scheduling is idempotent by target revision: a repeat at the
@@ -3333,7 +3334,7 @@ def stage_exit(
       ``--verify-capability interactive``; ``manual-print`` for the same state
       under ``manual`` (print ``verifyCommand`` instead of presenting the gate).
       Never a function of ``--host``: capable Pi is ``standard`` and incapable
-      Claude is ``manual-print`` (02 §4/§5.1, REQ-EXIT-07).
+      Claude is ``manual-print`` (REQ-EXIT-07).
     - ``primaryCommand``/``deferredCommand`` — the verify-first pair. While
       verification is unresolved ``primaryCommand`` is the verify command and is
       the ONLY fenced command; ``deferredCommand`` names the production successor
@@ -3343,9 +3344,9 @@ def stage_exit(
       records this stage complete (first non-complete production stage), else
       the fixed successor. ``--next-feature`` names the first actionable
       feature for the epic handoff; without it an epic exit hands back to the
-      epic dashboard rather than naming a member it cannot resolve (04 §8.2).
+      epic dashboard rather than naming a member it cannot resolve.
       With it, the handoff is derived from THAT member's live state via
-      ``next_stage`` (02 §9): a progressed member resumes where it actually is,
+      ``next_stage``: a progressed member resumes where it actually is,
       a fully complete member hands back to the epic dashboard, and a member
       whose state cannot be resolved falls back to ``forge-1-prd`` with
       ``warnings`` entry 1 naming it.
@@ -3359,12 +3360,12 @@ def stage_exit(
     - ``servedStage``/``verifyMode``/``outcome``/``owner``/``terminalOwnedBy`` —
       branch metadata. A production exit serves only itself, so ``servedStage``
       is None there; ``verifyStage`` is the DISTINCT value ``pending_verify``
-      returns, naming the stage outstanding verification is owed on (00 §4).
-      On a branch exit the 02 §6 outcome table in ``_branch_route`` — not
+      returns, naming the stage outstanding verification is owed on.
+      On a branch exit the outcome table in ``_branch_route`` — not
       verify-first ordering — supplies ``primaryCommand``: a diversion rejoins
       the production stage it served, and every recovery/defer route carries
       ``--served-stage`` forward so the thread is never dropped (issue #176).
-    - ``forge-5-loop`` — routed by its required ``--outcome`` (02 §7). ``complete``
+    - ``forge-5-loop`` — routed by its required ``--outcome``. ``complete``
       keeps verify-first ordering in front of the documentation/epic-member handoff,
       which for a member is delegated to the live ``render-status`` payload rather
       than re-derived here. The other four outcomes route to the loop resume
@@ -3374,20 +3375,20 @@ def stage_exit(
       ``none`` — a loop still in flight has no finished implementation to verify and
       nothing downstream may read as ready (REQ-PROD-02).
     - ``forge-6-docs`` — the documentation terminus is decided by LIVE epic state
-      (02 §8), never by the successor table: for an epic member the adjacent
+, never by the successor table: for an epic member the adjacent
       ``epic-manifest.py render-status`` supplies the next actionable member's own
       command, and anything else routes to the epic dashboard. A ``blocked``
       outcome routes to recovery and never claims completion. Any helper failure
       is an actionable ``UsageError`` — exit 2 with no payload, so no guessed
       member command and no sentinel can escape (REQ-REL-02).
-    - ``warnings`` — non-fatal advisories in the 00 §4 fixed order. Always
+    - ``warnings`` — non-fatal advisories in the documented fixed order. Always
       present; ``[]`` means checked-and-clean, which is not the same as absent.
 
     Read-only and deterministic. Syntactic validation fails closed with
     ``UsageError`` (exit 2, no payload and no sentinel); everything after it
     degrades to defaults rather than crashing a stage closing.
     """
-    # ---- 02 §3.1 deterministic validation order --------------------------- #
+    # ---- Deterministic validation order ----------------------------------- #
     # 1. Safe names and containment, before any strict filesystem access.
     _assert_safe_name(feature, "--feature")
     if epic is not None:
@@ -3464,7 +3465,7 @@ def stage_exit(
             f"--next-feature is accepted only for forge-0-epic, not {stage}"
         )
 
-    # 02 §7: a loop that did not complete has NO production successor and owes no
+    # A loop that did not complete has NO production successor and owes no
     # implementation verification yet. Everything downstream is suppressed below —
     # `nextStage`/`nextCommand`, the epic-reconcile deferred line, the in-stage
     # verify chain, its debt write, and the verify gate — because each of them
@@ -3474,7 +3475,7 @@ def stage_exit(
 
     config = _load_config(config_path)
     invalid_keys = invalid_auto_verify_keys(config)
-    for key in invalid_keys:   # already sorted (02 §10); advisory, never fatal
+    for key in invalid_keys:   # already sorted; advisory, never fatal
         print(
             INVALID_AUTO_VERIFY_KEY_WARNING.format(
                 key=key, valid=", ".join(VERIFY_TOKEN_BY_STAGE)
@@ -3484,7 +3485,7 @@ def stage_exit(
     feature_dir = _resolve_feature_dir(specs_dir, feature, epic)
     state = _read_state(feature_dir / PIPELINE_STATE_FILENAME)
 
-    # 02 §9 epic edit-mode: resolve the SELECTED member's live progress here, before
+    # Epic edit-mode: resolve the SELECTED member's live progress here, before
     # the scheduling boundary below, so an ambiguous identity exits 2 without having
     # mutated anything. `--next-feature` is accepted only for `forge-0-epic` (step 1),
     # so this is exactly the epic edit-mode selection. Read-only: no candidate state
@@ -3495,7 +3496,7 @@ def stage_exit(
         member_state, member_reason = _epic_member_state(specs_dir, feature, next_feature)
 
     # The clean-tree snapshot is taken HERE, before the sanctioned debt write
-    # below, so the pending marker cannot dirty its own precondition (03 §4.1).
+    # below, so the pending marker cannot dirty its own precondition.
     # Every other directive is likewise a pre-mutation snapshot; only
     # `autoVerifyDebtRecorded` describes what the write did.
     git_repo = _git_output(["rev-parse", "--git-dir"]) is not None
@@ -3511,7 +3512,7 @@ def stage_exit(
 
     # Verification context for the routed stage. An epic-scoped route reads
     # `.epic-state.json` and the manifest revision DIRECTLY — never
-    # `_resolve_feature_dir`, never a member stage version (03 §4.1, REQ-SEC-01).
+    # `_resolve_feature_dir`, never a member stage version (REQ-SEC-01).
     verify_token = _EXIT_VERIFY_TOKEN.get(route_stage)
     verify_key = f"forge-verify-{verify_token}" if verify_token else None
     if route_stage == "forge-0-epic":
@@ -3525,7 +3526,7 @@ def stage_exit(
         _classify_verify_entry(verify_entry, verify_key, verify_current)
         if verify_key
         # ``none`` is a tokenless stage (forge-6-docs) — there is no verification
-        # to owe (07 §3.4's last matrix row).
+        # to owe.
         else "none"
     )
     # ``none`` is resolved for routing purposes: no verify command is promoted.
@@ -3536,7 +3537,7 @@ def stage_exit(
     # `forge-verify --outcome findings` exit would both direct a re-dispatch of
     # itself and overwrite the `findings-reported` entry it had just written with
     # a fresh `auto-verify-pending` marker, losing the report (REQ-EXIT-04).
-    # Branch rejoin routing is 02 §6's, not this scheduling boundary's.
+    # Branch rejoin routing belongs to the outcome tables, not this boundary.
     run_in_stage = (
         effective_auto_verify
         and not resolved
@@ -3547,24 +3548,24 @@ def stage_exit(
         config.get("autoFix") is True and run_in_stage and clean_tree is True
     )
 
-    # ---- 03 §4.1 scheduling boundary -------------------------------------- #
+    # ---- Scheduling boundary ---------------------------------------------- #
     # The debt lands BEFORE the payload exists, so a crash between here and the
     # dispatch leaves durable state exposing the obligation, and a failed write
     # raises UsageError with no payload at all — `runInStageVerify: True` with
-    # `autoVerifyDebtRecorded: False` is therefore unreachable (00 §4).
+    # `autoVerifyDebtRecorded: False` is therefore unreachable.
     auto_verify_debt_recorded = False
     if run_in_stage and verify_key is not None:
         _schedule_auto_verify_debt(specs_dir, feature, epic, route_stage, verify_key)
         auto_verify_debt_recorded = True
-    # 02 §4 priority table. The gate is a pure function of the verification state
+    # Priority table. The gate is a pure function of the verification state
     # and the caller's declared capability: `--host` selects command syntax and
     # fresh-session wording ONLY. A capable Pi session gets `standard`; an
     # incapable Claude session gets `manual-print` (REQ-EXIT-07). Whether the
     # caller needed user consent to dispatch is the CALLER's determination
-    # (04 §3.2) and is invisible here — a consent-required caller sends
+    # and is invisible here — a consent-required caller sends
     # `interactive` and gets `standard`, which is the intended path.
     #
-    # A BRANCH exit is already inside the diversion and its 02 §6 outcome table
+    # A BRANCH exit is already inside the diversion and its outcome table
     # names the one action to take, so there is nothing left to gate: offering
     # "verify now?" beside a fenced fix command would be a second, contradictory
     # ask. The table's `verify` routes ARE the verification prompt.
@@ -3572,7 +3573,7 @@ def stage_exit(
     # A non-complete loop outcome is gateless for the same reason it never
     # schedules debt: there is no finished implementation to verify, so offering
     # "verify now?" beside a fenced loop resume would ask for a verification of
-    # work that is still in flight (02 §7).
+    # work that is still in flight.
     if resolved or run_in_stage or stage in _BRANCH_STAGES or loop_incomplete:
         verify_gate = "none"
     elif verify_capability == "interactive":
@@ -3599,7 +3600,7 @@ def stage_exit(
         # An epic exit that names no concrete member has nothing to hand off to.
         # The dashboard is the same non-fabrication answer §9 gives a named member
         # that has finished every production stage: never invent a member, and
-        # never print a template the user cannot run (04 §8.2).
+        # never print a template the user cannot run.
         next_stage_id = None
         next_command = f"/skill:forge-0-epic {feature}"
     else:
@@ -3608,7 +3609,7 @@ def stage_exit(
             f"/skill:{next_stage_id} {next_arg}" if next_stage_id else None
         )
 
-    # ---- 02 §9 epic edit-mode live member routing (issue #175) -------------- #
+    # ---- Epic edit-mode live member routing (issue #175) -------------------- #
     # The fixed `forge-0-epic -> forge-1-prd` successor above is a CREATION-mode
     # answer: a member that has just been decomposed has no completed production
     # stage, so PRD is right. In edit mode the selected member may be anywhere in
@@ -3653,7 +3654,7 @@ def stage_exit(
     # The epic name comes from the `--epic` arg or the state's `epic` back-pointer.
     epic_reconcile: dict | None = None
     epic_name = epic or state.get("epic")
-    # The epic a documentation (02 §8) or completed-loop (02 §7) exit routes against:
+    # The epic a documentation or completed-loop exit routes against:
     # the explicit `--epic`, else the state's back-pointer. A back-pointer is
     # untrusted on-disk data, so it is name-checked here rather than reaching the
     # helper's argv (REQ-SEC-01); an unusable value degrades to the standalone route
@@ -3685,7 +3686,7 @@ def stage_exit(
                 "count": len(open_requests),
             }
 
-    # ---- 02 §4 verify-first primary routing ------------------------------- #
+    # ---- Verify-first primary routing ------------------------------------- #
     # While verification is unresolved the verify command is THE action; the
     # production successor is demoted to unfenced conditional prose. No path may
     # fence or recommend the deferred production command first (REQ-EXIT-06).
@@ -3696,7 +3697,7 @@ def stage_exit(
     deferred_canonical: str | None
     outcome_text: str | None = None
     if stage in _BRANCH_STAGES:
-        # 02 §6: the outcome table alone decides a branch terminus — verify-first
+        # The outcome table alone decides a branch terminus — verify-first
         # ordering does not apply, because the branch IS the verification work.
         primary_canonical, deferred_canonical, outcome_text, advancing = _branch_route(
             stage,
@@ -3712,7 +3713,7 @@ def stage_exit(
             primary_canonical = epic_reconcile["command"]
             deferred_canonical = None
     elif stage == "forge-5-loop":
-        # 02 §7: every loop result gets a deterministic resume or recovery action.
+        # Every loop result gets a deterministic resume or recovery action.
         # `complete` keeps verify-first ordering (the table applies it to its own
         # handoff); the other four never reach a production stage at all.
         primary_canonical, deferred_canonical, outcome_text, advancing = _loop_route(
@@ -3739,7 +3740,7 @@ def stage_exit(
                 advancing,
             )
     elif stage == "forge-6-docs":
-        # 02 §8: the documentation terminus is decided by LIVE epic state, not by
+        # The documentation terminus is decided by LIVE epic state, not by
         # the successor table — the pipeline ends here, so there is no next stage
         # to fence and no verification to put first (docs is tokenless).
         primary_canonical, deferred_canonical, outcome_text, advancing = _docs_route(
@@ -3777,7 +3778,7 @@ def stage_exit(
         primary_canonical = next_command or "/skill:forge"
         deferred_canonical = None
 
-    # 00 §4 fixed order: entry 1 is the epic-member unreadable-state fallback (02 §9),
+    # Fixed order: entry 1 is the epic-member unreadable-state fallback,
     # then the debt-metadata and revision-mismatch entries.
     warnings: list[str] = []
     if epic_member_warning is not None:
@@ -4183,16 +4184,16 @@ def _load_epic_state_for_write(
 
     The epic counterpart of ``_load_state_for_write``, and deliberately NOT a
     variant of it: epic verification is epic-scoped and must never resolve, read,
-    create, or write a member's ``.pipeline-state.json`` (03 §2.1/§3.2,
-    REQ-SEC-01). There is no fallback in either direction — an epic whose manifest
-    is missing or whose identity disagrees is an error, not a feature lookup.
+    create, or write a member's ``.pipeline-state.json`` (REQ-SEC-01). There is no
+    fallback in either direction — an epic whose manifest is missing or whose
+    identity disagrees is an error, not a feature lookup.
 
     Resolution is strict where the member resolver is tolerant: the name must be a
     safe single token, the joined path must stay inside ``specs_dir`` after symlink
     resolution, ``epic-manifest.json`` must exist, and the manifest's own ``epic``
     value must equal ``epic_name``. The revision comes from the manifest, which is
     the canonical artifact version for epic freshness — never a member's
-    production-stage version (03 §2.2). A legacy manifest with no ``revision`` is
+    production-stage version. A legacy manifest with no ``revision`` is
     presented as logical ``1`` here, matching ``epic-manifest.py::load_manifest``,
     and its bytes are not rewritten.
 
@@ -4274,7 +4275,7 @@ def _load_epic_state_for_write(
             )
     else:
         state = {}
-    # Seed 03 §2.1's minimal shape in its documented key order. ``updatedAt`` is
+    # Seed the minimal state shape in its documented key order. ``updatedAt`` is
     # a placeholder: every caller stamps it through ``_commit_state`` immediately
     # before the single atomic replacement, so the null never reaches disk.
     state.setdefault("epic", epic_name)
@@ -4293,7 +4294,7 @@ def _commit_state(state_path: Path, state: dict) -> dict:
         state_path: The resolved state-file path — a feature's
             ``.pipeline-state.json``, or an epic's ``.epic-state.json``. The helper
             is target-agnostic: it stamps and writes whatever document it is given,
-            so an epic write reuses the same atomic mechanism (03 §3.2) without
+            so an epic write reuses the same atomic mechanism without
             going anywhere near the member resolver.
         state: The mutated state dict.
 
@@ -4558,7 +4559,7 @@ def cmd_state_complete(
             "--resumable implies --status in-progress; do not pass --status complete"
         )
     if commit_hash is not None:
-        # Branch 1's first act (03 §6.1): full 40-hex only, validated BEFORE the
+        # Branch 1's first act: full 40-hex only, validated BEFORE the
         # state file is loaded for mutation and long before _commit_state. Legacy
         # short hashes already recorded in state keep loading unmigrated.
         _assert_full_commit_hash(commit_hash)
@@ -4796,7 +4797,7 @@ def _require_positive_int(value: object, label: str) -> int:
 def _validated_findings_file(value: str, target_dir: Path) -> str:
     """Return ``value`` if it is a safe relative path inside ``target_dir``.
 
-    ``00-core-definitions.md`` §6 defines ``findingsFile`` as relative to the
+    ``findingsFile`` is defined as relative to the
     feature directory, and downstream consumers (forge-fix selecting the report)
     follow the stored value verbatim. So it gets the same fail-closed containment
     treatment as the write target itself (REQ-SEC-01): an absolute path, a ``..``
@@ -4873,7 +4874,7 @@ def _current_artifact_version(state: dict, stage: str) -> int:
 def _assert_full_commit_hash(commit_hash: object) -> None:
     """Reject a ``--commit-hash`` that is not exactly 40 hexadecimal characters.
 
-    REQ-STATE-01 constrains WRITES, not reads (03 §6.1/§6.2). New provenance is a
+    REQ-STATE-01 constrains WRITES, not reads. New provenance is a
     full ``git rev-parse HEAD`` object hash; an abbreviation is rejected rather than
     expanded, because expanding one would mean shelling out to Git from a script
     whose whole contract is bounded local file reads. Caller case is preserved —
@@ -4906,9 +4907,9 @@ def _load_verify_target(
     """Resolve the state document ``state-verify`` will mutate — epic or feature.
 
     An epic target NEVER falls back to the member writer, and a member target never
-    reaches the epic root: the two resolvers are disjoint (03 §3.2 step 2,
-    REQ-SEC-01). Both result mode and commit-2 mode go through here, so neither can
-    drift onto the other's resolver.
+    reaches the epic root: the two resolvers are disjoint (REQ-SEC-01). Both result
+    mode and commit-2 mode go through here, so neither can drift onto the other's
+    resolver.
 
     Args:
         specs_dir: The configured specs directory.
@@ -4941,7 +4942,7 @@ def _verify_result_entry(
     """Build the replacement ``forge-verify-*`` entry for one result transition.
 
     Each status REPLACES the entry rather than patching it, which is what makes the
-    03 §3.3 "clear …" columns exact: a terminal write cannot leave a stale
+    the "clear …" rules exact: a terminal write cannot leave a stale
     ``scheduledAt``/``scheduledStageVersion`` behind, and the keys are DELETED
     rather than nulled (``VerifyEntry`` is ``total=False``, so absent means "not
     scheduled" while present-but-null would be malformed). ``findings-applied`` is
@@ -5009,7 +5010,7 @@ def cmd_state_verify(
 
     Args:
         feature: The feature name, or the EPIC name when `stage == "forge-0-epic"`
-            (`03-verification-state.md` §3.2 step 2). Resolved through the same
+. Resolved through the same
             path-safety and containment rules as every other state write.
         stage: The production stage this verify entry serves — one of
             `VERIFY_MODE_TO_STAGE`'s values, or `"forge-0-epic"` for an epic-target
@@ -5018,10 +5019,24 @@ def cmd_state_verify(
         epic: Epic name when `feature` is a member, else None. REQUIRED for members
             so the bare name is never resolved ambiguously. For
             `stage == "forge-0-epic"` it must be absent or equal to `feature`.
-        status: Result mode. Mutually exclusive with `commit_hash`. See the
-            `03-verification-state.md` §3.3 matrix for which metadata each status
-            requires and which it forbids — the matrix is authoritative, not this
-            docstring.
+        status: Result mode. Mutually exclusive with `commit_hash`. Each status
+            admits only the metadata below; everything else is refused before any
+            write, so a contradictory call never lands a partial entry:
+
+            - `passed` — REQUIRES `verified_stage_version`; refuses `findings_file`;
+              accepts `findings_count` only when it is 0 (a non-zero count belongs to
+              `findings-reported`).
+            - `findings-reported` — REQUIRES all three of `verified_stage_version`,
+              `findings_file`, and a non-negative `findings_count`.
+            - `findings-applied` — REFUSES `verified_stage_version`. Applying fixes
+              is not verifying them, so this status deliberately CLEARS the recorded
+              freshness and leaves the stage's verification outstanding until a later
+              `passed` records a revision.
+            - `skipped` and `auto-verify-pending` — accept none of the three.
+
+            `passed` and `findings-reported` additionally refuse a
+            `verified_stage_version` that is stale against the served stage's current
+            version. The persisted shape is `references/pipeline-state-schema.json`.
         findings_file: Path to the findings document, relative to and contained by
             the resolved feature/epic directory. Required by `findings-reported`;
             rejected when absolute, containing `..`, or carrying NUL/control
@@ -5058,7 +5073,7 @@ def cmd_state_verify(
     if commit_hash is not None:
         # Commit-2 carries provenance for an entry that ALREADY exists, so every
         # result field must be absent: a hash arriving next to findings metadata
-        # means the caller conflated the two writes (03 §3.4).
+        # means the caller conflated the two writes.
         for label, value in (
             ("--findings-file", findings_file),
             ("--findings-count", findings_count),
@@ -5076,7 +5091,7 @@ def cmd_state_verify(
         known = ", ".join(VERIFY_RESULT_STATUSES)
         raise UsageError(f"unknown --status {status!r}; expected one of {known}")
 
-    # --- Target selection: epic before the token map (03 §3.2). --------------
+    # --- Target selection: epic before the token map. --------------
     is_epic_target = stage == "forge-0-epic"
     if is_epic_target:
         verify_key = "forge-verify-epic"
@@ -5089,7 +5104,7 @@ def cmd_state_verify(
             )
         verify_key = f"forge-verify-{token}"
 
-    # --- Commit-2 provenance mode (03 §3.4). ---------------------------------
+    # --- Commit-2 provenance mode. ---------------------------------
     # Commit 1 recorded the result with `commitHash: null`; this second, targeted
     # write records the hash of THAT commit. Nothing here invokes Git, rewrites
     # history, or amends — the two commits stay two commits (REQ-STATE-04).
@@ -5117,7 +5132,7 @@ def cmd_state_verify(
             "updatedAt": written["updatedAt"],
         }
 
-    # --- Metadata validation that needs no state (03 §3.3). ------------------
+    # --- Metadata validation that needs no state. ------------------
     if verified_stage_version is not None:
         _require_positive_int(verified_stage_version, "--verified-stage-version")
     if findings_count is not None and (
@@ -5181,7 +5196,7 @@ def cmd_state_verify(
         current = None
     elif is_epic_target:
         # The epic's artifact revision is the manifest revision — never a member's
-        # production-stage version (03 §2.2).
+        # production-stage version.
         current = epic_revision
     else:
         current = _current_artifact_version(state, stage)
@@ -5353,7 +5368,7 @@ def _print_rank_table(rows: list[FeatureRow], counts: dict[str, int]) -> None:
         print(f"  {marker} {label}: {row['currentStage']} — next: {nxt}")
         if row["verifyPending"]:
             # Owed automatic verification is an obligation, not an offer — the
-            # full 03 §5.3 sentence went to stderr, so keep this line honest
+            # full diagnostic sentence went to stderr, so keep this line honest
             # rather than repeating it (REQ-DEBT-02).
             offer = (
                 "automatic verification owed"

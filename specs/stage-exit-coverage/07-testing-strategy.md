@@ -546,8 +546,9 @@ REQ-COMPAT-02):
 8. scheduling/pass metadata uses manifest revision, never a member stage version.
 
 Keep one explicit legacy no-revision test rather than leaving all fixtures legacy. Update any schema
-contract digest in `tests/test_state_schema_conformance.py` deliberately: the current
-`PRE_R4_SCHEMA_CONTRACT_SHA256` pins an unchanged pre-R4 contract and will correctly fail after the
+contract digest in `tests/test_state_schema_conformance.py` deliberately: the constant that pinned
+the unchanged pre-R4 contract (then `PRE_R4_SCHEMA_CONTRACT_SHA256`, since renamed to
+`SCHEMA_CONTRACT_OUTSIDE_VERIFY_ENTRY_SHA256` and deliberately not re-pinned) will correctly fail after the
 additive verify schema change. Re-pin it to a new post-feature baseline **in the same PR** (renaming
 the constant accordingly), matching that guard's own documented convention — "A real schema change
 … belongs to a different feature and updates this constant in the same PR" — and **add** a
@@ -555,9 +556,11 @@ structural assertion that diffs the parsed pre/post contract and proves the only
 `verifyEntry.status` enum gaining `auto-verify-pending` and the additive `scheduledAt` /
 `scheduledStageVersion` properties. Do not re-pin without that structural diff, and do not delete
 the digest guard: removing it permanently loses the tripwire for future *unintended* schema edits.
-Keep `test_the_contract_digest_ignores_prose_but_not_structure` intact — it is the negative control
+Keep `test_the_contract_comparison_ignores_prose_but_not_structure` intact — it is the negative control
 that makes the digest meaningful, and an implementer told merely to "replace" the digest may delete
-it alongside (REQ-DEBT-06).
+it alongside (REQ-DEBT-06). (The digest was split into a digest over the contract outside
+`verifyEntry` plus a parsed-object comparison of `verifyEntry` itself; the negative control covers
+both halves.)
 
 ### 4.5 Hash and two-commit provenance
 

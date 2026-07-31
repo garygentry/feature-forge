@@ -64,6 +64,14 @@ identity is surfaced as the script's `Error:` line on stderr with exit 2. The sk
 surfaces that line and **stops without inventing next steps** — there is no payload and no
 sentinel to print.
 
+An exit 2 from `stage-exit` itself is **not** a no-write guarantee: the
+`auto-verify-pending` debt marker is persisted at the scheduling boundary *before* the
+payload is built, deliberately, so an interrupted exit still leaves the verification
+obligation durable on disk. Do not retry on the assumption that nothing landed — the
+marker is idempotent and the re-run will read it. (The narrower "nothing was recorded"
+guarantee belongs to `state-verify`, whose validation all precedes its single atomic
+write.)
+
 ### Stamp sites
 
 | Stamp site | Block |
@@ -89,6 +97,12 @@ python3 "$R/scripts/forge-session.py" stage-exit {stage-exit-args} --specs-dir "
 
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
 <!-- END: scripted-stage-exit-stamp -->
+
+The stamp is shown with `--host claude`; the adapter build substitutes `pi`/`generic` per
+target, and §"Host and capability determination" below governs the value. The literal is
+deliberate — `scripts/build-adapters.py` keys its host translation on the exact string
+`--host claude`, and the stamp sites are compared byte-for-byte, so it is the one token in
+that line that is not a placeholder.
 
 ## Host and capability determination
 

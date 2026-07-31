@@ -36,11 +36,12 @@ SESSION = SCRIPTS / "forge-session.py"
 CALL_RE = re.compile(r'forge-session\.py"?\s+(state-[a-z]+)')
 
 #: Non-vacuity floor, NOT a pinned total. A regex that stopped matching would satisfy the
-#: "every call site carries --epic" assertion trivially. 32 sites today (2026-07-31, after
+#: "every call site carries --epic" assertion trivially. 34 sites today (2026-07-31, after
 #: the `state-verify` fences landed in forge-verify, forge-fix, forge-6-docs, and
-#: shared-conventions.md); the floor is the count, since a call site being REMOVED is
+#: shared-conventions.md, then the two `--status skipped` fences in forge-4-backlog Step 6
+#: and forge-5-loop Step 5b); the floor is the count, since a call site being REMOVED is
 #: itself worth a look.
-MIN_CALL_SITES = 32
+MIN_CALL_SITES = 34
 
 #: How far above a call site the `--epic` instruction may live. Every site today carries
 #: it within **10** lines (it sits in the prose sentence introducing the fence, or inline
@@ -51,6 +52,29 @@ MIN_CALL_SITES = 32
 #: `state-enter` mandate 17 lines up. Widening this re-opens that hole.
 LOOKBEHIND = 12
 LOOKAHEAD = 8
+
+#: How many lines a single fenced `state-*` call may span. The verb sits on the first
+#: line and its flags on `\`-continued lines below; 3 covers the longest call in canon
+#: (verb + two flag lines) without reaching into a neighbouring invocation.
+CALL_SPAN = 3
+
+#: `--status skipped` on a `state-verify` call, matched against a flattened invocation.
+SKIP_STATUS_RE = re.compile(r"--status\s+skipped\b")
+
+#: Canon surfaces whose prose records a `forge-verify-*` result of `skipped`, each of
+#: which must therefore ship the fence that writes it. Seeded from V-002's two regressed
+#: sites plus forge-6-docs, which already had one and is the shape the other two copied.
+#:
+#: This is an allow-list, not a scan. A prose scan for "persist … `skipped`" also matches
+#: the shared `--verify-capability` paragraph in forge-1-prd, forge-2-tech, and
+#: forge-3-specs, which describe the in-stage Standard Verify Gate's skip and carry no
+#: fence of their own. Whether those three need one is a live question V-002 did not
+#: settle; folding them in here would assert an answer this guard has no basis to give.
+SKIP_RECORDING_SURFACES = (
+    "skills/forge-4-backlog/SKILL.md",
+    "skills/forge-5-loop/SKILL.md",
+    "skills/forge-6-docs/SKILL.md",
+)
 
 #: The normative sentence the per-call-site mandates restate. Guard 1 checks the
 #: restatements; without this, deleting the RULE ITSELF flags zero call sites — the
@@ -166,7 +190,69 @@ def test_the_documented_error_messages_still_exist_in_the_script():
 
 
 # --------------------------------------------------------------------------------------
-# Guard 3 — the guard itself
+# Guard 3 — a recorded verify skip is persisted through `state-verify`, never by hand
+# --------------------------------------------------------------------------------------
+
+
+def _state_verify_call_text(path: Path) -> list[str]:
+    """Each `state-verify` invocation in `path`, as one flattened string per call.
+
+    A fenced call spans a `\\`-continued line pair, so the flag being looked for sits on
+    a different line from the verb. Joining the verb's line with the lines that follow it
+    lets a single `--status skipped` search see the whole invocation.
+    """
+    lines = read(path).splitlines()
+    calls = []
+    for index, line in enumerate(lines):
+        match = CALL_RE.search(line)
+        if match and match.group(1) == "state-verify":
+            calls.append(" ".join(lines[index : index + CALL_SPAN]))
+    return calls
+
+
+def test_every_skip_recording_surface_persists_the_skip_through_state_verify():
+    """Each surface that records a `forge-verify-*` skip ships the fence that writes it.
+
+    A skill whose prose says "record the skip" without a scripted call leaves the agent
+    to hand-author `stages.forge-verify-*` — the precise drift `state-verify` exists to
+    remove, and the way both of V-002's sites regressed.
+    """
+    missing = []
+    for relpath in SKIP_RECORDING_SURFACES:
+        path = REPO_ROOT / relpath
+        assert path.is_file(), f"{relpath} is listed as a skip-recording surface but is absent"
+        if not any(SKIP_STATUS_RE.search(call) for call in _state_verify_call_text(path)):
+            missing.append(relpath)
+    assert not missing, (
+        "these surfaces record a verification skip but ship no "
+        "`state-verify --status skipped` invocation, so the skip will be hand-authored:"
+        "\n  " + "\n  ".join(missing)
+    )
+
+
+def test_the_skip_guard_is_not_vacuous():
+    """A negative control: deleting a fence's `--status skipped` must break Guard 3.
+
+    Without this, a `SKIP_STATUS_RE` that stopped matching — or a `_state_verify_call_text`
+    span too short to reach the flag — would satisfy the guard above by finding nothing to
+    complain about, which is indistinguishable from every surface being compliant.
+    """
+    assert SKIP_RECORDING_SURFACES, "the skip-recording roster is empty"
+    probe = REPO_ROOT / SKIP_RECORDING_SURFACES[0]
+    calls = _state_verify_call_text(probe)
+    assert calls, f"no `state-verify` call parsed out of {SKIP_RECORDING_SURFACES[0]}"
+    matched = [call for call in calls if SKIP_STATUS_RE.search(call)]
+    assert matched, f"{SKIP_RECORDING_SURFACES[0]} lost its `--status skipped` fence"
+
+    mutated = [SKIP_STATUS_RE.sub("--status passed", call) for call in matched]
+    assert not any(SKIP_STATUS_RE.search(call) for call in mutated), (
+        "flipping `--status skipped` to `--status passed` left the guard's pattern "
+        "matching — Guard 3 cannot detect a fence being repurposed"
+    )
+
+
+# --------------------------------------------------------------------------------------
+# Guard 4 — the guard itself
 # --------------------------------------------------------------------------------------
 
 

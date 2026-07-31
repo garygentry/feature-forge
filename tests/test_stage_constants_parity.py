@@ -320,6 +320,33 @@ def test_the_verify_status_alias_matches_the_status_constant():
     assert set(get_args(session.VerifyStatus)) == _schema_verify_statuses()
 
 
+def test_the_stage_exit_synopsis_lists_every_flag_the_parser_accepts():
+    """The module docstring is argparse's `description` — the tool's own `--help`.
+
+    It drifted once already: five flags this feature added (`--owner`, `--outcome`,
+    `--verify-mode`, `--served-stage`, `--verify-capability`) were all required of the
+    nine exit skills while `--help` still printed a signature that could not produce a
+    valid owner-aware exit. Nothing caught it, because a docstring has no callers.
+
+    Derived from the parser registration rather than a hand-kept list, so adding a
+    sixth flag fails here until the synopsis mentions it.
+    """
+    source = read(SESSION)
+    registered = set(re.findall(r'p_exit\.add_argument\(\s*"(--[a-z-]+)"', source))
+    assert len(registered) >= 10, (
+        f"only {len(registered)} `p_exit.add_argument` long options found — the "
+        "extraction pattern has stopped matching rather than the flags having gone"
+    )
+    module = _load_session_module()
+    synopsis = module.__doc__ or ""
+    missing = sorted(flag for flag in registered if flag not in synopsis)
+    assert not missing, (
+        "`stage-exit` flags accepted by the parser but absent from the module "
+        "docstring, so `--help` documents a signature that cannot produce a valid "
+        f"exit:\n  {', '.join(missing)}"
+    )
+
+
 # --------------------------------------------------------------------------------------
 # Guard 5 — the guard itself
 # --------------------------------------------------------------------------------------

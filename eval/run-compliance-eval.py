@@ -25,7 +25,7 @@ PROBE 1 — stage-exit compliance (`--probe stage-exit`)
 PROBE 2 — R2 prelude re-expansion (`--probe r2-prelude`)
     Gates a context-efficiency item (plan §8.4). Applies R2 to a real skill body — first
     plugin-root prelude kept byte-verbatim, later occurrences reduced to the compact form
-    from `specs/context-efficiency/05-instruction-relocations.md` §1.5 — then asks the
+    from the instruction-relocation rules — then asks the
     model to execute a later call site and checks whether the command it actually runs
     reconstructs the resolver BYTE-IDENTICALLY.
 
@@ -104,8 +104,8 @@ BOOTSTRAP_PRELUDE = (
 #: Inner line that marks a prelude occurrence (mirrors _PRELUDE_SENTINEL upstream).
 PRELUDE_SENTINEL = '[ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"'
 
-#: The compact form R2 substitutes at 2nd-and-subsequent call sites
-#: (`05-instruction-relocations.md` §1.5). Sentinel-free by construction.
+#: The compact form R2 substitutes at 2nd-and-subsequent call sites.
+#: Sentinel-free by construction.
 COMPACT_PRELUDE_LEAD = (
     "Resolve `$R` via the plugin-root prelude shown at the top of this skill, then run:"
 )
@@ -269,7 +269,7 @@ def run_session(cwd: Path, prompt: str, model: str) -> ParsedTranscript:
     return parse_transcript(proc.stdout)
 
 
-#: Cap on `CommandEvidence.resultTail` (06 §4.1). The tail exists to make a failure
+#: Cap on `CommandEvidence.resultTail`. The tail exists to make a failure
 #: READABLE in a bounded report; nothing scores against it, so a generous-but-finite slice
 #: is the whole requirement.
 RESULT_TAIL_LIMIT: Final[int] = 500
@@ -280,7 +280,7 @@ RESULT_TAIL_LIMIT: Final[int] = 500
 #: exit code cannot forge a status for itself.
 _EXIT_CODE_RE: Final = re.compile(r"\s*Exit code (\d+)\b")
 
-#: Both tokens must appear for a command to count as a real scripted exit (06 §4.2). A
+#: Both tokens must appear for a command to count as a real scripted exit. A
 #: `state-verify` call carries the first token only, and hand-authored prose carries
 #: neither — which is exactly the distinction ordered matching has to make.
 EXIT_COMMAND_TOKENS: Final[tuple[str, ...]] = ("forge-session.py", "stage-exit")
@@ -567,7 +567,7 @@ def ordered_command_evidence(
             if _is_exit_command(item["command"]):
                 # A real exit standing between two matched entries is a reordered or
                 # duplicated exit, not reconnaissance — the one thing that may NOT be
-                # skipped over (06 §4.2).
+                # skipped over.
                 return False, matches
         if found is None:
             return False, matches
@@ -794,7 +794,7 @@ def _in_fenced_block(text: str, needle: str) -> bool:
 
 #: The exact branch fixture. Deliberately nested under `compliance/`, BELOW
 #: `eval/run-eval.py::load_fixtures()`'s non-recursive `eval/fixtures/*.json` glob, so a
-#: compliance fixture can never be picked up as a trigger fixture (06 §3.1). This file is
+#: compliance fixture can never be picked up as a trigger fixture. This file is
 #: read by path; the branch probe never globs.
 BRANCH_FIXTURE_PATH = REPO_ROOT / "eval" / "fixtures" / "compliance" / "verify-fix-reverify.json"
 
@@ -1325,7 +1325,7 @@ def expected_branch_exit(
         ) from exc
 
 
-#: The exact criteria `score_branch_path` reports (06 §5.2). Declared once so the scorer,
+#: The exact criteria `score_branch_path` reports. Declared once so the scorer,
 #: the report, and the tests all name the same set — a criterion silently added or dropped
 #: would change what "compliant" means without changing any assertion.
 BRANCH_CRITERIA: Final[tuple[str, ...]] = (
@@ -1482,7 +1482,7 @@ def apply_r2(body: str) -> tuple[str, int]:
     """Apply R2 to a skill body: keep prelude #1 verbatim, compact #2-and-subsequent.
 
     Returns the transformed body and the number of call sites compacted. This is the
-    transformation R2 ships (`05-instruction-relocations.md` §1.5) applied to the real
+    transformation R2 ships applied to the real
     file — not a mock-up of it — so the probe measures the shipped change rather than a
     stand-in. The last compacted site carries the marker probe 2 points the model at.
     """

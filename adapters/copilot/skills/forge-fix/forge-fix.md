@@ -83,7 +83,7 @@ python3 "$R/scripts/forge-session.py" state-verify \
   --commit-hash "$(git rev-parse HEAD)" --specs-dir "{specsDir}"
 ```
 
-On exit 2 **nothing was recorded**: surface the `Error:` line verbatim together with the named feature (and epic), do not claim the fixes were persisted, and close with `failed` in Step 7 — authoritative state is unknown, so no success block may be printed. A failed validation or a failed commit is `failed` for the same reason.
+On exit 2 **nothing was recorded**: surface the `Error:` line verbatim together with the named feature (and epic), do not claim the fixes were persisted, and close with `failed` in Step 7 — the verify entry is unchanged, so no success block may be printed. A failed validation or a failed commit is `failed` for the same reason.
 
 ## Step 6: Re-verify Gate
 
