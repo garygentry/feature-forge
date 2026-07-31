@@ -1358,3 +1358,71 @@ member whose PRD and tech are complete routes to `/feature-forge:forge-3-specs
 config-store` (never back to PRD); a member with malformed state emits the exact 02 §9
 warning template with `{reason}` = `malformed` and degrades to `forge-1-prd`; an unsafe
 member name exits 2 before any routing.
+
+## Item 023 — stages 1–4 capability recipe + immediate parking-lot `state-note`
+
+Added a per-stage `--verify-capability` determination recipe to all four authoring
+stages, replaced the PRD/tech parking-lot "note it" promise with an IMMEDIATE
+`state-note` call, and registered `state-verify` (the eighth verb) plus two new
+single-sourced blocks in `references/shared-conventions.md`.
+
+### Gotchas for later items
+
+- **The `--verify-capability` FLAG was already there.** Item 017 re-stamped all five
+  existing scripted sites when it rewrote the canonical block, so
+  `--verify-capability "{verify-capability}"` was present in stages 1–4 before this
+  item started. The remaining work was AC 11/12's *recipe* — the prose that says how
+  to determine the value. Items 018/019 will find the same: check the stamp before
+  assuming the flag is missing.
+
+- **The capability paragraph goes BEFORE the stamped block, never inside it.**
+  `tests/test_stage_exit_protocol.py::test_scripted_stamp_stamped_verbatim` renders
+  `scripted-stage-exit-stamp` and asserts `block in body`, so any edit inside the
+  marker pair must be mirrored into the reference and re-stamped into all seven sites.
+  Inserting a paragraph immediately above `**Close this stage with the Scripted Stage
+  Exit**` is invisible to that guard.
+
+- **`--epic` on the stage-exit call is PROSE, not a stamp slot.** The stamp's one
+  build-time slot is `{stage-exit-args}`, which is per-stage and unconditional; `--epic`
+  is conditional on membership, so it has to live in the adjacent sentence (the
+  reference's own §"The nine covered exits" table states it the same way). Do not add
+  it to `_SCRIPTED_SITES` args — that would ship a literal `--epic "{epic}"` to
+  standalone features.
+
+- **`tests/test_state_verb_call_sites.py::CALL_RE` matches `state-[a-z]+` only**, so
+  `stage-exit` is invisible to it, but every new `state-note`/`state-verify` fence is a
+  guarded call site. All five new fences carry their `--epic` sentence in the paragraph
+  immediately above (1 line up, well inside LOOKBEHIND=12). The count went **21 → 28**;
+  `MIN_CALL_SITES` is a FLOOR so nothing broke, and item 029 owns raising it.
+
+- **The epic exception must be adjacent to its own fence.** The
+  `state-verify --stage forge-0-epic` fence in shared-conventions.md is preceded by the
+  sentence stating `--feature` names the epic and `--epic` must be absent or equal to
+  it — that sentence is what satisfies the window for THAT fence; the two ordinary
+  `state-verify` fences each carry their own "Add `--epic` when the feature is an epic
+  member" lead-in. One shared mandate further up would not cover all three.
+
+- **`_canon_files()` globs `skills/*/SKILL.md` + shared-conventions.md ONLY.** Fences
+  added to a skill-own `references/` file are NOT guarded by the `--epic` drift check.
+  That is another reason the state-verify recipes belong in shared-conventions.md.
+
+- **Three new single-sourced blocks in `references/shared-conventions.md`:**
+  `### state-verify — verification results and provenance` (under Pipeline State
+  Protocol, alongside the eight-verb inventory), `## Immediate Downstream Note (Parking
+  Lot)`, and `## Verify Capability`. Items 018/019 should invoke the `state-verify`
+  recipe by reference rather than inlining a fourth copy; item 030's navigator prose can
+  cite the Verify Capability block for the `owner: nested` dispatch consent wording.
+
+- **Body-cap headroom is comfortable here** (prd 181, tech 244, specs 187, backlog 183
+  raw lines against a 300 BODY-line cap), unlike forge-5-loop/forge-0-epic which sit at
+  the limit. Still, the capability recipe was written as ONE long unwrapped line per the
+  house convention.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!", with
+`PASS: spec-purity checker`, `PASS: epic-manifest pytest suite`, and
+`PASS: adapters/ matches a fresh generation (no drift)`;
+`python3 -m pytest tests -q` -> 1508 passed, 2 skipped (both pre-existing);
+`python3 scripts/build-adapters.py` run and the regenerated `adapters/` tree left in the
+working tree for the loop runner to commit.

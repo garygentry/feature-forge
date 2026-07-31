@@ -766,8 +766,8 @@
         "No stage treats a no-unsolicited-dispatch instruction as grounds to skip verification or to fence the production successor",
         "references/shared-conventions.md's Pipeline State Protocol lists state-verify among the state-* verbs with its --epic member rule and exit-2 failure protocol"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-07-31T10:24:37.982Z",
       "dependsOn": [
         "005",
         "011",

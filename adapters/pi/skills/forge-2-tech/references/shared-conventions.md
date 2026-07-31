@@ -191,6 +191,42 @@ Pipeline state is written by the `state-*` verbs of `scripts/forge-session.py` �
 
 If a `state-*` verb exits 2, surface the plain `Error:` line from stderr verbatim, do **not** proceed to the next step of the surrounding protocol, and do **not** hand-author the JSON as a workaround. The stage remains resumable because the entry stamp is already on disk — re-run the verb once the cause is fixed.
 
+**The eight `state-*` verbs.** `state-enter` (Stage-Entry Guard), `state-artifact` (incremental artifact tracking), `state-complete` (Git Commit Protocol), `state-branch` (Branch Setup and Branch Reconciliation), `state-note` (the Immediate Downstream Note below, and the optional completion note at stage closure), `state-decision` (deferred decisions), `state-ecr` (epic change requests), and `state-verify` (one `forge-verify-*` verification transition — below). The `--epic` member requirement and the exit-2 failure protocol above apply to **every** one of them, `state-verify` included; no verify entry is ever hand-authored.
+
+### `state-verify` — verification results and provenance
+
+`state-verify` writes exactly one `stages.forge-verify-{token}` entry — the verification result for the production stage named by `--stage` — plus the top-level `updatedAt`, and nothing else. `--stage` takes the **served production stage** (`forge-0-epic` through `forge-5-loop`; `forge-6-docs` has no verification token and is rejected). Add `--epic "{epic}"` when the feature is an epic member — required, per the member rule above. Result mode passes `--status` (`auto-verify-pending`, `passed`, `findings-reported`, `findings-applied`, or `skipped`) with whatever `--findings-file`, `--findings-count`, and `--verified-stage-version` that status requires; contradictory metadata is refused before any write:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{feature}" --stage "{served-production-stage}" --status "<status>" \
+  --specs-dir "{specsDir}"
+```
+
+Provenance follows the same two-commit sequence as `state-complete`: the result transition above writes `commitHash: null`, Commit 1 records the findings document and the state, and a second `state-verify` call records the full 40-hex hash of Commit 1 and touches nothing else (never `--amend`; an abbreviated hash is refused rather than expanded). Add `--epic "{epic}"` for an epic member — required, per the member rule above:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{feature}" --stage "{served-production-stage}" \
+  --commit-hash "$(git rev-parse HEAD)" --specs-dir "{specsDir}"
+```
+
+Epic-scoped verification is the single exception to the member rule: with `--stage forge-0-epic`, `--feature` names the **epic** and `--epic` must be absent or exactly equal to it. That call writes `{specsDir}/{epic}/.epic-state.json` and never a member's `.pipeline-state.json`, and its freshness version is the epic manifest's `revision`, never a member's stage version:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify \
+  --feature "{epic}" --stage forge-0-epic --status "<status>" \
+  --specs-dir "{specsDir}"
+```
+
+On exit 2 the verification result is **not** recorded: surface the `Error:` line verbatim, name the feature (and epic), and do not claim the verification was persisted or advance past it.
+
 ### Staleness Detection (Read-Time)
 
 When loading upstream artifacts as prerequisites, check `basedOnVersions` in the pipeline state for this stage. If any upstream stage's current version is newer than the version recorded in `basedOnVersions`, warn the user before proceeding:
@@ -198,6 +234,31 @@ When loading upstream artifacts as prerequisites, check `basedOnVersions` in the
 > "This stage was built against {upstream} v{old}, but {upstream} is now at v{new}. The current artifacts may be outdated. Consider re-running this stage, or use --force to proceed with potentially stale inputs."
 
 Frame the choice with its cost: re-running re-derives this stage from the current upstream (safest, but discards any hand-edits to this stage's artifacts); proceeding stale is faster but risks baking outdated assumptions into everything downstream. Recommend re-running unless the user knows the upstream change doesn't affect this stage.
+
+## Immediate Downstream Note (Parking Lot)
+
+When an interview raises a concern that belongs to a *later stage of this same feature*, acknowledge it and persist it **immediately, at the moment it is raised** — not at stage closure — by running `state-note` with a concise one-line statement of the concern. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol above; omitting it for a member is an error and must never be allowed to fall back to a same-named flat feature.
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-note \
+  --feature "{feature}" --note "<concise downstream concern>" \
+  --specs-dir "{specsDir}"
+```
+
+`state-note` **overwrites** the single top-level `notes` string — it does not append. To preserve an earlier note, read the current `notes` value out of the feature's `.pipeline-state.json` first and pass one combined concise string in a single `--note`; never edit or round-trip the JSON by hand. This interview-time call is separate from the optional completion note offered at stage closure and must not be deferred until then — a session that ends before closure would otherwise lose the concern entirely.
+
+On `UsageError`/exit 2, surface the `Error:` line verbatim together with the named feature (and epic) and the recovery instruction, and **stop claiming the concern was recorded** — it was not. Epic *decomposition* changes are not notes: they go through `state-ecr` into `epicChangeRequests`, never into `notes`.
+
+## Verify Capability
+
+Skills that close a stage pass `--verify-capability interactive|manual` to `stage-exit`. The full determination rule, the Standard Verify Gate, and the recovery path live in `references/stage-exit-protocol.md`; the two facts that are most often gotten wrong:
+
+- **Dispatch capability is *permitted* dispatch, not a listed tool.** The question is "**may I dispatch `forge-verifier` right now**", not "is a subagent-dispatch tool in my tool surface". A session can carry a standing host instruction against dispatching subagents unless the user asked; such instructions are injected by the harness, sit outside this project's control, and outrank skill prose. Classify on permission, up front.
+- **A consent requirement is `interactive`, not `manual`.** When dispatch is barred only *unless the user asked* and a question mechanism is available, pass `interactive`: the gate's own affirmative choice supplies the missing user request. Pass `manual` only when there is **no** question mechanism **and** **no** permitted dispatch.
+
+A bar on unsolicited dispatch is never grounds to skip verification, and never grounds to fence the production successor while verification is unresolved. On the `runInStageVerify: true` path the emitted `verifyGate` stays `none`: reuse the Standard Verify Gate block for consent with **choice 2 omitted** (auto-verify is already effective, so "enable auto-verify going forward" is a no-op), leaving exactly two choices — *Verify now* (recommended) and *Skip for now*, the latter persisted as an explicit `skipped` before any advancing block.
 
 ## Branch Setup
 
