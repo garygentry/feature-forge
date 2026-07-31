@@ -1983,3 +1983,73 @@ negative matrix. 102 tests (was 12). Test-only — nothing under `scripts/`, `sk
 drift)`; `python3 -m pytest tests/test_stage_exit_protocol.py` -> 102 passed;
 `python3 -m pytest tests -q` -> 1723 passed, 2 skipped (both pre-existing);
 `ruff check scripts/ eval/` clean.
+
+## Item 029 — final regeneration + full gate sweep with invariant confirmation
+
+Closing sweep, no new implementation. The only file edit the item calls for is the
+`MIN_CALL_SITES` floor; every other step is confirmation. **`adapters/` needed no
+regeneration** — `build-adapters.py --check` already reported no drift on entry, so
+items 010–030 had each left a correctly-regenerated tree behind.
+
+### Confirmed invariants (each checked directly, not only via the suite)
+
+- **Two consecutive builds are byte-identical.** Built, `cp -r adapters` to a scratch dir,
+  built again, `diff -r` clean, and `git status adapters/` empty after both.
+- **`RUNTIME_HELPERS` = 6** (`forge-root.sh`, `forge-init.sh`, `epic-manifest.py`,
+  `forge-session.py`, `validate-traceability.py`, `forge-bootstrap.py`), extracted by
+  regex + `ast.literal_eval` rather than eyeballed. `scripts/forge_json.py` absent.
+  `git diff --name-status $(git merge-base HEAD main) HEAD -- scripts/ 'adapters/*/scripts/'`
+  filtered to `^[AD]` reports **nothing** — no file added or removed anywhere in the
+  seven script trees across the whole feature.
+- **Mirrored loaders byte-identical in all 12 emitted copies** (6 targets x 2 consumers),
+  compared against canon through `test_json_loader_parity.mirrored_loader_pair` — the
+  single-sourced extractor, not a re-implementation. Block is 1,674 chars, so the
+  comparison is not vacuously empty.
+- **No lock/lease/version-check/retry/backoff in any writer.** Grepped
+  `flock|fcntl|lockf|O_EXCL|O_CREAT|lease|mutex|threading\.|time\.sleep|backoff|optimistic`
+  over `scripts/*.py` -> zero hits; item 007's `_MUTEX_TOKENS` guard (7 tests) passes.
+  The five `retry` hits in `forge-session.py` are all the *user-facing* "retry command"
+  string plus one loop-runner message about items left after retries — none is a write loop.
+- **No `--amend` provenance path.** 12 mentions survive across canon; every one is a
+  prohibition ("never `--amend`"), which is what item 007's negation-guard requires.
+  `scripts/` has zero.
+- **`smokeCommand: null`** at `forge.config.json:11`; `tests/test_smoke_command.py` passes;
+  CHECK-I21 is recorded not-applicable by design in `AGENTS.md:52`, `CLAUDE.md:61`, and the
+  checklist itself. Nothing fabricated.
+- **`forge-5-loop/SKILL.md` = 299 body lines / 4,534 body words** (caps 300 / 5,000),
+  measured with `test_runner_contract_split._body_lines`, not `wc -l`. Step 2d pointer to
+  `references/runner-contract.md` intact at line 174.
+- **All nine skills carry exactly ONE `stage-exit` invocation each** (grep count per file),
+  and `tests/test_stage_exit_protocol.py` -> 102 passed.
+- **Traceability**: 55 requirements, 8 spec files, all covered, no orphans.
+
+### Gotchas for later work
+
+- **`MIN_CALL_SITES` had already been raised to 32** by an earlier partial iteration of
+  this item; the count was re-derived independently (`CALL_RE` over `skills/*/SKILL.md` +
+  `shared-conventions.md`) and confirmed at 32 — session 1, prd 4, tech 4, specs 3,
+  backlog 2, loop 2, docs 2, fix 2, verify 2, shared-conventions 10. It is a FLOOR, so a
+  wrong value fails open; re-derive rather than trusting the constant.
+- **`validate-traceability.py` takes TWO positional args** (`prd_path specs_dir`), not one.
+  `python3 scripts/validate-traceability.py specs/<feature>/ ` fails with a usage error
+  that reads like a missing feature, not a missing argument.
+- **`specs/stage-exit-coverage/backlog.json.bak` is tracked AND gitignored**
+  (`.gitignore:9 **/backlog.json.bak`) — force-added or predating the rule. Pre-existing,
+  untouched here, but it means `git status` will never show it drifting. Worth a cleanup
+  item outside this feature.
+- **`scripts/__pycache__` is gitignored**, so it does not violate the "no new file under
+  `scripts/`" invariant. Check `git check-ignore` before reading an `ls` as a violation.
+- **Do not `cp -r adapters` into the repo** for the double-build check — use `/tmp`.
+  Executing an emitted adapter script would write `__pycache__` into `adapters/` and
+  create real drift (item 004's note); copying alone is safe.
+
+### Verification
+
+`bash scripts/validate.sh` exit 0, "All checks passed!" — 36 `PASS:` lines, zero `FAIL`/
+`SKIP`, including `PASS: spec-purity checker`, `PASS: epic-manifest pytest suite` (NOT the
+skip form), `PASS: adapters/ matches a fresh generation (no drift)`, `PASS: ruff lint`,
+`PASS: requirement traceability (.../specs/stage-exit-coverage)`, and `PASS: version sync`;
+the pytest suite reports **1723 passed, 2 skipped** (both pre-existing) in 203s;
+`ruff check scripts/ eval/` clean; `python3 scripts/build-adapters.py --check` no drift.
+Working tree left with exactly two modified files: the runner-owned `backlog.json` and
+`tests/test_state_verb_call_sites.py`.

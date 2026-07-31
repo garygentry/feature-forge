@@ -36,9 +36,11 @@ SESSION = SCRIPTS / "forge-session.py"
 CALL_RE = re.compile(r'forge-session\.py"?\s+(state-[a-z]+)')
 
 #: Non-vacuity floor, NOT a pinned total. A regex that stopped matching would satisfy the
-#: "every call site carries --epic" assertion trivially. 21 sites today (2026-07-29);
-#: the floor is the count, since a call site being REMOVED is itself worth a look.
-MIN_CALL_SITES = 21
+#: "every call site carries --epic" assertion trivially. 32 sites today (2026-07-31, after
+#: the `state-verify` fences landed in forge-verify, forge-fix, forge-6-docs, and
+#: shared-conventions.md); the floor is the count, since a call site being REMOVED is
+#: itself worth a look.
+MIN_CALL_SITES = 32
 
 #: How far above a call site the `--epic` instruction may live. Every site today carries
 #: it within **10** lines (it sits in the prose sentence introducing the fence, or inline
