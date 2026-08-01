@@ -688,6 +688,14 @@ the previous round demonstrated. The applier should not pick silently:
 patching is the evidence that (b) does not terminate, and (c) understates the risk given
 that the *annotated-alias* variant is one keystroke from the path round 5 just closed.
 
+> **RESOLVED 2026-08-01 — (a), generalise the shape class.** Chosen by the user at the
+> `forge-fix` decision gate, matching the recommendation. Applied in Step 3 with the
+> module-level-scope filter implemented as `_module_scope_nodes`, which descends through
+> control flow but stops at every new scope (`FunctionDef`/`AsyncFunctionDef`/`ClassDef`)
+> — so the nested-`if` binding is caught while a function-local of the same name is not
+> a false positive. All four probes plus the six pre-existing ones are RED; see the Fix
+> Progress record below for the per-probe de-shifted lines.
+
 **All other findings require no policy call.** V-001, V-002, V-003 and V-005 are prose
 corrections with no behavioural consequence; V-006 is an advisory that requires no action.
 
@@ -766,3 +774,98 @@ the probe reads a false GREEN. My first `_verify_state_for` mutation reported `5
 for exactly this reason before the real-file copy reported `82 failed`. Any future probe
 that mutates something under `scripts/` must use **real file copies** of `tests/`.
 
+
+---
+
+## Fix Progress
+
+Applied 2026-08-01 by `/feature-forge:forge-fix stage-exit-coverage --served-stage forge-5-loop`
+(owner: direct). Decision 1 resolved to **(a)** before any step ran.
+
+- Step 1: [APPLIED] 2026-08-01 — `tests/test_capability_determination_prose.py` module
+  docstring, clause (c): the trailing "left the untouched `presented through the gate`
+  matching on all six" replaced with the two-part account naming the surviving c1a
+  fragment per surface group. Acceptance re-derived independently, not taken from the
+  report: (i) per-surface c1a match is `reuse the Standard Verify Gate block for consent`
+  on the four authoring stages, `presented through the gate` on `forge-verify`,
+  `presented through the Step 6 gate` on `forge-fix`; (ii) the literal
+  `presented through the gate` occurs in exactly **1 of 6** capability paragraphs;
+  (iii) the merged c1a+c1b list after the dispatch-clause rewrite stays **GREEN on 6 of 6**,
+  each on its own gate fragment; (iv) the history the sentence asserts was re-measured at
+  `21f1c34` — `forge-1-prd` carried **0** occurrences of `dispatched on the affirmative`
+  and matched via its gate fragment, `forge-verify` held `presented through the gate`,
+  `forge-fix` held `presented through the Step 6 gate` — and the amended docstring was
+  read end-to-end against control 3a-ii (`:404-426`): neither states anything the other
+  contradicts, mine adding the `forge-fix` half 3a-ii leaves implicit. 43 passed.
+- Step 2: [APPLIED] 2026-08-01 — `scripts/forge-session.py`, `verify_state` docstring only.
+  The `stale` bullet now names the `findings-applied` reason, and the closing paragraph
+  states the rule unconditionally, matching `epic_verify_state`'s amended docstring
+  (`scripts/epic-manifest.py:1066-1073`) read side by side. No code, guard, ordering or
+  return value touched. The 24-shape x classifier matrix was re-run and is unchanged:
+  `findings-applied` -> `stale` at absent / matching / non-matching version alike;
+  `passed` -> `fresh` only at a matching version. `ruff check scripts/ eval/` clean.
+- Step 3: [APPLIED] 2026-08-01 — Decision 1 **(a)**. `test_the_controls_cover_every_determining_surface`
+  now asserts over binding FORMS and SCOPES rather than named instances: new helpers
+  `_module_scope_nodes` (control-flow descent, stops at every new scope),
+  `_store_target_names` (recovers the global through subscript/attribute/star/tuple) and
+  `_module_scope_writes` (`Assign`/`AnnAssign`/`AugAssign`); the alias check is now
+  symmetric with the roster check, and `_capability_surfaces` is pinned to exactly one
+  definition. The comment records why the check is written over forms rather than one node.
+  **Mandatory probe battery** — real file copies of `tests/` (symlinks defeat the probe
+  per the report's measurement hazard), `PYTHONDONTWRITEBYTECODE=1`, `-p no:cacheprovider`,
+  `__pycache__` purged, one fresh copy per probe, reversed-order hand-kept roster:
+
+  | Probe | Result | De-shifted line |
+  |---|---|---|
+  | P1 literal hand-kept value | RED | derivation `Call` (`:574`) |
+  | P2 derived from another function | RED | derivation `Call` (`:574`) |
+  | P3 wrapped in `list()` | RED | derivation `Call` (`:574`) |
+  | P4 `AnnAssign` demoted to `Assign` | RED | `AnnAssign` (`:570`) |
+  | P5 decoy + re-bind | RED | count (`:566`) |
+  | P6 plain alias | RED | alias (`:591`) |
+  | N1 **annotated** alias | RED | alias (`:591`) |
+  | N2 nested-`if` re-bind | RED | count (`:566`) |
+  | N3 in-place `ALL_SURFACES[:] =` | RED | count (`:566`) |
+  | N4 shadowing redefinition (before the binding) | RED | `len(definitions) == 1` (`:587`) |
+  | C0 unmutated control | GREEN | — 43 passed |
+
+  The floor (`:526`) was **never** the source of a red. Roster displacement was proven for
+  every probe: `SURFACE_IDS` was observed in the reversed hand-kept order in all ten, so
+  no probe is a no-op the guard merely appeared to catch. One harness correction is worth
+  recording: a hand-kept stub that *calls* the derivation recurses infinitely once the
+  alias probes rebind the name, so P6/N1 first errored at import rather than at the
+  assertion; the roster must be a static snapshot taken before the alias. Likewise N4 must
+  place the second `def` **before** the `ALL_SURFACES` binding or the roster is not
+  actually displaced.
+- Step 4: [APPLIED] 2026-08-01 — `tests/test_state_verb_call_sites.py`, `_state_verify_call_text`
+  docstring: "Joining `CALL_SPAN` lines starting at the verb's line (so the verb plus up to
+  `CALL_SPAN - 1` continuations)". `CALL_SPAN = 3` and the consumer slices
+  `lines[index : index + CALL_SPAN]` — width 3, which is what the sentence now states. Read
+  end-to-end against the `CALL_SPAN` comment block (`:45-89`): both describe the same
+  3-line window. Nothing else in the module touched. 10 passed.
+- Step 5: [APPLIED] 2026-08-01 — `01-architecture-layout.md` §2, one row added to the
+  `tests/` block for `fixtures/{status-derivation/lifecycle,valid-epic/auth-overhaul}/epic-manifest.json`
+  at the block's existing marker column. `.gitignore` and `forge.config.json` deliberately
+  not added. Acceptance re-run: `git diff --name-status e89d8fa~1..HEAD -- . ':(exclude)adapters/' ':(exclude)specs/'`
+  yields 49 paths, every one now listed in §2, covered by the `<existing epic manifest tests>`
+  placeholder row (`tests/test_epic_manifest.py`), or attributable to `b3110b1`
+  (`.gitignore`, `forge.config.json`).
+- Step 6: [APPLIED] 2026-08-01 — re-gate, on 2.8 GB free. **Deviation from the plan, disclosed:**
+  Step 6 asserted "no canon or adapter surface is touched by Steps 1–5, so `build-adapters.py`
+  regeneration is **not** required". That premise is **wrong** — Step 2 edits
+  `scripts/forge-session.py`, which is mirrored into all six adapter trees, and
+  `--check` exited **1** naming all six mirrors. Regeneration was run and the six
+  `adapters/*/scripts/forge-session.py` mirrors are committed with this pass; `--check`
+  then exited 0. Remaining gate, all green: `validate.sh` twice back-to-back (both exit 0,
+  both `All checks passed!`, both **1809 passed / 2 skipped**), `find tests/fixtures`
+  bytecode **0** after each, `ruff check scripts/ eval/` clean, `ruff check tests/` still
+  **19**, `ruff check tests/ --select F841,F541` clean, `check-spec-purity.py` PASS
+  (0 violations — the `§4.2 step 4` coordinate in the new docstring is a bare `§`, which
+  `_SPEC_CITATION_RE` deliberately does not match). Node-ID **set difference** against HEAD
+  is **empty on both sides** (1811 collected both ways), confirming Steps 1–5 add and
+  remove no tests.
+
+**Verification discipline honoured:** every prose edit above was accepted by re-reading the
+passage end-to-end against the artifact it describes, and every numeric claim was
+re-derived with an instrument independent of the one that wrote it — never by diffing and
+never by suite-green.

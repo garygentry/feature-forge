@@ -881,7 +881,9 @@ def verify_state(state: dict) -> tuple[str | None, str]:
       stage's current ``version`` (so no re-verify is needed).
     - ``stale``   — verify was resolved once, but the stage version has since moved
       (artifact revised) OR the entry predates the freshness ledger (no
-      ``verifiedStageVersion``). A revised artifact must be re-verified.
+      ``verifiedStageVersion``), OR the entry is ``findings-applied``, which never
+      classifies ``fresh`` regardless of any version it carries (§4.2 step 4).
+      A revised artifact must be re-verified.
     - ``failing`` — verify ran and reported findings that are not yet applied
       (``findings-reported``).
     - ``auto-pending`` — effective configuration scheduled unattended in-stage
@@ -901,9 +903,10 @@ def verify_state(state: dict) -> tuple[str | None, str]:
       is ``None``.
 
     Only the most-recent completed production stage is considered, matching the
-    navigator's "verify before continuing" gate. Absent ``verifiedStageVersion``
-    on a ``passed``/``findings-applied`` entry (legacy state) is deliberately
-    treated as ``stale`` — verify rather than skip.
+    navigator's "verify before continuing" gate. A ``findings-applied`` entry is
+    treated as ``stale`` UNCONDITIONALLY — applying fixes is not verifying them —
+    and an absent ``verifiedStageVersion`` on a ``passed`` entry (legacy state) is
+    likewise ``stale``: verify rather than skip.
     """
     for stage in reversed(PRODUCTION_STAGES):
         if _stage_status(state, stage) != _DONE_STATUS:

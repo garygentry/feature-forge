@@ -118,6 +118,8 @@ tests/
                                                scripted skip persistence
   test_check_spec_purity.py                 M  grandfather list shrink-only + drift warning
   <existing epic manifest tests>            M  revision mutation/freshness matrix
+  fixtures/{status-derivation/lifecycle,valid-epic/auth-overhaul}/epic-manifest.json
+                                            M  canonical `revision` added (item 002)
 
 README.md                                   M  documents the autoVerify / autoFix keys
 

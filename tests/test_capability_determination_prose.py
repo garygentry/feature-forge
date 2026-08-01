@@ -33,7 +33,10 @@ clauses must survive in every capability-determining surface:
     the untouched no-advance phrasing in the same sentence (four surfaces), and while
     c1a and c1b shared a list, rewriting the *dispatch clause* — `forge-verify`'s
     "dispatched on the affirmative choice" into "printed for the user" — left the
-    untouched "presented through the gate" matching on all six.
+    merged clause matching on all six: "presented through the gate" was untouched on
+    `forge-verify`, `forge-fix` kept "presented through the Step 6 gate", and the four
+    authoring stages carried no dispatch phrasing at all — each surface satisfied the
+    merged list on its own gate fragment.
 
     Note what is deliberately NOT pinned: relabelling only the gate's *option*
     (`*Verify now*` → `*Print the verify command for the user to run later*`) still
@@ -69,6 +72,7 @@ a bare `python3 -m pytest tests` runs it. No skip gate may be introduced — see
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Final
 
@@ -465,6 +469,58 @@ def test_deleting_the_no_advance_obligation_fails_the_guard(relpath: str, base: 
         _assert_capability_prose(mutated, f"{relpath} (control-3c)")
 
 
+def _module_scope_nodes(tree: ast.Module) -> Iterator[ast.AST]:
+    """Every statement executing in MODULE scope, at any control-flow nesting depth.
+
+    `tree.body` alone sees depth 0 only, so `if True:` one level down hid a genuine
+    module-global re-binding. `ast.walk` alone would also descend into function and
+    class bodies, where a local of the same name rebinds nothing this module reads and
+    would be a false positive. Descending through control flow but stopping at every
+    new scope is exactly the set of statements that can replace a module global.
+    """
+    stack: list[ast.AST] = list(tree.body)
+    while stack:
+        node = stack.pop()
+        yield node
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue  # a new scope — its bindings are not this module's globals
+        stack.extend(ast.iter_child_nodes(node))
+
+
+def _store_target_names(target: ast.AST) -> Iterator[str]:
+    """The module-global name a store target reaches, through every wrapper.
+
+    `ALL_SURFACES[:] = [...]` stores into a `Subscript` and re-binds nothing at all,
+    yet the roster every `parametrize` reads is replaced just the same — so the name
+    is recovered from inside subscripts, attributes, starred targets and tuple
+    unpackings rather than only from a bare `Name`.
+    """
+    if isinstance(target, ast.Name):
+        yield target.id
+    elif isinstance(target, (ast.Subscript, ast.Attribute, ast.Starred)):
+        yield from _store_target_names(target.value)
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for element in target.elts:
+            yield from _store_target_names(element)
+
+
+def _module_scope_writes(tree: ast.Module, name: str) -> list[ast.AST]:
+    """Every module-scope statement that binds or mutates `name`, in any form."""
+    writes: list[ast.AST] = []
+    for node in _module_scope_nodes(tree):
+        if isinstance(node, ast.Assign):
+            targets: list[ast.AST] = list(node.targets)
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            targets = [node.target]
+        else:
+            continue
+        if any(
+            reached == name for target in targets for reached in _store_target_names(target)
+        ):
+            writes.append(node)
+    return writes
+
+
 def test_the_controls_cover_every_determining_surface():
     """The control parametrization is the roster, not a sample of it."""
     assert len(ALL_SURFACES) >= MIN_CAPABILITY_SURFACES, (
@@ -492,26 +548,24 @@ def test_the_controls_cover_every_determining_surface():
     # value. The callee is pinned as a `FunctionDef` and asserted un-rebound for the
     # mirror reason: `func.id` is compared textually, so aliasing the derivation name
     # (`_capability_surfaces = _hand_kept_surfaces`) was equally invisible.
+    #
+    # Written over binding FORMS and SCOPES rather than over one node, deliberately.
+    # Four consecutive rounds closed exactly the shape each was shown, and the next
+    # round found the next shape immediately: a plain `Assign` decoy, then an aliasing
+    # `Assign`, then an ANNOTATED alias (`_capability_surfaces: Final = …`) that the
+    # `Assign`-only alias check could not see even though the roster check twelve lines
+    # up already counted both forms, then a binding one level below `tree.body`, an
+    # in-place `ALL_SURFACES[:] = …` that re-binds nothing, and a second `def` shadowing
+    # the first. None of those is a new IDEA — each is the same idea spelled with a
+    # different node — so the check now enumerates the binding forms (`Assign`,
+    # `AnnAssign`, `AugAssign`, and stores reached through a subscript, attribute,
+    # star or tuple) across every module-scope nesting level, and pins the definition
+    # count, instead of naming instances one round at a time.
     tree = ast.parse(read(Path(__file__).resolve()))
-    bindings = [
-        node
-        for node in tree.body
-        if (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == "ALL_SURFACES"
-        )
-        or (
-            isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name) and target.id == "ALL_SURFACES"
-                for target in node.targets
-            )
-        )
-    ]
+    bindings = _module_scope_writes(tree, "ALL_SURFACES")
     assert len(bindings) == 1, (
-        f"ALL_SURFACES is bound {len(bindings)} times at module level — a later "
-        "re-binding would shadow the derived roster while leaving this check green"
+        f"ALL_SURFACES is bound or mutated {len(bindings)} times at module level — a "
+        "later re-binding would shadow the derived roster while leaving this check green"
     )
     assert isinstance(bindings[0], ast.AnnAssign), (
         "ALL_SURFACES is no longer a module-level ANNOTATED assignment — the annotation "
@@ -524,20 +578,19 @@ def test_the_controls_cover_every_determining_surface():
         "ALL_SURFACES is no longer derived from the canonical exit table — the "
         "controls now run over a hand-kept list, which is the drift they exist to catch"
     )
-    assert [
+    definitions = [
         node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_capability_surfaces"
-    ], "_capability_surfaces is no longer a function definition — the name may be aliased"
-    assert not [
-        node
-        for node in tree.body
-        if isinstance(node, ast.Assign)
-        and any(
-            isinstance(target, ast.Name) and target.id == "_capability_surfaces"
-            for target in node.targets
-        )
-    ], "_capability_surfaces is re-bound at module level — the derivation name is aliased"
+        for node in _module_scope_nodes(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "_capability_surfaces"
+    ]
+    assert len(definitions) == 1, (
+        f"_capability_surfaces is defined {len(definitions)} times at module level — a "
+        "later redefinition shadows the derivation while leaving this check green"
+    )
+    assert not _module_scope_writes(tree, "_capability_surfaces"), (
+        "_capability_surfaces is re-bound at module level — the derivation name is aliased"
+    )
 
 
 # --------------------------------------------------------------------------------------

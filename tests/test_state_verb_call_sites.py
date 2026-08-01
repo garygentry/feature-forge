@@ -288,10 +288,11 @@ def _state_verify_call_text(path: Path) -> list[str]:
     """Each `state-verify` invocation in `path`, as one flattened string per call.
 
     A fenced call spans several `\\`-continued lines, so the flag being looked for sits
-    on a different line from the verb. Joining the verb's line with up to `CALL_SPAN`
-    lines lets a single `--status skipped` search see it. That window does not reach the
-    end of every call in canon — six run to four lines — but it does reach every flag
-    this function is searched for, which sits at offset 0 or 1. See `CALL_SPAN`.
+    on a different line from the verb. Joining `CALL_SPAN` lines starting at the verb's
+    line (so the verb plus up to `CALL_SPAN - 1` continuations) lets a single
+    `--status skipped` search see it. That window does not reach the end of every call
+    in canon — six run to four lines — but it does reach every flag this function is
+    searched for, which sits at offset 0 or 1. See `CALL_SPAN`.
     """
     lines = read(path).splitlines()
     calls = []
