@@ -323,6 +323,11 @@ Classification rules are ordered before generic unresolved handling:
 - `pending_verify` returns the served production stage for `auto-pending`;
 - `build_rows` sets `verifyPending=true`, `verifyState="auto-pending"`, and a non-null
   `verifyCommand`; it never treats the feature as verification-complete;
+- a `findings-applied` entry never classifies `fresh`, regardless of any
+  `verifiedStageVersion` it carries — fixes landed but were not re-verified (§4.2
+  step 4), and a legacy entry written before the current writer may still carry the key
+  (REQ-DEBT-06). §3.3 enforces this on the write side; this rule is the read-side
+  obligation, so the invariant does not rest on writer discipline alone (REQ-DEBT-05);
 - `_verify_state_for` applies identical labels for stage-exit routing.
 
 Keep `KNOWN_VERIFY_STATUSES` byte-identical in `scripts/forge-session.py` and

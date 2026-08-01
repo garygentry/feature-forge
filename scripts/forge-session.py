@@ -935,6 +935,15 @@ def verify_state(state: dict) -> tuple[str | None, str]:
             if status is not None and status not in KNOWN_VERIFY_STATUSES:
                 _warn_unknown_verify_status(f"forge-verify-{token}", status)
             return stage, "never"
+        if status == "findings-applied":
+            # Applying fixes is not verifying them: §4.2 step 4 says `findings-applied`
+            # CLEARS freshness, and only a later `passed` restores it. The writer builds
+            # the entry without `verifiedStageVersion`, but the read side may not rely on
+            # that — REQ-DEBT-06 requires loading legacy state without migration, and a
+            # pre-writer entry can still carry the key. Without this guard such an entry
+            # reads `fresh`, `pending_verify` returns None, and the verification debt for
+            # a fixed-but-never-re-verified stage disappears silently.
+            return stage, "stale"
         verified_version = entry.get("verifiedStageVersion")
         stage_version = _stage_version(state, stage)
         if (
@@ -2202,6 +2211,13 @@ def _classify_verify_entry(entry: dict, verify_key: str, current: int | None) ->
         return "auto-pending"
     if status not in _VERIFY_RESOLVED:
         return "never"
+    if status == "findings-applied":
+        # §4.2 step 4: applying fixes CLEARS freshness; only a later `passed` restores
+        # it. The writer omits `verifiedStageVersion` on this status, but REQ-DEBT-06
+        # requires loading legacy state without migration, so a pre-writer entry can
+        # still carry the key — and would otherwise read `fresh` here. Mirrors the
+        # identical guard in `verify_state` (§5.1).
+        return "stale"
     verified_version = entry.get("verifiedStageVersion")
     if (
         isinstance(verified_version, int)
@@ -3515,19 +3531,22 @@ def stage_exit(
     verify_token = _EXIT_VERIFY_TOKEN.get(route_stage)
     verify_key = f"forge-verify-{verify_token}" if verify_token else None
     if route_stage == "forge-0-epic":
+        # EPIC-scoped: the entry and the revision come from `.epic-state.json` and the
+        # manifest, never from a member stage version, so this branch cannot route
+        # through the stage-scoped helper below. `forge-0-epic` always has a token.
         verify_entry, verify_current = _epic_verify_context(specs_dir, feature)
-    elif verify_key:
-        verify_entry = _verify_entry(state, verify_key)
-        verify_current = _stage_version(state, route_stage)
+        verify_label = _classify_verify_entry(verify_entry, verify_key, verify_current)
     else:
-        verify_entry, verify_current = {}, None
-    verify_label = (
-        _classify_verify_entry(verify_entry, verify_key, verify_current)
-        if verify_key
-        # ``none`` is a tokenless stage (forge-6-docs) — there is no verification
-        # to owe.
-        else "none"
-    )
+        verify_entry = _verify_entry(state, verify_key) if verify_key else {}
+        verify_current = _stage_version(state, route_stage) if verify_key else None
+        # Classify through `_verify_state_for`, the designated stage-exit routing
+        # classifier, rather than re-deriving its two steps inline. The inline copy
+        # left `_verify_state_for` with no runtime
+        # caller, so `tests/test_auto_verify.py` could pin routing labels through a
+        # function the CLI never executed. It repeats the `_EXIT_VERIFY_TOKEN` lookup
+        # and `_classify_verify_entry` call above and returns "none" for a tokenless
+        # stage (forge-6-docs), where there is no verification to owe.
+        verify_label = _verify_state_for(state, route_stage)
     # ``none`` is resolved for routing purposes: no verify command is promoted.
     resolved = verify_label in ("fresh", "skipped", "none")
     effective_auto_verify = auto_verify_for(config, route_stage)

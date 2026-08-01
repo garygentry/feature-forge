@@ -470,6 +470,35 @@ def test_auto_pending_is_distinct_from_manual_pending_and_skip() -> None:
     assert fs.verify_state(_completed_prd_state({"status": "skipped"}))[1] == "skipped"
 
 
+def test_legacy_findings_applied_carrying_a_version_still_reads_stale() -> None:
+    """A `findings-applied` entry never classifies `fresh`, even carrying a match.
+
+    THIS SHAPE IS UNREACHABLE THROUGH THE CURRENT WRITER, and asserting the writer's
+    behaviour instead would make this test vacuous. `_write_verify_entry` builds
+    `findings-applied` with no `verifiedStageVersion` at all and actively refuses
+    `--verified-stage-version` on that status. The shape arrives only from LEGACY
+    state, which REQ-DEBT-06 requires loading without migration — this repo's own
+    `.pipeline-state.json` carries two such entries, written before the current
+    writer landed.
+
+    What is asserted is therefore the READ side (03 §5.1): applying fixes is not
+    verifying them (§4.2 step 4), so freshness stays cleared until a later `passed`
+    restores it — regardless of any key a legacy entry happens to carry. Without the
+    guard the version comparison returns `fresh`, `pending_verify` returns None, and
+    the verification debt for a fixed-but-never-re-verified stage disappears silently.
+    """
+    legacy = _completed_prd_state(
+        # `version: 1` matches `forge-1-prd.version`, so the generic freshness
+        # comparison below the guard would return `fresh`.
+        {"status": "findings-applied", "verifiedStageVersion": 1}
+    )
+
+    assert fs.verify_state(legacy) == ("forge-1-prd", "stale")
+    assert fs.pending_verify(legacy) == "forge-1-prd"
+    # The stage-exit classifier must agree, or routing and the ledger disagree.
+    assert fs._verify_state_for(legacy, "forge-1-prd") == "stale"
+
+
 def test_read_side_signatures_are_unchanged() -> None:
     """The four functions keep their exact 03 §5.1 signatures.
 

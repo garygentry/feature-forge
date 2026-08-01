@@ -722,7 +722,12 @@ Add/retain canon tests for (REQ-CAP-01, REQ-FOLLOW-01/02, REQ-A11Y-01):
   auto-path-through-gate sentence. This is the one contract in the feature that has already been
   misread once, is prose-only, and degrades silently — a model self-reporting `manual` merely
   prints a copy-paste command, so nothing else catches it (`04-skill-integration.md` §3.2/§3.3,
-  `02-stage-exit-routing.md` §4/§5.1, REQ-EXIT-07);
+  `02-stage-exit-routing.md` §4/§5.1, REQ-EXIT-07). This bullet is implemented by
+  **`tests/test_capability_determination_prose.py`**, which guards clauses (a), (b) and (c) — the
+  last split into four independently-required sub-clauses (c1a gate, c1b dispatch, c2 no-skip,
+  c3 no-advance) so no obligation can go unsaid — over a roster **derived** from
+  `test_stage_exit_protocol.CANONICAL_EXIT_SITES` rather than hand-kept, with a per-surface
+  negative control for each clause and a structural `ast` guard on the derivation itself;
 - the new `state-verify` call sites in `skills/forge-verify/SKILL.md` and
   `skills/forge-fix/SKILL.md` satisfy `tests/test_state_verb_call_sites.py` — its `CALL_RE` matches
   `state-verify`, so each site needs the `--epic` instruction inside the module's
@@ -895,6 +900,13 @@ strategy can go green while zero tests ran. Acceptance therefore requires the ru
 `python3 -m pytest tests -q` alongside the gate wherever that line is not `PASS`. (Traceability and
 version-sync degrade to warnings on a missing tree/script for the same reason; treat those the same
 way.) No live compliance model run is required for correctness (REQ-EVAL-02, REQ-COMPAT-02).
+
+**`tests/test_gate_pytest_reachability.py`** guards that conditional step from the inside. It pins
+that pytest is importable in the environment running the suite — the same `find_spec` resolution
+`validate.sh` gates on — so the `PASS` branch is demonstrably reachable rather than assumed, and
+that the `SKIP` branch stays textually distinguishable and increments the gate's `WARNINGS`
+counter. Without it, an interpreter without pytest satisfies every "output shows PASS" criterion
+vacuously while zero tests run.
 
 ### 8.3 Null smoke command and CHECK-I21
 

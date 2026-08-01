@@ -58,16 +58,34 @@ MIN_CALL_SITES = 34
 LOOKBEHIND = 12
 LOOKAHEAD = 3
 
-#: How many lines a single fenced `state-*` call may span. The verb sits on the first
-#: line and its flags on `\`-continued lines below; 3 covers the longest call in canon
-#: (verb + two flag lines) without reaching into a neighbouring invocation.
+#: The flattening window: how many lines of a fenced `state-*` call are joined before
+#: searching it. The verb sits on the first line and its flags on `\`-continued lines
+#: below.
+#:
+#: NOT the longest call in canon, and deliberately so. Re-measured 2026-08-01 by walking
+#: all 34 sites: spans are 1 (x4), 2 (x11), 3 (x13) and **4 (x6)**. This window truncates
+#: those six on purpose —
+#:
+#:     skills/forge-1-prd/SKILL.md:116     state-ecr
+#:     skills/forge-2-tech/SKILL.md:110    state-ecr
+#:     skills/forge-3-specs/SKILL.md:160   state-complete
+#:     skills/forge-4-backlog/SKILL.md:158 state-complete
+#:     skills/forge-6-docs/SKILL.md:197    state-complete
+#:     skills/forge-verify/SKILL.md:233    state-verify
+#:
+#: — because the truncated 4th line never carries what the flattener searches for. The
+#: real measured basis is the FLAG's offset, not the call's length: every `--status
+#: skipped` `SKIP_STATUS_RE` looks for sits at offset **0 or 1** from its verb line
+#: (forge-5-loop:263 at 0; forge-4-backlog:172 and forge-6-docs:53 at 1), so 3 is 1 plus
+#: two lines of margin. Widening this to 4 to "cover canon" would buy the flattener
+#: nothing and cost the window its bound — see below.
 #:
 #: LOAD-BEARING FOR GUARD 1'S WINDOW, not only for call flattening: `LOOKAHEAD` is
-#: pinned relative to it (`LOOKAHEAD <= CALL_SPAN`), so widening this to fit a longer
-#: fenced call would silently widen how far below a call site Guard 1 will accept an
-#: `--epic` mandate. That is why it carries an absolute bound of its own in
-#: `test_the_window_is_no_wider_than_the_measured_maximum` — raising it means
-#: re-measuring canon, exactly as raising `LOOKBEHIND` does.
+#: pinned relative to it (`LOOKAHEAD <= CALL_SPAN`), so widening this would silently
+#: widen how far below a call site Guard 1 will accept an `--epic` mandate. That is why
+#: it carries an absolute bound of its own in
+#: `test_the_window_is_no_wider_than_the_measured_maximum`. Raising it means re-measuring
+#: the searched flags' offsets — not the call spans, and not editing that assertion.
 CALL_SPAN = 3
 
 #: `--status skipped` on a `state-verify` call, matched against a flattened invocation.
@@ -162,17 +180,20 @@ def test_the_window_is_no_wider_than_the_measured_maximum():
 
     Both bounds are measured, and the docstring states both measurements rather than
     supplying one and implying the other: 10 lines above and 1 line below at the
-    widest real sites. 12/3 adds margin for a reworded lead-in and for the longest
-    fenced call (`CALL_SPAN`) respectively. Raising either constant means re-measuring
+    widest real sites. 12/3 adds margin for a reworded lead-in and for the flattening
+    window (`CALL_SPAN`) respectively. Raising either constant means re-measuring
     canon and re-confirming the buried-mandate hole stays closed, not editing this
     assertion.
 
     THREE assertions, not two, because the lookahead bound is expressed relative to
     `CALL_SPAN`. The coupling is deliberate — the window should reach to the end of
-    the call and no further — but `CALL_SPAN` has an independent job (flattening, at
-    the `" ".join` below), so a maintainer who adds a fenced call with three flag
-    lines has a legitimate, self-contained reason to raise it, and would silently
-    raise the permitted `LOOKAHEAD` with it. Pinning `CALL_SPAN` absolutely keeps
+    the flattened call and no further — but `CALL_SPAN` has an independent job
+    (flattening, at the `" ".join` below), so a maintainer could have a
+    self-contained reason to raise it and would silently raise the permitted
+    `LOOKAHEAD` with it. That reason is NOT "canon has a longer call": canon already
+    holds six four-line calls that this window truncates by design (see `CALL_SPAN`).
+    It is a searched flag appearing on a fourth line — today every one sits at offset
+    0 or 1 — which is the trigger to re-measure. Pinning `CALL_SPAN` absolutely keeps
     both halves of the window at the same strength as `LOOKBEHIND`'s.
     """
     assert LOOKBEHIND <= 12, (
@@ -181,9 +202,11 @@ def test_the_window_is_no_wider_than_the_measured_maximum():
         "once passed Guard 1"
     )
     assert CALL_SPAN <= 3, (
-        f"CALL_SPAN widened to {CALL_SPAN}: it is the LOOKAHEAD bound as well as the "
-        "flattening span, so widening it widens Guard 1's window past the call's own "
-        "fence — re-measure canon first, then raise this bound deliberately"
+        f"CALL_SPAN widened to {CALL_SPAN}: every flag the flattener searches for sits "
+        "at offset 0-1 from its verb line, so a wider window buys flattening nothing "
+        "while widening Guard 1's LOOKAHEAD past the call's own fence — re-measure the "
+        "searched flags' offsets first (NOT the call spans: six calls in canon are "
+        "four lines and are truncated here by design), then raise this deliberately"
     )
     assert LOOKAHEAD <= CALL_SPAN, (
         f"LOOKAHEAD widened to {LOOKAHEAD} (> CALL_SPAN={CALL_SPAN}): the window now "
@@ -264,9 +287,11 @@ def test_the_documented_error_messages_still_exist_in_the_script():
 def _state_verify_call_text(path: Path) -> list[str]:
     """Each `state-verify` invocation in `path`, as one flattened string per call.
 
-    A fenced call spans a `\\`-continued line pair, so the flag being looked for sits on
-    a different line from the verb. Joining the verb's line with the lines that follow it
-    lets a single `--status skipped` search see the whole invocation.
+    A fenced call spans several `\\`-continued lines, so the flag being looked for sits
+    on a different line from the verb. Joining the verb's line with up to `CALL_SPAN`
+    lines lets a single `--status skipped` search see it. That window does not reach the
+    end of every call in canon — six run to four lines — but it does reach every flag
+    this function is searched for, which sits at offset 0 or 1. See `CALL_SPAN`.
     """
     lines = read(path).splitlines()
     calls = []

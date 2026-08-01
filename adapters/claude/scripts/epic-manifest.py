@@ -1066,9 +1066,10 @@ def epic_verify_state(epic_dir: Path, revision: int | None) -> str:
         - ``fresh``       — ``passed`` whose ``verifiedStageVersion`` equals the
           current manifest revision.
         - ``stale``       — a resolved terminal entry whose recorded revision is
-          absent or does not match. ``findings-applied`` lands here in practice: the
-          writer deliberately deletes ``verifiedStageVersion``, so an interruption
-          between fix and re-verify cannot read as verified.
+          absent or does not match. ``findings-applied`` is classified here
+          UNCONDITIONALLY, not merely because the writer deletes
+          ``verifiedStageVersion``: applying fixes is not verifying them, and legacy
+          state loaded without migration (REQ-DEBT-06) may still carry the key.
     """
     entry = _read_epic_state_safely(epic_dir).get("stages", {})
     entry = entry.get(EPIC_VERIFY_KEY) if isinstance(entry, dict) else None
@@ -1083,6 +1084,13 @@ def epic_verify_state(epic_dir: Path, revision: int | None) -> str:
         return "skipped"
     if status not in _VERIFY_RESOLVED:
         return "never"
+    if status == "findings-applied":
+        # §4.2 step 4: applying fixes CLEARS freshness; only a later `passed` restores
+        # it. Mirrors the identical guards in forge-session.py's `verify_state` and
+        # `_classify_verify_entry` — §5.1 requires identical labels across all three,
+        # and §5.2 requires manifest parity, so a partial fix is itself the drift
+        # `test_stage_constants_parity.py` exists to catch.
+        return "stale"
     verified = _positive_int(entry.get("verifiedStageVersion"))
     if verified is not None and revision is not None and verified == revision:
         return "fresh"

@@ -55,6 +55,8 @@ scripts/
   epic-manifest.py                         M  verify vocabulary, manifest revision,
                                               pending/read-side parity
   forge-bootstrap.py                       M  shared duplicate-aware config consumer
+  check-spec-purity.py                     M  rule-7 shipped-file corpus and the
+                                              CITATION_GRANDFATHERED ceilings
   build-adapters.py                        —  unchanged; listed for orientation only
 
 references/
@@ -62,6 +64,7 @@ references/
   pipeline-state-schema.json               M  auto-verify-pending + schedule metadata
   epic-manifest-schema.json                M  required revision >= 1
   shared-conventions.md                    M  register state-verify; immediate state-note recipe
+  forge-config-schema.json                 M  autoVerify / autoVerifyStages / autoFix keys
 
 skills/
   forge/SKILL.md                           M  auto-pending row rendering + nested-owner dispatch
@@ -106,7 +109,17 @@ tests/
   test_build_adapters.py                    M  runtime helper and translated stamps
   test_doctor.py                            M  auto-pending label in doctor output
   test_rank_features.py                     M  auto-pending obligation in rank rows
+  test_capability_determination_prose.py    N  the prose-only capability contract:
+                                               clauses (a), (b) and (c1a/c1b/c2/c3) over a
+                                               roster derived from the exit table
+  test_gate_pytest_reachability.py          N  validate.sh's pytest step is reachable, so
+                                               a soft skip cannot hide a red suite
+  test_state_verb_call_sites.py             M  per-call-site --epic mandate window;
+                                               scripted skip persistence
+  test_check_spec_purity.py                 M  grandfather list shrink-only + drift warning
   <existing epic manifest tests>            M  revision mutation/freshness matrix
+
+README.md                                   M  documents the autoVerify / autoFix keys
 
 adapters/{claude,codex,copilot,cursor,gemini,pi}/
   scripts/forge-session.py                  G

@@ -23,17 +23,30 @@ clauses must survive in every capability-determining surface:
     resolved by advancing to the production successor. This is FOUR independent
     obligations, and they are pinned as four independently-required sub-clauses,
     because a surface can state any of them while dropping the others: (c1a) the gate
-    half — the directive is presented through the gate; (c1b) the dispatch half — the
-    gate's affirmative choice DISPATCHES the verifier, rather than printing a command
-    for the user to run later; (c2) the no-skip half — it is never silently skipped;
-    (c3) the no-advance half — it is never resolved by advancing past unresolved
-    verification. Merging any two of them into one any-of list is not enough, measured
-    twice: inverting "never grounds to skip verification" into "IS grounds to skip
-    verification entirely" left the merged c2/c3 matching on the untouched no-advance
-    phrasing in the same sentence (four surfaces), and while c1a and c1b shared a list,
-    rewriting the affirmative choice from *Verify now* into *Print the verify command
-    for the user to run later* — the `manual-print` path the capability rule exists to
-    keep separate — left the guard green on all six.
+    obligation — the directive is presented through the gate; (c1b) the dispatch
+    obligation — the gate's affirmative choice DISPATCHES the verifier, rather than
+    printing a command for the user to run later; (c2) the no-skip obligation — it is
+    never silently skipped; (c3) the no-advance obligation — it is never resolved by
+    advancing past unresolved verification. Merging any two of them into one any-of
+    list is not enough, measured twice: inverting "never grounds to skip verification"
+    into "IS grounds to skip verification entirely" left the merged c2/c3 matching on
+    the untouched no-advance phrasing in the same sentence (four surfaces), and while
+    c1a and c1b shared a list, rewriting the *dispatch clause* — `forge-verify`'s
+    "dispatched on the affirmative choice" into "printed for the user" — left the
+    untouched "presented through the gate" matching on all six.
+
+    Note what is deliberately NOT pinned: relabelling only the gate's *option*
+    (`*Verify now*` → `*Print the verify command for the user to run later*`) still
+    passes, and must. The obligation now lives in its own clause of the sentence, so
+    relabelling the option makes the prose self-contradictory — "choose *Print the
+    command*" one clause before "the verifier is dispatched on the affirmative choice,
+    never merely printed" — without unsaying the obligation. Pinning the label would
+    re-admit a gate-SHAPE token, the `"choice 2 omitted"` mistake this module removed
+    once already, and it could not be a `CLAUSES` fragment in any case: `forge-verify`
+    and `forge-fix` render no option label at all (`*Verify now*` occurs 0 times in
+    each), so any label fragment would be an authoring-stage-only token that breaks the
+    six-surface uniformity of the clause set. The label is left to the clause that
+    glosses it, one line away.
 
 The roster is **derived, not listed**: it comes from
 `test_stage_exit_protocol.CANONICAL_EXIT_SITES` filtered to the surfaces that actually
@@ -103,7 +116,7 @@ CAPABILITY_LEAD_INS: Final[tuple[str, ...]] = (
 #:     on five surfaces, and — because the token is production-stage-only — accepting it
 #:     as clause-(c) evidence is what let `forge-fix`, a BRANCH stage, be "repaired" by
 #:     pasting production-stage prose describing a directive path it can never emit
-#:     (V-001). Clause (c) is now four required sub-clauses so no obligation can go
+#:     (round-3 V-001). Clause (c) is now four required sub-clauses so no obligation can go
 #:     unsaid.
 CLAUSES: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
     "a": (
@@ -124,7 +137,7 @@ CLAUSES: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
             # `forge-fix` names *which* gate, because it has two numbered steps a
             # directive could plausibly route through. Same obligation, one word wider.
             "presented through the Step 6 gate",
-            # The four authoring stages state the gate half mechanically rather than
+            # The four authoring stages state the gate obligation mechanically rather than
             # narratively: they name the block the directive is routed through. Deleting
             # it leaves no statement that the directive is gated at all.
             "reuse the Standard Verify Gate block for consent",
@@ -369,7 +382,7 @@ def test_downgrading_the_consent_case_to_manual_fails_the_guard(relpath: str, ba
 
 @pytest.mark.parametrize("relpath,base", ALL_SURFACES, ids=SURFACE_IDS)
 def test_deleting_the_auto_path_through_the_gate_fails_the_guard(relpath: str, base: str):
-    """Negative control 3a-i: dropping the "auto directive goes through the gate" half.
+    """Negative control 3a-i: dropping the "auto directive goes through the gate" obligation.
 
     With the shared DIRECTIVES boilerplate no longer an accepted phrasing, this
     control now deletes only sentences that live in the capability paragraph — a
@@ -392,7 +405,7 @@ def test_deleting_the_auto_path_through_the_gate_fails_the_guard(relpath: str, b
 def test_downgrading_the_affirmative_choice_to_a_printed_command_fails_the_guard(
     relpath: str, base: str
 ):
-    """Negative control 3a-ii: dropping the "the affirmative choice dispatches" half.
+    """Negative control 3a-ii: dropping the "the affirmative choice dispatches" obligation.
 
     Pinned apart from 3a-i because routing the directive through the gate and then
     *printing* the verify command on the affirmative choice — the `manual-print` path
@@ -415,9 +428,9 @@ def test_downgrading_the_affirmative_choice_to_a_printed_command_fails_the_guard
 
 @pytest.mark.parametrize("relpath,base", ALL_SURFACES, ids=SURFACE_IDS)
 def test_deleting_the_no_skip_obligation_fails_the_guard(relpath: str, base: str):
-    """Negative control 3b: dropping the "never skipped" half.
+    """Negative control 3b: dropping the "never skipped" obligation.
 
-    This is the half that had NO pin of its own while `"choice 2 omitted"` was
+    This is the obligation that had NO pin of its own while `"choice 2 omitted"` was
     accepted as clause-(c) evidence: inverting "is never grounds to skip
     verification" into "IS grounds to skip verification entirely" — the exact
     misreading §6.2 exists to prevent — left the guard green on five of the six
@@ -436,7 +449,7 @@ def test_deleting_the_no_skip_obligation_fails_the_guard(relpath: str, base: str
 
 @pytest.mark.parametrize("relpath,base", ALL_SURFACES, ids=SURFACE_IDS)
 def test_deleting_the_no_advance_obligation_fails_the_guard(relpath: str, base: str):
-    """Negative control 3c: dropping the "never resolved by advancing past" half.
+    """Negative control 3c: dropping the "never resolved by advancing past" obligation.
 
     Pinned separately from 3b for the mirror-image reason: a surface that keeps its
     no-skip sentence while dropping the promise not to advance past unresolved
@@ -467,29 +480,64 @@ def test_the_controls_cover_every_determining_surface():
     # Asserted STRUCTURALLY, via `ast`, and not as a substring search: a search for
     # the assignment's own text would be satisfied by this assertion's source line,
     # since the needle would then occur twice in the file it reads — once at the
-    # assignment and once here. That is the vacuity V-002 named, and the substring
+    # assignment and once here. That is the vacuity round-3 V-002 named, and the substring
     # form of this very assertion shipped with it (round-4 V-001). A test that reads
     # its own file may only assert ABSENCE (see `test_this_guard_is_not_skippable`),
     # or must assert over parsed structure rather than raw text, as here.
+    #
+    # Every module-level binding of the name is counted, not just the annotated one,
+    # because a single-node check is satisfied by a DECOY: keeping the derived
+    # `AnnAssign` and re-binding `ALL_SURFACES = [<hand-kept tuples>]` below it left
+    # this guard green while `SURFACE_IDS` and every `parametrize` took the shadowed
+    # value. The callee is pinned as a `FunctionDef` and asserted un-rebound for the
+    # mirror reason: `func.id` is compared textually, so aliasing the derivation name
+    # (`_capability_surfaces = _hand_kept_surfaces`) was equally invisible.
     tree = ast.parse(read(Path(__file__).resolve()))
-    assigned = [
-        node.value
+    bindings = [
+        node
         for node in tree.body
-        if isinstance(node, ast.AnnAssign)
-        and isinstance(node.target, ast.Name)
-        and node.target.id == "ALL_SURFACES"
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "ALL_SURFACES"
+        )
+        or (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "ALL_SURFACES"
+                for target in node.targets
+            )
+        )
     ]
-    assert len(assigned) == 1, (
-        f"ALL_SURFACES is no longer a single module-level annotated assignment "
-        f"({len(assigned)} found) — the derivation below cannot be checked"
+    assert len(bindings) == 1, (
+        f"ALL_SURFACES is bound {len(bindings)} times at module level — a later "
+        "re-binding would shadow the derived roster while leaving this check green"
+    )
+    assert isinstance(bindings[0], ast.AnnAssign), (
+        "ALL_SURFACES is no longer a module-level ANNOTATED assignment — the annotation "
+        "is what makes the single binding legible as the roster's one definition"
     )
     assert (
-        isinstance(assigned[0], ast.Call)
-        and getattr(assigned[0].func, "id", None) == "_capability_surfaces"
+        isinstance(bindings[0].value, ast.Call)
+        and getattr(bindings[0].value.func, "id", None) == "_capability_surfaces"
     ), (
         "ALL_SURFACES is no longer derived from the canonical exit table — the "
         "controls now run over a hand-kept list, which is the drift they exist to catch"
     )
+    assert [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_capability_surfaces"
+    ], "_capability_surfaces is no longer a function definition — the name may be aliased"
+    assert not [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "_capability_surfaces"
+            for target in node.targets
+        )
+    ], "_capability_surfaces is re-bound at module level — the derivation name is aliased"
 
 
 # --------------------------------------------------------------------------------------

@@ -455,12 +455,15 @@ def test_grandfather_list_is_sorted_deduped_and_shrinking_only():
             stale_high.append(f"{rel}: annotated {annotated[rel]}, live {live}")
 
     if stale_high:
+        # stacklevel left at the default: this warns about ITS OWN module's data, not on
+        # behalf of a caller, so the report must point here. At stacklevel=2 the caller
+        # is pytest, and the warnings summary attributes the drift to
+        # `_pytest/python.py` — no pointer to this file or to CITATION_GRANDFATHERED.
         warnings.warn(
             "CITATION_GRANDFATHERED annotations read high — the debt shrank but the "
             "baseline was not re-derived, so these entries overstate outstanding debt "
             "and their ceilings are correspondingly slack. Lower each annotation to "
             "its live count:\n  " + "\n  ".join(stale_high),
-            stacklevel=2,
         )
 
 
