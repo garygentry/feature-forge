@@ -20,7 +20,16 @@ clauses must survive in every capability-determining surface:
     *no permitted dispatch*.
 (c) **An auto-verify directive under a no-unsolicited-dispatch bar goes through the
     gate** and is dispatched on the affirmative — never silently skipped, and never
-    resolved by advancing to the production successor.
+    resolved by advancing to the production successor. This is THREE independent
+    obligations, and they are pinned as three independently-required sub-clauses,
+    because a surface can state any of them while dropping the others: (c1) the gate
+    half — the directive is presented through the gate and dispatched on the
+    affirmative choice; (c2) the no-skip half — it is never silently skipped;
+    (c3) the no-advance half — it is never resolved by advancing past unresolved
+    verification. Folding c2 and c3 into one any-of list is not enough: inverting
+    "never grounds to skip verification" into "IS grounds to skip verification
+    entirely" leaves the untouched no-advance phrasing matching, and the guard stays
+    green on the exact misreading — measured, on four surfaces.
 
 The roster is **derived, not listed**: it comes from
 `test_stage_exit_protocol.CANONICAL_EXIT_SITES` filtered to the surfaces that actually
@@ -81,6 +90,15 @@ CAPABILITY_LEAD_INS: Final[tuple[str, ...]] = (
 #:     capability prose at all. Every surface matched it for free, and `forge-fix`
 #:     matched clause (c) on nothing else; deleting the real clause-(c) sentence from
 #:     two surfaces left the guard green both times.
+#:   * `"choice 2 omitted"` (clause c) — a gate-SHAPE token, not a clause. It says how
+#:     many options the gate offers, which is true of a production stage and meaningless
+#:     on a branch stage, and it carries neither the gate obligation nor the no-skip
+#:     one. It admitted the misreading twice over: inverting "is never grounds to skip
+#:     verification" to "IS grounds to skip verification entirely" left the guard green
+#:     on five surfaces, and — because the token is production-stage-only — accepting it
+#:     as clause-(c) evidence is what let `forge-fix`, a BRANCH stage, be "repaired" by
+#:     pasting production-stage prose describing a directive path it can never emit
+#:     (V-001). Clause (c) is now two required sub-clauses so neither half can go unsaid.
 CLAUSES: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
     "a": (
         "capability is a permission test, not a tool-presence test",
@@ -93,12 +111,31 @@ CLAUSES: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
             "**no** question mechanism **and** **no** permitted dispatch",
         ),
     ),
-    "c": (
-        "an auto-verify directive under a dispatch bar goes through the gate",
+    "c1": (
+        "an auto-verify directive under a dispatch bar goes through the gate and is "
+        "dispatched on the affirmative choice",
         (
-            "choice 2 omitted",
             "dispatched on the affirmative",
+            "presented through the gate",
+            # The four authoring stages state the gate half mechanically rather than
+            # narratively: they name the block the directive is routed through. Deleting
+            # it leaves no statement that the directive is gated at all.
+            "reuse the Standard Verify Gate block for consent",
+        ),
+    ),
+    "c2": (
+        "that directive is never silently skipped",
+        (
+            "never grounds to skip verification",
+            "never skipped",
+        ),
+    ),
+    "c3": (
+        "and is never resolved by advancing past unresolved verification",
+        (
             "never grounds to fence the production successor",
+            "never resolved by advancing to the production successor",
+            "never resolved by closing with an outcome that advances the pipeline",
         ),
     ),
 }
@@ -164,7 +201,7 @@ def _markdown_section(text: str, heading: str) -> str:
 
 
 def _assert_capability_prose(surface: str, where: str) -> None:
-    """Raise `AssertionError` unless `surface` states all three clauses.
+    """Raise `AssertionError` unless `surface` states every clause.
 
     Takes the surface's **text**, not a path, so the negative controls can call it on
     mutated copies without ever writing to the repository. Matching is scoped to the
@@ -179,7 +216,7 @@ def _assert_capability_prose(surface: str, where: str) -> None:
 
 
 def _assert_clauses_in(scope: str, where: str, scope_name: str) -> None:
-    """Assert all three clauses appear within `scope`."""
+    """Assert every clause — (c) counted as its two required sub-clauses — is in `scope`."""
     for clause, (description, fragments) in CLAUSES.items():
         assert any(fragment in scope for fragment in fragments), (
             f"{where}: capability clause ({clause}) is gone — {description}. "
@@ -203,7 +240,7 @@ def _capability_surfaces() -> list[tuple[str, str]]:
 # --------------------------------------------------------------------------------------
 
 
-def test_every_capability_determining_surface_states_all_three_clauses():
+def test_every_capability_determining_surface_states_all_the_clauses():
     """The clause set survives in each skill that decides `--verify-capability` itself."""
     surfaces = _capability_surfaces()
     for relpath, text in surfaces:
@@ -320,21 +357,61 @@ def test_downgrading_the_consent_case_to_manual_fails_the_guard(relpath: str, ba
 
 @pytest.mark.parametrize("relpath,base", ALL_SURFACES, ids=SURFACE_IDS)
 def test_deleting_the_auto_path_through_the_gate_fails_the_guard(relpath: str, base: str):
-    """Negative control 3: dropping the "auto directive still goes through the gate"
-    sentence must be caught.
+    """Negative control 3a: dropping the "auto directive goes through the gate" half.
 
     With the shared DIRECTIVES boilerplate no longer an accepted phrasing, this
     control now deletes only sentences that live in the capability paragraph — a
-    degradation a real edit would produce, which was not true before.
+    degradation a real edit would produce, which was not true before. It is split
+    from 3b because (c)'s two halves are independently droppable: while they shared
+    one fragment list, a surface that stated either one satisfied both.
     """
     mutated = base
-    for fragment in CLAUSES["c"][1]:
+    for fragment in CLAUSES["c1"][1]:
         mutated = mutated.replace(fragment, "")
     assert mutated != base, (
-        f"{relpath}: clause (c)'s wording moved — this control now mutates nothing"
+        f"{relpath}: clause (c1)'s wording moved — this control now mutates nothing"
     )
-    with pytest.raises(AssertionError, match=r"clause \(c\)"):
-        _assert_capability_prose(mutated, f"{relpath} (control-3)")
+    with pytest.raises(AssertionError, match=r"clause \(c1\)"):
+        _assert_capability_prose(mutated, f"{relpath} (control-3a)")
+
+
+@pytest.mark.parametrize("relpath,base", ALL_SURFACES, ids=SURFACE_IDS)
+def test_deleting_the_no_skip_obligation_fails_the_guard(relpath: str, base: str):
+    """Negative control 3b: dropping the "never skipped" half.
+
+    This is the half that had NO pin of its own while `"choice 2 omitted"` was
+    accepted as clause-(c) evidence: inverting "is never grounds to skip
+    verification" into "IS grounds to skip verification entirely" — the exact
+    misreading §6.2 exists to prevent — left the guard green on five of the six
+    surfaces, and still did after (c) was merely split in two, because the
+    no-advance phrasing in the same sentence went on matching.
+    """
+    mutated = base
+    for fragment in CLAUSES["c2"][1]:
+        mutated = mutated.replace(fragment, "")
+    assert mutated != base, (
+        f"{relpath}: clause (c2)'s wording moved — this control now mutates nothing"
+    )
+    with pytest.raises(AssertionError, match=r"clause \(c2\)"):
+        _assert_capability_prose(mutated, f"{relpath} (control-3b)")
+
+
+@pytest.mark.parametrize("relpath,base", ALL_SURFACES, ids=SURFACE_IDS)
+def test_deleting_the_no_advance_obligation_fails_the_guard(relpath: str, base: str):
+    """Negative control 3c: dropping the "never resolved by advancing past" half.
+
+    Pinned separately from 3b for the mirror-image reason: a surface that keeps its
+    no-skip sentence while dropping the promise not to advance past unresolved
+    verification has given up the obligation that actually fences the successor.
+    """
+    mutated = base
+    for fragment in CLAUSES["c3"][1]:
+        mutated = mutated.replace(fragment, "")
+    assert mutated != base, (
+        f"{relpath}: clause (c3)'s wording moved — this control now mutates nothing"
+    )
+    with pytest.raises(AssertionError, match=r"clause \(c3\)"):
+        _assert_capability_prose(mutated, f"{relpath} (control-3c)")
 
 
 def test_the_controls_cover_every_determining_surface():
@@ -343,8 +420,16 @@ def test_the_controls_cover_every_determining_surface():
         f"only {len(ALL_SURFACES)} surfaces parametrize the negative controls "
         f"(floor {MIN_CAPABILITY_SURFACES})"
     )
-    assert SURFACE_IDS == [relpath for relpath, _ in _capability_surfaces()], (
-        "the controls' roster drifted from the live derived roster"
+    # NOT `SURFACE_IDS == [relpath for relpath, _ in _capability_surfaces()]`: both
+    # sides are the same pure function of the same files, so within one process that
+    # is `f() == f()` and cannot fail — it advertised drift detection it did not
+    # provide. The property actually at risk is someone replacing the derived roster
+    # with a literal list at module level, so assert the derivation itself. (Unlike
+    # the vacuous form, this reads for a DIFFERENT string than the one it writes.)
+    source = read(Path(__file__).resolve())
+    assert "ALL_SURFACES: Final[list[tuple[str, str]]] = _capability_surfaces()" in source, (
+        "ALL_SURFACES is no longer derived from the canonical exit table — the "
+        "controls now run over a hand-kept list, which is the drift they exist to catch"
     )
 
 

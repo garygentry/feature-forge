@@ -2,10 +2,10 @@
 """Validate the feature-forge skill canon for spec purity (REQ-VER-01..03).
 
 Stdlib-only (no pyyaml), matching scripts/epic-manifest.py. Enforces the seven
-rules from tech-spec.md §3.4 against the canonical skill surfaces, printing a
-human-readable report (REQ-OBS-01) and exiting non-zero on any violation
-(REQ-VER-02). See spec docs 00-core-definitions.md (types/constants) and
-05-spec-purity-checker.md (this implementation).
+rules enumerated in the ``Rule`` enum below — six from the original spec-purity
+contract plus rule 7, the shipped-artifact self-containment ratchet added by
+finding V-009 — against the canonical skill surfaces, printing a human-readable
+report (REQ-OBS-01) and exiting non-zero on any violation (REQ-VER-02).
 
 Usage:
     python3 check-spec-purity.py [--root DIR]
@@ -188,6 +188,11 @@ SELF_CONTAINMENT_SURFACES: tuple[str, ...] = (
 #: outstanding debt. Clean the file, then delete its line. Never add a line to
 #: make a new violation pass. Matched by exact repo-relative POSIX path, so a
 #: rename re-locks the file rather than silently carrying the exemption along.
+#: The ``# N`` counts are ENFORCED as a ceiling by
+#: ``test_grandfather_list_is_sorted_deduped_and_shrinking_only``: an entry's live
+#: count may fall but never rise, so the debt can only shrink and the annotations
+#: cannot rot the way one silently did (V-006). Widening ``_SPEC_CITATION_RE``
+#: means re-deriving every count here in the same change.
 CITATION_GRANDFATHERED: tuple[str, ...] = (
     "eval/README.md",  # 1
     "references/loop-agent-selection.py",  # 18
@@ -200,7 +205,7 @@ CITATION_GRANDFATHERED: tuple[str, ...] = (
     "references/stacks/typescript.md",  # 2
     "references/vendor-construct-inventory.md",  # 8
     "scripts/build-adapters.py",  # 83
-    "scripts/check-spec-purity.py",  # 21
+    "scripts/check-spec-purity.py",  # 25
     "scripts/check-version-sync.py",  # 5
     "scripts/forge-bootstrap.py",  # 49 — pre-existing at the feature's base
     "scripts/forge-root.sh",  # 1
@@ -220,19 +225,34 @@ CITATION_GRANDFATHERED: tuple[str, ...] = (
     "skills/forge-verify/references/verification-checklists/specs.md",  # 6
 )
 
-#: The three citation forms that leaked, as one alternation:
+#: The citation forms that leaked, as one alternation:
 #:   1. a full spec filename — ``03-verification-state.md``
 #:   2. numeric shorthand, BACKTICKED OR BARE — ``03 §5.1`` and ```002` §3.1``
-#:   3. a tech-spec coordinate — ``tech-spec §3.4``
+#:   3. a tech-spec coordinate, with or without the ``.md`` — ``tech-spec §3.4``
+#:      and ``tech-spec.md §3.4``
 #: Form 2 must accept the backticked variant: a pattern requiring a literal space
 #: was blind to exactly that spelling, and six such coordinates re-entered an
 #: already-cleaned file because the check reused the pattern that had edited it.
+#: Form 3 must accept the ``.md``: requiring ``§`` to follow ``tech-spec``
+#: IMMEDIATELY made the ratchet internally inconsistent — ``tech-spec §3.4`` tripped
+#: while ``tech-spec.md §3.4``, the spelling this file's own module docstring used,
+#: slipped through, so a regression written in the repo's commonest spelling of a
+#: tech-spec citation passed the gate (V-003).
 #: A bare ``§`` with no document coordinate is deliberately NOT matched — an
 #: intra-file section reference points at something that ships.
+#: The bare filename ``tech-spec.md``, with NO section, is likewise deliberately not
+#: matched, and this is the one asymmetry with form 1. ``03-verification-state.md``
+#: can only be a spec document; ``tech-spec.md`` is also the name of a pipeline
+#: ARTIFACT that shipped skills legitimately write, read, and display (forge-2-tech
+#: authors it, forge-6-docs tells you not to link it, the navigator prints it in a
+#: status table). Matching it bare turns five clean shipped surfaces red for naming
+#: their own output, and the only way to keep the gate green would be to grandfather
+#: them — adding lines to make new violations pass, which is exactly what the
+#: grandfather list forbids. A citation is a filename plus a COORDINATE.
 _SPEC_CITATION_RE: re.Pattern[str] = re.compile(
     r"\b0[0-9]-[a-z][a-z0-9-]*\.md\b"
     r"|(?:`0[0-9]`|\b0[0-9])\s*§"
-    r"|\btech-spec\s*§"
+    r"|\btech-spec(?:\.md)?\s*§"
 )
 
 # §5 — canonical violation reason strings (single source of truth; never
@@ -254,7 +274,12 @@ VR_SPEC_CITATION: str = (
 
 
 class Rule(str, enum.Enum):
-    """The seven spec-purity rules check-spec-purity.py enforces (tech-spec §3.4).
+    """The seven spec-purity rules check-spec-purity.py enforces.
+
+    Six come from the original spec-purity contract; rule 7 was added by finding
+    V-009. Each member records its own provenance in the trailing comment, which is
+    where a reader should look — there is no single spec section that enumerates
+    all seven.
 
     Uses the ``str, enum.Enum`` mixin (rather than 3.11's ``enum.StrEnum``) so the
     checker runs on the repo's Python 3.10 baseline; ``.value`` is a plain ``str``,

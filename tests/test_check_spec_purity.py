@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -322,15 +323,21 @@ def _citation_tree(tmp_path: Path, name: str, rel: str, body: str) -> Path:
         "per 03 §5.1 the entry is cleared",  # bare numeric shorthand
         "per `02` §3.1 step 5, owners are direct",  # BACKTICKED — the N-3 spelling
         "the tech-spec §3.4 rules govern this",  # tech-spec coordinate
+        "the tech-spec.md §3.4 rules govern this",  # SAME, spelled with the .md
     ],
 )
 def test_each_citation_form_trips_the_ratchet(tmp_path: Path, citation: str):
-    """All four leaked citation forms trip, including the backticked one.
+    """Every leaked citation form trips, including the backticked and ``.md`` ones.
 
     The backticked case is the regression that matters: the round-1 cleanup
     measured itself with the same space-requiring pattern that produced it, so
     six ``\\`02\\` §3.1``-style coordinates re-entered an already-cleaned file
     invisibly. A pattern that cannot see that spelling is not a gate.
+
+    The ``tech-spec.md §3.4`` case is the same lesson one turn later: requiring
+    ``§`` to follow ``tech-spec`` immediately let the repo's commonest spelling of
+    a tech-spec citation through — the spelling this checker's OWN docstring used
+    (V-003).
     """
     m = _load_checker_module()
     root = _citation_tree(tmp_path, "bad", "scripts/helper.py", f"# {citation}\n")
@@ -394,17 +401,44 @@ def test_grandfather_list_is_sorted_deduped_and_shrinking_only():
     A stale entry silently un-locks nothing, but it hides that the file was
     cleaned or renamed; catching it here is what makes "delete the line" the
     natural maintenance action and keeps the list shrinking.
+
+    The per-entry ``# N`` annotation is enforced as a CEILING, which is what makes
+    "shrinking only" more than a name. Without it the annotations rot silently:
+    one read 21 against a live 24 (V-006), so a reader auditing the debt would have
+    read a partial cleanup as a regression. A ceiling also stops the cheapest wrong
+    repair — quietly adding citations to an already-grandfathered file.
     """
     m = _load_checker_module()
     entries = list(m.CITATION_GRANDFATHERED)
     assert entries == sorted(entries), "keep the grandfather list sorted"
     assert len(entries) == len(set(entries)), "duplicate grandfather entries"
+
+    source = (REPO_ROOT / "scripts" / "check-spec-purity.py").read_text("utf-8")
+    block = re.search(
+        r"CITATION_GRANDFATHERED: tuple\[str, \.\.\.\] = \((.*?)\n\)", source, re.S
+    )
+    assert block, "CITATION_GRANDFATHERED is no longer a parseable literal tuple"
+    annotated = {
+        path: int(count)
+        for path, count in re.findall(r'"([^"]+)",\s*#\s*(\d+)', block.group(1))
+    }
+
     for rel in entries:
         path = REPO_ROOT / rel
         assert path.is_file(), f"grandfathered path no longer exists: {rel}"
         text = path.read_text(encoding="utf-8", errors="replace")
         assert m._SPEC_CITATION_RE.search(text), (
             f"{rel} is now clean — delete its CITATION_GRANDFATHERED entry"
+        )
+        assert rel in annotated, (
+            f"{rel} carries no `# N` count annotation — every entry must record the "
+            "debt it grandfathers, or the list stops being auditable"
+        )
+        live = len(m._SPEC_CITATION_RE.findall(text))
+        assert live <= annotated[rel], (
+            f"{rel} now holds {live} citations against an annotated {annotated[rel]} "
+            "— grandfathered debt may only shrink. Clean the file, or (if the "
+            "PATTERN widened rather than the file) re-derive every annotation."
         )
 
 

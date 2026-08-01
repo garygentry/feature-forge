@@ -24,6 +24,7 @@ against generated `adapters/`. No skip gate may be introduced — see
 
 from __future__ import annotations
 
+import inspect
 import re
 from pathlib import Path
 
@@ -43,15 +44,19 @@ CALL_RE = re.compile(r'forge-session\.py"?\s+(state-[a-z]+)')
 #: itself worth a look.
 MIN_CALL_SITES = 34
 
-#: How far above a call site the `--epic` instruction may live. Every site today carries
-#: it within **10** lines (it sits in the prose sentence introducing the fence, or inline
-#: in the call itself); 12 is that measured maximum plus 2 lines of margin for a reworded
-#: lead-in. It is deliberately NOT wider: at 20 the window reached past a block's own
-#: mandate into the PRECEDING block's, so deleting the `state-artifact` mandate at
+#: How far around a call site the `--epic` instruction may live. Both bounds are
+#: MEASURED against canon, not chosen: the widest real site carries its mandate **10**
+#: lines above (in the prose sentence introducing the fence), and the widest site that
+#: carries it BELOW carries it **1** line down (inline on the call's own continuation
+#: line). 12 is 10 plus 2 lines of margin for a reworded lead-in; 3 is 1 rounded up to
+#: `CALL_SPAN`, so the window reaches to the end of the longest fenced call and no
+#: further. Neither is deliberately wider: at 20 the lookbehind reached past a block's
+#: own mandate into the PRECEDING block's, so deleting the `state-artifact` mandate at
 #: `shared-conventions.md:318` left the guard green on the strength of the unrelated
-#: `state-enter` mandate 17 lines up. Widening this re-opens that hole.
+#: `state-enter` mandate 17 lines up. Widening either re-opens that hole — LOOKAHEAD
+#: was 8 (7 lines of unmeasured reach below every site) until V-005 measured it.
 LOOKBEHIND = 12
-LOOKAHEAD = 8
+LOOKAHEAD = 3
 
 #: How many lines a single fenced `state-*` call may span. The verb sits on the first
 #: line and its flags on `\`-continued lines below; 3 covers the longest call in canon
@@ -148,8 +153,10 @@ def test_the_window_is_no_wider_than_the_measured_maximum():
     numbers grow — the guard just quietly stops discriminating — so the bound is
     asserted here rather than left to review.
 
-    12/8 is the measured maximum (10 lines above at the widest real site) plus a
-    small margin for a reworded lead-in. Raising either constant means re-measuring
+    Both bounds are measured, and the docstring states both measurements rather than
+    supplying one and implying the other: 10 lines above and 1 line below at the
+    widest real sites. 12/3 adds margin for a reworded lead-in and for the longest
+    fenced call (`CALL_SPAN`) respectively. Raising either constant means re-measuring
     canon and re-confirming the buried-mandate hole stays closed, not editing this
     assertion.
     """
@@ -158,9 +165,10 @@ def test_the_window_is_no_wider_than_the_measured_maximum():
         "own `--epic` mandate into its neighbour's, which is how a deleted mandate "
         "once passed Guard 1"
     )
-    assert LOOKAHEAD <= 8, (
-        f"LOOKAHEAD widened to {LOOKAHEAD}: same failure mode as LOOKBEHIND, in the "
-        "other direction"
+    assert LOOKAHEAD <= CALL_SPAN, (
+        f"LOOKAHEAD widened to {LOOKAHEAD} (> CALL_SPAN={CALL_SPAN}): the window now "
+        "reaches past this call's own fence into the NEXT block's mandate — same "
+        "buried-mandate failure mode as LOOKBEHIND, in the other direction"
     )
 
 
@@ -171,8 +179,8 @@ def test_the_failure_message_describes_the_whole_window():
     so a maintainer chasing a failure would look 12 lines up, find nothing relevant,
     and never think to look below the call.
     """
-    source = read(Path(__file__).resolve())
-    assert "lines above or " in source and "lines below" in source, (
+    guard_src = inspect.getsource(test_every_state_verb_call_site_carries_the_epic_instruction)
+    assert "lines above or " in guard_src and "lines below" in guard_src, (
         "Guard 1's failure message no longer describes both limbs of the window"
     )
 
