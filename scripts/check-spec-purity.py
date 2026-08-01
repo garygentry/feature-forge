@@ -193,6 +193,13 @@ SELF_CONTAINMENT_SURFACES: tuple[str, ...] = (
 #: count may fall but never rise, so the debt can only shrink and the annotations
 #: cannot rot the way one silently did (V-006). Widening ``_SPEC_CITATION_RE``
 #: means re-deriving every count here in the same change.
+#: An annotation may only ever be LOWERED to a freshly re-derived count — never
+#: raised, except in that same pattern-widening change. Raising one to clear a
+#: failure inverts the ratchet: it makes outstanding debt read as already-cleaned
+#: and leaves that entry's ceiling permanently vacuous. The ceiling cannot catch
+#: an inflated value (it is blind upward by design, so a partial cleanup does not
+#: go red), so the same test WARNS whenever an annotation reads high; treat that
+#: warning as the instruction to lower the number.
 CITATION_GRANDFATHERED: tuple[str, ...] = (
     "eval/README.md",  # 1
     "references/loop-agent-selection.py",  # 18

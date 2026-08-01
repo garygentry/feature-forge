@@ -61,6 +61,13 @@ LOOKAHEAD = 3
 #: How many lines a single fenced `state-*` call may span. The verb sits on the first
 #: line and its flags on `\`-continued lines below; 3 covers the longest call in canon
 #: (verb + two flag lines) without reaching into a neighbouring invocation.
+#:
+#: LOAD-BEARING FOR GUARD 1'S WINDOW, not only for call flattening: `LOOKAHEAD` is
+#: pinned relative to it (`LOOKAHEAD <= CALL_SPAN`), so widening this to fit a longer
+#: fenced call would silently widen how far below a call site Guard 1 will accept an
+#: `--epic` mandate. That is why it carries an absolute bound of its own in
+#: `test_the_window_is_no_wider_than_the_measured_maximum` — raising it means
+#: re-measuring canon, exactly as raising `LOOKBEHIND` does.
 CALL_SPAN = 3
 
 #: `--status skipped` on a `state-verify` call, matched against a flattened invocation.
@@ -159,11 +166,24 @@ def test_the_window_is_no_wider_than_the_measured_maximum():
     fenced call (`CALL_SPAN`) respectively. Raising either constant means re-measuring
     canon and re-confirming the buried-mandate hole stays closed, not editing this
     assertion.
+
+    THREE assertions, not two, because the lookahead bound is expressed relative to
+    `CALL_SPAN`. The coupling is deliberate — the window should reach to the end of
+    the call and no further — but `CALL_SPAN` has an independent job (flattening, at
+    the `" ".join` below), so a maintainer who adds a fenced call with three flag
+    lines has a legitimate, self-contained reason to raise it, and would silently
+    raise the permitted `LOOKAHEAD` with it. Pinning `CALL_SPAN` absolutely keeps
+    both halves of the window at the same strength as `LOOKBEHIND`'s.
     """
     assert LOOKBEHIND <= 12, (
         f"LOOKBEHIND widened to {LOOKBEHIND}: the window now reaches past a block's "
         "own `--epic` mandate into its neighbour's, which is how a deleted mandate "
         "once passed Guard 1"
+    )
+    assert CALL_SPAN <= 3, (
+        f"CALL_SPAN widened to {CALL_SPAN}: it is the LOOKAHEAD bound as well as the "
+        "flattening span, so widening it widens Guard 1's window past the call's own "
+        "fence — re-measure canon first, then raise this bound deliberately"
     )
     assert LOOKAHEAD <= CALL_SPAN, (
         f"LOOKAHEAD widened to {LOOKAHEAD} (> CALL_SPAN={CALL_SPAN}): the window now "

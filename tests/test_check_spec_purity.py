@@ -13,6 +13,7 @@ import json
 import re
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -407,6 +408,15 @@ def test_grandfather_list_is_sorted_deduped_and_shrinking_only():
     one read 21 against a live 24 (V-006), so a reader auditing the debt would have
     read a partial cleanup as a regression. A ceiling also stops the cheapest wrong
     repair — quietly adding citations to an already-grandfathered file.
+
+    A ceiling is deliberately blind upward, and that blindness is reported rather
+    than gated. ``"eval/README.md",  # 9999`` against a live 1 passes, and that
+    entry's ceiling is then permanently vacuous — an inflated baseline makes
+    OUTSTANDING debt look already-cleaned, which is V-006's complaint mirrored.
+    Strict equality is the wrong fix: counts legitimately fall between cleanups and
+    a partial cleanup must not go red. So the drift is emitted as a warning, naming
+    every stale-high entry, and stays visible in ``pytest`` output without turning
+    a legitimate cleanup into a failure.
     """
     m = _load_checker_module()
     entries = list(m.CITATION_GRANDFATHERED)
@@ -423,6 +433,7 @@ def test_grandfather_list_is_sorted_deduped_and_shrinking_only():
         for path, count in re.findall(r'"([^"]+)",\s*#\s*(\d+)', block.group(1))
     }
 
+    stale_high: list[str] = []
     for rel in entries:
         path = REPO_ROOT / rel
         assert path.is_file(), f"grandfathered path no longer exists: {rel}"
@@ -439,6 +450,17 @@ def test_grandfather_list_is_sorted_deduped_and_shrinking_only():
             f"{rel} now holds {live} citations against an annotated {annotated[rel]} "
             "— grandfathered debt may only shrink. Clean the file, or (if the "
             "PATTERN widened rather than the file) re-derive every annotation."
+        )
+        if live < annotated[rel]:
+            stale_high.append(f"{rel}: annotated {annotated[rel]}, live {live}")
+
+    if stale_high:
+        warnings.warn(
+            "CITATION_GRANDFATHERED annotations read high — the debt shrank but the "
+            "baseline was not re-derived, so these entries overstate outstanding debt "
+            "and their ceilings are correspondingly slack. Lower each annotation to "
+            "its live count:\n  " + "\n  ".join(stale_high),
+            stacklevel=2,
         )
 
 
