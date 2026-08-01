@@ -107,11 +107,11 @@
       "findingsFile": ".verification/VERIFY-impl-2026-07-31-round4.md",
       "findingsCount": 5,
       "fixedAt": "2026-08-01T03:43:22Z",
-      "commitHash": null
+      "commitHash": "5b375f7eb275fb264f0d4b3a7c948308cc13fb98"
     }
   },
   "currentStage": "forge-5-loop",
-  "updatedAt": "2026-08-01T03:43:22Z",
+  "updatedAt": "2026-08-01T03:43:49Z",
   "branch": "forge/stage-exit-coverage",
   "notes": "Specs v4, backlog v3 (30 items, 001-030). Both verify gates are findings-applied; the backlog now traces to the amended v4 specs and is ready for forge-5-loop. STANDING INVARIANTS (assert on every item): no item may create scripts/forge_json.py -- the duplicate-aware JSON loader is MIRRORED into scripts/forge-session.py and scripts/forge-bootstrap.py, guarded by tests/test_json_loader_parity.py, because the flat scripts share no import module (01 3.4, 05 2.1); RUNTIME_HELPERS stays at six entries. No item may introduce locking, leasing, or optimistic versioning for state writes -- PRD REQ-REL-04 forbids it, see issue #180. TWO TRAPS the backlog verification closed, worth re-checking if items are ever regenerated: (1) item 024's guard must fetch EXIT_STAGES from scripts/forge-session.py by regex + ast.literal_eval -- a hardcoded copy of the nine names passes its AC while making the assertion vacuous; (2) every state-verify bash fence must carry the --epic sentence inside tests/test_state_verb_call_sites.py's 12/3-line window or validate.sh red-gates. NOTE: stageNoun already exists in the live directives dict -- retain it, do not re-add it."
 }
