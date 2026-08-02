@@ -572,19 +572,32 @@ def test_the_controls_cover_every_determining_surface():
     # count, instead of naming instances one round at a time.
     #
     # DELIBERATELY OUT OF SCOPE, a recorded decision (round-7 Decision 1(c)), NOT an
-    # oversight: `NamedExpr` (walrus `(ALL_SURFACES := …)`), a `For`/`AsyncFor` loop
-    # target, `with … as`, a comprehension target, `import … as`, `except … as`, a
-    # `match`-capture (`case ALL_SURFACES`), and an assignment inside a called function
-    # that declares `global ALL_SURFACES` all replace the roster and are NOT caught here.
-    # Each of THOSE was probed and confirmed to leave the suite green with the roster
-    # displaced. (`del ALL_SURFACES` is a separate case, not one of them: it UNBINDS
-    # rather than replaces, and cannot be a green-and-displaced decoy — placed before the
-    # `SURFACE_IDS`/`parametrize` reads it raises `NameError` at collection, placed after
-    # them the roster is already captured.) They are left open for the same reason
-    # `SURFACES_WITHOUT_PROSE` records rather than closes its hole: the space of ways to
-    # rebind a Python name is not enumerable by adding node types (five consecutive
-    # rounds each closed the shape it was shown and the next round found the next one),
-    # every one of these paths requires a hand-planted decoy, and none is live drift.
+    # oversight: several binding forms escape every assertion above because none is a
+    # counted module-scope `Assign`/`AnnAssign`/`AugAssign`. They do NOT all behave
+    # alike, and the only test that separates them is what a SUBSEQUENT module-scope read
+    # of `ALL_SURFACES` observes (suite-green is not it). Three distinct kinds:
+    #   • Green-and-DISPLACED decoys — leave the suite green AND make the roster read back
+    #     the hand-kept value: `NamedExpr` (walrus `(ALL_SURFACES := …)`), a `For`/
+    #     `AsyncFor` loop target, `with … as`, a `match`-capture (`case ALL_SURFACES`),
+    #     and an assignment inside a called function that declares `global ALL_SURFACES`.
+    #     Each of THESE FIVE was probed and confirmed to leave the suite green with the
+    #     roster displaced.
+    #   • Scope-local, NO leak — a comprehension target (`[… for ALL_SURFACES in …]`).
+    #     Python 3 gives comprehensions their own scope, so the name never reaches module
+    #     scope: the roster stays INTACT (the read yields the real derived value), the
+    #     opposite of displaced. Not a decoy at all.
+    #   • UNBINDS or non-iterable — never a green-and-displaced decoy: `del ALL_SURFACES`
+    #     and `except … as ALL_SURFACES` both REMOVE the name (PEP 3110 auto-`del`s the
+    #     exception target at handler exit — `del`'s exact twin), so placed before the
+    #     `SURFACE_IDS`/`parametrize` reads they raise `NameError` at collection, and
+    #     placed after them the roster is already captured; `import … as ALL_SURFACES` can
+    #     bind only a module object, which is non-iterable, so the read raises `TypeError`
+    #     rather than passing green.
+    # All are left open for the same reason `SURFACES_WITHOUT_PROSE` records rather than
+    # closes its hole: the space of ways to rebind a Python name is not enumerable by
+    # adding node types (five consecutive rounds each closed the shape it was shown and
+    # the next round found the next one), every one of these paths requires a hand-planted
+    # decoy, and none is live drift.
     # The ONE property that actually matters — replacing the derivation
     # `_capability_surfaces()` at the single annotated binding with a literal list — IS
     # caught, but NOT "regardless of binding form": the count assertion reds any

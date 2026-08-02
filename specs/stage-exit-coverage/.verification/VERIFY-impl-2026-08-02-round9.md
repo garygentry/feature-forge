@@ -82,3 +82,10 @@ None — V-001 is a prose correction with no behavioural consequence (Decision 1
 - **Recommendation: another fix pass** (single prose edit, no assertion change).
 
 Relevant path: `/home/gary/workspace/feature-forge/tests/test_capability_determination_prose.py:576-583`.
+
+## Fix Progress
+- Step 1: [APPLIED] 2026-08-02 — Corrected the round-8 "roster displaced" blanket at `tests/test_capability_determination_prose.py` (option b). Replaced the single false generalisation with a three-way partition, each re-probed with an independent in-process instrument (live `_module_scope_writes`/`_module_scope_nodes` + `exec` of a synthesised decoy per form, subsequent module-scope read of `ALL_SURFACES`):
+  - **Green-and-displaced (5, claim holds):** walrus, `For`/`AsyncFor` target, `with … as`, `match`-capture, `global`-in-fn → guard GREEN, read `['HANDKEPT']`.
+  - **Scope-local, no leak:** comprehension target → guard GREEN, read `['REAL']` (roster INTACT, not displaced) — removed from the "displaced" set.
+  - **Unbinds / non-iterable:** `except … as` → `NameError` (PEP 3110 auto-`del`, `del`'s twin) — moved next to `del`; `import … as` → `TypeError` (module object non-iterable). Neither is a green-and-displaced decoy.
+  Comment-only change: executable-token identity 1521 = 1521 (comments+strings stripped, HEAD vs working tree) — no assertion moved, Decision 1(c) stands. `validate.sh` All checks passed! · `ruff check tests/` 19 (unchanged) · `ruff check scripts/ eval/` clean · `check-spec-purity.py` PASS.
