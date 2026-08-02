@@ -573,17 +573,26 @@ def test_the_controls_cover_every_determining_surface():
     #
     # DELIBERATELY OUT OF SCOPE, a recorded decision (round-7 Decision 1(c)), NOT an
     # oversight: `NamedExpr` (walrus `(ALL_SURFACES := …)`), a `For`/`AsyncFor` loop
-    # target, `with … as`, a comprehension target, `import … as`, `except … as`, `del`,
-    # and an assignment inside a called function that declares `global ALL_SURFACES` all
-    # replace the roster and are NOT caught here. Each was probed and confirmed to leave
-    # the suite green with the roster displaced. They are left open for the same reason
+    # target, `with … as`, a comprehension target, `import … as`, `except … as`, a
+    # `match`-capture (`case ALL_SURFACES`), and an assignment inside a called function
+    # that declares `global ALL_SURFACES` all replace the roster and are NOT caught here.
+    # Each of THOSE was probed and confirmed to leave the suite green with the roster
+    # displaced. (`del ALL_SURFACES` is a separate case, not one of them: it UNBINDS
+    # rather than replaces, and cannot be a green-and-displaced decoy — placed before the
+    # `SURFACE_IDS`/`parametrize` reads it raises `NameError` at collection, placed after
+    # them the roster is already captured.) They are left open for the same reason
     # `SURFACES_WITHOUT_PROSE` records rather than closes its hole: the space of ways to
     # rebind a Python name is not enumerable by adding node types (five consecutive
     # rounds each closed the shape it was shown and the next round found the next one),
-    # every one of these paths requires a hand-planted decoy, none is live drift, and the
-    # ONE property that actually matters — replacing the derived roster with a literal
-    # list — is caught by the derivation-`Call` assertion below regardless of binding
-    # form, because a hand-kept list is not a call to `_capability_surfaces`.
+    # every one of these paths requires a hand-planted decoy, and none is live drift.
+    # The ONE property that actually matters — replacing the derivation
+    # `_capability_surfaces()` at the single annotated binding with a literal list — IS
+    # caught, but NOT "regardless of binding form": the count assertion reds any
+    # ADDITIONAL counted binding (`Assign`/`AnnAssign`/`AugAssign`), and the
+    # derivation-`Call` assertion reds a literal VALUE at that one annotated binding. A
+    # literal installed through one of the out-of-scope forms above is NOT caught — it
+    # leaves the real derivation as `bindings[0]` — and that is the recorded, accepted
+    # residue, not a claim of coverage.
     tree = ast.parse(read(Path(__file__).resolve()))
     bindings = _module_scope_writes(tree, "ALL_SURFACES")
     assert len(bindings) == 1, (
