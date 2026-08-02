@@ -387,6 +387,15 @@ Over all **249 added lines** (139 of them `.py`) across the 12-file diff:
 
 **Recommendation: (c), paired with V-001's Step 1.** This is a change of recommendation from round 6, and the reason is the evidence round 6 produced: (a) was tried, it was executed faithfully and competently, and it still missed six spellings — because the space of ways to rebind a Python name is not enumerable by adding node types, and every round spent enumerating it has ended with the next round finding the next one. Meanwhile the actual defect class this feature keeps shipping is **false prose**, not an under-tight `ast` guard: no probe in five rounds corresponds to real drift, all six of this round's paths need a hand-planted decoy, and the guard's real job — catching someone who replaces the derived roster with a literal list — is already done by the `:574` derivation assertion, which every roster-replacing probe reds on. (c) costs one comment, makes V-001's fix trivially correct, and stops the sequence. If the user prefers a coverage improvement, **(b)** is the better value than (a): it closes five of six for a few lines and no assertion re-shaping.
 
+> **RESOLVED 2026-08-01 — (c), record and stop.** Chosen by the user at the `forge-fix`
+> decision gate, matching the recommendation. No assertion changes; a comment enumerates
+> every unhandled binding form (`NamedExpr`, `For`/`AsyncFor` target, `with … as`,
+> comprehension target, `import … as`, `except … as`, `del`, and `global`-in-a-called-
+> function) as deliberately out of scope, on the same rationale the module already uses
+> for `SURFACES_WITHOUT_PROSE`: each path requires a hand-planted decoy, none is live
+> drift, and the derivation-`Call` assertion at `:574` already reds on any literal-list
+> replacement of the roster. Step 1's docstrings are worded to this decision.
+
 **All other findings require no policy call.** V-001, V-003 and V-004 are prose corrections with no behavioural consequence; V-005 is an advisory requiring no action.
 
 ### Execution Steps
@@ -465,7 +474,95 @@ Every area named in the dispatch was reached:
 - **V-004 (improvement)** — control 3a-ii's docstring (the reference V-001 was rewritten to match) accounts for 5 of 6 surfaces while asserting "all six"; `forge-fix`'s reason is unstated.
 - **V-005 (improvement)** — CHECK-I21 mandatory `smokeCommand: null` advisory; keep `null` per Decision 6.
 
-**Gate: GREEN, run not taken on report.** `df` 2.3 GB before / 1.9 GB after · `validate.sh` exit 0 `All checks passed!` · **1809 passed, 2 skipped** (1811 collected) · fixture bytecode **0** after validate and after the full suite · `ruff check scripts/ eval/` exit 0 · `ruff check tests/` **19** · `ruff check tests/ --select F841,F541` exit 0 · `check-spec-purity.py` PASS 0 violations · `build-adapters.py --check` exit 0 · **`git status --porcelain` empty** (require-clean satisfied — I wrote nothing to the repository).agentId: a2a207020b7713447 (use SendMessage with to: 'a2a207020b7713447', summary: '<5-10 word recap>' to continue this agent)
-<usage>subagent_tokens: 173881
-tool_uses: 41
-duration_ms: 1005233</usage>
+**Gate: GREEN, run not taken on report.** `df` 2.3 GB before / 1.9 GB after · `validate.sh` exit 0 `All checks passed!` · **1809 passed, 2 skipped** (1811 collected) · fixture bytecode **0** after validate and after the full suite · `ruff check scripts/ eval/` exit 0 · `ruff check tests/` **19** · `ruff check tests/ --select F841,F541` exit 0 · `check-spec-purity.py` PASS 0 violations · `build-adapters.py --check` exit 0 · **`git status --porcelain` empty** (require-clean satisfied — I wrote nothing to the repository).
+---
+
+## Fix Progress
+
+Applied 2026-08-01 by `/feature-forge:forge-fix stage-exit-coverage --served-stage forge-5-loop`
+(owner: direct). Decision 1 (V-002) resolved to **(c) record and stop** before any step ran.
+The report tail carried a stray subagent harness trailer (`agentId:`/`<usage>`) from the
+round-7 write; it was stripped in this pass and is committed corrected here.
+
+- Step 1: [APPLIED] 2026-08-01 — V-001, two helper docstrings in
+  `tests/test_capability_determination_prose.py`. `_module_scope_nodes` (`:473-481`) no
+  longer claims its traversal is "exactly the set of statements that can replace a module
+  global"; it now says it "covers every module-level BINDING STATEMENT", is "deliberately
+  NOT exhaustive", and names the `global`-in-a-function exception, pointing at the
+  comment for the full out-of-scope list. `_module_scope_writes` (`:508`) replaces "in any
+  form" with the explicit form list (`Assign`/`AnnAssign`/`AugAssign` plus
+  subscript/attribute/star/tuple stores). Acceptance (not suite-green): probe X3
+  (`global ALL_SURFACES` in a called function) and X1/X2/X4 (walrus / `for` target /
+  `with … as`) each re-run GREEN with the roster displaced — matching what the amended
+  docstrings now say they do NOT cover — and both docstrings were read end-to-end against
+  the helper bodies statement by statement, with no remaining sentence asserting a
+  property the body lacks. 43 passed before and after.
+- Step 2: [APPLIED] 2026-08-01 — V-002 under Decision 1(c). No assertion changed. A
+  recorded-decision comment was added ahead of `tree = ast.parse(...)` naming every
+  unhandled binding form (`NamedExpr`, `For`/`AsyncFor` target, `with … as`, comprehension
+  target, `import … as`, `except … as`, `del`, `global`-in-function) as deliberately out
+  of scope, on the `SURFACES_WITHOUT_PROSE` rationale: each needs a hand-planted decoy,
+  none is live drift, and the derivation-`Call` assertion catches any literal-list
+  replacement regardless of binding form. **Mandatory probe battery** — real file copies
+  of `tests/` (symlinks defeat the probe), `PYTHONDONTWRITEBYTECODE=1`, `-p no:cacheprovider`,
+  `__pycache__` purged, one fresh copy per probe, reversed-order hand-kept roster (static
+  snapshot, not a call-through), displacement proven by reversed `SURFACE_IDS`:
+
+  | Probe | Expected | Result | De-shifted line |
+  |---|---|---|---|
+  | P1 literal hand-kept value | RED | RED | derivation `Call` (`:595`) |
+  | P2 derived from another fn | RED | RED | derivation `Call` (`:595`) |
+  | P3 wrapped in `list()` | RED | RED | derivation `Call` (`:595`) |
+  | P4 `AnnAssign` → `Assign` | RED | RED | `AnnAssign` (`:591`) |
+  | P5 decoy + re-bind | RED | RED | count (`:587`) |
+  | P6 plain alias | RED | RED | alias (`:612`) |
+  | N1 annotated alias | RED | RED | alias (`:612`) |
+  | N2 nested-`if` re-bind | RED | RED | count (`:587`) |
+  | N3 in-place `[:]` slice | RED | RED | count (`:587`) |
+  | N4 shadow redef (before binding) | RED | RED | `len(definitions) == 1` (`:608`) |
+  | X1 walrus `(ALL_SURFACES := …)` | GREEN by decision | GREEN | roster REVERSED |
+  | X2 module `for ALL_SURFACES` | GREEN by decision | GREEN | roster REVERSED |
+  | X3 `global ALL_SURFACES` in fn | GREEN by decision | GREEN | roster REVERSED |
+  | X4 `with … as ALL_SURFACES` | GREEN by decision | GREEN | roster REVERSED |
+  | X5 `for _capability_surfaces` | GREEN by decision | GREEN | roster REVERSED |
+  | X6 walrus on derivation name | GREEN by decision | GREEN | roster REVERSED |
+  | C0 unmutated control | GREEN | GREEN | 43 passed |
+
+  The floor (`:533`) was **never** the source of a red. The six X-forms are the ones the
+  comment now records as out of scope, and each was confirmed to genuinely displace the
+  roster (not a no-op) so the record is honest.
+- Step 3: [APPLIED] 2026-08-01 — V-003, `scripts/forge-session.py`, `verify_state`'s
+  `fresh` bullet (`:880-883`) now names `passed` as the ONLY status reaching `fresh`,
+  matching `epic_verify_state` (`scripts/epic-manifest.py:1066-1067`) read side by side.
+  Docstring only. All seven bullets read top-to-bottom: no bullet's stated condition is
+  satisfied by an input another bullet claims (`findings-applied`+matching version is
+  `stale`, not `fresh`; `skipped` carves itself out). 24-shape × classifier matrix re-run
+  and unchanged: `fresh` set is exactly `{(passed, matching)}`; `findings-applied` is
+  `stale` at absent/matching/non-matching. `ruff check scripts/ eval/` clean;
+  `check-spec-purity.py` PASS (the `§4.2 step 4` coordinate is a bare `§`, unmatched by
+  `_SPEC_CITATION_RE`). **Adapter regeneration required and done** — this file is mirrored
+  into all six trees; `--check` exited 1, `build-adapters.py` was run, the six
+  `adapters/*/scripts/forge-session.py` mirrors are committed, `--check` then exited 0.
+  (This is the premise round-6 Step 6 got wrong; the round-7 report flagged it in advance.)
+- Step 4: [APPLIED] 2026-08-01 — V-004, control 3a-ii's docstring
+  (`test_downgrading_the_affirmative_choice_to_a_printed_command_fails_the_guard`,
+  `:417-421`) now accounts for all three surface groups — `forge-verify` via
+  `presented through the gate`, `forge-fix` via `presented through the Step 6 gate`, the
+  four authoring stages via their gate-block fragment — instead of asserting "all six" and
+  explaining only five. Read end-to-end against the module docstring's clause (c): each of
+  the six surfaces is accounted for in both and neither contradicts the other.
+  `presented through the gate` re-confirmed in exactly 1 of 6 capability paragraphs.
+  43 passed.
+- Step 5: [APPLIED] 2026-08-01 — re-gate on 2.8 GB free. `build-adapters.py --check` exit 1
+  before Step 3's regen, exit 0 after. `validate.sh` twice back-to-back (both exit 0, both
+  `All checks passed!`, both **1809 passed / 2 skipped**). `find tests/fixtures` bytecode 0
+  after each. `ruff check scripts/ eval/` clean, `ruff check tests/` **19**,
+  `ruff check tests/ --select F841,F541` clean, `check-spec-purity.py` PASS (0 violations).
+  Node-ID **set difference** vs HEAD **empty on both sides** (1811 collected both ways) —
+  Decision 1(c) changed no assertion, so no test churn. `git status --porcelain` empty.
+
+**Verification discipline honoured:** every prose edit was accepted by re-reading the
+passage end-to-end against the artifact it describes, and every numeric/behavioural claim
+was re-derived with an instrument independent of the one that wrote it — never by diffing,
+never by suite-green. This round's sharpest case was V-001: false claims in the docstrings
+of the very helpers round 6 added, invisible to all 1809 green tests.

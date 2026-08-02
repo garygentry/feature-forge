@@ -417,8 +417,10 @@ def test_downgrading_the_affirmative_choice_to_a_printed_command_fails_the_guard
     abandoning the dispatch one. While c1a and c1b shared one any-of list this
     misreading was undetected on all six surfaces: rewriting `forge-verify`'s
     "dispatched on the affirmative choice" to "printed for the user" left the
-    untouched "presented through the gate" matching, and the authoring stages carried
-    no dispatch phrasing at all.
+    untouched "presented through the gate" matching on `forge-verify`, `forge-fix`
+    matching on its own "presented through the Step 6 gate", and the four authoring
+    stages matching on their gate-block fragment — they carried no dispatch phrasing
+    at all, so the mutation was a no-op there.
     """
     mutated = base
     for fragment in CLAUSES["c1b"][1]:
@@ -474,9 +476,13 @@ def _module_scope_nodes(tree: ast.Module) -> Iterator[ast.AST]:
 
     `tree.body` alone sees depth 0 only, so `if True:` one level down hid a genuine
     module-global re-binding. `ast.walk` alone would also descend into function and
-    class bodies, where a local of the same name rebinds nothing this module reads and
-    would be a false positive. Descending through control flow but stopping at every
-    new scope is exactly the set of statements that can replace a module global.
+    class bodies, where a plain local of the same name rebinds nothing at module scope
+    and would be a false positive. Descending through control flow but stopping at
+    function and class bodies covers every module-level BINDING STATEMENT. It is
+    deliberately NOT exhaustive: an assignment inside a function that declares
+    `global ALL_SURFACES` also replaces the global and is out of this traversal's reach.
+    See the comment in `test_the_controls_cover_every_determining_surface` for the full
+    list of binding forms left out of scope, and why.
     """
     stack: list[ast.AST] = list(tree.body)
     while stack:
@@ -505,7 +511,10 @@ def _store_target_names(target: ast.AST) -> Iterator[str]:
 
 
 def _module_scope_writes(tree: ast.Module, name: str) -> list[ast.AST]:
-    """Every module-scope statement that binds or mutates `name`, in any form."""
+    """Module-scope statements binding or mutating `name` as an `Assign`, `AnnAssign`
+    or `AugAssign` — including stores reached through a subscript, attribute, star or
+    tuple target. Not every binding form: see the comment in
+    `test_the_controls_cover_every_determining_surface` for what is out of scope."""
     writes: list[ast.AST] = []
     for node in _module_scope_nodes(tree):
         if isinstance(node, ast.Assign):
@@ -561,6 +570,20 @@ def test_the_controls_cover_every_determining_surface():
     # `AnnAssign`, `AugAssign`, and stores reached through a subscript, attribute,
     # star or tuple) across every module-scope nesting level, and pins the definition
     # count, instead of naming instances one round at a time.
+    #
+    # DELIBERATELY OUT OF SCOPE, a recorded decision (round-7 Decision 1(c)), NOT an
+    # oversight: `NamedExpr` (walrus `(ALL_SURFACES := …)`), a `For`/`AsyncFor` loop
+    # target, `with … as`, a comprehension target, `import … as`, `except … as`, `del`,
+    # and an assignment inside a called function that declares `global ALL_SURFACES` all
+    # replace the roster and are NOT caught here. Each was probed and confirmed to leave
+    # the suite green with the roster displaced. They are left open for the same reason
+    # `SURFACES_WITHOUT_PROSE` records rather than closes its hole: the space of ways to
+    # rebind a Python name is not enumerable by adding node types (five consecutive
+    # rounds each closed the shape it was shown and the next round found the next one),
+    # every one of these paths requires a hand-planted decoy, none is live drift, and the
+    # ONE property that actually matters — replacing the derived roster with a literal
+    # list — is caught by the derivation-`Call` assertion below regardless of binding
+    # form, because a hand-kept list is not a call to `_capability_surfaces`.
     tree = ast.parse(read(Path(__file__).resolve()))
     bindings = _module_scope_writes(tree, "ALL_SURFACES")
     assert len(bindings) == 1, (

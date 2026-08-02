@@ -877,8 +877,10 @@ def verify_state(state: dict) -> tuple[str | None, str]:
 
     Returns ``(stage, state_label)`` where ``state_label`` is one of:
 
-    - ``fresh``   — verify is resolved AND its ``verifiedStageVersion`` matches the
-      stage's current ``version`` (so no re-verify is needed).
+    - ``fresh``   — the entry is ``passed`` AND its ``verifiedStageVersion`` matches
+      the stage's current ``version`` (so no re-verify is needed). ``passed`` is the
+      ONLY status that reaches ``fresh``: ``findings-applied`` and ``skipped`` are
+      resolved but never fresh, for the reasons given below.
     - ``stale``   — verify was resolved once, but the stage version has since moved
       (artifact revised) OR the entry predates the freshness ledger (no
       ``verifiedStageVersion``), OR the entry is ``findings-applied``, which never
