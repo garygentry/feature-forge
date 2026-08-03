@@ -125,6 +125,8 @@ On a **direct** invocation, present the gate with the host's question mechanism 
 
 A cancellation, an unavailable tool, or a non-answer is `deferred` **only** when it was an explicit user choice and `failed` when it was an operational failure — an unavailable tool is never an explicit user skip, and neither ever becomes `reverified`. `applied` is not `reverified`: `findings-applied` cleared the freshness the writer deliberately dropped, so only `reverified` after a passing verify permits advancement.
 
+**Round-ledger escalation binds this row on every capability.** Before closing `reverify-findings` that is the SECOND consecutive for this served stage (count the round-discriminated reports in `.verification/`), present the escalation dispositions per "Escalation (the round ledger)" in `references/stage-exit-protocol.md` — through the question mechanism when `interactive`, or printed as text (digest + the three dispositions, "Accept the residual findings" first) BEFORE the terminal block when `manual`. Never recommend another fix pass at this point.
+
 Add `--epic "{epic}"` when the feature is an epic member. Pass no other flags.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:

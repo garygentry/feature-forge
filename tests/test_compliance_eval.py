@@ -788,10 +788,18 @@ def test_ordered_evidence_ignores_a_repeated_reconnaissance_command() -> None:
     assert ok is True
 
 
-def test_a_command_counts_as_an_exit_only_with_both_tokens() -> None:
+def test_a_command_counts_as_an_exit_only_with_the_invocation_shape() -> None:
     assert ce._is_exit_command(EXIT_1) is True
     assert ce._is_exit_command('python3 "$R/scripts/forge-session.py" state-verify') is False
     assert ce._is_exit_command("stage-exit was run for forge-verify") is False
+    # F4: reconnaissance and mere co-mention are not exits — a --help probe
+    # produces no payload, and the two tokens appearing apart is not an invocation.
+    assert ce._is_exit_command(
+        'python3 "$R/scripts/forge-session.py" stage-exit --help'
+    ) is False
+    assert ce._is_exit_command(
+        "grep stage-exit notes.md; cat scripts/forge-session.py"
+    ) is False
 
 
 def test_ordered_evidence_rejects_a_prose_only_claim_with_no_bash_evidence() -> None:

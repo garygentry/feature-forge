@@ -288,9 +288,24 @@ _EXIT_CODE_RE: Final = re.compile(r"\s*Exit code (\d+)\b")
 EXIT_COMMAND_TOKENS: Final[tuple[str, ...]] = ("forge-session.py", "stage-exit")
 
 
+#: Invocation shape of a REAL scripted exit: `forge-session.py` (however the path is
+#: quoted) invoked with the `stage-exit` subcommand. A substring test over the two
+#: tokens alone scored `stage-exit --help` reconnaissance — and any command that merely
+#: MENTIONS both strings — as a real exit, which then tripped the reordered-exit guard
+#: and marked compliant runs non-compliant (remediation finding F4).
+_EXIT_INVOCATION_RE: Final[re.Pattern[str]] = re.compile(
+    r"forge-session\.py\"?'?\s+stage-exit\b"
+)
+
+
 def _is_exit_command(command: str) -> bool:
-    """True when `command` is a real `forge-session.py stage-exit` invocation."""
-    return all(token in command for token in EXIT_COMMAND_TOKENS)
+    """True when `command` is a real `forge-session.py stage-exit` invocation.
+
+    `--help` anywhere in the command is reconnaissance, not an exit: it produces no
+    payload and mutates nothing, so treating it as an exit scores looking-before-
+    leaping as non-compliance.
+    """
+    return bool(_EXIT_INVOCATION_RE.search(command)) and "--help" not in command
 
 
 def _content_blocks(event: object, event_type: str) -> list[dict]:
@@ -573,25 +588,31 @@ def ordered_command_evidence(
             if all(token in command for token in tokens):
                 found = index
                 break
-            if _is_exit_command(item["command"]):
-                # A real exit standing between two matched entries is a reordered or
-                # duplicated exit, not reconnaissance — the one thing that may NOT be
-                # skipped over.
+            if _is_exit_command(item["command"]) and _succeeded(item):
+                # A SUCCESSFUL exit standing between two matched entries is a
+                # reordered or duplicated exit — the one thing that may NOT be
+                # skipped over. A failed attempt later retried is not that defect
+                # (F4): it produced no payload, so nothing was closed out of order.
                 return False, matches
         if found is None:
             return False, matches
         item = evidence[found]
         # Requested is not run: only a seen, non-error, zero-exit result is evidence.
-        if not (item["resultSeen"] and not item["isError"] and item["exitCode"] == 0):
+        if not _succeeded(item):
             return False, matches
         matches.append(item)
         cursor = found + 1
     for item in evidence[cursor:]:
-        if _is_exit_command(item["command"]):
+        if _is_exit_command(item["command"]) and _succeeded(item):
             # A trailing extra exit is the same defect seen from the other side: the run
             # fired a scripted exit the fixture never expected.
             return False, matches
     return True, matches
+
+
+def _succeeded(item: CommandEvidence) -> bool:
+    """True when the command's result was seen, non-error, and exit 0."""
+    return bool(item["resultSeen"] and not item["isError"] and item["exitCode"] == 0)
 
 
 # --------------------------------------------------------------------------- #
