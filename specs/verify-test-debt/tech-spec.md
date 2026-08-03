@@ -29,9 +29,11 @@ Four architectural decisions shape the rest:
 4. **REQ-FIX-02 surfaced no new defect.** The one candidate was investigated and
    disproved (§3.12).
 
-**Three PRD figures are superseded by verified rosters** in this document (§10.1). They
-also appear in PRD §8 Success Criteria and are flagged for amendment; per the recorded
-decision, this spec carries the corrected values and the PRD is not re-versioned mid-trial.
+**Three PRD figures were superseded by verified rosters** in this document (§10.1). At
+`forge-2-tech` close the PRD was amended to v2 and adopted all three, so PRD and tech spec
+now agree; §10.1 is retained as the derivation record. PRD v2 also amended the trial
+instrumentation — the stop condition is now narration churn and non-convergence rather than
+a round count (§10.3).
 
 ## 2. Module Structure
 
@@ -931,7 +933,9 @@ in scope and is not modified.
 - **OQ-03 (`resolver_line_identical`)** — resolved: it already asserts equality via
   `all(criteria.values())`. The gap is the missing key-set pin (§3.13).
 
-**PRD figures superseded — flagged for amendment, recorded in pipeline state:**
+**PRD figures superseded — ADOPTED INTO PRD v2 (2026-08-03).** These were flagged for
+amendment during round 1 and the PRD has since been amended, so PRD and tech spec now
+agree. The table is retained as the derivation record:
 
 | PRD | States | Verified |
 |---|---|---|
@@ -943,9 +947,10 @@ in scope and is not modified.
 against the section header in `tests/test_stage_exit.py`, §3.14) and its corrupt-file
 refusal ×3 hand-rolled sites. Both PRD figures are exact.
 
-Per the recorded decision, the PRD is **not** re-versioned mid-trial — a version bump would
-cascade `forge-2-tech` to stale and re-trigger PRD verification, spending trial rounds on a
-numeric correction. This spec is the authority for these three rosters.
+**Superseded by PRD v2.** The original position was not to re-version the PRD mid-trial. At
+`forge-2-tech` close the user amended the PRD instead (v1 → v2), adopting all three
+corrections and the corrected REQ-BRIT-07 dedup rule. PRD and tech spec now state the same
+figures, so neither is "the authority" over the other — they agree.
 
 ### 10.2 Open, with a recorded position
 
@@ -971,9 +976,26 @@ The measurement is now stated in §3.1 and there is no pre-implementation check 
 
 ### 10.3 Trial instrumentation (REQ-TRIAL-01..03)
 
-REQ-TRIAL-02 is a **hard stop**, not a guideline: if any single stage reaches a third
-verify round, work stops, R-05..R-08 reopen, and this feature does not continue through the
-pipeline. Pushing through destroys the measurement, which is the point of the trial.
+**Amended in PRD v2, after this stage ran.** The stop condition is no longer a round count.
+Work stops if **either** a narration-churn finding occurs (REQ-TRIAL-01 — a stage-blocking
+finding whose substance lies in a comment, docstring, or test narration) **or** blocking
+findings fail to converge across consecutive rounds (REQ-TRIAL-02). Rounds ≤2 per stage is
+a guideline whose breach is recorded and inspected, not an automatic stop (REQ-TRIAL-03).
+
+**This stage's result, which drove the amendment:**
+
+| Round | Findings | Blocking | Narration-churn |
+|---|---|---|---|
+| 1 | 11 | 5 | 0 |
+| 2 | 4 | 1 | 0 |
+| 3 | 2 | **0** | 0 |
+
+Three rounds — over the guideline — but **zero narration churn across all 17 findings** and
+strict convergence 5 → 1 → 0. The failure mode Phase 2 targets did not occur. The recurring
+defect was instead a **derived summary figure left stale by a correction elsewhere in this
+same document** (REQ-TRIAL-06): five of seventeen findings landed in §8.2 while the rosters
+those figures derive from were correct every time — which is why §8.2 now opens with a
+derived-table warning.
 
 The trial runs the **full** pipeline — PRD → tech spec → specs → backlog → loop → docs
 (C-06) — because the rules under trial operate at every stage. Two of those rules bear
@@ -988,5 +1010,13 @@ directly on how findings against this spec should be read:
   re-filed. Every "recorded position" in §10.2 and every declared non-goal in §8.4 exists
   to be cited under this rule.
 
-The per-stage round count is recorded in the remediation plan's Session Log at feature
-close (REQ-TRIAL-03). **This stage (`forge-2-tech`) is round 0 at authoring.**
+**REQ-TRIAL-04** requires the Session Log to record, per stage, three things — the
+verify-round count, the narration-churn count, and the blocking-finding convergence
+sequence. The last two are the trial's actual result; the round count alone is not. For
+this stage that is: **3 rounds · 0 narration churn · 5 → 1 → 0**.
+
+**REQ-TRIAL-05** requires the round overage to be filed as a Phase 2 finding in its own
+right, *without* reopening R-05..R-08 on the narration-churn axis — that axis measured
+clean. The finding to file is REQ-TRIAL-06's derived-figure propagation: R-05..R-08 suppress
+narration churn but say nothing about a summary figure going stale when its source roster is
+corrected inside the same artifact. Both are recorded in the remediation plan's Session Log.
