@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "revision": 1,
   "epic": "lifecycle",
   "description": "Synthetic epic exercising every completion-for-orchestration branch.",
   "status": "active",

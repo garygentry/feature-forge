@@ -6,16 +6,9 @@ description: Execute the autonomous coding loop (rauf by default) against a forg
 
 # forge-5-loop — Autonomous Loop Executor
 
-Execute the autonomous coding loop against a forge feature's backlog. The loop
-spawns a fresh agent session per backlog item, implementing each task with full
-verification.
+Execute the autonomous coding loop against a forge feature's backlog. The loop spawns a fresh agent session per backlog item, implementing each task with full verification.
 
-The loop **runner** is configured, not hardcoded. feature-forge talks to it
-through the `loopRunner` block in `forge.config.json`; rauf is the default and
-reference implementation (see `references/ralph-loop-contract.md`). Every command
-below is rendered from `loopRunner` with token substitution — there are no
-hardcoded `rauf …` commands in this skill, and even the human log filename is
-tokenized as `{loopRunner.logFile}`.
+The loop **runner** is configured, not hardcoded. feature-forge talks to it through the `loopRunner` block in `forge.config.json`; rauf is the default and reference implementation (see `references/ralph-loop-contract.md`). Every command below is rendered from `loopRunner` with token substitution — there are no hardcoded `rauf …` commands in this skill, and even the human log filename is tokenized as `{loopRunner.logFile}`.
 
 ## Resolve the loop runner
 
@@ -34,8 +27,7 @@ Token substitution applies to every `*Command` string. Substitute:
 - `{specsDir}` → `specsDir` from config
 - `{iterations}` → the computed iteration count (Step 2a)
 
-Whenever this skill says "run the **run command**" / "**status command**" /
-etc., it means the corresponding substituted `loopRunner.*Command`.
+Whenever this skill says "run the **run command**" / "**status command**" / etc., it means the corresponding substituted `loopRunner.*Command`.
 
 **Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
 
@@ -51,9 +43,13 @@ Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, `stages.
 
 ### 1b. Verification Check
 
-Check if `stages.forge-verify-backlog` exists and has status `passed` or `findings-applied`. If not, use `AskUserQuestion` to warn with the cost of skipping:
+Read `stages.forge-verify-backlog` and branch on its status — **three** cases, in this order (the pending case must be tested *before* the generic one, or owed-and-dropped debt gets reported as never-scheduled):
 
-"Backlog hasn't been verified yet. Recommended: run `/skill:forge-verify {feature}` first — the loop implements items autonomously and commits as it goes, so a bad item (wrong scope, missing dependency, untestable acceptance criteria) is far cheaper to catch now than after several commits build on it. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
+1. **`passed` or `findings-applied`** — proceed with no prompt.
+2. **`auto-verify-pending`** — automatic verification *was* scheduled for the backlog stage and the debt *was* durably recorded; it simply has not run. Say exactly that, naming the served stage and the retry command: *"{feature}: automatic verification is still pending for forge-4-backlog; run `/skill:forge-verify {feature} backlog` to resolve it."* Then use `AskUserQuestion` to offer the same two choices as case 3. Never report this as "hasn't been verified yet" — "nobody ever asked for this" and "this was owed and dropped" are different facts and the operator acts on them differently.
+3. **Anything else** (absent, `pending`, `skipped`, `findings-reported`) — use `AskUserQuestion` to warn with the cost of skipping: "Backlog hasn't been verified yet. Recommended: run `/skill:forge-verify {feature}` first — the loop implements items autonomously and commits as it goes, so a bad item (wrong scope, missing dependency, untestable acceptance criteria) is far cheaper to catch now than after several commits build on it. Continue anyway?"
+
+Cases 2 and 3 offer the same choices: **Verify first (recommended)** · **Continue without verifying**. The proceed-anyway path is unchanged.
 
 ### 1b-epic. Epic Dependency Gate
 
@@ -166,9 +162,7 @@ For the model-selection precedence (item.model > --model/options > project defau
 provider default), read references/runner-contract.md.
 ```
 
-**Run mode (gated on `loopRunner.name == "rauf"`).** When the runner is rauf, add a **"Run mode"** question to this same `AskUserQuestion` surface with these options **in this exact order** (do NOT improvise — deterministic ordering is the point): **(1) "Run with review pass (recommended)"** — append `--review`, and this is the default; **(2) "Run without review"** — the bare rendered command; **(3, only when 2a counted blocked items) "Review + retry blocked"** — append `--review --retry-blocked`. `AskUserQuestion`'s built-in "Other" covers ad-hoc flags (`--model`/`--timeout`); add no separate open-ended option. The command line shown above renders `--review` (the recommended default). **When the runner is not rauf**, add NO Run-mode question — present the bare rendered command and let the user adjust via "Other" (byte-identical to today). Verbatim option labels: `## Run mode (Step 2d, rauf)` in `references/runner-contract.md`.
-
-For the full loop-runner contract — event-stream vs. log-fallback launch, the live-supervision/monitor rules, and the model-selection precedence — read `references/runner-contract.md`. Whichever Run-mode option (or "Other") the user picks, append its flags to the rendered run command before Step 3.
+**Run mode and full loop-runner contract:** follow `## Run mode (Step 2d, rauf)` and the remaining sections in `references/runner-contract.md` verbatim.
 
 #### Agent selection (gated on `loopRunner.agentArgument`)
 
@@ -225,11 +219,7 @@ rules, read `references/runner-contract.md`.
 
 ### 3f. Reach completion
 
-Step 4 is reached when the backgrounded process exits (its completion notification is
-authoritative); the `loop_completed` / `loop_error` / `loop_cancelled` event is the live
-heads-up that it's imminent. Stop the Monitor (it ends on its own when `tail` sees the
-process-ended log, or via `TaskStop`) and proceed to Step 4. Do NOT foreground-sleep
-or poll — the harness drives both the Monitor events and the completion notification.
+Step 4 is reached when the backgrounded process exits (its completion notification is authoritative); the `loop_completed` / `loop_error` / `loop_cancelled` event is the live heads-up that it's imminent. Stop the Monitor (it ends on its own when `tail` sees the process-ended log, or via `TaskStop`) and proceed to Step 4. Do NOT foreground-sleep or poll — the harness drives both the Monitor events and the completion notification.
 
 ## Step 4: Check Results
 
@@ -246,9 +236,7 @@ is not configured. You will already have most of this from the live tally in 3e.
 ### 4b. Report Results
 
 Present a summary to the user. Pick **every** branch that applies (a run can be both
-blocked and needs-human) and render its report. The five verbatim result-report
-output templates — **all-done**, **needs-human**, **blocked**, **deferred**, and
-**pending** (iteration limit reached) — are in `references/result-reporting.md`.
+blocked and needs-human) and render its report. The five verbatim result-report output templates — **all-done**, **needs-human**, **blocked**, **deferred**, and **pending** (iteration limit reached) — are in `references/result-reporting.md`, together with the Step 7 `LoopOutcome` ladder these same counts feed. The reports are descriptive only: they carry no next command, and the run does not end here. If the authoritative counts cannot be obtained at all (4a failed or its output does not parse), follow **Operational failure before the counts are known** in that same file: surface the failure and its recovery, and close nothing — no outcome, no stage exit, no terminal block.
 
 ## Step 5: Update Pipeline State
 
@@ -264,33 +252,42 @@ python3 "$R/scripts/forge-session.py" state-complete --feature "{feature}" --sta
 
 ## Step 5b: Offer Impl-Verify (standalone path)
 
-**Gate:** run only if (a) the feature's `.pipeline-state.json` has **no** `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete`. Otherwise **skip** — partial runs end as today, and epic members get the equivalent offer in Step 6.1 (do **not** prompt twice). This standalone counterpart to Step 6.1 nudges verification interactively rather than via the easily-missed "Next steps" text. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is complete. Recommended: run `/skill:forge-verify {feature} impl` to audit the implementation before generating docs. Run it now, or skip to forge-6-docs?"* On **run**, hand off to `/skill:forge-verify {feature} impl`. On **skip**, record `stages.forge-verify-impl.status` as `"skipped"` (mirrors `forge-4-backlog`'s skip handling) and point the user at `/skill:forge-6-docs {feature}` — the forge-6-docs backstop re-surfaces the skip.
+**Gate:** run only if (a) the feature's `.pipeline-state.json` has **no** `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete`. Otherwise **skip** straight to Step 7 — a non-complete run has nothing to verify yet, and epic members get the equivalent offer in Step 6.1 (do **not** prompt twice). This standalone counterpart to Step 6.1 nudges verification interactively rather than via the easily-missed "Next steps" text. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is complete. Recommended: run `/skill:forge-verify {feature} impl` to audit the implementation before generating docs. Run it now, or skip to forge-6-docs?"* On **run**, invoke `feature-forge:forge-verify {feature} impl` with the literal `owner: nested` token in the dispatching prompt — this dispatch happens inside the loop stage, so **you** remain the sole terminal owner and the branch skill returns its structured result and prints no terminal block of its own (see "Branch ownership: the `owner:` token" in `references/stage-exit-protocol.md`). On **skip**, persist the skip through `state-verify` using the fence below (mirrors `forge-4-backlog`'s skip handling) — the forge-6-docs backstop re-surfaces the skip. Either way, do **not** name a next command here: Step 7 routes, and it routes differently depending on what this step recorded.
+
+**The skip is written by `state-verify`, never by hand.** Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`. On exit 2, surface the plain `Error:` line verbatim and stop: the skip is not persisted, so Step 7 would route on state that is not on disk.
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-verify --feature "{feature}" --stage forge-5-loop --status skipped --specs-dir "{specsDir}"
+```
 
 ## Step 6: Epic Handoff
 
-**Gate:** only run this step if (a) the resolved feature's `.pipeline-state.json` has an `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete` (all backlog items done). If either is false, **skip** — standalone completed features are handled by Step 5b, and partial runs end as today (REQ-COMPAT-01).
+**Gate:** only run this step if (a) the resolved feature's `.pipeline-state.json` has an `epic` key **and** (b) Step 5 set `stages.forge-5-loop.status` to `complete` (all backlog items done). If either is false, **skip** straight to Step 7 — standalone completed features are handled by Step 5b, and a non-complete run has no handoff to make (REQ-COMPAT-01).
 
-1. **Offer impl-verify first (recommended, skippable).** Per the completion rule (`00-core-definitions.md §7`), a feature whose `forge-verify-impl.status == findings-reported` does **not** unblock dependents. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is done. Recommended: run `/skill:forge-verify {feature} impl` before unblocking dependents. Run it now, or skip and continue the handoff?"* The user may skip (then completion is judged on the §7 rule with impl-verify absent).
+1. **Offer impl-verify first (recommended, skippable).** Per the completion rule (`00-core-definitions.md §7`), a feature whose `forge-verify-impl.status == findings-reported` does **not** unblock dependents. Use `AskUserQuestion` (NOT inline prose) to offer: *"{feature}'s loop is done. Recommended: run `/skill:forge-verify {feature} impl` before unblocking dependents. Run it now, or skip and continue the handoff?"* On **run**, invoke `feature-forge:forge-verify {feature} impl` with the literal `owner: nested` token in the dispatching prompt — this dispatch happens inside the loop stage, so **you** remain the sole terminal owner and the branch skill returns its structured result and prints no terminal block of its own (see "Branch ownership: the `owner:` token" in `references/stage-exit-protocol.md`). The user may skip (then completion is judged on the §7 rule with impl-verify absent).
 2. **Recompute and announce.** Run `render-status "{epic}" --specs-dir "{specsDir}" --json`. Announce the feature's completion and the epic rollup (e.g. "2/4 features complete") — derived live from disk, never re-computed in prose.
-3. **Identify the next actionable feature(s).** Read `render-status`'s `actionable` set (every dependency now complete, not itself complete) and `nextCommand`. **None actionable:** say so — if `rollup.total > 0` **AND** `rollup.complete == rollup.total`, suggest `/skill:forge-6-docs {feature}` and note the epic-level documentation offer (§10) (the `rollup.total > 0` guard prevents an **empty epic** `0 == 0` from reading as complete); otherwise list what is still blocked and on which dependencies, then end (do not prompt to start a feature that cannot start). **One or more actionable:** use `AskUserQuestion` presenting **each actionable feature** as an option (plus "stop here"). Execution is **serial** — the user picks exactly one (REQ-ORCH-03); do **not** autonomously chain into the next pipeline.
-4. **Begin the chosen feature.** **PRD absent** (no `PRD.md`, or `stages.forge-1-prd` not complete): offer to author it now — "Start `/skill:forge-1-prd {chosen}`?" (REQ-ORCH-02); on yes, hand off to forge-1-prd (which injects epic context per §5.1). **PRD present:** point the user at the chosen feature's `nextCommand` from render-status.
-5. **Commit (REQ-OBS-01).** When `gitCommitAfterStage` is true, commit the Step 5 completion write (and any manifest `updatedAt` bump) via the shared-conventions **Git Commit Protocol**, staging the epic subtree so the member state change commits atomically: `git add {specsDir}/{epic}/` then `{commitPrefix}({feature}): complete loop`. If `gitCommitAfterStage` is false, skip the commit.
-6. **Close the handoff with the Stage Exit Protocol.** Finishing feature `{feature}` → starting the picked feature `{chosen}`'s PRD is a **cold** stage boundary (single-sourced in `references/stage-exit-protocol.md`). Feature `{feature}`'s impl-verify was already offered in Step 6.1, so step 1's gate self-suppresses when it ran or was skipped — the block collapses to `/new` → next-command. Present it only when the chosen feature's PRD is absent (a PRD-present pick just runs its `nextCommand`):
+3. **Announce what is actionable — do not route.** Read `render-status`'s `actionable` set (every dependency now complete, not itself complete) and say plainly which members can start now, or which are still blocked and on which dependencies. This is context for the user, not a handoff: the Step 7 exit consumes the same live payload and fences the one authoritative next command itself, so do **not** present a next-feature picker, offer to author a member's PRD, or repeat a member's `nextCommand` here. Two competing actions is exactly the ambiguity the scripted exit removes.
+4. **Commit (REQ-OBS-01).** When `gitCommitAfterStage` is true, commit the Step 5 completion write (and any manifest `updatedAt` bump) via the shared-conventions **Git Commit Protocol**, staging the epic subtree so the member state change commits atomically: `git add {specsDir}/{epic}/` then `{commitPrefix}({feature}): complete loop`. If `gitCommitAfterStage` is false, skip the commit. Then fall through to Step 7 — the epic handoff closes there, once, like every other path.
 
-**This stage is done — walk the user through the Stage Exit Protocol** before moving on. The order is fixed, and step 2 is something only the user can do:
+## Step 7: Close the Stage
 
-1. **Verify feature {feature}'s loop first — if it isn't already verified.** If verify already ran in this session — via the in-stage auto-verify on the authoring stages, or the interactive impl-verify offered above on the loop — or is already fresh on record, or the stage was explicitly skipped, say so and go straight to step 2. Only when `autoVerify` is off for this stage **and** verify is **missing or stale** do you present the **Standard Verify Gate**: verify **now, before clearing**, using `AskUserQuestion` with exactly these three options — but only when the host has a question mechanism **and** the clean-room path is available (the host's subagent mechanism plus a dispatchable `forge-verifier` subagent):
-   - **Verify feature {feature}'s loop now** *(recommended)* — dispatch the clean-room `forge-verifier` subagent from this session in require-clean mode; the digest returns here so any fix decision keeps its context. One-time — it does **not** change config.
-   - **Verify now + enable auto-verify going forward** — verify now **and** patch `"autoVerify": true` into `forge.config.json` in place (preserve formatting and every other key) so future stages verify automatically, no prompt. This complements the `forge-init` opt-in. **Do not auto-commit this config change** — treat it like `notes`: a user-facing edit the user commits on their own cadence, never folded into a stage's artifact commit.
-   - **Skip for now** — go straight to `/new` and the next command without verifying. Record this stage's verify status as `"skipped"` in pipeline state (mirroring the existing skip handling) **only** on an explicit skip — a skip does not go stale.
+Every loop run ends here, and ends here **exactly once** — standalone or epic member, complete or not.
 
-   **Host / clean-room fallback (not a user-selectable option):** if the question mechanism, the host's subagent mechanism, or the `forge-verifier` subagent is unavailable, do **not** run clean-room — degrade to printing `/skill:forge-verify {feature} impl` for the user to run inline/manually (mirroring `autoInvokeNextStage`), and offer the auto-verify enable as plain text only if a config write is possible.
-2. **Then `/new`.** Recommended **unconditionally** at this boundary for a clean start — independent of how full the context window is. Every artifact is on disk, so the work survives the clear. **I can't `/new` for you — you have to run it yourself.**
-3. **Then run the next command** in the fresh session — or re-run `/skill:forge` to let the navigator resume from disk:
+First select the single `LoopOutcome` with the ladder in `references/result-reporting.md` (`needs-human` → `blocked` → `deferred` → `partial` → `complete`, first match wins), reading it from Step 4a's authoritative counts and never from the runner's process exit code. If those counts were never obtained, follow that file's operational-failure rule instead: report the failure and its recovery and run no exit at all.
 
-   ```
-   /skill:forge-1-prd {chosen}
-   ```
+**Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-5-loop --outcome "{LoopOutcome}" --specs-dir "{specsDir}" --host pi --verify-capability "{verify-capability}"
+```
+
+Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
+
+Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`. Determine `{verify-capability}` per the **Host and capability determination** section of `references/stage-exit-protocol.md`: `interactive` needs both a question mechanism and *permission* to dispatch the clean-room `forge-verifier`, and a session that merely needs consent first is still `interactive`. The script owns the routing for every outcome — the loop resume, the navigator recovery, the docs handoff, and the epic's live next member — so append nothing to its block: no retry line, no rollup restated, no "continue to docs". A non-`complete` outcome deliberately fences no downstream work, and re-adding one here would claim readiness the backlog does not support.
 
 ## Gotchas
 

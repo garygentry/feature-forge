@@ -19,8 +19,10 @@ item.model  >  --model / options  >  project default  >  provider default
 
 So a backlog item's own `model` field overrides a `--model` flag passed to the
 run, which overrides the project's configured default, which overrides the
-runner/provider default. Pass `--model <model>` (optional flag below) to override
-the project default for the whole run.
+runner/provider default. Pass `--model <model>` to override the project default for
+the whole run; it is catalogued with the run's other optional flags under
+`## Optional flags catalog (Step 2d, rauf)` in `references/agent-selection.md` —
+read that file only when Step 2d's `loopRunner.agentArgument` capability gate is on.
 
 ## Run mode (Step 2d, rauf)
 

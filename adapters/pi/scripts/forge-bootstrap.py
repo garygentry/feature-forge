@@ -806,6 +806,56 @@ def verify(target: Path, answers: Answers) -> VerifyResult:
     return {"toolchainPresent": True, "lint": lint, "test": test, "green": green}
 
 
+#: mirrors ``load_json_with_duplicates``/``warn_duplicate_keys`` in scripts/forge-session.py
+def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
+    """Load JSON with last-key-wins values and ordered duplicate key names.
+
+    Args:
+        path: UTF-8 JSON file to read.
+
+    Returns:
+        The parsed JSON value and duplicate key names in deterministic decoder-hook
+        order. A repeated occurrence is appended whenever its key was already seen
+        in that same object. Objects at every nesting depth use the hook.
+
+    Raises:
+        OSError: The path cannot be read as UTF-8 text.
+        json.JSONDecodeError: The file is not valid JSON.
+    """
+    duplicate_keys: list[str] = []
+
+    def object_from_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                duplicate_keys.append(key)
+            result[key] = value
+        return result
+
+    text = path.read_text(encoding="utf-8")
+    value = json.loads(text, object_pairs_hook=object_from_pairs)
+    return value, duplicate_keys
+
+
+def warn_duplicate_keys(path: Path, duplicate_keys: list[str]) -> None:
+    """Write one deterministic warning for each reported duplicate occurrence.
+
+    Args:
+        path: Source file whose duplicate key was accepted.
+        duplicate_keys: Ordered names returned by `load_json_with_duplicates`.
+
+    Raises:
+        OSError: The process cannot write to stderr.
+    """
+    for key in duplicate_keys:
+        rendered_key = json.dumps(key, ensure_ascii=False)
+        print(
+            f"Warning: duplicate JSON key {rendered_key} in {path}; "
+            "using the last value.",
+            file=sys.stderr,
+        )
+
+
 def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:
     """Stage the exact artifact list and commit or stop at staged (02 §6, 00 §4).
 
@@ -854,13 +904,15 @@ def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:
 
     # commitPrefix is a forge.config.json field (00 §7), not an interview answer.
     # Read it back from the config bootstrap just wrote; default "forge" if absent.
+    config_path = target / "forge.config.json"
     try:
-        cfg = json.loads(
-            (target / "forge.config.json").read_text(encoding="utf-8")
-        )
+        config_value, duplicate_keys = load_json_with_duplicates(config_path)
     except (OSError, json.JSONDecodeError) as exc:
-        raise UsageError(f"cannot read forge.config.json: {exc}")
-    prefix = cfg.get("commitPrefix") or "forge"
+        raise UsageError(f"cannot read forge.config.json: {exc}") from exc
+    warn_duplicate_keys(config_path, duplicate_keys)
+    if not isinstance(config_value, dict):
+        raise UsageError("cannot read forge.config.json: root must be a JSON object")
+    prefix = config_value.get("commitPrefix") or "forge"
     message = f"{prefix}: bootstrap baseline"
     run(["git", "commit", "-m", message], cwd=target)
     rev = run(["git", "rev-parse", "HEAD"], cwd=target)

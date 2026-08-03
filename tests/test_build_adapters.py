@@ -93,9 +93,23 @@ def hash_tree(root: Path) -> dict[str, str]:
     Path-keyed and content-hashed so two trees compare byte-for-byte AND
     structurally (a missing/extra file shows as a key diff). Used to assert
     determinism (REQ-DET-01) and idempotency (REQ-DET-03).
+
+    Bytecode caches are excluded. The fixture tree ships real ``.py`` helpers
+    under ``scripts/`` and ``expected-adapters/*/scripts/``; any run that
+    imports or byte-compiles one drops a ``__pycache__/`` beside it. Those
+    directories are gitignored, so they are invisible to ``git status`` while
+    still being copied by ``fixture_copy`` into the comparison tree. Counting
+    them would make this a *stateful* hash: a freshly generated ``adapters/``
+    never has them, so the first suite run would poison the fixture and every
+    later run would fail with phantom ``.pyc`` key diffs against
+    ``expected-adapters/``. Ignoring them keeps the comparison a function of
+    the generator's output alone, which is the only thing these tests are
+    about.
     """
     out: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
         if path.is_file():
             rel = path.relative_to(root).as_posix()
             out[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -139,6 +153,42 @@ def test_matches_committed_snapshot(fixture_copy):
     """A fresh build of `minimal-canon` equals its committed expected snapshot (REQ-DET-01)."""
     root = fixture_copy("minimal-canon")
     assert run_build(root).returncode == 0
+    assert hash_tree(root / "adapters") == hash_tree(root / "expected-adapters")
+
+
+def test_hash_tree_ignores_bytecode_caches(fixture_copy):
+    """Planting `__pycache__` debris cannot change a `hash_tree` comparison.
+
+    Regression guard for the suite's own idempotency: importing or
+    byte-compiling a fixture helper leaves `__pycache__/` beside it, which
+    `fixture_copy` then carries into the comparison tree. Before this was
+    fixed, that made `bash scripts/validate.sh` pass exactly once per clean
+    checkout — the first run poisoned `expected-adapters/*/scripts/` and every
+    later run failed on phantom `.pyc` keys.
+
+    Everything here happens under a COPIED fixture; the committed tree is
+    never written to.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    clean = hash_tree(root / "adapters")
+    assert clean, "fixture built nothing — the guard below would be vacuous"
+
+    # Plant debris on one side only, mimicking what a real import leaves behind.
+    planted = 0
+    for scripts_dir in sorted((root / "adapters").rglob("scripts")):
+        if not scripts_dir.is_dir():
+            continue
+        cache = scripts_dir / "__pycache__"
+        cache.mkdir(exist_ok=True)
+        (cache / "forge-session.cpython-310.pyc").write_bytes(b"\x00\x0f\x0d\x0a not real bytecode")
+        planted += 1
+    assert planted, "no scripts/ dir under adapters/ — nowhere to plant debris"
+
+    assert hash_tree(root / "adapters") == clean, (
+        "hash_tree counted bytecode-cache debris; the suite is no longer idempotent"
+    )
+    # And the comparison the debris actually broke stays green.
     assert hash_tree(root / "adapters") == hash_tree(root / "expected-adapters")
 
 
@@ -899,3 +949,147 @@ def test_claude_body_helpers_are_verbatim_passthrough():
     codex = mod.skill_body_for(body, "codex")
     assert "AskUserQuestion" not in codex
     assert "Host execution notes (Codex)" in codex
+
+
+# --------------------------------------------------------------------------- #
+# 3.12 Mirrored duplicate-aware loader co-distribution (05 §5.1/§8.2, 07 §6.3)
+#
+# The loader is NOT a seventh runtime helper: it lives inside two scripts that are
+# already in RUNTIME_HELPERS, so nothing new is emitted and no import has to resolve
+# inside a bundle (01-architecture-layout.md §3.4). These tests close that invariant at
+# the distribution boundary — `tests/test_json_loader_parity.py` closes it at the source
+# boundary, and this module reuses that guard's extractor rather than re-implementing it.
+#
+# minimal-canon deliberately cannot prove this: its expected-adapters helpers are ~70-byte
+# stubs, so a body-equality assertion against them would pass vacuously (07 §2.3). The
+# assertions therefore run against the committed adapters/ tree, guarded by this module's
+# existing `skipif(not ADAPTERS.is_dir())` convention.
+# --------------------------------------------------------------------------- #
+
+from test_json_loader_parity import mirrored_loader_pair  # noqa: E402
+
+#: The two scripts that carry a mirrored copy (05 §3.1/§3.2).
+LOADER_CONSUMERS = ("forge-session.py", "forge-bootstrap.py")
+
+
+def test_runtime_helpers_still_has_exactly_six_entries():
+    """No seventh helper was added: the loader ships inside two existing ones.
+
+    A `scripts/forge_json.py` would add an entry here and freeze its signature across
+    six shipped bundles — the design this feature explicitly rejected.
+    """
+    mod = _load_generator_module()
+
+    assert len(mod.RUNTIME_HELPERS) == 6, mod.RUNTIME_HELPERS
+    assert len(set(mod.RUNTIME_HELPERS)) == 6, "duplicate entry in RUNTIME_HELPERS"
+    assert set(LOADER_CONSUMERS) <= set(mod.RUNTIME_HELPERS)
+    assert "forge_json.py" not in mod.RUNTIME_HELPERS
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+@pytest.mark.parametrize("agent", AGENT_TARGETS)
+def test_no_new_file_appears_under_an_adapter_scripts_dir(agent):
+    """Each bundle's scripts/ holds exactly RUNTIME_HELPERS — nothing more, nothing less."""
+    mod = _load_generator_module()
+    scripts_dir = ADAPTERS / agent / "scripts"
+
+    emitted = sorted(p.name for p in scripts_dir.iterdir() if p.is_file())
+
+    assert emitted == sorted(mod.RUNTIME_HELPERS), (
+        f"{agent}: adapters/{agent}/scripts/ diverged from RUNTIME_HELPERS"
+    )
+    assert not any(p.is_dir() for p in scripts_dir.iterdir()), (
+        f"{agent}: a directory appeared under adapters/{agent}/scripts/"
+    )
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+@pytest.mark.parametrize("agent", AGENT_TARGETS)
+@pytest.mark.parametrize("consumer", LOADER_CONSUMERS)
+def test_emitted_consumers_carry_the_mirrored_loader_byte_identically(agent, consumer):
+    """The loader survives generation unchanged in both consumers, on all six targets.
+
+    Pi is included on purpose: the loader contains no `/feature-forge:` string, so the
+    one substitution the Pi build is permitted to make cannot touch it. That is why the
+    *function bodies* are compared even where the whole file legitimately differs.
+    """
+    canon = REPO_ROOT / "scripts" / consumer
+    emitted = ADAPTERS / agent / "scripts" / consumer
+
+    assert emitted.is_file(), f"{agent}: {consumer} missing from the bundle"
+    assert mirrored_loader_pair(emitted) == mirrored_loader_pair(canon), (
+        f"{agent}/{consumer}: the mirrored loader diverged from canon — regenerate "
+        f"with `python3 scripts/build-adapters.py`, never hand-edit adapters/"
+    )
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+@pytest.mark.parametrize("agent", AGENT_TARGETS)
+@pytest.mark.parametrize("consumer", LOADER_CONSUMERS)
+def test_emitted_consumers_keep_mode_0644_and_no_generated_header(agent, consumer):
+    """Runtime helpers use the byte-copy path: mode 0644, no provenance header (05 §5.1)."""
+    emitted = ADAPTERS / agent / "scripts" / consumer
+
+    assert emitted.stat().st_mode & 0o777 == 0o644, f"{agent}/{consumer}: wrong mode"
+    head = emitted.read_text("utf-8").splitlines()[:5]
+    assert not any("DO NOT EDIT" in line for line in head), (
+        f"{agent}/{consumer}: a generated header was injected into a byte-copied helper"
+    )
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+@pytest.mark.parametrize("agent", AGENT_TARGETS)
+def test_the_only_permitted_whole_file_divergence_is_the_pi_substitution(agent):
+    """forge-bootstrap.py is byte-equal everywhere; forge-session.py everywhere but Pi.
+
+    The Pi copy differs only by the generator's `/feature-forge:` -> `/skill:`
+    substitution — the ONE divergence `_translate_pi_support_command_strings` permits a
+    runtime helper — so re-applying it to canon reproduces the emitted file exactly. A
+    naive "byte-equal including Pi" assertion would fail against the real tree, and
+    dropping Pi from the check would leave its copy unguarded.
+    """
+    bootstrap_canon = (REPO_ROOT / "scripts" / "forge-bootstrap.py").read_bytes()
+    session_canon = (REPO_ROOT / "scripts" / "forge-session.py").read_text("utf-8")
+
+    assert (ADAPTERS / agent / "scripts" / "forge-bootstrap.py").read_bytes() == (
+        bootstrap_canon
+    ), f"{agent}: forge-bootstrap.py diverged from canon"
+
+    emitted_session = (ADAPTERS / agent / "scripts" / "forge-session.py").read_text("utf-8")
+    expected = (
+        session_canon.replace("/feature-forge:", "/skill:")
+        if agent == "pi"
+        else session_canon
+    )
+    assert emitted_session == expected, (
+        f"{agent}: forge-session.py diverged beyond the permitted host substitution"
+    )
+
+
+@pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
+@pytest.mark.parametrize("agent", AGENT_TARGETS)
+@pytest.mark.parametrize("consumer", LOADER_CONSUMERS)
+def test_the_emitted_consumer_still_executes_with_its_in_file_loader(agent, consumer):
+    """Each bundled copy imports and exposes its own loader — no sibling module needed.
+
+    Executed with `-I` so the bundle's own directory, not the repository, has to supply
+    everything the helper needs, and with `-B` so importing the emitted file leaves no
+    `__pycache__` behind in the committed tree — a stray one would look like generator
+    drift to `--check`.
+    """
+    emitted = ADAPTERS / agent / "scripts" / consumer
+    probe = (
+        "import importlib.util, sys;"
+        f"spec = importlib.util.spec_from_file_location('bundled', {str(emitted)!r});"
+        "mod = importlib.util.module_from_spec(spec);"
+        "sys.modules['bundled'] = mod;"
+        "spec.loader.exec_module(mod);"
+        "assert callable(mod.load_json_with_duplicates);"
+        "assert callable(mod.warn_duplicate_keys)"
+    )
+
+    proc = subprocess.run(
+        [sys.executable, "-I", "-B", "-c", probe], capture_output=True, text=True
+    )
+
+    assert proc.returncode == 0, f"{agent}/{consumer}: {proc.stderr}"

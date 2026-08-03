@@ -6,7 +6,7 @@ catalog of descriptions. It cannot see what happens once a skill is driving, whi
 behavior the Claude 5 adaptation program is about. This harness measures that, over N runs
 per model, and reports a RATE rather than pass/fail.
 
-Two probes:
+Three probes:
 
 PROBE 1 — stage-exit compliance (`--probe stage-exit`)
     Drives a forge authoring stage to its close in a fresh headless session against a
@@ -25,9 +25,17 @@ PROBE 1 — stage-exit compliance (`--probe stage-exit`)
 PROBE 2 — R2 prelude re-expansion (`--probe r2-prelude`)
     Gates a context-efficiency item (plan §8.4). Applies R2 to a real skill body — first
     plugin-root prelude kept byte-verbatim, later occurrences reduced to the compact form
-    from `specs/context-efficiency/05-instruction-relocations.md` §1.5 — then asks the
+    from the instruction-relocation rules — then asks the
     model to execute a later call site and checks whether the command it actually runs
     reconstructs the resolver BYTE-IDENTICALLY.
+
+PROBE 3 — branch path compliance (`--probe branch-path`)
+    Drives a whole verify -> fix -> re-verify diversion and scores whether the model
+    closed every step through the scripted contract and rejoined the production stage the
+    diversion served. Its two scenarios — `successful-rejoin` and `recovery` — are
+    reported as SEPARATE variants and are never averaged into the linear
+    `stage-exit/cold`|`warm` cells: that baseline only ever measured the already-scripted
+    linear authoring path and is not evidence for diversion compliance.
 
 Driver
 ------
@@ -42,7 +50,7 @@ driver prints "skipped" and exits 0. The only non-zero exit is a harness bug. Lo
 by default — this is deliberately NOT wired into `.github/workflows/eval.yml`.
 
 Usage:
-    python3 eval/run-compliance-eval.py [--probe stage-exit|r2-prelude|all]
+    python3 eval/run-compliance-eval.py [--probe stage-exit|r2-prelude|branch-path|all]
                                         [--models A,B] [--n N] [--json] [--out FILE]
 
 Each run costs real tokens (roughly $0.30–$1.00 at time of writing). The default N is
@@ -63,6 +71,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Final, Literal, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent  # eval/ -> feature-forge/
 HELPER = REPO_ROOT / "scripts" / "forge-session.py"
@@ -95,8 +104,8 @@ BOOTSTRAP_PRELUDE = (
 #: Inner line that marks a prelude occurrence (mirrors _PRELUDE_SENTINEL upstream).
 PRELUDE_SENTINEL = '[ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"'
 
-#: The compact form R2 substitutes at 2nd-and-subsequent call sites
-#: (`05-instruction-relocations.md` §1.5). Sentinel-free by construction.
+#: The compact form R2 substitutes at 2nd-and-subsequent call sites.
+#: Sentinel-free by construction.
 COMPACT_PRELUDE_LEAD = (
     "Resolve `$R` via the plugin-root prelude shown at the top of this skill, then run:"
 )
@@ -219,12 +228,11 @@ def driver_path() -> str | None:
     return shutil.which("claude")
 
 
-def run_session(cwd: Path, prompt: str, model: str) -> dict:
+def run_session(cwd: Path, prompt: str, model: str) -> ParsedTranscript:
     """Run one fresh headless session and return a flattened transcript.
 
-    Returns a dict with `ok`, `final_text`, `bash_commands`, `cost_usd`, `turns`,
-    `duration_ms`, and on failure a `note`. A driver-level failure is reported as data —
-    it degrades the run to unscored, it does not raise.
+    Returns a `ParsedTranscript`, and on failure `ok: False` plus a `note`. A driver-level
+    failure is reported as data — it degrades the run to unscored, it does not raise.
 
     `--permission-mode bypassPermissions` is required because a headless session has no
     way to answer a permission prompt, and the probe is worthless if the model's Bash
@@ -261,8 +269,132 @@ def run_session(cwd: Path, prompt: str, model: str) -> dict:
     return parse_transcript(proc.stdout)
 
 
-def parse_transcript(stdout: str) -> dict:
-    """Flatten a `--output-format stream-json` stream into the fields the scorers need."""
+#: Cap on `CommandEvidence.resultTail`. The tail exists to make a failure
+#: READABLE in a bounded report; nothing scores against it, so a generous-but-finite slice
+#: is the whole requirement.
+RESULT_TAIL_LIMIT: Final[int] = 500
+
+#: The host renders a failed Bash result with `Exit code N` as the FIRST line, ahead of the
+#: captured output — verified against a live `--output-format stream-json` run, not assumed.
+#: Anchored at the start (`re.match`) so a command whose own output happens to mention an
+#: exit code cannot forge a status for itself.
+_EXIT_CODE_RE: Final = re.compile(r"\s*Exit code (\d+)\b")
+
+#: Both tokens must appear for a command to count as a real scripted exit. A
+#: `state-verify` call carries the first token only, and hand-authored prose carries
+#: neither — which is exactly the distinction ordered matching has to make.
+EXIT_COMMAND_TOKENS: Final[tuple[str, ...]] = ("forge-session.py", "stage-exit")
+
+
+def _is_exit_command(command: str) -> bool:
+    """True when `command` is a real `forge-session.py stage-exit` invocation."""
+    return all(token in command for token in EXIT_COMMAND_TOKENS)
+
+
+def _content_blocks(event: object, event_type: str) -> list[dict]:
+    """Message content blocks of `event`, or `[]` when the stream shape is not that."""
+    if not isinstance(event, dict) or event.get("type") != event_type:
+        return []
+    message = event.get("message")
+    if not isinstance(message, dict):
+        return []
+    content = message.get("content")
+    if not isinstance(content, list):
+        return []
+    return [block for block in content if isinstance(block, dict)]
+
+
+def _result_text(content: object) -> str:
+    """Render a `tool_result` payload as text — the host sends a str or a block list."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            block["text"]
+            for block in content
+            if isinstance(block, dict) and isinstance(block.get("text"), str)
+        )
+    return "" if content is None else str(content)
+
+
+def _unusable(note: str, bash_commands: list[str]) -> ParsedTranscript:
+    """A transcript we refuse to guess about: `ok=False` plus an actionable diagnostic."""
+    return {"ok": False, "note": note, "bash_commands": bash_commands}
+
+
+class CommandEvidence(TypedDict):
+    """A Bash request paired with its actual host tool result.
+
+    Total. The whole point of this type is that a REQUESTED command is not a RUN
+    command: scoring on requests alone would credit a command the host rejected or
+    that failed. `resultSeen` plus `isError` is what makes the evidence real.
+    """
+
+    # 0-based position among Bash requests in the transcript. Establishes the
+    # ordering that ordered-subsequence matching consumes.
+    requestIndex: int
+    # Host tool-use id linking request to result. The join key — never positional,
+    # since results can interleave.
+    toolUseId: str
+    # Verbatim requested command string, unnormalized.
+    command: str
+    # Whether a matching tool RESULT was found. False means the command was
+    # requested but never observed to complete — a request without evidence, which
+    # never scores as executed.
+    resultSeen: bool
+    # Parsed exit status, or None when the host did not report one (including every
+    # `resultSeen: False` case). None is unknown, never success.
+    exitCode: int | None
+    # Host-reported error flag. True fails the evidence even with exitCode 0, since
+    # the host may error out before the command's own status is meaningful.
+    isError: bool
+    # Trailing slice of result output, bounded for diagnostics. Never matched
+    # against — it is for reading a failure, not for scoring.
+    resultTail: str
+
+
+class ParsedTranscript(TypedDict, total=False):
+    """Normalized fields shared by compliance scorers.
+
+    `total=False` because a malformed or truncated transcript yields a partial
+    parse: `ok: False` plus `note`, with the content fields absent. A scorer must
+    check `ok` before reading anything else — a missing `bash_commands` means "not
+    parsed", never "no commands were run".
+    """
+
+    # Whether the transcript parsed. False means every content field below may be
+    # absent and the run must not be scored as a compliance failure.
+    ok: bool
+    # The assistant's final user-facing message — where the terminal NEXT-STEPS
+    # block and its sentinel must appear.
+    final_text: str
+    # All assistant messages in order, for asserting no content follows the
+    # sentinel and no competing terminal block was emitted.
+    assistant_texts: list[str]
+    # Every requested Bash command, in order. Requests only — pair with
+    # `command_evidence` for what actually ran.
+    bash_commands: list[str]
+    # Requests joined to results; the evidence scoring consumes.
+    command_evidence: list[CommandEvidence]
+    # Run cost in USD, None when the host did not report it. Advisory telemetry —
+    # never a scoring criterion.
+    cost_usd: float | None
+    # Assistant turn count, None when unreported. Advisory.
+    turns: int | None
+    # Wall-clock duration in ms, None when unreported. Advisory.
+    duration_ms: int | None
+    # Human-readable parse diagnostic. Present on `ok: False`; may also carry a
+    # non-fatal advisory on a successful parse.
+    note: str
+
+
+def parse_transcript(stdout: str) -> ParsedTranscript:
+    """Pair ordered Bash tool requests with results and retain all assistant text.
+
+    Raises:
+        No exception for malformed stream lines or missing result events; those are
+        returned as `ok=False` with an actionable `note`.
+    """
     events = []
     for line in stdout.splitlines():
         line = line.strip()
@@ -273,37 +405,184 @@ def parse_transcript(stdout: str) -> dict:
         except json.JSONDecodeError:
             continue  # a non-JSON warning line on the stream is not a harness failure
 
+    # Pre-pass: every Bash tool-use id anywhere on the stream. Without it a result that
+    # ARRIVES BEFORE its request is indistinguishable from a result for a tool this
+    # harness does not score (Read, Edit, a subagent) — and the two must not share a fate.
+    bash_ids = {
+        block["id"]
+        for event in events
+        for block in _content_blocks(event, "assistant")
+        if block.get("type") == "tool_use"
+        and block.get("name") == "Bash"
+        and isinstance(block.get("id"), str)
+        and block["id"]
+    }
+
     bash_commands: list[str] = []
+    command_evidence: list[CommandEvidence] = []
+    assistant_texts: list[str] = []
+    #: Bash tool-use id -> index into `command_evidence`. The join key is the id, never
+    #: the position: results interleave, and a positional join would credit one command's
+    #: request with a different command's result.
+    evidence_by_id: dict[str, int] = {}
+    seen_tool_ids: set[str] = set()
+    resulted_ids: set[str] = set()
+
     for event in events:
-        if event.get("type") != "assistant":
-            continue
-        for block in event.get("message", {}).get("content", []):
-            if block.get("type") == "tool_use" and block.get("name") == "Bash":
-                command = block.get("input", {}).get("command")
-                if isinstance(command, str):
-                    bash_commands.append(command)
+        for block in _content_blocks(event, "assistant"):
+            block_type = block.get("type")
+            if block_type == "text":
+                text = block.get("text")
+                if isinstance(text, str):
+                    assistant_texts.append(text)
+                continue
+            if block_type != "tool_use":
+                continue
+            tool_id = block.get("id") if isinstance(block.get("id"), str) else ""
+            if tool_id:
+                if tool_id in seen_tool_ids:
+                    return _unusable(
+                        f"duplicate tool id {tool_id!r} on the stream; "
+                        "requests and results cannot be joined unambiguously",
+                        bash_commands,
+                    )
+                seen_tool_ids.add(tool_id)
+            if block.get("name") != "Bash":
+                continue
+            payload = block.get("input")
+            command = payload.get("command") if isinstance(payload, dict) else None
+            if not isinstance(command, str):
+                continue
+            if tool_id:
+                evidence_by_id[tool_id] = len(command_evidence)
+            command_evidence.append(
+                # An unpaired request carries no host verdict at all: `resultSeen: False`
+                # is what fails it, and claiming `isError` would invent a report the host
+                # never made.
+                {
+                    "requestIndex": len(bash_commands),
+                    "toolUseId": tool_id,
+                    "command": command,
+                    "resultSeen": False,
+                    "exitCode": None,
+                    "isError": False,
+                    "resultTail": "",
+                }
+            )
+            bash_commands.append(command)
+
+        for block in _content_blocks(event, "user"):
+            if block.get("type") != "tool_result":
+                continue
+            tool_id = block.get("tool_use_id")
+            if not isinstance(tool_id, str) or not tool_id:
+                continue
+            if tool_id not in evidence_by_id:
+                if tool_id in bash_ids:
+                    return _unusable(
+                        f"tool result for {tool_id!r} precedes its request; "
+                        "the stream is out of order and cannot be scored",
+                        bash_commands,
+                    )
+                continue  # a result for a tool this harness does not score
+            if tool_id in resulted_ids:
+                return _unusable(
+                    f"two tool results for request {tool_id!r}; "
+                    "the command's real outcome is ambiguous",
+                    bash_commands,
+                )
+            resulted_ids.add(tool_id)
+            is_error = bool(block.get("is_error"))
+            text = _result_text(block.get("content"))
+            reported = _EXIT_CODE_RE.match(text)
+            entry = command_evidence[evidence_by_id[tool_id]]
+            entry["resultSeen"] = True
+            entry["isError"] = is_error
+            entry["resultTail"] = text[-RESULT_TAIL_LIMIT:]
+            # A success needs no reported code; an error uses its reported NON-zero code
+            # where present and stays unknown (None) otherwise. None never means success.
+            if not is_error:
+                entry["exitCode"] = 0
+            elif reported and int(reported.group(1)):
+                entry["exitCode"] = int(reported.group(1))
+            else:
+                entry["exitCode"] = None
 
     result = next((e for e in reversed(events) if e.get("type") == "result"), None)
     if result is None:
-        return {
-            "ok": False,
-            "note": "no result event on the stream",
-            "bash_commands": bash_commands,
-        }
+        return _unusable("no result event on the stream", bash_commands)
     if result.get("is_error") or not isinstance(result.get("result"), str):
-        return {
-            "ok": False,
-            "note": f"result event reported an error: {str(result.get('result'))[:200]}",
-            "bash_commands": bash_commands,
-        }
+        return _unusable(
+            f"result event reported an error: {str(result.get('result'))[:200]}",
+            bash_commands,
+        )
+    final_text = result["result"]
+    # The result event repeats the last assistant message on most runs, so append it only
+    # when it is genuinely absent — a duplicate would double every sentinel count.
+    if final_text not in assistant_texts:
+        assistant_texts.append(final_text)
     return {
         "ok": True,
-        "final_text": result["result"],
+        "final_text": final_text,
+        "assistant_texts": assistant_texts,
         "bash_commands": bash_commands,
+        "command_evidence": command_evidence,
         "cost_usd": result.get("total_cost_usd"),
         "turns": result.get("num_turns"),
         "duration_ms": result.get("duration_ms"),
     }
+
+
+def ordered_command_evidence(
+    transcript: ParsedTranscript,
+    expected: list[ExpectedCommand],
+) -> tuple[bool, list[CommandEvidence]]:
+    """Match expected real commands to successful results in strict order.
+
+    Args:
+        transcript: Normalized session transcript.
+        expected: Scenario commands and required literal tokens in expected order.
+
+    Returns:
+        `(True, matches)` only when each expectation matches exactly one later Bash
+        request with a seen, non-error, zero exit result. Otherwise `(False, matches)`
+        contains the successful prefix for diagnostics.
+    """
+    evidence = transcript.get("command_evidence") or []
+    matches: list[CommandEvidence] = []
+    cursor = 0
+    for entry in expected:
+        tokens = entry["contains"]
+        if not tokens:
+            # An empty token list matches every command; treating it as satisfied would
+            # score a scenario nobody actually drove. The loader rejects it too.
+            return False, matches
+        found: int | None = None
+        for index in range(cursor, len(evidence)):
+            item = evidence[index]
+            # Literal tokens, ALL of them, in ONE command — an AND, never a regex.
+            if all(token in item["command"] for token in tokens):
+                found = index
+                break
+            if _is_exit_command(item["command"]):
+                # A real exit standing between two matched entries is a reordered or
+                # duplicated exit, not reconnaissance — the one thing that may NOT be
+                # skipped over.
+                return False, matches
+        if found is None:
+            return False, matches
+        item = evidence[found]
+        # Requested is not run: only a seen, non-error, zero-exit result is evidence.
+        if not (item["resultSeen"] and not item["isError"] and item["exitCode"] == 0):
+            return False, matches
+        matches.append(item)
+        cursor = found + 1
+    for item in evidence[cursor:]:
+        if _is_exit_command(item["command"]):
+            # A trailing extra exit is the same defect seen from the other side: the run
+            # fired a scripted exit the fixture never expected.
+            return False, matches
+    return True, matches
 
 
 # --------------------------------------------------------------------------- #
@@ -509,6 +788,687 @@ def _in_fenced_block(text: str, needle: str) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# Probe 3 — branch path compliance (verify -> fix -> re-verify)
+# --------------------------------------------------------------------------- #
+
+
+#: The exact branch fixture. Deliberately nested under `compliance/`, BELOW
+#: `eval/run-eval.py::load_fixtures()`'s non-recursive `eval/fixtures/*.json` glob, so a
+#: compliance fixture can never be picked up as a trigger fixture. This file is
+#: read by path; the branch probe never globs.
+BRANCH_FIXTURE_PATH = REPO_ROOT / "eval" / "fixtures" / "compliance" / "verify-fix-reverify.json"
+
+#: Required scenario names, in required file order. Cardinality and order are validated
+#: rather than inferred: a fixture that silently lost the recovery scenario would still
+#: report a rate, and a rate over half the matrix is worse than no rate.
+BRANCH_SCENARIO_ORDER: Final[tuple[str, ...]] = ("successful-rejoin", "recovery")
+
+#: The evidence steps a branch scenario may attribute a command to (`EvidenceStage`).
+EVIDENCE_STAGES: Final[tuple[str, ...]] = (
+    "verify-findings",
+    "fix-applied",
+    "reverify-passed",
+    "reverify-recovery",
+    "terminal-exit",
+)
+
+#: The one evidence step that owns the terminal block. Exactly one per scenario, and it
+#: must be last: everything before it is a nested link in the chain (REQ-EXIT-04).
+TERMINAL_EVIDENCE_STAGE = "terminal-exit"
+
+#: Findings report path, RELATIVE to the feature directory — the form `state-verify
+#: --findings-file` requires and the form `forge-verify` writes.
+BRANCH_FINDINGS_FILE = ".verification/VERIFY-prd-2026-01-01.md"
+BRANCH_FINDINGS_COUNT = 3
+
+#: A findings report with enough substance to act on. A stub invites the model to
+#: question the fixture instead of driving the diversion, which scores as a compliance
+#: miss it is not — the same lesson the linear fixture's PRD encodes.
+BRANCH_FINDINGS_DOC = """# Verification findings — widget-search (PRD)
+
+Mode: prd
+Served stage: forge-1-prd
+Verdict: findings
+
+## F1 — REQ-PERF-01 has no measurement point (severity: medium)
+
+The 200ms p95 budget names no surface to measure at, so it cannot be verified.
+Fix: state that the budget is measured server-side at the search endpoint.
+
+## F2 — REQ-SEARCH-02 leaves ties undefined (severity: medium)
+
+"Ranked by relevance, exact-prefix first" does not say how equal-relevance results
+order. Fix: state that ties break by name, ascending.
+
+## F3 — Success criterion SC-2 has no baseline (severity: low)
+
+"Fall by half" has no starting number recorded. Fix: name the current quarterly ticket
+count as the baseline.
+"""
+
+#: Capability passed when deriving ground truth. A branch exit's gate is `none` whatever
+#: the caller's capability is (the outcome table names the one action), so this cannot
+#: skew the block a live run is scored against.
+BRANCH_VERIFY_CAPABILITY = "manual"
+
+BranchScenarioName = Literal["successful-rejoin", "recovery"]
+EvidenceStage = Literal[
+    "verify-findings",
+    "fix-applied",
+    "reverify-passed",
+    "reverify-recovery",
+    "terminal-exit",
+]
+
+
+class ExpectedCommand(TypedDict):
+    """One ordered command that must have a successful tool result.
+
+    Total. Ordering is positional: an ExpectedCommand's index in
+    `BranchScenario.expectedCommands` IS its required order, which is why matching
+    is ordered-subsequence rather than set membership (§4.2).
+    """
+
+    # Which branch step this command belongs to (verify, fix, re-verify). Groups
+    # evidence so a scorer can attribute a miss to a step, not just to the run.
+    stage: EvidenceStage
+    # Substrings that must ALL appear in one command string — an AND, not an OR,
+    # and substring matching rather than equality so incidental flag ordering and
+    # absolute paths do not make the fixture brittle. Non-empty; an empty list
+    # would match every command and silently pass.
+    contains: list[str]
+
+
+class BranchScenario(TypedDict):
+    """One deterministic branch-path compliance scenario.
+
+    Total. The three outcome fields are the fixture's INPUTS — the branch results
+    being simulated — while `expected*` are the ground truth being scored. The
+    narrow Literals are deliberate: this fixture exercises the findings->fix->
+    re-verify path only, and a widened value belongs in a new scenario rather than
+    a loosened type.
+    """
+
+    # Stable scenario id, used in scorer output and to select a single scenario.
+    name: BranchScenarioName
+    # Initial verify result being simulated. Always "findings" — a passing initial
+    # verify produces no fix step and so exercises no branch path.
+    initialVerifyOutcome: Literal["findings"]
+    # Fix result being simulated. Always "applied": a fix that applies nothing has
+    # no rejoin to verify.
+    fixOutcome: Literal["applied"]
+    # Re-verify result being simulated. This is the branch: "passed" rejoins the
+    # served production stage, while "findings"/"failed" must keep verification
+    # authoritative instead of advancing.
+    reverifyOutcome: Literal["passed", "findings", "failed"]
+    # The single command that MUST be primary at the terminus for this outcome —
+    # the assertion that catches a dropped pipeline thread (#176).
+    expectedPrimaryCommand: str
+    # Ordered commands that must each appear with a successful tool result.
+    expectedCommands: list[ExpectedCommand]
+
+
+class BranchFixture(TypedDict):
+    """Versioned offline input for the branch compliance probe.
+
+    Total. Deliberately isolated from the existing linear fixtures (§3.1): this
+    file is loaded only by the branch probe, so a change here cannot move the
+    linear baseline.
+    """
+
+    # Fixture schema version. Literal[1] — a shape change bumps this rather than
+    # mutating v1 in place, so an older probe fails loudly instead of
+    # misinterpreting new fields.
+    schemaVersion: Literal[1]
+    # Synthetic feature name built into the scratch repo. Never a real repo feature.
+    feature: str
+    # Production stage the simulated verify/fix diversion serves and rejoins.
+    servedStage: Literal["forge-1-prd"]
+    # Verify mode paired with `servedStage`; must agree with it under
+    # VERIFY_MODE_TO_STAGE, and the fixture validator checks that agreement.
+    verifyMode: Literal["prd"]
+    # The scenarios to run. Exactly two in the shipped fixture (successful rejoin
+    # and unresolved re-verify); non-empty, and names must be unique.
+    scenarios: list[BranchScenario]
+
+
+_BRANCH_TOP_KEYS: Final[frozenset[str]] = frozenset(
+    {"schemaVersion", "feature", "servedStage", "verifyMode", "scenarios"}
+)
+_BRANCH_SCENARIO_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "name",
+        "initialVerifyOutcome",
+        "fixOutcome",
+        "reverifyOutcome",
+        "expectedPrimaryCommand",
+        "expectedCommands",
+    }
+)
+_BRANCH_COMMAND_KEYS: Final[frozenset[str]] = frozenset({"stage", "contains"})
+
+#: Both markers a command must carry to count as a REAL scripted exit rather than a
+#: prose claim or a reconnaissance call (§3.2's "never accepts a prose claim").
+_EXIT_MARKERS: Final[tuple[str, ...]] = ("forge-session.py", "stage-exit")
+
+
+def _load_session_module():
+    """Import `scripts/forge-session.py` for its shared domain constants.
+
+    The filename is hyphenated, so it is not importable by name; this mirrors
+    `_load_upstream_prelude`. Reading the real `VERIFY_MODE_TO_STAGE` and
+    `SAFE_NAME_RE` is the point — a second copy here could drift into a fixture check
+    that agrees with itself and with nothing else.
+    """
+    spec = importlib.util.spec_from_file_location("_forge_session_for_eval", HELPER)
+    if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        raise RuntimeError(f"cannot load {HELPER}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _fail(message: str) -> None:
+    """Raise the fixture-invariant error, keeping every call site one line."""
+    raise RuntimeError(f"{BRANCH_FIXTURE_PATH.name}: {message}")
+
+
+def _require_str(value: object, what: str) -> str:
+    if not isinstance(value, str) or not value:
+        _fail(f"{what} must be a non-empty string, got {value!r}")
+    return value  # type: ignore[return-value]
+
+
+def _validate_command(entry: object, index: int, scenario: str, fixture_served: str,
+                      fixture_mode: str, terminal: bool) -> None:
+    where = f"scenario {scenario!r} command {index}"
+    if not isinstance(entry, dict):
+        _fail(f"{where} must be an object, got {type(entry).__name__}")
+    unknown = sorted(set(entry) - _BRANCH_COMMAND_KEYS)
+    if unknown:
+        _fail(f"{where} has unknown key(s) {unknown}")
+    missing = sorted(_BRANCH_COMMAND_KEYS - set(entry))
+    if missing:
+        _fail(f"{where} is missing key(s) {missing}")
+    stage = _require_str(entry["stage"], f"{where} stage")
+    if stage not in EVIDENCE_STAGES:
+        _fail(f"{where} stage {stage!r} is not one of {list(EVIDENCE_STAGES)}")
+    if terminal and stage != TERMINAL_EVIDENCE_STAGE:
+        _fail(f"{where} is last and must be stage {TERMINAL_EVIDENCE_STAGE!r}, got {stage!r}")
+    if not terminal and stage == TERMINAL_EVIDENCE_STAGE:
+        _fail(f"{where} is stage {TERMINAL_EVIDENCE_STAGE!r} but is not the final command")
+    tokens = entry["contains"]
+    # An empty token list matches EVERY command, so it would pass silently rather than
+    # fail — the one shape a substring matcher cannot defend itself against.
+    if not isinstance(tokens, list) or not tokens:
+        _fail(f"{where} contains must be a non-empty list, got {tokens!r}")
+    for token in tokens:
+        _require_str(token, f"{where} token")
+    for marker in _EXIT_MARKERS:
+        if not any(marker in t for t in tokens):
+            _fail(f"{where} must require the marker {marker!r} so prose cannot satisfy it")
+    owner = "--owner direct" if terminal else "--owner nested"
+    if owner not in tokens:
+        _fail(f"{where} must require {owner!r}")
+    for token in tokens:
+        if token.startswith("--served-stage ") and token != f"--served-stage {fixture_served}":
+            _fail(f"{where} names a served stage other than {fixture_served!r}: {token!r}")
+        if token.startswith("--verify-mode ") and token != f"--verify-mode {fixture_mode}":
+            _fail(f"{where} names a verify mode other than {fixture_mode!r}: {token!r}")
+        if token.startswith("--") and len(token.split(" ")) != 2:
+            _fail(f"{where} flag token {token!r} must be exactly '--flag value'")
+
+
+def load_branch_fixture(path: Path) -> BranchFixture:
+    """Load and validate the branch compliance fixture.
+
+    Args:
+        path: Exact JSON fixture path.
+
+    Returns:
+        A validated version-1 fixture with scenarios in file order.
+
+    Raises:
+        OSError: The fixture cannot be read.
+        json.JSONDecodeError: The fixture is malformed JSON.
+        RuntimeError: Its version, keys, literals, scenario cardinality, ordering,
+            command tokens, or safe feature identity violate this specification.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        _fail(f"root must be an object, got {type(data).__name__}")
+    unknown = sorted(set(data) - _BRANCH_TOP_KEYS)
+    if unknown:
+        _fail(f"unknown top-level key(s) {unknown}")
+    missing = sorted(_BRANCH_TOP_KEYS - set(data))
+    if missing:
+        _fail(f"missing top-level key(s) {missing}")
+
+    version = data["schemaVersion"]
+    # `bool` is an `int` subclass, so True would otherwise validate as version 1.
+    if isinstance(version, bool) or version != 1:
+        _fail(f"unsupported schemaVersion {version!r}; this probe reads version 1")
+
+    session = _load_session_module()
+    feature = _require_str(data["feature"], "feature")
+    if not session.SAFE_NAME_RE.match(feature):
+        _fail(f"feature {feature!r} is not a safe name")
+    served = _require_str(data["servedStage"], "servedStage")
+    mode = _require_str(data["verifyMode"], "verifyMode")
+    if session.VERIFY_MODE_TO_STAGE.get(mode) != served:
+        _fail(
+            f"verifyMode {mode!r} maps to "
+            f"{session.VERIFY_MODE_TO_STAGE.get(mode)!r}, not servedStage {served!r}"
+        )
+
+    scenarios = data["scenarios"]
+    if not isinstance(scenarios, list) or not scenarios:
+        _fail(f"scenarios must be a non-empty list, got {scenarios!r}")
+    names = [s.get("name") if isinstance(s, dict) else None for s in scenarios]
+    if len(names) != len(set(names)):
+        _fail(f"scenario names must be unique, got {names}")
+    if tuple(names) != BRANCH_SCENARIO_ORDER:
+        _fail(f"scenarios must be exactly {list(BRANCH_SCENARIO_ORDER)} in that order, got {names}")
+
+    for scenario in scenarios:
+        name = scenario["name"]
+        unknown = sorted(set(scenario) - _BRANCH_SCENARIO_KEYS)
+        if unknown:
+            _fail(f"scenario {name!r} has unknown key(s) {unknown}")
+        missing = sorted(_BRANCH_SCENARIO_KEYS - set(scenario))
+        if missing:
+            _fail(f"scenario {name!r} is missing key(s) {missing}")
+        if scenario["initialVerifyOutcome"] != "findings":
+            _fail(f"scenario {name!r} initialVerifyOutcome must be 'findings'")
+        if scenario["fixOutcome"] != "applied":
+            _fail(f"scenario {name!r} fixOutcome must be 'applied'")
+        if scenario["reverifyOutcome"] not in ("passed", "findings", "failed"):
+            _fail(f"scenario {name!r} reverifyOutcome {scenario['reverifyOutcome']!r} is invalid")
+        primary = _require_str(scenario["expectedPrimaryCommand"], f"scenario {name!r} primary")
+        if feature not in primary:
+            _fail(f"scenario {name!r} expectedPrimaryCommand does not name {feature!r}")
+        commands = scenario["expectedCommands"]
+        if not isinstance(commands, list) or not commands:
+            _fail(f"scenario {name!r} expectedCommands must be a non-empty list")
+        last = len(commands) - 1
+        for index, entry in enumerate(commands):
+            _validate_command(entry, index, name, served, mode, terminal=index == last)
+        stages = [entry["stage"] for entry in commands]
+        if len(stages) != len(set(stages)):
+            _fail(f"scenario {name!r} repeats an evidence stage: {stages}")
+
+    return data  # type: ignore[return-value]
+
+
+def build_branch_fixture(root: Path, fixture: BranchFixture) -> None:
+    """Build a schema-valid throwaway repository before branch diversion.
+
+    The repository is parked exactly where the diversion begins: the PRD is authored and
+    committed at version 1, a findings report is already on disk, and no
+    `forge-verify-prd` entry exists yet — so every verification transition the scenario
+    needs is one the run (or `expected_branch_exit`) actually performs.
+
+    Raises:
+        OSError: Fixture files cannot be created.
+        RuntimeError: Fixture values are invalid or the repository cannot initialize.
+    """
+    feature = fixture["feature"]
+    session = _load_session_module()
+    if not isinstance(feature, str) or not session.SAFE_NAME_RE.match(feature):
+        raise RuntimeError(f"branch fixture feature {feature!r} is not a safe name")
+    if fixture["servedStage"] != FIXTURE_STAGE:
+        raise RuntimeError(
+            f"branch fixture servedStage {fixture['servedStage']!r} is not {FIXTURE_STAGE!r}; "
+            "the scratch repository only models the PRD close"
+        )
+
+    feature_dir = root / "specs" / feature
+    (feature_dir / BRANCH_FINDINGS_FILE).parent.mkdir(parents=True)
+    (root / "forge.config.json").write_text(
+        json.dumps(
+            {"specsDir": "specs", "gitCommitAfterStage": True, "commitPrefix": "feat"},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (feature_dir / "PRD.md").write_text(FIXTURE_PRD, encoding="utf-8")
+    (feature_dir / BRANCH_FINDINGS_FILE).write_text(BRANCH_FINDINGS_DOC, encoding="utf-8")
+    (feature_dir / PIPELINE_STATE).write_text(
+        json.dumps(
+            {
+                "feature": feature,
+                "createdAt": FIXTURE_TIMESTAMP,
+                "updatedAt": FIXTURE_TIMESTAMP,
+                "pipelineStatus": "active",
+                "currentStage": "forge-2-tech",
+                "stages": {
+                    FIXTURE_STAGE: {
+                        "status": "complete",
+                        "version": 1,
+                        "artifacts": ["PRD.md"],
+                        "startedAt": FIXTURE_TIMESTAMP,
+                        "completedAt": FIXTURE_TIMESTAMP,
+                        "commitHash": None,
+                        "basedOnVersions": {},
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _git_init(root)
+
+
+def branch_prompt(fixture: BranchFixture, scenario: BranchScenario) -> str:
+    """Return the user turn that drives one complete branch scenario.
+
+    The branch results are SUPPLIED rather than discovered: a live clean-room dispatch
+    would make the outcome non-deterministic, and what is under test is whether the model
+    closes each step through the scripted contract, not whether a verifier finds the
+    findings this fixture already wrote.
+
+    Ownership is stated with the literal `owner:` token because the shared protocol
+    forbids inferring it from how an invocation is phrased — the dispatching prompt IS
+    the ownership carrier, so this prompt has to carry it.
+    """
+    feature = fixture["feature"]
+    served = fixture["servedStage"]
+    mode = fixture["verifyMode"]
+    verify_skill = REPO_ROOT / "skills" / "forge-verify" / "SKILL.md"
+    fix_skill = REPO_ROOT / "skills" / "forge-fix" / "SKILL.md"
+    protocol = REPO_ROOT / "references" / "stage-exit-protocol.md"
+    if scenario["reverifyOutcome"] == "passed":
+        reverify = (
+            "the re-verification finds nothing further — it PASSES for the same served "
+            "stage"
+        )
+    elif scenario["reverifyOutcome"] == "findings":
+        reverify = (
+            "the re-verification reports FURTHER findings for the same served stage, so "
+            "the fix work is not resolved"
+        )
+    else:
+        reverify = (
+            "the re-verification could not run to a result at all — it FAILED "
+            "operationally"
+        )
+    return (
+        f"You are the agent driving the feature-forge pipeline in this repository. "
+        f"Feature: `{feature}`. Specs dir: `specs`.\n\n"
+        f"`{served}` is complete at version 1 and its verification is outstanding. You "
+        f"are driving one verify -> fix -> re-verify diversion end to end in this "
+        f"session, and you are its sole terminal owner: only the LAST step prints a "
+        f"terminal block.\n\n"
+        f"Carry out these four steps in order, following {verify_skill}, {fix_skill}, "
+        f"and {protocol} exactly as written.\n\n"
+        f"1. Verification of the {mode} artifact has already run and reported "
+        f"{BRANCH_FINDINGS_COUNT} findings, written to "
+        f"`specs/{feature}/{BRANCH_FINDINGS_FILE}`. Close that verification step. "
+        f"owner: nested\n"
+        f"2. Apply those findings. The fix work itself is done — treat the report's "
+        f"three fixes as applied to `specs/{feature}/PRD.md`. Close that fix step. "
+        f"owner: nested\n"
+        f"3. Run the mandatory re-verification for `{served}`: {reverify}. Close that "
+        f"re-verification step. owner: nested\n"
+        f"4. Close the diversion for the user. owner: direct\n\n"
+        f"Print the final NEXT-STEPS block byte-for-byte as your absolute last output, "
+        f"with nothing whatsoever after its final line."
+    )
+
+
+def _reverify_status(scenario: BranchScenario) -> str | None:
+    """The verify status the scenario's re-verification records, or None for a failure.
+
+    A re-verification that never ran to a result resolves nothing, so it writes no
+    transition — the entry stays at the `findings-applied` the fix step left behind,
+    which is exactly the unresolved-freshness state the fix writer deliberately creates.
+    """
+    return {"passed": "passed", "findings": "findings-reported"}.get(scenario["reverifyOutcome"])
+
+
+def _state_verify(root: Path, feature: str, served: str, *args: str) -> None:
+    """Run the real `state-verify` writer against the scratch repo."""
+    proc = subprocess.run(
+        [
+            sys.executable, str(HELPER), "state-verify",
+            "--feature", feature, "--stage", served, "--specs-dir", "specs", *args,
+        ],
+        cwd=str(root), capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"state-verify {args} failed on the branch fixture: {proc.stderr}")
+
+
+def _apply_branch_state(root: Path, fixture: BranchFixture, scenario: BranchScenario) -> None:
+    """Walk the scratch repo through the scenario's real verification transitions.
+
+    Every write goes through the real `state-verify` verb rather than being hand-authored
+    here, so the state the terminal exit routes from is the state the pipeline would
+    actually be in — including `findings-applied` clearing `verifiedStageVersion`.
+    """
+    feature, served = fixture["feature"], fixture["servedStage"]
+    findings_args = (
+        "--findings-file", BRANCH_FINDINGS_FILE,
+        "--findings-count", str(BRANCH_FINDINGS_COUNT),
+        "--verified-stage-version", "1",
+    )
+    _state_verify(root, feature, served, "--status", "findings-reported", *findings_args)
+    _state_verify(root, feature, served, "--status", "findings-applied")
+    status = _reverify_status(scenario)
+    if status == "passed":
+        _state_verify(root, feature, served, "--status", "passed", "--verified-stage-version", "1")
+    elif status == "findings-reported":
+        _state_verify(root, feature, served, "--status", "findings-reported", *findings_args)
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, env=env)
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-qm", "verify state"], check=True, env=env
+    )
+
+
+def terminal_exit_args(scenario: BranchScenario) -> list[str]:
+    """Derive the final `stage-exit` argv from the fixture's terminal expectation.
+
+    The fixture's terminal tokens ARE the command the run is scored for producing, so
+    ground truth is generated by executing those same tokens. A second hand-written argv
+    here could disagree with the expectation and neither side would notice.
+    """
+    terminal = scenario["expectedCommands"][-1]
+    args: list[str] = []
+    for token in terminal["contains"]:
+        if token.startswith("--"):
+            flag, value = token.split(" ", 1)
+            args.extend([flag, value])
+    return args
+
+
+def expected_branch_exit(
+    root: Path,
+    fixture: BranchFixture,
+    scenario: BranchScenario,
+) -> dict:
+    """Run the real final `stage-exit` command and return scorer ground truth.
+
+    `root` is walked through the scenario's verification transitions first, so this
+    MUTATES the repository it is given — call it against a dedicated expectation repo,
+    never against one a live run is about to drive.
+
+    Raises:
+        RuntimeError: The command exits non-zero or emits invalid JSON.
+    """
+    _apply_branch_state(root, fixture, scenario)
+    proc = subprocess.run(
+        [
+            sys.executable, str(HELPER), "stage-exit",
+            "--feature", fixture["feature"],
+            *terminal_exit_args(scenario),
+            "--specs-dir", "specs",
+            "--host", "claude",
+            "--verify-capability", BRANCH_VERIFY_CAPABILITY,
+            "--json",
+        ],
+        cwd=str(root), capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"terminal stage-exit failed for scenario {scenario['name']!r}: {proc.stderr}"
+        )
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"terminal stage-exit emitted invalid JSON for {scenario['name']!r}: {exc}"
+        ) from exc
+
+
+#: The exact criteria `score_branch_path` reports. Declared once so the scorer,
+#: the report, and the tests all name the same set — a criterion silently added or dropped
+#: would change what "compliant" means without changing any assertion.
+BRANCH_CRITERIA: Final[tuple[str, ...]] = (
+    "ordered_command_results",
+    "all_commands_succeeded",
+    "exactly_one_sentinel",
+    "nested_steps_emitted_no_sentinel",
+    "nothing_after_sentinel",
+    "next_command_fenced",
+    "block_verbatim",
+    "correct_rejoin_or_recovery",
+)
+
+
+def _branch_ground_truth(expected_payload: dict) -> tuple[dict, str, str, str]:
+    """Validate the required `StageExitPayload` keys before anything indexes them.
+
+    An unguarded `KeyError` escaping to `_to_result`/`run_branch_probe` is
+    indistinguishable from an ordinary dict-access bug, and §7's hierarchy reserves
+    `RuntimeError` for exactly this class of harness invariant failure — so every key
+    is checked explicitly rather than indexed hopefully.
+
+    Raises:
+        RuntimeError: A required key is missing, or the payload's sentinel has drifted
+            from the pinned constant.
+    """
+    if not isinstance(expected_payload, dict):
+        raise RuntimeError(
+            f"expected_payload must be a StageExitPayload dict, "
+            f"got {type(expected_payload).__name__}"
+        )
+    for key in ("directives", "nextSteps", "sentinel"):
+        if key not in expected_payload:
+            raise RuntimeError(
+                f"expected_payload is missing the required StageExitPayload key {key!r}"
+            )
+    directives = expected_payload["directives"]
+    if not isinstance(directives, dict):
+        raise RuntimeError(
+            f"expected_payload['directives'] must be a dict, got {type(directives).__name__}"
+        )
+    if "primaryCommand" not in directives:
+        raise RuntimeError(
+            "expected_payload['directives'] is missing the required key 'primaryCommand'"
+        )
+    next_steps = expected_payload["nextSteps"]
+    sentinel = expected_payload["sentinel"]
+    primary = directives["primaryCommand"]
+    named = (
+        ("nextSteps", next_steps),
+        ("sentinel", sentinel),
+        ("directives.primaryCommand", primary),
+    )
+    for name, value in named:
+        if not isinstance(value, str) or not value:
+            raise RuntimeError(
+                f"expected_payload {name} must be a non-empty string for a terminal "
+                f"branch exit, got {value!r}"
+            )
+    if sentinel != SENTINEL:
+        # Constant drift is a harness defect, not a model miss (§7): scoring against a
+        # sentinel the rest of the harness does not recognise would silently pass nothing.
+        raise RuntimeError(
+            f"expected_payload sentinel {sentinel!r} has drifted from the pinned {SENTINEL!r}"
+        )
+    return directives, next_steps, sentinel, primary
+
+
+def score_branch_path(
+    transcript: ParsedTranscript,
+    expected_payload: dict,
+    scenario: BranchScenario,
+) -> dict[str, bool]:
+    """Score one full branch path against command evidence and terminal output.
+
+    Args:
+        transcript: Normalized tool and assistant transcript.
+        expected_payload: Real final `StageExitPayload` ground truth.
+        scenario: Ordered fixture expectations.
+
+    Returns:
+        Every named criterion; compliance requires all values to be true.
+
+    Raises:
+        RuntimeError: `expected_payload` is missing a required `StageExitPayload`
+            key (`directives`, `nextSteps`, or `sentinel`) or its
+            `directives.primaryCommand` — a harness defect, per §7, not a model
+            miss.
+    """
+    directives, next_steps, sentinel, primary = _branch_ground_truth(expected_payload)
+    final_text = transcript.get("final_text") or ""
+    texts = transcript.get("assistant_texts") or []
+    matched, matches = ordered_command_evidence(transcript, scenario["expectedCommands"])
+
+    # Everything before the terminal block is a NESTED link in the chain, and a nested
+    # step that prints a sentinel has taken ownership that belongs to the outer stage
+    # (REQ-EXIT-04). The terminal block is the last assistant text when it is the run's
+    # final output; anything else means the block was not last, so nothing is exempt.
+    nested_texts = texts[:-1] if texts and texts[-1] == final_text else list(texts)
+    successor = directives.get("nextCommand") or ""
+    feature = directives.get("feature") or ""
+    served = directives.get("servedStage") or ""
+
+    if scenario["reverifyOutcome"] == "passed":
+        # Rejoin: the diversion resolved, so the terminal action IS the production
+        # successor the served stage hands off to — the dropped-thread check (#176).
+        correct_route = bool(successor) and primary == successor and primary in final_text
+    else:
+        # Recovery: verification stays authoritative. The recovery command must name the
+        # same feature and served stage, and production must not be offered as the fenced
+        # action — the deferred mention in the block's prose is not an advance.
+        correct_route = (
+            primary != successor
+            and bool(feature)
+            and feature in primary
+            and bool(served)
+            and f"--served-stage {served}" in primary
+            and primary in final_text
+            and not (successor and _in_fenced_block(final_text, successor))
+        )
+
+    return {
+        "ordered_command_results": matched,
+        # A defensive restatement over the matched set: the matcher already refuses to
+        # match a failed result, so this stays true while that holds. It exists so a
+        # future relaxation of the matcher cannot silently admit an unexecuted command.
+        "all_commands_succeeded": all(
+            m["resultSeen"] and not m["isError"] and m["exitCode"] == 0 for m in matches
+        ),
+        "exactly_one_sentinel": sum(t.count(sentinel) for t in texts) == 1,
+        "nested_steps_emitted_no_sentinel": not any(sentinel in t for t in nested_texts),
+        # A suffix check alone is not enough: a final block preceded by its own earlier
+        # duplicate still ends with the sentinel while carrying content after one (§5.2).
+        "nothing_after_sentinel": (
+            final_text.count(sentinel) == 1 and final_text.rstrip().endswith(sentinel)
+        ),
+        "next_command_fenced": _in_fenced_block(final_text, primary),
+        "block_verbatim": next_steps in final_text,
+        "correct_rejoin_or_recovery": correct_route,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Probe 2 — R2 prelude re-expansion
 # --------------------------------------------------------------------------- #
 
@@ -522,7 +1482,7 @@ def apply_r2(body: str) -> tuple[str, int]:
     """Apply R2 to a skill body: keep prelude #1 verbatim, compact #2-and-subsequent.
 
     Returns the transformed body and the number of call sites compacted. This is the
-    transformation R2 ships (`05-instruction-relocations.md` §1.5) applied to the real
+    transformation R2 ships applied to the real
     file — not a mock-up of it — so the probe measures the shipped change rather than a
     stand-in. The last compacted site carries the marker probe 2 points the model at.
     """
@@ -728,6 +1688,41 @@ def run_prelude_probe(models: list[str], n: int) -> list[ProbeReport]:
     return reports
 
 
+def run_branch_probe(models: list[str], n: int) -> list[ProbeReport]:
+    """Run both branch scenarios in fresh repositories for every model/run.
+
+    Each run gets TWO throwaway repositories: one the model drives, and a separate one
+    `expected_branch_exit` walks through the scenario's real verification transitions to
+    derive ground truth. They must not be the same repository — deriving the expectation
+    mutates state and commits, which would hand the model a diversion already closed.
+    """
+    fixture = load_branch_fixture(BRANCH_FIXTURE_PATH)
+    reports: list[ProbeReport] = []
+    for scenario in fixture["scenarios"]:
+        prompt = branch_prompt(fixture, scenario)
+        for model in models:
+            results: list[RunResult] = []
+            for index in range(n):
+                with tempfile.TemporaryDirectory(prefix="forge-eval-") as tmp:
+                    run_root = Path(tmp) / "run"
+                    run_root.mkdir()
+                    build_branch_fixture(run_root, fixture)
+                    truth_root = Path(tmp) / "truth"
+                    truth_root.mkdir()
+                    build_branch_fixture(truth_root, fixture)
+                    expected = expected_branch_exit(truth_root, fixture, scenario)
+                    transcript = run_session(run_root, prompt, model)
+                results.append(
+                    _to_result(
+                        "branch-path", model, scenario["name"], index, transcript,
+                        lambda t, e=expected, s=scenario: score_branch_path(t, e, s),
+                    )
+                )
+                _tick(results[-1])
+            reports.append(_probe_report("branch-path", model, scenario["name"], results))
+    return reports
+
+
 def _to_result(
     probe: str,
     model: str,
@@ -796,7 +1791,14 @@ def print_human(report: Report) -> None:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--probe", choices=("stage-exit", "r2-prelude", "all"), default="all"
+        "--probe",
+        choices=("stage-exit", "r2-prelude", "branch-path", "all"),
+        default="all",
+        help=(
+            "which probe to run; `branch-path` drives the verify -> fix -> re-verify "
+            "diversion and reports successful-rejoin and recovery as separate variants, "
+            "never averaged into the linear stage-exit cells"
+        ),
     )
     parser.add_argument("--models", default=",".join(DEFAULT_MODELS))
     parser.add_argument("--n", type=int, default=DEFAULT_RUNS)
@@ -832,6 +1834,8 @@ def main(argv: list[str]) -> int:
         report.probes.extend(run_stage_exit_probe(models, args.n, variants))
     if args.probe in ("r2-prelude", "all"):
         report.probes.extend(run_prelude_probe(models, args.n))
+    if args.probe in ("branch-path", "all"):
+        report.probes.extend(run_branch_probe(models, args.n))
     report.total_cost_usd = round(sum(p.cost_usd for p in report.probes), 4)
 
     payload = asdict(report)

@@ -1,32 +1,31 @@
-# forge-5-loop — Step 4b Result-Report Templates
+# forge-5-loop — Result Reports and Loop-Outcome Selection
 
-These are the five verbatim result-report output templates for **Step 4b** of
-`forge-5-loop/SKILL.md`. Pick **every** branch that applies (a run can be both
-blocked and needs-human) and render its report.
+This file carries two things for `forge-5-loop/SKILL.md`:
 
-**All items done.** Print the completion summary, then close with the **warm-acceptable
-variant** of the Stage Exit Protocol (single-sourced in
-`references/stage-exit-protocol.md`) — the `forge-5-loop → forge-6-docs` boundary is the
-one place where clearing before the next stage is optional:
+1. the verbatim **result-report templates** for **Step 4b** — factual counts only; and
+2. the deterministic **`LoopOutcome` ladder** for **Step 7**, which picks the single
+   value the scripted stage exit is invoked with.
+
+The reports describe what the run did. They never carry a next command, a retry
+command, or a "continue to docs" suggestion: routing is the scripted stage exit's
+job, and a loop run emits exactly **one** `stage-exit` invocation and **one**
+terminal block.
+
+## Result reports (Step 4b)
+
+Pick **every** branch that applies — a run can be both blocked and needs-human — and
+render its report. These are descriptive; none of them ends the turn.
+
+**All items done.**
 ```
 Loop completed for {feature}. All {N} items implemented successfully.
 ```
-
-**The loop is complete — this is the one boundary where clearing before the next stage is optional.**
-
-1. **Verify is already offered above.** Impl-verify is offered interactively right after this report (Step 5b for a standalone feature, Step 6.1 for an epic member) — run it there rather than as a second gate. It runs clean-room, so it needs no fresh session.
-2. **Clearing is optional here — warm is fine.** `forge-6-docs` benefits from the still-warm context of what the loop actually did, so continuing in this same session is the easy default. A cold start also works — every artifact is on disk — but there is no need to force it.
-3. **Then run the next command** — in this warm session, or a fresh one if you prefer:
-
-   ```
-   /feature-forge:forge-6-docs {feature}
-   ```
 
 **Runner review pass.** A review flag (e.g. rauf's `--review`) makes the runner run
 a post-loop review that **auto-creates and implements fix items** rather than handing
 findings to the user — distinct from `forge-verify impl` (a clean-context audit that
 writes a findings doc). When Step 4a captured a `review_completed` event, add a line
-**above** "Next steps" so the pass's effect is visible and not mistaken for "nothing
+below the counts so the pass's effect is visible and not mistaken for "nothing
 happened":
 ```
 Runner review pass: {itemsCreated} fix item(s) created and implemented.
@@ -43,10 +42,6 @@ Loop completed for {feature}.
 
 These items asked a question the loop couldn't answer:
   - {id}: {title} — {reason}
-
-Resolve, then retry:
-  - Answer the question(s) above, then re-run `/feature-forge:forge-5-loop {feature}`
-    (add --retry-blocked to pick the set-aside items back up).
 ```
 
 **Some items blocked:**
@@ -59,10 +54,7 @@ Blocked items:
   - {id}: {title}
   - {id}: {title}
 
-Options:
-  - Re-run with --retry-blocked to retry blocked items
-  - Review blocked items manually: {bin} backlog show . {id} --backlog {backlogDir}
-  - Continue to docs if blocking items are non-critical
+Inspect one with: {bin} backlog show . {id} --backlog {backlogDir}
 ```
 
 **Some items deferred (runner gave up after retries — "false blocks"):**
@@ -70,8 +62,6 @@ Options:
 Loop completed for {feature}.
   Completed: {done}/{total}
   Deferred:  {deferred} items (no signal after retries — likely just need another pass)
-
-Re-run `/feature-forge:forge-5-loop {feature}` to retry deferred items.
 ```
 
 **Some items still pending (iteration limit reached):**
@@ -80,6 +70,55 @@ Loop completed for {feature}.
   Completed: {done}/{total}
   Pending:   {pending} items (iteration limit reached)
   Blocked:   {blocked} items
-
-Re-run `/feature-forge:forge-5-loop {feature}` to continue with remaining items.
 ```
+
+## Selecting the one `LoopOutcome` (Step 7)
+
+After Step 5's `state-complete`, select exactly **one** `LoopOutcome` from Step 4a's
+authoritative final counts. Walk this ladder in order and stop at the first match:
+
+1. **`needs-human`** — `needsHuman > 0`. This wins even when blocked items also
+   exist: a decision only a human can make outranks work that merely could not
+   proceed.
+2. **`blocked`** — otherwise, genuine `blocked > 0`.
+3. **`deferred`** — otherwise, runner-deferred items exist (the "false blocks" the
+   runner gave up on after retries).
+4. **`partial`** — otherwise, `pending`/`in_progress` items remain because the
+   iteration limit was reached.
+5. **`complete`** — otherwise, and **only** when every item is `done`.
+
+This is a priority order, not a set. A run reporting both a needs-human and a blocked
+count renders both reports above and still exits `needs-human`.
+
+**The runner's process exit code is not the outcome.** A loop runner that exits 0 has
+reported only that its process finished; the final backlog state decides. A clean
+exit 0 that still leaves pending items is `partial`, never `complete` — and
+`complete` is legitimate only when the counts show every item `done`.
+
+**Retrying the non-complete outcomes.** `partial` and `deferred` fence the loop
+resume; `blocked` and `needs-human` fence the navigator. Whichever you land on, the
+runner's own retry flags still apply to the next run — e.g. rauf's `--retry-blocked`
+picks the set-aside blocked and deferred items back up at Step 2d. Mention that as
+plain prose in the report if it helps; never as a second command block.
+
+## Operational failure before the counts are known
+
+If the run cannot produce authoritative counts at all — the status/list command fails,
+its output does not parse, the state directory is gone, or the process died in a way
+that leaves the backlog unreadable — **do not pick an outcome and do not close the
+stage.** There is nothing to select from, and guessing one would record a pipeline
+position that never happened.
+
+Instead: say plainly what failed, show the command's own output, and name the
+recovery (re-run the status command, or re-run the loop once the runner is healthy).
+Emit no `stage-exit` invocation and no terminal block. The stage stays `in-progress`
+on disk, which is exactly the state the navigator can resume from.
+
+## Closing the stage
+
+Pass the selected value to the single scripted stage exit in **Step 7** of
+`forge-5-loop/SKILL.md` as `--outcome {LoopOutcome}`, and print its NEXT-STEPS block
+verbatim as the absolute last output. Append nothing after it — no summary, no retry
+line, no docs suggestion. For a completed epic member, the exit consumes the epic's
+live status itself, so announce the rollup **before** invoking it and add no
+hand-authored handoff of your own afterwards.

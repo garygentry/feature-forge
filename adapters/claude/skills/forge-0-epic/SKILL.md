@@ -165,6 +165,7 @@ sequence, **not** a dependency ordering). Preserve the C2 order unless the user 
 Compose the full `epic-manifest.json` per the 00 §2 schema, setting:
 
 - `schemaVersion`: `1`
+- `revision`: `1` — the canonical artifact revision epic-scoped verification freshness compares against. Creation always writes `1`; every later mutation bumps it exactly once via the helper mutators. Never hand-edit it.
 - `epic`: `"{epic}"`
 - `description`: from C1
 - `status`: `"active"`
@@ -253,10 +254,10 @@ now self-contained: manifest + EPIC.md + one subdirectory per member.
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-session.py" stage-exit --feature "{epic}" --stage forge-0-epic --next-feature "{first-actionable-feature}" --specs-dir "{specsDir}" --host claude
+python3 "$R/scripts/forge-session.py" stage-exit --feature "{epic}" --stage forge-0-epic --next-feature "{first-actionable-feature}" --specs-dir "{specsDir}" --host claude --verify-capability "{verify-capability}"
 ```
 
-Obey the DIRECTIVES it prints, in order, per the directive contract: `runInStageVerify: true` → dispatch the in-stage clean-room verify now (honoring `autoFixEligible`); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user; non-empty `invalidAutoVerifyKeys` → print a one-line warning. Then **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.**
+Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
 
 ---
 
@@ -274,6 +275,8 @@ EPIC.md patch rule, and the E6 Observability / Pipeline State & Commit machinery
 (`.epic-state.json` schema, `updatedAt` rules, Git Commit Protocol shared with C8) — read
 `references/edit-mode.md`. For the exact `epic-manifest.py` mutator flag surface and
 per-subcommand exit-code (`0`/`1`/`2`) handling, read `references/epic-manifest-subcommands.md`.
+
+An edit-mode mutation closes through the **same** Scripted Stage Exit command Step C8 runs — there is one scripted exit for this skill, not one per branch. Only the argument differs: edit mode re-reads live epic status **after** the mutation and its commit, passes the resulting concrete member as `--next-feature`, and **omits that flag entirely** when no member is actionable (so the router hands back to the epic dashboard instead of naming a member it cannot resolve). Those substitution rules, the `render-status` failure path, and the script's member fallback warning are all in `references/edit-mode.md` — do not improvise a closing pointer here.
 
 ---
 

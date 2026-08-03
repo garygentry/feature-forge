@@ -1,0 +1,132 @@
+{
+  "feature": "stage-exit-coverage",
+  "createdAt": "2026-07-30T03:44:44Z",
+  "pipelineStatus": "active",
+  "stages": {
+    "forge-1-prd": {
+      "status": "complete",
+      "startedAt": "2026-07-30T04:22:51Z",
+      "completedAt": "2026-07-30T15:16:00Z",
+      "version": 3,
+      "basedOnVersions": {},
+      "artifacts": [
+        "PRD.md"
+      ],
+      "commitHash": "302c93f5fe2227df5d11bba97ac295e1c1f8279b"
+    },
+    "forge-2-tech": {
+      "status": "complete",
+      "startedAt": "2026-07-30T04:23:37Z",
+      "artifacts": [
+        "tech-spec.md"
+      ],
+      "completedAt": "2026-07-30T04:24:44Z",
+      "version": 3,
+      "basedOnVersions": {
+        "forge-1-prd": 3
+      },
+      "commitHash": "4b89009b7986711c46a2646c88cbe0466ccadd4f"
+    },
+    "forge-verify-tech": {
+      "status": "passed",
+      "verifiedAt": "2026-08-03T00:46:17Z",
+      "verifiedStageVersion": 3,
+      "commitHash": "3248cf3123f55a49c7e35237c3c1c94007dd98f6"
+    },
+    "forge-3-specs": {
+      "status": "complete",
+      "startedAt": "2026-07-30T05:06:43Z",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-stage-exit-routing.md",
+        "03-verification-state.md",
+        "04-skill-integration.md",
+        "05-config-and-distribution.md",
+        "06-compliance-and-coverage.md",
+        "07-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "completedAt": "2026-07-31T02:08:14Z",
+      "version": 4,
+      "basedOnVersions": {
+        "forge-1-prd": 3,
+        "forge-2-tech": 3
+      },
+      "commitHash": "effe2639b2dd9b3fa4a5e0b9316bb0e9a9153d9c"
+    },
+    "forge-verify-specs": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-specs-2026-07-30-round5.md",
+      "findingsCount": 33,
+      "verifiedAt": "2026-07-30T23:30:00Z",
+      "verifiedStageVersion": 4,
+      "fixedAt": "2026-07-30T23:55:00Z"
+    },
+    "forge-4-backlog": {
+      "status": "complete",
+      "startedAt": "2026-07-30T20:44:14Z",
+      "completedAt": "2026-07-31T02:27:12Z",
+      "version": 3,
+      "basedOnVersions": {
+        "forge-1-prd": 3,
+        "forge-2-tech": 3,
+        "forge-3-specs": 4
+      },
+      "artifacts": [
+        "backlog.json"
+      ],
+      "commitHash": "d33a265407d3900b85681311fb3a001457601b77"
+    },
+    "forge-verify-backlog": {
+      "status": "findings-applied",
+      "findingsFile": ".verification/VERIFY-backlog-2026-07-30.md",
+      "findingsCount": 32,
+      "verifiedAt": "2026-07-31T00:20:00Z",
+      "verifiedStageVersion": 3,
+      "fixedAt": "2026-07-31T00:45:00Z"
+    },
+    "forge-5-loop": {
+      "status": "complete",
+      "startedAt": "2026-07-31T02:50:58Z",
+      "completedAt": "2026-07-31T13:38:05Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-4-backlog": 3
+      },
+      "artifacts": [
+        "specs/stage-exit-coverage/.rauf/state.json"
+      ],
+      "commitHash": null
+    },
+    "forge-verify-impl": {
+      "status": "passed",
+      "verifiedAt": "2026-08-03T00:45:18Z",
+      "verifiedStageVersion": 1,
+      "commitHash": "3248cf3123f55a49c7e35237c3c1c94007dd98f6"
+    },
+    "forge-6-docs": {
+      "status": "complete",
+      "completedAt": "2026-08-02T15:24:55Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 3,
+        "forge-2-tech": 3,
+        "forge-3-specs": 4,
+        "forge-4-backlog": 3,
+        "forge-5-loop": 1
+      },
+      "artifacts": [
+        "docs/architecture/stage-exit-coverage/README.md",
+        "docs/architecture/stage-exit-coverage/architecture.md",
+        "docs/architecture/stage-exit-coverage/cli-reference.md",
+        "docs/architecture/stage-exit-coverage/guides/integration.md"
+      ],
+      "commitHash": "9db6b964f0938620b988ebf7de3f1edb70e7a0fb"
+    }
+  },
+  "currentStage": "forge-5-loop",
+  "updatedAt": "2026-08-03T00:46:34Z",
+  "branch": "forge/stage-exit-coverage",
+  "notes": "Specs v4, backlog v3 (32 items, 001-032; 031-032 appended by forge-5-loop as fix items after backlog verification). Both verify gates are findings-applied; the backlog now traces to the amended v4 specs and is ready for forge-5-loop. STANDING INVARIANTS (assert on every item): no item may create scripts/forge_json.py -- the duplicate-aware JSON loader is MIRRORED into scripts/forge-session.py and scripts/forge-bootstrap.py, guarded by tests/test_json_loader_parity.py, because the flat scripts share no import module (01 3.4, 05 2.1); RUNTIME_HELPERS stays at six entries. No item may introduce locking, leasing, or optimistic versioning for state writes -- PRD REQ-REL-04 forbids it, see issue #180. TWO TRAPS the backlog verification closed, worth re-checking if items are ever regenerated: (1) item 024's guard must fetch EXIT_STAGES from scripts/forge-session.py by regex + ast.literal_eval -- a hardcoded copy of the nine names passes its AC while making the assertion vacuous; (2) every state-verify bash fence must carry the --epic sentence inside tests/test_state_verb_call_sites.py's 12/3-line window or validate.sh red-gates. NOTE: stageNoun already exists in the live directives dict -- retain it, do not re-add it."
+}

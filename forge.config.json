@@ -4,6 +4,7 @@
   "backlogDir": null,
   "gitCommitAfterStage": true,
   "commitPrefix": "forge",
+  "autoVerify": true,
   "stack": "python",
   "typeCheckCommand": "ruff check scripts/ eval/",
   "testCommand": "bash scripts/validate.sh",

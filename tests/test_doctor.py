@@ -74,6 +74,68 @@ def test_doctor_happy_path(tmp_path: Path) -> None:
     assert feat["backlogPath"] == "specs/widget/backlog.json"
 
 
+def test_doctor_reports_owed_auto_verification(tmp_path: Path) -> None:
+    """Doctor's per-feature line carries the ``auto-pending`` label, not ``never``.
+
+    Doctor shares ``build_rows`` with the navigator, so the one place a confused
+    session looks must distinguish "auto-verify was owed and dropped" from
+    "verification was never scheduled" (REQ-DEBT-02, issue #163). The 03 §5.3
+    sentence rides on stderr; JSON stdout stays prose-free.
+    """
+    specs = tmp_path / "specs"
+    _write_state(specs, "widget", {
+        "pipelineStatus": "active",
+        "stages": {
+            "forge-1-prd": {"status": "complete", "version": 1},
+            "forge-verify-prd": {
+                "status": "auto-verify-pending",
+                "scheduledAt": "2026-07-30T00:00:00Z",
+                "scheduledStageVersion": 1,
+                "commitHash": None,
+            },
+        },
+    })
+    (tmp_path / "forge.config.json").write_text("{}")
+
+    result = _doctor(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    (feat,) = json.loads(result.stdout)["features"]
+    assert feat["verifyState"] == "auto-pending"
+    assert (
+        "widget: automatic verification is still pending for forge-1-prd; "
+        "run /feature-forge:forge-verify widget to resolve it." in result.stderr
+    )
+    # A diagnostic, not a dump: no state-file internals leak into either stream.
+    assert "scheduledStageVersion" not in result.stderr
+    assert "still pending" not in result.stdout
+
+
+def test_doctor_human_output_shows_the_auto_pending_label(tmp_path: Path) -> None:
+    """The human report's ``verify=`` field carries the same label."""
+    specs = tmp_path / "specs"
+    _write_state(specs, "widget", {
+        "pipelineStatus": "active",
+        "stages": {
+            "forge-1-prd": {"status": "complete", "version": 1},
+            "forge-verify-prd": {
+                "status": "auto-verify-pending",
+                "scheduledStageVersion": 1,
+            },
+        },
+    })
+    (tmp_path / "forge.config.json").write_text("{}")
+
+    result = subprocess.run(
+        [sys.executable, str(HELPER), "doctor"],
+        capture_output=True, text=True, cwd=str(tmp_path),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "verify=auto-pending" in result.stdout
+    assert "verify=never" not in result.stdout
+
+
 def test_doctor_composes_configured_backlog_dir(tmp_path: Path) -> None:
     """With ``backlogDir`` configured, the per-feature subpath rule applies."""
     specs = tmp_path / "specs"

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -297,6 +299,177 @@ def test_reader_robustness(fixture_copy, fixture, expect_clean):
     else:
         assert result.returncode != 0
         assert "malformed frontmatter block" in result.stdout
+
+
+# ── Rule 7: the shipped-artifact self-containment ratchet (finding V-009) ──
+# Default-deny over scripts/, references/, skills/, eval/, with existing debt
+# grandfathered by exact path. The property that matters is the RATCHET one: a
+# file that is clean today cannot regress, and a new file starts locked. That is
+# what the blanket rule (unlandable) and a flat allowlist (no enforcement) each
+# fail to give. Driven directly against check_no_spec_citations over a tmp tree.
+
+
+def _citation_tree(tmp_path: Path, name: str, rel: str, body: str) -> Path:
+    root = tmp_path / name
+    target = root / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body, encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize(
+    "citation",
+    [
+        "see 03-verification-state.md for the matrix",  # full spec filename
+        "per 03 §5.1 the entry is cleared",  # bare numeric shorthand
+        "per `02` §3.1 step 5, owners are direct",  # BACKTICKED — the N-3 spelling
+        "the tech-spec §3.4 rules govern this",  # tech-spec coordinate
+        "the tech-spec.md §3.4 rules govern this",  # SAME, spelled with the .md
+    ],
+)
+def test_each_citation_form_trips_the_ratchet(tmp_path: Path, citation: str):
+    """Every leaked citation form trips, including the backticked and ``.md`` ones.
+
+    The backticked case is the regression that matters: the round-1 cleanup
+    measured itself with the same space-requiring pattern that produced it, so
+    six ``\\`02\\` §3.1``-style coordinates re-entered an already-cleaned file
+    invisibly. A pattern that cannot see that spelling is not a gate.
+
+    The ``tech-spec.md §3.4`` case is the same lesson one turn later: requiring
+    ``§`` to follow ``tech-spec`` immediately let the repo's commonest spelling of
+    a tech-spec citation through — the spelling this checker's OWN docstring used
+    (V-003).
+    """
+    m = _load_checker_module()
+    root = _citation_tree(tmp_path, "bad", "scripts/helper.py", f"# {citation}\n")
+    violations = m.check_no_spec_citations(root)
+    assert violations, f"citation form must trip rule 7: {citation}"
+    assert violations[0].rule is m.Rule.SELF_CONTAINMENT
+    assert violations[0].path == "scripts/helper.py"
+
+
+def test_new_file_starts_locked_but_grandfathered_file_is_exempt(tmp_path: Path):
+    m = _load_checker_module()
+    citation = "# see 04-pipeline-integration.md\n"
+
+    # (a) A file NOT on the grandfather list is locked from birth.
+    new = _citation_tree(tmp_path, "new", "scripts/brand-new.py", citation)
+    assert m.check_no_spec_citations(new), "a new shipped file must start locked"
+
+    # (b) A grandfathered path carries its documented debt without failing.
+    old = _citation_tree(
+        tmp_path, "old", m.CITATION_GRANDFATHERED[0], citation
+    )
+    assert m.check_no_spec_citations(old) == []
+
+
+def test_bare_section_reference_is_not_a_citation(tmp_path: Path):
+    """An intra-file ``§`` points at something that ships — it must not trip.
+
+    Rule 7 targets pointers into the specs tree, which is archived once the
+    feature ships. A bare section mark with no document coordinate is not one,
+    and flagging it would make the rule unlandable for the wrong reason.
+    """
+    m = _load_checker_module()
+    root = _citation_tree(tmp_path, "ok", "scripts/helper.py", "# see §7 above\n")
+    assert m.check_no_spec_citations(root) == []
+
+
+def test_the_ratchet_would_have_caught_the_n3_leak():
+    """The six coordinates that re-entered forge-session.py go red under rule 7.
+
+    Verified against the real file at the commit that carried them, so the claim
+    is measured rather than asserted. The current worktree copy is clean, and
+    ``scripts/forge-session.py`` is deliberately NOT grandfathered — that pairing
+    is the whole point of the ratchet.
+    """
+    m = _load_checker_module()
+    assert "scripts/forge-session.py" not in m.CITATION_GRANDFATHERED
+    leaked = subprocess.run(
+        ["git", "show", "99e63e6:scripts/forge-session.py"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if leaked.returncode != 0:
+        pytest.skip("pre-fix revision unavailable (shallow clone)")
+    assert len(m._SPEC_CITATION_RE.findall(leaked.stdout)) == 6
+
+
+def test_grandfather_list_is_sorted_deduped_and_shrinking_only():
+    """The allowlist is debt, so it must stay auditable — and every entry must exist.
+
+    A stale entry silently un-locks nothing, but it hides that the file was
+    cleaned or renamed; catching it here is what makes "delete the line" the
+    natural maintenance action and keeps the list shrinking.
+
+    The per-entry ``# N`` annotation is enforced as a CEILING, which is what makes
+    "shrinking only" more than a name. Without it the annotations rot silently:
+    one read 21 against a live 24 (V-006), so a reader auditing the debt would have
+    read a partial cleanup as a regression. A ceiling also stops the cheapest wrong
+    repair — quietly adding citations to an already-grandfathered file.
+
+    A ceiling is deliberately blind upward, and that blindness is reported rather
+    than gated. ``"eval/README.md",  # 9999`` against a live 1 passes, and that
+    entry's ceiling is then permanently vacuous — an inflated baseline makes
+    OUTSTANDING debt look already-cleaned, which is V-006's complaint mirrored.
+    Strict equality is the wrong fix: counts legitimately fall between cleanups and
+    a partial cleanup must not go red. So the drift is emitted as a warning, naming
+    every stale-high entry, and stays visible in ``pytest`` output without turning
+    a legitimate cleanup into a failure.
+    """
+    m = _load_checker_module()
+    entries = list(m.CITATION_GRANDFATHERED)
+    assert entries == sorted(entries), "keep the grandfather list sorted"
+    assert len(entries) == len(set(entries)), "duplicate grandfather entries"
+
+    source = (REPO_ROOT / "scripts" / "check-spec-purity.py").read_text("utf-8")
+    block = re.search(
+        r"CITATION_GRANDFATHERED: tuple\[str, \.\.\.\] = \((.*?)\n\)", source, re.S
+    )
+    assert block, "CITATION_GRANDFATHERED is no longer a parseable literal tuple"
+    annotated = {
+        path: int(count)
+        for path, count in re.findall(r'"([^"]+)",\s*#\s*(\d+)', block.group(1))
+    }
+
+    stale_high: list[str] = []
+    for rel in entries:
+        path = REPO_ROOT / rel
+        assert path.is_file(), f"grandfathered path no longer exists: {rel}"
+        text = path.read_text(encoding="utf-8", errors="replace")
+        assert m._SPEC_CITATION_RE.search(text), (
+            f"{rel} is now clean — delete its CITATION_GRANDFATHERED entry"
+        )
+        assert rel in annotated, (
+            f"{rel} carries no `# N` count annotation — every entry must record the "
+            "debt it grandfathers, or the list stops being auditable"
+        )
+        live = len(m._SPEC_CITATION_RE.findall(text))
+        assert live <= annotated[rel], (
+            f"{rel} now holds {live} citations against an annotated {annotated[rel]} "
+            "— grandfathered debt may only shrink. Clean the file, or (if the "
+            "PATTERN widened rather than the file) re-derive every annotation."
+        )
+        if live < annotated[rel]:
+            stale_high.append(f"{rel}: annotated {annotated[rel]}, live {live}")
+
+    if stale_high:
+        # stacklevel left at the default: this warns about ITS OWN module's data, not on
+        # behalf of a caller, so the report must point here. At stacklevel=2 the caller
+        # is pytest, and the warnings summary attributes the drift to
+        # `_pytest/python.py` — no pointer to this file or to CITATION_GRANDFATHERED.
+        warnings.warn(
+            "CITATION_GRANDFATHERED annotations read high — the debt shrank but the "
+            "baseline was not re-derived, so these entries overstate outstanding debt "
+            "and their ceilings are correspondingly slack. Lower each annotation to "
+            "its live count:\n  " + "\n  ".join(stale_high),
+        )
+
+
+def test_repo_itself_is_clean_under_rule_7():
+    m = _load_checker_module()
+    assert m.check_no_spec_citations(REPO_ROOT) == []
 
 
 def test_loaded_keysets_match_schema():

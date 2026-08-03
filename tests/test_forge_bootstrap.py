@@ -730,7 +730,6 @@ def test_verify_member_is_path_not_name(run_bootstrap, tmp_path: Path) -> None:
     members = [_member("worker", "packages/worker", "generic", None)]
     answers = _answers(layout="monorepo", members=members)
     _scaffold(run_bootstrap, tmp_path, answers)
-    worker = tmp_path / "packages" / "worker"
     # No manual chmod: scaffold sets the exec bit on run.sh/test.sh (REQ-STACK-03).
     result = _verify(run_bootstrap, tmp_path, answers)
     assert result.returncode == 0
@@ -1181,3 +1180,183 @@ def test_scaffolded_config_matches_forge_init_field_set(
     mono_keys = set(_config(mono))
     assert init_keys <= mono_keys, f"missing: {init_keys - mono_keys}"
     assert mono_keys - init_keys <= {"loopRunner", "workspaces"}, mono_keys - init_keys
+
+
+# --------------------------------------------------------------------------- #
+# Duplicate-key diagnostics on the commit-prefix read (item 004)
+# 05-config-and-distribution.md §3.2/§3.3, 07-testing-strategy.md §5.2/§5.3
+#
+# `commit` is the only real forge.config.json read in this script, and it keeps the
+# module's existing exit-2 policy: malformed / unreadable / non-object config is a
+# UsageError, and an OSError from the *warning* propagates rather than being swallowed.
+# That last part is the deliberate asymmetry with forge-session.py, whose `_load_config`
+# swallows it so the read path stays total (05 §3.3). Both halves are pinned — this one
+# here, the session one in tests/test_effective_config.py.
+# --------------------------------------------------------------------------- #
+
+#: Reused so both files drive the same "first stderr write raises OSError" injection.
+from test_effective_config import run_with_failing_stderr  # noqa: E402
+
+
+def _commit_ready_repo(run_bootstrap, repo: Path) -> dict[str, Any]:
+    """Scaffold ``repo`` and configure git so a `commit` run can succeed."""
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    scaffolded = _scaffold(run_bootstrap, repo, answers)
+    assert scaffolded.returncode == 0, scaffolded.stderr
+    _set_git_identity(repo)
+    return answers
+
+
+#: `commit` is invoked with target "." from inside the repo, so the path the warning
+#: renders is the relative one it was handed — not an absolute tmp_path.
+CONFIG_REL = Path("forge.config.json")
+
+
+def _warning_line(key: str, path: Path = CONFIG_REL) -> str:
+    """The exact stderr line from 05-config-and-distribution.md §2.2."""
+    return (
+        f"Warning: duplicate JSON key {json.dumps(key, ensure_ascii=False)} "
+        f"in {path}; using the last value."
+    )
+
+
+def test_commit_with_duplicate_commit_prefix_warns_and_uses_the_last_prefix(
+    run_bootstrap, tmp_path: Path
+) -> None:
+    """A duplicate `commitPrefix` warns on stderr, succeeds, and the LAST value wins.
+
+    Duplicate keys are warning-only: they never become a UsageError and never change
+    the exit code (05 §2.2). The config bytes are captured before and after to prove
+    the warning path writes nothing back.
+    """
+    answers = _commit_ready_repo(run_bootstrap, tmp_path)
+    config = tmp_path / "forge.config.json"
+    config.write_text(
+        '{"specsDir": "./specs", "commitPrefix": "first", "commitPrefix": "last"}',
+        encoding="utf-8",
+    )
+    before = config.read_bytes()
+
+    result = _commit(run_bootstrap, tmp_path, answers)
+
+    assert result.returncode == 0, result.stderr
+    assert result.json()["committed"] is True
+    assert _warning_line("commitPrefix") in result.stderr
+    assert "Warning:" not in result.stdout
+    subject = _git(tmp_path, "log", "-1", "--pretty=%s").stdout.strip()
+    assert subject == "last: bootstrap baseline"
+    assert config.read_bytes() == before
+
+
+def test_commit_detects_a_nested_duplicate_too(
+    run_bootstrap, tmp_path: Path
+) -> None:
+    """Detection is recursive here as well — a nested `loopRunner` key warns (REQ-CONFIG-04)."""
+    answers = _commit_ready_repo(run_bootstrap, tmp_path)
+    (tmp_path / "forge.config.json").write_text(
+        '{"specsDir": "./specs", "loopRunner": {"bin": "a", "bin": "b"}}',
+        encoding="utf-8",
+    )
+
+    result = _commit(run_bootstrap, tmp_path, answers)
+
+    assert result.returncode == 0, result.stderr
+    assert _warning_line("bin") in result.stderr
+    # No commitPrefix at all → the documented "forge" default still applies.
+    assert _git(tmp_path, "log", "-1", "--pretty=%s").stdout.strip() == (
+        "forge: bootstrap baseline"
+    )
+
+
+def test_commit_without_duplicates_stays_silent(run_bootstrap, tmp_path: Path) -> None:
+    """The no-duplicate path emits no extra bytes at all (REQ-PERF-02)."""
+    answers = _commit_ready_repo(run_bootstrap, tmp_path)
+
+    result = _commit(run_bootstrap, tmp_path, answers)
+
+    assert result.returncode == 0, result.stderr
+    assert "Warning:" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("label", "text"),
+    [
+        ("malformed", "{ not json"),
+        ("non-object-array", "[]"),
+        ("non-object-scalar", '"forge"'),
+    ],
+)
+def test_commit_rejects_bad_config_with_exit_2_and_no_false_json(
+    run_bootstrap, tmp_path: Path, label: str, text: str
+) -> None:
+    """Malformed and non-object config keep the existing exit-2 policy (05 §3.3).
+
+    Asserts the whole §9 error shape, not just the code: an ``Error:`` line, no
+    success payload on stdout (a caller parsing stdout must not see a false result),
+    and no traceback leaking for an expected user error.
+    """
+    answers = _commit_ready_repo(run_bootstrap, tmp_path)
+    (tmp_path / "forge.config.json").write_text(text, encoding="utf-8")
+
+    result = _commit(run_bootstrap, tmp_path, answers)
+
+    assert result.returncode == 2, f"{label}: {result.stdout}{result.stderr}"
+    assert result.stdout == "", f"{label}: emitted a success payload anyway"
+    assert result.stderr.startswith("Error:"), result.stderr
+    assert "forge.config.json" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_commit_rejects_an_unreadable_config_with_exit_2(
+    run_bootstrap, tmp_path: Path
+) -> None:
+    """An unreadable config is the same actionable exit-2 error, not a silent default.
+
+    The unreadable form here is a directory in the config's place (IsADirectoryError,
+    an OSError subclass) rather than a mode-000 file: `commit` runs `git add` over the
+    artifact list *before* it reads the prefix, so a mode-000 file fails inside git and
+    the loader's own OSError branch is never reached. A directory containing one file
+    stages cleanly and still fails the read, which is the branch under test.
+    """
+    answers = _commit_ready_repo(run_bootstrap, tmp_path)
+    config = tmp_path / "forge.config.json"
+    config.unlink()
+    config.mkdir()
+    (config / "keep.txt").write_text("stageable\n", encoding="utf-8")
+
+    result = _commit(run_bootstrap, tmp_path, answers)
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert result.stdout == ""
+    assert result.stderr.startswith("Error:")
+    assert "cannot read forge.config.json" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_unwritable_stderr_keeps_commit_on_its_exit_2_policy(
+    run_bootstrap, tmp_path: Path
+) -> None:
+    """05 §3.3: bootstrap propagates the warning's OSError; it does not swallow it.
+
+    This is the counterpart to
+    tests/test_effective_config.py::test_unwritable_stderr_drops_the_warning_and_leaves_the_session_exit_unchanged.
+    The split is deliberate: the session read path must stay total, while `commit`
+    already maps OSError to exit 2 by policy and keeps doing so.
+    """
+    answers = _commit_ready_repo(run_bootstrap, tmp_path)
+    (tmp_path / "forge.config.json").write_text(
+        '{"specsDir": "./specs", "commitPrefix": "first", "commitPrefix": "last"}',
+        encoding="utf-8",
+    )
+
+    result = run_with_failing_stderr(
+        str(HELPER), "commit", ".", "--answers", json.dumps(answers), "--json",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert result.stdout == "", "a success payload was emitted despite the failure"
+    assert "Error:" in result.stderr
+    # The advisory itself is gone — its write is what failed — and no commit landed.
+    assert "Warning: duplicate JSON key" not in result.stderr
+    assert _git(tmp_path, "rev-parse", "HEAD").returncode != 0
