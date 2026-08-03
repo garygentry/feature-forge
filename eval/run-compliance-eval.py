@@ -32,7 +32,9 @@ PROBE 2 — R2 prelude re-expansion (`--probe r2-prelude`)
 PROBE 3 — branch path compliance (`--probe branch-path`)
     Drives a whole verify -> fix -> re-verify diversion and scores whether the model
     closed every step through the scripted contract and rejoined the production stage the
-    diversion served. Its two scenarios — `successful-rejoin` and `recovery` — are
+    diversion served. Its three scenarios — `successful-rejoin`, `recovery`, and
+    `escalation` (a SECOND consecutive red re-verify, which must surface the round
+    ledger's acceptance digest rather than another fix recommendation) — are
     reported as SEPARATE variants and are never averaged into the linear
     `stage-exit/cold`|`warm` cells: that baseline only ever measured the already-scripted
     linear authoring path and is not evidence for diversion compliance.
@@ -286,9 +288,24 @@ _EXIT_CODE_RE: Final = re.compile(r"\s*Exit code (\d+)\b")
 EXIT_COMMAND_TOKENS: Final[tuple[str, ...]] = ("forge-session.py", "stage-exit")
 
 
+#: Invocation shape of a REAL scripted exit: `forge-session.py` (however the path is
+#: quoted) invoked with the `stage-exit` subcommand. A substring test over the two
+#: tokens alone scored `stage-exit --help` reconnaissance — and any command that merely
+#: MENTIONS both strings — as a real exit, which then tripped the reordered-exit guard
+#: and marked compliant runs non-compliant (remediation finding F4).
+_EXIT_INVOCATION_RE: Final[re.Pattern[str]] = re.compile(
+    r"forge-session\.py\"?'?\s+stage-exit\b"
+)
+
+
 def _is_exit_command(command: str) -> bool:
-    """True when `command` is a real `forge-session.py stage-exit` invocation."""
-    return all(token in command for token in EXIT_COMMAND_TOKENS)
+    """True when `command` is a real `forge-session.py stage-exit` invocation.
+
+    `--help` anywhere in the command is reconnaissance, not an exit: it produces no
+    payload and mutates nothing, so treating it as an exit scores looking-before-
+    leaping as non-compliance.
+    """
+    return bool(_EXIT_INVOCATION_RE.search(command)) and "--help" not in command
 
 
 def _content_blocks(event: object, event_type: str) -> list[dict]:
@@ -561,28 +578,41 @@ def ordered_command_evidence(
         for index in range(cursor, len(evidence)):
             item = evidence[index]
             # Literal tokens, ALL of them, in ONE command — an AND, never a regex.
-            if all(token in item["command"] for token in tokens):
+            # Matched against a DEQUOTED view: the skill fences quote templated
+            # values (`--owner "{owner}"`), so a live `--owner "nested"` must
+            # satisfy the fixture token `--owner nested` — quotes change shell
+            # parsing, not the argv the flags deliver, and the fixture's tokens
+            # are argv-level facts. Scoring the quoted form non-compliant marks a
+            # run that followed the skill verbatim as a miss.
+            command = item["command"].replace('"', "").replace("'", "")
+            if all(token in command for token in tokens):
                 found = index
                 break
-            if _is_exit_command(item["command"]):
-                # A real exit standing between two matched entries is a reordered or
-                # duplicated exit, not reconnaissance — the one thing that may NOT be
-                # skipped over.
+            if _is_exit_command(item["command"]) and _succeeded(item):
+                # A SUCCESSFUL exit standing between two matched entries is a
+                # reordered or duplicated exit — the one thing that may NOT be
+                # skipped over. A failed attempt later retried is not that defect
+                # (F4): it produced no payload, so nothing was closed out of order.
                 return False, matches
         if found is None:
             return False, matches
         item = evidence[found]
         # Requested is not run: only a seen, non-error, zero-exit result is evidence.
-        if not (item["resultSeen"] and not item["isError"] and item["exitCode"] == 0):
+        if not _succeeded(item):
             return False, matches
         matches.append(item)
         cursor = found + 1
     for item in evidence[cursor:]:
-        if _is_exit_command(item["command"]):
+        if _is_exit_command(item["command"]) and _succeeded(item):
             # A trailing extra exit is the same defect seen from the other side: the run
             # fired a scripted exit the fixture never expected.
             return False, matches
     return True, matches
+
+
+def _succeeded(item: CommandEvidence) -> bool:
+    """True when the command's result was seen, non-error, and exit 0."""
+    return bool(item["resultSeen"] and not item["isError"] and item["exitCode"] == 0)
 
 
 # --------------------------------------------------------------------------- #
@@ -801,7 +831,9 @@ BRANCH_FIXTURE_PATH = REPO_ROOT / "eval" / "fixtures" / "compliance" / "verify-f
 #: Required scenario names, in required file order. Cardinality and order are validated
 #: rather than inferred: a fixture that silently lost the recovery scenario would still
 #: report a rate, and a rate over half the matrix is worse than no rate.
-BRANCH_SCENARIO_ORDER: Final[tuple[str, ...]] = ("successful-rejoin", "recovery")
+BRANCH_SCENARIO_ORDER: Final[tuple[str, ...]] = (
+    "successful-rejoin", "recovery", "escalation",
+)
 
 #: The evidence steps a branch scenario may attribute a command to (`EvidenceStage`).
 EVIDENCE_STAGES: Final[tuple[str, ...]] = (
@@ -820,6 +852,27 @@ TERMINAL_EVIDENCE_STAGE = "terminal-exit"
 #: --findings-file` requires and the form `forge-verify` writes.
 BRANCH_FINDINGS_FILE = ".verification/VERIFY-prd-2026-01-01.md"
 BRANCH_FINDINGS_COUNT = 3
+
+#: The prior red re-verification's report, seeded only for a scenario whose
+#: `priorRedReverifies` is nonzero. Round-discriminated per the forge-verify Step 4
+#: filename rule, so the round ledger the escalation rule counts is on disk.
+BRANCH_ROUND2_FINDINGS_FILE = ".verification/VERIFY-prd-2026-01-01-round2.md"
+BRANCH_ROUND2_FINDINGS_COUNT = 1
+BRANCH_ROUND2_FINDINGS_DOC = """# Re-verification findings — widget-search (PRD, round 2)
+
+Mode: prd
+Served stage: forge-1-prd
+Verdict: reverify-findings (first consecutive)
+
+## F1 — REQ-PERF-01 measurement point still unstated (severity: gap)
+
+The round-1 fix named the search endpoint but not the side of the wire the 200ms p95
+budget is measured on. Fix: state that the budget is measured server-side.
+"""
+
+#: The disposition label the escalation digest must present, verbatim from the
+#: "Escalation (the round ledger)" rule in `references/stage-exit-protocol.md`.
+ESCALATION_MARKER = "Accept the residual findings"
 
 #: A findings report with enough substance to act on. A stub invites the model to
 #: question the fixture instead of driving the diversion, which scores as a compliance
@@ -851,7 +904,7 @@ count as the baseline.
 #: skew the block a live run is scored against.
 BRANCH_VERIFY_CAPABILITY = "manual"
 
-BranchScenarioName = Literal["successful-rejoin", "recovery"]
+BranchScenarioName = Literal["successful-rejoin", "recovery", "escalation"]
 EvidenceStage = Literal[
     "verify-findings",
     "fix-applied",
@@ -901,6 +954,12 @@ class BranchScenario(TypedDict):
     # served production stage, while "findings"/"failed" must keep verification
     # authoritative instead of advancing.
     reverifyOutcome: Literal["passed", "findings", "failed"]
+    # Red re-verify rounds ALREADY recorded before this scenario's driven cycle:
+    # 0 for a first diversion, 1 for the escalation scenario (whose driven red
+    # re-verify is then the SECOND consecutive — the round-ledger trigger). A
+    # nonzero value seeds the round-2 report and its `findings-reported` entry
+    # into the scratch repo, and requires `reverifyOutcome` "findings".
+    priorRedReverifies: int
     # The single command that MUST be primary at the terminus for this outcome —
     # the assertion that catches a dropped pipeline thread (#176).
     expectedPrimaryCommand: str
@@ -916,10 +975,10 @@ class BranchFixture(TypedDict):
     linear baseline.
     """
 
-    # Fixture schema version. Literal[1] — a shape change bumps this rather than
-    # mutating v1 in place, so an older probe fails loudly instead of
-    # misinterpreting new fields.
-    schemaVersion: Literal[1]
+    # Fixture schema version. Literal[2] — a shape change bumps this rather than
+    # mutating the prior version in place, so an older probe fails loudly instead
+    # of misinterpreting new fields (v2 added `priorRedReverifies` + escalation).
+    schemaVersion: Literal[2]
     # Synthetic feature name built into the scratch repo. Never a real repo feature.
     feature: str
     # Production stage the simulated verify/fix diversion serves and rejoins.
@@ -927,8 +986,9 @@ class BranchFixture(TypedDict):
     # Verify mode paired with `servedStage`; must agree with it under
     # VERIFY_MODE_TO_STAGE, and the fixture validator checks that agreement.
     verifyMode: Literal["prd"]
-    # The scenarios to run. Exactly two in the shipped fixture (successful rejoin
-    # and unresolved re-verify); non-empty, and names must be unique.
+    # The scenarios to run. Exactly three in the shipped fixture (successful
+    # rejoin, unresolved re-verify, and second-consecutive-red escalation);
+    # non-empty, and names must be unique.
     scenarios: list[BranchScenario]
 
 
@@ -941,6 +1001,7 @@ _BRANCH_SCENARIO_KEYS: Final[frozenset[str]] = frozenset(
         "initialVerifyOutcome",
         "fixOutcome",
         "reverifyOutcome",
+        "priorRedReverifies",
         "expectedPrimaryCommand",
         "expectedCommands",
     }
@@ -1046,9 +1107,9 @@ def load_branch_fixture(path: Path) -> BranchFixture:
         _fail(f"missing top-level key(s) {missing}")
 
     version = data["schemaVersion"]
-    # `bool` is an `int` subclass, so True would otherwise validate as version 1.
-    if isinstance(version, bool) or version != 1:
-        _fail(f"unsupported schemaVersion {version!r}; this probe reads version 1")
+    # `bool` is an `int` subclass, so True would otherwise validate as an integer.
+    if isinstance(version, bool) or version != 2:
+        _fail(f"unsupported schemaVersion {version!r}; this probe reads version 2")
 
     session = _load_session_module()
     feature = _require_str(data["feature"], "feature")
@@ -1085,6 +1146,15 @@ def load_branch_fixture(path: Path) -> BranchFixture:
             _fail(f"scenario {name!r} fixOutcome must be 'applied'")
         if scenario["reverifyOutcome"] not in ("passed", "findings", "failed"):
             _fail(f"scenario {name!r} reverifyOutcome {scenario['reverifyOutcome']!r} is invalid")
+        prior = scenario["priorRedReverifies"]
+        if isinstance(prior, bool) or not isinstance(prior, int) or prior < 0:
+            _fail(f"scenario {name!r} priorRedReverifies must be an int >= 0, got {prior!r}")
+        if prior > 0 and scenario["reverifyOutcome"] != "findings":
+            _fail(
+                f"scenario {name!r} has priorRedReverifies {prior} but reverifyOutcome "
+                f"{scenario['reverifyOutcome']!r}; an escalation cycle's re-verify must "
+                f"report findings"
+            )
         primary = _require_str(scenario["expectedPrimaryCommand"], f"scenario {name!r} primary")
         if feature not in primary:
             _fail(f"scenario {name!r} expectedPrimaryCommand does not name {feature!r}")
@@ -1101,13 +1171,20 @@ def load_branch_fixture(path: Path) -> BranchFixture:
     return data  # type: ignore[return-value]
 
 
-def build_branch_fixture(root: Path, fixture: BranchFixture) -> None:
+def build_branch_fixture(
+    root: Path, fixture: BranchFixture, scenario: BranchScenario | None = None
+) -> None:
     """Build a schema-valid throwaway repository before branch diversion.
 
     The repository is parked exactly where the diversion begins: the PRD is authored and
     committed at version 1, a findings report is already on disk, and no
     `forge-verify-prd` entry exists yet — so every verification transition the scenario
     needs is one the run (or `expected_branch_exit`) actually performs.
+
+    When `scenario` is supplied with a nonzero `priorRedReverifies`, the prior cycle is
+    seeded first: the round-2 report file lands on disk and its `findings-reported`
+    entry is written through the real `state-verify` verb, so the round ledger the
+    escalation rule counts is exactly what a real prior red re-verify leaves behind.
 
     Raises:
         OSError: Fixture files cannot be created.
@@ -1160,6 +1237,17 @@ def build_branch_fixture(root: Path, fixture: BranchFixture) -> None:
         + "\n",
         encoding="utf-8",
     )
+    if scenario is not None and scenario["priorRedReverifies"] >= 1:
+        (feature_dir / BRANCH_ROUND2_FINDINGS_FILE).write_text(
+            BRANCH_ROUND2_FINDINGS_DOC, encoding="utf-8"
+        )
+        _state_verify(
+            root, feature, fixture["servedStage"],
+            "--status", "findings-reported",
+            "--findings-file", BRANCH_ROUND2_FINDINGS_FILE,
+            "--findings-count", str(BRANCH_ROUND2_FINDINGS_COUNT),
+            "--verified-stage-version", "1",
+        )
     _git_init(root)
 
 
@@ -1196,6 +1284,37 @@ def branch_prompt(fixture: BranchFixture, scenario: BranchScenario) -> str:
             "the re-verification could not run to a result at all — it FAILED "
             "operationally"
         )
+    tail = (
+        "Print the final NEXT-STEPS block byte-for-byte as your absolute last output, "
+        "with nothing whatsoever after its final line."
+    )
+    if scenario["priorRedReverifies"] >= 1:
+        # The prior cycle is HISTORY, already on disk: the prompt supplies only the
+        # facts (the ledger and this cycle's red result), never the conclusion — the
+        # escalation behavior itself is what the skills must supply.
+        return (
+            f"You are the agent driving the feature-forge pipeline in this repository. "
+            f"Feature: `{feature}`. Specs dir: `specs`.\n\n"
+            f"`{served}` is complete at version 1. A prior verification cycle is "
+            f"already recorded: the original findings report "
+            f"(`specs/{feature}/{BRANCH_FINDINGS_FILE}`, {BRANCH_FINDINGS_COUNT} "
+            f"findings) and one red re-verification "
+            f"(`specs/{feature}/{BRANCH_ROUND2_FINDINGS_FILE}`, "
+            f"{BRANCH_ROUND2_FINDINGS_COUNT} unresolved finding) are both on disk, "
+            f"and pipeline state records `findings-reported` for that round-2 "
+            f"report. You are driving the NEXT fix -> re-verify cycle end to end in "
+            f"this session, and you are its sole terminal owner: only the LAST step "
+            f"prints a terminal block.\n\n"
+            f"Carry out these three steps in order, following {verify_skill}, "
+            f"{fix_skill}, and {protocol} exactly as written.\n\n"
+            f"1. Apply the round-2 report's unresolved finding. The fix work itself is "
+            f"done — treat it as applied to `specs/{feature}/PRD.md`. Close that fix "
+            f"step. owner: nested\n"
+            f"2. Run the mandatory re-verification for `{served}`: {reverify}. Close "
+            f"that re-verification step. owner: nested\n"
+            f"3. Close the diversion for the user. owner: direct\n\n"
+            f"{tail}"
+        )
     return (
         f"You are the agent driving the feature-forge pipeline in this repository. "
         f"Feature: `{feature}`. Specs dir: `specs`.\n\n"
@@ -1215,8 +1334,7 @@ def branch_prompt(fixture: BranchFixture, scenario: BranchScenario) -> str:
         f"3. Run the mandatory re-verification for `{served}`: {reverify}. Close that "
         f"re-verification step. owner: nested\n"
         f"4. Close the diversion for the user. owner: direct\n\n"
-        f"Print the final NEXT-STEPS block byte-for-byte as your absolute last output, "
-        f"with nothing whatsoever after its final line."
+        f"{tail}"
     )
 
 
@@ -1256,7 +1374,10 @@ def _apply_branch_state(root: Path, fixture: BranchFixture, scenario: BranchScen
         "--findings-count", str(BRANCH_FINDINGS_COUNT),
         "--verified-stage-version", "1",
     )
-    _state_verify(root, feature, served, "--status", "findings-reported", *findings_args)
+    if scenario["priorRedReverifies"] == 0:
+        _state_verify(root, feature, served, "--status", "findings-reported", *findings_args)
+    # For a nonzero priorRedReverifies the seeded round-2 `findings-reported` entry is
+    # already on disk (build_branch_fixture), so the cycle starts at the fix.
     _state_verify(root, feature, served, "--status", "findings-applied")
     status = _reverify_status(scenario)
     if status == "passed":
@@ -1337,6 +1458,7 @@ BRANCH_CRITERIA: Final[tuple[str, ...]] = (
     "next_command_fenced",
     "block_verbatim",
     "correct_rejoin_or_recovery",
+    "escalation_digest_presented",
 )
 
 
@@ -1465,6 +1587,15 @@ def score_branch_path(
         "next_command_fenced": _in_fenced_block(final_text, primary),
         "block_verbatim": next_steps in final_text,
         "correct_rejoin_or_recovery": correct_route,
+        # A second consecutive red re-verify must surface the round ledger's
+        # acceptance digest (the escalation rule in stage-exit-protocol.md) — under
+        # manual capability, as text before the terminal block. Scored by the
+        # disposition label the rule fixes; auto-true when no prior red round exists,
+        # so the criterion set stays uniform across scenarios.
+        "escalation_digest_presented": (
+            scenario["priorRedReverifies"] == 0
+            or any(ESCALATION_MARKER in t for t in texts)
+        ),
     }
 
 
@@ -1706,10 +1837,10 @@ def run_branch_probe(models: list[str], n: int) -> list[ProbeReport]:
                 with tempfile.TemporaryDirectory(prefix="forge-eval-") as tmp:
                     run_root = Path(tmp) / "run"
                     run_root.mkdir()
-                    build_branch_fixture(run_root, fixture)
+                    build_branch_fixture(run_root, fixture, scenario)
                     truth_root = Path(tmp) / "truth"
                     truth_root.mkdir()
-                    build_branch_fixture(truth_root, fixture)
+                    build_branch_fixture(truth_root, fixture, scenario)
                     expected = expected_branch_exit(truth_root, fixture, scenario)
                     transcript = run_session(run_root, prompt, model)
                 results.append(

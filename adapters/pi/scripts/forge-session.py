@@ -5050,6 +5050,8 @@ def _verify_result_entry(
     the one status that carries prior state forward — the report metadata — and it
     deliberately writes no ``verifiedStageVersion``: fixes landed, nothing
     re-verified them, so freshness stays unresolved until a later ``passed``.
+    ``passed`` may record NEW attached-report metadata of its own (the
+    advisory-only and escalation-acceptance rules in ``cmd_state_verify``).
 
     Args:
         status: The validated result status.
@@ -5070,12 +5072,19 @@ def _verify_result_entry(
             "commitHash": None,
         }
     if status == "passed":
-        return {
-            "status": status,
-            "verifiedAt": now,
-            "verifiedStageVersion": current,
-            "commitHash": None,
-        }
+        entry: dict = {"status": status}
+        if findings_file is not None:
+            # An attached report — advisory-only, or residual findings the user
+            # explicitly accepted at the escalation gate — resolves as `passed`
+            # so it never routes to forge-fix, while the report stays attached
+            # for later pickup. A bare zero count records no report keys, keeping
+            # the plain "verified clean" shape byte-identical to before.
+            entry["findingsFile"] = findings_file
+            entry["findingsCount"] = findings_count
+        entry["verifiedAt"] = now
+        entry["verifiedStageVersion"] = current
+        entry["commitHash"] = None
+        return entry
     if status == "findings-reported":
         return {
             "status": status,
@@ -5124,9 +5133,16 @@ def cmd_state_verify(
             admits only the metadata below; everything else is refused before any
             write, so a contradictory call never lands a partial entry:
 
-            - `passed` — REQUIRES `verified_stage_version`; refuses `findings_file`;
-              accepts `findings_count` only when it is 0 (a non-zero count belongs to
-              `findings-reported`).
+            - `passed` — REQUIRES `verified_stage_version`. MAY carry an attached
+              report (`findings_file` + `findings_count` together, count >= 1) in
+              two protocol cases: an ADVISORY-ONLY report (no blocking
+              `error`/`gap` findings), and residual findings the user explicitly
+              ACCEPTED at the round-ledger escalation (recorded first as a
+              `state-decision`; see "Escalation" in stage-exit-protocol.md).
+              Either way the stage resolves without routing to forge-fix and the
+              report stays attached. Half a pairing is refused: a file without a
+              count, a positive count without a file, or a file with a zero
+              count. Unaccepted blocking findings belong to `findings-reported`.
             - `findings-reported` — REQUIRES all three of `verified_stage_version`,
               `findings_file`, and a non-negative `findings_count`.
             - `findings-applied` — REFUSES `verified_stage_version`. Applying fixes
@@ -5139,9 +5155,10 @@ def cmd_state_verify(
             `verified_stage_version` that is stale against the served stage's current
             version. The persisted shape is `references/pipeline-state-schema.json`.
         findings_file: Path to the findings document, relative to and contained by
-            the resolved feature/epic directory. Required by `findings-reported`;
-            rejected when absolute, containing `..`, or carrying NUL/control
-            characters (REQ-SEC-01).
+            the resolved feature/epic directory. Required by `findings-reported`,
+            optional on `passed` (the attached-report cases above); rejected when
+            absolute, containing `..`, or carrying NUL/control characters
+            (REQ-SEC-01).
         findings_count: Number of findings in `findings_file`. Required alongside it.
         verified_stage_version: The served stage's `version` at verification time,
             feeding the navigator's freshness ledger. Cleared by
@@ -5250,14 +5267,29 @@ def cmd_state_verify(
             if value is not None:
                 raise UsageError(f"--status {status} does not accept {label}")
     elif status == "passed":
-        if findings_file is not None:
-            raise UsageError("--status passed does not accept --findings-file")
-        if findings_count is not None and findings_count != 0:
+        if findings_file is not None and findings_count is None:
             raise UsageError(
-                f"--status passed requires --findings-count 0 when supplied; "
-                f"got {findings_count!r} — record findings with "
-                f"--status findings-reported instead"
+                "--status passed with an advisory --findings-file requires "
+                "--findings-count N (the number of advisory findings it lists)"
             )
+        if findings_count is not None:
+            if findings_count < 0:
+                raise UsageError(
+                    f"--findings-count must not be negative; got {findings_count!r}"
+                )
+            if findings_count > 0 and findings_file is None:
+                raise UsageError(
+                    f"--status passed with --findings-count {findings_count} requires "
+                    f"--findings-file <advisory report>: a positive count with no "
+                    f"report to read is unrecoverable. Blocking findings belong to "
+                    f"--status findings-reported instead."
+                )
+            if findings_count == 0 and findings_file is not None:
+                raise UsageError(
+                    "--status passed with --findings-file requires --findings-count "
+                    ">= 1: an attached report claiming zero findings is "
+                    "self-contradictory — omit both for a clean pass"
+                )
         if verified_stage_version is None:
             raise UsageError(
                 "--status passed requires --verified-stage-version <current version>"

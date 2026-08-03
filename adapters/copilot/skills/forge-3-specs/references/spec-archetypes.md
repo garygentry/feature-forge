@@ -45,6 +45,15 @@ How to test this feature.
 - Coverage targets
 - Test file location conventions
 
+**Meta-guard norm (anti-churn).** A spec that mandates a meta-guard — a test protecting
+other tests or prose — must give it an **enumerated protection set** and **explicit
+non-goals**, never an open-ended objective ("un-rottable", "regardless of form"): the
+space of ways to evade a guard is not enumerable, so an unbounded objective produces an
+arms race of one-shape-per-round hardening. The guard's contract is the declared set;
+the verifier judges completeness against it and never files guard-incompleteness
+against a declared non-goal (`references/stage-exit-protocol.md` § Re-verify scope,
+decision immunity).
+
 ## Conditionally Required
 
 ### ##-{domain-concern}.md (one per major subsystem)

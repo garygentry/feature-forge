@@ -397,6 +397,56 @@ nested state transitions so its single final block reflects the terminal result.
 
 ---
 
+## Re-verify scope and convergence
+
+A **re-verify** is any verification run whose served stage's verify entry is
+`findings-applied` — a fix pass preceded it, and its job is to CONFIRM that pass, not to
+re-open the artifact. These rules bind the dispatched `forge-verifier`, the skill that
+synthesizes its digest (`skills/forge-verify/SKILL.md`), and the fix pass that requests
+the re-verify (`skills/forge-fix/SKILL.md` Step 6):
+
+- **Scope.** Confirm each finding of the prior report against that finding's own
+  acceptance evidence, and examine the fix's delta (the changed lines and what they
+  directly touch) for new blocking defects. A re-verify is NOT a fresh full-checklist
+  sweep: the full sweep already ran when the report was minted, and re-sweeping mints
+  arbitrary new findings against text the fix just wrote — the divergence loop this
+  section exists to prevent.
+- **Convergence.** Only an unresolved finding from the prior report, or a new
+  **blocking** finding (`error` with behavioral, CLI-output, or decision-bearing
+  consequence, or `gap`) introduced by the fix delta itself, may make a re-verify close
+  as `reverify-findings`. Every other new observation — advisory-severity anywhere, or
+  anything outside the fix delta — is recorded in the report at most and never flips
+  the outcome.
+- **Decision immunity.** A finding whose subject carries a recorded decision — a
+  `state-decision` entry, a recorded-decision comment in the artifact, or a declared
+  non-goal — is never filed, in a re-verify or a fresh sweep. Cite the decision
+  instead. Re-filing a decided question costs a round and reverses nothing.
+  In particular, a **meta-guard** (a test protecting other tests or prose) is judged
+  against its DECLARED protection set: guard-incompleteness against a declared
+  non-goal is never a finding — the space of what a guard does not cover is
+  unbounded, and enumerating it one round at a time is an arms race, not
+  verification (authoring norm: the testing-strategy archetype in
+  `skills/forge-3-specs/references/spec-archetypes.md`).
+- **Escalation (the round ledger).** Rounds are counted from the served stage's
+  findings documents (`VERIFY-{mode}-{date}.md`, then `-round{N}` — the filename rule
+  in `skills/forge-verify/SKILL.md` Step 4), so the ledger is reconstructable from the
+  `.verification/` directory alone. On the SECOND consecutive `reverify-findings`
+  close for the same served stage, the loop has stopped converging: do NOT recommend
+  another fix pass. Present the compact findings digest and ask for explicit
+  disposition with exactly these options —
+  **Accept the residual findings and advance** *(recommended)*: record the acceptance
+  as a `state-decision` naming each accepted finding, then write the stage's verify
+  result as `passed` with the report attached (`--findings-file`/`--findings-count`);
+  the accepted findings become recorded decisions that decision immunity keeps from
+  ever being re-filed. **Run another fix pass**: available, never recommended at this
+  point. **Stop here**. The user may still choose to fix — the protocol just stops
+  steering into the loop it cannot show is converging. Under `manual` capability
+  (no question mechanism), print the digest and the three dispositions as text
+  BEFORE the terminal block — the user answers on their own cadence; the terminal
+  block still closes the stage mechanically.
+
+---
+
 ## Retired blocks
 
 The two bespoke terminal blocks this protocol used to carry — the **standard block** and

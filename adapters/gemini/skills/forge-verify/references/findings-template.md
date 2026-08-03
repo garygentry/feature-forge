@@ -7,6 +7,10 @@ Loaded by the **parent orchestrator** role of `forge-verify` at Step 4 (write th
 Write findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`
 (for epic mode, `{specsDir}/{epic}/.verification/VERIFY-epic-{YYYY-MM-DD}.md` — same
 format, with `{mode}=epic`). Ensure the `.verification/` subdirectory exists first.
+**Never overwrite an existing report:** if the name already exists (an earlier round
+the same day), write `VERIFY-{mode}-{YYYY-MM-DD}-round{N}.md` with the smallest
+`N ≥ 2` not yet on disk — each round's report and Fix Progress is an audit record the
+round ledger reads (`references/stage-exit-protocol.md` § Escalation).
 
 ```markdown
 # Verification Report: {feature} ({mode})
@@ -20,6 +24,7 @@ Artifacts Reviewed: {list of files}
 - Inconsistencies: {N}
 - Improvements: {N}
 - Errors: {N}
+- Blocking (errors + gaps): {N} — {"report records findings-reported" | "0: advisory-only, report records passed with this file attached"}
 
 ## Findings
 
@@ -95,8 +100,11 @@ state file `{specsDir}/{epic}/.epic-state.json` — **never** into any member's
 violate REQ-STATE-02; per-feature status is always derived live from each member's
 `.pipeline-state.json`).
 
-Set `stages.forge-verify-epic.status` to `findings-reported` (or `passed` if zero
-findings), recording `findingsFile`, `findingsCount`, and `verifiedAt`.
+Set `stages.forge-verify-epic.status` to `findings-reported` when the report lists at
+least one **blocking** finding (`error`/`gap`), else `passed` — for an advisory-only
+report pass `--findings-file`/`--findings-count` alongside `--status passed`, exactly
+as in feature mode (the severity floor in `skills/forge-verify/SKILL.md`) — recording
+`findingsFile`, `findingsCount`, and `verifiedAt`.
 
 **Write it with `state-verify`, never by hand.** `--stage forge-0-epic` is the sanctioned
 epic writer: it creates the file lazily, mutates only `stages.forge-verify-epic` plus the

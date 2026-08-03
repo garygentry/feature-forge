@@ -46,9 +46,10 @@ python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}"
 - [ ] **CHECK-E09**: **open epic change requests** — any member whose `.pipeline-state.json`
   carries `epicChangeRequests[]` entries with `status: "open"` is surfaced as a **non-fatal**
   finding (one per open request). Severity keys off `blocksCurrent`: a **blocking** request →
-  `inconsistency` (the epic decomposition and an in-flight member disagree; specs written now
-  would build on a soon-invalid premise), a **non-blocking** request → `improvement` (a
-  peer/downstream change to reconcile when convenient). Name the request's `kind`, `target`,
+  `error` (decision-bearing: the epic decomposition and an in-flight member disagree, stage
+  exits interpose reconcile-first on it, and specs written now would build on a soon-invalid
+  premise), a **non-blocking** request → `improvement` (a peer/downstream change to reconcile
+  when convenient). Name the request's `kind`, `target`,
   and `rationale`, and point at `/feature-forge:forge-0-epic {epic}` to reconcile. **Report, do
   not repair** (same posture as CHECK-E07). Which members have open requests comes from the
   same `render-status --json` counts the navigator uses (`features[].openEpicChangeRequests` /
