@@ -42,10 +42,32 @@
       "verifiedAt": "2026-08-03T17:59:36Z",
       "verifiedStageVersion": 2,
       "commitHash": "ffa2fa79caa4128fef0367b0e32e0f0dfd77a82d"
+    },
+    "forge-3-specs": {
+      "status": "complete",
+      "startedAt": "2026-08-03T18:21:26Z",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-canon-and-prose-guard.md",
+        "03-machinery-trim.md",
+        "04-production-validations.md",
+        "05-coverage-backfill.md",
+        "06-brittleness-batch.md",
+        "07-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "completedAt": "2026-08-03T19:27:01Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 2,
+        "forge-2-tech": 2
+      },
+      "commitHash": null
     }
   },
-  "currentStage": "forge-2-tech",
-  "updatedAt": "2026-08-03T18:00:05Z",
+  "currentStage": "forge-3-specs",
+  "updatedAt": "2026-08-03T19:27:01Z",
   "branch": "forge/verify-test-debt",
   "notes": "PRD amendment needed: research superseded three figures. REQ-BRIT-04 exact-stderr roster is 5 sites/11 comparisons across 2 files (not ~15); REQ-BRIT-07 hash-matrix family is 4 sites (not 5); REQ-COV-03's resolver_line_identical IS asserted via all(criteria.values()) at run-compliance-eval.py:1883 — the real gap is a missing prelude key-set pin. Same figures appear in PRD sec 8 Success Criteria. Corrected rosters live in tech-spec.md."
 }
