@@ -2,7 +2,7 @@
 name: forge-verify
 description: "Verify forge pipeline artifacts for completeness, consistency, and quality. Use when user runs /feature-forge:forge-verify or asks to check forge specs, backlog, or implementation for gaps. Do NOT trigger for general code review, quality checks, or verification tasks outside the forge pipeline."
 metadata:
-  argument-hint: "<feature-name> [stage: prd|tech|specs|backlog|impl] [--require-clean]"
+  argument-hint: "<feature-name> [stage: prd|tech|specs|backlog|impl] [--served-stage <production-stage>] [--require-clean]"
 ---
 
 # forge-verify — Verification Gate
@@ -121,7 +121,9 @@ Read `{resolvedFeatureDir}/.pipeline-state.json` to understand current pipeline 
 
 ### Mode Selection
 
-If a stage is specified as a second argument (e.g., `/feature-forge:forge-verify auth specs`), use that mode. Otherwise, auto-detect based on pipeline state:
+An explicit `--served-stage <production-stage>` argument on this invocation is authoritative — it is what the scripted exit and forge-fix pass when they route back here (the fix rejoin fences `/feature-forge:forge-verify {feature} --served-stage {stage}`). Map it to the mode directly (`forge-0-epic`→epic, `forge-1-prd`→prd, `forge-2-tech`→tech, `forge-3-specs`→specs, `forge-4-backlog`→backlog, `forge-5-loop`→impl) and skip auto-detection.
+
+Otherwise, if a stage is specified as a second argument (e.g., `/feature-forge:forge-verify auth specs`), use that mode. Otherwise, auto-detect based on pipeline state:
 
 - **epic mode**: Explicit via `/feature-forge:forge-verify {epic} epic`, or auto-detected when the named argument resolves to an **epic directory** — i.e. `{specsDir}/{name}/epic-manifest.json` exists (an epic root holds `epic-manifest.json` but no `.pipeline-state.json` of its own). When the argument is an epic, prefer epic mode over feature-mode resolution.
 - **prd mode**: If `forge-1-prd` is complete but `forge-verify-prd` is not `passed` or `findings-applied`
