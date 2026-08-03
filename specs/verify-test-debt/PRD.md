@@ -55,9 +55,10 @@ piece of work.
 - As an **agent running the loop**, I want the seven untested production behaviors
   covered, so that a change to `stage-exit`'s scheduling boundary or the `state-*`
   verbs fails loudly instead of silently.
-- As a **maintainer evaluating the remediation**, I want this feature's verify-round
-  count recorded, so that I can tell whether Phase 2's rules actually work before
-  committing to Phase 4 and a release.
+- As a **maintainer evaluating the remediation**, I want this feature's **narration-churn
+  count and blocking-finding convergence sequence** recorded alongside its verify-round
+  count, so that I can tell whether Phase 2's rules actually work before committing to
+  Phase 4 and a release.
 - As a **future contributor**, I want `state-artifact --path` to reject paths that
   escape the feature directory, so that state cannot record a location no forge stage
   could legitimately have written.
@@ -108,10 +109,17 @@ piece of work.
   - Priority: P0
   - Notes: This is a guard on the trim itself — the risk of REQ-TRIM-01 is
     over-deletion.
-- **REQ-TRIM-03:** Guard 1 in `tests/test_state_verb_call_sites.py` MUST be replaced
-  by a structural check: each fenced `state-*` call contains `--epic`. The
-  proximity-window approach MUST be removed.
+- **REQ-TRIM-03:** Guard 1 in `tests/test_state_verb_call_sites.py` MUST be replaced by a
+  **structural block scan**: each fenced `state-*` call, together with the prose attached to
+  it — delimited by markdown headings and neighbouring fence blocks — must carry the
+  `--epic` mandate. The proximity-window approach MUST be removed.
   - Priority: P1
+  - Notes: **Corrected in v2.** v1 required "each fenced `state-*` call **contains**
+    `--epic`", which cannot hold: only **2 of 34** fenced calls literally carry the flag —
+    the mandate lives in the prose around each fence, which is precisely why `LOOKBEHIND`
+    exists — and the epic-scoped `state-verify` must **never** carry it. The intent
+    (eliminate tuned-integer windows) is preserved; the mechanism is corrected. Measured
+    rosters and the three region variants are in `tech-spec.md` §3.5.
 - **REQ-TRIM-04:** The window-tuning tests bounding LOOKBEHIND, LOOKAHEAD, and
   CALL_SPAN MUST be deleted together with the machinery they constrain.
   - Priority: P1
@@ -245,27 +253,49 @@ Three behavior changes are in scope, and only these three:
   - Notes: This is the defect class that produced rounds 5–9 of the `stage-exit-coverage`
     epic (11 of 12 blocking findings). It is what R-05's severity floor and R-08's
     non-goals norm exist to suppress, so it is what the trial must actually measure.
-- **REQ-TRIAL-02:** **Blocking findings MUST converge.** Across consecutive verify rounds
-  at a single stage, each round's stage-blocking finding count MUST be strictly less than
-  its predecessor's. Work MUST STOP if **either** (a) a narration-churn finding occurs
-  (REQ-TRIAL-01 violated), **or** (b) a round produces blocking findings greater than or
-  equal to the previous round's — non-convergence, which is the real signature of a fix
-  pass manufacturing the next round's work.
+- **REQ-TRIAL-02:** **Blocking findings MUST converge.** Work MUST STOP if **either**
+  (a) a narration-churn finding occurs (REQ-TRIAL-01 violated), **or** (b) **within one
+  stage at one stage version**, a round records **one or more** outstanding stage-blocking
+  findings and that count is **greater than or equal to that same stage-version's
+  immediately preceding round's** — non-convergence, the real signature of a fix pass
+  manufacturing the next round's work.
   - Priority: P0
-  - Notes: Replaces the fixed three-round stop. A round count cannot distinguish
-    "converging on a genuinely intricate artifact" from "churning"; the convergence slope
-    can. Under this rule the forge-2-tech trial (5 → 1 → 0) passes, while the original
-    9-round epic — which re-introduced blocking findings every round from round 2 on —
-    still fails at round 3.
+  - **Counting rules** (each is load-bearing; all three were defects in the first draft of
+    this amendment, found by verification):
+    1. **`≥1` qualifier.** A round recording **zero** outstanding blocking findings resolves
+       the stage version and can never trip (b). Without it, a clean round following a clean
+       round (0 ≥ 0) would trip the stop — the opposite of the intent.
+    2. **Scope is one stage at one stage version.** Counts are **never** compared across
+       stage boundaries, and **never** across a version bump. A stage's first round at a
+       given version has no predecessor and can never trip (b). Without this, the first
+       blocking round of every later stage would trip against the previous stage's
+       terminal zero, and no stage carrying any blocking finding could ever pass.
+    3. **"Outstanding", not "newly filed".** The count is what the round's report records as
+       outstanding — newly filed findings **plus** any prior finding it confirms unresolved.
+       Under a scoped re-verify (C-04) a report legitimately carries both, and the two
+       readings select different numbers on real data.
+  - Notes: Replaces the fixed three-round stop. Retro-classification against real reports:
+    this feature's `forge-2-tech` v1 cycle ran **5 → 1 → 0** and passes (round 3 resolves);
+    the original `stage-exit-coverage` impl stage ran **4 → 2 → 3** and still fails at
+    round 3, which is the behavior the amendment must preserve.
+  - Notes: A round count cannot distinguish "converging on a genuinely intricate artifact"
+    from "churning"; the convergence slope can. A stage version resolves when a round
+    records zero outstanding blocking findings.
 - **REQ-TRIAL-03:** Verify rounds per stage SHOULD be ≤2. Exceeding it is a **signal to
   inspect**, not an automatic stop: record the overage and its reason, then evaluate
   against REQ-TRIAL-01 and REQ-TRIAL-02.
   - Priority: P1
 - **REQ-TRIAL-04:** At feature close, the remediation plan's Session Log MUST record, per
-  stage: the verify-round count, the **narration-churn count**, and the **blocking-finding
-  convergence sequence**. The latter two are the trial's actual result; the round count
-  alone is not.
+  stage **and per stage version**: the verify-round count, the **narration-churn count**,
+  the **blocking-finding convergence sequence**, and the count of **advisory**
+  (non-blocking) findings whose substance lay in a comment, docstring, or test narration.
+  The middle two are the trial's actual result; the round count alone is not.
   - Priority: P1
+  - Notes: The advisory-narration count is recorded to distinguish "**the severity floor
+    held**" from "**no narration churn occurred**". C-03 caps narration inaccuracies at
+    `inconsistency`, so a floor-compliant verifier cannot produce a nonzero REQ-TRIAL-01
+    count by construction; without the advisory series the trial cannot tell the two apart.
+    The reports already carry per-severity totals, so this costs nothing to collect.
 - **REQ-TRIAL-05:** The forge-2-tech overage (3 rounds against the original ≤2) MUST be
   recorded as a Phase 2 finding in its own right — **without** reopening R-05..R-08 on the
   narration-churn axis, which measured clean. The finding to file is §3.6.1.
@@ -354,9 +384,10 @@ Three behavior changes are in scope, and only these three:
 - Any product behavior change beyond the three named in §3.3 (REQ-FIX-01,
   REQ-SEC-01, and whatever REQ-FIX-02 surfaces).
 - Driving `ruff check tests/` to zero. The requirement is non-increase.
-- Changes to `eval/` fixtures beyond the `resolver_line_identical` assertion and the
-  criterion key-set pin required by REQ-COV-03. The compliance eval was stabilized in
-  GATE-P2 and is otherwise frozen.
+- Changes to `eval/` fixtures beyond the prelude criterion key-set pin required by
+  REQ-COV-03. The compliance eval was stabilized in GATE-P2 and is otherwise frozen.
+  (**Corrected in v2:** v1 also admitted "the `resolver_line_identical` assertion", which
+  v2 establishes already exists — nothing changes about its role.)
 - Test files outside those named in T1-T4, except where REQ-BRIT-04's enumerated
   exact-stderr sites legitimately span additional files.
 - Concurrency and locking (REQ-CONC-01).
@@ -380,6 +411,9 @@ Three behavior changes are in scope, and only these three:
 
 ## 8. Success Criteria
 
+> **These criteria restate figures DERIVED from §3.4 and §3.6.** When a roster or a trial
+> figure changes there, recompute this section **in the same edit** (REQ-TRIAL-06).
+
 The feature is done when all of the following hold:
 
 1. `tests/test_capability_determination_prose.py` contains ≤5 tests, declares its
@@ -388,13 +422,10 @@ The feature is done when all of the following hold:
    paragraph or a pointer, resolved in canon rather than a test constant.
 3. Mutation controls in `tests/test_stage_exit_protocol.py` are reduced to ~7 with
    every positive stamp-verbatim test intact.
-4. `tests/test_state_verb_call_sites.py` uses a **structural block scan** bounded by
-   headings and neighbouring fence blocks; the window machinery (`LOOKBEHIND`,
-   `LOOKAHEAD`, `CALL_SPAN`), its tuning tests, and the `inspect.getsource` meta-test are
-   gone; the canon-mandate test survives; a mutation control replaces the deleted width
-   bound. (**Corrected in v2:** v1 said "`--epic`-in-fence check", but only 2 of 34 fenced
-   calls literally carry `--epic` — the mandate lives in the prose attached to each fence,
-   and one call must never carry it. See `tech-spec.md` §3.5.)
+4. `tests/test_state_verb_call_sites.py` satisfies REQ-TRIM-03's structural block scan; the
+   window machinery (`LOOKBEHIND`, `LOOKAHEAD`, `CALL_SPAN`), its tuning tests, and the
+   `inspect.getsource` meta-test are gone; the canon-mandate test survives; a mutation
+   control replaces the deleted width bound.
 5. Each of the seven T3 gaps has a named test; `state-complete --version 0` is
    refused at the write path; `state-artifact --path` enforces containment.
 6. The seven brittleness items in §3.4 are addressed, using the v2-corrected rosters
@@ -409,9 +440,11 @@ The feature is done when all of the following hold:
    filed, which is a **valid and informative** outcome of this trial, not a failure of
    this feature. Any stage exceeding 2 rounds is recorded with its reason (REQ-TRIAL-03),
    alongside the narration-churn count and convergence sequence (REQ-TRIAL-04).
-   - **Status at `forge-2-tech` close:** narration-churn **0/17**; convergence
+   - **Status at `forge-2-tech` v1 close:** narration-churn **0/17**; convergence
      **5 → 1 → 0**; rounds **3** (over the ≤2 guideline, recorded per REQ-TRIAL-05).
-     Criterion **met** under the amended rules.
+     Criterion **met** under the amended rules. The v2 amendment cycle is a **new stage
+     version** and therefore starts a fresh convergence sequence (REQ-TRIAL-02 counting
+     rule 2).
 
 **What a user would complain about if we got this wrong:** that we deleted guards and
 lost real protection (addressed by REQ-TRIM-02, REQ-TRIM-06, REQ-GUARD-04's

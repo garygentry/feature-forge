@@ -471,7 +471,7 @@ file is the fail-closed convention every `state-*` verb follows.
 `stage-exit` unusable under auto-verify with no payload explaining why. Making the failure
 diagnostic was considered and rejected for this feature: it changes `stage_exit`'s output
 contract, which is heavily golden-file tested, and the churn risk is unjustifiable against
-REQ-TRIAL-01's 2-round budget. Recorded in §10.2 as a candidate for later work, not as a
+REQ-TRIAL-03's ≤2-round guideline and REQ-TRIAL-02's convergence requirement. Recorded in §10.2 as a candidate for later work, not as a
 defect this feature leaves unfixed.
 
 ### 3.10 Debt-write idempotency (REQ-COV-04)
@@ -542,7 +542,7 @@ exactly the two named in PRD §3.3.
 
 ### 3.13 Eval criterion key-set pin (REQ-COV-03 — resolves OQ-03)
 
-**The PRD's premise is superseded.** `resolver_line_identical` is **not** "computed and
+**PRD v1's premise was superseded; v2 states the corrected position.** `resolver_line_identical` is **not** "computed and
 never checked". `score_prelude` returns it as one of four keys, and `_to_result` computes
 `compliant = all(criteria.values())` — so it is fully load-bearing for a run's compliance
 flag. **OQ-03 is resolved: it already asserts equality; no change to its role is needed.**
@@ -590,7 +590,7 @@ tokens. Narrow to the `_render_status` function body — the same slicing idiom 
 `test_docs_resolves_the_helper_beside_itself_and_never_a_bare_python3` already uses. This
 is the only unsliced token ban in the file; every other site already scopes.
 
-**REQ-BRIT-04 — roster corrected (resolves OQ-01).** The PRD estimates ~15 sites spanning
+**REQ-BRIT-04 — roster corrected (resolves OQ-01).** PRD v1 estimated ~15 sites spanning
 more than one file. Exhaustive search found **5 assertion sites across exactly 2 files**,
 totalling **11 runtime comparisons**:
 
@@ -622,7 +622,7 @@ Becomes `assert set(state) == {"epic", "updatedAt", "stages"}`.
 files**. `test_state_verbs.py` asserts CLI behavior and `test_state_schema_conformance.py`
 asserts stored-document shape — merging them would delete real coverage, not redundancy.
 
-**The 40-hex hash family is TWO families, totalling 9 sites.** Both the PRD's "×5" and an
+**The 40-hex hash family is TWO families, totalling 9 sites.** Both PRD v1's "×5" and an
 earlier draft of this spec's "4" counted one sub-family each. The complete roster:
 
 | Sub-family | `test_state_verbs.py` (hand-rolled loops) | `test_state_schema_conformance.py` (already parametrized) |
@@ -832,8 +832,8 @@ against.
 > **Implementation warning — this table is DERIVED, not authoritative.** Every figure below
 > is computed from the rosters in §3.3, §3.4, §3.5 and §3.14. Whenever one of those rosters
 > changes, **recompute this table in the same edit.** This table was the single most
-> defect-prone location in the document: **five of the fifteen findings** across the
-> verification rounds landed here (round 1: the call-sites row, the dedup row's mixed units,
+> defect-prone location in the document: **five of the fifteen findings from rounds 1 and 2** landed here
+> (five of seventeen across all three rounds) (round 1: the call-sites row, the dedup row's mixed units,
 > and the table's incomplete accounting; round 2: the dedup row's After column and the Units
 > paragraph's inverted expansion). The rosters in §3.3/§3.4/§3.5/§3.14 were correct every
 > time; this table was the defect site. It is the last thing to edit, never the first.
@@ -926,7 +926,7 @@ in scope and is not modified.
 ### 10.1 Resolved during this spec
 
 - **OQ-01 (exact-stderr roster)** — resolved: **5 sites / 11 comparisons across 2 files**,
-  enumerated in §3.14. The PRD's "~15" is superseded.
+  enumerated in §3.14. PRD v1's "~15" was superseded and v2 adopted the corrected roster.
 - **OQ-02 (canonical section)** — resolved: reuse
   `references/stage-exit-protocol.md` § "Host and capability determination"; no new section
   (§3.1).
@@ -939,7 +939,7 @@ agree. The table is retained as the derivation record:
 
 | PRD | States | Verified |
 |---|---|---|
-| §3.4 / §8 | ~15 exact-stderr sites | 5 sites / 11 comparisons, 2 files |
+| §3.4 / §8 | ~15 exact-stderr sites (v1) | 5 sites / 11 comparisons, 2 files |
 | §3.4 / §8 | hash matrices ×5 | **incomplete, not wrong** — ×5 is the `_REJECTED_HASHES` sub-family; the full roster across both sub-families is **9 sites / 5 hand-rolled loops** (§3.14) |
 | §3.3 | `resolver_line_identical` computed, never checked | checked via `all(criteria.values())` |
 
@@ -974,7 +974,7 @@ measures the body after the closing frontmatter fence, so `forge-0-epic` has +5 
 `forge-verify` +1 — both under the cap, and `check-spec-purity.py` reports 0 violations.
 The measurement is now stated in §3.1 and there is no pre-implementation check outstanding.
 
-### 10.3 Trial instrumentation (REQ-TRIAL-01..03)
+### 10.3 Trial instrumentation (REQ-TRIAL-01..06)
 
 **Amended in PRD v2, after this stage ran.** The stop condition is no longer a round count.
 Work stops if **either** a narration-churn finding occurs (REQ-TRIAL-01 — a stage-blocking
