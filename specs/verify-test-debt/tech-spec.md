@@ -94,8 +94,8 @@ fence — **not** the file. Measured with that exact rule:
 
 | Skill | File lines | Body lines | Body words | Headroom |
 |---|---|---|---|---|
-| `skills/forge-0-epic/SKILL.md` | 302 | **295** / 300 | 2749 / 5000 | **+5 lines** |
-| `skills/forge-verify/SKILL.md` | 306 | **299** / 300 | 4365 / 5000 | **+1 line** |
+| `skills/forge-0-epic/SKILL.md` | 301 | **295** / 300 | 2749 / 5000 | **+5 lines** |
+| `skills/forge-verify/SKILL.md` | 305 | **299** / 300 | 4365 / 5000 | **+1 line** |
 
 Neither file is over the cap, which is why `check-spec-purity.py` reports 0 violations. A
 one-sentence pointer in `forge-0-epic` fits within its 5 lines of headroom. `forge-verify`
@@ -663,7 +663,8 @@ canon edit propagates mechanically; the `forge-0-epic` skill edit propagates thr
 per-skill emitters with host-term translation for non-Claude targets.
 
 `check-spec-purity.py` must report 0 violations. Its seven rules include the body-size cap
-(§3.1's open risk), prelude byte-identity, and a self-containment ratchet that bans new
+(§3.1, measured — both affected skills are under the cap), prelude byte-identity, and a
+self-containment ratchet that bans new
 spec-document citations in `scripts/`, `references/`, `skills/`, and `eval/`. **This spec
 lives in `specs/`, which is not a shipped surface, so its own citations are unaffected —
 but any prose added to canon must not cite this document.**
@@ -830,7 +831,7 @@ against.
 | `test_state_verb_call_sites.py` | 10 tests | **9** | −2 deletions, +1 mutation control |
 | REQ-COV backfill | — | **+7** named tests | +7 |
 | `PRELUDE_CRITERIA` pin (§3.13) | — | **+1** | +1 |
-| REQ-BRIT-07 dedup | 13 hand-rolled functions | **3** parametrized functions | ≈0 collected |
+| REQ-BRIT-07 dedup | 13 hand-rolled functions | **7** parametrized functions | **+31 or more** collected |
 
 The two `test_state_verb_call_sites.py` deletions are named in §3.5:
 `test_the_window_is_no_wider_than_the_measured_maximum` and
@@ -838,14 +839,22 @@ The two `test_state_verb_call_sites.py` deletions are named in §3.5:
 `MIN_CALL_SITES`, `test_the_epic_guard_is_not_vacuous`, the canon-mandate test, both Guard
 3 tests and the not-skippable check all survive.
 
-**Units.** The dedup row counts *test functions* (5 hash + 3 corrupt + 5 gate = 13
-hand-rolled → 3 parametrized); the 4 already-parametrized sites are untouched and are not
-in either column. Parametrizing preserves the individual cases, so the row is
-approximately neutral in *collected items* — it reduces function count, not coverage.
+**Units.** The dedup row counts *test functions*: 5 hash + 3 corrupt + 5 gate = 13
+hand-rolled → 5 + 1 + 1 = **7** parametrized. The five hash loops stay **five** functions —
+§3.14 forbids merging them, because they exercise three verbs through different fixtures
+and two different domains. Six already-parametrized sites (4 hash, 1 corrupt, 1 gate) are
+untouched and appear in neither column.
 
-**Expected suite total:** 1842 collected today → **≈1750** after
-(1842 − 39 − 60 − 1 + 7 + 1), ± the dedup's collected-item delta. This is the number
-REQ-QUAL-01's full-suite check compares against.
+Parametrizing **expands** each loop's cases into separate collected items: the five hash
+loops alone go from 5 collected items to 2×3 + 3×10 = **36**, so the dedup adds ≈**+31**
+collected items while reducing function count. Coverage is unchanged; only the collection
+unit changes.
+
+**Expected suite total:** 1842 collected today → **≈1781** after
+(1842 − 39 − 60 − 1 + 7 + 1 + 31), ± up to +7 more if the corrupt-file dedup is
+parametrized over all 8 verb invocations. This is the number REQ-QUAL-01's full-suite
+check compares against — an implementer landing near 1781 is seeing the expected
+parametrization expansion, not an accidental addition.
 
 ### 8.3 Verification gates (REQ-QUAL-01..04)
 
