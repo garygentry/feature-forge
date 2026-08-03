@@ -261,6 +261,11 @@ Three behavior changes are in scope, and only these three:
   - Notes: This is the defect class that produced rounds 5–9 of the `stage-exit-coverage`
     epic (11 of 12 blocking findings). It is what R-05's severity floor and R-08's
     non-goals norm exist to suppress, so it is what the trial must actually measure.
+  - **Falsifiability:** this count is only meaningful at stages that **author code** —
+    `forge-5-loop`, and any fix pass touching `tests/` or `scripts/`. A zero at
+    `forge-1-prd` or `forge-2-tech` is consistent with the rule but is **not evidence for
+    it**, because those stages author specification prose rather than narration. The
+    trial's decisive datapoint is `forge-5-loop`.
 - **REQ-TRIAL-02:** **Blocking findings MUST converge.** Work MUST STOP if **either**
   (a) a narration-churn finding occurs (REQ-TRIAL-01 violated), **or** (b) **within one
   stage at one stage version**, a round records **one or more** outstanding stage-blocking
@@ -448,11 +453,17 @@ The feature is done when all of the following hold:
    filed, which is a **valid and informative** outcome of this trial, not a failure of
    this feature. Any stage exceeding 2 rounds is recorded with its reason (REQ-TRIAL-03),
    alongside the narration-churn count and convergence sequence (REQ-TRIAL-04).
-   - **Status at `forge-2-tech` v1 close:** narration-churn **0/17**; convergence
-     **5 → 1 → 0**; rounds **3** (over the ≤2 guideline, recorded per REQ-TRIAL-05).
-     Criterion **met** under the amended rules. The v2 amendment cycle is a **new stage
-     version** and therefore starts a fresh convergence sequence (REQ-TRIAL-02 counting
-     rule 2).
+   - **Status at `forge-2-tech` close:** v1 — narration-churn **0/17**, convergence
+     **5 → 1 → 0**, rounds **3** (over the ≤2 guideline, recorded per REQ-TRIAL-05).
+     v2 — narration-churn **0/22**, convergence **2 → 0**, rounds **2**. The v2 amendment
+     cycle is a **new stage version** and therefore started a fresh sequence (REQ-TRIAL-02
+     counting rule 2).
+   - **Criterion PROVISIONALLY met.** REQ-TRIAL-01's narration-churn count cannot fail at a
+     stage that authors no comments, docstrings, or test narration — forge-1-prd and
+     forge-2-tech author specification prose, so every zero above is structurally guaranteed
+     rather than evidence. The decisive datapoint is **forge-5-loop**, where the original
+     epic's churn occurred (11 of 12 blocking findings, all in the impl stage). Do not read
+     these zeros as proof the rules work.
 
 **What a user would complain about if we got this wrong:** that we deleted guards and
 lost real protection (addressed by REQ-TRIM-02, REQ-TRIM-06, REQ-GUARD-04's
