@@ -1292,3 +1292,39 @@ def test_stage_exit_classifies_a_torn_verify_entry_without_crashing(
     d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
     assert d["verifyState"] == "never"
     assert d["runInStageVerify"] is False
+
+
+def test_a_loop_complete_exit_with_a_live_report_routes_to_fix(
+    tmp_path: Path,
+) -> None:
+    """The loop's `complete` handoff obeys the same live-report rule as a
+    production re-exit: the fenced action is the fix, no debt is scheduled,
+    and the report survives byte-identically."""
+    state = {"pipelineStatus": "active", "stages": {
+        "forge-5-loop": {"status": "complete", "version": 1},
+        "forge-verify-impl": {"status": "findings-reported", "findingsFile": "f.md",
+                              "findingsCount": 2, "verifiedStageVersion": 1,
+                              "commitHash": None},
+    }}
+    root = _exit_project(tmp_path, state=state)
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+    before = state_file.read_bytes()
+
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-5-loop",
+                 "--outcome", "complete")["directives"]
+
+    assert d["runInStageVerify"] is False
+    assert d["autoVerifyDebtRecorded"] is False
+    assert d["verifyGate"] == "none"
+    assert d["primaryCommand"] == "/feature-forge:forge-fix widget --served-stage forge-5-loop"
+    assert state_file.read_bytes() == before
+
+
+def test_rank_features_warns_on_a_torn_non_string_status(tmp_path: Path) -> None:
+    """The non-string guard degrades to `never` WITH the #148 diagnostic —
+    a malformed status is at least as warn-worthy as an unknown string."""
+    specs = tmp_path / "specs"
+    _write_state(specs, "a", _completed_prd_state({"status": ["findings-reported"]}))
+    result = _rank_proc(specs)
+    assert result.returncode == 0, result.stderr
+    assert "unknown forge-verify-prd status" in result.stderr

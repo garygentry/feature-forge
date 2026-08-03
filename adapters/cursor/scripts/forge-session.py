@@ -577,8 +577,9 @@ class StageExitDirectives(TypedDict, total=False):
     # promotion rule below. None when `nextStage` is None.
     nextCommand: str | None
     # THE authoritative single action. While verification is unresolved this is the
-    # verify command, never the downstream stage. The one fenced command in the
-    # rendered block. None only when the pipeline has no further action.
+    # verify command — or the forge-fix command when a findings report is live at
+    # the current revision — never the downstream stage. The one fenced command in
+    # the rendered block. None only when the pipeline has no further action.
     primaryCommand: str | None
     # Post-verification guidance shown as prose, never fenced, so it cannot be
     # mistaken for the primary action. None when there is nothing deferred.
@@ -922,7 +923,9 @@ def verify_state(state: dict) -> tuple[str | None, str]:
             # A torn or hand-edited entry can carry any JSON type here; an
             # unhashable one would raise TypeError at the frozenset membership
             # below, crashing the navigator on one bad file. Same answer as an
-            # absent entry: this stage was never verifiably verified.
+            # absent entry — and the same #148 diagnostic as an unknown string,
+            # so the degradation is never silent.
+            _warn_unknown_verify_status(f"forge-verify-{token}", status)
             return stage, "never"
         if status == "skipped":
             # An explicit skip is resolved and non-pending — preserve the user's
@@ -3017,6 +3020,11 @@ _LOOP_COMPLETE_SETTLED: Final[str] = (
     " Its implementation verification is settled, so the pipeline continues with the "
     "action below."
 )
+_LOOP_COMPLETE_FINDINGS: Final[str] = (
+    " Implementation verification already ran at this revision and reported findings, "
+    "so applying them comes first — nothing downstream becomes the primary action "
+    "until a re-verify passes or the verification is explicitly skipped."
+)
 
 #: The outcome sentence a loop or documentation exit renders when a blocking
 #: epic change request DISPLACES its live continuation. Both route tables above name
@@ -3114,6 +3122,7 @@ def _loop_route(
     successor_command: str | None,
     resolved: bool,
     verify_canonical: str,
+    fix_canonical: str | None,
 ) -> tuple[str, str | None, str, bool]:
     """Route one loop result — the outcome table.
 
@@ -3133,6 +3142,11 @@ def _loop_route(
         successor_command: Canonical live-successor command (documentation), or None.
         resolved: Whether the implementation verification is settled.
         verify_canonical: Canonical implementation-verify command.
+        fix_canonical: Canonical forge-fix command when a findings report is live
+            at the current revision (see ``live_findings_report`` in ``stage_exit``),
+            else None. A live report outranks a fresh verify on the ``complete``
+            handoff: findings already exist at this exact revision, so the fenced
+            action is applying them, exactly as on a production re-exit.
 
     Returns:
         `(primary_canonical, deferred_canonical, outcome_text, advancing)`, matching
@@ -3177,11 +3191,19 @@ def _loop_route(
         else:
             handoff, key = f"/feature-forge:forge-0-epic {epic}", "epic-dashboard"
 
-    text = _LOOP_COMPLETE_TEXT[key].format(**fields) + (
-        _LOOP_COMPLETE_SETTLED if resolved else _LOOP_COMPLETE_OUTSTANDING
-    )
+    if resolved:
+        tail = _LOOP_COMPLETE_SETTLED
+    elif fix_canonical is not None:
+        tail = _LOOP_COMPLETE_FINDINGS
+    else:
+        tail = _LOOP_COMPLETE_OUTSTANDING
+    text = _LOOP_COMPLETE_TEXT[key].format(**fields) + tail
     if resolved:
         return handoff, None, text, True
+    if fix_canonical is not None:
+        # A live findings report outranks a fresh verify, exactly as on a
+        # production re-exit: the fenced action is the fix, the handoff is demoted.
+        return fix_canonical, handoff, text, False
     # Verify-first ordering, applied to the loop's own handoff rather than to
     # the fixed successor: the verification is fenced and the handoff is demoted.
     return verify_canonical, handoff, text, False
@@ -3365,17 +3387,21 @@ def stage_exit(
       ``auto-pending`` on the next one. Only ``autoVerifyDebtRecorded`` reports
       the write.
     - ``verifyGate`` — ``none`` when verify is resolved (including a tokenless
-      stage) or the in-stage run covers it; ``standard`` when auto-verify is off,
-      verification is outstanding, and the CALLER declared
+      stage), the in-stage run covers it, or a live findings report routes to
+      forge-fix (the fenced fix IS the one action — a "verify now?" prompt
+      beside it would be a second, contradictory ask); ``standard`` when
+      auto-verify is off, verification is outstanding, and the CALLER declared
       ``--verify-capability interactive``; ``manual-print`` for the same state
       under ``manual`` (print ``verifyCommand`` instead of presenting the gate).
       Never a function of ``--host``: capable Pi is ``standard`` and incapable
       Claude is ``manual-print`` (REQ-EXIT-07).
     - ``primaryCommand``/``deferredCommand`` — the verify-first pair. While
-      verification is unresolved ``primaryCommand`` is the verify command and is
-      the ONLY fenced command; ``deferredCommand`` names the production successor
-      as unfenced conditional prose. ``nextCommand`` stays compatibility/routing
-      metadata and never overrides ``primaryCommand`` (REQ-EXIT-06).
+      verification is unresolved ``primaryCommand`` is the verify command — or
+      the forge-fix command when a findings report is live at the current
+      revision — and is the ONLY fenced command; ``deferredCommand`` names the
+      production successor as unfenced conditional prose. ``nextCommand`` stays
+      compatibility/routing metadata and never overrides ``primaryCommand``
+      (REQ-EXIT-06).
     - ``nextStage``/``nextCommand`` — from pipeline state when it already
       records this stage complete (first non-complete production stage), else
       the fixed successor. ``--next-feature`` names the first actionable
@@ -3751,10 +3777,17 @@ def stage_exit(
             }
 
     # ---- Verify-first primary routing ------------------------------------- #
-    # While verification is unresolved the verify command is THE action; the
-    # production successor is demoted to unfenced conditional prose. No path may
-    # fence or recommend the deferred production command first (REQ-EXIT-06).
+    # While verification is unresolved the verify command is THE action — except
+    # under a live findings report, whose one action is the forge-fix that applies
+    # it. Either way the production successor is demoted to unfenced conditional
+    # prose. No path may fence or recommend the deferred production command first
+    # (REQ-EXIT-06).
     verify_canonical = f"/feature-forge:forge-verify {feature}"
+    # The one action a live findings report promotes, on every route that can
+    # reach it: findings already exist at this exact revision, so re-dispatching
+    # verify would only restate them. The served stage is carried so the fix
+    # rejoins this production thread.
+    fix_canonical = f"/feature-forge:forge-fix {feature} --served-stage {route_stage}"
     verify_command = _host_command(verify_canonical, host)
     blocking_reconcile = bool(epic_reconcile and epic_reconcile.get("required"))
     primary_canonical: str | None
@@ -3788,6 +3821,7 @@ def stage_exit(
             next_command,
             resolved,
             verify_canonical,
+            fix_canonical if live_findings_report else None,
         )
         if blocking_reconcile:
             # Same reconcile-first rule as every other advancing route — but the
@@ -3831,10 +3865,7 @@ def stage_exit(
                 advancing,
             )
     elif live_findings_report:
-        # Findings already exist at this exact revision, so re-dispatching verify
-        # would only restate them; the outstanding action is applying the fixes.
-        # The served stage is carried so the fix rejoins this production thread.
-        primary_canonical = f"/feature-forge:forge-fix {feature} --served-stage {route_stage}"
+        primary_canonical = fix_canonical
         deferred_canonical = next_command
     elif not resolved:
         primary_canonical = verify_canonical
