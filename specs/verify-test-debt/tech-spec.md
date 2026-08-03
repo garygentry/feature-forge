@@ -822,6 +822,14 @@ against.
 
 ### 8.2 Net test-count effect
 
+> **Implementation warning — this table is DERIVED, not authoritative.** Every figure below
+> is computed from the rosters in §3.3, §3.4, §3.5 and §3.14. Whenever one of those rosters
+> changes, **recompute this table in the same edit.** Both verification rounds of this spec
+> produced exactly one defect of this shape — a summary figure left stale by a correction
+> made elsewhere in the document (round 1: the call-sites row after §3.5 settled; round 2:
+> the dedup row after §3.14's hash roster settled). The rosters were right both times; this
+> table was the defect site. It is the last thing to edit, never the first.
+
 | File | Before | After | Delta |
 |---|---|---|---|
 | `test_capability_determination_prose.py` | 43 items | **4** | −39 |
