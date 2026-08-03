@@ -1199,3 +1199,72 @@ def test_a_branch_exit_never_schedules_over_the_result_it_just_wrote(
     assert d["autoVerifyDebtRecorded"] is False
     assert state_file.read_bytes() == before
     assert _read_entry(root) == report
+
+
+# --- a live findings report is never clobbered by scheduling ----------------- #
+
+
+def _live_report(version: int = 2) -> dict:
+    return {"status": "findings-reported", "findingsFile": "findings.md",
+            "findingsCount": 3, "verifiedStageVersion": version, "commitHash": None}
+
+
+def test_a_production_re_exit_preserves_a_current_revision_findings_report(
+    tmp_path: Path,
+) -> None:
+    """A findings report at the current revision is live evidence, not owed debt.
+
+    Scheduling over it would replace the entry and delete
+    ``findingsFile``/``findingsCount`` (the REQ-EXIT-04 clobber reached from a
+    production re-exit), after which ``state-verify --status findings-applied``
+    loses its precondition. The exit must leave the entry intact and route to
+    forge-fix instead.
+    """
+    report = _live_report()
+    root = _exit_project(tmp_path, state=_tech_state(report))
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+    before = state_file.read_bytes()
+
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+
+    assert d["runInStageVerify"] is False
+    assert d["autoVerifyDebtRecorded"] is False
+    assert d["verifyGate"] == "none"
+    assert d["verifyState"] == "failing"
+    assert d["primaryCommand"] == "/feature-forge:forge-fix widget --served-stage forge-2-tech"
+    assert state_file.read_bytes() == before
+    assert _read_entry(root) == report
+
+
+def test_findings_applied_still_succeeds_after_a_production_re_exit(
+    tmp_path: Path,
+) -> None:
+    root = _exit_project(tmp_path, state=_tech_state(_live_report()))
+    _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+
+    proc = subprocess.run(
+        [sys.executable, str(HELPER), "state-verify", "--feature", "widget",
+         "--stage", "forge-2-tech", "--status", "findings-applied",
+         "--specs-dir", "specs"],
+        capture_output=True, text=True, cwd=str(root),
+    )
+    assert proc.returncode == 0, proc.stderr
+    entry = _read_entry(root)
+    assert entry["status"] == "findings-applied"
+    assert entry["findingsFile"] == "findings.md"
+    assert entry["findingsCount"] == 3
+
+
+def test_a_stale_findings_report_is_still_superseded_by_scheduling(
+    tmp_path: Path,
+) -> None:
+    """A report against a since-revised artifact is superseded normally."""
+    root = _exit_project(tmp_path, state=_tech_state(_live_report(version=1)))
+
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+
+    assert d["runInStageVerify"] is True
+    assert d["autoVerifyDebtRecorded"] is True
+    entry = _read_entry(root)
+    assert entry["status"] == "auto-verify-pending"
+    assert entry["scheduledStageVersion"] == 2

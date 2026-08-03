@@ -1592,6 +1592,48 @@ def test_state_verify_skipped_clears_every_result_field(tmp_path):
     assert _entry(specs) == {"status": "skipped", "commitHash": None}
 
 
+def test_state_verify_scheduling_refuses_to_clobber_a_current_revision_report(tmp_path):
+    """Scheduling REPLACES the entry, so a report at the current revision would
+    lose ``findingsFile``/``findingsCount`` and break the later
+    ``findings-applied`` precondition (REQ-EXIT-04 through the CLI)."""
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/f.md", "--findings-count", "3",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    before = _state_bytes(specs)
+
+    result = _verify(specs, "--stage", "forge-1-prd", "--status", "auto-verify-pending")
+
+    assert result.returncode == 2
+    assert "would replace" in result.stderr
+    assert _state_bytes(specs) == before, "mutated on a rejected write"
+    # The report survives, so the applied transition still works.
+    assert _verify(specs, "--stage", "forge-1-prd",
+                   "--status", "findings-applied").returncode == 0
+
+
+def test_state_verify_scheduling_supersedes_a_stale_report(tmp_path):
+    """A report against a since-revised artifact is superseded normally."""
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/f.md", "--findings-count", "3",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    assert _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+        "--version", "2", "--artifact", "PRD.md", "--specs-dir", str(specs),
+    ).returncode == 0
+
+    assert _verify(specs, "--stage", "forge-1-prd",
+                   "--status", "auto-verify-pending").returncode == 0
+    entry = _entry(specs)
+    assert entry["status"] == "auto-verify-pending"
+    assert entry["scheduledStageVersion"] == 2
+
+
 def test_state_verify_findings_applied_preserves_the_report_and_clears_freshness(tmp_path):
     specs = _verify_fixture(tmp_path)
     assert _verify(
