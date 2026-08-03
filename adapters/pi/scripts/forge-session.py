@@ -918,6 +918,12 @@ def verify_state(state: dict) -> tuple[str | None, str]:
             continue  # forge-6-docs has no verify step
         entry = _verify_entry(state, f"forge-verify-{token}")
         status = entry.get("status")
+        if status is not None and not isinstance(status, str):
+            # A torn or hand-edited entry can carry any JSON type here; an
+            # unhashable one would raise TypeError at the frozenset membership
+            # below, crashing the navigator on one bad file. Same answer as an
+            # absent entry: this stage was never verifiably verified.
+            return stage, "never"
         if status == "skipped":
             # An explicit skip is resolved and non-pending — preserve the user's
             # decision. It never goes stale (no recorded version to compare), so
@@ -2205,6 +2211,11 @@ def _classify_verify_entry(entry: dict, verify_key: str, current: int | None) ->
         One of fresh / stale / failing / auto-pending / never / skipped.
     """
     status = entry.get("status")
+    if status is not None and not isinstance(status, str):
+        # Same guard as `verify_state`: an unhashable status from a torn or
+        # hand-edited entry must classify, not raise at the frozenset
+        # membership below — this label is read while closing a stage.
+        return "never"
     if status == "skipped":
         return "skipped"
     if status == "findings-reported":

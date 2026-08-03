@@ -193,6 +193,16 @@ def test_verify_state_none_when_nothing_complete() -> None:
     assert fs.verify_state(state) == (None, "none")
 
 
+@pytest.mark.parametrize("bad", [["findings-reported"], {"passed": True}, 3, True],
+                         ids=["list", "dict", "int", "bool"])
+def test_verify_state_never_on_a_torn_non_string_status(bad: object) -> None:
+    """A torn or hand-edited entry can carry any JSON type as `status`; an
+    unhashable one must classify as `never`, not raise TypeError at the
+    frozenset membership — this label gates the navigator and stage exit."""
+    state = _completed_prd_state({"status": bad})
+    assert fs.verify_state(state) == ("forge-1-prd", "never")
+
+
 def test_verify_state_skipped_is_resolved_not_pending() -> None:
     """An explicit skip (no verifiedStageVersion) stays skipped, never stale.
 
@@ -1268,3 +1278,17 @@ def test_a_stale_findings_report_is_still_superseded_by_scheduling(
     entry = _read_entry(root)
     assert entry["status"] == "auto-verify-pending"
     assert entry["scheduledStageVersion"] == 2
+
+
+def test_stage_exit_classifies_a_torn_verify_entry_without_crashing(
+    tmp_path: Path,
+) -> None:
+    """`_classify_verify_entry` runs while closing a stage; an unhashable
+    status must label `never` rather than raise (auto-verify off keeps this
+    scoped to classification — corrupt-state debt writes are their own case)."""
+    root = _exit_project(
+        tmp_path, config={}, state=_tech_state({"status": ["findings-reported"]})
+    )
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert d["verifyState"] == "never"
+    assert d["runInStageVerify"] is False

@@ -1071,11 +1071,32 @@ def epic_verify_state(epic_dir: Path, revision: int | None) -> str:
           ``verifiedStageVersion``: applying fixes is not verifying them, and legacy
           state loaded without migration (REQ-DEBT-06) may still carry the key.
     """
-    entry = _read_epic_state_safely(epic_dir).get("stages", {})
-    entry = entry.get(EPIC_VERIFY_KEY) if isinstance(entry, dict) else None
-    if not isinstance(entry, dict):
+    return _classify_epic_verify_entry(_read_epic_verify_entry(epic_dir), revision)
+
+
+def _read_epic_verify_entry(epic_dir: Path) -> dict:
+    """The ``forge-verify-epic`` entry out of ``.epic-state.json``, or ``{}``.
+
+    The single read both the classifier and the warning renderer share: a caller
+    that needs the label AND the entry's metadata reads once and passes the same
+    dict to both, so a file rewritten between two reads can never classify against
+    one snapshot and index into another.
+    """
+    stages = _read_epic_state_safely(epic_dir).get("stages", {})
+    entry = stages.get(EPIC_VERIFY_KEY) if isinstance(stages, dict) else None
+    return entry if isinstance(entry, dict) else {}
+
+
+def _classify_epic_verify_entry(entry: dict, revision: int | None) -> str:
+    """The classification half of ``epic_verify_state``, over an already-read entry."""
+    if not entry:
         return "never"
     status = entry.get("status")
+    if not isinstance(status, str):
+        # A torn or hand-edited entry can carry any JSON type here; an unhashable
+        # one would raise TypeError at the frozenset membership below, crashing
+        # the whole dashboard on one bad file.
+        return "never"
     if status == "auto-verify-pending":
         return "auto-pending"
     if status == "findings-reported":
@@ -1105,11 +1126,10 @@ def _epic_verify_warnings(epic: str, epic_dir: Path, revision: int | None) -> li
     reachable through the epic's own verify run. Owed-and-dropped debt is the case
     that is otherwise invisible.
     """
-    if epic_verify_state(epic_dir, revision) != "auto-pending":
+    entry = _read_epic_verify_entry(epic_dir)
+    if _classify_epic_verify_entry(entry, revision) != "auto-pending":
         return []
-    # Reaching here means the entry classified auto-pending, so it IS a dict.
-    stages = _read_epic_state_safely(epic_dir)["stages"]
-    scheduled = _positive_int(stages[EPIC_VERIFY_KEY].get("scheduledStageVersion"))
+    scheduled = _positive_int(entry.get("scheduledStageVersion"))
     return [_auto_pending_message(
         epic,
         EPIC_VERIFY_STAGE,
