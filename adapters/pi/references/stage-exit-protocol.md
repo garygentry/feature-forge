@@ -421,6 +421,20 @@ the re-verify (`skills/forge-fix/SKILL.md` Step 6):
   `state-decision` entry, a recorded-decision comment in the artifact, or a declared
   non-goal — is never filed, in a re-verify or a fresh sweep. Cite the decision
   instead. Re-filing a decided question costs a round and reverses nothing.
+- **Escalation (the round ledger).** Rounds are counted from the served stage's
+  findings documents (`VERIFY-{mode}-{date}.md`, then `-round{N}` — the filename rule
+  in `skills/forge-verify/SKILL.md` Step 4), so the ledger is reconstructable from the
+  `.verification/` directory alone. On the SECOND consecutive `reverify-findings`
+  close for the same served stage, the loop has stopped converging: do NOT recommend
+  another fix pass. Present the compact findings digest and ask for explicit
+  disposition with exactly these options —
+  **Accept the residual findings and advance** *(recommended)*: record the acceptance
+  as a `state-decision` naming each accepted finding, then write the stage's verify
+  result as `passed` with the report attached (`--findings-file`/`--findings-count`);
+  the accepted findings become recorded decisions that decision immunity keeps from
+  ever being re-filed. **Run another fix pass**: available, never recommended at this
+  point. **Stop here**. The user may still choose to fix — the protocol just stops
+  steering into the loop it cannot show is converging.
 
 ---
 

@@ -7,6 +7,10 @@ Loaded by the **parent orchestrator** role of `forge-verify` at Step 4 (write th
 Write findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`
 (for epic mode, `{specsDir}/{epic}/.verification/VERIFY-epic-{YYYY-MM-DD}.md` — same
 format, with `{mode}=epic`). Ensure the `.verification/` subdirectory exists first.
+**Never overwrite an existing report:** if the name already exists (an earlier round
+the same day), write `VERIFY-{mode}-{YYYY-MM-DD}-round{N}.md` with the smallest
+`N ≥ 2` not yet on disk — each round's report and Fix Progress is an audit record the
+round ledger reads (`references/stage-exit-protocol.md` § Escalation).
 
 ```markdown
 # Verification Report: {feature} ({mode})
