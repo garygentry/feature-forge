@@ -563,7 +563,14 @@ def ordered_command_evidence(
         for index in range(cursor, len(evidence)):
             item = evidence[index]
             # Literal tokens, ALL of them, in ONE command — an AND, never a regex.
-            if all(token in item["command"] for token in tokens):
+            # Matched against a DEQUOTED view: the skill fences quote templated
+            # values (`--owner "{owner}"`), so a live `--owner "nested"` must
+            # satisfy the fixture token `--owner nested` — quotes change shell
+            # parsing, not the argv the flags deliver, and the fixture's tokens
+            # are argv-level facts. Scoring the quoted form non-compliant marks a
+            # run that followed the skill verbatim as a miss.
+            command = item["command"].replace('"', "").replace("'", "")
+            if all(token in command for token in tokens):
                 found = index
                 break
             if _is_exit_command(item["command"]):

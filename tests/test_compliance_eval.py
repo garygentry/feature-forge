@@ -842,6 +842,30 @@ def test_ordered_evidence_accepts_the_shipped_fixture_token_shape(branch_fixture
         assert len(matches) == len(scenario["expectedCommands"])
 
 
+def test_ordered_evidence_matches_the_quoted_form_the_skill_fences(
+    branch_fixture: dict,
+) -> None:
+    """Skill fences quote templated values (`--owner "{owner}"`), so a live run's
+    quoted argv must satisfy the fixture's unquoted argv-level tokens — scoring
+    the quoted form non-compliant marks a run that followed the skill verbatim
+    as a miss."""
+    for scenario in branch_fixture["scenarios"]:
+        events: list[object] = []
+        for index, expected in enumerate(scenario["expectedCommands"]):
+            quoted = " ".join(
+                f'{flag} "{value}"' if token.startswith("--") else token
+                for token in expected["contains"]
+                for flag, _, value in [token.partition(" ")]
+            )
+            command = 'python3 "$R/scripts/forge-session.py" stage-exit ' + quoted
+            events += _ok(command, f"q{index}", "ran")
+        ok, matches = ce.ordered_command_evidence(
+            ce.parse_transcript(_stream(*events, _final())), scenario["expectedCommands"]
+        )
+        assert ok is True, scenario["name"]
+        assert len(matches) == len(scenario["expectedCommands"])
+
+
 # --------------------------------------------------------------------------- #
 # Probe 3 — branch fixture, loader, and ground truth
 # --------------------------------------------------------------------------- #
