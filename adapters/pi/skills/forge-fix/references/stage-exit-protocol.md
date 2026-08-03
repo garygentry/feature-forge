@@ -397,6 +397,33 @@ nested state transitions so its single final block reflects the terminal result.
 
 ---
 
+## Re-verify scope and convergence
+
+A **re-verify** is any verification run whose served stage's verify entry is
+`findings-applied` — a fix pass preceded it, and its job is to CONFIRM that pass, not to
+re-open the artifact. These rules bind the dispatched `forge-verifier`, the skill that
+synthesizes its digest (`skills/forge-verify/SKILL.md`), and the fix pass that requests
+the re-verify (`skills/forge-fix/SKILL.md` Step 6):
+
+- **Scope.** Confirm each finding of the prior report against that finding's own
+  acceptance evidence, and examine the fix's delta (the changed lines and what they
+  directly touch) for new blocking defects. A re-verify is NOT a fresh full-checklist
+  sweep: the full sweep already ran when the report was minted, and re-sweeping mints
+  arbitrary new findings against text the fix just wrote — the divergence loop this
+  section exists to prevent.
+- **Convergence.** Only an unresolved finding from the prior report, or a new
+  **blocking** finding (`error` with behavioral, CLI-output, or decision-bearing
+  consequence, or `gap`) introduced by the fix delta itself, may make a re-verify close
+  as `reverify-findings`. Every other new observation — advisory-severity anywhere, or
+  anything outside the fix delta — is recorded in the report at most and never flips
+  the outcome.
+- **Decision immunity.** A finding whose subject carries a recorded decision — a
+  `state-decision` entry, a recorded-decision comment in the artifact, or a declared
+  non-goal — is never filed, in a re-verify or a fresh sweep. Cite the decision
+  instead. Re-filing a decided question costs a round and reverses nothing.
+
+---
+
 ## Retired blocks
 
 The two bespoke terminal blocks this protocol used to carry — the **standard block** and
