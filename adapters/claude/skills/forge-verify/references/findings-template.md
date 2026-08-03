@@ -20,6 +20,7 @@ Artifacts Reviewed: {list of files}
 - Inconsistencies: {N}
 - Improvements: {N}
 - Errors: {N}
+- Blocking (errors + gaps): {N} — {"report records findings-reported" | "0: advisory-only, report records passed with this file attached"}
 
 ## Findings
 

@@ -1776,14 +1776,43 @@ def test_state_verify_rejects_findings_metadata_on_pending_and_skipped(tmp_path)
             assert _state_bytes(specs) == before, f"{status} {bad}"
 
 
-def test_state_verify_rejects_findings_metadata_on_passed(tmp_path):
+def test_state_verify_passed_requires_a_count_with_an_advisory_file(tmp_path):
+    """An advisory report is file + count together; half a record is refused."""
     specs = _verify_fixture(tmp_path)
     before = _state_bytes(specs)
     result = _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
                      "--verified-stage-version", "1", "--findings-file", "verify/f.md")
     assert result.returncode == 2
-    assert "does not accept --findings-file" in result.stderr
+    assert "requires --findings-count" in result.stderr
     assert _state_bytes(specs) == before
+
+
+def test_state_verify_passed_records_an_advisory_report(tmp_path):
+    """An advisory-only report (no error/gap) resolves as `passed` WITH the
+    report attached, so it never routes to forge-fix and stays discoverable."""
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "passed",
+        "--findings-file", "verify/advisories.md", "--findings-count", "3",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    entry = _entry(specs)
+    assert entry["status"] == "passed"
+    assert entry["findingsFile"] == "verify/advisories.md"
+    assert entry["findingsCount"] == 3
+    assert entry["verifiedStageVersion"] == 1
+    assert entry["commitHash"] is None
+
+
+def test_state_verify_plain_passed_keeps_the_report_free_shape(tmp_path):
+    """A bare zero count still records no report keys — the plain 'verified
+    clean' entry keeps its pre-advisory shape."""
+    specs = _verify_fixture(tmp_path)
+    assert _verify(specs, "--stage", "forge-1-prd", "--status", "passed",
+                   "--verified-stage-version", "1",
+                   "--findings-count", "0").returncode == 0
+    entry = _entry(specs)
+    assert "findingsFile" not in entry and "findingsCount" not in entry
 
 
 def test_state_verify_findings_reported_requires_its_full_metadata(tmp_path):

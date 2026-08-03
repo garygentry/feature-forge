@@ -5050,6 +5050,8 @@ def _verify_result_entry(
     the one status that carries prior state forward — the report metadata — and it
     deliberately writes no ``verifiedStageVersion``: fixes landed, nothing
     re-verified them, so freshness stays unresolved until a later ``passed``.
+    ``passed`` may record NEW advisory-report metadata of its own (see the
+    advisory-only rule in ``cmd_state_verify``).
 
     Args:
         status: The validated result status.
@@ -5070,12 +5072,18 @@ def _verify_result_entry(
             "commitHash": None,
         }
     if status == "passed":
-        return {
-            "status": status,
-            "verifiedAt": now,
-            "verifiedStageVersion": current,
-            "commitHash": None,
-        }
+        entry: dict = {"status": status}
+        if findings_file is not None:
+            # An advisory-only report (no blocking findings) resolves as `passed`
+            # so it never routes to forge-fix, while the report stays attached
+            # for later pickup. A bare zero count records no report keys, keeping
+            # the plain "verified clean" shape byte-identical to before.
+            entry["findingsFile"] = findings_file
+            entry["findingsCount"] = findings_count
+        entry["verifiedAt"] = now
+        entry["verifiedStageVersion"] = current
+        entry["commitHash"] = None
+        return entry
     if status == "findings-reported":
         return {
             "status": status,
@@ -5124,9 +5132,13 @@ def cmd_state_verify(
             admits only the metadata below; everything else is refused before any
             write, so a contradictory call never lands a partial entry:
 
-            - `passed` — REQUIRES `verified_stage_version`; refuses `findings_file`;
-              accepts `findings_count` only when it is 0 (a non-zero count belongs to
-              `findings-reported`).
+            - `passed` — REQUIRES `verified_stage_version`. MAY carry an ADVISORY
+              report: `findings_file` + `findings_count` together record a report
+              whose findings are all advisory-severity (no blocking `error`/`gap`),
+              which resolves the stage without routing to forge-fix while keeping
+              the report attached. A file without a count, or a positive count
+              without a file, is refused; blocking findings belong to
+              `findings-reported`.
             - `findings-reported` — REQUIRES all three of `verified_stage_version`,
               `findings_file`, and a non-negative `findings_count`.
             - `findings-applied` — REFUSES `verified_stage_version`. Applying fixes
@@ -5250,14 +5262,23 @@ def cmd_state_verify(
             if value is not None:
                 raise UsageError(f"--status {status} does not accept {label}")
     elif status == "passed":
-        if findings_file is not None:
-            raise UsageError("--status passed does not accept --findings-file")
-        if findings_count is not None and findings_count != 0:
+        if findings_file is not None and findings_count is None:
             raise UsageError(
-                f"--status passed requires --findings-count 0 when supplied; "
-                f"got {findings_count!r} — record findings with "
-                f"--status findings-reported instead"
+                "--status passed with an advisory --findings-file requires "
+                "--findings-count N (the number of advisory findings it lists)"
             )
+        if findings_count is not None:
+            if findings_count < 0:
+                raise UsageError(
+                    f"--findings-count must not be negative; got {findings_count!r}"
+                )
+            if findings_count > 0 and findings_file is None:
+                raise UsageError(
+                    f"--status passed with --findings-count {findings_count} requires "
+                    f"--findings-file <advisory report>: a positive count with no "
+                    f"report to read is unrecoverable. Blocking findings belong to "
+                    f"--status findings-reported instead."
+                )
         if verified_stage_version is None:
             raise UsageError(
                 "--status passed requires --verified-stage-version <current version>"
