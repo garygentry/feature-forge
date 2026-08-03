@@ -632,8 +632,13 @@ earlier draft of this spec's "4" counted one sub-family each. The complete roste
 | Family | Action |
 |---|---|
 | 40-hex hash (**9 sites**) | **5** hand-rolled loops in `test_state_verbs.py` → `parametrize` **in place, one per test**; the 4 in `test_state_schema_conformance.py` are already parametrized — **unchanged** |
-| corrupt-file refusal (3 sites) | 3 hand-rolled in `test_state_verbs.py` → 1 parametrized; `test_state_schema_conformance.py`'s own parametrized version — **unchanged** |
+| corrupt-file refusal (**4 sites**) | **3** hand-rolled in `test_state_verbs.py` (`test_load_state_for_write_refuses_a_corrupt_state_file_byte_intact`, `test_a_corrupt_or_malformed_epic_state_is_refused_byte_intact`, `test_every_verb_refuses_a_corrupt_state_file_byte_intact`) → 1 parametrized; `test_state_schema_conformance.py`'s already-parametrized `test_a_corrupt_state_file_exits_2_and_is_left_byte_identical` — **unchanged** |
 | gate selection (**6 sites** — PRD figure confirmed) | 5 unparametrized in `test_stage_exit.py` → 1 parametrized; the 6th is already parametrized over host — **unchanged** |
+
+**Corrupt-file family boundary, pinned.**
+`test_load_state_for_write_refuses_a_non_object_state_file` is **out** of this family — it
+asserts the non-object refusal message, not corrupt-JSON refusal. The three named tests
+above are the whole hand-rolled set.
 
 **Do not merge the five hash loops into one case.** They exercise three different verbs
 (`state-complete`, `state-verify` commit-2, epic commit-2) through different fixtures, and
@@ -824,11 +829,12 @@ against.
 
 > **Implementation warning — this table is DERIVED, not authoritative.** Every figure below
 > is computed from the rosters in §3.3, §3.4, §3.5 and §3.14. Whenever one of those rosters
-> changes, **recompute this table in the same edit.** Both verification rounds of this spec
-> produced exactly one defect of this shape — a summary figure left stale by a correction
-> made elsewhere in the document (round 1: the call-sites row after §3.5 settled; round 2:
-> the dedup row after §3.14's hash roster settled). The rosters were right both times; this
-> table was the defect site. It is the last thing to edit, never the first.
+> changes, **recompute this table in the same edit.** This table was the single most
+> defect-prone location in the document: **five of the fifteen findings** across the
+> verification rounds landed here (round 1: the call-sites row, the dedup row's mixed units,
+> and the table's incomplete accounting; round 2: the dedup row's After column and the Units
+> paragraph's inverted expansion). The rosters in §3.3/§3.4/§3.5/§3.14 were correct every
+> time; this table was the defect site. It is the last thing to edit, never the first.
 
 | File | Before | After | Delta |
 |---|---|---|---|
@@ -933,8 +939,9 @@ in scope and is not modified.
 | §3.4 / §8 | hash matrices ×5 | **incomplete, not wrong** — ×5 is the `_REJECTED_HASHES` sub-family; the full roster across both sub-families is **9 sites / 5 hand-rolled loops** (§3.14) |
 | §3.3 | `resolver_line_identical` computed, never checked | checked via `all(criteria.values())` |
 
-**Confirmed correct and NOT superseded:** REQ-BRIT-07's gate-selection ×6. Re-derived
-against the section header in `tests/test_stage_exit.py` (§3.14); the PRD figure is exact.
+**Confirmed correct and NOT superseded:** REQ-BRIT-07's gate-selection ×6 (re-derived
+against the section header in `tests/test_stage_exit.py`, §3.14) and its corrupt-file
+refusal ×3 hand-rolled sites. Both PRD figures are exact.
 
 Per the recorded decision, the PRD is **not** re-versioned mid-trial — a version bump would
 cascade `forge-2-tech` to stale and re-trigger PRD verification, spending trial rounds on a
