@@ -440,7 +440,10 @@ the re-verify (`skills/forge-fix/SKILL.md` Step 6):
   the accepted findings become recorded decisions that decision immunity keeps from
   ever being re-filed. **Run another fix pass**: available, never recommended at this
   point. **Stop here**. The user may still choose to fix — the protocol just stops
-  steering into the loop it cannot show is converging.
+  steering into the loop it cannot show is converging. Under `manual` capability
+  (no question mechanism), print the digest and the three dispositions as text
+  BEFORE the terminal block — the user answers on their own cadence; the terminal
+  block still closes the stage mechanically.
 
 ---
 

@@ -257,7 +257,11 @@ CITATION_GRANDFATHERED: tuple[str, ...] = (
 #: them — adding lines to make new violations pass, which is exactly what the
 #: grandfather list forbids. A citation is a filename plus a COORDINATE.
 _SPEC_CITATION_RE: re.Pattern[str] = re.compile(
-    r"\b0[0-9]-[a-z][a-z0-9-]*\.md\b"
+    # The doc-name arm must not fire inside a larger hyphenated token: a
+    # round-discriminated findings filename (VERIFY-{mode}-{date}-round{N}.md)
+    # ends with a two-digit date segment before the round suffix, which is not a
+    # spec citation — hence the lookbehind barring a word or hyphen prefix.
+    r"(?<![\w-])0[0-9]-[a-z][a-z0-9-]*\.md\b"
     r"|(?:`0[0-9]`|\b0[0-9])\s*§"
     r"|\btech-spec(?:\.md)?\s*§"
 )

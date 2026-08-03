@@ -907,14 +907,16 @@ def test_existing_trigger_fixtures_keep_their_schema() -> None:
         assert set(data) == {"skill", "shouldTrigger", "shouldNotTrigger"}
 
 
-def test_branch_fixture_loads_with_two_ordered_scenarios(branch_fixture: dict) -> None:
-    assert branch_fixture["schemaVersion"] == 1
+def test_branch_fixture_loads_with_three_ordered_scenarios(branch_fixture: dict) -> None:
+    assert branch_fixture["schemaVersion"] == 2
     assert [s["name"] for s in branch_fixture["scenarios"]] == [
         "successful-rejoin",
         "recovery",
+        "escalation",
     ]
     assert branch_fixture["servedStage"] == "forge-1-prd"
     assert branch_fixture["verifyMode"] == "prd"
+    assert [s["priorRedReverifies"] for s in branch_fixture["scenarios"]] == [0, 0, 1]
 
 
 def test_served_stage_and_verify_mode_agree_under_the_real_mapping(branch_fixture: dict) -> None:
@@ -929,7 +931,9 @@ def test_the_shipped_fixture_orders_nested_calls_before_one_direct_terminal(
     """AC 6: intermediate calls are nested; only the final call is terminal owner."""
     for scenario in branch_fixture["scenarios"]:
         commands = scenario["expectedCommands"]
-        assert len(commands) == 4
+        # A first diversion drives four exits; an escalation cycle starts at the fix
+        # (the prior verify close is history on disk), so it drives three.
+        assert len(commands) == (3 if scenario["priorRedReverifies"] else 4)
         for entry in commands[:-1]:
             assert "--owner nested" in entry["contains"]
             assert entry["stage"] != "terminal-exit"
@@ -969,13 +973,13 @@ def test_no_next_steps_prose_is_hard_coded_in_the_fixture() -> None:
 
 def test_loader_rejects_an_unknown_schema_version(tmp_path: Path) -> None:
     data = _fixture_dict()
-    data["schemaVersion"] = 2
+    data["schemaVersion"] = 1
     with pytest.raises(RuntimeError, match="schemaVersion"):
         ce.load_branch_fixture(_write_fixture(tmp_path, data))
 
 
 def test_loader_rejects_a_boolean_schema_version(tmp_path: Path) -> None:
-    """`bool` is an `int` subclass, so True would otherwise validate as version 1."""
+    """`bool` is an `int` subclass, so a bool would otherwise validate as an int."""
     data = _fixture_dict()
     data["schemaVersion"] = True
     with pytest.raises(RuntimeError, match="schemaVersion"):
@@ -1243,7 +1247,7 @@ def test_branch_prompt_carries_the_ownership_tokens_and_real_paths(branch_fixtur
     """Ownership is never inferred from phrasing — the prompt is the carrier (04 §3.1)."""
     for scenario in branch_fixture["scenarios"]:
         prompt = ce.branch_prompt(branch_fixture, scenario)
-        assert prompt.count("owner: nested") == 3
+        assert prompt.count("owner: nested") == len(scenario["expectedCommands"]) - 1
         assert prompt.count("owner: direct") == 1
         assert branch_fixture["feature"] in prompt
         assert str(REPO_ROOT / "skills" / "forge-verify" / "SKILL.md") in prompt
@@ -1276,9 +1280,10 @@ def test_branch_prompt_never_dictates_the_expected_output(branch_fixture: dict) 
 # API key. The one subprocess is the real `forge-session.py` CLI deriving ground truth,
 # which is exactly what keeps the expectation the script's own output rather than prose.
 
-#: The eight keys 06 §5.2 fixes, spelled out here rather than imported. Comparing the
-#: module constant against itself would be vacuous; this is the second, independent copy
-#: that makes a silently added or dropped criterion fail.
+#: The nine branch criteria (06 §5.2's eight plus the remediation round-ledger
+#: criterion), spelled out here rather than imported. Comparing the module constant
+#: against itself would be vacuous; this is the second, independent copy that makes
+#: a silently added or dropped criterion fail.
 SPEC_BRANCH_CRITERIA = (
     "ordered_command_results",
     "all_commands_succeeded",
@@ -1288,6 +1293,7 @@ SPEC_BRANCH_CRITERIA = (
     "next_command_fenced",
     "block_verbatim",
     "correct_rejoin_or_recovery",
+    "escalation_digest_presented",
 )
 
 
@@ -1305,7 +1311,7 @@ def branch_truth(tmp_path_factory) -> dict[str, dict]:
     for scenario in fixture["scenarios"]:
         root = base / scenario["name"]
         root.mkdir()
-        ce.build_branch_fixture(root, fixture)
+        ce.build_branch_fixture(root, fixture, scenario)
         truth[scenario["name"]] = ce.expected_branch_exit(root, fixture, scenario)
     return truth
 
@@ -1360,6 +1366,13 @@ def _score_run(
     """Score one synthetic run of `name`, defaulting to a fully compliant one."""
     scenario = _scenario(branch_fixture, name)
     truth = branch_truth[name]
+    if scenario["priorRedReverifies"] and "pre_texts" not in stream_kwargs:
+        # A compliant escalation run presents the acceptance digest as text before
+        # the terminal block; the marker is what the scorer's criterion reads.
+        stream_kwargs["pre_texts"] = (
+            f"Second consecutive red re-verify — {ce.ESCALATION_MARKER} and advance, "
+            f"run another fix pass, or stop here.",
+        )
     stream = _branch_stream(
         _branch_commands(scenario) if commands is None else commands,
         truth["nextSteps"] if final_text is None else final_text,
@@ -1377,7 +1390,7 @@ def _assert_true(criteria: dict[str, bool], *keys: str) -> None:
 # --- the criteria set and the two positives ----------------------------------
 
 
-def test_the_scorer_returns_exactly_the_eight_specified_criteria(
+def test_the_scorer_returns_exactly_the_nine_specified_criteria(
     branch_fixture: dict, branch_truth: dict[str, dict]
 ) -> None:
     criteria = _score_run(branch_fixture, branch_truth, "successful-rejoin")
@@ -1385,7 +1398,7 @@ def test_the_scorer_returns_exactly_the_eight_specified_criteria(
     assert ce.BRANCH_CRITERIA == SPEC_BRANCH_CRITERIA
 
 
-@pytest.mark.parametrize("name", ["successful-rejoin", "recovery"])
+@pytest.mark.parametrize("name", ["successful-rejoin", "recovery", "escalation"])
 def test_a_compliant_branch_run_satisfies_every_criterion(
     branch_fixture: dict, branch_truth: dict[str, dict], name: str
 ) -> None:
@@ -1393,8 +1406,8 @@ def test_a_compliant_branch_run_satisfies_every_criterion(
     assert all(criteria.values()), [key for key, value in criteria.items() if not value]
 
 
-@pytest.mark.parametrize("name", ["successful-rejoin", "recovery"])
-def test_compliance_requires_all_eight(
+@pytest.mark.parametrize("name", ["successful-rejoin", "recovery", "escalation"])
+def test_compliance_requires_all_nine(
     branch_fixture: dict, branch_truth: dict[str, dict], name: str
 ) -> None:
     """`_to_result` treats the scorer's dict as an AND, which is what makes each key bind."""
@@ -1895,12 +1908,13 @@ def test_branch_path_is_rejected_by_neither_argparse_nor_the_help() -> None:
     assert "branch-path" in proc.stdout
 
 
-def test_branch_probe_reports_the_two_scenarios_as_separate_variants() -> None:
+def test_branch_probe_reports_the_three_scenarios_as_separate_variants() -> None:
     """Never averaged into stage-exit/cold or /warm — they are their own cells."""
     reports = ce.run_branch_probe(["model-x"], 0)  # n=0 drives no session
     assert [(r.probe, r.variant) for r in reports] == [
         ("branch-path", "successful-rejoin"),
         ("branch-path", "recovery"),
+        ("branch-path", "escalation"),
     ]
     assert all(report.runs == 0 and report.rate is None for report in reports)
 
@@ -1916,9 +1930,9 @@ def test_the_offline_branch_path_never_reaches_a_live_driver(
     monkeypatch.setattr(ce, "run_session", boom)
     monkeypatch.setattr(ce, "driver_path", boom)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    for name in ("successful-rejoin", "recovery"):
+    for name in ("successful-rejoin", "recovery", "escalation"):
         assert all(_score_run(branch_fixture, branch_truth, name).values())
-    assert len(ce.run_branch_probe(["model-x"], 0)) == 2
+    assert len(ce.run_branch_probe(["model-x"], 0)) == 3
 
 
 def test_a_missing_driver_still_skips_at_exit_zero_for_the_branch_probe(
@@ -1952,3 +1966,106 @@ def test_an_unusable_transcript_is_unscored_rather_than_non_compliant(
         lambda t: ce.score_branch_path(t, branch_truth["recovery"], scenario),
     )
     assert result.ok is False and result.criteria == {}
+
+
+# --- escalation scenario (the round ledger) ----------------------------------
+
+
+def test_escalation_build_seeds_the_round_ledger(
+    tmp_path: Path, branch_fixture: dict
+) -> None:
+    """A nonzero priorRedReverifies seeds the round-2 report AND its real state entry."""
+    scenario = _scenario(branch_fixture, "escalation")
+    root = tmp_path / "esc"
+    root.mkdir()
+    ce.build_branch_fixture(root, branch_fixture, scenario)
+    feature_dir = root / "specs" / branch_fixture["feature"]
+    assert (feature_dir / ce.BRANCH_ROUND2_FINDINGS_FILE).is_file()
+    entry = json.loads((feature_dir / ".pipeline-state.json").read_text())[
+        "stages"]["forge-verify-prd"]
+    assert entry["status"] == "findings-reported"
+    assert entry["findingsFile"] == ce.BRANCH_ROUND2_FINDINGS_FILE
+    proc = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"], capture_output=True, text=True
+    )
+    assert proc.returncode == 0 and proc.stdout.strip() == ""
+
+
+def test_a_zero_prior_scenario_build_stays_parked(
+    tmp_path: Path, branch_fixture: dict
+) -> None:
+    scenario = _scenario(branch_fixture, "recovery")
+    root = tmp_path / "rec"
+    root.mkdir()
+    ce.build_branch_fixture(root, branch_fixture, scenario)
+    state = json.loads(
+        (root / "specs" / branch_fixture["feature"] / ".pipeline-state.json").read_text()
+    )
+    assert "forge-verify-prd" not in state["stages"]
+    assert not (
+        root / "specs" / branch_fixture["feature"] / ce.BRANCH_ROUND2_FINDINGS_FILE
+    ).is_file()
+
+
+def test_expected_branch_exit_for_escalation_routes_to_fix(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    scenario = _scenario(branch_fixture, "escalation")
+    directives = branch_truth["escalation"]["directives"]
+    assert directives["primaryCommand"] == scenario["expectedPrimaryCommand"]
+    assert directives["primaryCommand"].startswith("/feature-forge:forge-fix ")
+    assert "--served-stage forge-1-prd" in directives["primaryCommand"]
+
+
+def test_escalation_prompt_supplies_the_ledger_not_the_conclusion(
+    branch_fixture: dict,
+) -> None:
+    """The prompt states the facts (both reports, the red result); the escalation
+    behavior itself must come from the skills, or the probe measures prompt-following."""
+    prompt = ce.branch_prompt(branch_fixture, _scenario(branch_fixture, "escalation"))
+    assert ce.BRANCH_ROUND2_FINDINGS_FILE in prompt
+    assert ce.BRANCH_FINDINGS_FILE in prompt
+    assert ce.ESCALATION_MARKER not in prompt
+    assert "escalat" not in prompt.lower()
+
+
+def test_escalation_criterion_reads_the_digest_marker(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """Present digest -> true; absent digest -> the one failing criterion."""
+    compliant = _score_run(branch_fixture, branch_truth, "escalation")
+    assert compliant["escalation_digest_presented"] is True
+
+    silent = _score_run(branch_fixture, branch_truth, "escalation", pre_texts=())
+    assert silent["escalation_digest_presented"] is False
+    _assert_true(
+        silent,
+        "ordered_command_results",
+        "exactly_one_sentinel",
+        "block_verbatim",
+        "correct_rejoin_or_recovery",
+    )
+
+
+def test_the_digest_criterion_is_vacuous_only_without_prior_rounds(
+    branch_fixture: dict, branch_truth: dict[str, dict]
+) -> None:
+    """Zero-prior scenarios auto-pass the criterion so the set stays uniform."""
+    for name in ("successful-rejoin", "recovery"):
+        criteria = _score_run(branch_fixture, branch_truth, name)
+        assert criteria["escalation_digest_presented"] is True
+
+
+def test_loader_rejects_a_bool_or_negative_prior_count(tmp_path: Path) -> None:
+    for bad in (True, -1):
+        data = _fixture_dict()
+        data["scenarios"][2]["priorRedReverifies"] = bad
+        with pytest.raises(RuntimeError, match="priorRedReverifies"):
+            ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+def test_loader_rejects_an_escalation_whose_reverify_passes(tmp_path: Path) -> None:
+    data = _fixture_dict()
+    data["scenarios"][2]["reverifyOutcome"] = "passed"
+    with pytest.raises(RuntimeError, match="must\nreport findings|must report findings"):
+        ce.load_branch_fixture(_write_fixture(tmp_path, data))
