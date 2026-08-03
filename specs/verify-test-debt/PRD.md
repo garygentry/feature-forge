@@ -67,10 +67,18 @@ piece of work.
 
 ### 3.1 Prose-guard collapse (R-10) — **P0**
 
-- **REQ-GUARD-01:** The capability-determination rule MUST exist as a single
-  canonical section in `references/shared-conventions.md`, stating every required
-  clause. This section is the source of truth.
+- **REQ-GUARD-01:** The capability-determination rule MUST exist as a single canonical
+  section — `references/stage-exit-protocol.md` § "Host and capability determination"
+  (OQ-02) — stating every required clause. That section is the source of truth;
+  `references/shared-conventions.md` § "Verify Capability" remains a summary that defers to
+  it and MUST NOT be promoted to a second source of truth.
   - Priority: P0
+  - Notes: **Corrected in v2.** v1 named `shared-conventions.md` as canonical, which was the
+    tentative position while OQ-02 was open. v2 resolved OQ-02 the other way: the
+    `stage-exit-protocol.md` section already states every clause plus the Standard Verify
+    Gate and the recovery path, both existing pointer surfaces name it by title, and
+    `shared-conventions.md` § "Verify Capability" self-identifies as a summary deferring to
+    it. See `tech-spec.md` §3.1, including the rejected alternative.
 - **REQ-GUARD-02:** Each capability-determination surface MUST either restate the
   paragraph or carry a pointer to the canonical section. No surface may silently
   carry neither.
@@ -305,7 +313,7 @@ Three behavior changes are in scope, and only these three:
 
 - **REQ-TRIAL-06:** The recurring defect across both fix rounds was **a derived summary
   figure left stale by a correction made elsewhere in the same artifact** — not narration
-  drift. Five of seventeen findings landed in one derived table (`tech-spec.md` §8.2) while
+  drift. Six of seventeen findings landed in one derived table (`tech-spec.md` §8.2) while
   the rosters those figures derive from were correct every time. Any artifact in this
   feature carrying figures derived from another section MUST declare that derivation and be
   recomputed in the same edit as its source.

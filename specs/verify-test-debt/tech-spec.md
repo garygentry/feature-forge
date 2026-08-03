@@ -23,9 +23,8 @@ Four architectural decisions shape the rest:
 2. **`SURFACES_WITHOUT_PROSE` is deleted outright, not shrunk** — under REQ-GUARD-02's
    paragraph-**or**-pointer test, two of its three entries already pass; one added pointer
    empties the set (§3.2).
-3. **REQ-TRIM-03's stated mechanism is unachievable and is replaced by a structural block
-   scan** that satisfies its intent — only 2 of 34 fenced calls literally carry `--epic`
-   (§3.5).
+3. **REQ-TRIM-03 mandates a structural block scan** (v2; v1's "contains `--epic`"
+   mechanism was unachievable — only 2 of 34 fenced calls literally carry the flag) (§3.5).
 4. **REQ-FIX-02 surfaced no new defect.** The one candidate was investigated and
    disproved (§3.12).
 
@@ -234,8 +233,9 @@ positive assertions and are likewise not trimmed.
 
 ### 3.5 Structural `--epic` check (REQ-TRIM-03, REQ-TRIM-04, REQ-TRIM-05, REQ-TRIM-06)
 
-**The requirement's stated mechanism cannot be implemented.** REQ-TRIM-03 specifies
-"each fenced `state-*` call contains `--epic`". Measured against current canon:
+**PRD v1's stated mechanism could not be implemented; v2 mandates the structural block
+scan specified here.** REQ-TRIM-03 v1 specified "each fenced `state-*` call contains
+`--epic`". Measured against current canon:
 
 - **34** fenced `state-*` call sites exist across `skills/*/SKILL.md` and
   `references/shared-conventions.md`.
@@ -833,9 +833,9 @@ against.
 > is computed from the rosters in §3.3, §3.4, §3.5 and §3.14. Whenever one of those rosters
 > changes, **recompute this table in the same edit.** This table was the single most
 > defect-prone location in the document: **five of the fifteen findings from rounds 1 and 2** landed here
-> (five of seventeen across all three rounds) (round 1: the call-sites row, the dedup row's mixed units,
+> (six of seventeen across all three rounds) (round 1: the call-sites row, the dedup row's mixed units,
 > and the table's incomplete accounting; round 2: the dedup row's After column and the Units
-> paragraph's inverted expansion). The rosters in §3.3/§3.4/§3.5/§3.14 were correct every
+> paragraph's inverted expansion; round 3: this blockquote's own defect-history count). The rosters in §3.3/§3.4/§3.5/§3.14 were correct every
 > time; this table was the defect site. It is the last thing to edit, never the first.
 
 | File | Before | After | Delta |
@@ -979,7 +979,8 @@ The measurement is now stated in §3.1 and there is no pre-implementation check 
 **Amended in PRD v2, after this stage ran.** The stop condition is no longer a round count.
 Work stops if **either** a narration-churn finding occurs (REQ-TRIAL-01 — a stage-blocking
 finding whose substance lies in a comment, docstring, or test narration) **or** blocking
-findings fail to converge across consecutive rounds (REQ-TRIAL-02). Rounds ≤2 per stage is
+findings fail to converge across consecutive rounds **within one stage at one stage
+version** (REQ-TRIAL-02). Rounds ≤2 per stage is
 a guideline whose breach is recorded and inspected, not an automatic stop (REQ-TRIAL-03).
 
 **This stage's result, which drove the amendment:**
@@ -993,7 +994,7 @@ a guideline whose breach is recorded and inspected, not an automatic stop (REQ-T
 Three rounds — over the guideline — but **zero narration churn across all 17 findings** and
 strict convergence 5 → 1 → 0. The failure mode Phase 2 targets did not occur. The recurring
 defect was instead a **derived summary figure left stale by a correction elsewhere in this
-same document** (REQ-TRIAL-06): five of seventeen findings landed in §8.2 while the rosters
+same document** (REQ-TRIAL-06): six of seventeen findings landed in §8.2 while the rosters
 those figures derive from were correct every time — which is why §8.2 now opens with a
 derived-table warning.
 
@@ -1010,9 +1011,11 @@ directly on how findings against this spec should be read:
   re-filed. Every "recorded position" in §10.2 and every declared non-goal in §8.4 exists
   to be cited under this rule.
 
-**REQ-TRIAL-04** requires the Session Log to record, per stage, three things — the
-verify-round count, the narration-churn count, and the blocking-finding convergence
-sequence. The last two are the trial's actual result; the round count alone is not. For
+**REQ-TRIAL-04** requires the Session Log to record, per stage **and per stage version**,
+four things — the verify-round count, the narration-churn count, the blocking-finding
+convergence sequence, and the count of **advisory** findings whose substance lay in a
+comment, docstring, or test narration. The middle two are the trial's actual result; the
+round count alone is not. For
 this stage that is: **3 rounds · 0 narration churn · 5 → 1 → 0**.
 
 **REQ-TRIAL-05** requires the round overage to be filed as a Phase 2 finding in its own
