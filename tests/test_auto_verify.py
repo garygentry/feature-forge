@@ -193,6 +193,16 @@ def test_verify_state_none_when_nothing_complete() -> None:
     assert fs.verify_state(state) == (None, "none")
 
 
+@pytest.mark.parametrize("bad", [["findings-reported"], {"passed": True}, 3, True],
+                         ids=["list", "dict", "int", "bool"])
+def test_verify_state_never_on_a_torn_non_string_status(bad: object) -> None:
+    """A torn or hand-edited entry can carry any JSON type as `status`; an
+    unhashable one must classify as `never`, not raise TypeError at the
+    frozenset membership — this label gates the navigator and stage exit."""
+    state = _completed_prd_state({"status": bad})
+    assert fs.verify_state(state) == ("forge-1-prd", "never")
+
+
 def test_verify_state_skipped_is_resolved_not_pending() -> None:
     """An explicit skip (no verifiedStageVersion) stays skipped, never stale.
 
@@ -1199,3 +1209,122 @@ def test_a_branch_exit_never_schedules_over_the_result_it_just_wrote(
     assert d["autoVerifyDebtRecorded"] is False
     assert state_file.read_bytes() == before
     assert _read_entry(root) == report
+
+
+# --- a live findings report is never clobbered by scheduling ----------------- #
+
+
+def _live_report(version: int = 2) -> dict:
+    return {"status": "findings-reported", "findingsFile": "findings.md",
+            "findingsCount": 3, "verifiedStageVersion": version, "commitHash": None}
+
+
+def test_a_production_re_exit_preserves_a_current_revision_findings_report(
+    tmp_path: Path,
+) -> None:
+    """A findings report at the current revision is live evidence, not owed debt.
+
+    Scheduling over it would replace the entry and delete
+    ``findingsFile``/``findingsCount`` (the REQ-EXIT-04 clobber reached from a
+    production re-exit), after which ``state-verify --status findings-applied``
+    loses its precondition. The exit must leave the entry intact and route to
+    forge-fix instead.
+    """
+    report = _live_report()
+    root = _exit_project(tmp_path, state=_tech_state(report))
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+    before = state_file.read_bytes()
+
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+
+    assert d["runInStageVerify"] is False
+    assert d["autoVerifyDebtRecorded"] is False
+    assert d["verifyGate"] == "none"
+    assert d["verifyState"] == "failing"
+    assert d["primaryCommand"] == "/feature-forge:forge-fix widget --served-stage forge-2-tech"
+    assert state_file.read_bytes() == before
+    assert _read_entry(root) == report
+
+
+def test_findings_applied_still_succeeds_after_a_production_re_exit(
+    tmp_path: Path,
+) -> None:
+    root = _exit_project(tmp_path, state=_tech_state(_live_report()))
+    _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+
+    proc = subprocess.run(
+        [sys.executable, str(HELPER), "state-verify", "--feature", "widget",
+         "--stage", "forge-2-tech", "--status", "findings-applied",
+         "--specs-dir", "specs"],
+        capture_output=True, text=True, cwd=str(root),
+    )
+    assert proc.returncode == 0, proc.stderr
+    entry = _read_entry(root)
+    assert entry["status"] == "findings-applied"
+    assert entry["findingsFile"] == "findings.md"
+    assert entry["findingsCount"] == 3
+
+
+def test_a_stale_findings_report_is_still_superseded_by_scheduling(
+    tmp_path: Path,
+) -> None:
+    """A report against a since-revised artifact is superseded normally."""
+    root = _exit_project(tmp_path, state=_tech_state(_live_report(version=1)))
+
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+
+    assert d["runInStageVerify"] is True
+    assert d["autoVerifyDebtRecorded"] is True
+    entry = _read_entry(root)
+    assert entry["status"] == "auto-verify-pending"
+    assert entry["scheduledStageVersion"] == 2
+
+
+def test_stage_exit_classifies_a_torn_verify_entry_without_crashing(
+    tmp_path: Path,
+) -> None:
+    """`_classify_verify_entry` runs while closing a stage; an unhashable
+    status must label `never` rather than raise (auto-verify off keeps this
+    scoped to classification — corrupt-state debt writes are their own case)."""
+    root = _exit_project(
+        tmp_path, config={}, state=_tech_state({"status": ["findings-reported"]})
+    )
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
+    assert d["verifyState"] == "never"
+    assert d["runInStageVerify"] is False
+
+
+def test_a_loop_complete_exit_with_a_live_report_routes_to_fix(
+    tmp_path: Path,
+) -> None:
+    """The loop's `complete` handoff obeys the same live-report rule as a
+    production re-exit: the fenced action is the fix, no debt is scheduled,
+    and the report survives byte-identically."""
+    state = {"pipelineStatus": "active", "stages": {
+        "forge-5-loop": {"status": "complete", "version": 1},
+        "forge-verify-impl": {"status": "findings-reported", "findingsFile": "f.md",
+                              "findingsCount": 2, "verifiedStageVersion": 1,
+                              "commitHash": None},
+    }}
+    root = _exit_project(tmp_path, state=state)
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+    before = state_file.read_bytes()
+
+    d = _exit_ok(root, "--feature", "widget", "--stage", "forge-5-loop",
+                 "--outcome", "complete")["directives"]
+
+    assert d["runInStageVerify"] is False
+    assert d["autoVerifyDebtRecorded"] is False
+    assert d["verifyGate"] == "none"
+    assert d["primaryCommand"] == "/feature-forge:forge-fix widget --served-stage forge-5-loop"
+    assert state_file.read_bytes() == before
+
+
+def test_rank_features_warns_on_a_torn_non_string_status(tmp_path: Path) -> None:
+    """The non-string guard degrades to `never` WITH the #148 diagnostic —
+    a malformed status is at least as warn-worthy as an unknown string."""
+    specs = tmp_path / "specs"
+    _write_state(specs, "a", _completed_prd_state({"status": ["findings-reported"]}))
+    result = _rank_proc(specs)
+    assert result.returncode == 0, result.stderr
+    assert "unknown forge-verify-prd status" in result.stderr

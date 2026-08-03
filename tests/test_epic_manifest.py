@@ -1656,6 +1656,11 @@ _EPIC_FRESHNESS_ROWS: list[tuple[str, object, str]] = [
     ("findings-applied", {"status": "findings-applied", "fixedAt": "x"}, "stale"),
     ("skipped", {"status": "skipped"}, "skipped"),
     ("not-a-dict", "passed", "never"),
+    # Torn/hand-edited statuses: an unhashable value must classify, not raise
+    # TypeError at the frozenset membership (the dashboard reads every epic's file).
+    ("list-status", {"status": ["findings-reported"]}, "never"),
+    ("dict-status", {"status": {"passed": True}}, "never"),
+    ("int-status", {"status": 3}, "never"),
 ]
 
 
@@ -1681,6 +1686,39 @@ def test_009_epic_verify_state_is_never_without_state(helper_module, tmp_path) -
     for text in ("{not json", '"a string"', "[]", '{"stages": []}', '{"stages": {}}'):
         path.write_text(text, encoding="utf-8")
         assert helper_module.epic_verify_state(epic_dir, 1) == "never", text
+
+
+def test_009_render_status_survives_a_torn_epic_state(run_cli, tmp_path) -> None:
+    """The dashboard renders (exit 0, valid JSON) over an unhashable status."""
+    specs = tmp_path / "specs"
+    epic = _make_single_member_epic(
+        specs, current_stage="forge-1-prd", stages={"forge-1-prd": _complete()}
+    )
+    _write_epic_state(specs, epic, {"status": ["findings-reported"]})
+    result = run_cli("render-status", epic, "--specs-dir", str(specs), "--json")
+    assert result.returncode == 0, result.stderr
+    result.json()
+
+
+def test_009_epic_verify_warning_classifies_and_reads_one_snapshot(
+    helper_module, tmp_path, monkeypatch
+) -> None:
+    """The warning renderer reads the state file ONCE and indexes that same
+    snapshot — a file rewritten between a classify-read and a metadata-read
+    could otherwise KeyError while rendering the dashboard."""
+    epic_dir = tmp_path / "an-epic"
+    _write_epic_state(tmp_path, "an-epic", _auto_pending(1))
+    calls: list[Path] = []
+    real = helper_module._read_epic_state_safely
+
+    def counting_read(path: Path) -> dict:
+        calls.append(path)
+        return real(path)
+
+    monkeypatch.setattr(helper_module, "_read_epic_state_safely", counting_read)
+    warnings = helper_module._epic_verify_warnings("an-epic", epic_dir, 1)
+    assert len(warnings) == 1
+    assert len(calls) == 1
 
 
 def test_009_epic_verification_never_reads_a_member_pipeline_state(

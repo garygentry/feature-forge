@@ -577,8 +577,9 @@ class StageExitDirectives(TypedDict, total=False):
     # promotion rule below. None when `nextStage` is None.
     nextCommand: str | None
     # THE authoritative single action. While verification is unresolved this is the
-    # verify command, never the downstream stage. The one fenced command in the
-    # rendered block. None only when the pipeline has no further action.
+    # verify command — or the forge-fix command when a findings report is live at
+    # the current revision — never the downstream stage. The one fenced command in
+    # the rendered block. None only when the pipeline has no further action.
     primaryCommand: str | None
     # Post-verification guidance shown as prose, never fenced, so it cannot be
     # mistaken for the primary action. None when there is nothing deferred.
@@ -918,6 +919,14 @@ def verify_state(state: dict) -> tuple[str | None, str]:
             continue  # forge-6-docs has no verify step
         entry = _verify_entry(state, f"forge-verify-{token}")
         status = entry.get("status")
+        if status is not None and not isinstance(status, str):
+            # A torn or hand-edited entry can carry any JSON type here; an
+            # unhashable one would raise TypeError at the frozenset membership
+            # below, crashing the navigator on one bad file. Same answer as an
+            # absent entry — and the same #148 diagnostic as an unknown string,
+            # so the degradation is never silent.
+            _warn_unknown_verify_status(f"forge-verify-{token}", status)
+            return stage, "never"
         if status == "skipped":
             # An explicit skip is resolved and non-pending — preserve the user's
             # decision. It never goes stale (no recorded version to compare), so
@@ -2205,6 +2214,11 @@ def _classify_verify_entry(entry: dict, verify_key: str, current: int | None) ->
         One of fresh / stale / failing / auto-pending / never / skipped.
     """
     status = entry.get("status")
+    if status is not None and not isinstance(status, str):
+        # Same guard as `verify_state`: an unhashable status from a torn or
+        # hand-edited entry must classify, not raise at the frozenset
+        # membership below — this label is read while closing a stage.
+        return "never"
     if status == "skipped":
         return "skipped"
     if status == "findings-reported":
@@ -3006,6 +3020,11 @@ _LOOP_COMPLETE_SETTLED: Final[str] = (
     " Its implementation verification is settled, so the pipeline continues with the "
     "action below."
 )
+_LOOP_COMPLETE_FINDINGS: Final[str] = (
+    " Implementation verification already ran at this revision and reported findings, "
+    "so applying them comes first — nothing downstream becomes the primary action "
+    "until a re-verify passes or the verification is explicitly skipped."
+)
 
 #: The outcome sentence a loop or documentation exit renders when a blocking
 #: epic change request DISPLACES its live continuation. Both route tables above name
@@ -3103,6 +3122,7 @@ def _loop_route(
     successor_command: str | None,
     resolved: bool,
     verify_canonical: str,
+    fix_canonical: str | None,
 ) -> tuple[str, str | None, str, bool]:
     """Route one loop result — the outcome table.
 
@@ -3122,6 +3142,11 @@ def _loop_route(
         successor_command: Canonical live-successor command (documentation), or None.
         resolved: Whether the implementation verification is settled.
         verify_canonical: Canonical implementation-verify command.
+        fix_canonical: Canonical forge-fix command when a findings report is live
+            at the current revision (see ``live_findings_report`` in ``stage_exit``),
+            else None. A live report outranks a fresh verify on the ``complete``
+            handoff: findings already exist at this exact revision, so the fenced
+            action is applying them, exactly as on a production re-exit.
 
     Returns:
         `(primary_canonical, deferred_canonical, outcome_text, advancing)`, matching
@@ -3166,11 +3191,19 @@ def _loop_route(
         else:
             handoff, key = f"/skill:forge-0-epic {epic}", "epic-dashboard"
 
-    text = _LOOP_COMPLETE_TEXT[key].format(**fields) + (
-        _LOOP_COMPLETE_SETTLED if resolved else _LOOP_COMPLETE_OUTSTANDING
-    )
+    if resolved:
+        tail = _LOOP_COMPLETE_SETTLED
+    elif fix_canonical is not None:
+        tail = _LOOP_COMPLETE_FINDINGS
+    else:
+        tail = _LOOP_COMPLETE_OUTSTANDING
+    text = _LOOP_COMPLETE_TEXT[key].format(**fields) + tail
     if resolved:
         return handoff, None, text, True
+    if fix_canonical is not None:
+        # A live findings report outranks a fresh verify, exactly as on a
+        # production re-exit: the fenced action is the fix, the handoff is demoted.
+        return fix_canonical, handoff, text, False
     # Verify-first ordering, applied to the loop's own handoff rather than to
     # the fixed successor: the verification is fenced and the handoff is demoted.
     return verify_canonical, handoff, text, False
@@ -3237,8 +3270,11 @@ def _schedule_auto_verify_debt(
     `auto-verify-pending` at the current revision returns without calling
     `_commit_state`, so `scheduledAt`, top-level `updatedAt`, and the file bytes
     are all untouched. A newer revision supersedes the older marker with exactly
-    one write. The caller's `resolved` check is what keeps a fresh terminal entry
-    or an explicit `skipped` from ever reaching this function.
+    one write. The caller's `resolved` and live-report checks are what keep a
+    fresh terminal entry, an explicit `skipped`, or a `findings-reported` entry
+    at the current revision from ever reaching this function — the last because
+    a write here REPLACES the entry and would delete its report metadata
+    (REQ-EXIT-04).
 
     Unlike the `state-verify` CLI, a target whose artifact revision is unknown
     (no recorded `version`, or an epic with no readable manifest) records the debt
@@ -3330,8 +3366,10 @@ def stage_exit(
 
     - ``runInStageVerify`` — the effective auto-verify (per-stage override,
       else global; strict-true) is on AND this stage's verify is not already
-      resolved (fresh/skipped). The skill then dispatches the clean-room
-      verify in-session (principle #2: verify before the clear).
+      resolved (fresh/skipped) AND no findings report exists at the current
+      revision (that state routes to forge-fix instead — scheduling over the
+      report would delete its metadata, REQ-EXIT-04). The skill then dispatches
+      the clean-room verify in-session (principle #2: verify before the clear).
     - ``autoVerifyDebtRecorded`` — the ``auto-verify-pending`` marker for this
       stage is durably on disk. Written BEFORE this payload exists, so
       a failed write raises ``UsageError`` and returns no payload at all and
@@ -3349,17 +3387,21 @@ def stage_exit(
       ``auto-pending`` on the next one. Only ``autoVerifyDebtRecorded`` reports
       the write.
     - ``verifyGate`` — ``none`` when verify is resolved (including a tokenless
-      stage) or the in-stage run covers it; ``standard`` when auto-verify is off,
-      verification is outstanding, and the CALLER declared
+      stage), the in-stage run covers it, or a live findings report routes to
+      forge-fix (the fenced fix IS the one action — a "verify now?" prompt
+      beside it would be a second, contradictory ask); ``standard`` when
+      auto-verify is off, verification is outstanding, and the CALLER declared
       ``--verify-capability interactive``; ``manual-print`` for the same state
       under ``manual`` (print ``verifyCommand`` instead of presenting the gate).
       Never a function of ``--host``: capable Pi is ``standard`` and incapable
       Claude is ``manual-print`` (REQ-EXIT-07).
     - ``primaryCommand``/``deferredCommand`` — the verify-first pair. While
-      verification is unresolved ``primaryCommand`` is the verify command and is
-      the ONLY fenced command; ``deferredCommand`` names the production successor
-      as unfenced conditional prose. ``nextCommand`` stays compatibility/routing
-      metadata and never overrides ``primaryCommand`` (REQ-EXIT-06).
+      verification is unresolved ``primaryCommand`` is the verify command — or
+      the forge-fix command when a findings report is live at the current
+      revision — and is the ONLY fenced command; ``deferredCommand`` names the
+      production successor as unfenced conditional prose. ``nextCommand`` stays
+      compatibility/routing metadata and never overrides ``primaryCommand``
+      (REQ-EXIT-06).
     - ``nextStage``/``nextCommand`` — from pipeline state when it already
       records this stage complete (first non-complete production stage), else
       the fixed successor. ``--next-feature`` names the first actionable
@@ -3554,6 +3596,21 @@ def stage_exit(
         verify_label = _verify_state_for(state, route_stage)
     # ``none`` is resolved for routing purposes: no verify command is promoted.
     resolved = verify_label in ("fresh", "skipped", "none")
+    # A findings report AT THE CURRENT revision is live evidence, not owed debt.
+    # Scheduling over it would REPLACE the entry (`_verify_result_entry` builds
+    # replacements, not patches) and delete `findingsFile`/`findingsCount` —
+    # the same REQ-EXIT-04 clobber the branch-exit guard below forbids, reached
+    # instead from a production re-exit. The outstanding obligation is the FIX,
+    # so this exit routes to forge-fix and never re-schedules; a report left
+    # behind by a since-revised artifact is superseded normally.
+    reported_version = verify_entry.get("verifiedStageVersion")
+    live_findings_report = (
+        verify_label == "failing"
+        and isinstance(reported_version, int)
+        and not isinstance(reported_version, bool)
+        and verify_current is not None
+        and reported_version == verify_current
+    )
     effective_auto_verify = auto_verify_for(config, route_stage)
     # A BRANCH exit is already inside the verification diversion, so it never owes
     # an in-stage verify chain and never schedules debt. Without this a
@@ -3564,6 +3621,7 @@ def stage_exit(
     run_in_stage = (
         effective_auto_verify
         and not resolved
+        and not live_findings_report
         and stage not in _BRANCH_STAGES
         and not loop_incomplete
     )
@@ -3597,7 +3655,16 @@ def stage_exit(
     # schedules debt: there is no finished implementation to verify, so offering
     # "verify now?" beside a fenced loop resume would ask for a verification of
     # work that is still in flight.
-    if resolved or run_in_stage or stage in _BRANCH_STAGES or loop_incomplete:
+    # A live findings report is likewise gateless: the fenced forge-fix route IS
+    # the one action, and a "verify now?" prompt beside it would be a second,
+    # contradictory ask for a verification that already ran at this revision.
+    if (
+        resolved
+        or run_in_stage
+        or live_findings_report
+        or stage in _BRANCH_STAGES
+        or loop_incomplete
+    ):
         verify_gate = "none"
     elif verify_capability == "interactive":
         verify_gate = "standard"
@@ -3710,10 +3777,17 @@ def stage_exit(
             }
 
     # ---- Verify-first primary routing ------------------------------------- #
-    # While verification is unresolved the verify command is THE action; the
-    # production successor is demoted to unfenced conditional prose. No path may
-    # fence or recommend the deferred production command first (REQ-EXIT-06).
+    # While verification is unresolved the verify command is THE action — except
+    # under a live findings report, whose one action is the forge-fix that applies
+    # it. Either way the production successor is demoted to unfenced conditional
+    # prose. No path may fence or recommend the deferred production command first
+    # (REQ-EXIT-06).
     verify_canonical = f"/skill:forge-verify {feature}"
+    # The one action a live findings report promotes, on every route that can
+    # reach it: findings already exist at this exact revision, so re-dispatching
+    # verify would only restate them. The served stage is carried so the fix
+    # rejoins this production thread.
+    fix_canonical = f"/skill:forge-fix {feature} --served-stage {route_stage}"
     verify_command = _host_command(verify_canonical, host)
     blocking_reconcile = bool(epic_reconcile and epic_reconcile.get("required"))
     primary_canonical: str | None
@@ -3747,6 +3821,7 @@ def stage_exit(
             next_command,
             resolved,
             verify_canonical,
+            fix_canonical if live_findings_report else None,
         )
         if blocking_reconcile:
             # Same reconcile-first rule as every other advancing route — but the
@@ -3789,6 +3864,9 @@ def stage_exit(
                 outcome_text,
                 advancing,
             )
+    elif live_findings_report:
+        primary_canonical = fix_canonical
+        deferred_canonical = next_command
     elif not resolved:
         primary_canonical = verify_canonical
         deferred_canonical = next_command
@@ -5235,6 +5313,28 @@ def cmd_state_verify(
         )
 
     prior = _verify_entry(state, verify_key)
+    if status == "auto-verify-pending" and prior.get("status") == "findings-reported":
+        # `_verify_result_entry` REPLACES the entry, so scheduling over a report
+        # for the current revision would delete its `findingsFile`/`findingsCount`
+        # and break the later `findings-applied` precondition (REQ-EXIT-04's
+        # forbidden clobber, reached through the CLI instead of a branch exit).
+        # A report against a since-revised artifact is superseded normally.
+        reported = prior.get("verifiedStageVersion")
+        if (
+            isinstance(reported, int)
+            and not isinstance(reported, bool)
+            and current is not None
+            and reported == current
+        ):
+            raise UsageError(
+                f"--status auto-verify-pending would replace {verify_key}'s "
+                f"findings-reported entry for the current revision and delete its "
+                f"report metadata ({prior.get('findingsFile')!r}, "
+                f"findingsCount {prior.get('findingsCount')!r}). Apply the report "
+                f"via forge-fix (--status findings-applied) or re-verify to a "
+                f"terminal status; scheduling is valid only after the artifact "
+                f"is revised."
+            )
     if status == "findings-applied":
         if prior.get("status") not in ("findings-reported", "findings-applied"):
             raise UsageError(
