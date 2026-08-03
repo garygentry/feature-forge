@@ -87,17 +87,24 @@ gotten wrong") and omits the Standard Verify Gate and the recovery path, so prom
 would require duplicating prose that already lives in stage-exit-protocol.md. Authoring a
 third distinct section was rejected as adding a surface while R-10 is collapsing surfaces.
 
-**Constraint check (C-05).** `check-spec-purity.py` enforces the body cap mechanically
-(`MAX_BODY_LINES = 300`, `MAX_BODY_WORDS = 5000`). `skills/forge-verify/SKILL.md` is
-**305 lines** — already over. `skills/forge-0-epic/SKILL.md` is 301. Both have negative
-headroom, so the forge-0-epic addition must be **one sentence**, and no capability prose
-may be added to forge-verify. This is the decisive reason the fix is a pointer.
+**Constraint check (C-05) — measured, not inferred.** `check-spec-purity.py::check_body_size`
+enforces `MAX_BODY_LINES = 300` and `MAX_BODY_WORDS = 5000` against the **body** —
+`text.split("\n")[fm.body_start_line:]`, i.e. everything after the closing frontmatter
+fence — **not** the file. Measured with that exact rule:
 
-> **Open risk.** Two shipped skills already exceed the cap that `check-spec-purity.py`
-> enforces. Either the rule counts a *body* smaller than the file (front-matter and
-> fences excluded) or the gate is not tripping. This must be measured before the
-> forge-0-epic edit lands — a one-line addition to a 301-line file could push it over.
-> Recorded in §10.2 as a pre-implementation check, not an assumption.
+| Skill | File lines | Body lines | Body words | Headroom |
+|---|---|---|---|---|
+| `skills/forge-0-epic/SKILL.md` | 302 | **295** / 300 | 2749 / 5000 | **+5 lines** |
+| `skills/forge-verify/SKILL.md` | 306 | **299** / 300 | 4365 / 5000 | **+1 line** |
+
+Neither file is over the cap, which is why `check-spec-purity.py` reports 0 violations. A
+one-sentence pointer in `forge-0-epic` fits within its 5 lines of headroom. `forge-verify`
+has one line, so no capability prose may be added there — this is what C-05 actually
+constrains.
+
+The pointer-not-paragraph decision does **not** rest on headroom. It stands on the
+shape-matching rationale above (`forge-5-loop` / `forge-6-docs` already use a pointer) and
+on R-10's goal of collapsing restatements rather than adding a seventh.
 
 ### 3.2 Surface roster and constant deletion (REQ-GUARD-02, REQ-GUARD-03)
 
@@ -142,6 +149,12 @@ test and its three helpers (`_module_scope_nodes`, `_store_target_names`,
 `SURFACES_WITHOUT_PROSE`, `MIN_CAPABILITY_SURFACES` (replaced by a floor of 9), and the
 clause-fragment tuples that encode bold markers.
 
+The self-check is a **fourth declared protection**, not an addition beyond the three
+REQ-GUARD-04 enumerates: it protects the guard's *existence* rather than the rule, and
+REQ-GUARD-04's cap of 5 accommodates it. Declaring it is what keeps the shipped test set
+and the `PROTECTS` block identical — an undeclared test is precisely the shape that invites
+next round's finding.
+
 **Why 4 and not 5.** The cap is a ceiling, not a quota. `test_the_roster_is_derived_not_listed`
 is dropped because the hand-listing risk it guarded *was* `SURFACES_WITHOUT_PROSE`, which
 §3.2 deletes; and it is the test most entangled with the `ast` layer REQ-GUARD-07 removes.
@@ -161,6 +174,7 @@ PROTECTS (the enumerated contract — the whole of it):
   1. The canonical section states every required clause.
   2. Every canonical exit surface carries a paragraph or a pointer.
   3. The roster cannot shrink to a vacuous size.
+  4. This guard cannot be skipped or disabled.
 
 NON-GOALS (never a finding against this guard):
   - Exact-markdown fidelity: clause-fragment matching, bold-marker
@@ -235,20 +249,54 @@ positive assertions and are likewise not trimmed.
 prose attached to it, delimited by **markdown structure** rather than tuned line counts:
 
 ```
-region = lines between the nearest enclosing headings, where a heading is
-         `^#{1,6} ` occurring OUTSIDE any fenced block
+lower = max( nearest enclosing heading,
+             end of the previous fence BLOCK containing a state-* call )
+upper = min( next heading,
+             start of the next fence BLOCK containing a state-* call )
 
-  ## Some Section                    <- lower bound
+  ## Some Section                    <- heading bound
   ...prose: "Add `--epic` when ..."  <- searched
   ```bash
   python3 ... state-note \
     --feature ... --specs-dir ...    <- the call
   ```
   ...prose...                        <- searched
-  ## Next Section                    <- upper bound
-
+  ```bash                            <- next call's fence block: upper bound
 assert '--epic' appears somewhere in region, for every call site
 ```
+
+**The bound is the fence BLOCK, not the call line.** Two `state-*` calls inside the *same*
+fence (the Git Commit Protocol's commit-1 and commit-2 `state-complete` pair) share one
+region — their `--epic` instruction precedes both. Bounding on the previous *call line*
+instead produces a false failure on that pair; bounding on the enclosing fence block does
+not. This distinction is specified because the wrong variant looks correct and fails on
+exactly one site.
+
+**Measured against current canon:**
+
+| Variant | Green on canon | Self-mutation detection |
+|---|---|---|
+| heading-bounded only | 34/34 | 12/34 |
+| **fence-block-bounded (adopted)** | **34/34** | **20/34** |
+| call-line-bounded | 33/34 (false failure) | 24/34 |
+
+Detection is measured by removing each site's *own* `--epic` mandate (its current
+`LOOKBEHIND`/`LOOKAHEAD` window) and asking whether the guard still reports that site. The
+adopted variant recovers the `state-artifact` case specifically (§ Stage-Entry Guard),
+which is the documented regression below.
+
+**Declared boundary — the residual is recorded, not hidden.** At 20/34, fourteen sites
+remain detectable only through a neighbouring call's mandate in the same region. This is a
+real reduction from the current window's per-site discrimination, accepted in exchange for
+removing every tuned integer. It is recorded here so a later round resolves it against a
+position rather than re-deriving it.
+
+**The regression this addresses.** `tests/test_state_verb_call_sites.py`'s `LOOKBEHIND`
+docstring records that at 20 the lookbehind reached past a block's own mandate into the
+preceding block's, so deleting the `state-artifact` mandate left the guard green on the
+strength of an unrelated `state-enter` mandate — which is why `LOOKBEHIND` is 12. Both
+calls sit under one `## Stage-Entry Guard` heading, so a heading-only region merges them.
+The fence-block bound separates them and restores detection on that exact case.
 
 **Verified against current canon: 34/34 pass, zero exemptions.** The epic-scoped
 `state-verify` passes naturally because its own prose reads "`--epic` must be absent or
@@ -267,7 +315,11 @@ the implementer, because the naive version fails in a way that looks like a cano
 **document structure** (headings, fence delimiters), which move with the text, versus
 **tuned integers** (`LOOKBEHIND = 12`, `LOOKAHEAD = 3`, `CALL_SPAN = 3`), which must be
 re-tuned whenever prose is reflowed. The former has nothing to tune, which is what makes
-REQ-TRIM-04 deletable. This distinction is a declared boundary of the guard.
+REQ-TRIM-04 deletable.
+
+This claim is about **tunability only**. Detection strength is a separate axis and is
+weaker (20/34 vs the window's per-site discrimination) — measured above and recorded as a
+declared boundary rather than asserted as parity.
 
 **Consequent deletions:**
 
@@ -279,6 +331,16 @@ REQ-TRIM-04 deletable. This distinction is a declared boundary of the guard.
 - `SKIP_STATUS_RE`'s `CALL_SPAN`-based line flattening is replaced by the same structural
   region, so Guard 3 (`test_every_skip_recording_surface_persists_the_skip_through_state_verify`)
   keeps its protection without the flattening window.
+
+**One test is ADDED as a replacement, not a net deletion.** Removing
+`test_the_window_is_no_wider_than_the_measured_maximum` removes the only bound on the
+guard's discriminating width; a site-count floor cannot detect an over-wide region, and
+nothing else fails when the guard stops discriminating — which is how the original hole
+shipped. Its structural equivalent is a **mutation control**: delete one known site's own
+`--epic` mandate from an in-memory copy of `shared-conventions.md` and assert Guard 1
+reports that site. Use the `state-artifact` site (§ Stage-Entry Guard), because that is the
+case the recorded regression names. This is one test inside REQ-TRIM-04's budget and is the
+only thing that fails if the region silently widens again.
 
 **REQ-TRIM-06 — preserved unchanged.** `test_the_epic_mandate_itself_is_still_documented`
 pins the normative rule in `shared-conventions.md` rather than a mechanism, and survives
@@ -344,28 +406,46 @@ Error: --version must be a positive integer; got 0
 each `--path` value to `stages.{stage}.artifacts` verbatim — no absolute-path check, no
 `..` check, no containment check, no control-character check.
 
-**Decision.** Reuse `_validated_findings_file(value: str, target_dir: Path) -> str` per
-path. It is already target-agnostic and its docstring already generalizes the rationale to
-REQ-SEC-01. It rejects: empty string, control characters (`ord < 32` or `127`), absolute
-paths, a literal `..` segment, and a resolved escape (it calls `.resolve()`, so a symlinked
-escape is caught). It returns the **original unresolved string**, so the stored value is
-unchanged on the success path — no migration, no rewrite of existing state.
+**Decision.** Reuse `_validated_findings_file` per path, **adding a defaulted `label`
+parameter**. Its *validation* is already target-agnostic; its *messages* are not — all five
+`UsageError` strings hardcode the literal `--findings-file`, and there is no label
+parameter. Reuse without that change would make `state-artifact --path ../escape.md` exit 2
+naming a flag the user never passed, violating §7's message shape and REQ-OBS-01.
 
 ```python
-target_dir = state_path.parent          # same shape as the findings-file call site
-for path in paths:
-    _validated_findings_file(path, target_dir)
+def _validated_findings_file(
+    value: str, target_dir: Path, label: str = "--findings-file"
+) -> str: ...
 ```
+
+Replace the hardcoded `--findings-file` in all five messages with `{label}`. The default
+preserves every existing message **byte-for-byte**, so the sole existing call site in
+`cmd_state_verify` and its tests are unchanged — this is not a behavior change for
+`state-verify`.
+
+```python
+state_path, state = _load_state_for_write(specs_dir, feature, epic)
+target_dir = state_path.parent
+for path in paths:
+    _validated_findings_file(path, target_dir, label="--path")
+```
+
+The validator rejects: empty string, control characters (`ord < 32` or `127`), absolute
+paths, a literal `..` segment, and a resolved escape (it calls `.resolve()`, so a symlinked
+escape is caught) — **five branch-specific messages, not one generic message**. It returns
+the **original unresolved string**, so the stored value is unchanged on the success path —
+no migration, no rewrite of existing state.
 
 Validation runs over **all** paths before any mutation, so a rejected path in a repeated
 `--path` list leaves the state file byte-identical.
 
 **The PRD's relative/absolute concern does not apply.** Both flags are feature-dir-relative
 *by contract* — `--path`'s help reads "Artifact path relative to the feature dir",
-`--findings-file`'s reads "relative to and contained by the feature directory". No
-adaptation is needed beyond looping and the error label.
+`--findings-file`'s reads "relative to and contained by the feature directory". The
+adaptation is the defaulted `label` parameter plus the loop; nothing about the containment
+semantics changes.
 
-**Naming.** The helper is currently named for its only caller. It gains a second caller
+**Naming.** The helper is currently named for its original caller. It gains a second caller
 here; renaming it is deliberately **out of scope** (§10.2) — a rename touches every call
 site and its tests for no behavioral gain, in a feature with a 2-round verify budget.
 
@@ -540,11 +620,36 @@ Becomes `assert set(state) == {"epic", "updatedAt", "stages"}`.
 files**. `test_state_verbs.py` asserts CLI behavior and `test_state_schema_conformance.py`
 asserts stored-document shape — merging them would delete real coverage, not redundancy.
 
+**The 40-hex hash family is TWO families, totalling 9 sites.** Both the PRD's "×5" and an
+earlier draft of this spec's "4" counted one sub-family each. The complete roster:
+
+| Sub-family | `test_state_verbs.py` (hand-rolled loops) | `test_state_schema_conformance.py` (already parametrized) |
+|---|---|---|
+| `_ACCEPTED_HASHES` — every valid casing accepted | `test_state_complete_accepts_every_40_hex_casing_verbatim`, `test_state_verify_commit_2_accepts_every_40_hex_casing_verbatim` | 2 sites |
+| `_REJECTED_HASHES` — short/malformed refused | `test_state_complete_rejects_a_short_or_malformed_hash_before_mutation`, `test_state_verify_commit_2_rejects_a_short_or_malformed_hash_before_mutation`, `test_epic_commit_2_rejects_a_short_or_malformed_hash_before_mutation` | 2 sites |
+| **totals** | **5 hand-rolled loops** | **4 parametrized** |
+
 | Family | Action |
 |---|---|
-| 40-hex hash casing (**4 sites**, not 5) | 2 hand-rolled loops in `test_state_verbs.py` → `parametrize`; the 2 in `test_state_schema_conformance.py` are already parametrized — **unchanged** |
+| 40-hex hash (**9 sites**) | **5** hand-rolled loops in `test_state_verbs.py` → `parametrize` **in place, one per test**; the 4 in `test_state_schema_conformance.py` are already parametrized — **unchanged** |
 | corrupt-file refusal (3 sites) | 3 hand-rolled in `test_state_verbs.py` → 1 parametrized; `test_state_schema_conformance.py`'s own parametrized version — **unchanged** |
-| gate selection (6 sites) | 5 unparametrized in `test_stage_exit.py` → 1 parametrized; the 6th is already parametrized over host — **unchanged** |
+| gate selection (**6 sites** — PRD figure confirmed) | 5 unparametrized in `test_stage_exit.py` → 1 parametrized; the 6th is already parametrized over host — **unchanged** |
+
+**Do not merge the five hash loops into one case.** They exercise three different verbs
+(`state-complete`, `state-verify` commit-2, epic commit-2) through different fixtures, and
+two different domains (accepted vs rejected). Each is parametrized over its own tuple in
+place; merging would delete the epic-target coverage.
+
+**Gate-selection unit, pinned (REQ-BRIT-07 leaves it undefined).** A gate-selection site is
+a test function under the `# autoVerify effectiveness × gate selection` section header in
+`tests/test_stage_exit.py`. That section contains exactly 6:
+`test_auto_verify_off_outstanding_verify_gates_standard`,
+`test_global_auto_verify_runs_in_stage_and_gates_none`,
+`test_per_stage_override_beats_global`, `test_non_boolean_auto_verify_fails_closed`,
+`test_invalid_auto_verify_keys_surface`, and the already-parametrized
+`test_a_manual_capability_gates_manual_print_on_every_host`. Seventeen tests in that file
+*reference* `verifyGate`, but the other eleven assert freshness, routing or epic state and
+are **not** in this family — the section header is the boundary, not the token.
 
 `@pytest.mark.parametrize` is an established idiom in all three files, so this introduces
 no new convention.
@@ -596,11 +701,15 @@ $ state-complete --feature f --stage forge-2-tech --version 0
 Error: --version must be a positive integer; got 0                    # exit 2
 
 $ state-artifact --feature f --stage forge-3-specs --path ../escape.md
-Error: --path must be a relative path inside the feature directory: '../escape.md'   # exit 2
+Error: --path '../escape.md' contains a '..' segment; it must stay inside the
+feature directory (specs/f)                                           # exit 2
 ```
 
-The exact `--path` wording follows whatever `_validated_findings_file` already emits, with
-the flag label substituted; it is not re-invented here.
+The `--path` wording is **not re-invented**: it is the existing `_validated_findings_file`
+message with `{label}` substituted (§3.8). The helper emits **one of five** branch-specific
+messages — empty value, control character, absolute path, `..` segment, resolved escape —
+so the example above is one branch, not a single generic template. The `--findings-file`
+default keeps every existing message byte-identical.
 
 **Exit-code contract preserved.** The script is 0/2 only — never 1. Both new rejections
 raise `UsageError`, which the existing top-level handler maps to exit 2. REQ-BRIT-05's
@@ -615,7 +724,7 @@ widened guard protects this property.
 | `cmd_state_complete` | `(feature, stage, version, ...) -> dict` | §3.7 validation site |
 | `cmd_state_artifact` | `(feature: str, stage: str, paths: list[str], specs_dir: Path, epic: str \| None) -> dict` | §3.8 validation site |
 | `_require_positive_int` | `(value: object, label: str) -> int` | reused verbatim by §3.7 |
-| `_validated_findings_file` | `(value: str, target_dir: Path) -> str` | reused verbatim by §3.8 |
+| `_validated_findings_file` | `(value: str, target_dir: Path, label: str = "--findings-file") -> str` | §3.8 adds the defaulted `label`; the default keeps every existing message byte-identical |
 | `_assert_full_commit_hash` | `(commit_hash) -> None` | placement precedent for §3.7 |
 | `_load_state_for_write` | `(...) -> tuple[Path, dict]` | strict read; §3.9 |
 | `_read_state` | `(state_path: Path) -> dict` | tolerant read; §3.9 |
@@ -623,9 +732,17 @@ widened guard protects this property.
 | `_scan_features` | `(specs_dir: Path) -> list[tuple[str, str \| None, dict]]` | §3.12 — epic from `iterdir()` |
 | `SAFE_NAME_RE` | `^[a-z0-9]+(?:-[a-z0-9]+)*$` | §3.12 |
 
-Data flow for both new validations: **validate → load → mutate → commit**. Neither
-validation reads state, so a rejection leaves the file untouched, matching the existing
-fail-closed pattern.
+Data flow differs between the two validations, because one needs the resolved path and one
+does not:
+
+- **`--version`** validates **before** the load — it needs no resolved path, so it mirrors
+  `_assert_full_commit_hash`'s pre-load placement.
+- **`--path`** validates **after** the load and **before** any mutation, because its
+  containment target is `state_path.parent`, which only the load produces.
+
+In both cases nothing is mutated before validation, and `_load_state_for_write` only reads,
+so a rejection leaves the state file byte-identical — the fail-closed property both
+placements are reaching for.
 
 ### 6.2 `eval/run-compliance-eval.py`
 
@@ -671,8 +788,8 @@ One convention, already established, extended to two new sites:
   value with `!r`.
 - Every public function's docstring carries a `Raises:` section naming `UsageError` and
   `(→ exit 2)`.
-- Validation happens **before** any state load or mutation, so a rejection never leaves a
-  partially written file.
+- Validation happens **before any mutation** — and before the load where the validator does
+  not depend on the resolved path (§6.1). A rejection never leaves a partially written file.
 
 No new exception type is introduced. No `try`/`except` is added around the new validations
 — they propagate to the existing top-level handler.
@@ -696,7 +813,7 @@ wrapper (§6.4):
 | REQ-COV-04 | debt-write idempotency (byte-level) | `tests/test_auto_verify.py` |
 | REQ-COV-05 | commit-2 ignores conflicting flags | `tests/test_state_verbs.py` |
 | REQ-COV-06 | `--path` containment | `tests/test_state_verbs.py` |
-| REQ-COV-07 | unsafe epic back-pointer degradation | `tests/test_state_verbs.py` |
+| REQ-COV-07 | unsafe epic back-pointer degradation | `tests/test_stage_exit.py` |
 
 This mapping is the audit trail for "each of the seven gaps has a named test" — the
 backfill is not visible as a single file, so the table is the deliverable a verifier checks
@@ -704,14 +821,31 @@ against.
 
 ### 8.2 Net test-count effect
 
-| File | Before | After |
-|---|---|---|
-| `test_capability_determination_prose.py` | 43 items | **4** |
-| `test_stage_exit_protocol.py` mutation controls | 67 items | **7** |
-| `test_stage_exit_protocol.py` stamp-verbatim | 18 items | **18** (untouched) |
-| `test_state_verb_call_sites.py` | 10 tests | **7** (−3 per REQ-TRIM-04/05) |
-| backfill | — | **+7** named tests |
-| REQ-BRIT-07 dedup | 13 sites | **3** parametrized |
+| File | Before | After | Delta |
+|---|---|---|---|
+| `test_capability_determination_prose.py` | 43 items | **4** | −39 |
+| `test_stage_exit_protocol.py` — mutation controls | 67 items | **7** | −60 |
+| `test_stage_exit_protocol.py` — stamp-verbatim | 18 items | **18** | 0 (REQ-TRIM-02) |
+| `test_stage_exit_protocol.py` — everything else | 17 items | **17** | 0 |
+| `test_state_verb_call_sites.py` | 10 tests | **9** | −2 deletions, +1 mutation control |
+| REQ-COV backfill | — | **+7** named tests | +7 |
+| `PRELUDE_CRITERIA` pin (§3.13) | — | **+1** | +1 |
+| REQ-BRIT-07 dedup | 13 hand-rolled functions | **3** parametrized functions | ≈0 collected |
+
+The two `test_state_verb_call_sites.py` deletions are named in §3.5:
+`test_the_window_is_no_wider_than_the_measured_maximum` and
+`test_the_failure_message_describes_the_whole_window`. **No third deletion exists** —
+`MIN_CALL_SITES`, `test_the_epic_guard_is_not_vacuous`, the canon-mandate test, both Guard
+3 tests and the not-skippable check all survive.
+
+**Units.** The dedup row counts *test functions* (5 hash + 3 corrupt + 5 gate = 13
+hand-rolled → 3 parametrized); the 4 already-parametrized sites are untouched and are not
+in either column. Parametrizing preserves the individual cases, so the row is
+approximately neutral in *collected items* — it reduces function count, not coverage.
+
+**Expected suite total:** 1842 collected today → **≈1750** after
+(1842 − 39 − 60 − 1 + 7 + 1), ± the dedup's collected-item delta. This is the number
+REQ-QUAL-01's full-suite check compares against.
 
 ### 8.3 Verification gates (REQ-QUAL-01..04)
 
@@ -779,8 +913,11 @@ in scope and is not modified.
 | PRD | States | Verified |
 |---|---|---|
 | §3.4 / §8 | ~15 exact-stderr sites | 5 sites / 11 comparisons, 2 files |
-| §3.4 / §8 | hash matrices ×5 | 4 sites |
+| §3.4 / §8 | hash matrices ×5 | **incomplete, not wrong** — ×5 is the `_REJECTED_HASHES` sub-family; the full roster across both sub-families is **9 sites / 5 hand-rolled loops** (§3.14) |
 | §3.3 | `resolver_line_identical` computed, never checked | checked via `all(criteria.values())` |
+
+**Confirmed correct and NOT superseded:** REQ-BRIT-07's gate-selection ×6. Re-derived
+against the section header in `tests/test_stage_exit.py` (§3.14); the PRD figure is exact.
 
 Per the recorded decision, the PRD is **not** re-versioned mid-trial — a version bump would
 cascade `forge-2-tech` to stale and re-trigger PRD verification, spending trial rounds on a
@@ -788,20 +925,25 @@ numeric correction. This spec is the authority for these three rosters.
 
 ### 10.2 Open, with a recorded position
 
-1. **Body-size cap headroom (§3.1).** `forge-verify/SKILL.md` is 305 lines and
-   `forge-0-epic/SKILL.md` is 301, against `MAX_BODY_LINES = 300`. Either "body" excludes
-   front-matter and fences, or the gate is not tripping. **Measure before editing
-   forge-0-epic** — a one-sentence addition could cross the threshold. If it does, the
-   pointer replaces existing text rather than adding to it.
-2. **`_validated_findings_file` naming.** Gains a second, non-findings caller in §3.8. Not
-   renamed — a rename touches every call site and test for no behavioral gain.
-3. **`stage_exit`'s unvalidated `epic_name` in the reconcile command string** (§3.12).
+1. **`_validated_findings_file` naming.** Gains a second, non-findings caller and a
+   `label` parameter in §3.8. Not renamed — a rename touches every call site and test for
+   no behavioral gain.
+2. **`stage_exit`'s unvalidated `epic_name` in the reconcile command string** (§3.12).
    Fails closed downstream. Not changed; not pinned as golden either.
-4. **Corrupt-state + auto-verify-ON produces no payload** (§3.9). Tested as golden this
+3. **Corrupt-state + auto-verify-ON produces no payload** (§3.9). Tested as golden this
    round; making the failure diagnostic is deferred as an output-contract change.
-5. **`test_the_cli_stage_choices_are_the_whole_exit_domain`'s source-text assertion**
+4. **`test_the_cli_stage_choices_are_the_whole_exit_domain`'s source-text assertion**
    (§3.6). Retained — no runtime counterpart exists, so removal would delete coverage.
    Converting it to an `argparse`-choices inspection is out of scope.
+5. **Structural-scan detection residual** (§3.5). 20/34 sites carry per-site
+   discrimination; the rest are covered only through a neighbouring mandate. Recorded as a
+   declared boundary of the guard, with a mutation control pinning the `state-artifact`
+   case.
+
+**Resolved during verification round 1** (was item 1): the body-size cap. `check_body_size`
+measures the body after the closing frontmatter fence, so `forge-0-epic` has +5 lines and
+`forge-verify` +1 — both under the cap, and `check-spec-purity.py` reports 0 violations.
+The measurement is now stated in §3.1 and there is no pre-implementation check outstanding.
 
 ### 10.3 Trial instrumentation (REQ-TRIAL-01..03)
 
