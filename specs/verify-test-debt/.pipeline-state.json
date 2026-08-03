@@ -1,0 +1,21 @@
+{
+  "feature": "verify-test-debt",
+  "createdAt": "2026-08-03T13:39:30Z",
+  "pipelineStatus": "active",
+  "stages": {
+    "forge-1-prd": {
+      "status": "complete",
+      "startedAt": "2026-08-03T13:39:30Z",
+      "completedAt": "2026-08-03T13:45:56Z",
+      "version": 1,
+      "basedOnVersions": {},
+      "artifacts": [
+        "PRD.md"
+      ],
+      "commitHash": null
+    }
+  },
+  "currentStage": "forge-1-prd",
+  "updatedAt": "2026-08-03T13:45:56Z",
+  "branch": "forge/verify-test-debt"
+}

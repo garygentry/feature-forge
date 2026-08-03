@@ -1,0 +1,344 @@
+# verify-test-debt — Product Requirements Document
+
+## 1. Problem Statement
+
+The `stage-exit-coverage` epic took **9 implementation verify/fix rounds** to close.
+A five-agent review established that the churn was not caused by product defects: of
+12 stage-blocking `error` findings across those 9 rounds, **11 lived in comments or
+test narration** and exactly 1 was user-reachable behavior. From round 2 onward,
+every blocking finding was introduced by the previous round's fix.
+
+The protocol gaps that let this happen were closed in Phase 2 of the remediation
+plan. What remains is the **test debt those rounds left behind** — guards that are
+expensive to satisfy and cheap to falsify, plus real coverage holes they crowded out:
+
+- One test file, `tests/test_capability_determination_prose.py` (43 tests, 651 lines),
+  absorbed **39% of all fix lines** and appears in **all 9 fix commits**, while
+  catching **zero product defects**. It asserts a 6-clause × 6-surface grid of exact
+  markdown (including bold markers) and adds an AST layer that inspects its own
+  source.
+- `tests/test_stage_exit_protocol.py` carries 67 mutation controls where roughly one
+  per mutation class would do the same job.
+- `tests/test_state_verb_call_sites.py` implements proximity-window matching
+  (LOOKBEHIND / LOOKAHEAD / CALL_SPAN) plus a test that asserts *another test's
+  failure-message wording* via `inspect.getsource`.
+- Seven behaviors on production paths have **no test at all**, including a confirmed
+  defect: `state-complete --version 0` writes `"version": 0`, which the read path
+  (`_positive_int`, rejects `< 1`) then refuses at exit 2 — poisoning a later verify
+  read.
+
+The cost is paid on every future change to this repo: brittle guards convert ordinary
+edits into multi-round verify churn, and the untested paths mean genuine regressions
+ship unnoticed.
+
+This feature is also the **live trial of Phase 2's anti-churn rules** — it runs
+through the forge pipeline specifically to test whether those rules hold under real
+work. That dual purpose is a requirement, not a footnote (see §3.6).
+
+**Who has this problem:** maintainers of this repo, and every agent session that runs
+the suite or a forge verify round against it.
+
+**Why now:** Phases 1 and 2 are merged to `main`. The protocol is fixed but unproven,
+and the debt it created is still in the tree. Both facts are addressed by the same
+piece of work.
+
+## 2. User Stories
+
+- As a **repo maintainer**, I want the capability-determination rule stated once in
+  canon rather than restated six times in exact markdown, so that editing the rule is
+  a one-file change instead of a seven-file grid update.
+- As a **repo maintainer**, I want a test failure to tell me a real behavior broke,
+  so that I stop spending rounds re-satisfying assertions about prose formatting.
+- As an **agent running a forge verify round**, I want guards that declare what they
+  do *not* protect, so that I do not file guard-incompleteness findings against
+  deliberate non-goals.
+- As an **agent running the loop**, I want the seven untested production behaviors
+  covered, so that a change to `stage-exit`'s scheduling boundary or the `state-*`
+  verbs fails loudly instead of silently.
+- As a **maintainer evaluating the remediation**, I want this feature's verify-round
+  count recorded, so that I can tell whether Phase 2's rules actually work before
+  committing to Phase 4 and a release.
+- As a **future contributor**, I want `state-artifact --path` to reject paths that
+  escape the feature directory, so that state cannot record a location no forge stage
+  could legitimately have written.
+
+## 3. Functional Requirements
+
+### 3.1 Prose-guard collapse (R-10) — **P0**
+
+- **REQ-GUARD-01:** The capability-determination rule MUST exist as a single
+  canonical section in `references/shared-conventions.md`, stating every required
+  clause. This section is the source of truth.
+  - Priority: P0
+- **REQ-GUARD-02:** Each capability-determination surface MUST either restate the
+  paragraph or carry a pointer to the canonical section. No surface may silently
+  carry neither.
+  - Priority: P0
+- **REQ-GUARD-03:** `forge-0-epic`'s missing capability-determination guidance MUST be
+  closed **in canon** (as a paragraph or pointer on that surface), not by adding it to
+  a test-side exclusion constant. This also closes review finding D7.
+  - Priority: P0
+  - Notes: The current `SURFACES_WITHOUT_PROSE` test constant encodes the gap as
+    permanent; the gap is the defect, and the constant is the symptom.
+- **REQ-GUARD-04:** `tests/test_capability_determination_prose.py` MUST contain **at
+  most 5 tests**, covering exactly this protection set:
+  1. the canonical section states all required clauses;
+  2. every surface in the roster has a paragraph or a pointer;
+  3. the roster cannot shrink to a vacuous size (non-vacuity floor).
+  - Priority: P0
+- **REQ-GUARD-05:** The guard MUST declare its **enumerated protection set and its
+  explicit non-goals** in the file, per the meta-guard norm established in R-08.
+  - Priority: P0
+- **REQ-GUARD-06:** Exact-markdown fidelity — clause-fragment matching, bold-marker
+  presence, and per-surface formatting equality — is a **declared non-goal**. The
+  guard MUST NOT assert it, and a verifier MUST NOT file its absence as a finding.
+  - Priority: P0
+  - Notes: This is the specific mechanism that produced the churn. Reintroducing it
+    rebuilds the problem.
+- **REQ-GUARD-07:** The AST self-inspection layer MUST be deleted.
+  - Priority: P0
+
+### 3.2 Mutation-control and machinery trim (R-11) — **P1**
+
+- **REQ-TRIM-01:** `tests/test_stage_exit_protocol.py` MUST retain approximately one
+  mutation control per mutation class (~7 total, from 67).
+  - Priority: P1
+- **REQ-TRIM-02:** Every positive stamp-verbatim test in that file MUST be preserved.
+  These are legitimate golden-file assertions and are **not** in scope for trimming.
+  - Priority: P0
+  - Notes: This is a guard on the trim itself — the risk of REQ-TRIM-01 is
+    over-deletion.
+- **REQ-TRIM-03:** Guard 1 in `tests/test_state_verb_call_sites.py` MUST be replaced
+  by a structural check: each fenced `state-*` call contains `--epic`. The
+  proximity-window approach MUST be removed.
+  - Priority: P1
+- **REQ-TRIM-04:** The window-tuning tests bounding LOOKBEHIND, LOOKAHEAD, and
+  CALL_SPAN MUST be deleted together with the machinery they constrain.
+  - Priority: P1
+- **REQ-TRIM-05:** The test asserting another test's failure-message wording via
+  `inspect.getsource` MUST be deleted.
+  - Priority: P1
+- **REQ-TRIM-06:** `test_the_epic_mandate_itself_is_still_documented` MUST be
+  preserved — it pins the normative rule in canon rather than a mechanism.
+  - Priority: P0
+- **REQ-TRIM-07:** Source-text assertions in `tests/test_stage_constants_parity.py`
+  that duplicate an existing runtime check MUST be removed.
+  - Priority: P1
+
+### 3.3 Coverage backfill (R-12) — **P1**
+
+Each of the seven gaps MUST have at least one named test:
+
+- **REQ-COV-01:** Corrupt `.pipeline-state.json` encountered on a production
+  `stage-exit`, covering the tolerant-read vs. strict-debt-write asymmetry, with
+  auto-verify both **on** and **off**.
+  - Priority: P1
+- **REQ-COV-02:** The `--version` domain on `state-complete` (see REQ-FIX-01).
+  - Priority: P1
+- **REQ-COV-03:** The `resolver_line_identical` criterion in the compliance eval MUST
+  be asserted (it is currently computed and never checked), and the criterion key set
+  MUST be pinned so a future criterion cannot be silently dropped.
+  - Priority: P1
+- **REQ-COV-04:** Auto-verify debt-write idempotency at the same revision, asserted at
+  the byte level.
+  - Priority: P1
+- **REQ-COV-05:** `state-complete`'s commit-2 path ignoring conflicting flags.
+  - Priority: P1
+- **REQ-COV-06:** `state-artifact --path` containment (see REQ-SEC-01).
+  - Priority: P1
+- **REQ-COV-07:** Degradation behavior on an unsafe on-disk `epic` back-pointer.
+  - Priority: P1
+
+Three behavior changes are in scope, and only these three:
+
+- **REQ-FIX-01:** `state-complete --version` MUST reject values below 1 at the
+  **write** path, matching the read path's existing domain.
+  - Priority: P1
+  - Notes: Confirmed live — `--version 0` currently exits 0 and writes `"version": 0`.
+- **REQ-SEC-01:** `state-artifact --path` MUST reject paths that escape the resolved
+  feature directory, consistent with the containment validation already applied to
+  findings-file paths.
+  - Priority: P1
+- **REQ-FIX-02:** If a test written for REQ-COV-01..07 uncovers a defect beyond
+  REQ-FIX-01 and REQ-SEC-01, the defect MUST be fixed within this feature rather than
+  pinned as golden behavior and deferred.
+  - Priority: P1
+  - Notes: A test that asserts known-wrong behavior invites a blocking finding on the
+    next verify round.
+
+### 3.4 Brittleness batch (R-13) — **P2**
+
+- **REQ-BRIT-01:** The chmod-based test in `tests/test_auto_verify.py` MUST carry a
+  root-uid skip guard, matching its sibling tests.
+  - Priority: P2
+- **REQ-BRIT-02:** Token scanners with known false-positive traps in
+  `tests/test_state_verbs.py` MUST be corrected so legitimate text does not trip them.
+  - Priority: P2
+- **REQ-BRIT-03:** Whole-source token bans in `tests/test_stage_exit.py` MUST be
+  narrowed to the region whose property they actually assert.
+  - Priority: P2
+- **REQ-BRIT-04:** Exact-stderr full-equality assertions (~15 sites) MUST become
+  substring or regex assertions that pin the diagnostic content without pinning
+  incidental wording.
+  - Priority: P2
+- **REQ-BRIT-05:** The evadable exit-1 guard regex in `tests/test_state_verbs.py` MUST
+  be widened so it cannot be trivially bypassed.
+  - Priority: P2
+- **REQ-BRIT-06:** The key-**order** pin in `tests/test_state_schema_conformance.py`
+  MUST become a key-**set** assertion.
+  - Priority: P2
+- **REQ-BRIT-07:** Redundant coverage (~15%) MUST be deduplicated: the 40-hex hash
+  matrices (×5), corrupt-file refusal (×3), and gate-selection (×6) families each
+  collapse to a single parameterized case.
+  - Priority: P2
+
+### 3.5 Canon and adapter obligations
+
+- **REQ-CANON-01:** Any change to `skills/` or `references/` MUST be accompanied by
+  regeneration of the six adapter mirrors in the same commit, with
+  `build-adapters.py --check` exiting 0.
+  - Priority: P0
+- **REQ-CANON-02:** `check-spec-purity.py` MUST report 0 violations after every
+  canon change.
+  - Priority: P0
+- **REQ-CANON-03:** Comments, docstrings, and test narration written during any fix
+  pass MUST state intent only — no empirical or quantified claims ("measured",
+  "probed and confirmed", counts). Acceptance evidence belongs in the verification
+  report's Fix Progress section and in commit messages.
+  - Priority: P0
+  - Notes: Carried from R-08. This is the habit that generated rounds 5-9.
+
+### 3.6 Trial instrumentation
+
+- **REQ-TRIAL-01:** This feature MUST complete in **≤2 verify rounds** at any single
+  pipeline stage.
+  - Priority: P0
+- **REQ-TRIAL-02:** If a third verify round is reached at any stage, work MUST STOP.
+  The failure is recorded as a Phase 2 finding, R-05..R-08 are reopened, and this
+  feature does **not** continue through the pipeline.
+  - Priority: P0
+  - Notes: The point of the trial is to learn that Phase 2 is insufficient, if it is.
+    Pushing through a third round destroys the measurement.
+- **REQ-TRIAL-03:** The observed verify-round count per stage MUST be recorded in the
+  remediation plan's Session Log at feature close.
+  - Priority: P1
+
+## 4. Non-Functional Requirements
+
+### 4.1 Suite quality
+
+- **REQ-QUAL-01:** The full suite MUST pass. Baseline entering this feature is
+  1840 passed / 2 skipped.
+- **REQ-QUAL-02:** `ruff check tests/` MUST NOT exceed 19 errors. Fewer is a
+  successful outcome and becomes the new baseline; more is a regression.
+- **REQ-QUAL-03:** `bash scripts/validate.sh` MUST report "All checks passed!".
+- **REQ-QUAL-04:** Success targets are **countable**, not wall-clock: prose-guard file
+  ≤5 tests; mutation controls ~7; every positive stamp-verbatim test retained; each of
+  the seven coverage gaps has a named test. No runtime threshold is specified, because
+  a machine-dependent number cannot be reproduced by a verifier and would reintroduce
+  unfalsifiable-claim churn.
+
+### 4.2 Security
+
+- **REQ-SEC-01** (stated in §3.3): path containment on `state-artifact --path`.
+- No other security surface is introduced. This feature adds no authentication,
+  authorization, network, or untrusted-input handling.
+
+### 4.3 Observability
+
+- **REQ-OBS-01:** Every assertion that replaces an exact-equality check MUST still
+  fail with a message identifying which behavior broke and where. Loosening an
+  assertion MUST NOT degrade its diagnostic value.
+
+### 4.4 Concurrency
+
+- **REQ-CONC-01:** Concurrent writers to `.pipeline-state.json` are **out of scope**.
+  A single forge session writes at a time; the atomic write protects only against an
+  interrupted or torn write, not against simultaneous writers. No locking protocol is
+  required, and none may be introduced by this feature.
+  - Notes: Stated explicitly so that a generic concurrency check (`CHECK-S27`)
+    resolves against a recorded position. An unstated position has previously induced
+    a full locking protocol that no requirement asked for.
+
+### 4.5 Accessibility and scalability
+
+- Not applicable. This feature has no user interface and no runtime load
+  characteristics — it changes test code, canonical prose, and two CLI validation
+  paths.
+
+## 5. Constraints
+
+- **C-01:** Canon lives in `skills/` and `references/`; the six adapter mirrors are
+  generated, never hand-edited. `python3 scripts/build-adapters.py` regenerates them.
+- **C-02:** After any `git checkout`, `merge`, or `pull`, adapter file modes can land
+  as 0664 from the ambient umask and fail the mode test. Re-running
+  `build-adapters.py` restores 0644; content is unaffected.
+- **C-03:** `forge-verify`'s severity floor (R-05) applies: inaccuracies confined to
+  comments, docstrings, or test narration cap at `inconsistency` and do not block.
+- **C-04:** Re-verify is scoped (R-06): a re-verify confirms the prior report's
+  findings; new findings below `error` do not block it; a finding with a recorded
+  decision is never re-filed.
+- **C-05:** `forge-verify` is at its 300-line cap. Rules that would grow it belong in
+  `references/stage-exit-protocol.md` with a same-line pointer from the skill.
+- **C-06:** This feature runs the **full** pipeline — PRD → tech spec → specs →
+  backlog → loop → docs — because the rules under trial operate at every stage.
+- **C-07:** Line numbers cited in the remediation plan are as of baseline commit
+  `6337e13` and have drifted. Locate by symbol name or quoted text, never by line
+  number.
+
+## 6. Out of Scope
+
+- Phase 4 items R-14 through R-17: findings D3, D4, C4, C5, C6, C7, F3, the remaining
+  F4 eval fixture case, and the D8 nits.
+- The version bump, CHANGELOG entry, and release checklist (R-17).
+- Any product behavior change beyond the three named in §3.3 (REQ-FIX-01,
+  REQ-SEC-01, and whatever REQ-FIX-02 surfaces).
+- Driving `ruff check tests/` to zero. The requirement is non-increase.
+- Changes to `eval/` fixtures beyond the `resolver_line_identical` assertion and the
+  criterion key-set pin required by REQ-COV-03. The compliance eval was stabilized in
+  GATE-P2 and is otherwise frozen.
+- Test files outside those named in T1-T4, except where REQ-BRIT-04's enumerated
+  exact-stderr sites legitimately span additional files.
+- Concurrency and locking (REQ-CONC-01).
+- Re-litigating the review findings. The remediation plan's findings register is the
+  surviving record.
+
+## 7. Open Questions
+
+- **OQ-01:** The exact count of exact-stderr full-equality sites is approximate
+  (~15) and spans more than one file. The precise roster is to be enumerated during
+  the tech spec.
+- **OQ-02:** Whether the canonical capability-determination section can reuse the
+  existing "Verify Capability" section in `references/shared-conventions.md` or needs
+  a distinct section — a structural question for the tech spec.
+- **OQ-03:** Whether `resolver_line_identical` should assert equality or merely
+  record, once its computed value is inspected against real eval runs.
+
+## 8. Success Criteria
+
+The feature is done when all of the following hold:
+
+1. `tests/test_capability_determination_prose.py` contains ≤5 tests, declares its
+   protection set and non-goals, and has no AST self-inspection layer.
+2. All capability-determination surfaces — including `forge-0-epic` — carry a
+   paragraph or a pointer, resolved in canon rather than a test constant.
+3. Mutation controls in `tests/test_stage_exit_protocol.py` are reduced to ~7 with
+   every positive stamp-verbatim test intact.
+4. `tests/test_state_verb_call_sites.py` uses a structural `--epic`-in-fence check;
+   the window machinery, its tuning tests, and the `inspect.getsource` meta-test are
+   gone; the canon-mandate test survives.
+5. Each of the seven T3 gaps has a named test; `state-complete --version 0` is
+   refused at the write path; `state-artifact --path` enforces containment.
+6. The seven brittleness items in §3.4 are addressed.
+7. Full suite green; `validate.sh` passes; `build-adapters.py --check` exits 0;
+   `check-spec-purity.py` reports 0 violations; `ruff check scripts/ eval/` clean;
+   `ruff check tests/` ≤19 errors.
+8. No stage required more than 2 verify rounds — or work stopped at the third round
+   with a Phase 2 finding filed, which is a **valid and informative** outcome of this
+   trial, not a failure of this feature.
+
+**What a user would complain about if we got this wrong:** that we deleted guards and
+lost real protection (addressed by REQ-TRIM-02, REQ-TRIM-06, REQ-GUARD-04's
+enumerated set, and the REQ-COV-* backfill running in the same feature), or that the
+trim itself triggered another 9-round churn (addressed by REQ-GUARD-05/06 and
+REQ-CANON-03, and measured by REQ-TRIAL-01).
