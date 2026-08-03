@@ -20,10 +20,10 @@
       "findingsCount": 10,
       "verifiedAt": "2026-08-03T14:04:15Z",
       "verifiedStageVersion": 1,
-      "commitHash": null
+      "commitHash": "2e522587109bdd2f999bb8818edda5da0e948536"
     }
   },
   "currentStage": "forge-1-prd",
-  "updatedAt": "2026-08-03T14:04:15Z",
+  "updatedAt": "2026-08-03T14:04:24Z",
   "branch": "forge/verify-test-debt"
 }
