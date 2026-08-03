@@ -1273,7 +1273,7 @@ def test_branch_prompt_never_dictates_the_expected_output(branch_fixture: dict) 
 
 
 # --------------------------------------------------------------------------- #
-# Branch scorer — the eight criteria and the negative matrix (06 §5.2, 07 §7.2)
+# Branch scorer — the nine criteria and the negative matrix (06 §5.2, 07 §7.2)
 # --------------------------------------------------------------------------- #
 #
 # Every transcript below is a pure dictionary stream: no live model, no network, and no

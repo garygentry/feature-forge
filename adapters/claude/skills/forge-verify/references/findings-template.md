@@ -100,8 +100,11 @@ state file `{specsDir}/{epic}/.epic-state.json` — **never** into any member's
 violate REQ-STATE-02; per-feature status is always derived live from each member's
 `.pipeline-state.json`).
 
-Set `stages.forge-verify-epic.status` to `findings-reported` (or `passed` if zero
-findings), recording `findingsFile`, `findingsCount`, and `verifiedAt`.
+Set `stages.forge-verify-epic.status` to `findings-reported` when the report lists at
+least one **blocking** finding (`error`/`gap`), else `passed` — for an advisory-only
+report pass `--findings-file`/`--findings-count` alongside `--status passed`, exactly
+as in feature mode (the severity floor in `skills/forge-verify/SKILL.md`) — recording
+`findingsFile`, `findingsCount`, and `verifiedAt`.
 
 **Write it with `state-verify`, never by hand.** `--stage forge-0-epic` is the sanctioned
 epic writer: it creates the file lazily, mutates only `stages.forge-verify-epic` plus the

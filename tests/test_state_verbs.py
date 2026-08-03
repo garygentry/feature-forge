@@ -1804,6 +1804,20 @@ def test_state_verify_passed_records_an_advisory_report(tmp_path):
     assert entry["commitHash"] is None
 
 
+def test_state_verify_passed_refuses_a_report_claiming_zero_findings(tmp_path):
+    """A file with a zero count is self-contradictory; omit both for a clean pass."""
+    specs = _verify_fixture(tmp_path)
+    before = _state_bytes(specs)
+    result = _verify(
+        specs, "--stage", "forge-1-prd", "--status", "passed",
+        "--findings-file", "verify/advisories.md", "--findings-count", "0",
+        "--verified-stage-version", "1",
+    )
+    assert result.returncode == 2
+    assert "self-contradictory" in result.stderr
+    assert _state_bytes(specs) == before, "mutated on a rejected write"
+
+
 def test_state_verify_plain_passed_keeps_the_report_free_shape(tmp_path):
     """A bare zero count still records no report keys — the plain 'verified
     clean' entry keeps its pre-advisory shape."""

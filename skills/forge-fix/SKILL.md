@@ -120,7 +120,7 @@ On a **direct** invocation, present the gate with `AskUserQuestion` using these 
 | A fix step, a validation, a commit, or a state write failed (Steps 4–6) | `failed` | Fix/navigator recovery; no advancement |
 | Fixes persisted and re-verify has not been run (nested, or manual capability) | `applied` | Re-run `forge-verify` for the same served stage — re-verification is mandatory |
 | A mandatory re-verify passed | `reverified` | The live production successor |
-| A mandatory re-verify reported findings | `reverify-findings` | `forge-fix` for the same served stage |
+| A mandatory re-verify reported an unresolved prior finding or a new blocking defect (a clean-or-advisory-only result is `reverified`) | `reverify-findings` | `forge-fix` for the same served stage |
 | The user explicitly deferred the fix pass or the re-verify (Steps 3, 6) | `deferred` | Deterministic `forge-fix`/navigator resume stating the findings remain unresolved; no advancement |
 
 A cancellation, an unavailable tool, or a non-answer is `deferred` **only** when it was an explicit user choice and `failed` when it was an operational failure — an unavailable tool is never an explicit user skip, and neither ever becomes `reverified`. `applied` is not `reverified`: `findings-applied` cleared the freshness the writer deliberately dropped, so only `reverified` after a passing verify permits advancement.
