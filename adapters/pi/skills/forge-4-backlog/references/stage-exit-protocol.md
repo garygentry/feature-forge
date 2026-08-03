@@ -421,6 +421,12 @@ the re-verify (`skills/forge-fix/SKILL.md` Step 6):
   `state-decision` entry, a recorded-decision comment in the artifact, or a declared
   non-goal — is never filed, in a re-verify or a fresh sweep. Cite the decision
   instead. Re-filing a decided question costs a round and reverses nothing.
+  In particular, a **meta-guard** (a test protecting other tests or prose) is judged
+  against its DECLARED protection set: guard-incompleteness against a declared
+  non-goal is never a finding — the space of what a guard does not cover is
+  unbounded, and enumerating it one round at a time is an arms race, not
+  verification (authoring norm: the testing-strategy archetype in
+  `skills/forge-3-specs/references/spec-archetypes.md`).
 - **Escalation (the round ledger).** Rounds are counted from the served stage's
   findings documents (`VERIFY-{mode}-{date}.md`, then `-round{N}` — the filename rule
   in `skills/forge-verify/SKILL.md` Step 4), so the ledger is reconstructable from the
