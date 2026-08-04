@@ -830,42 +830,46 @@ def test_commit_2_ignores_based_on_artifact_and_preserve_commit_hash(tmp_path: P
     assert after["version"] == 2
 
 
-def test_state_complete_accepts_every_40_hex_casing_verbatim(tmp_path):
+@pytest.mark.parametrize(
+    "label,value", _ACCEPTED_HASHES, ids=[case[0] for case in _ACCEPTED_HASHES]
+)
+def test_state_complete_accepts_every_40_hex_casing_verbatim(tmp_path, label, value):
     """REQ-STATE-01: 40 hex characters, in any case, recorded exactly as supplied."""
-    for label, value in _ACCEPTED_HASHES:
-        root = tmp_path / f"complete-{label}"
-        _seed(root, {"forge-1-prd": {"status": "complete", "version": 1}})
-        result = _run(
-            "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
-            "--version", "1", "--commit-hash", value,
-            "--specs-dir", str(root / "specs"),
-        )
-        assert result.returncode == 0, f"{label}: {result.stderr}"
-        recorded = _state_of(root)["stages"]["forge-1-prd"]["commitHash"]
-        assert recorded == value, f"{label}: case was not preserved ({recorded!r})"
+    _seed(tmp_path, {"forge-1-prd": {"status": "complete", "version": 1}})
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+        "--version", "1", "--commit-hash", value,
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, f"{label}: {result.stderr}"
+    recorded = _state_of(tmp_path)["stages"]["forge-1-prd"]["commitHash"]
+    assert recorded == value, f"{label}: case was not preserved ({recorded!r})"
 
 
-def test_state_complete_rejects_a_short_or_malformed_hash_before_mutation(tmp_path):
+@pytest.mark.parametrize(
+    "label,value", _REJECTED_HASHES, ids=[case[0] for case in _REJECTED_HASHES]
+)
+def test_state_complete_rejects_a_short_or_malformed_hash_before_mutation(
+    tmp_path, label, value
+):
     """Every non-40-hex shape fails, and the state file is left byte-identical.
 
     The check runs before `_load_state_for_write`, so the stage-not-complete guard
-    below is never even consulted for a malformed value (03 §6.1).
+    is never even consulted for a malformed value.
     """
-    for label, value in _REJECTED_HASHES:
-        root = tmp_path / f"reject-{label}"
-        _seed(root, {"forge-1-prd": {"status": "complete", "version": 1}})
-        state_path = root / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
-        before = state_path.read_bytes()
-        result = _run(
-            "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
-            "--version", "1", "--commit-hash", value,
-            "--specs-dir", str(root / "specs"),
-        )
-        assert result.returncode == 2, f"{label}: exit {result.returncode}"
-        assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
-        assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
-        assert not result.stdout.strip(), f"{label} produced stdout"
-        assert state_path.read_bytes() == before, f"{label} mutated state"
+    _seed(tmp_path, {"forge-1-prd": {"status": "complete", "version": 1}})
+    state_path = tmp_path / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
+    before = state_path.read_bytes()
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+        "--version", "1", "--commit-hash", value,
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 2, f"{label}: exit {result.returncode}"
+    assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
+    assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
+    assert not result.stdout.strip(), f"{label} produced stdout"
+    assert state_path.read_bytes() == before, f"{label} mutated state"
 
 
 @pytest.mark.parametrize("raw", ["0", "-1"], ids=["zero", "negative"])
@@ -2283,26 +2287,37 @@ def test_state_verify_commit_2_changes_only_the_hash_and_updated_at(tmp_path):
     assert after == before, "commit-2 changed more than commitHash and updatedAt"
 
 
-def test_state_verify_commit_2_accepts_every_40_hex_casing_verbatim(tmp_path):
-    for label, value in _ACCEPTED_HASHES:
-        specs = _verify_fixture(tmp_path / f"case-{label}")
-        _reported(specs)
-        assert _verify(specs, "--stage", "forge-1-prd",
-                       "--commit-hash", value).returncode == 0, label
-        assert _entry(specs)["commitHash"] == value, f"{label}: case was not preserved"
+@pytest.mark.parametrize(
+    "label,value", _ACCEPTED_HASHES, ids=[case[0] for case in _ACCEPTED_HASHES]
+)
+def test_state_verify_commit_2_accepts_every_40_hex_casing_verbatim(
+    tmp_path, label, value
+):
+    """Commit 2 on a verify entry records the supplied casing verbatim."""
+    specs = _verify_fixture(tmp_path)
+    _reported(specs)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--commit-hash", value
+    ).returncode == 0, label
+    assert _entry(specs)["commitHash"] == value, f"{label}: case was not preserved"
 
 
-def test_state_verify_commit_2_rejects_a_short_or_malformed_hash_before_mutation(tmp_path):
-    for label, value in _REJECTED_HASHES:
-        specs = _verify_fixture(tmp_path / f"bad-{label}")
-        _reported(specs)
-        before = _state_bytes(specs)
-        result = _verify(specs, "--stage", "forge-1-prd", "--commit-hash", value)
-        assert result.returncode == 2, f"{label}: exit {result.returncode}"
-        assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
-        assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
-        assert not result.stdout.strip(), f"{label} produced stdout"
-        assert _state_bytes(specs) == before, f"{label} mutated state"
+@pytest.mark.parametrize(
+    "label,value", _REJECTED_HASHES, ids=[case[0] for case in _REJECTED_HASHES]
+)
+def test_state_verify_commit_2_rejects_a_short_or_malformed_hash_before_mutation(
+    tmp_path, label, value
+):
+    """A malformed hash is refused before the verify entry is touched."""
+    specs = _verify_fixture(tmp_path)
+    _reported(specs)
+    before = _state_bytes(specs)
+    result = _verify(specs, "--stage", "forge-1-prd", "--commit-hash", value)
+    assert result.returncode == 2, f"{label}: exit {result.returncode}"
+    assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
+    assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
+    assert not result.stdout.strip(), f"{label} produced stdout"
+    assert _state_bytes(specs) == before, f"{label} mutated state"
 
 
 def test_state_verify_commit_2_requires_an_existing_entry(tmp_path):
@@ -2393,6 +2408,17 @@ def test_state_verify_rejects_an_unknown_status_at_the_callable(tmp_path):
 # --------------------------------------------------------------------------- #
 # state-verify — the epic target (03 §3.2 step 2 / §2.1, 07 §4.3)
 # --------------------------------------------------------------------------- #
+
+
+#: Epic-state contents that must be refused, with the diagnostic each one owes.
+#: Labels are the parametrize ids, so a failure names the shape it came from.
+_CORRUPT_EPIC_STATES: Final[tuple[tuple[str, str, str], ...]] = (
+    ("not-json", "{ not json", "not valid JSON"),
+    ("json-array", "[]", "not a JSON object"),
+    ("stages-array", '{"epic": "auth-overhaul", "stages": []}', "non-object 'stages'"),
+    ("stages-string", '{"epic": "auth-overhaul", "stages": "nope"}', "non-object 'stages'"),
+    ("wrong-epic", '{"epic": "some-other-epic"}', "records epic"),
+)
 
 
 def _epic_fixture(
@@ -2705,22 +2731,23 @@ def test_a_missing_or_mismatched_manifest_fails_before_mutation(tmp_path):
     manifest_path.write_bytes(original)
 
 
-def test_a_corrupt_or_malformed_epic_state_is_refused_byte_intact(tmp_path):
+@pytest.mark.parametrize(
+    "label,content,needle",
+    _CORRUPT_EPIC_STATES,
+    ids=[case[0] for case in _CORRUPT_EPIC_STATES],
+)
+def test_a_corrupt_or_malformed_epic_state_is_refused_byte_intact(
+    tmp_path, label, content, needle
+):
+    """An unreadable epic state is refused and left exactly as found."""
     specs = _epic_fixture(tmp_path, revision=1)
     state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
-    for content, needle in (
-        ("{ not json", "not valid JSON"),
-        ("[]", "not a JSON object"),
-        ('{"epic": "auth-overhaul", "stages": []}', "non-object 'stages'"),
-        ('{"epic": "auth-overhaul", "stages": "nope"}', "non-object 'stages'"),
-        ('{"epic": "some-other-epic"}', "records epic"),
-    ):
-        state_path.write_text(content, encoding="utf-8")
-        before = state_path.read_bytes()
-        result = _epic_verify(specs, "--status", "skipped")
-        assert result.returncode == 2, content
-        assert needle in result.stderr, f"{content}: {result.stderr!r}"
-        assert state_path.read_bytes() == before, f"{content}: mutated on a refusal"
+    state_path.write_text(content, encoding="utf-8")
+    before = state_path.read_bytes()
+    result = _epic_verify(specs, "--status", "skipped")
+    assert result.returncode == 2, f"{label}: exit {result.returncode}"
+    assert needle in result.stderr, f"{label}: {result.stderr!r}"
+    assert state_path.read_bytes() == before, f"{label}: mutated on a refusal"
 
 
 def test_a_legacy_epic_state_without_epic_or_stages_is_enriched(tmp_path):
@@ -2812,16 +2839,21 @@ def test_epic_commit_2_requires_an_existing_entry_and_creates_no_state_file(tmp_
     assert _member_bytes(specs) == members_before
 
 
-def test_epic_commit_2_rejects_a_short_or_malformed_hash_before_mutation(tmp_path):
-    for label, value in _REJECTED_HASHES:
-        specs = _epic_fixture(tmp_path / f"epic-bad-{label}", revision=1)
-        assert _epic_verify(specs, "--status", "skipped").returncode == 0
-        state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
-        before = state_path.read_bytes()
-        result = _epic_verify(specs, "--commit-hash", value)
-        assert result.returncode == 2, f"{label}: exit {result.returncode}"
-        assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
-        assert state_path.read_bytes() == before, f"{label} mutated the epic state"
+@pytest.mark.parametrize(
+    "label,value", _REJECTED_HASHES, ids=[case[0] for case in _REJECTED_HASHES]
+)
+def test_epic_commit_2_rejects_a_short_or_malformed_hash_before_mutation(
+    tmp_path, label, value
+):
+    """The epic target refuses a malformed hash and leaves its state file intact."""
+    specs = _epic_fixture(tmp_path, revision=1)
+    assert _epic_verify(specs, "--status", "skipped").returncode == 0
+    state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
+    before = state_path.read_bytes()
+    result = _epic_verify(specs, "--commit-hash", value)
+    assert result.returncode == 2, f"{label}: exit {result.returncode}"
+    assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
+    assert state_path.read_bytes() == before, f"{label} mutated the epic state"
 
 
 # --------------------------------------------------------------------------- #
@@ -2918,16 +2950,18 @@ def test_every_verb_exits_2_on_an_unknown_feature(tmp_path):
         assert "no feature directory at" in result.stderr, verb
 
 
-def test_every_verb_refuses_a_corrupt_state_file_byte_intact(tmp_path):
-    for verb, extra in _VERB_INVOCATIONS.items():
-        state_path = _feature_dir(tmp_path / verb) / FS.PIPELINE_STATE_FILENAME
-        state_path.write_bytes(b"{ not json")
-        result = _run(
-            verb, "--feature", "demo", *extra, "--specs-dir", str(tmp_path / verb / "specs")
-        )
-        assert result.returncode == 2, f"{verb}: {result.stdout}{result.stderr}"
-        assert "refusing to overwrite it" in result.stderr, verb
-        assert state_path.read_bytes() == b"{ not json", f"{verb} touched a corrupt file"
+@pytest.mark.parametrize("verb", sorted(_VERB_INVOCATIONS))
+def test_every_verb_refuses_a_corrupt_state_file_byte_intact(tmp_path, verb):
+    """No verb may overwrite a state file it could not parse."""
+    state_path = _feature_dir(tmp_path) / FS.PIPELINE_STATE_FILENAME
+    state_path.write_bytes(b"{ not json")
+    result = _run(
+        verb, "--feature", "demo", *_VERB_INVOCATIONS[verb],
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 2, f"{verb}: {result.stdout}{result.stderr}"
+    assert "refusing to overwrite it" in result.stderr, verb
+    assert state_path.read_bytes() == b"{ not json", f"{verb} touched a corrupt file"
 
 
 def test_every_verb_writes_schema_valid_state_for_a_nested_epic_member(tmp_path):
