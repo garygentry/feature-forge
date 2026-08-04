@@ -910,10 +910,11 @@ def test_commit_hash_against_an_incomplete_stage_exits_2(tmp_path):
         "--commit-hash", _FULL_HASH, "--specs-dir", str(tmp_path / "specs"),
     )
     assert result.returncode == 2, result.stdout
-    assert result.stderr.strip() == (
-        "Error: --commit-hash requires forge-2-tech to be complete (status: 'pending'); "
-        "run state-complete without --commit-hash first"
-    )
+    stderr = result.stderr
+    assert stderr.startswith("Error:"), stderr
+    assert "--commit-hash" in stderr, stderr
+    assert "forge-2-tech" in stderr, stderr
+    assert "status: 'pending'" in stderr, stderr
     assert state_path.read_bytes() == before, "the rejected follow-up must not write"
 
 
@@ -1060,9 +1061,10 @@ def test_resumable_with_an_explicit_status_complete_exits_2(tmp_path):
         "--resumable", "--status", "complete", "--specs-dir", str(tmp_path / "specs"),
     )
     assert result.returncode == 2, result.stdout
-    assert result.stderr.strip() == (
-        "Error: --resumable implies --status in-progress; do not pass --status complete"
-    )
+    stderr = result.stderr
+    assert stderr.startswith("Error:"), stderr
+    assert "--resumable" in stderr, stderr
+    assert re.search(r"--status\s+'?complete'?", stderr), stderr
     assert state_path.read_bytes() == before
 
 
@@ -1110,10 +1112,11 @@ def test_without_preserve_commit_hash_an_existing_hash_is_reset(tmp_path):
 
 
 def test_a_malformed_based_on_token_exits_2_naming_the_token(tmp_path):
-    for token, expected in (
-        ("forge-1-prd", "Error: --based-on expects STAGE=N, got: 'forge-1-prd'"),
-        ("forge-1-prd=two", "Error: --based-on version must be an integer: 'forge-1-prd=two'"),
-        ("forge-1-prd=1.5", "Error: --based-on version must be an integer: 'forge-1-prd=1.5'"),
+    """Every malformed shape is refused before any write, quoting what was passed."""
+    for token, reason in (
+        ("forge-1-prd", "expects STAGE=N"),
+        ("forge-1-prd=two", "version must be an integer"),
+        ("forge-1-prd=1.5", "version must be an integer"),
     ):
         _feature_dir(tmp_path / token, "demo")
         result = _run(
@@ -1121,7 +1124,13 @@ def test_a_malformed_based_on_token_exits_2_naming_the_token(tmp_path):
             "--based-on", token, "--specs-dir", str(tmp_path / token / "specs"),
         )
         assert result.returncode == 2, f"{token}: {result.stdout}"
-        assert result.stderr.strip() == expected, token
+        stderr = result.stderr
+        assert stderr.startswith("Error:"), f"{token}: {stderr!r}"
+        assert "--based-on" in stderr, f"{token}: the flag is not named: {stderr!r}"
+        assert reason in stderr, f"{token}: expected reason {reason!r} in {stderr!r}"
+        assert repr(token) in stderr, (
+            f"{token}: the message must quote the offending token: {stderr!r}"
+        )
         assert not (
             tmp_path / token / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
         ).exists(), f"{token}: a parse failure must not write state"
@@ -1535,6 +1544,7 @@ def test_repeated_state_ecr_invocations_append(tmp_path):
 
 
 def test_blocks_current_rejects_anything_but_true_or_false(tmp_path):
+    """Anything outside the boolean domain is refused, naming the domain and the value."""
     _feature_dir(tmp_path)
     for bad in ("yes", "1", "", "True false", "no"):
         result = _run(
@@ -1542,9 +1552,15 @@ def test_blocks_current_rejects_anything_but_true_or_false(tmp_path):
             "--specs-dir", str(tmp_path / "specs"),
         )
         assert result.returncode == 2, f"{bad!r}: expected exit 2, got {result.returncode}"
-        assert result.stderr.strip() == (
-            f"Error: --blocks-current expects true|false, got: {bad!r}"
-        ), result.stderr
+        stderr = result.stderr
+        assert stderr.startswith("Error:"), f"{bad!r}: {stderr!r}"
+        assert "--blocks-current" in stderr, f"{bad!r}: the flag is not named: {stderr!r}"
+        assert "true|false" in stderr, (
+            f"{bad!r}: the accepted domain must be named: {stderr!r}"
+        )
+        assert repr(bad) in stderr, (
+            f"{bad!r}: the offending value must be quoted: {stderr!r}"
+        )
     assert not (tmp_path / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME).exists()
 
 

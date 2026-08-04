@@ -19,13 +19,17 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+from typing import Final
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESOLVER = REPO_ROOT / "scripts" / "forge-root.sh"
 
-FAILURE_MESSAGE = (
-    "feature-forge: cannot locate install root. "
-    "Set FEATURE_FORGE_ROOT to the bundle dir, or run from an installed skill dir."
+#: What step 4's failure must tell a user: who failed, what failed, and the lever
+#: that fixes it. The wording between these is free to improve.
+FAILURE_MARKERS: Final[tuple[str, ...]] = (
+    "feature-forge:",
+    "cannot locate install root",
+    "FEATURE_FORGE_ROOT",
 )
 
 
@@ -126,7 +130,12 @@ def test_forge_root_fails_actionably(tmp_path):
         {"HOME": str(tmp_path / "empty-home"), "CLAUDE_PLUGIN_ROOT": ""},
     )
     assert result.returncode == 1
-    assert result.stderr.strip() == FAILURE_MESSAGE
+    stderr = result.stderr.strip()
+    assert stderr, "step 4 must fail with a diagnostic, not silently"
+    for marker in FAILURE_MARKERS:
+        assert marker in stderr, (
+            f"forge-root.sh step-4 failure dropped {marker!r}: {stderr!r}"
+        )
 
 
 def test_forge_root_env_fallback(tmp_path):
