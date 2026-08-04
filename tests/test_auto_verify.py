@@ -760,6 +760,35 @@ def test_repeated_stage_exit_at_the_same_revision_is_byte_idempotent(
     assert json.loads(state_file.read_bytes())["updatedAt"] == written["updatedAt"]
 
 
+def test_a_pending_marker_at_the_current_revision_is_left_byte_identical(
+    tmp_path: Path,
+) -> None:
+    """REQ-COV-04: an already-owed debt at this revision is re-owed without a write.
+
+    The scheduler returns before it commits and before it stamps a time, so a
+    marker that already names the current revision survives the exit exactly as
+    it sits on disk. Seeded rather than written by an earlier exit, so the
+    early-return branch is the only thing that can make this pass.
+    """
+    root = _exit_project(tmp_path, state=_tech_state(
+        {"status": "auto-verify-pending",
+         "scheduledAt": "2020-01-01T00:00:00Z",
+         "scheduledStageVersion": 2,
+         "commitHash": None}
+    ))
+    state_file = root / "specs" / "widget" / ".pipeline-state.json"
+    before = state_file.read_bytes()
+
+    directives = _exit_ok(
+        root, "--feature", "widget", "--stage", "forge-2-tech"
+    )["directives"]
+
+    assert directives["runInStageVerify"] is True
+    assert directives["autoVerifyDebtRecorded"] is True
+    assert state_file.read_bytes() == before, "the early return must not write"
+    assert _read_entry(root)["scheduledAt"] == "2020-01-01T00:00:00Z"
+
+
 def test_a_newer_revision_creates_exactly_one_new_schedule(tmp_path: Path) -> None:
     root = _exit_project(tmp_path, state=_tech_state())
     state_file = root / "specs" / "widget" / ".pipeline-state.json"
@@ -851,6 +880,65 @@ def test_an_injected_write_failure_exits_2_with_no_dispatch_directive(
     assert proc.stdout == ""
     assert "runInStageVerify" not in proc.stdout
     assert state_file.read_bytes() == before
+
+
+def _corrupt(root: Path, feature: str = "widget") -> Path:
+    """Overwrite a feature's state file with bytes that are not JSON.
+
+    Args:
+        root: The project root produced by ``_exit_project``.
+        feature: The feature whose state file is corrupted.
+
+    Returns:
+        The path to the corrupted state file.
+    """
+    state_path = root / "specs" / feature / ".pipeline-state.json"
+    state_path.write_text("{not json at all", encoding="utf-8")
+    return state_path
+
+
+def test_a_corrupt_state_file_exits_2_with_no_payload_when_auto_verify_is_on(
+    tmp_path: Path,
+) -> None:
+    """REQ-COV-01: the debt write is strict where the routing read is tolerant.
+
+    Routing classifies through the tolerant reader, so the exit reaches the
+    scheduling boundary; the boundary reloads through the strict writer, which
+    refuses to overwrite an unparseable file. The refusal is the whole payload:
+    stdout carries nothing at all, and the file is left as it was found.
+    """
+    root = _exit_project(tmp_path, state=_tech_state())
+    state_path = _corrupt(root)
+    before = state_path.read_bytes()
+
+    proc = _stage_exit(root, "--feature", "widget", "--stage", "forge-2-tech")
+
+    assert proc.returncode == 2, proc.stdout
+    assert not proc.stdout.strip(), "a refused exit must print no payload"
+    assert "not valid JSON" in proc.stderr
+    assert "refusing to overwrite" in proc.stderr
+    assert state_path.read_bytes() == before
+
+
+def test_a_corrupt_state_file_closes_the_stage_normally_when_auto_verify_is_off(
+    tmp_path: Path,
+) -> None:
+    """REQ-COV-01: with auto-verify off the strict reload is never reached.
+
+    Nothing is owed, so nothing is written, so the strict reader never runs and
+    the corrupt file only degrades the routing snapshot to its defaults. The
+    stage still closes, and the file is still left as it was found.
+    """
+    root = _exit_project(tmp_path, config={}, state=_tech_state())
+    state_path = _corrupt(root)
+    before = state_path.read_bytes()
+
+    payload = _exit_ok(root, "--feature", "widget", "--stage", "forge-2-tech")
+
+    directives = payload["directives"]
+    assert directives["runInStageVerify"] is False
+    assert directives["autoVerifyDebtRecorded"] is False
+    assert state_path.read_bytes() == before
 
 
 def test_an_interrupted_dispatch_leaves_the_marker_readable_from_a_new_process(
