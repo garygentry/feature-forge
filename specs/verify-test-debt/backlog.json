@@ -18,8 +18,8 @@
         "No file under `adapters/` was hand-edited, and no added canon prose cites a path under `specs/`",
         "`bash scripts/validate.sh` reports \"All checks passed!\""
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-04T19:24:03.944Z",
       "dependsOn": [],
       "notes": "REQ-GUARD-01, REQ-GUARD-03, REQ-CANON-01, REQ-CANON-02. This is the only item that touches `skills/` or `references/`, but it is **not** the only item that must regenerate adapters — `scripts/forge-session.py` is a `build-adapters.py` runtime helper copied byte-identically into every bundle, so items 002 and 003 must regenerate too. After a later `git checkout`/`merge`/`pull`, adapter file modes can land as 0664 from the ambient umask and fail the mode test — re-running `build-adapters.py` restores 0644; that is not a content defect. The existing `tests/test_capability_determination_prose.py` should stay green through this edit: the pointer shape used by forge-5-loop/forge-6-docs does not match that file's lead-in filter, so forge-0-epic will not flip into `covered` and trip `test_the_roster_is_derived_not_listed`. If it does trip, the pointer wording has drifted from the §3.2 shape — fix the wording, do not touch `SURFACES_WITHOUT_PROSE` (item 005 deletes it).",
       "estimatedIterations": 1,
