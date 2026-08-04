@@ -46,8 +46,8 @@
         "`python3 scripts/build-adapters.py --check` exits 0, and all six adapter mirrors are staged in the same commit as the `scripts/forge-session.py` change, with no file under `adapters/` hand-edited",
         "`bash scripts/validate.sh` reports \"All checks passed!\""
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-04T19:39:04.932Z",
       "dependsOn": [],
       "notes": "REQ-FIX-01 (production) + REQ-COV-02 (its coverage). Paired deliberately: `05` §10.2 makes \"the validation must land before its test\" the one hard ordering constraint in the backfill, so shipping them together keeps the item self-contained and green. Narration rule (REQ-CANON-03) applies to every item in this backlog: comments, docstrings, and test narration state intent only — no counts, no \"measured\", no \"confirmed\", no empirical claims. Acceptance evidence goes in the commit message.",
       "estimatedIterations": 1,
