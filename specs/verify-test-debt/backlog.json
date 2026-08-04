@@ -132,8 +132,8 @@
         "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
         "`bash scripts/validate.sh` reports \"All checks passed!\""
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-04T19:33:57.636Z",
       "dependsOn": [
         "001"
       ],
