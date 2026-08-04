@@ -2020,6 +2020,35 @@ def test_docs_routes_on_the_state_epic_back_pointer_without_an_explicit_flag(
     assert d["primaryCommand"] == "/feature-forge:forge-1-prd beta"
 
 
+def test_an_unsafe_epic_back_pointer_degrades_to_the_standalone_route(
+    tmp_path: Path,
+) -> None:
+    """REQ-COV-07: an unusable on-disk epic name routes standalone, not fatally.
+
+    The back-pointer is untrusted on-disk data, so it is name-checked before it
+    can steer routing. A value that fails the check leaves no epic to route
+    against, and the exit falls back to the standalone terminus rather than
+    failing a stage closing on data the user did not type.
+    """
+    root = _project(
+        tmp_path,
+        config={},
+        state={
+            "pipelineStatus": "active",
+            "epic": "../evil",
+            "stages": {"forge-5-loop": {"status": "complete", "version": 1}},
+        },
+    )
+
+    payload = _docs(root, "widget", "complete")
+
+    # `_exit` already asserts exit 0: the closing succeeds.
+    directives = payload["directives"]
+    assert "<new-feature>" in payload["nextSteps"], "the standalone terminus was not taken"
+    assert "../evil" not in directives["primaryCommand"]
+    assert payload["nextSteps"].rstrip("\n").endswith(SENTINEL)
+
+
 def test_docs_pi_translates_both_the_route_and_the_secondary_mentions(
     tmp_path: Path,
 ) -> None:

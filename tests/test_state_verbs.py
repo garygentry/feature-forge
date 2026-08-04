@@ -734,6 +734,52 @@ def test_commit_hash_follow_up_touches_only_commit_hash(tmp_path):
     }, "the Commit-2 follow-up must leave status/version/artifacts intact"
 
 
+def test_commit_2_ignores_based_on_artifact_and_preserve_commit_hash(tmp_path: Path) -> None:
+    """REQ-COV-05: the commit-2 branch records the hash and discards the rest.
+
+    Ignoring is branch precedence, not rejection: argparse accepts these flags
+    and the branch never reads them. Everything the completion write owns must
+    survive the follow-up unchanged, so the surrounding entry is compared as a
+    whole rather than field by field.
+    """
+    _seed(
+        tmp_path,
+        {
+            "forge-1-prd": {
+                "status": "complete",
+                "completedAt": "2026-01-01T00:00:00Z",
+                "version": 2,
+                "basedOnVersions": {},
+                "artifacts": ["PRD.md"],
+                "commitHash": None,
+            }
+        },
+    )
+    before = _state_of(tmp_path)["stages"]["forge-1-prd"]
+
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+        "--version", "2", "--commit-hash", _FULL_HASH,
+        "--based-on", "forge-2-tech=9",
+        "--artifact", "SHOULD-NOT-BE-RECORDED.md",
+        "--preserve-commit-hash",
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+
+    after = _state_of(tmp_path)["stages"]["forge-1-prd"]
+    assert after["commitHash"] == _FULL_HASH
+    # Every other field is exactly what the completion write left behind.
+    assert {k: v for k, v in after.items() if k != "commitHash"} == {
+        k: v for k, v in before.items() if k != "commitHash"
+    }
+    assert after["basedOnVersions"] == {}, "--based-on must not reach the commit-2 branch"
+    assert after["artifacts"] == ["PRD.md"], "--artifact must not reach the commit-2 branch"
+    assert after["status"] == "complete"
+    assert after["completedAt"] == "2026-01-01T00:00:00Z"
+    assert after["version"] == 2
+
+
 def test_state_complete_accepts_every_40_hex_casing_verbatim(tmp_path):
     """REQ-STATE-01: 40 hex characters, in any case, recorded exactly as supplied."""
     for label, value in _ACCEPTED_HASHES:
