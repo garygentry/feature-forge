@@ -103,8 +103,8 @@
         "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
         "`bash scripts/validate.sh` reports \"All checks passed!\""
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-04T19:58:48.411Z",
       "dependsOn": [],
       "notes": "REQ-COV-03. The production constant and its test are paired because the test cannot be written against a constant that does not exist (`05` §10.2). Independent of items 002/003 — different files entirely. Typed `test` because the test is the deliverable; the paired `PRELUDE_CRITERIA` constant is the minimum production change required to write it, and is the only `eval/` edit in this feature — items 009 and 010 remain the strictly test-only items, and their \"no production source file is modified\" criterion is deliberately not carried here. Narration states intent only (REQ-CANON-03).",
       "estimatedIterations": 1,
