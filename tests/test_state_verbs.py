@@ -23,6 +23,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from _forge_paths import REFERENCES, REPO_ROOT, SCRIPTS, SKILLS, read
 from _state_schema import validate_state
 
@@ -768,6 +770,36 @@ def test_state_complete_rejects_a_short_or_malformed_hash_before_mutation(tmp_pa
         assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
         assert not result.stdout.strip(), f"{label} produced stdout"
         assert state_path.read_bytes() == before, f"{label} mutated state"
+
+
+@pytest.mark.parametrize("raw", ["0", "-1"], ids=["zero", "negative"])
+def test_state_complete_rejects_a_non_positive_version_before_mutation(
+    tmp_path: Path, raw: str
+) -> None:
+    """REQ-COV-02 / REQ-FIX-01: the write domain matches the read domain.
+
+    The read path already refuses a version below 1, so accepting one at the
+    write path records a value that a later read must reject — poisoning the
+    file at write time and failing at read time. The check runs before the state
+    file is loaded, so a rejection leaves it byte-identical.
+    """
+    root = tmp_path / f"version-{raw}"
+    _seed(root, {"forge-1-prd": {"status": "complete", "version": 1}})
+    specs = root / "specs"
+    before = _state_bytes(specs)
+
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+        "--version", raw, "--artifact", "PRD.md",
+        "--specs-dir", str(specs),
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert result.stderr.strip() == (
+        f"Error: --version must be a positive integer; got {raw}"
+    )
+    assert not result.stdout.strip(), "a refused write must print nothing"
+    assert _state_bytes(specs) == before, "the rejected write must not mutate state"
 
 
 def test_commit_hash_against_an_incomplete_stage_exits_2(tmp_path):

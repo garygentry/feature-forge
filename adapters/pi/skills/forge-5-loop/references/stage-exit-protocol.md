@@ -138,6 +138,14 @@ throws away the in-context digest for no reason. Pass `manual` only when there i
 question mechanism **and** **no** permitted dispatch — genuine incapability, never a
 consent step.
 
+**A dispatch bar routes an auto-verify directive through the gate; it never resolves it.**
+When `runInStageVerify: true` arrives and you may not dispatch unsolicited, that directive
+is **presented through the Standard Verify Gate** in its consent form — see "Consent
+variant on a `none` gate" below — and the clean-room `forge-verifier` is **dispatched on
+the affirmative choice**, never merely printed for the user to run later. Such a bar is
+**never grounds to skip verification**, and it is never resolved by **advancing to the
+production successor** while verification is unresolved.
+
 **Do not use `host == claude` as a capability proxy.** It is not one in either direction:
 
 - a capable Pi session is `--host pi --verify-capability interactive`, and receives the

@@ -337,6 +337,31 @@ def test_prelude_scorer_ignores_reconnaissance_before_the_real_call() -> None:
     assert criteria["functionally_equivalent"] is True
 
 
+#: The four prelude criteria, spelled out here rather than imported. Comparing the module
+#: constant against itself would be vacuous; this is the second, independent copy that
+#: makes a silently added or dropped criterion fail.
+SPEC_PRELUDE_CRITERIA = (
+    "attempted_resolver",
+    "byte_identical",
+    "resolver_line_identical",
+    "functionally_equivalent",
+)
+
+
+def test_the_prelude_scorer_returns_exactly_the_four_specified_criteria() -> None:
+    """REQ-COV-03: pin probe 2's criterion key set the way probe 3's is pinned.
+
+    Every key ANDs into the run's compliance flag, so dropping one silently
+    widens what counts as compliant. Both sides are asserted: the scorer's live
+    output and the module constant, each against this file's own copy.
+    """
+    command = f'{ce.BOOTSTRAP_PRELUDE}\npython3 "$R/scripts/forge-session.py" doctor --json'
+    criteria = ce.score_prelude({"bash_commands": [command]})
+
+    assert tuple(criteria) == SPEC_PRELUDE_CRITERIA
+    assert ce.PRELUDE_CRITERIA == SPEC_PRELUDE_CRITERIA
+
+
 def test_executing_command_falls_back_to_a_bare_resolver() -> None:
     bare = f'{ce.BOOTSTRAP_PRELUDE}\necho "$R"'
     assert ce.executing_command(["ls", bare]) == bare

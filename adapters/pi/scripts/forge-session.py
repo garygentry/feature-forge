@@ -4649,9 +4649,9 @@ def cmd_state_complete(
         surfaced in the --json echo / printer but NEVER written to disk.
 
     Raises:
-        UsageError: Contradictory ``--resumable --status complete``, a short or
-            non-hex ``--commit-hash``, a ``--commit-hash`` follow-up against a
-            stage that is not complete, an
+        UsageError: Contradictory ``--resumable --status complete``, a
+            ``--version`` below 1, a short or non-hex ``--commit-hash``, a
+            ``--commit-hash`` follow-up against a stage that is not complete, an
             unknown feature directory, an unparseable state file, or a failed
             atomic write (→ exit 2).
     """
@@ -4659,6 +4659,9 @@ def cmd_state_complete(
         raise UsageError(
             "--resumable implies --status in-progress; do not pass --status complete"
         )
+    # The write path must not accept a version the read path refuses; checked before
+    # the state file is loaded for mutation, so a rejection touches nothing.
+    _require_positive_int(version, "--version")
     if commit_hash is not None:
         # Branch 1's first act: full 40-hex only, validated BEFORE the
         # state file is loaded for mutation and long before _commit_state. Legacy

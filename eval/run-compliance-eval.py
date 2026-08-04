@@ -1689,6 +1689,17 @@ def executing_command(commands: list[str]) -> str:
     return resolver_commands[0] if resolver_commands else ""
 
 
+#: The exact criteria `score_prelude` reports. Declared once so the scorer, the report,
+#: and the tests all name the same set — a criterion silently added or dropped would
+#: change what "compliant" means without changing any assertion.
+PRELUDE_CRITERIA: Final[tuple[str, ...]] = (
+    "attempted_resolver",
+    "byte_identical",
+    "resolver_line_identical",
+    "functionally_equivalent",
+)
+
+
 def score_prelude(transcript: dict) -> dict[str, bool]:
     """Score the command the model actually ran against the byte-pinned prelude."""
     commands = transcript.get("bash_commands", [])
