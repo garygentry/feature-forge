@@ -16,6 +16,7 @@ conformance goes through ``tests/_state_schema.py``.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import re
@@ -133,10 +134,43 @@ def test_next_stage_still_returns_prd_for_a_fresh_standalone_feature():
     assert FS.next_stage({"stages": {}}) == "forge-1-prd"
 
 
+def _imported_modules(source: str) -> frozenset[str]:
+    """Root module names bound by an import statement anywhere in ``source``.
+
+    Scanning the parsed statements rather than the raw text means prose that
+    names a module — a comment explaining why it is unused, a docstring, an
+    error string — is not mistaken for a dependency on it.
+
+    Args:
+        source: Python source text to parse.
+
+    Returns:
+        The root name of every module reached by an ``import x`` or
+        ``from x import y`` statement, at module scope or inside a function.
+
+    Raises:
+        SyntaxError: ``source`` is not parseable Python. The guard fails loudly
+            rather than reporting an empty import set.
+    """
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module.split(".")[0])
+    return frozenset(names)
+
+
 def test_tempfile_is_imported_and_jsonschema_is_not():
-    source = read(FORGE_SESSION)
-    assert re.search(r"^import tempfile$", source, re.M)
-    assert "jsonschema" not in source
+    """The atomic write path needs `tempfile`; importing `jsonschema` would make
+    the script unrunnable where it is absent."""
+    imported = _imported_modules(read(FORGE_SESSION))
+    assert "tempfile" in imported, (
+        f"{FORGE_SESSION.name} does not import tempfile; the atomic write path needs it"
+    )
+    assert "jsonschema" not in imported, (
+        f"{FORGE_SESSION.name} imports jsonschema, which is not available in CI"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -3220,6 +3254,34 @@ def _canon_text_files() -> list[Path]:
     )
 
 
+#: Clause boundaries for the `--amend` scan: sentence-final punctuation, the
+#: parenthesis pair, and a comma introducing a following instruction. A
+#: prohibition on one side of a boundary does not govern a mention on the other.
+_CLAUSE_BOUNDARY: Final[re.Pattern[str]] = re.compile(r"[;:()!?]|\.(?=\s|$)|,\s+then\b")
+
+#: The wording that counts as forbidding `--amend` within its own clause. Matched
+#: case-insensitively and on word boundaries, so canon may phrase the prohibition
+#: however it reads best.
+_AMEND_PROHIBITION: Final[re.Pattern[str]] = re.compile(
+    r"\b(?:never|not|no|without|forbid(?:s|den)?|prohibit(?:s|ed)?"
+    r"|disallow(?:s|ed)?|ban(?:s|ned)?|refuse(?:s|d)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _amend_clauses(line: str) -> list[str]:
+    """Return the clause-sized fragments of ``line`` that mention ``--amend``.
+
+    Args:
+        line: One line of canon prose or source text.
+
+    Returns:
+        Every fragment containing ``--amend``, delimited by ``_CLAUSE_BOUNDARY``.
+        Empty when the line does not mention the flag at all.
+    """
+    return [part for part in _CLAUSE_BOUNDARY.split(line) if "--amend" in part]
+
+
 def test_no_script_reaches_for_amend_at_all():
     """`--amend` is not a route any executable may take (REQ-STATE-04)."""
     for path in sorted(SCRIPTS.rglob("*.py")) + sorted(SCRIPTS.rglob("*.sh")):
@@ -3227,24 +3289,23 @@ def test_no_script_reaches_for_amend_at_all():
 
 
 def test_every_canon_mention_of_amend_forbids_it():
-    """Prose may name `--amend` only to prohibit it — never as an instruction.
+    """Prose may name `--amend` only inside a clause that forbids it.
 
     The two-commit protocol exists precisely because amending rewrites HEAD, so a
     hash captured before the amend points at a commit that is not in the final
-    history. A line that mentioned `--amend` without forbidding it would be a
-    provenance route, however it was phrased.
+    history. A prohibition in a NEIGHBOURING clause does not govern the mention,
+    and a mention its own clause forbids is acceptable however it is phrased — so
+    the negation is matched against the clause, not the line.
     """
     files = _canon_text_files()
     assert files, "no canon files were scanned"
     seen = 0
     for path in files:
         for number, line in enumerate(read(path).splitlines(), start=1):
-            if "--amend" not in line:
-                continue
-            seen += 1
-            lowered = line.lower()
-            assert "never" in lowered or "without" in lowered, (
-                f"{path.relative_to(REPO_ROOT)}:{number} mentions --amend without "
-                f"forbidding it:\n{line.strip()}"
-            )
+            for clause in _amend_clauses(line):
+                seen += 1
+                assert _AMEND_PROHIBITION.search(clause), (
+                    f"{path.relative_to(REPO_ROOT)}:{number} mentions --amend in a "
+                    f"clause that does not forbid it:\n{clause.strip()}"
+                )
     assert seen, "the prohibition itself disappeared from canon"
