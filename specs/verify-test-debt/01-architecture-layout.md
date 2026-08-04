@@ -303,8 +303,8 @@ capability surfaces.
       `specs/`.
 - [ ] `from test_stage_exit_protocol import CANONICAL_EXIT_SITES` resolves after all edits
       and yields **9** entries.
-- [ ] The seven REQ-COV tests exist in the seven host files named in §4.2, each reusing that
-      file's own CLI wrapper.
+- [ ] The seven REQ-COV requirements each have at least one named test, in the host file
+      §4.2 assigns it (four files in total), each reusing that file's own CLI wrapper.
 - [ ] `tests/conftest.py`, `scripts/epic-manifest.py`, and every `eval/` fixture are absent
       from the diff.
 - [ ] No new directory, module, class, CLI verb, flag, exit code, or payload key appears in

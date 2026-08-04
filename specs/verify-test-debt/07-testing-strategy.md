@@ -163,7 +163,7 @@ trim removes.
 | Suite collected today | 1842 | measured (§2) |
 | `_ACCEPTED_HASHES` | 3 entries | measured |
 | `_REJECTED_HASHES` | 10 entries | measured |
-| `_VERB_INVOCATIONS` | **9** entries | measured — `tech-spec.md` §8.2 assumed 8 |
+| `_VERB_INVOCATIONS` | **8** entries | measured — matches `tech-spec.md` §8.2 |
 | epic corrupt-state loop | 5 shapes | measured |
 | gate-selection unparametrized | 5 functions | `00` §9.4 |
 
@@ -176,8 +176,8 @@ trim removes.
 | `test_stage_exit_protocol.py` — stamp-verbatim | 18 items | **18** | 0 (REQ-TRIM-02) |
 | `test_stage_exit_protocol.py` — everything else | 17 items | **17** | 0 |
 | `test_state_verb_call_sites.py` | 10 items | **9** | **−1** (−2 deleted, +1 mutation control) |
-| REQ-COV backfill | — | **10** named functions | **+10** |
-| REQ-BRIT-07 dedup | 13 items | **56** | **+43** |
+| REQ-COV backfill | — | **15** collected (10 named functions) | **+15** |
+| REQ-BRIT-07 dedup | 13 items | **55** | **+42** |
 
 ### 5.3 The dedup row, computed
 
@@ -186,9 +186,9 @@ Parametrizing **expands** collected items while **reducing** function count. Bot
 | Family | Functions before → after | Collected before → after |
 |---|---|---|
 | 40-hex hash | 5 → **5** (never merged) | 5 → **36** (2×3 + 3×10) |
-| corrupt-file | 3 → **3** (see below) | 3 → **15** (1 + 5 + 9) |
+| corrupt-file | 3 → **3** (see below) | 3 → **14** (1 + 5 + 8) |
 | gate selection | 5 → **1** | 5 → **5** |
-| **total** | **13 → 9** | **13 → 56** |
+| **total** | **13 → 9** | **13 → 55** |
 
 > **Divergence from `tech-spec.md` §3.14, adopted deliberately.** The tech spec's action
 > table says corrupt-file is "3 hand-rolled → 1 parametrized". **That is not achievable
@@ -199,7 +199,7 @@ Parametrizing **expands** collected items while **reducing** function count. Bot
 >   loop**. There is nothing to parametrize.
 > - `test_a_corrupt_or_malformed_epic_state_is_refused_byte_intact` — loops **5**
 >   malformation shapes over `.epic-state.json` via `_epic_verify`.
-> - `test_every_verb_refuses_a_corrupt_state_file_byte_intact` — loops **9** registered verbs
+> - `test_every_verb_refuses_a_corrupt_state_file_byte_intact` — loops **8** registered verbs
 >   over the feature state via `_run`.
 >
 > Merging them needs a mechanism-selecting parameter and a branching body — strictly worse
@@ -217,25 +217,30 @@ Parametrizing **expands** collected items while **reducing** function count. Bot
  −39  prose guard          (43 → 4)
  −60  mutation controls    (67 → 7)
   −1  call-sites guard     (10 → 9)
- +10  REQ-COV backfill     (10 named functions)
- +43  REQ-BRIT-07 dedup    (13 → 56 collected)
+ +15  REQ-COV backfill     (10 named functions, 15 collected)
+ +42  REQ-BRIT-07 dedup    (13 → 55 collected)
 ────
-1795  expected
+1799  expected
 ```
 
-**An implementer landing near 1795 is seeing the expected parametrization expansion, not an
+**An implementer landing near 1799 is seeing the expected parametrization expansion, not an
 accidental addition.** This is the number REQ-QUAL-01's full-suite check is read against.
 
 Two stated assumptions, each with its recompute rule:
 
-1. **The backfill contributes 10 collected items** — one per named function
-   (`05-coverage-backfill.md` covers the seven gaps with ten named tests: REQ-COV-01 → 2,
-   REQ-COV-06 → 3, the rest → 1 each). **If any backfill test is parametrized, this rises**;
-   recompute §5.2 and §5.4 together.
-2. **`_VERB_INVOCATIONS` has 9 entries.** `tech-spec.md` §8.2 wrote "± up to +7 more if the
-   corrupt-file dedup is parametrized over all 8 verb invocations" — the real cardinality is
-   **9**, and the epic loop contributes 4 more, so the corrupt-file expansion is **+12**, not
-   +7. This is why §5.4 lands at 1795 rather than the tech spec's ≈1781.
+1. **The backfill contributes 15 collected items across 10 named functions.**
+   `05-coverage-backfill.md` covers the seven gaps with ten named tests (REQ-COV-01 → 2,
+   REQ-COV-06 → 3, the rest → 1 each). Two of those ten are parametrized as specified, so
+   the collected contribution is **not** one per function and the assumption is discharged
+   here rather than left conditional: `05` §3.2 collects **2** (`zero`, `negative`), `05`
+   §7.2's first test collects **5** (the `_UNSAFE_ARTIFACT_PATHS` roster), and the other
+   eight functions collect **1** each — 2 + 5 + 8 = **15**. **If a backfill test gains or
+   loses ids, recompute §5.2 and §5.4 together.**
+2. **`_VERB_INVOCATIONS` has 8 entries.** `tech-spec.md` §8.2's "± up to +7 more if the
+   corrupt-file dedup is parametrized over all 8 verb invocations" is correct for the verb
+   loop alone; the epic loop contributes 4 more, so the corrupt-file expansion is **+11**.
+   That expansion, together with the backfill's parametrized ids in assumption 1, is why
+   §5.4 lands at 1799 rather than the tech spec's ≈1781.
 
 ## 6. Countable Success Criteria (REQ-QUAL-04)
 
@@ -379,8 +384,9 @@ rather than filing them:
 - **Probe-1 criterion pinning** in the compliance eval (`04` §5). REQ-COV-03 names the
   prelude criterion only.
 - **`ruff check tests/` reaching zero.** The requirement is non-increase.
-- **Detection-strength parity** for the structural scan. It is **weaker** (20/34) and
-  recorded as a declared boundary (`00` §6.4), not asserted as parity.
+- **Detection-strength parity** for the structural scan. It is **weaker**, and recorded as a
+  declared boundary (`00` §6.4), not asserted as parity. The residual is deliberately not
+  enumerated (`03` §9).
 - **`stage_exit`'s reconcile-command interpolation** — REQ-COV-07 asserts the degradation
   only and does **not** pin the interpolation as golden (`04` §5).
 
@@ -395,7 +401,7 @@ Gate execution requires `pytest`, `ruff`, `python3`, and `bash`. No new dependen
 
 - [ ] All six gates in §3 pass, in order, on a clean tree.
 - [ ] The import gate in §3.1 passes after **both** `02` and `03` have landed.
-- [ ] Suite collection lands near **1795** (§5.4); a large divergence means a roster changed
+- [ ] Suite collection lands near **1799** (§5.4); a large divergence means a roster changed
       without §5 being recomputed.
 - [ ] `ruff check tests/` reports **≤19** errors, and no `F401` from a removed-usage import.
 - [ ] Every countable criterion in §6 is satisfied.

@@ -41,8 +41,11 @@ Project conventions this feature follows without deviation:
   **no** dataclasses, **no** `jsonschema` at runtime.
 - Google-style docstrings with `Args:` / `Returns:` / `Raises:` on every public function.
 - `UsageError` for every failure that maps to CLI exit 2 (§8).
-- `@pytest.mark.parametrize` for table-driven tests — an established idiom in every file
-  this feature touches, so nothing here introduces a new convention.
+- `@pytest.mark.parametrize` for table-driven tests — the established idiom in
+  `test_stage_exit.py`, `test_state_schema_conformance.py`, and `test_auto_verify.py`, so
+  nothing here introduces a new convention. **`tests/test_state_verbs.py` uses it nowhere
+  and does not import `pytest`; work that adds a decorator there must add the import
+  (§10.5).**
 
 **No type is added, removed, or retyped.** `.pipeline-state.json` conforms to
 `references/pipeline-state-schema.json` exactly as today and needs no migration. The only
@@ -85,9 +88,10 @@ work. Measured against the clause set in §3.2, the canonical section today stat
 | **c2** | **no** | `shared-conventions.md` § "Verify Capability" |
 | **c3** | **no** | `shared-conventions.md` § "Verify Capability" |
 
-The section does additionally carry the Standard Verify Gate and the recovery path in its
-`### Clean-room unavailable, or a non-answer` subsection, and the `host`-is-not-a-proxy
-rule.
+The section additionally carries the recovery path in its `### Clean-room unavailable, or a
+non-answer` subsection and the `host`-is-not-a-proxy rule. The Standard Verify Gate itself
+lives in the same file under `## Directive contract` → `### verifyGate: "standard"`, which
+the capability section references rather than restates.
 
 > **The current arrangement is inverted, and that inversion is the defect REQ-GUARD-01
 > closes.** Four of the six obligations are stated *only* in the surface designated as the
@@ -297,17 +301,29 @@ both. **Bounding on the previous call line produces a false failure on exactly t
 This is specified rather than left to the implementer because the wrong variant looks
 correct and fails on one site out of thirty-four.
 
-| Variant | Green on canon | Self-mutation detection |
-|---|---|---|
-| heading-bounded only | 34/34 | 12/34 |
-| **fence-block-bounded (adopted)** | **34/34** | **20/34** |
-| call-line-bounded | 33/34 (false failure) | 24/34 |
+| Variant | Green on canon |
+|---|---|
+| heading-bounded only | 34/34 |
+| **fence-block-bounded (adopted)** | **34/34** |
+| call-line-bounded | 33/34 (false failure) |
+
+**Green on canon is the reproducible column, and it is the one the decision rests on.** The
+three variants also differ in how finely they discriminate *per site* under self-mutation:
+the adopted bound discriminates less finely than the call-line bound and more finely than
+the heading-only bound. That ordering is stated qualitatively **on purpose** — no numeric
+census is given, because "remove this site's own mandate" has no single mechanical meaning
+when a region carries more than one mandate, and an unreproducible numeral in this table
+would be re-derived differently by every later round (§6.4).
 
 ### 6.3 Fence-aware heading detection is mandatory
 
-A naive `^#{1,6} ` scan misreads bash comments inside fences (e.g.
-`# Commit 1 — before \`git commit\``) as headings, truncating the region and producing **2
-false failures** in `shared-conventions.md` § Git Commit Protocol.
+A naive `^#{1,6} ` scan reads bash comments inside fences (e.g.
+`# Commit 1 — before \`git commit\``) as headings. Under the fence-**block** bound those
+comments sit inside the block and so satisfy neither `index < first` nor `index > last`,
+which means they cannot move either bound — canon is green today either way. The
+fence-aware index is required because the bound degrades to the call's own line for any
+`state-*` call found **outside** a fence (`03` §4.5's `(index, index)` fallback), and there
+an in-fence `#` line does truncate the region.
 
 **The heading index MUST toggle on fence delimiters and ignore any `#` line while inside a
 fence.** Specified, not left to the implementer, because the naive version fails in a way
@@ -315,9 +331,10 @@ that looks like a canon defect.
 
 ### 6.4 Declared boundary — the residual is recorded, not hidden
 
-At 20/34, fourteen sites remain detectable only through a neighbouring call's mandate in
-the same region. This is a **real reduction** from the current window's per-site
-discrimination, accepted in exchange for removing every tuned integer.
+Some sites remain detectable only through a neighbouring call's mandate in the same region.
+This is a **real reduction** from the current window's per-site discrimination, accepted in
+exchange for removing every tuned integer. **The residual is not enumerated** — see §6.2 on
+why no numeric census is stated.
 
 Recorded here so a later round resolves it against a position rather than re-deriving it.
 A mutation control pins the `state-artifact` case specifically (`03` §4.4).

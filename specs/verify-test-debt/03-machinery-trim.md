@@ -327,10 +327,13 @@ would enlarge the diff for no behavioral gain.
 `00-core-definitions.md` §6.3 makes this non-optional. A naive `^#{1,6} ` scan reads the
 bash comments inside `references/shared-conventions.md` § Git Commit Protocol
 (`# Commit 1 — before \`git commit\``, `# Commit 2 — after Commit 1 lands, so its hash
-exists`) as headings. Those two lines sit **between** the two `state-complete` calls and
-**after** the paragraph carrying their shared `--epic` mandate, so a naive index truncates
-both calls' regions below the mandate and produces **2 false failures** on a canon file that
-is correct.
+exists`) as headings. Under the fence-**block** bound of §4.4 those two lines sit *inside*
+the block holding both `state-complete` calls, so they satisfy neither `index < first` nor
+`index > last` and cannot move either bound — both calls keep identical bounds under either
+heading mode, and canon is green either way. The fence-aware index is required because the
+bound degrades to the call's own line for any `state-*` call found **outside** a fence
+(§4.5's `(index, index)` fallback), and there an in-fence `#` line does truncate the region
+below its mandate.
 
 ```python
 def _fence_flags(lines: list[str]) -> list[bool]:
@@ -582,11 +585,10 @@ as a canon defect rather than a guard defect:
 | Wrong variant | Symptom |
 |---|---|
 | bounding on the previous **call line** instead of the previous fence **block** | the Git Commit Protocol's second `state-complete` gets a region starting *below* the shared mandate → **1 false failure** on a correct canon file |
-| a naive `^#{1,6} ` heading scan that does not toggle on fences | the two bash comments inside the Git Commit Protocol fence are read as headings → **2 false failures** |
+| a naive `^#{1,6} ` heading scan that does not toggle on fences | no false failure under the fence-block bound — the two bash comments sit inside the block and cannot move a bound; the region truncates for any **unfenced** call site, which is why the index is fence-aware |
 
-Per `00` §6.2, the call-line variant scores higher on self-mutation detection (24/34 vs
-20/34) and is nonetheless **rejected**: a guard that is red on correct canon is not a
-stronger guard.
+Per `00` §6.2, the call-line variant discriminates more finely per site and is nonetheless
+**rejected**: a guard that is red on correct canon is not a stronger guard.
 
 **Recorded limitation.** An **unterminated** fence in a canon file makes every later
 heading invisible to `_heading_lines` and contributes no block to `_call_blocks`, which
@@ -771,7 +773,7 @@ def _region_probe_site(text: str) -> CallSite:
 def _without_the_probe_mandate(text: str) -> str:
     """Return a copy of `text` with the probe site's own `--epic` mandate removed.
 
-    The mandate is located structurally — the lines of the probe's region that lie
+    The mandate is located structurally — the lines of the probe's lead-in that lie
     outside its own fenced block — so the control does not depend on the exact wording
     of the sentence carrying it, and no repository file is written.
 
@@ -782,13 +784,26 @@ def _without_the_probe_mandate(text: str) -> str:
         The same document with the flag struck from the probe's attached prose.
 
     Raises:
-        AssertionError: The probe's region carries no mandate to remove, so the control
+        AssertionError: The probe's lead-in carries no mandate to remove, so the control
             would assert nothing.
     """
     lines = text.splitlines()
     site = _region_probe_site(text)
-    lower, upper = site.bounds
     first, last = site.block
+    flags = _fence_flags(lines)
+    headings = _heading_lines(lines, flags)
+    blocks = _call_blocks(lines)
+    # The probe's own lead-in, fixed by document structure. Deliberately NOT
+    # site.bounds: a span taken from the function under test widens with it, so the
+    # control would delete a neighbour's mandate too and never go green.
+    lower = max(
+        max((index + 1 for index in headings if index < first), default=0),
+        max((end + 1 for _, end in blocks if end < first), default=0),
+    )
+    upper = min(
+        min((index for index in headings if index > last), default=len(lines)),
+        min((start for start, _ in blocks if start > last), default=len(lines)),
+    )
     mutated = list(lines)
     removed = 0
     for index in range(lower, upper):
@@ -797,7 +812,7 @@ def _without_the_probe_mandate(text: str) -> str:
         mutated[index] = mutated[index].replace(EPIC_FLAG, "the member flag")
         removed += 1
     assert removed, (
-        f"{CONVENTIONS.name}: the {_REGION_PROBE_VERB} region carries no `{EPIC_FLAG}` "
+        f"{CONVENTIONS.name}: the {_REGION_PROBE_VERB} lead-in carries no `{EPIC_FLAG}` "
         "mandate to delete — the control has nothing to mutate"
     )
     return "\n".join(mutated)
@@ -837,16 +852,22 @@ def test_deleting_a_call_sites_own_epic_mandate_is_reported():
     )
 ```
 
-Three properties make this a real control rather than a restatement:
+Four properties make this a real control rather than a restatement:
 
 1. **The `before` assertion establishes the baseline.** Without it, a guard that reported
    *every* site would satisfy the `after` assertion trivially.
-2. **The mutation is structural, not textual.** It strikes the flag from whichever region
+2. **The mutation is structural, not textual.** It strikes the flag from whichever lead-in
    lines carry it outside the probe's own fence, so rewording the mandate sentence in canon
    does not silently turn the control into a no-op.
 3. **Canon is re-read and compared afterwards**, matching the `_surface_is_unmutated`
    idiom in `test_stage_exit_protocol.py`: a control that mutated the repository would be a
    defect of its own.
+4. **The strike span is computed from document structure directly, never from
+   `_region_bounds`.** A control whose mutation is sized by the function under test cannot
+   detect that function widening: widening the region would widen the strike span in
+   lockstep, so the neighbouring call's mandate would be deleted too and the probe would
+   still be reported. Sizing the span independently is what makes the degradation in §13
+   observable.
 
 This is **one test inside REQ-TRIM-04's budget** (2 deleted, 1 added) and is the only thing
 that fails if the region silently widens again.
@@ -936,11 +957,21 @@ used for `ast.literal_eval` constant extraction, not self-inspection, and is out
 
 Recorded so a later round resolves them against a position rather than re-deriving them.
 
-**Detection strength: 20 of 34 sites, and this is not parity.** With the fence-block bound,
-14 sites remain detectable only through a neighbouring call's mandate in the same region.
-That is a **real reduction** from the window's per-site discrimination, accepted in exchange
-for removing every tuned integer (`00` §6.4). Detection is measured by removing each site's
-*own* mandate and asking whether the guard still reports that site.
+**Detection strength is reduced, and this is not parity.** With the fence-block bound, some
+sites remain detectable only through a neighbouring call's mandate in the same region. That
+is a **real reduction** from the window's per-site discrimination, accepted in exchange for
+removing every tuned integer (`00` §6.4).
+
+**The residual is deliberately not enumerated.** "Remove each site's own mandate and ask
+whether the guard still reports it" has no single mechanical meaning where a region carries
+more than one mandate — which is precisely the case the measurement would be about. The one
+realization this document ships, §6's `_without_the_probe_mandate`, strikes every in-region
+mandate outside the call's own block; applied per-site across canon it yields a materially
+different census than a rule striking only the call's own lead-in prose. Rather than pin a
+figure no later round could reproduce, this document states the ordering qualitatively (`00`
+§6.2) and keeps only the reproducible facts: **34/34 green on canon**, and **1 false failure**
+for the rejected call-line variant. `00` §9's "re-measure, never re-estimate" rule binds
+figures that have a procedure; this residual deliberately has none.
 
 **Do not read §5.1's tunability argument as a detection-parity claim.** `00` §6.5 states the
 distinction: the adopted bounds have nothing to tune; they do not discriminate as finely.
@@ -948,7 +979,7 @@ Both facts are true and neither implies the other.
 
 **The mutation control pins the `state-artifact` case specifically** (§6), which is the
 documented regression and the case the adopted variant recovers over the heading-only
-variant. It does **not** pin the other 13 residual sites, and no test in this document
+variant. It does **not** pin the remaining residual sites, and no test in this document
 claims to.
 
 **Not a goal of this workstream:** re-deriving the residual, adding per-site exemptions
@@ -989,7 +1020,7 @@ must be enough to locate the defect.
 
 > **Derived figures (REQ-TRIAL-06).** These are computed from §2.1, §3, §5.2, §6 and §8. If
 > any of those rosters changes, recompute this table **in the same edit**.
-> `07-testing-strategy.md` §8's suite total derives from this table in turn.
+> `07-testing-strategy.md` §5.2 and §5.4 derive from this table in turn.
 
 ## 12. Dependencies
 
@@ -1050,9 +1081,8 @@ Run `python3 -m pytest tests -q` after each block; the ordered gate list is
 - [ ] No exemption constant, allow-list, or per-site skip exists anywhere in
       `tests/test_state_verb_call_sites.py`; the epic-scoped `state-verify` under
       `--stage forge-0-epic` passes through its own region's prose.
-- [ ] `_heading_lines` returns no index inside a fenced block — verified by the guard being
-      green on `references/shared-conventions.md` § Git Commit Protocol, which is red under
-      a naive heading scan.
+- [ ] `_heading_lines(lines, _fence_flags(lines))` returns no index that `_fence_flags`
+      marks `True`, asserted directly against `references/shared-conventions.md`.
 - [ ] The two `state-complete` calls in § Git Commit Protocol resolve to **identical**
       `bounds`, confirming the bound is the fence block and not the call line.
 

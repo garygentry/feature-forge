@@ -507,6 +507,22 @@ These were checked and hold. They are the bulk of the suite.
   finding; (b) is cheaper and does not reopen the declared boundary. Every other finding has
   a single determined fix.
 
+  **RESOLVED 2026-08-03 — option (b).** Replace the three numerals with the qualitative
+  statement; keep `00` §6.2's "Green on canon" column (34/34, 34/34, 33/34), which is
+  reproducible. The declared boundary in `00` §6.4 and `07` §8's non-goal entry are not
+  reopened.
+
+- **V-004 — RESOLVED 2026-08-03: the finding is refuted; Step 4 is NOT applied.** Step 4's
+  own action requires re-confirming through `check-spec-purity.py`'s slice. Re-measured
+  through `read_frontmatter` + `body_start_line` **and** `check_body_size`'s trailing-empty
+  drop (`scripts/check-spec-purity.py`, the `if body_lines and body_lines[-1] == ""` guard),
+  the live figures are `forge-0-epic` **295** lines / **+5** headroom and `forge-verify`
+  **299** / **+1** — exactly what `01` §3.1 already states. V-004's 296 / 300 are the slice
+  lengths *before* that drop; both files end in a newline, so `str.split("\n")` yields a
+  trailing `""` element that `check_body_size` discards. The matching word counts (2749,
+  4365) confirm the same slice with only that difference. Applying Step 4 would write an
+  off-by-one into a correct table. `01` §3.1 is left unchanged.
+
 All other fixes can be applied directly.
 
 ### Execution Steps
@@ -594,3 +610,117 @@ All other fixes can be applied directly.
   and `03` §11 all carry the same numbers. This is the check the equivalent tech-spec table
   failed six times.
 - **Depends on:** Steps 1, 6
+
+---
+
+## Fix Progress
+
+- Step 1: [APPLIED] 2026-08-03 — V-001. Re-measured the input before editing:
+  `len(_VERB_INVOCATIONS)` is **8** (`state-enter`, `state-artifact`, `state-complete`,
+  `state-branch`, `state-note`, `state-decision`, `state-ecr`, `state-verify`);
+  `test_state_schema_conformance.VERB_INVOCATIONS` is 8 as well. Corrected `07` §5.1's
+  measured-input row (9 → 8, "How obtained" → `measured — matches tech-spec.md §8.2`),
+  §5.3's corrupt-file collected cell (15 → **14**, `1 + 5 + 8`) and total row (56 → **55**),
+  §5.3's divergence-note prose ("loops 9 registered verbs" → **8**), §5.2's `REQ-BRIT-07
+  dedup` row (56 / +43 → **55** / **+42**), §5.4's arithmetic block and total, and §10's
+  collection checkbox. `TRACEABILITY.md` correction row 4: the `_VERB_INVOCATIONS` clause is
+  struck and replaced with "8 entries, as `tech-spec.md` §8.2 states — re-measured, no
+  correction needed"; the parametrize/`import pytest` half of the row is accurate and stays.
+  `00` §9's rosters were not touched. (§5.2/§5.4 are revised once more in Step 6 to fold in
+  V-009's collected counts; the end-state figures are Step 8's.)
+
+- Step 2: [APPLIED] 2026-08-03 — V-002. Executed the specified algorithm against live canon
+  before editing, and the report reproduces exactly. With the span taken from `site.bounds`:
+  fence-block bound → `removed=1`, probe reported at line 386, control passes; heading-only
+  degradation → `removed=2`, probe **still** reported (sites 373 and 386), control **still
+  passes** — so it cannot detect the widening `03` §13 requires it to catch. Replaced
+  `_without_the_probe_mandate`'s span computation with the structure-derived version
+  (`_fence_flags` / `_heading_lines` / `_call_blocks` inline, never `_region_bounds`), with
+  the explanatory comment. Re-executed the replacement: fence-block → `removed=1`, probe
+  reported (passes); heading-only → `removed=1`, probe **not** reported (goes green), which
+  is what §13's REQ-TRIM-04 checkbox requires. Added the fourth "property" bullet stating
+  the strike span must never be sized by the function under test. `assert removed`,
+  `_region_probe_site`, `test_deleting_a_call_sites_own_epic_mandate_is_reported`, the
+  `before` baseline, and §13's checkbox are unchanged; "region" → "lead-in" in the two
+  docstring/message phrases the narrowed span made inaccurate.
+
+- Step 3: [APPLIED] 2026-08-03 — V-003. Executed the scan against live canon under both
+  heading modes: **34 sites, 0 misses under each**, and the two § Git Commit Protocol
+  `state-complete` calls resolve to identical bounds `(323, 352)` either way — the "2 false
+  failures" claim does not reproduce under the adopted fence-block bound. Replaced the
+  empirical claim with the structural one in `00` §6.3 and `03` §4.2, rewrote `03` §4.8's
+  second table row, and replaced `03` §13's REQ-TRIM-03 checkbox with the directly
+  performable form (`_heading_lines(lines, _fence_flags(lines))` returns no fence-flagged
+  index). `_fence_flags` and `_heading_lines` are unchanged, as the step requires.
+
+- Step 4: [NOT APPLIED] 2026-08-03 — V-004 refuted by re-measurement; user-confirmed skip.
+  The step's own action requires re-confirming through `check-spec-purity.py`'s slice rather
+  than a raw line count. Measured through `read_frontmatter` + `body_start_line` **and**
+  `check_body_size`'s trailing-empty drop (the `if body_lines and body_lines[-1] == ""`
+  guard): `forge-0-epic` = **295** lines / **+5** headroom, `forge-verify` = **299** /
+  **+1** — exactly what `01` §3.1 already states. V-004's 296 / 300 are the slice lengths
+  *before* that drop; both files end in a newline, so `str.split("\n")` yields a trailing
+  `""` the gate discards. Matching word counts (2749, 4365) confirm the same slice with only
+  that difference. `01` §3.1 left unchanged; applying the step would have written an
+  off-by-one into a correct table.
+
+- Step 5: [APPLIED] 2026-08-03 — V-005, V-011. Re-verified against the tree:
+  `tests/test_state_verbs.py` has zero `parametrize` occurrences and no `import pytest` in
+  its import block. Rewrote `00` §1's parametrize bullet to name the three files where the
+  idiom is established and to carry the `import pytest` obligation, and `05` §1.3's trailing
+  clause likewise. Replaced `05` §3.2's unresolved WARNING with the directive form. Swept
+  the suite for the superseded phrasings: the only remaining occurrences are in `07` §1 and
+  `06` §8.4's *correction notes*, which supersede the claim and are correct as written, and
+  in upstream `tech-spec.md`, which this stage does not edit. Two refinements over the
+  suggested text: the directive names **§3.2 and §7.2** rather than the finding's "§3.2,
+  §6.2 and §7.2" — §6.3 is REQ-COV-05's test section and carries no decorator, and a grep
+  confirms only two `@pytest.mark.parametrize` sites in `05`; and it records that the import
+  lands in this document, not `06`, because `05` §1.3 sequences `05` first (`06` §10 lists
+  the same addition for REQ-BRIT-07).
+
+- Step 6: [APPLIED] 2026-08-03 — V-006, V-007, V-008, V-009. `00` §3.1: the Standard Verify
+  Gate sentence now credits the capability section with the recovery path and the
+  `host`-is-not-a-proxy rule only, and points the gate itself at `## Directive contract` →
+  `### verifyGate: "standard"`; `02` §2's scope statement was checked and does not depend on
+  the gate's location (the six clauses are the scope). `03` §11: derived-figure pointer
+  retargeted from `07` §8 to `07` §5.2 and §5.4. `01` §9: the "seven host files" checkbox
+  now reads "seven REQ-COV requirements … (four files in total)". `05` §1.1: "ten named
+  tests across four host files, covering the seven gaps". Discharged `07` §5.4's assumption
+  1 rather than leaving it conditional: `05` §3.2 collects 2 ids and `05` §7.2's first test
+  collects 5 (the `_UNSAFE_ARTIFACT_PATHS` roster), the other eight functions 1 each, so the
+  backfill contributes **15** collected across 10 named functions. Carried that into §5.2's
+  row (+15) and §5.4's arithmetic. `05` §11's placement checkbox was checked and is already
+  correct.
+
+- Step 7: [APPLIED] 2026-08-03 — V-010, user decision **(b)**. Dropped the "Self-mutation
+  detection" column (20/34, 12/34, 24/34) from `00` §6.2, keeping the reproducible "Green on
+  canon" column (34/34, 34/34, 33/34), and stated the per-site ordering qualitatively with
+  the reason no census is given. Rewrote `00` §6.4 and `03` §9's detection-strength paragraph
+  to record the residual without enumerating it, naming why the procedure is not
+  recoverable: the only shipped realization (`03` §6's `_without_the_probe_mandate`) strikes
+  every in-region mandate outside the call's own block and yields a materially different
+  census than a rule striking only the call's own lead-in. Removed the trailing numerals
+  from `03` §4.8 and `07` §8's non-goal entry. The adopted variant, `00` §6.4's declared
+  boundary, and `07` §8's non-goal itself are unchanged — only how the residual is described.
+  Recorded the divergence from upstream as `TRACEABILITY.md` correction rows **11** (the
+  withdrawn figures) and **12** (the false-failure claim from Step 3), since both supersede
+  statements in `tech-spec.md` §3.5/§8, which this stage does not edit.
+
+- Step 8: [APPLIED] 2026-08-03 — verification only, no file changed by the step itself.
+  Re-derived `07` §5.4 independently from `00` §9's rosters and §5.1's measured inputs:
+  hash `5 → 36` (2×3 + 3×10), corrupt-file `3 → 14` (1 + 5 + 8), gate `5 → 5`, dedup
+  `13 → 55` (**+42**), backfill **15** (2 + 5 + 8×1); `1842 − 39 − 60 − 1 + 15 + 42 =
+  **1799**`. The block closes. The pass caught one straggler — §5.4 assumption 2 still ended
+  "lands at 1794" — which was corrected to 1799 with the reason (the backfill's parametrized
+  ids, per assumption 1) named. §5.2, §5.3, §5.4 and §10 now all carry the same numbers, and
+  `03` §11 points at §5.2/§5.4. A repo-wide grep for `1794`, `1795`, `13 → 56`, `20/34`,
+  `12/34`, `24/34`, `2 false failures`, `seven host files` and `seven tests across four`
+  returns nothing in the stage artifacts; the only hits are the two TRACEABILITY correction
+  rows that deliberately quote the superseded figures, and upstream `tech-spec.md`.
+
+**Gates run after the pass.** `check-spec-purity.py`: **PASS**, 0 violations.
+`scripts/validate.sh`: 1 error, the **pre-existing** traceability orphan baseline
+(`REQ-DEBT-04`, `REQ-REL-01`, `REQ-STATE-01`) that this report's own "What is correct"
+section records as quotations of existing docstrings per `TRACEABILITY.md` § Coverage
+Verification. `git diff` confirms this pass touches none of those three ids, so the error is
+unchanged by it, not introduced by it.

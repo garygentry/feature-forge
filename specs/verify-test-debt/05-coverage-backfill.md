@@ -32,8 +32,8 @@ this document only **tests** them.
 ### 1.1 The map
 
 This table is the audit trail a verifier checks against. The backfill is **not one file** —
-it is seven tests across four host files, so the map is the deliverable that makes
-"each of the seven gaps has a named test" (REQ-QUAL-04) checkable.
+it is **ten named tests across four host files**, covering the seven gaps, so the map is the
+deliverable that makes "each of the seven gaps has a named test" (REQ-QUAL-04) checkable.
 
 | Req | Behavior | Host file | Named test(s) |
 |---|---|---|---|
@@ -90,8 +90,9 @@ added test outside a family it belongs to.
 
 **Consequence for this document:** none of the tests below may be written as a hand-rolled
 loop that `06` would then have to convert. Where a test covers several inputs it is written
-with `@pytest.mark.parametrize` **from the start** (§7.2), which is an established idiom in
-all three files.
+with `@pytest.mark.parametrize` **from the start** (§7.2). Note that
+`tests/test_state_verbs.py` does not import `pytest` today — `00-core-definitions.md` §10.5
+requires the import to be added with the first decorator.
 
 ### 1.4 Narration rule (REQ-CANON-03)
 
@@ -339,11 +340,15 @@ def test_state_complete_rejects_a_non_positive_version_before_mutation(
     assert state_path.read_bytes() == before, "the rejected write must not mutate state"
 ```
 
-`pytest` is already imported in `tests/test_state_verbs.py`? **WARNING: Could not confirm a
-top-level `import pytest` in `tests/test_state_verbs.py` — verify it exists (and add it if
-not) before implementing the `@pytest.mark.parametrize` decorators in §3.2, §6.2 and §7.2.**
-Every other module-level import these tests need (`json`, `subprocess`, `sys`, `Path`,
-`FS`, `validate_state`) is already present.
+**`tests/test_state_verbs.py` does not import `pytest` today** (`00-core-definitions.md`
+§10.5). The `@pytest.mark.parametrize` decorators this document specifies for that file —
+§3.2 above and §7.2's unsafe-path roster — therefore require `import pytest` to be added to
+that module's import block; omitting it is a collection-time `NameError` that presents as
+the whole file vanishing from the run. Because §1.3 sequences this document **before**
+`06-brittleness-batch.md`, the import lands here, not there: `06` §10 lists the same
+addition for REQ-BRIT-07, and whichever change lands first adds it once. Every other
+module-level import these tests need (`json`, `subprocess`, `sys`, `Path`, `FS`,
+`validate_state`) is already present.
 
 ### 3.3 Why the exact message, and why byte-identity
 
