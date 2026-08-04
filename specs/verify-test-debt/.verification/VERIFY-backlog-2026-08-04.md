@@ -385,3 +385,31 @@ Everything else was mechanical and applied directly.
 - Max chain depth **13** (unchanged from before the fix pass, as V-003 and V-004 predicted).
 - `closure(016)` = all 15 other item ids.
 - All `specReferences` paths resolve from the project root.
+
+---
+
+## Re-verify (round 2) — 2026-08-04
+
+Scoped re-verify per `references/stage-exit-protocol.md` § "Re-verify scope and convergence": each prior finding confirmed against its own acceptance evidence, plus inspection of the fix delta (`159f19b`) for defects it introduced. **Not** a fresh CHECK-B01..B27 sweep.
+
+**Verdict: PASS.**
+
+- Prior findings resolved: **15 of 15**, each confirmed against independently re-derived evidence rather than the fix log's assertion.
+- New blocking findings from the fix delta: **0**.
+- New advisory notes: **2** (below). Neither flips the outcome.
+
+Independently re-derived after the fix: 16 items, ids `001`–`016` contiguous; no dangling edges; no cycles; **max chain depth 13** (unchanged); `closure(016)` = all 15 other ids; **zero priority inversions** across the whole graph, including both new edges. `rauf-stable backlog validate` → `{"valid": true, "findings": []}`, exit 0. `check-spec-purity.py` → 0 violations. The `.pipeline-state.json` delta is the correct fix-pass shape (`findings-reported` → `findings-applied`, freshness cleared, provenance hash written by the commit-2 call).
+
+### Note A — item 002 step 4 mis-attributed `_state_bytes` to `05` §3.2 (fix-delta, advisory) — SINCE CORRECTED
+
+The Step 5 edit wrote "as `05` §3.2's code does". §3.2 uses `_run` and `_seed` but does its byte comparison **inline** (`before = state_path.read_bytes()`); it never calls `_state_bytes`. Item 003's parallel claim about §7.2 is accurate. The steer was benign — `_state_bytes` resolves the feature-directory segment §3.2's inline path omits, so the fix pointed at the *more* correct helper — but the attribution was imprecise.
+
+**Corrected 2026-08-04** (commit follows this report): item 002 step 4 now reads "`05` §3.2's code uses `_run` and `_seed` and does its byte comparison inline — use `_state_bytes` for that comparison instead, as `05` §7.2's code does, since it resolves the feature-directory segment the inline path omits."
+
+### Note B — item 010 carries the same spurious `_feature_dir` (pre-existing, no action)
+
+Item 010's description says "Reuse each host file's own wrappers — `_run` / `_feature_dir` / `_state_of` in `test_state_verbs.py`", while `05` §6.3's verbatim code uses `_seed` / `_state_of` / `_run`. This is **pre-existing** text the fix delta did not touch (the fix plan deliberately instructed "do not modify items 009 or 010"), and unlike items 002/003 item 010 carries no byte-identity acceptance criterion, so `_state_of`'s dict return is the correct call there. Recorded for visibility; explicitly **not** a finding under the re-verify scope rule, and no action taken.
+
+### Decision-immune items — confirmed not re-filed
+
+Item 016 AC8's ±5 vs `07` §5.4's stated-no-tolerance (recorded decision); item 004's `type: "test"` alongside its `eval/` change (recorded decision); the superseded PRD §8 figures for REQ-BRIT-04 / -07 / REQ-COV-03; and the four non-substantive dependency edges recorded as no-action in round 1.
