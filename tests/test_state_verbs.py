@@ -1954,6 +1954,102 @@ def test_state_verify_accepts_a_findings_file_that_does_not_exist_yet(tmp_path):
     assert _entry(specs)["findingsFile"] == "verify/not-written-yet.md"
 
 
+#: `--path` values that must be refused before any mutation (REQ-SEC-01), one per
+#: rejection branch. A NUL byte is absent for the same reason it is absent from the
+#: findings-file roster: subprocess cannot put one in argv at all.
+_UNSAFE_ARTIFACT_PATHS = (
+    ("empty", ""),
+    ("control-char", "specs/bell\x07.md"),
+    ("absolute", "/etc/passwd"),
+    ("dotdot", "../../escape.md"),
+    ("dotdot-embedded", "verify/../../escape.md"),
+)
+
+
+@pytest.mark.parametrize(
+    "label,bad", _UNSAFE_ARTIFACT_PATHS, ids=[row[0] for row in _UNSAFE_ARTIFACT_PATHS]
+)
+def test_state_artifact_rejects_an_unsafe_path_before_mutation(
+    tmp_path: Path, label: str, bad: str
+) -> None:
+    """REQ-COV-06 / REQ-SEC-01: a recorded path must stay inside the feature dir.
+
+    State must not record a location no forge stage could legitimately have
+    written. The refusal names the flag the caller actually passed, and it runs
+    before any mutation, so the file is left exactly as it was found.
+    """
+    root = tmp_path / f"artifact-{label}"
+    _seed(root, {"forge-3-specs": {"status": "in-progress"}})
+    specs = root / "specs"
+    before = _state_bytes(specs)
+
+    result = _run(
+        "state-artifact", "--feature", "demo", "--stage", "forge-3-specs",
+        "--path", bad, "--specs-dir", str(specs),
+    )
+
+    assert result.returncode == 2, f"{bad!r} was accepted"
+    assert result.stderr.startswith("Error:"), f"{bad!r}: {result.stderr!r}"
+    assert "--path" in result.stderr, f"{bad!r}: {result.stderr!r}"
+    assert "--findings-file" not in result.stderr, (
+        f"{bad!r}: the refusal must name the flag the caller passed"
+    )
+    assert not result.stdout.strip(), f"{bad!r} produced stdout"
+    assert _state_bytes(specs) == before, f"{bad!r} mutated state"
+
+
+def test_state_artifact_rejects_a_path_that_escapes_through_a_symlink(
+    tmp_path: Path,
+) -> None:
+    """REQ-COV-06: the containment check resolves, so a link cannot walk out.
+
+    No textual inspection of the value would catch this one — the path has no
+    `..` segment and is not absolute; only resolution reveals the escape.
+    """
+    _seed(tmp_path, {"forge-3-specs": {"status": "in-progress"}})
+    specs = tmp_path / "specs"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (specs / "demo" / "elsewhere").symlink_to(outside, target_is_directory=True)
+    before = _state_bytes(specs)
+
+    result = _run(
+        "state-artifact", "--feature", "demo", "--stage", "forge-3-specs",
+        "--path", "elsewhere/leaked.md", "--specs-dir", str(specs),
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert "--path" in result.stderr
+    assert "escapes the feature directory" in result.stderr
+    assert _state_bytes(specs) == before
+
+
+def test_state_artifact_rejects_the_whole_batch_when_one_repeated_path_is_unsafe(
+    tmp_path: Path,
+) -> None:
+    """REQ-COV-06: validation covers every `--path` before any of them is appended.
+
+    `--path` is repeatable, so a batch that validates as it appends would leave
+    the safe prefix recorded and the file rewritten. Nothing may land.
+    """
+    _seed(tmp_path, {"forge-3-specs": {"status": "in-progress"}})
+    specs = tmp_path / "specs"
+    before = _state_bytes(specs)
+
+    result = _run(
+        "state-artifact", "--feature", "demo", "--stage", "forge-3-specs",
+        "--path", "00-core-definitions.md",
+        "--path", "../escape.md",
+        "--path", "01-architecture-layout.md",
+        "--specs-dir", str(specs),
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert "--path" in result.stderr
+    assert "'../escape.md'" in result.stderr, "the refusal must quote the offending value"
+    assert _state_bytes(specs) == before, "no path in a rejected batch may be recorded"
+
+
 def test_state_verify_rejects_neither_mode_and_mixed_mode(tmp_path):
     specs = _verify_fixture(tmp_path)
     before = _state_bytes(specs)

@@ -75,8 +75,8 @@
         "`python3 scripts/build-adapters.py --check` exits 0, and all six adapter mirrors are staged in the same commit as the `scripts/forge-session.py` change, with no file under `adapters/` hand-edited",
         "`bash scripts/validate.sh` reports \"All checks passed!\""
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-04T19:49:22.656Z",
       "dependsOn": [
         "002"
       ],
