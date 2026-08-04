@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -122,52 +123,76 @@ _FRESH_TECH_VERIFY = {"status": "passed", "verifiedStageVersion": 2}
 # --------------------------------------------------------------------------- #
 
 
-def test_auto_verify_off_outstanding_verify_gates_standard(tmp_path: Path) -> None:
-    # INTENTIONAL CHANGE (item 011, capability-aware gate selection): the gate no
-    # longer follows `--host claude`; it follows `--verify-capability`. The flag is
-    # supplied explicitly here because the CLI default is `manual`.
-    root = _project(tmp_path, config={}, state=None)
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
-              "--verify-capability", "interactive")["directives"]
-    assert d["autoVerifyEffective"] is False
-    assert d["runInStageVerify"] is False
-    assert d["verifyState"] == "never"
-    assert d["verifyGate"] == "standard"
-    assert d["verifyCommand"] == "/feature-forge:forge-verify widget"
+#: Each row: an id, the forge.config.json payload, the extra CLI flags the row
+#: needs, and the directives it pins. Rows state only their own load-bearing
+#: directives; a key a row does not name is not asserted for that row.
+_GATE_SELECTION_ROWS: Final[tuple[tuple[str, dict, tuple[str, ...], dict], ...]] = (
+    (
+        "auto-verify-off-outstanding-gates-standard",
+        {},
+        ("--verify-capability", "interactive"),
+        {
+            "autoVerifyEffective": False,
+            "runInStageVerify": False,
+            "verifyState": "never",
+            "verifyGate": "standard",
+            "verifyCommand": "/feature-forge:forge-verify widget",
+        },
+    ),
+    (
+        "global-auto-verify-runs-in-stage-and-gates-none",
+        {"autoVerify": True},
+        (),
+        {"autoVerifyEffective": True, "runInStageVerify": True, "verifyGate": "none"},
+    ),
+    (
+        "per-stage-override-beats-global",
+        {"autoVerify": True, "autoVerifyStages": {"forge-2-tech": False}},
+        ("--verify-capability", "interactive"),
+        {
+            "autoVerifyEffective": False,
+            "runInStageVerify": False,
+            "verifyGate": "standard",
+        },
+    ),
+    (
+        "non-boolean-auto-verify-fails-closed",
+        {"autoVerify": "true"},          # a string, not a bool
+        (),
+        {"autoVerifyEffective": False},
+    ),
+    (
+        "invalid-auto-verify-keys-surface",
+        {"autoVerifyStages": {"forge-1-prod": True}},
+        (),
+        {"invalidAutoVerifyKeys": ["forge-1-prod"]},
+    ),
+)
 
 
-def test_global_auto_verify_runs_in_stage_and_gates_none(tmp_path: Path) -> None:
-    root = _project(tmp_path, config={"autoVerify": True})
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
-    assert d["autoVerifyEffective"] is True
-    assert d["runInStageVerify"] is True
-    assert d["verifyGate"] == "none"
+@pytest.mark.parametrize(
+    "config,extra,expected",
+    [row[1:] for row in _GATE_SELECTION_ROWS],
+    ids=[row[0] for row in _GATE_SELECTION_ROWS],
+)
+def test_auto_verify_effectiveness_selects_the_gate(
+    tmp_path: Path,
+    config: dict,
+    extra: tuple[str, ...],
+    expected: dict,
+) -> None:
+    """Effective autoVerify and the verify capability together select the gate.
 
-
-def test_per_stage_override_beats_global(tmp_path: Path) -> None:
-    root = _project(tmp_path, config={
-        "autoVerify": True,
-        "autoVerifyStages": {"forge-2-tech": False},
-    })
-    # INTENTIONAL CHANGE (item 011, capability-aware gate selection): `standard`
-    # now requires `--verify-capability interactive`, not `--host claude`.
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
-              "--verify-capability", "interactive")["directives"]
-    assert d["autoVerifyEffective"] is False
-    assert d["runInStageVerify"] is False
-    assert d["verifyGate"] == "standard"
-
-
-def test_non_boolean_auto_verify_fails_closed(tmp_path: Path) -> None:
-    root = _project(tmp_path, config={"autoVerify": "true"})  # string, not bool
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
-    assert d["autoVerifyEffective"] is False
-
-
-def test_invalid_auto_verify_keys_surface(tmp_path: Path) -> None:
-    root = _project(tmp_path, config={"autoVerifyStages": {"forge-1-prod": True}})
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
-    assert d["invalidAutoVerifyKeys"] == ["forge-1-prod"]
+    The gate follows `--verify-capability`, not `--host`, which is why the rows
+    expecting `standard` pass the flag explicitly: the CLI default is `manual`.
+    """
+    root = _project(tmp_path, config=config)
+    directives = _exit(
+        root, "--feature", "widget", "--stage", "forge-2-tech", *extra
+    )["directives"]
+    missing = sorted(key for key in expected if key not in directives)
+    assert not missing, f"stage-exit emitted no {missing} directive(s)"
+    assert {key: directives[key] for key in expected} == expected
 
 
 @pytest.mark.parametrize("host", ["claude", "pi", "generic"])
