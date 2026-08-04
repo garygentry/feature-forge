@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -860,6 +861,10 @@ def test_a_stale_terminal_entry_does_reschedule(tmp_path: Path) -> None:
     assert _read_entry(root)["status"] == "auto-verify-pending"
 
 
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="a read-only directory stays writable as root",
+)
 def test_an_injected_write_failure_exits_2_with_no_dispatch_directive(
     tmp_path: Path,
 ) -> None:

@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -540,11 +541,26 @@ def test_every_verb_is_registered_as_a_subparser_and_dispatched():
         assert _run(verb, "--help").returncode == 0, f"{verb} is not a registered subcommand"
 
 
+#: Every literal spelling of an exit-1 branch. Tolerant of whitespace and of the
+#: parenthesised return form, so reflowing a line cannot slip one past the guard.
+_EXIT_1_SPELLINGS: Final[tuple[tuple[str, str], ...]] = (
+    ("return statement", r"(?m)^[ \t]*return[ \t]*\(?[ \t]*1[ \t]*\)?[ \t]*(?:#.*)?$"),
+    ("sys.exit call",    r"\bsys[ \t]*\.[ \t]*exit[ \t]*\([ \t]*1[ \t]*\)"),
+    ("SystemExit raise", r"\bSystemExit[ \t]*\([ \t]*1[ \t]*\)"),
+    ("os._exit call",    r"\bos[ \t]*\.[ \t]*_exit[ \t]*\([ \t]*1[ \t]*\)"),
+    ("builtin exit call", r"(?<![.\w])exit[ \t]*\([ \t]*1[ \t]*\)"),
+)
+
+
 def test_the_script_has_no_exit_1_branch():
-    """The contract is 0/2 only — a `return 1` anywhere would break it."""
+    """The CLI contract is exit 0 or 2 — no spelling of exit 1 may reach the source."""
     source = read(FORGE_SESSION)
-    assert not re.search(r"^\s+return 1$", source, re.M)
-    assert not re.search(r"sys\.exit\(1\)", source)
+    for label, pattern in _EXIT_1_SPELLINGS:
+        found = re.search(pattern, source)
+        assert not found, (
+            f"{FORGE_SESSION.name} carries a {label} exit-1 branch "
+            f"({found.group(0)!r}); the contract is exit 0 or 2 only"
+        )
 
 
 # --------------------------------------------------------------------------- #

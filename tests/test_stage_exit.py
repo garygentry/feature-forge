@@ -2254,10 +2254,22 @@ def test_docs_resolves_the_helper_beside_itself_and_never_a_bare_python3() -> No
 
 
 def test_docs_never_reimplements_the_epic_dependency_derivation() -> None:
-    """tech-spec §3.5: the router consumes render-status; it does not re-derive."""
+    """tech-spec §3.5: the router consumes render-status; it does not re-derive.
+
+    Scoped to `_render_status`'s executable body by the same slicing the sibling
+    invocation-contract test uses. The ban is a property of that function, and a
+    docstring naming a derivation in order to say it belongs elsewhere is prose,
+    not a reimplementation.
+    """
     source = HELPER.read_text()
+    body = source[source.index("def _render_status(specs_dir"):]
+    body = body[: body.index("\n_DOCS_OUTCOME_TEXT")]
+    code = body[body.index('"""', body.index('"""') + 3) + 3:]
     for forbidden in ("unmet_deps", "parallelEligible", "is_complete_for_orchestration"):
-        assert forbidden not in source, forbidden
+        assert forbidden not in code, (
+            f"_render_status re-derives {forbidden!r}; dependency and completion "
+            "derivation belong to epic-manifest.py (tech-spec §3.5)"
+        )
 
 
 # --------------------------------------------------------------------------- #
