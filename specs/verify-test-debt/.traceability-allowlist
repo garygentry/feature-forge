@@ -1,0 +1,7 @@
+# Foreign requirement ids that appear in this suite's specs without being defined
+# in this suite's PRD. All three are verbatim quotations of existing test docstrings
+# from the antecedent `stage-exit-coverage` feature, where they are defined; they are
+# not requirements of verify-test-debt. See TRACEABILITY.md § Coverage Verification.
+REQ-DEBT-04
+REQ-REL-01
+REQ-STATE-01

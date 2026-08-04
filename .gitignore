@@ -6,6 +6,7 @@
 **/.rauf/iteration-status.json
 **/.rauf/rauf.log
 **/.rauf/events.ndjson
+**/.rauf/progress.md
 **/backlog.json.bak
 
 # Local Claude Code session artifacts
