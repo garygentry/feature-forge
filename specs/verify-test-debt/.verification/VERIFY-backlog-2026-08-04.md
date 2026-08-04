@@ -265,10 +265,10 @@ Every quantitative literal the backlog asserts was independently re-derived and 
 
 ### User Decisions Required
 
-1. **V-009** proposes **±5** as the concrete divergence tolerance for the 1799 suite-count target. `07-testing-strategy.md` §5.4 deliberately states no tolerance. Confirm ±5, supply a different number, or choose the alternative: drop the tolerance clause and require the actual count to be recorded in the commit message unconditionally. If the tolerance is to bind the spec too, `07` §5.4 must be edited in the same pass (`00` §9 REQ-TRIAL-06 derivation warning).
-2. **V-015** — retype item 004 (`test` → `chore`) or annotate its notes. Recommend the annotation: advisory-severity, and retyping churns an item whose deliverable genuinely is a test.
+1. **V-009** — **RESOLVED 2026-08-04: ±5 items, backlog only.** AC8 carries the ±5 threshold; `07-testing-strategy.md` §5.4 is left untouched and continues to state no tolerance. Item 016's description records explicitly that ±5 is a backlog-side operational threshold for when an explanation is owed, and is *not* a spec figure subject to REQ-TRIAL-06 recomputation — so the two documents do not contradict.
+2. **V-015** — **RESOLVED 2026-08-04: keep `type: "test"`, annotate the notes.** Item 004 keeps its type; its notes now record that the type is deliberate (the test is the deliverable, the paired constant is the minimum production change needed to write it) and that items 009/010 remain the strictly test-only items.
 
-Everything else is mechanical and can be applied directly.
+Everything else was mechanical and applied directly.
 
 ### Step 1 — Correct the adapter-regeneration rule (blocking)
 
@@ -360,3 +360,28 @@ Everything else is mechanical and can be applied directly.
 - **Action:** Re-run `rauf-stable backlog validate . --backlog specs/verify-test-debt --specs-dir ./specs --json` from the project root and confirm `{"valid": true, "findings": []}`, exit 0. Then confirm structural invariants are unchanged where intended: `python3 -c "import json; b=json.load(open('specs/verify-test-debt/backlog.json')); print(len(b['items']), [i['id'] for i in b['items']])"` → 16 items, ids `001`–`016`. Re-derive the dependency graph and confirm max depth 13, no cycles, `closure(016)` covers all 15 other items.
 - **Note:** the validator reported clean *before* these fixes too — it does not detect missing (as opposed to invalid) edges, so it is a regression check only, never evidence the findings were addressed.
 - **Depends on:** Steps 1–12
+
+---
+
+## Fix Progress
+
+- Step 1: [APPLIED] 2026-08-04 — V-001/V-002. Item 001's notes now state it is *not* the only item that must regenerate adapters, naming `scripts/forge-session.py` as a `build-adapters.py` runtime helper. Items 002 and 003 each gained a final description step ordering a full six-mirror regeneration in the same commit, plus the acceptance criterion `python3 scripts/build-adapters.py --check` exits 0 with no file under `adapters/` hand-edited, inserted before their existing `validate.sh` criterion.
+- Step 2: [APPLIED] 2026-08-04 — V-003/V-004. Item 011 `dependsOn` → `["003","010"]`; item 016 `dependsOn` → `["003","004","015"]`. Both notes record why the edge is carried (011: `01` §5.4 add-before-rewrite on `test_state_verbs.py` plus the `import pytest` item 014 needs; 016: the 1799 reconciliation counts 002/003/004's 10 backfill ids). Re-derived after the edit — max chain depth unchanged at 13, no cycles, `closure(016)` now covers all 15 other items.
+- Step 3: [APPLIED] 2026-08-04 — V-005. Item 016 `priority` 1 → 3, matching its position at the tail of the chain. No other priority changed; realized execution order is identical.
+- Step 4: [APPLIED] 2026-08-04 — V-006. Twelve bare `§` references in item 007's description qualified with `` `03` `` (§4.2, §4.3, §4.4, §4.5, §4.6, §5, §5.4 ×2, §5.5, §6 ×2, §7, §4 ×2). Item 007's notes left untouched — already correctly anchored. Item 014's "Corrupt-file family (§8.3" → "(`06` §8.3". No section number changed.
+- Step 5: [APPLIED] 2026-08-04 — V-007. Item 002 step 4 and item 003 step 4 now name `_run` / `_seed` / `_state_bytes`, matching the verbatim code in `05` §3.2 and §7.2. Item 003's sentence additionally records that AC4/AC5's byte-identity assertions require `_state_bytes`, not the dict-returning `_state_of`. Both `conftest.py` `run_cli` warnings left unchanged; items 009 and 010 untouched.
+- Step 6: [APPLIED] 2026-08-04 — V-010. `` `ruff check scripts/ eval/` is clean `` inserted into items 002 and 003, matching item 004 AC5 verbatim.
+- Step 7: [APPLIED] 2026-08-04 — V-008. Item 011 `estimatedIterations` 1 → 2. Item not split.
+- Step 8: [APPLIED] 2026-08-04 — V-011. Item 016 description step 2 now instructs that any `adapters/` diff ships as all six mirrors together, as item 001 does, and otherwise the item modifies no file.
+- Step 9: [APPLIED] 2026-08-04 — V-012. Item 016's notes record that REQ-TRIAL-04's four figures are written at feature close by the operator running the final forge-verify, sourced from the `.verification/VERIFY-*.md` per-severity totals and the `07` §7.4 table. AC12 and the "Explicit non-goal" paragraph left unchanged.
+- Step 10: [APPLIED] 2026-08-04 — V-013. Items 009 and 010 AC6 qualified to "absent a REQ-FIX-02 trigger raised per `05` §9", and both notes now carry the standing-obligation sequence (raise against PRD §3.3, never pin the wrong behavior). Items 002/003/004 unchanged.
+- Step 11: [APPLIED] 2026-08-04 — V-014. `specs/verify-test-debt/00-core-definitions.md` added to `specReferences` of items 004, 008 and 010, preserving each array's workstream-first ordering.
+- Step 12: [APPLIED] 2026-08-04 — V-009/V-015 per the recorded decisions above. Item 016 AC8 rewritten with the ±5 threshold and an explicit `--collect-only` command; item 016's description prose updated to match and to record that ±5 is backlog-side, not a spec figure. Item 004's notes annotated; its `type` left as `test`.
+
+### Post-fix validation evidence
+
+- `rauf-stable backlog validate . --backlog specs/verify-test-debt --specs-dir ./specs --json` → `{"valid": true, "findings": []}`, exit 0.
+- 16 items, ids `001`–`016` contiguous; no dangling `dependsOn` edges; no cycles.
+- Max chain depth **13** (unchanged from before the fix pass, as V-003 and V-004 predicted).
+- `closure(016)` = all 15 other item ids.
+- All `specReferences` paths resolve from the project root.
