@@ -19,7 +19,7 @@
       "findingsFile": ".verification/VERIFY-prd-2026-08-05.md",
       "findingsCount": 13,
       "fixedAt": "2026-08-05T21:02:10Z",
-      "commitHash": null
+      "commitHash": "526119329d8d2885cd3fa89d54a3fc674c6d184f"
     }
   },
   "currentStage": "forge-1-prd",
