@@ -28,8 +28,16 @@ two production files §3.2 owns.
 **One exception, outside that ownership: `scripts/validate-traceability.py`** (§3.4). It
 gained an `--allow-orphan` flag, `.traceability-allowlist` auto-discovery, and two `--json`
 payload keys. That change is an out-of-band gate unblock, owned by no requirement in this
-suite, and is inventoried in §2 and §3.4 so this document remains a complete file-ownership
-map.
+suite, and is inventoried in §2 and §3.4.
+
+**Scope of this map.** §2 and §3 inventory the surfaces this feature's *implementation*
+touches — the workstreams in `00-core-definitions.md` §2, plus §3.4's gate unblock.
+Documentation and test surfaces added **after** `forge-5-loop` closed, in response to
+`forge-verify`, are not re-inventoried here; they are recorded where the decision that
+produced them lives — `07-testing-strategy.md` §5.5 for the added test module, and
+`.verification/VERIFY-impl-2026-08-04.md` for the documentation edits (`README.md`,
+`CHANGELOG.md`, `skills/forge-verify/references/verification-checklists/specs.md`,
+`forge.config.json`).
 
 **Public API surface: unchanged.** The two production validations (§3.2) narrow the
 *accepted domain* of two existing flags; they change no success-path output. Every value

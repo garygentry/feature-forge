@@ -28,7 +28,7 @@ The ordered gate list from `07-testing-strategy.md` §3 is green:
 | Gate | Result |
 |---|---|
 | `bash scripts/validate.sh` | exit 0 — `All checks passed!` |
-| `python3 -m pytest tests -q` | 1797 passed, 2 skipped — **1799 collected**, matching `07` §5.4's prediction exactly |
+| `python3 -m pytest tests -q` | 1802 passed, 2 skipped — **1804 collected**, matching the current `07` §5.4 figure. The loop itself closed at **1799**, exactly as §5.4 predicted; the `+5` is the post-verify allowlist guard recorded in `07` §5.5 |
 | `python3 scripts/build-adapters.py --check` | exit 0 |
 | `python3 scripts/check-spec-purity.py` | PASS — 0 violations |
 | `ruff check scripts/ eval/` | clean |
