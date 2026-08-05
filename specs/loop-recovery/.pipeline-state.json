@@ -20,7 +20,7 @@
       "findingsCount": 3,
       "verifiedAt": "2026-08-05T21:06:23Z",
       "verifiedStageVersion": 1,
-      "commitHash": null
+      "commitHash": "e646c002738e2cb85c3e532184fbfceddcdeeb69"
     }
   },
   "currentStage": "forge-1-prd",
