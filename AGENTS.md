@@ -203,7 +203,14 @@ workflow, and verify.
    This repo **does not git-tag releases** — don't create a tag.
 2. **CHANGELOG.** Ensure the change is recorded under `## [Unreleased]` in `CHANGELOG.md` (the
    installer is an independent version line, so no dated heading rename is required for an
-   installer-only publish).
+   installer-only publish). Two standing rules, both learned from the 0.14.0 release (which
+   bumped versions without cutting `[Unreleased]`, and was followed by two feature merges with
+   no CHANGELOG entries at all — a process gap, not a one-off):
+   - **Every feature PR adds its own CHANGELOG entry** under `## [Unreleased]`, in the PR
+     itself — never deferred to "the release".
+   - **A plugin release cuts `[Unreleased]` into a dated `## [X.Y.Z] — YYYY-MM-DD` heading in
+     the release commit** (the same commit that bumps the three synced version fields), leaving
+     an empty `## [Unreleased]` behind.
 3. **Regenerate + verify** if canon changed: `python3 scripts/build-adapters.py` then
    `bash scripts/validate.sh` (green). Any version bump / changelog edit goes through a PR with
    green CI — never a direct push to `main`.
