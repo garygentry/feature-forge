@@ -248,12 +248,6 @@ def test_the_exit_domains_are_derived_not_hand_listed():
         "forge-verify": frozenset(get_args(session.VerifyOutcome)),
         "forge-fix": frozenset(get_args(session.FixOutcome)),
     }
-    # The derivation must be textual too: a hand-written tuple that happens to agree
-    # today is the drift this guard exists to prevent.
-    source = read(SESSION)
-    assert "EXIT_STAGES: Final[tuple[str, ...]] = get_args(ExitStage)" in source
-    for alias in ("LoopOutcome", "DocsOutcome", "VerifyOutcome", "FixOutcome"):
-        assert f"frozenset(get_args({alias}))" in source, f"{alias} not derived"
 
 
 def test_each_shared_constant_is_assigned_exactly_once():

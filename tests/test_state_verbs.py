@@ -16,12 +16,16 @@ conformance goes through ``tests/_state_schema.py``.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Final
+
+import pytest
 
 from _forge_paths import REFERENCES, REPO_ROOT, SCRIPTS, SKILLS, read
 from _state_schema import validate_state
@@ -130,10 +134,43 @@ def test_next_stage_still_returns_prd_for_a_fresh_standalone_feature():
     assert FS.next_stage({"stages": {}}) == "forge-1-prd"
 
 
+def _imported_modules(source: str) -> frozenset[str]:
+    """Root module names bound by an import statement anywhere in ``source``.
+
+    Scanning the parsed statements rather than the raw text means prose that
+    names a module — a comment explaining why it is unused, a docstring, an
+    error string — is not mistaken for a dependency on it.
+
+    Args:
+        source: Python source text to parse.
+
+    Returns:
+        The root name of every module reached by an ``import x`` or
+        ``from x import y`` statement, at module scope or inside a function.
+
+    Raises:
+        SyntaxError: ``source`` is not parseable Python. The guard fails loudly
+            rather than reporting an empty import set.
+    """
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module.split(".")[0])
+    return frozenset(names)
+
+
 def test_tempfile_is_imported_and_jsonschema_is_not():
-    source = read(FORGE_SESSION)
-    assert re.search(r"^import tempfile$", source, re.M)
-    assert "jsonschema" not in source
+    """The atomic write path needs `tempfile`; importing `jsonschema` would make
+    the script unrunnable where it is absent."""
+    imported = _imported_modules(read(FORGE_SESSION))
+    assert "tempfile" in imported, (
+        f"{FORGE_SESSION.name} does not import tempfile; the atomic write path needs it"
+    )
+    assert "jsonschema" not in imported, (
+        f"{FORGE_SESSION.name} imports jsonschema, which is not available in CI"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -538,11 +575,26 @@ def test_every_verb_is_registered_as_a_subparser_and_dispatched():
         assert _run(verb, "--help").returncode == 0, f"{verb} is not a registered subcommand"
 
 
+#: Every literal spelling of an exit-1 branch. Tolerant of whitespace and of the
+#: parenthesised return form, so reflowing a line cannot slip one past the guard.
+_EXIT_1_SPELLINGS: Final[tuple[tuple[str, str], ...]] = (
+    ("return statement", r"(?m)^[ \t]*return[ \t]*\(?[ \t]*1[ \t]*\)?[ \t]*(?:#.*)?$"),
+    ("sys.exit call",    r"\bsys[ \t]*\.[ \t]*exit[ \t]*\([ \t]*1[ \t]*\)"),
+    ("SystemExit raise", r"\bSystemExit[ \t]*\([ \t]*1[ \t]*\)"),
+    ("os._exit call",    r"\bos[ \t]*\.[ \t]*_exit[ \t]*\([ \t]*1[ \t]*\)"),
+    ("builtin exit call", r"(?<![.\w])exit[ \t]*\([ \t]*1[ \t]*\)"),
+)
+
+
 def test_the_script_has_no_exit_1_branch():
-    """The contract is 0/2 only — a `return 1` anywhere would break it."""
+    """The CLI contract is exit 0 or 2 — no spelling of exit 1 may reach the source."""
     source = read(FORGE_SESSION)
-    assert not re.search(r"^\s+return 1$", source, re.M)
-    assert not re.search(r"sys\.exit\(1\)", source)
+    for label, pattern in _EXIT_1_SPELLINGS:
+        found = re.search(pattern, source)
+        assert not found, (
+            f"{FORGE_SESSION.name} carries a {label} exit-1 branch "
+            f"({found.group(0)!r}); the contract is exit 0 or 2 only"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -732,42 +784,122 @@ def test_commit_hash_follow_up_touches_only_commit_hash(tmp_path):
     }, "the Commit-2 follow-up must leave status/version/artifacts intact"
 
 
-def test_state_complete_accepts_every_40_hex_casing_verbatim(tmp_path):
+def test_commit_2_ignores_based_on_artifact_and_preserve_commit_hash(tmp_path: Path) -> None:
+    """REQ-COV-05: the commit-2 branch records the hash and discards the rest.
+
+    Ignoring is branch precedence, not rejection: argparse accepts these flags
+    and the branch never reads them. Everything the completion write owns must
+    survive the follow-up unchanged, so the surrounding entry is compared as a
+    whole rather than field by field.
+    """
+    _seed(
+        tmp_path,
+        {
+            "forge-1-prd": {
+                "status": "complete",
+                "completedAt": "2026-01-01T00:00:00Z",
+                "version": 2,
+                "basedOnVersions": {},
+                "artifacts": ["PRD.md"],
+                "commitHash": None,
+            }
+        },
+    )
+    before = _state_of(tmp_path)["stages"]["forge-1-prd"]
+
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+        "--version", "2", "--commit-hash", _FULL_HASH,
+        "--based-on", "forge-2-tech=9",
+        "--artifact", "SHOULD-NOT-BE-RECORDED.md",
+        "--preserve-commit-hash",
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, result.stderr
+
+    after = _state_of(tmp_path)["stages"]["forge-1-prd"]
+    assert after["commitHash"] == _FULL_HASH
+    # Every other field is exactly what the completion write left behind.
+    assert {k: v for k, v in after.items() if k != "commitHash"} == {
+        k: v for k, v in before.items() if k != "commitHash"
+    }
+    assert after["basedOnVersions"] == {}, "--based-on must not reach the commit-2 branch"
+    assert after["artifacts"] == ["PRD.md"], "--artifact must not reach the commit-2 branch"
+    assert after["status"] == "complete"
+    assert after["completedAt"] == "2026-01-01T00:00:00Z"
+    assert after["version"] == 2
+
+
+@pytest.mark.parametrize(
+    "label,value", _ACCEPTED_HASHES, ids=[case[0] for case in _ACCEPTED_HASHES]
+)
+def test_state_complete_accepts_every_40_hex_casing_verbatim(tmp_path, label, value):
     """REQ-STATE-01: 40 hex characters, in any case, recorded exactly as supplied."""
-    for label, value in _ACCEPTED_HASHES:
-        root = tmp_path / f"complete-{label}"
-        _seed(root, {"forge-1-prd": {"status": "complete", "version": 1}})
-        result = _run(
-            "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
-            "--version", "1", "--commit-hash", value,
-            "--specs-dir", str(root / "specs"),
-        )
-        assert result.returncode == 0, f"{label}: {result.stderr}"
-        recorded = _state_of(root)["stages"]["forge-1-prd"]["commitHash"]
-        assert recorded == value, f"{label}: case was not preserved ({recorded!r})"
+    _seed(tmp_path, {"forge-1-prd": {"status": "complete", "version": 1}})
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+        "--version", "1", "--commit-hash", value,
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 0, f"{label}: {result.stderr}"
+    recorded = _state_of(tmp_path)["stages"]["forge-1-prd"]["commitHash"]
+    assert recorded == value, f"{label}: case was not preserved ({recorded!r})"
 
 
-def test_state_complete_rejects_a_short_or_malformed_hash_before_mutation(tmp_path):
+@pytest.mark.parametrize(
+    "label,value", _REJECTED_HASHES, ids=[case[0] for case in _REJECTED_HASHES]
+)
+def test_state_complete_rejects_a_short_or_malformed_hash_before_mutation(
+    tmp_path, label, value
+):
     """Every non-40-hex shape fails, and the state file is left byte-identical.
 
     The check runs before `_load_state_for_write`, so the stage-not-complete guard
-    below is never even consulted for a malformed value (03 §6.1).
+    is never even consulted for a malformed value.
     """
-    for label, value in _REJECTED_HASHES:
-        root = tmp_path / f"reject-{label}"
-        _seed(root, {"forge-1-prd": {"status": "complete", "version": 1}})
-        state_path = root / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
-        before = state_path.read_bytes()
-        result = _run(
-            "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
-            "--version", "1", "--commit-hash", value,
-            "--specs-dir", str(root / "specs"),
-        )
-        assert result.returncode == 2, f"{label}: exit {result.returncode}"
-        assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
-        assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
-        assert not result.stdout.strip(), f"{label} produced stdout"
-        assert state_path.read_bytes() == before, f"{label} mutated state"
+    _seed(tmp_path, {"forge-1-prd": {"status": "complete", "version": 1}})
+    state_path = tmp_path / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
+    before = state_path.read_bytes()
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+        "--version", "1", "--commit-hash", value,
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 2, f"{label}: exit {result.returncode}"
+    assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
+    assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
+    assert not result.stdout.strip(), f"{label} produced stdout"
+    assert state_path.read_bytes() == before, f"{label} mutated state"
+
+
+@pytest.mark.parametrize("raw", ["0", "-1"], ids=["zero", "negative"])
+def test_state_complete_rejects_a_non_positive_version_before_mutation(
+    tmp_path: Path, raw: str
+) -> None:
+    """REQ-COV-02 / REQ-FIX-01: the write domain matches the read domain.
+
+    The read path already refuses a version below 1, so accepting one at the
+    write path records a value that a later read must reject — poisoning the
+    file at write time and failing at read time. The check runs before the state
+    file is loaded, so a rejection leaves it byte-identical.
+    """
+    root = tmp_path / f"version-{raw}"
+    _seed(root, {"forge-1-prd": {"status": "complete", "version": 1}})
+    specs = root / "specs"
+    before = _state_bytes(specs)
+
+    result = _run(
+        "state-complete", "--feature", "demo", "--stage", "forge-1-prd",
+        "--version", raw, "--artifact", "PRD.md",
+        "--specs-dir", str(specs),
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert result.stderr.strip() == (
+        f"Error: --version must be a positive integer; got {raw}"
+    )
+    assert not result.stdout.strip(), "a refused write must print nothing"
+    assert _state_bytes(specs) == before, "the rejected write must not mutate state"
 
 
 def test_commit_hash_against_an_incomplete_stage_exits_2(tmp_path):
@@ -782,10 +914,11 @@ def test_commit_hash_against_an_incomplete_stage_exits_2(tmp_path):
         "--commit-hash", _FULL_HASH, "--specs-dir", str(tmp_path / "specs"),
     )
     assert result.returncode == 2, result.stdout
-    assert result.stderr.strip() == (
-        "Error: --commit-hash requires forge-2-tech to be complete (status: 'pending'); "
-        "run state-complete without --commit-hash first"
-    )
+    stderr = result.stderr
+    assert stderr.startswith("Error:"), stderr
+    assert "--commit-hash" in stderr, stderr
+    assert "forge-2-tech" in stderr, stderr
+    assert "status: 'pending'" in stderr, stderr
     assert state_path.read_bytes() == before, "the rejected follow-up must not write"
 
 
@@ -932,9 +1065,10 @@ def test_resumable_with_an_explicit_status_complete_exits_2(tmp_path):
         "--resumable", "--status", "complete", "--specs-dir", str(tmp_path / "specs"),
     )
     assert result.returncode == 2, result.stdout
-    assert result.stderr.strip() == (
-        "Error: --resumable implies --status in-progress; do not pass --status complete"
-    )
+    stderr = result.stderr
+    assert stderr.startswith("Error:"), stderr
+    assert "--resumable" in stderr, stderr
+    assert re.search(r"--status\s+'?complete'?", stderr), stderr
     assert state_path.read_bytes() == before
 
 
@@ -982,10 +1116,11 @@ def test_without_preserve_commit_hash_an_existing_hash_is_reset(tmp_path):
 
 
 def test_a_malformed_based_on_token_exits_2_naming_the_token(tmp_path):
-    for token, expected in (
-        ("forge-1-prd", "Error: --based-on expects STAGE=N, got: 'forge-1-prd'"),
-        ("forge-1-prd=two", "Error: --based-on version must be an integer: 'forge-1-prd=two'"),
-        ("forge-1-prd=1.5", "Error: --based-on version must be an integer: 'forge-1-prd=1.5'"),
+    """Every malformed shape is refused before any write, quoting what was passed."""
+    for token, reason in (
+        ("forge-1-prd", "expects STAGE=N"),
+        ("forge-1-prd=two", "version must be an integer"),
+        ("forge-1-prd=1.5", "version must be an integer"),
     ):
         _feature_dir(tmp_path / token, "demo")
         result = _run(
@@ -993,7 +1128,13 @@ def test_a_malformed_based_on_token_exits_2_naming_the_token(tmp_path):
             "--based-on", token, "--specs-dir", str(tmp_path / token / "specs"),
         )
         assert result.returncode == 2, f"{token}: {result.stdout}"
-        assert result.stderr.strip() == expected, token
+        stderr = result.stderr
+        assert stderr.startswith("Error:"), f"{token}: {stderr!r}"
+        assert "--based-on" in stderr, f"{token}: the flag is not named: {stderr!r}"
+        assert reason in stderr, f"{token}: expected reason {reason!r} in {stderr!r}"
+        assert repr(token) in stderr, (
+            f"{token}: the message must quote the offending token: {stderr!r}"
+        )
         assert not (
             tmp_path / token / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME
         ).exists(), f"{token}: a parse failure must not write state"
@@ -1407,6 +1548,7 @@ def test_repeated_state_ecr_invocations_append(tmp_path):
 
 
 def test_blocks_current_rejects_anything_but_true_or_false(tmp_path):
+    """Anything outside the boolean domain is refused, naming the domain and the value."""
     _feature_dir(tmp_path)
     for bad in ("yes", "1", "", "True false", "no"):
         result = _run(
@@ -1414,9 +1556,15 @@ def test_blocks_current_rejects_anything_but_true_or_false(tmp_path):
             "--specs-dir", str(tmp_path / "specs"),
         )
         assert result.returncode == 2, f"{bad!r}: expected exit 2, got {result.returncode}"
-        assert result.stderr.strip() == (
-            f"Error: --blocks-current expects true|false, got: {bad!r}"
-        ), result.stderr
+        stderr = result.stderr
+        assert stderr.startswith("Error:"), f"{bad!r}: {stderr!r}"
+        assert "--blocks-current" in stderr, f"{bad!r}: the flag is not named: {stderr!r}"
+        assert "true|false" in stderr, (
+            f"{bad!r}: the accepted domain must be named: {stderr!r}"
+        )
+        assert repr(bad) in stderr, (
+            f"{bad!r}: the offending value must be quoted: {stderr!r}"
+        )
     assert not (tmp_path / "specs" / "demo" / FS.PIPELINE_STATE_FILENAME).exists()
 
 
@@ -1922,6 +2070,102 @@ def test_state_verify_accepts_a_findings_file_that_does_not_exist_yet(tmp_path):
     assert _entry(specs)["findingsFile"] == "verify/not-written-yet.md"
 
 
+#: `--path` values that must be refused before any mutation (REQ-SEC-01), one per
+#: rejection branch. A NUL byte is absent for the same reason it is absent from the
+#: findings-file roster: subprocess cannot put one in argv at all.
+_UNSAFE_ARTIFACT_PATHS = (
+    ("empty", ""),
+    ("control-char", "specs/bell\x07.md"),
+    ("absolute", "/etc/passwd"),
+    ("dotdot", "../../escape.md"),
+    ("dotdot-embedded", "verify/../../escape.md"),
+)
+
+
+@pytest.mark.parametrize(
+    "label,bad", _UNSAFE_ARTIFACT_PATHS, ids=[row[0] for row in _UNSAFE_ARTIFACT_PATHS]
+)
+def test_state_artifact_rejects_an_unsafe_path_before_mutation(
+    tmp_path: Path, label: str, bad: str
+) -> None:
+    """REQ-COV-06 / REQ-SEC-01: a recorded path must stay inside the feature dir.
+
+    State must not record a location no forge stage could legitimately have
+    written. The refusal names the flag the caller actually passed, and it runs
+    before any mutation, so the file is left exactly as it was found.
+    """
+    root = tmp_path / f"artifact-{label}"
+    _seed(root, {"forge-3-specs": {"status": "in-progress"}})
+    specs = root / "specs"
+    before = _state_bytes(specs)
+
+    result = _run(
+        "state-artifact", "--feature", "demo", "--stage", "forge-3-specs",
+        "--path", bad, "--specs-dir", str(specs),
+    )
+
+    assert result.returncode == 2, f"{bad!r} was accepted"
+    assert result.stderr.startswith("Error:"), f"{bad!r}: {result.stderr!r}"
+    assert "--path" in result.stderr, f"{bad!r}: {result.stderr!r}"
+    assert "--findings-file" not in result.stderr, (
+        f"{bad!r}: the refusal must name the flag the caller passed"
+    )
+    assert not result.stdout.strip(), f"{bad!r} produced stdout"
+    assert _state_bytes(specs) == before, f"{bad!r} mutated state"
+
+
+def test_state_artifact_rejects_a_path_that_escapes_through_a_symlink(
+    tmp_path: Path,
+) -> None:
+    """REQ-COV-06: the containment check resolves, so a link cannot walk out.
+
+    No textual inspection of the value would catch this one — the path has no
+    `..` segment and is not absolute; only resolution reveals the escape.
+    """
+    _seed(tmp_path, {"forge-3-specs": {"status": "in-progress"}})
+    specs = tmp_path / "specs"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (specs / "demo" / "elsewhere").symlink_to(outside, target_is_directory=True)
+    before = _state_bytes(specs)
+
+    result = _run(
+        "state-artifact", "--feature", "demo", "--stage", "forge-3-specs",
+        "--path", "elsewhere/leaked.md", "--specs-dir", str(specs),
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert "--path" in result.stderr
+    assert "escapes the feature directory" in result.stderr
+    assert _state_bytes(specs) == before
+
+
+def test_state_artifact_rejects_the_whole_batch_when_one_repeated_path_is_unsafe(
+    tmp_path: Path,
+) -> None:
+    """REQ-COV-06: validation covers every `--path` before any of them is appended.
+
+    `--path` is repeatable, so a batch that validates as it appends would leave
+    the safe prefix recorded and the file rewritten. Nothing may land.
+    """
+    _seed(tmp_path, {"forge-3-specs": {"status": "in-progress"}})
+    specs = tmp_path / "specs"
+    before = _state_bytes(specs)
+
+    result = _run(
+        "state-artifact", "--feature", "demo", "--stage", "forge-3-specs",
+        "--path", "00-core-definitions.md",
+        "--path", "../escape.md",
+        "--path", "01-architecture-layout.md",
+        "--specs-dir", str(specs),
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert "--path" in result.stderr
+    assert "'../escape.md'" in result.stderr, "the refusal must quote the offending value"
+    assert _state_bytes(specs) == before, "no path in a rejected batch may be recorded"
+
+
 def test_state_verify_rejects_neither_mode_and_mixed_mode(tmp_path):
     specs = _verify_fixture(tmp_path)
     before = _state_bytes(specs)
@@ -2043,26 +2287,37 @@ def test_state_verify_commit_2_changes_only_the_hash_and_updated_at(tmp_path):
     assert after == before, "commit-2 changed more than commitHash and updatedAt"
 
 
-def test_state_verify_commit_2_accepts_every_40_hex_casing_verbatim(tmp_path):
-    for label, value in _ACCEPTED_HASHES:
-        specs = _verify_fixture(tmp_path / f"case-{label}")
-        _reported(specs)
-        assert _verify(specs, "--stage", "forge-1-prd",
-                       "--commit-hash", value).returncode == 0, label
-        assert _entry(specs)["commitHash"] == value, f"{label}: case was not preserved"
+@pytest.mark.parametrize(
+    "label,value", _ACCEPTED_HASHES, ids=[case[0] for case in _ACCEPTED_HASHES]
+)
+def test_state_verify_commit_2_accepts_every_40_hex_casing_verbatim(
+    tmp_path, label, value
+):
+    """Commit 2 on a verify entry records the supplied casing verbatim."""
+    specs = _verify_fixture(tmp_path)
+    _reported(specs)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--commit-hash", value
+    ).returncode == 0, label
+    assert _entry(specs)["commitHash"] == value, f"{label}: case was not preserved"
 
 
-def test_state_verify_commit_2_rejects_a_short_or_malformed_hash_before_mutation(tmp_path):
-    for label, value in _REJECTED_HASHES:
-        specs = _verify_fixture(tmp_path / f"bad-{label}")
-        _reported(specs)
-        before = _state_bytes(specs)
-        result = _verify(specs, "--stage", "forge-1-prd", "--commit-hash", value)
-        assert result.returncode == 2, f"{label}: exit {result.returncode}"
-        assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
-        assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
-        assert not result.stdout.strip(), f"{label} produced stdout"
-        assert _state_bytes(specs) == before, f"{label} mutated state"
+@pytest.mark.parametrize(
+    "label,value", _REJECTED_HASHES, ids=[case[0] for case in _REJECTED_HASHES]
+)
+def test_state_verify_commit_2_rejects_a_short_or_malformed_hash_before_mutation(
+    tmp_path, label, value
+):
+    """A malformed hash is refused before the verify entry is touched."""
+    specs = _verify_fixture(tmp_path)
+    _reported(specs)
+    before = _state_bytes(specs)
+    result = _verify(specs, "--stage", "forge-1-prd", "--commit-hash", value)
+    assert result.returncode == 2, f"{label}: exit {result.returncode}"
+    assert result.stderr.startswith("Error:"), f"{label}: {result.stderr!r}"
+    assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
+    assert not result.stdout.strip(), f"{label} produced stdout"
+    assert _state_bytes(specs) == before, f"{label} mutated state"
 
 
 def test_state_verify_commit_2_requires_an_existing_entry(tmp_path):
@@ -2153,6 +2408,17 @@ def test_state_verify_rejects_an_unknown_status_at_the_callable(tmp_path):
 # --------------------------------------------------------------------------- #
 # state-verify — the epic target (03 §3.2 step 2 / §2.1, 07 §4.3)
 # --------------------------------------------------------------------------- #
+
+
+#: Epic-state contents that must be refused, with the diagnostic each one owes.
+#: Labels are the parametrize ids, so a failure names the shape it came from.
+_CORRUPT_EPIC_STATES: Final[tuple[tuple[str, str, str], ...]] = (
+    ("not-json", "{ not json", "not valid JSON"),
+    ("json-array", "[]", "not a JSON object"),
+    ("stages-array", '{"epic": "auth-overhaul", "stages": []}', "non-object 'stages'"),
+    ("stages-string", '{"epic": "auth-overhaul", "stages": "nope"}', "non-object 'stages'"),
+    ("wrong-epic", '{"epic": "some-other-epic"}', "records epic"),
+)
 
 
 def _epic_fixture(
@@ -2465,22 +2731,23 @@ def test_a_missing_or_mismatched_manifest_fails_before_mutation(tmp_path):
     manifest_path.write_bytes(original)
 
 
-def test_a_corrupt_or_malformed_epic_state_is_refused_byte_intact(tmp_path):
+@pytest.mark.parametrize(
+    "label,content,needle",
+    _CORRUPT_EPIC_STATES,
+    ids=[case[0] for case in _CORRUPT_EPIC_STATES],
+)
+def test_a_corrupt_or_malformed_epic_state_is_refused_byte_intact(
+    tmp_path, label, content, needle
+):
+    """An unreadable epic state is refused and left exactly as found."""
     specs = _epic_fixture(tmp_path, revision=1)
     state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
-    for content, needle in (
-        ("{ not json", "not valid JSON"),
-        ("[]", "not a JSON object"),
-        ('{"epic": "auth-overhaul", "stages": []}', "non-object 'stages'"),
-        ('{"epic": "auth-overhaul", "stages": "nope"}', "non-object 'stages'"),
-        ('{"epic": "some-other-epic"}', "records epic"),
-    ):
-        state_path.write_text(content, encoding="utf-8")
-        before = state_path.read_bytes()
-        result = _epic_verify(specs, "--status", "skipped")
-        assert result.returncode == 2, content
-        assert needle in result.stderr, f"{content}: {result.stderr!r}"
-        assert state_path.read_bytes() == before, f"{content}: mutated on a refusal"
+    state_path.write_text(content, encoding="utf-8")
+    before = state_path.read_bytes()
+    result = _epic_verify(specs, "--status", "skipped")
+    assert result.returncode == 2, f"{label}: exit {result.returncode}"
+    assert needle in result.stderr, f"{label}: {result.stderr!r}"
+    assert state_path.read_bytes() == before, f"{label}: mutated on a refusal"
 
 
 def test_a_legacy_epic_state_without_epic_or_stages_is_enriched(tmp_path):
@@ -2572,16 +2839,21 @@ def test_epic_commit_2_requires_an_existing_entry_and_creates_no_state_file(tmp_
     assert _member_bytes(specs) == members_before
 
 
-def test_epic_commit_2_rejects_a_short_or_malformed_hash_before_mutation(tmp_path):
-    for label, value in _REJECTED_HASHES:
-        specs = _epic_fixture(tmp_path / f"epic-bad-{label}", revision=1)
-        assert _epic_verify(specs, "--status", "skipped").returncode == 0
-        state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
-        before = state_path.read_bytes()
-        result = _epic_verify(specs, "--commit-hash", value)
-        assert result.returncode == 2, f"{label}: exit {result.returncode}"
-        assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
-        assert state_path.read_bytes() == before, f"{label} mutated the epic state"
+@pytest.mark.parametrize(
+    "label,value", _REJECTED_HASHES, ids=[case[0] for case in _REJECTED_HASHES]
+)
+def test_epic_commit_2_rejects_a_short_or_malformed_hash_before_mutation(
+    tmp_path, label, value
+):
+    """The epic target refuses a malformed hash and leaves its state file intact."""
+    specs = _epic_fixture(tmp_path, revision=1)
+    assert _epic_verify(specs, "--status", "skipped").returncode == 0
+    state_path = specs / "auth-overhaul" / FS.EPIC_STATE_FILENAME
+    before = state_path.read_bytes()
+    result = _epic_verify(specs, "--commit-hash", value)
+    assert result.returncode == 2, f"{label}: exit {result.returncode}"
+    assert "40-character" in result.stderr, f"{label}: {result.stderr!r}"
+    assert state_path.read_bytes() == before, f"{label} mutated the epic state"
 
 
 # --------------------------------------------------------------------------- #
@@ -2678,16 +2950,18 @@ def test_every_verb_exits_2_on_an_unknown_feature(tmp_path):
         assert "no feature directory at" in result.stderr, verb
 
 
-def test_every_verb_refuses_a_corrupt_state_file_byte_intact(tmp_path):
-    for verb, extra in _VERB_INVOCATIONS.items():
-        state_path = _feature_dir(tmp_path / verb) / FS.PIPELINE_STATE_FILENAME
-        state_path.write_bytes(b"{ not json")
-        result = _run(
-            verb, "--feature", "demo", *extra, "--specs-dir", str(tmp_path / verb / "specs")
-        )
-        assert result.returncode == 2, f"{verb}: {result.stdout}{result.stderr}"
-        assert "refusing to overwrite it" in result.stderr, verb
-        assert state_path.read_bytes() == b"{ not json", f"{verb} touched a corrupt file"
+@pytest.mark.parametrize("verb", sorted(_VERB_INVOCATIONS))
+def test_every_verb_refuses_a_corrupt_state_file_byte_intact(tmp_path, verb):
+    """No verb may overwrite a state file it could not parse."""
+    state_path = _feature_dir(tmp_path) / FS.PIPELINE_STATE_FILENAME
+    state_path.write_bytes(b"{ not json")
+    result = _run(
+        verb, "--feature", "demo", *_VERB_INVOCATIONS[verb],
+        "--specs-dir", str(tmp_path / "specs"),
+    )
+    assert result.returncode == 2, f"{verb}: {result.stdout}{result.stderr}"
+    assert "refusing to overwrite it" in result.stderr, verb
+    assert state_path.read_bytes() == b"{ not json", f"{verb} touched a corrupt file"
 
 
 def test_every_verb_writes_schema_valid_state_for_a_nested_epic_member(tmp_path):
@@ -3030,6 +3304,34 @@ def _canon_text_files() -> list[Path]:
     )
 
 
+#: Clause boundaries for the `--amend` scan: sentence-final punctuation, the
+#: parenthesis pair, and a comma introducing a following instruction. A
+#: prohibition on one side of a boundary does not govern a mention on the other.
+_CLAUSE_BOUNDARY: Final[re.Pattern[str]] = re.compile(r"[;:()!?]|\.(?=\s|$)|,\s+then\b")
+
+#: The wording that counts as forbidding `--amend` within its own clause. Matched
+#: case-insensitively and on word boundaries, so canon may phrase the prohibition
+#: however it reads best.
+_AMEND_PROHIBITION: Final[re.Pattern[str]] = re.compile(
+    r"\b(?:never|not|no|without|forbid(?:s|den)?|prohibit(?:s|ed)?"
+    r"|disallow(?:s|ed)?|ban(?:s|ned)?|refuse(?:s|d)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _amend_clauses(line: str) -> list[str]:
+    """Return the clause-sized fragments of ``line`` that mention ``--amend``.
+
+    Args:
+        line: One line of canon prose or source text.
+
+    Returns:
+        Every fragment containing ``--amend``, delimited by ``_CLAUSE_BOUNDARY``.
+        Empty when the line does not mention the flag at all.
+    """
+    return [part for part in _CLAUSE_BOUNDARY.split(line) if "--amend" in part]
+
+
 def test_no_script_reaches_for_amend_at_all():
     """`--amend` is not a route any executable may take (REQ-STATE-04)."""
     for path in sorted(SCRIPTS.rglob("*.py")) + sorted(SCRIPTS.rglob("*.sh")):
@@ -3037,24 +3339,23 @@ def test_no_script_reaches_for_amend_at_all():
 
 
 def test_every_canon_mention_of_amend_forbids_it():
-    """Prose may name `--amend` only to prohibit it — never as an instruction.
+    """Prose may name `--amend` only inside a clause that forbids it.
 
     The two-commit protocol exists precisely because amending rewrites HEAD, so a
     hash captured before the amend points at a commit that is not in the final
-    history. A line that mentioned `--amend` without forbidding it would be a
-    provenance route, however it was phrased.
+    history. A prohibition in a NEIGHBOURING clause does not govern the mention,
+    and a mention its own clause forbids is acceptable however it is phrased — so
+    the negation is matched against the clause, not the line.
     """
     files = _canon_text_files()
     assert files, "no canon files were scanned"
     seen = 0
     for path in files:
         for number, line in enumerate(read(path).splitlines(), start=1):
-            if "--amend" not in line:
-                continue
-            seen += 1
-            lowered = line.lower()
-            assert "never" in lowered or "without" in lowered, (
-                f"{path.relative_to(REPO_ROOT)}:{number} mentions --amend without "
-                f"forbidding it:\n{line.strip()}"
-            )
+            for clause in _amend_clauses(line):
+                seen += 1
+                assert _AMEND_PROHIBITION.search(clause), (
+                    f"{path.relative_to(REPO_ROOT)}:{number} mentions --amend in a "
+                    f"clause that does not forbid it:\n{clause.strip()}"
+                )
     assert seen, "the prohibition itself disappeared from canon"

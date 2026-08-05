@@ -8,7 +8,7 @@
   "stack": "python",
   "typeCheckCommand": "ruff check scripts/ eval/",
   "testCommand": "bash scripts/validate.sh",
-  "smokeCommand": null,
+  "smokeCommand": "python3 scripts/forge-session.py doctor --json",
   "loopIterationMultiplier": 1.5,
   "contextWindowTokens": 1000000,
   "loopRunner": {

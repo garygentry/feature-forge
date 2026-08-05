@@ -1,0 +1,139 @@
+{
+  "feature": "verify-test-debt",
+  "createdAt": "2026-08-03T13:39:30Z",
+  "pipelineStatus": "active",
+  "stages": {
+    "forge-1-prd": {
+      "status": "complete",
+      "startedAt": "2026-08-03T13:39:30Z",
+      "completedAt": "2026-08-03T17:20:03Z",
+      "version": 2,
+      "basedOnVersions": {},
+      "artifacts": [
+        "PRD.md"
+      ],
+      "commitHash": "54a34078b9b404c1b2dd4c0eda968b325baadb83"
+    },
+    "forge-verify-prd": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-tech-v2confirm-2026-08-03.md",
+      "findingsCount": 11,
+      "verifiedAt": "2026-08-03T18:00:05Z",
+      "verifiedStageVersion": 2,
+      "commitHash": "e1603f1bb2a39193dd59910f5a81c4e2420d0694"
+    },
+    "forge-2-tech": {
+      "status": "complete",
+      "startedAt": "2026-08-03T14:10:51Z",
+      "completedAt": "2026-08-03T17:20:08Z",
+      "version": 2,
+      "basedOnVersions": {
+        "forge-1-prd": 2
+      },
+      "artifacts": [
+        "tech-spec.md"
+      ],
+      "commitHash": "54a34078b9b404c1b2dd4c0eda968b325baadb83"
+    },
+    "forge-verify-tech": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-tech-v2confirm-2026-08-03.md",
+      "findingsCount": 11,
+      "verifiedAt": "2026-08-03T17:59:36Z",
+      "verifiedStageVersion": 2,
+      "commitHash": "ffa2fa79caa4128fef0367b0e32e0f0dfd77a82d"
+    },
+    "forge-3-specs": {
+      "status": "complete",
+      "startedAt": "2026-08-03T18:21:26Z",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-canon-and-prose-guard.md",
+        "03-machinery-trim.md",
+        "04-production-validations.md",
+        "05-coverage-backfill.md",
+        "06-brittleness-batch.md",
+        "07-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "completedAt": "2026-08-03T19:27:01Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 2,
+        "forge-2-tech": 2
+      },
+      "commitHash": "e59a41b329e0475faaf84214f5f3f46b51c7136a"
+    },
+    "forge-verify-specs": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-specs-v1-2026-08-03-round2.md",
+      "findingsCount": 1,
+      "verifiedAt": "2026-08-04T00:49:40Z",
+      "verifiedStageVersion": 1,
+      "commitHash": "f09b52a9b747e5085e62513eecdfebe4db3f8951"
+    },
+    "forge-4-backlog": {
+      "status": "complete",
+      "startedAt": "2026-08-04T01:14:26Z",
+      "completedAt": "2026-08-04T14:00:22Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 2,
+        "forge-2-tech": 2,
+        "forge-3-specs": 1
+      },
+      "artifacts": [
+        "backlog.json"
+      ],
+      "commitHash": "d5187071515b87f26b0dd6f4057b53503007bfbd"
+    },
+    "forge-verify-backlog": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-backlog-2026-08-04.md",
+      "findingsCount": 15,
+      "verifiedAt": "2026-08-04T15:00:21Z",
+      "verifiedStageVersion": 1,
+      "commitHash": "2d77a9eaed3ecb44f355916ff2c985dc07705ed5"
+    },
+    "forge-5-loop": {
+      "status": "complete",
+      "startedAt": "2026-08-04T16:37:44Z",
+      "completedAt": "2026-08-04T22:18:55Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-4-backlog": 1
+      },
+      "artifacts": [
+        "specs/verify-test-debt/.rauf/state.json"
+      ],
+      "commitHash": "d1d26c3e436da73e60bf98cdf6af480c4fc53389"
+    },
+    "forge-verify-impl": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-impl-2026-08-04.md",
+      "findingsCount": 14,
+      "verifiedAt": "2026-08-05T03:56:48Z",
+      "verifiedStageVersion": 1,
+      "commitHash": "29ca73e03a0094087d8cef8b7365891806c4e2a5"
+    },
+    "forge-6-docs": {
+      "status": "complete",
+      "completedAt": "2026-08-05T13:23:45Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 2,
+        "forge-2-tech": 2,
+        "forge-3-specs": 1,
+        "forge-4-backlog": 1,
+        "forge-5-loop": 1
+      },
+      "artifacts": [],
+      "commitHash": "9614a141d559b29ce3d8d3916e5274b4e5263e9a"
+    }
+  },
+  "currentStage": "forge-5-loop",
+  "updatedAt": "2026-08-05T13:24:01Z",
+  "branch": "forge/verify-test-debt",
+  "notes": "PRD amendment needed: research superseded three figures. REQ-BRIT-04 exact-stderr roster is 5 sites/11 comparisons across 2 files (not ~15); REQ-BRIT-07 hash-matrix family is 4 sites (not 5); REQ-COV-03's resolver_line_identical IS asserted via all(criteria.values()) at run-compliance-eval.py:1883 — the real gap is a missing prelude key-set pin. Same figures appear in PRD sec 8 Success Criteria. Corrected rosters live in tech-spec.md. || DOCS DELIBERATELY SKIPPED (2026-08-05, operator decision): forge-6-docs is recorded complete with NO artifacts and no commitHash because no documentation was generated — the stage never ran. This is a workaround, not a truthful status: the pipeline has no way to express 'docs intentionally skipped' (production stageEntry.status is pending|in-progress|complete|stale, with no 'skipped'; DocsOutcome is complete|blocked only; pipelineStatus is active|paused|abandoned), and complete:true/nextStage:null is reachable ONLY via forge-6-docs.status=complete. Read the empty artifacts array as the signal that this stage produced nothing. Gap filed for a 'skipped' docs outcome."
+}

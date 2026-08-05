@@ -4489,10 +4489,18 @@ def cmd_state_artifact(
         The mutated state dict (for the --json echo).
 
     Raises:
-        UsageError: Unknown feature directory, unparseable state file, or a
-            failed atomic write (→ exit 2).
+        UsageError: A ``--path`` that is empty, absolute, ``..``-bearing,
+            control-character-bearing, or escaping the feature directory; an
+            unknown feature directory, an unparseable state file, or a failed
+            atomic write (→ exit 2).
     """
     state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    # Containment is checked against the resolved feature dir, which only the load
+    # produces; every path is validated before any of them is appended, so a
+    # rejected value in a repeated --path list leaves the file untouched.
+    target_dir = state_path.parent
+    for path in paths:
+        _validated_findings_file(path, target_dir, label="--path")
     entry = _stage_entry(state, stage)
     artifacts = entry.setdefault("artifacts", [])
     for path in paths:
@@ -4649,9 +4657,9 @@ def cmd_state_complete(
         surfaced in the --json echo / printer but NEVER written to disk.
 
     Raises:
-        UsageError: Contradictory ``--resumable --status complete``, a short or
-            non-hex ``--commit-hash``, a ``--commit-hash`` follow-up against a
-            stage that is not complete, an
+        UsageError: Contradictory ``--resumable --status complete``, a
+            ``--version`` below 1, a short or non-hex ``--commit-hash``, a
+            ``--commit-hash`` follow-up against a stage that is not complete, an
             unknown feature directory, an unparseable state file, or a failed
             atomic write (→ exit 2).
     """
@@ -4659,6 +4667,9 @@ def cmd_state_complete(
         raise UsageError(
             "--resumable implies --status in-progress; do not pass --status complete"
         )
+    # The write path must not accept a version the read path refuses; checked before
+    # the state file is loaded for mutation, so a rejection touches nothing.
+    _require_positive_int(version, "--version")
     if commit_hash is not None:
         # Branch 1's first act: full 40-hex only, validated BEFORE the
         # state file is loaded for mutation and long before _commit_state. Legacy
@@ -4895,7 +4906,9 @@ def _require_positive_int(value: object, label: str) -> int:
     return value
 
 
-def _validated_findings_file(value: str, target_dir: Path) -> str:
+def _validated_findings_file(
+    value: str, target_dir: Path, label: str = "--findings-file"
+) -> str:
     """Return ``value`` if it is a safe relative path inside ``target_dir``.
 
     ``findingsFile`` is defined as relative to the
@@ -4905,9 +4918,14 @@ def _validated_findings_file(value: str, target_dir: Path) -> str:
     segment, a NUL/control character, or a symlinked escape is rejected BEFORE any
     mutation rather than persisted for a later reader to resolve.
 
+    The same containment contract governs every stored path a caller asserts is
+    inside the feature directory, so the flag being validated is a parameter: the
+    diagnostic must name the flag the user actually passed.
+
     Args:
-        value: The ``--findings-file`` value.
+        value: The candidate path, as supplied on the command line.
         target_dir: The resolved feature (or epic) directory it must sit inside.
+        label: The flag to name in the error.
 
     Returns:
         The value unchanged, once validated.
@@ -4917,29 +4935,29 @@ def _validated_findings_file(value: str, target_dir: Path) -> str:
             escaping the target directory (→ exit 2).
     """
     if not value:
-        raise UsageError("--findings-file must not be empty")
+        raise UsageError(f"{label} must not be empty")
     bad = next((ch for ch in value if ord(ch) < 32 or ord(ch) == 127), None)
     if bad is not None:
         raise UsageError(
-            f"--findings-file contains a control character ({bad!r}); "
+            f"{label} contains a control character ({bad!r}); "
             f"expected a plain relative path"
         )
     candidate = Path(value)
     if candidate.is_absolute():
         raise UsageError(
-            f"--findings-file {value!r} is absolute; it must be relative to the "
+            f"{label} {value!r} is absolute; it must be relative to the "
             f"feature directory ({target_dir})"
         )
     if ".." in candidate.parts:
         raise UsageError(
-            f"--findings-file {value!r} contains a '..' segment; it must stay inside "
+            f"{label} {value!r} contains a '..' segment; it must stay inside "
             f"the feature directory ({target_dir})"
         )
     root = target_dir.resolve()
     resolved = (target_dir / candidate).resolve()
     if resolved == root or root not in resolved.parents:
         raise UsageError(
-            f"--findings-file {value!r} escapes the feature directory ({target_dir}); "
+            f"{label} {value!r} escapes the feature directory ({target_dir}); "
             f"refusing to record it"
         )
     return value

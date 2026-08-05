@@ -62,3 +62,5 @@ Detailed checklist for the **specs** verification mode, loaded by the `forge-ver
 ### Traceability
 - [ ] **CHECK-S38**: Build a complete traceability matrix from every REQ-XXX-NN to the spec document and section that implements it. Any REQ ID not found in at least one spec is a gap finding.
 
+> **A quoted foreign requirement id is not an orphan.** A suite may legitimately mention a `REQ-` id it does not own — most often when a spec quotes an antecedent feature's test docstrings verbatim. Such ids may be declared, one per line, in `{resolvedFeatureDir}/.traceability-allowlist` (blank lines and `#` comments ignored), or passed as a repeatable `--allow-orphan REQ-ID` to `scripts/validate-traceability.py`. Allowed ids are reported as `ALLOWED FOREIGN REFERENCES` (`allowed_orphans` under `--json`) rather than silently dropped, and an entry matching nothing is reported as `STALE ALLOWLIST ENTRIES` (`unused_allowlist_entries`), which is advisory and does not fail the check. Before filing an orphaned reference as a finding, check whether it is already declared there — a declared id is a recorded decision, not a defect.
+

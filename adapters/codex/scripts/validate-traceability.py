@@ -5,12 +5,20 @@ Extracts REQ-XXX-NN identifiers from a PRD file and checks that every
 requirement is referenced in at least one implementation spec document.
 Also reports orphaned references (IDs found in specs but not in PRD).
 
+A suite may legitimately mention a *foreign* requirement id — most often when a
+spec quotes an antecedent feature's test docstrings verbatim, carrying that
+feature's ids into this suite's text. Those are not this suite's requirements and
+are not orphans. Declare them with --allow-orphan, or one id per line in
+<specs-dir>/.traceability-allowlist; allowed ids are reported, never silently
+dropped.
+
 Usage:
     python validate-traceability.py <prd-path> <specs-dir> [--json]
+                                    [--allow-orphan REQ-ID ...]
 
 Exit codes:
-    0 = all requirements covered, no orphans
-    1 = gaps or orphans found
+    0 = all requirements covered; no orphans other than allowlisted ones
+    1 = uncovered requirements, or orphans that are not allowlisted
     2 = file not found or read error
 """
 
@@ -27,10 +35,44 @@ from pathlib import Path
 #: character stays `[A-Z]` so a lowercase or digit-led token is still not an ID.
 REQ_PATTERN = re.compile(r"REQ-[A-Z][A-Z0-9]*-\d+")
 
+#: Optional per-suite allowlist of foreign requirement ids, read from the specs dir.
+#: One id per line; blank lines and `#` comments ignored. Kept beside the suite it
+#: describes rather than hardcoded here, so this validator stays generic across
+#: repos and suites.
+ALLOWLIST_FILENAME = ".traceability-allowlist"
+
 
 def extract_req_ids(text: str) -> set[str]:
     """Extract all unique REQ-XXX-NN identifiers from text."""
     return set(REQ_PATTERN.findall(text))
+
+
+def read_allowlist_file(specs_dir: Path) -> set[str]:
+    """Read <specs-dir>/.traceability-allowlist, if present.
+
+    A missing file is not an error — most suites have no foreign ids at all.
+
+    Args:
+        specs_dir: The suite's specs directory, searched for the allowlist file.
+
+    Returns:
+        The declared foreign requirement ids; an empty set when the file is
+        absent or unreadable.
+    """
+    allowlist_path = specs_dir / ALLOWLIST_FILENAME
+    if not allowlist_path.exists():
+        return set()
+    try:
+        text = allowlist_path.read_text()
+    except OSError as e:
+        print(f"Warning: Could not read {allowlist_path}: {e}", file=sys.stderr)
+        return set()
+    ids: set[str] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if line:
+            ids.add(line)
+    return ids
 
 
 def main() -> int:
@@ -41,6 +83,17 @@ def main() -> int:
     parser.add_argument("specs_dir", help="Directory containing ##-*.md spec files")
     parser.add_argument(
         "--json", action="store_true", dest="json_output", help="Output as JSON"
+    )
+    parser.add_argument(
+        "--allow-orphan",
+        action="append",
+        default=[],
+        dest="allow_orphan",
+        metavar="REQ-ID",
+        help=(
+            "Requirement id that may appear in the specs without being defined in "
+            f"this suite's PRD (repeatable). Merged with {ALLOWLIST_FILENAME}."
+        ),
     )
     args = parser.parse_args()
 
@@ -96,9 +149,16 @@ def main() -> int:
         except OSError:
             pass
 
-    # Analysis
+    # Analysis. Allowed foreign ids are subtracted from the orphan set but reported
+    # below, so an allowlist entry is always visible rather than an invisible pass.
+    allowlist = read_allowlist_file(specs_dir) | set(args.allow_orphan)
     uncovered = sorted(prd_reqs - all_spec_reqs)
-    orphaned = sorted(all_spec_reqs - prd_reqs)
+    raw_orphaned = all_spec_reqs - prd_reqs
+    allowed_orphans = sorted(raw_orphaned & allowlist)
+    orphaned = sorted(raw_orphaned - allowlist)
+    # An allowlist entry that no longer matches anything is stale — surface it so the
+    # list cannot quietly outlive the quotation that justified it.
+    unused_allowlist = sorted(allowlist - raw_orphaned)
 
     # Per-requirement coverage map
     coverage: dict[str, list[str]] = {}
@@ -118,6 +178,8 @@ def main() -> int:
             "total_spec_files": len(spec_files),
             "uncovered_requirements": uncovered,
             "orphaned_references": orphaned,
+            "allowed_orphans": allowed_orphans,
+            "unused_allowlist_entries": unused_allowlist,
             "coverage": coverage,
             "valid": not has_issues,
         }
@@ -142,8 +204,27 @@ def main() -> int:
                 print(f"  - {req_id}: found in {', '.join(sources)} but not in PRD")
             print()
 
+        if allowed_orphans:
+            print(f"ALLOWED FOREIGN REFERENCES ({len(allowed_orphans)}):")
+            for req_id in allowed_orphans:
+                sources = [
+                    name for name, reqs in spec_reqs.items() if req_id in reqs
+                ]
+                print(f"  - {req_id}: found in {', '.join(sources)}; allowlisted")
+            print()
+
+        if unused_allowlist:
+            print(f"STALE ALLOWLIST ENTRIES ({len(unused_allowlist)}):")
+            for req_id in unused_allowlist:
+                print(
+                    f"  - {req_id}: allowlisted but no longer referenced — remove it "
+                    f"from <specs-dir>/{ALLOWLIST_FILENAME} "
+                    f"(advisory; does not fail this check)"
+                )
+            print()
+
         if not has_issues:
-            print("All requirements covered. No orphaned references.")
+            print("All requirements covered. No unallowlisted orphaned references.")
         else:
             total_issues = len(uncovered) + len(orphaned)
             print(f"Found {total_issues} issue(s).")

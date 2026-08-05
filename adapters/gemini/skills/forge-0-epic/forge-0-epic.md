@@ -248,6 +248,8 @@ now self-contained: manifest + EPIC.md + one subdirectory per member.
 
 3. **Closing message — the Stage Exit Protocol.** Congratulate the user ("Epic `{epic}` created with {N} features."), then close with the Stage Exit Protocol below (single-sourced in `references/stage-exit-protocol.md`; the epic → first-PRD boundary is a full stage boundary — do not improvise a "Next steps" list). `{first-actionable-feature}` = any feature with empty `dependsOn` (or the first entry of `render-status`'s `actionable` set):
 
+Determine `{verify-capability}` per the **Host and capability determination** section of `references/stage-exit-protocol.md`: `interactive` needs both a question mechanism and *permission* to dispatch the clean-room `forge-verifier`, and a session that merely needs consent first is still `interactive`.
+
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 
 ```bash

@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -122,52 +123,76 @@ _FRESH_TECH_VERIFY = {"status": "passed", "verifiedStageVersion": 2}
 # --------------------------------------------------------------------------- #
 
 
-def test_auto_verify_off_outstanding_verify_gates_standard(tmp_path: Path) -> None:
-    # INTENTIONAL CHANGE (item 011, capability-aware gate selection): the gate no
-    # longer follows `--host claude`; it follows `--verify-capability`. The flag is
-    # supplied explicitly here because the CLI default is `manual`.
-    root = _project(tmp_path, config={}, state=None)
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
-              "--verify-capability", "interactive")["directives"]
-    assert d["autoVerifyEffective"] is False
-    assert d["runInStageVerify"] is False
-    assert d["verifyState"] == "never"
-    assert d["verifyGate"] == "standard"
-    assert d["verifyCommand"] == "/feature-forge:forge-verify widget"
+#: Each row: an id, the forge.config.json payload, the extra CLI flags the row
+#: needs, and the directives it pins. Rows state only their own load-bearing
+#: directives; a key a row does not name is not asserted for that row.
+_GATE_SELECTION_ROWS: Final[tuple[tuple[str, dict, tuple[str, ...], dict], ...]] = (
+    (
+        "auto-verify-off-outstanding-gates-standard",
+        {},
+        ("--verify-capability", "interactive"),
+        {
+            "autoVerifyEffective": False,
+            "runInStageVerify": False,
+            "verifyState": "never",
+            "verifyGate": "standard",
+            "verifyCommand": "/feature-forge:forge-verify widget",
+        },
+    ),
+    (
+        "global-auto-verify-runs-in-stage-and-gates-none",
+        {"autoVerify": True},
+        (),
+        {"autoVerifyEffective": True, "runInStageVerify": True, "verifyGate": "none"},
+    ),
+    (
+        "per-stage-override-beats-global",
+        {"autoVerify": True, "autoVerifyStages": {"forge-2-tech": False}},
+        ("--verify-capability", "interactive"),
+        {
+            "autoVerifyEffective": False,
+            "runInStageVerify": False,
+            "verifyGate": "standard",
+        },
+    ),
+    (
+        "non-boolean-auto-verify-fails-closed",
+        {"autoVerify": "true"},          # a string, not a bool
+        (),
+        {"autoVerifyEffective": False},
+    ),
+    (
+        "invalid-auto-verify-keys-surface",
+        {"autoVerifyStages": {"forge-1-prod": True}},
+        (),
+        {"invalidAutoVerifyKeys": ["forge-1-prod"]},
+    ),
+)
 
 
-def test_global_auto_verify_runs_in_stage_and_gates_none(tmp_path: Path) -> None:
-    root = _project(tmp_path, config={"autoVerify": True})
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
-    assert d["autoVerifyEffective"] is True
-    assert d["runInStageVerify"] is True
-    assert d["verifyGate"] == "none"
+@pytest.mark.parametrize(
+    "config,extra,expected",
+    [row[1:] for row in _GATE_SELECTION_ROWS],
+    ids=[row[0] for row in _GATE_SELECTION_ROWS],
+)
+def test_auto_verify_effectiveness_selects_the_gate(
+    tmp_path: Path,
+    config: dict,
+    extra: tuple[str, ...],
+    expected: dict,
+) -> None:
+    """Effective autoVerify and the verify capability together select the gate.
 
-
-def test_per_stage_override_beats_global(tmp_path: Path) -> None:
-    root = _project(tmp_path, config={
-        "autoVerify": True,
-        "autoVerifyStages": {"forge-2-tech": False},
-    })
-    # INTENTIONAL CHANGE (item 011, capability-aware gate selection): `standard`
-    # now requires `--verify-capability interactive`, not `--host claude`.
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech",
-              "--verify-capability", "interactive")["directives"]
-    assert d["autoVerifyEffective"] is False
-    assert d["runInStageVerify"] is False
-    assert d["verifyGate"] == "standard"
-
-
-def test_non_boolean_auto_verify_fails_closed(tmp_path: Path) -> None:
-    root = _project(tmp_path, config={"autoVerify": "true"})  # string, not bool
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
-    assert d["autoVerifyEffective"] is False
-
-
-def test_invalid_auto_verify_keys_surface(tmp_path: Path) -> None:
-    root = _project(tmp_path, config={"autoVerifyStages": {"forge-1-prod": True}})
-    d = _exit(root, "--feature", "widget", "--stage", "forge-2-tech")["directives"]
-    assert d["invalidAutoVerifyKeys"] == ["forge-1-prod"]
+    The gate follows `--verify-capability`, not `--host`, which is why the rows
+    expecting `standard` pass the flag explicitly: the CLI default is `manual`.
+    """
+    root = _project(tmp_path, config=config)
+    directives = _exit(
+        root, "--feature", "widget", "--stage", "forge-2-tech", *extra
+    )["directives"]
+    missing = sorted(key for key in expected if key not in directives)
+    assert not missing, f"stage-exit emitted no {missing} directive(s)"
+    assert {key: directives[key] for key in expected} == expected
 
 
 @pytest.mark.parametrize("host", ["claude", "pi", "generic"])
@@ -2020,6 +2045,35 @@ def test_docs_routes_on_the_state_epic_back_pointer_without_an_explicit_flag(
     assert d["primaryCommand"] == "/feature-forge:forge-1-prd beta"
 
 
+def test_an_unsafe_epic_back_pointer_degrades_to_the_standalone_route(
+    tmp_path: Path,
+) -> None:
+    """REQ-COV-07: an unusable on-disk epic name routes standalone, not fatally.
+
+    The back-pointer is untrusted on-disk data, so it is name-checked before it
+    can steer routing. A value that fails the check leaves no epic to route
+    against, and the exit falls back to the standalone terminus rather than
+    failing a stage closing on data the user did not type.
+    """
+    root = _project(
+        tmp_path,
+        config={},
+        state={
+            "pipelineStatus": "active",
+            "epic": "../evil",
+            "stages": {"forge-5-loop": {"status": "complete", "version": 1}},
+        },
+    )
+
+    payload = _docs(root, "widget", "complete")
+
+    # `_exit` already asserts exit 0: the closing succeeds.
+    directives = payload["directives"]
+    assert "<new-feature>" in payload["nextSteps"], "the standalone terminus was not taken"
+    assert "../evil" not in directives["primaryCommand"]
+    assert payload["nextSteps"].rstrip("\n").endswith(SENTINEL)
+
+
 def test_docs_pi_translates_both_the_route_and_the_secondary_mentions(
     tmp_path: Path,
 ) -> None:
@@ -2225,10 +2279,22 @@ def test_docs_resolves_the_helper_beside_itself_and_never_a_bare_python3() -> No
 
 
 def test_docs_never_reimplements_the_epic_dependency_derivation() -> None:
-    """tech-spec §3.5: the router consumes render-status; it does not re-derive."""
+    """tech-spec §3.5: the router consumes render-status; it does not re-derive.
+
+    Scoped to `_render_status`'s executable body by the same slicing the sibling
+    invocation-contract test uses. The ban is a property of that function, and a
+    docstring naming a derivation in order to say it belongs elsewhere is prose,
+    not a reimplementation.
+    """
     source = HELPER.read_text()
+    body = source[source.index("def _render_status(specs_dir"):]
+    body = body[: body.index("\n_DOCS_OUTCOME_TEXT")]
+    code = body[body.index('"""', body.index('"""') + 3) + 3:]
     for forbidden in ("unmet_deps", "parallelEligible", "is_complete_for_orchestration"):
-        assert forbidden not in source, forbidden
+        assert forbidden not in code, (
+            f"_render_status re-derives {forbidden!r}; dependency and completion "
+            "derivation belong to epic-manifest.py (tech-spec §3.5)"
+        )
 
 
 # --------------------------------------------------------------------------- #

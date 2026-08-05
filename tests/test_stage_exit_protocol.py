@@ -291,6 +291,24 @@ def _read_contract_surface(site: CanonicalExitSite) -> str:
     return "\n".join(parts)
 
 
+def _site(skill: str) -> CanonicalExitSite:
+    """Return the canonical exit site for ``skill``.
+
+    Args:
+        skill: The skill id, as it appears in ``CANONICAL_EXIT_SITES``.
+
+    Returns:
+        The matching site entry.
+
+    Raises:
+        AssertionError: ``skill`` is not a covered exit site.
+    """
+    for site in CANONICAL_EXIT_SITES:
+        if site.skill == skill:
+            return site
+    raise AssertionError(f"{skill!r} is not a covered exit site")
+
+
 def _assert_exit_contract(site: CanonicalExitSite, surface: str) -> None:
     """Assert the 06 §2.3 closure contract against one covered skill's surface.
 
@@ -543,15 +561,21 @@ def test_the_reference_carries_the_sentinel_exactly_once():
 # ---------------------------------------------------------------------------
 
 
+#: The single surface every mutation control mutates. A branch site, because the
+#: ownership-token control only applies to a branch closure; one site for all classes,
+#: so a failure always names the same surface.
+_MUTATION_SITE: Final[CanonicalExitSite] = _site("forge-verify")
+
+
 def _surface_is_unmutated(site: CanonicalExitSite, before: str) -> None:
     assert _read_contract_surface(site) == before, (
         f"{site.skill}: a negative guard mutated repository canon — copy the string instead"
     )
 
 
-@pytest.mark.parametrize("site", CANONICAL_EXIT_SITES, ids=_SITE_IDS)
-def test_removing_the_scripted_invocation_fails_the_guard(site):
+def test_removing_the_scripted_invocation_fails_the_guard():
     """Deleting a covered skill's scripted exit call is caught."""
+    site = _MUTATION_SITE
     surface = _read_contract_surface(site)
     broken = surface.replace(_SCRIPTED_INVOCATION, "echo 'closed the stage'", 1)
     assert broken != surface
@@ -560,9 +584,9 @@ def test_removing_the_scripted_invocation_fails_the_guard(site):
     _surface_is_unmutated(site, surface)
 
 
-@pytest.mark.parametrize("site", CANONICAL_EXIT_SITES, ids=_SITE_IDS)
-def test_a_duplicate_terminal_print_instruction_fails_the_guard(site):
+def test_a_duplicate_terminal_print_instruction_fails_the_guard():
     """A second terminal-print instruction is a duplicate advancing contract."""
+    site = _MUTATION_SITE
     surface = _read_contract_surface(site)
     doubled = f"{surface}\n\nThen {_TERMINAL_PRINT_MARKER} — {_NO_TRAILING_CONTENT_MARKER}.\n"
     with pytest.raises(AssertionError, match="terminal-print instruction"):
@@ -570,9 +594,9 @@ def test_a_duplicate_terminal_print_instruction_fails_the_guard(site):
     _surface_is_unmutated(site, surface)
 
 
-@pytest.mark.parametrize("site", CANONICAL_EXIT_SITES, ids=_SITE_IDS)
-def test_a_duplicate_scripted_invocation_fails_the_guard(site):
+def test_a_duplicate_scripted_invocation_fails_the_guard():
     """Two scripted exits per surface is likewise a duplicate advancing contract."""
+    site = _MUTATION_SITE
     surface = _read_contract_surface(site)
     doubled = f"{surface}\n\n```bash\n{_SCRIPTED_INVOCATION} --stage {site.skill}\n```\n"
     with pytest.raises(AssertionError, match="scripted stage-exit invocation"):
@@ -580,20 +604,20 @@ def test_a_duplicate_scripted_invocation_fails_the_guard(site):
     _surface_is_unmutated(site, surface)
 
 
-@pytest.mark.parametrize("site", CANONICAL_EXIT_SITES, ids=_SITE_IDS)
-@pytest.mark.parametrize("marker", _RETIRED_BLOCK_MARKERS)
-def test_restoring_a_bespoke_terminal_block_fails_the_guard(site, marker):
+def test_restoring_a_bespoke_terminal_block_fails_the_guard():
     """A restored standard/warm block is an alternative advancing contract."""
+    site = _MUTATION_SITE
     surface = _read_contract_surface(site)
-    restored = f"{surface}\n\nOtherwise, {marker}.\n"
-    with pytest.raises(AssertionError, match="retired bespoke-block prose"):
-        _assert_exit_contract(site, restored)
+    for marker in _RETIRED_BLOCK_MARKERS:
+        restored = f"{surface}\n\nOtherwise, {marker}.\n"
+        with pytest.raises(AssertionError, match="retired bespoke-block prose"):
+            _assert_exit_contract(site, restored)
     _surface_is_unmutated(site, surface)
 
 
-@pytest.mark.parametrize("site", CANONICAL_EXIT_SITES, ids=_SITE_IDS)
-def test_a_hand_typed_sentinel_fails_the_guard(site):
+def test_a_hand_typed_sentinel_fails_the_guard():
     """A nested/branch surface that types the sentinel leaks terminal ownership."""
+    site = _MUTATION_SITE
     surface = _read_contract_surface(site)
     leaked = f"{surface}\n\nAs a nested owner, end with:\n\n{NEXT_STEPS_SENTINEL}\n"
     with pytest.raises(AssertionError, match="literal sentinel"):
@@ -601,27 +625,31 @@ def test_a_hand_typed_sentinel_fails_the_guard(site):
     _surface_is_unmutated(site, surface)
 
 
-@pytest.mark.parametrize("site", _BRANCH_SITES, ids=[s.skill for s in _BRANCH_SITES])
-@pytest.mark.parametrize("token", _OWNER_TOKENS)
-def test_dropping_a_branch_ownership_token_fails_the_guard(site, token):
+def test_dropping_a_branch_ownership_token_fails_the_guard():
     """A branch skill that stops naming an ownership token is caught."""
+    site = _MUTATION_SITE
+    assert site in _BRANCH_SITES, (
+        f"{site.skill} is no longer a branch site, so it cannot exercise the ownership "
+        "tokens — re-point the representative at a site that carries --owner"
+    )
     surface = _read_contract_surface(site)
-    stripped = surface.replace(token, "the dispatcher's intent")
-    assert stripped != surface
-    with pytest.raises(AssertionError, match="never inferred"):
-        _assert_exit_contract(site, stripped)
+    for token in _OWNER_TOKENS:
+        stripped = surface.replace(token, "the dispatcher's intent")
+        assert stripped != surface
+        with pytest.raises(AssertionError, match="never inferred"):
+            _assert_exit_contract(site, stripped)
     _surface_is_unmutated(site, surface)
 
 
-@pytest.mark.parametrize("site", CANONICAL_EXIT_SITES, ids=_SITE_IDS)
-def test_dropping_the_nested_no_terminal_block_rule_fails_the_guard(site):
-    """Losing the nested "prints nothing" rule is caught on every covered surface.
+def test_dropping_the_nested_no_terminal_block_rule_fails_the_guard():
+    """Losing the nested "prints nothing" rule is caught on a covered surface.
 
     The rule is carried by the canonical stamp, so on a covered surface the verbatim
     stamp check is what trips first — the stricter of the two. The dedicated
     `_NESTED_NO_BLOCK_MARKER` assertion still covers a surface that reworded the rule
     outside the stamp, which is why both messages are accepted here.
     """
+    site = _MUTATION_SITE
     surface = _read_contract_surface(site)
     stripped = surface.replace(_NESTED_NO_BLOCK_MARKER, "hand off to the caller")
     assert stripped != surface
@@ -635,13 +663,6 @@ def test_dropping_the_nested_no_terminal_block_rule_fails_the_guard(site):
 # ---------------------------------------------------------------------------
 # Loop and docs migration equivalence (06 §2.4) — positive replacements.
 # ---------------------------------------------------------------------------
-
-
-def _site(skill: str) -> CanonicalExitSite:
-    for site in CANONICAL_EXIT_SITES:
-        if site.skill == skill:
-            return site
-    raise AssertionError(f"{skill!r} is not a covered exit site")
 
 
 def test_the_loop_surface_covers_every_loop_outcome():

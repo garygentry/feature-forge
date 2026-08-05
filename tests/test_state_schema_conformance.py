@@ -411,7 +411,7 @@ def test_epic_commit_2_records_the_hash_in_the_documented_minimal_shape(tmp_path
     state = json.loads(
         (specs / "auth-overhaul" / ".epic-state.json").read_text(encoding="utf-8")
     )
-    assert list(state) == ["epic", "updatedAt", "stages"]
+    assert set(state) == {"epic", "updatedAt", "stages"}, sorted(state)
     assert state["epic"] == "auth-overhaul"
     entry = state["stages"]["forge-verify-epic"]
     assert entry["commitHash"] == value

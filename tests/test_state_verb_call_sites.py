@@ -15,7 +15,7 @@ boundaries, neither had a drift guard:
    workaround. Lose that text and an agent routes around a failed verb by writing state
    by hand — re-introducing exactly the drift REQ-R4-02 exists to remove.
 
-Both hold today (21 call sites, 0 misses). These guards keep them holding.
+Both invariants hold across canon today; these guards keep them holding.
 
 Stdlib only, asserting against canon (`skills/`, `references/`, `scripts/`) and never
 against generated `adapters/`. No skip gate may be introduced — see
@@ -24,9 +24,9 @@ against generated `adapters/`. No skip gate may be introduced — see
 
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
+from typing import Final, NamedTuple
 
 from _forge_paths import REFERENCES, REPO_ROOT, SCRIPTS, SKILLS, read
 
@@ -44,49 +44,16 @@ CALL_RE = re.compile(r'forge-session\.py"?\s+(state-[a-z]+)')
 #: itself worth a look.
 MIN_CALL_SITES = 34
 
-#: How far around a call site the `--epic` instruction may live. Both bounds are
-#: MEASURED against canon, not chosen: the widest real site carries its mandate **10**
-#: lines above (in the prose sentence introducing the fence), and the widest site that
-#: carries it BELOW carries it **1** line down (inline on the call's own continuation
-#: line). 12 is 10 plus 2 lines of margin for a reworded lead-in; 3 is 1 rounded up to
-#: `CALL_SPAN`, so the window reaches to the end of the longest fenced call and no
-#: further. Neither is deliberately wider: at 20 the lookbehind reached past a block's
-#: own mandate into the PRECEDING block's, so deleting the `state-artifact` mandate at
-#: `shared-conventions.md:318` left the guard green on the strength of the unrelated
-#: `state-enter` mandate 17 lines up. Widening either re-opens that hole — LOOKAHEAD
-#: was 8 (7 lines of unmeasured reach below every site) until V-005 measured it.
-LOOKBEHIND = 12
-LOOKAHEAD = 3
+#: A fenced block delimiter. Anchored at line start (allowing leading indentation) so a
+#: triple backtick appearing mid-sentence in prose cannot open or close a block.
+FENCE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*```")
 
-#: The flattening window: how many lines of a fenced `state-*` call are joined before
-#: searching it. The verb sits on the first line and its flags on `\`-continued lines
-#: below.
-#:
-#: NOT the longest call in canon, and deliberately so. Re-measured 2026-08-01 by walking
-#: all 34 sites: spans are 1 (x4), 2 (x11), 3 (x13) and **4 (x6)**. This window truncates
-#: those six on purpose —
-#:
-#:     skills/forge-1-prd/SKILL.md:116     state-ecr
-#:     skills/forge-2-tech/SKILL.md:110    state-ecr
-#:     skills/forge-3-specs/SKILL.md:160   state-complete
-#:     skills/forge-4-backlog/SKILL.md:158 state-complete
-#:     skills/forge-6-docs/SKILL.md:197    state-complete
-#:     skills/forge-verify/SKILL.md:233    state-verify
-#:
-#: — because the truncated 4th line never carries what the flattener searches for. The
-#: real measured basis is the FLAG's offset, not the call's length: every `--status
-#: skipped` `SKIP_STATUS_RE` looks for sits at offset **0 or 1** from its verb line
-#: (forge-5-loop:263 at 0; forge-4-backlog:172 and forge-6-docs:53 at 1), so 3 is 1 plus
-#: two lines of margin. Widening this to 4 to "cover canon" would buy the flattener
-#: nothing and cost the window its bound — see below.
-#:
-#: LOAD-BEARING FOR GUARD 1'S WINDOW, not only for call flattening: `LOOKAHEAD` is
-#: pinned relative to it (`LOOKAHEAD <= CALL_SPAN`), so widening this would silently
-#: widen how far below a call site Guard 1 will accept an `--epic` mandate. That is why
-#: it carries an absolute bound of its own in
-#: `test_the_window_is_no_wider_than_the_measured_maximum`. Raising it means re-measuring
-#: the searched flags' offsets — not the call spans, and not editing that assertion.
-CALL_SPAN = 3
+#: A markdown ATX heading. Meaningful only OUTSIDE a fence: a bash comment has the same
+#: shape and is not a document boundary.
+HEADING_RE: Final[re.Pattern[str]] = re.compile(r"^#{1,6} ")
+
+#: The member flag whose mandate every call site's region must carry.
+EPIC_FLAG: Final[str] = "--epic"
 
 #: `--status skipped` on a `state-verify` call, matched against a flattened invocation.
 SKIP_STATUS_RE = re.compile(r"--status\s+skipped\b")
@@ -136,17 +103,179 @@ def _canon_files() -> list[Path]:
     return sorted(SKILLS.glob("*/SKILL.md")) + [CONVENTIONS]
 
 
-def _call_sites() -> list[tuple[Path, int, str, list[str]]]:
-    """(path, 1-indexed line, verb, window) for every `state-*` call site in canon."""
-    sites = []
-    for path in _canon_files():
-        lines = read(path).splitlines()
-        for index, line in enumerate(lines):
-            match = CALL_RE.search(line)
-            if match:
-                window = lines[max(0, index - LOOKBEHIND) : index + LOOKAHEAD]
-                sites.append((path, index + 1, match.group(1), window))
+def _fence_flags(lines: list[str]) -> list[bool]:
+    """Mark every line that lies inside a fenced block, delimiters included.
+
+    A `#` line inside a fence is a comment in the fenced language, never a document
+    heading, so heading detection must consult this index first.
+
+    Args:
+        lines: The document's lines, in order, without trailing newlines.
+
+    Returns:
+        One flag per line, `True` when that line belongs to a fenced block — counting
+        the opening and closing delimiter lines themselves as part of their block.
+    """
+    flags: list[bool] = []
+    inside = False
+    for line in lines:
+        if FENCE_RE.match(line):
+            flags.append(True)  # the delimiter belongs to its own block
+            inside = not inside
+            continue
+        flags.append(inside)
+    return flags
+
+
+def _heading_lines(lines: list[str], flags: list[bool]) -> list[int]:
+    """Return the 0-indexed heading lines, ignoring `#` lines inside a fence.
+
+    Args:
+        lines: The document's lines, in order.
+        flags: `_fence_flags(lines)` for the same document.
+
+    Returns:
+        Ascending 0-indexed positions of the document's ATX headings.
+    """
+    return [
+        index
+        for index, line in enumerate(lines)
+        if not flags[index] and HEADING_RE.match(line)
+    ]
+
+
+def _call_blocks(lines: list[str]) -> list[tuple[int, int]]:
+    """Return the bounds of every fenced block containing a `state-*` call.
+
+    Blocks are delimited by toggling on fence delimiters rather than by scanning the
+    fence-flag index, so two adjacent blocks with no blank line between them stay
+    separate. A block with no `state-*` call is not a region bound and is omitted.
+
+    Args:
+        lines: The document's lines, in order.
+
+    Returns:
+        Ascending, non-overlapping `(first, last)` 0-indexed inclusive bounds — the
+        opening and closing delimiter lines — one per call-bearing block. A fence left
+        unterminated at end of file contributes no block.
+    """
+    blocks: list[tuple[int, int]] = []
+    start: int | None = None
+    holds_call = False
+    for index, line in enumerate(lines):
+        if FENCE_RE.match(line):
+            if start is None:
+                start, holds_call = index, False
+            else:
+                if holds_call:
+                    blocks.append((start, index))
+                start, holds_call = None, False
+            continue
+        if start is not None and CALL_RE.search(line):
+            holds_call = True
+    return blocks
+
+
+def _region_bounds(
+    block: tuple[int, int],
+    headings: list[int],
+    blocks: list[tuple[int, int]],
+    total: int,
+) -> tuple[int, int]:
+    """Return the half-open line span attached to one call-bearing fenced block.
+
+    The lower bound is the later of the nearest enclosing heading and the end of the
+    previous call-bearing fenced block; the upper bound is the earlier of the next
+    heading and the start of the next call-bearing fenced block. Bounding below on the
+    block rather than on the previous call line is what lets two calls inside one fence
+    share the mandate that precedes both.
+
+    Args:
+        block: `(first, last)` 0-indexed bounds of the block holding the call — or the
+            call's own line twice, when the call is not fenced.
+        headings: `_heading_lines(...)` for the same document.
+        blocks: `_call_blocks(...)` for the same document.
+        total: The document's line count.
+
+    Returns:
+        A `(lower, upper)` half-open 0-indexed span, suitable for slicing `lines`.
+    """
+    first, last = block
+    lower = max(
+        max((index + 1 for index in headings if index < first), default=0),
+        max((end + 1 for _, end in blocks if end < first), default=0),
+    )
+    upper = min(
+        min((index for index in headings if index > last), default=total),
+        min((start for start, _ in blocks if start > last), default=total),
+    )
+    return lower, upper
+
+
+class CallSite(NamedTuple):
+    """One `state-*` invocation and the document structure attached to it."""
+
+    # Canon file the call was read from — carried for the failure message only.
+    path: Path
+    # 1-indexed line of the verb, as a reader would cite it.
+    line: int
+    # The verb itself, e.g. `state-artifact`.
+    verb: str
+    # 0-indexed inclusive bounds of the fenced block holding the call. A call found
+    # outside any fence bounds itself, so the region rules still apply to it.
+    block: tuple[int, int]
+    # 0-indexed half-open span of the attached region.
+    bounds: tuple[int, int]
+    # The fenced block's own text — the unit Guard 3 searches.
+    block_text: str
+    # The whole attached region's text — the unit Guard 1 searches.
+    region: str
+
+
+def _sites_in(path: Path, text: str) -> list[CallSite]:
+    """Return every `state-*` call site in `text`, with its attached region.
+
+    Takes the document text as an argument rather than reading `path`, so a control can
+    scan a mutated copy without any repository file being written.
+
+    Args:
+        path: The canon file `text` was read from; used only to label failures.
+        text: The document's full contents.
+
+    Returns:
+        Call sites in document order, one per matching verb line.
+    """
+    lines = text.splitlines()
+    flags = _fence_flags(lines)
+    headings = _heading_lines(lines, flags)
+    blocks = _call_blocks(lines)
+    sites: list[CallSite] = []
+    for index, line in enumerate(lines):
+        match = CALL_RE.search(line)
+        if not match:
+            continue
+        block = next(
+            ((first, last) for first, last in blocks if first <= index <= last),
+            (index, index),
+        )
+        bounds = _region_bounds(block, headings, blocks, len(lines))
+        sites.append(
+            CallSite(
+                path=path,
+                line=index + 1,
+                verb=match.group(1),
+                block=block,
+                bounds=bounds,
+                block_text="\n".join(lines[block[0] : block[1] + 1]),
+                region="\n".join(lines[bounds[0] : bounds[1]]),
+            )
+        )
     return sites
+
+
+def _call_sites() -> list[CallSite]:
+    """Every `state-*` call site across canon, in a stable file order."""
+    return [site for path in _canon_files() for site in _sites_in(path, read(path))]
 
 
 # --------------------------------------------------------------------------------------
@@ -155,76 +284,17 @@ def _call_sites() -> list[tuple[Path, int, str, list[str]]]:
 
 
 def test_every_state_verb_call_site_carries_the_epic_instruction():
-    """Zero call sites without a nearby `--epic` mandate (spec 03 §3.6)."""
+    """Zero call sites whose attached region omits the `--epic` mandate."""
     missing = [
-        f"{path.relative_to(REPO_ROOT).as_posix()}:{line} ({verb})"
-        for path, line, verb, window in _call_sites()
-        if not any("--epic" in text for text in window)
+        f"{site.path.relative_to(REPO_ROOT).as_posix()}:{site.line} ({site.verb})"
+        for site in _call_sites()
+        if EPIC_FLAG not in site.region
     ]
     assert not missing, (
-        "`state-*` call sites with no `--epic` instruction within "
-        f"{LOOKBEHIND} lines above or {LOOKAHEAD} lines below — epic members will "
+        "`state-*` call sites whose section carries no `--epic` instruction — the "
+        "region searched runs from the enclosing heading (or the previous fenced call "
+        "block) to the next heading (or the next fenced call block). Epic members will "
         "write the wrong feature's state:\n  " + "\n  ".join(missing)
-    )
-
-
-def test_the_window_is_no_wider_than_the_measured_maximum():
-    """The lookaround bounds are pinned, because widening them silently guts Guard 1.
-
-    The window is the guard's entire discriminating power: at 20 lines of lookbehind
-    it reached past a block's own `--epic` mandate into the PRECEDING block's, so
-    deleting the `state-artifact` mandate left Guard 1 green on the strength of an
-    unrelated `state-enter` mandate 17 lines up. Nothing else fails when these
-    numbers grow — the guard just quietly stops discriminating — so the bound is
-    asserted here rather than left to review.
-
-    Both bounds are measured, and the docstring states both measurements rather than
-    supplying one and implying the other: 10 lines above and 1 line below at the
-    widest real sites. 12/3 adds margin for a reworded lead-in and for the flattening
-    window (`CALL_SPAN`) respectively. Raising either constant means re-measuring
-    canon and re-confirming the buried-mandate hole stays closed, not editing this
-    assertion.
-
-    THREE assertions, not two, because the lookahead bound is expressed relative to
-    `CALL_SPAN`. The coupling is deliberate — the window should reach to the end of
-    the flattened call and no further — but `CALL_SPAN` has an independent job
-    (flattening, at the `" ".join` below), so a maintainer could have a
-    self-contained reason to raise it and would silently raise the permitted
-    `LOOKAHEAD` with it. That reason is NOT "canon has a longer call": canon already
-    holds six four-line calls that this window truncates by design (see `CALL_SPAN`).
-    It is a searched flag appearing on a fourth line — today every one sits at offset
-    0 or 1 — which is the trigger to re-measure. Pinning `CALL_SPAN` absolutely keeps
-    both halves of the window at the same strength as `LOOKBEHIND`'s.
-    """
-    assert LOOKBEHIND <= 12, (
-        f"LOOKBEHIND widened to {LOOKBEHIND}: the window now reaches past a block's "
-        "own `--epic` mandate into its neighbour's, which is how a deleted mandate "
-        "once passed Guard 1"
-    )
-    assert CALL_SPAN <= 3, (
-        f"CALL_SPAN widened to {CALL_SPAN}: every flag the flattener searches for sits "
-        "at offset 0-1 from its verb line, so a wider window buys flattening nothing "
-        "while widening Guard 1's LOOKAHEAD past the call's own fence — re-measure the "
-        "searched flags' offsets first (NOT the call spans: six calls in canon are "
-        "four lines and are truncated here by design), then raise this deliberately"
-    )
-    assert LOOKAHEAD <= CALL_SPAN, (
-        f"LOOKAHEAD widened to {LOOKAHEAD} (> CALL_SPAN={CALL_SPAN}): the window now "
-        "reaches past this call's own fence into the NEXT block's mandate — same "
-        "buried-mandate failure mode as LOOKBEHIND, in the other direction"
-    )
-
-
-def test_the_failure_message_describes_the_whole_window():
-    """Guard 1's message must name both limbs, or it misdirects the reader.
-
-    It described only the lookbehind while the window searched in both directions,
-    so a maintainer chasing a failure would look 12 lines up, find nothing relevant,
-    and never think to look below the call.
-    """
-    guard_src = inspect.getsource(test_every_state_verb_call_site_carries_the_epic_instruction)
-    assert "lines above or " in guard_src and "lines below" in guard_src, (
-        "Guard 1's failure message no longer describes both limbs of the window"
     )
 
 
@@ -249,6 +319,118 @@ def test_the_epic_guard_is_not_vacuous():
         f"only {total} `state-*` call sites found across the skill bodies and "
         f"shared-conventions.md (floor {MIN_CALL_SITES}) — the pattern has almost "
         "certainly stopped matching rather than the call sites having been removed"
+    )
+
+
+#: The verb whose own `--epic` mandate the region control deletes. Its mandate sits in
+#: the prose between two fenced calls under one heading, so a region that stops
+#: separating those two fences stops reporting it.
+_REGION_PROBE_VERB: Final[str] = "state-artifact"
+
+
+def _region_probe_site(text: str) -> CallSite:
+    """Return the probe call site in a copy of shared-conventions.md.
+
+    Args:
+        text: The document's contents — canon, or a mutated copy of it.
+
+    Returns:
+        The single `state-artifact` call site the region control targets.
+
+    Raises:
+        AssertionError: The document does not carry exactly one such call site, so the
+            control can no longer name which one it probed.
+    """
+    found = [
+        site for site in _sites_in(CONVENTIONS, text) if site.verb == _REGION_PROBE_VERB
+    ]
+    assert len(found) == 1, (
+        f"expected exactly one `{_REGION_PROBE_VERB}` call site in "
+        f"{CONVENTIONS.name}, found {len(found)} — re-point the region control at a "
+        "site whose own mandate can be identified"
+    )
+    return found[0]
+
+
+def _without_the_probe_mandate(text: str) -> str:
+    """Return a copy of `text` with the probe site's own `--epic` mandate removed.
+
+    The mandate is located structurally — the lines of the probe's lead-in that lie
+    outside its own fenced block — so the control does not depend on the exact wording
+    of the sentence carrying it, and no repository file is written.
+
+    Args:
+        text: The document's contents.
+
+    Returns:
+        The same document with the flag struck from the probe's attached prose.
+
+    Raises:
+        AssertionError: The probe's lead-in carries no mandate to remove, so the control
+            would assert nothing.
+    """
+    lines = text.splitlines()
+    site = _region_probe_site(text)
+    first, last = site.block
+    flags = _fence_flags(lines)
+    headings = _heading_lines(lines, flags)
+    blocks = _call_blocks(lines)
+    # The probe's own lead-in, fixed by document structure. Deliberately NOT
+    # site.bounds: a span taken from the function under test widens with it, so the
+    # control would delete a neighbour's mandate too and never go green.
+    lower = max(
+        max((index + 1 for index in headings if index < first), default=0),
+        max((end + 1 for _, end in blocks if end < first), default=0),
+    )
+    upper = min(
+        min((index for index in headings if index > last), default=len(lines)),
+        min((start for start, _ in blocks if start > last), default=len(lines)),
+    )
+    mutated = list(lines)
+    removed = 0
+    for index in range(lower, upper):
+        if first <= index <= last or EPIC_FLAG not in mutated[index]:
+            continue
+        mutated[index] = mutated[index].replace(EPIC_FLAG, "the member flag")
+        removed += 1
+    assert removed, (
+        f"{CONVENTIONS.name}: the {_REGION_PROBE_VERB} lead-in carries no `{EPIC_FLAG}` "
+        "mandate to delete — the control has nothing to mutate"
+    )
+    return "\n".join(mutated)
+
+
+def test_deleting_a_call_sites_own_epic_mandate_is_reported():
+    """Guard 1 must report a site whose own mandate is gone, not lean on a neighbour's.
+
+    This is the bound on the guard's discriminating width. A region that widened until
+    every site is covered by an adjacent call's mandate would still pass Guard 1 and the
+    non-vacuity floor, and nothing else would fail.
+    """
+    original = read(CONVENTIONS)
+    probe_line = _region_probe_site(original).line
+
+    before = {
+        site.line for site in _sites_in(CONVENTIONS, original) if EPIC_FLAG not in site.region
+    }
+    assert not before, (
+        f"{CONVENTIONS.name} already has call sites with no `{EPIC_FLAG}` mandate in "
+        f"region {sorted(before)} — fix canon before reading this control"
+    )
+
+    after = {
+        site.line
+        for site in _sites_in(CONVENTIONS, _without_the_probe_mandate(original))
+        if EPIC_FLAG not in site.region
+    }
+    assert probe_line in after, (
+        f"deleting the {_REGION_PROBE_VERB} call's own `{EPIC_FLAG}` mandate left Guard "
+        f"1 green at {CONVENTIONS.name}:{probe_line} — the region now reaches into a "
+        "neighbouring call's mandate, which is the hole this control exists to close"
+    )
+
+    assert read(CONVENTIONS) == original, (
+        f"the region control mutated {CONVENTIONS.name} — mutate the copy, never canon"
     )
 
 
@@ -285,22 +467,25 @@ def test_the_documented_error_messages_still_exist_in_the_script():
 
 
 def _state_verify_call_text(path: Path) -> list[str]:
-    """Each `state-verify` invocation in `path`, as one flattened string per call.
+    """Each `state-verify` invocation in `path`, as the text of its own fenced block.
 
-    A fenced call spans several `\\`-continued lines, so the flag being looked for sits
-    on a different line from the verb. Joining `CALL_SPAN` lines starting at the verb's
-    line (so the verb plus up to `CALL_SPAN - 1` continuations) lets a single
-    `--status skipped` search see it. That window does not reach the end of every call
-    in canon — six run to four lines — but it does reach every flag this function is
-    searched for, which sits at offset 0 or 1. See `CALL_SPAN`.
+    The fenced block is the unit this guard's subject is stated in: a surface that
+    records a verification skip must ship the fence that writes it, so the invocation's
+    block — not the prose around it — is what is searched.
+
+    Args:
+        path: A canon file to scan.
+
+    Returns:
+        One string per `state-verify` call site, being that call's fenced block. Two
+        calls sharing one block yield that block twice, matching the per-call unit the
+        caller iterates.
     """
-    lines = read(path).splitlines()
-    calls = []
-    for index, line in enumerate(lines):
-        match = CALL_RE.search(line)
-        if match and match.group(1) == "state-verify":
-            calls.append(" ".join(lines[index : index + CALL_SPAN]))
-    return calls
+    return [
+        site.block_text
+        for site in _sites_in(path, read(path))
+        if site.verb == "state-verify"
+    ]
 
 
 def test_every_skip_recording_surface_persists_the_skip_through_state_verify():
@@ -326,9 +511,10 @@ def test_every_skip_recording_surface_persists_the_skip_through_state_verify():
 def test_the_skip_guard_is_not_vacuous():
     """A negative control: deleting a fence's `--status skipped` must break Guard 3.
 
-    Without this, a `SKIP_STATUS_RE` that stopped matching — or a `_state_verify_call_text`
-    span too short to reach the flag — would satisfy the guard above by finding nothing to
-    complain about, which is indistinguishable from every surface being compliant.
+    Without this, a `SKIP_STATUS_RE` that stopped matching — or a
+    `_state_verify_call_text` that stopped returning the fenced block the flag lives in
+    — would satisfy the guard above by finding nothing to complain about, which is
+    indistinguishable from every surface being compliant.
     """
     assert SKIP_RECORDING_SURFACES, "the skip-recording roster is empty"
     probe = REPO_ROOT / SKIP_RECORDING_SURFACES[0]

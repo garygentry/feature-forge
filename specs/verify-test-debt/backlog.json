@@ -1,0 +1,486 @@
+{
+  "schemaVersion": "1",
+  "project": "feature-forge — verify-test-debt",
+  "description": "Pay down the test debt left by the stage-exit-coverage epic: collapse the capability prose guard, trim mutation-control and window-tuning machinery, land two production input validations, backfill seven untested production behaviors, and de-brittle assertions across the suite. 46 PRD requirements across five workstreams. Baseline entering this work: 1840 passed / 2 skipped, `ruff check tests/` at exactly 19 errors (the REQ-QUAL-02 ceiling — no headroom). Expected suite total on completion: ~1799 collected. Implementation order is fixed by specs/verify-test-debt/01-architecture-layout.md §5.2.",
+  "items": [
+    {
+      "id": "001",
+      "type": "chore",
+      "priority": 1,
+      "title": "Complete the canonical capability rule and add the forge-0-epic pointer",
+      "description": "Two canon edits, one commit, plus full adapter regeneration.\n\n1. `references/stage-exit-protocol.md` § \"Host and capability determination\": this section states clauses **a** and **b** today. Add the paragraph specified verbatim in `02-canon-and-prose-guard.md` §2.3 so it also states clauses **c1a** (an auto-verify directive under a dispatch bar is routed through the gate), **c1b** (the gate's affirmative choice dispatches the verifier rather than printing a command), **c2** (never silently skipped), and **c3** (never resolved by advancing past unresolved verification). Those four live only in `references/shared-conventions.md` § \"Verify Capability\" today — that inversion is the defect being closed.\n\n2. `references/shared-conventions.md` § \"Verify Capability\" stays a summary. Do NOT delete its restatement and do NOT promote it; it must keep self-identifying as a partial excerpt.\n\n3. `skills/forge-0-epic/SKILL.md` Step C8: insert the one-sentence pointer from `02` §3.2 **immediately before** the sentence beginning `**Close this stage with the Scripted Stage Exit**`. Shape-match `skills/forge-5-loop/SKILL.md`. Budget is +5 body lines (`check_body_size` cap is 300 body lines; this file is at 295). A pointer, not a paragraph.\n\n4. Run `python3 scripts/build-adapters.py` and commit **all six** mirrors (`adapters/{claude,codex,copilot,cursor,gemini,pi}`) in this same commit. `scripts/validate.sh` gates on `build-adapters.py --check`, so a partial regeneration red-gates every later commit.\n\nDo NOT hand-edit anything under `adapters/`. Do NOT cite any `specs/` document from canon prose — `check-spec-purity.py`'s self-containment ratchet bans it.",
+      "acceptanceCriteria": [
+        "`references/stage-exit-protocol.md` § \"Host and capability determination\" states all six clauses (a, b, c1a, c1b, c2, c3) from `00-core-definitions.md` §3.2",
+        "`references/shared-conventions.md` § \"Verify Capability\" still self-identifies as a partial summary and is not promoted to a second source of truth",
+        "`skills/forge-0-epic/SKILL.md` Step C8 contains the literal string `Host and capability determination` before the `**Close this stage with the Scripted Stage Exit**` sentence",
+        "`python3 scripts/check-spec-purity.py` reports 0 violations, including the body-size cap on `skills/forge-0-epic/SKILL.md`",
+        "`python3 scripts/build-adapters.py --check` exits 0, and all six adapter mirrors are staged in the same commit as the `skills/` and `references/` changes",
+        "No file under `adapters/` was hand-edited, and no added canon prose cites a path under `specs/`",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T19:24:03.944Z",
+      "dependsOn": [],
+      "notes": "REQ-GUARD-01, REQ-GUARD-03, REQ-CANON-01, REQ-CANON-02. This is the only item that touches `skills/` or `references/`, but it is **not** the only item that must regenerate adapters — `scripts/forge-session.py` is a `build-adapters.py` runtime helper copied byte-identically into every bundle, so items 002 and 003 must regenerate too. After a later `git checkout`/`merge`/`pull`, adapter file modes can land as 0664 from the ambient umask and fail the mode test — re-running `build-adapters.py` restores 0644; that is not a content defect. The existing `tests/test_capability_determination_prose.py` should stay green through this edit: the pointer shape used by forge-5-loop/forge-6-docs does not match that file's lead-in filter, so forge-0-epic will not flip into `covered` and trip `test_the_roster_is_derived_not_listed`. If it does trip, the pointer wording has drifted from the §3.2 shape — fix the wording, do not touch `SURFACES_WITHOUT_PROSE` (item 005 deletes it).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/02-canon-and-prose-guard.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "002",
+      "type": "bugfix",
+      "priority": 2,
+      "title": "Reject --version below 1 on the state-complete write path",
+      "description": "`scripts/forge-session.py`'s `cmd_state_complete` accepts `--version 0` and negative values at the write path, while the read path already requires `>= 1`. Close the asymmetry, then pin it.\n\n1. In `cmd_state_complete`, call `_require_positive_int(version, \"--version\")` **unconditionally, before** `_load_state_for_write`. `_require_positive_int` already exists and is unchanged by this work — it rejects `bool` (an `int` subclass, so `True` would otherwise sail through as version 1), non-`int`, and `< 1`, raising `UsageError` (→ exit 2). The pre-load placement mirrors `_assert_full_commit_hash`. Full call-site detail is in `04-production-validations.md` §2.4.\n\n   Note the PRD names this validator `_positive_int`. No such symbol exists — the real name is `_require_positive_int`.\n\n2. Validate unconditionally, not only inside the write branch: `04` §2.6 records that alternative as rejected. `04` §2.5 explains why this does not conflict with the commit-2 flag-precedence behavior item 010 covers — read it before changing placement.\n\n3. Add `test_state_complete_rejects_a_non_positive_version_before_mutation` to `tests/test_state_verbs.py`, written per `05-coverage-backfill.md` §3.2. Use `@pytest.mark.parametrize` over the zero and negative cases from the start (2 collected ids) — that file has no `parametrize` usage today and **does not import pytest at all**, so add `import pytest`. Omitting it is a collection-time `NameError` that presents as the whole file vanishing from the run.\n\n4. Reuse that file's own `_run` / `_seed` / `_state_bytes` wrappers. `05` §3.2's code uses `_run` and `_seed` and does its byte comparison inline — use `_state_bytes` for that comparison instead, as `05` §7.2's code does, since it resolves the feature-directory segment the inline path omits. Do NOT use `tests/conftest.py`'s `run_cli` fixture — it is hardcoded to `scripts/epic-manifest.py`.\n\n5. Run `python3 scripts/build-adapters.py` and commit **all six** mirrors (`adapters/{claude,codex,copilot,cursor,gemini,pi}`) in this same commit. `scripts/forge-session.py` is one of `build-adapters.py`'s `RUNTIME_HELPERS` — copied byte-identically into every bundle — so `scripts/validate.sh`'s `build-adapters.py --check` gate fails on a `scripts/forge-session.py` edit not accompanied by a regeneration. Do NOT hand-edit anything under `adapters/`.\n\nExit contract is 0/2 only, never 1. Stdout stays empty on rejection.",
+      "acceptanceCriteria": [
+        "`cmd_state_complete` calls `_require_positive_int(version, \"--version\")` before `_load_state_for_write`, on every path",
+        "`state-complete --version 0` exits 2 with the message `--version must be a positive integer; got 0` on stderr and empty stdout",
+        "The state file is byte-identical after a rejected `--version`",
+        "`tests/test_state_verbs.py` defines `test_state_complete_rejects_a_non_positive_version_before_mutation`, parametrized over zero and negative, collecting 2 ids",
+        "`tests/test_state_verbs.py` imports `pytest`",
+        "`ruff check scripts/ eval/` is clean",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`python3 scripts/build-adapters.py --check` exits 0, and all six adapter mirrors are staged in the same commit as the `scripts/forge-session.py` change, with no file under `adapters/` hand-edited",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T19:39:04.932Z",
+      "dependsOn": [],
+      "notes": "REQ-FIX-01 (production) + REQ-COV-02 (its coverage). Paired deliberately: `05` §10.2 makes \"the validation must land before its test\" the one hard ordering constraint in the backfill, so shipping them together keeps the item self-contained and green. Narration rule (REQ-CANON-03) applies to every item in this backlog: comments, docstrings, and test narration state intent only — no counts, no \"measured\", no \"confirmed\", no empirical claims. Acceptance evidence goes in the commit message.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/04-production-validations.md",
+        "specs/verify-test-debt/05-coverage-backfill.md",
+        "specs/verify-test-debt/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "003",
+      "type": "bugfix",
+      "priority": 2,
+      "title": "Enforce --path containment on state-artifact",
+      "description": "`cmd_state_artifact` in `scripts/forge-session.py` performs **no validation at all** on `--path`, so `../escape.md` is stored verbatim. Reuse the existing containment validator instead of writing a second one.\n\n1. Widen `_validated_findings_file` to `(value: str, target_dir: Path, label: str = \"--findings-file\") -> str` and substitute `{label}` into **all five** `UsageError` messages (empty, control character, absolute, `..` segment, resolved escape). Exact message text is in `04-production-validations.md` §3.3; the full edited helper is in §3.4. The `--findings-file` default keeps every existing message **byte-for-byte identical**, so the sole existing caller `cmd_state_verify` and all of its tests are unchanged. This is not a behavior change for `state-verify`.\n\n2. In `cmd_state_artifact`, validate **every** `--path` **after** the load and **before any mutation**, passing `label=\"--path\"`. The containment target is `state_path.parent`, which only the load produces — hence after, not before. Validating all paths up front means a rejected path in a repeated `--path` list leaves the state file byte-identical. Call-site detail in `04` §3.5.\n\n3. Do NOT rename `_validated_findings_file` — `04` §3.8 records the rename as deliberately out of scope.\n\n4. Add three tests to `tests/test_state_verbs.py` per `05-coverage-backfill.md` §7.2: `test_state_artifact_rejects_an_unsafe_path_before_mutation` (parametrized over the `_UNSAFE_ARTIFACT_PATHS` roster, 5 ids), `test_state_artifact_rejects_a_path_that_escapes_through_a_symlink`, and `test_state_artifact_rejects_the_whole_batch_when_one_repeated_path_is_unsafe`. Reuse that file's `_run` / `_seed` / `_state_bytes` wrappers, as `05` §7.2's code does — the byte-identity assertions in AC 4 and AC 5 require `_state_bytes`, not the dict-returning `_state_of`. `05` §7.5 lists what these must NOT assert — read it.\n\n5. Run `python3 scripts/build-adapters.py` and commit **all six** mirrors (`adapters/{claude,codex,copilot,cursor,gemini,pi}`) in this same commit. `scripts/forge-session.py` is one of `build-adapters.py`'s `RUNTIME_HELPERS` — copied byte-identically into every bundle — so `scripts/validate.sh`'s `build-adapters.py --check` gate fails on a `scripts/forge-session.py` edit not accompanied by a regeneration. Do NOT hand-edit anything under `adapters/`.",
+      "acceptanceCriteria": [
+        "`_validated_findings_file` has the signature `(value: str, target_dir: Path, label: str = \"--findings-file\") -> str` and all five rejection messages interpolate `{label}`",
+        "Every existing `--findings-file` error message is byte-identical to before, and `cmd_state_verify`'s call site is unchanged",
+        "`cmd_state_artifact` validates every `--path` after the load and before any mutation",
+        "`state-artifact --path ../escape.md` exits 2 with a message naming `--path`, not `--findings-file`, and leaves the state file byte-identical",
+        "A repeated `--path` list containing one unsafe entry rejects the whole batch, leaving the state file byte-identical",
+        "`tests/test_state_verbs.py` defines the three named tests from `05` §7.2, with the parametrized one collecting 5 ids",
+        "`ruff check scripts/ eval/` is clean",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`python3 scripts/build-adapters.py --check` exits 0, and all six adapter mirrors are staged in the same commit as the `scripts/forge-session.py` change, with no file under `adapters/` hand-edited",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T19:49:22.656Z",
+      "dependsOn": [
+        "002"
+      ],
+      "notes": "REQ-SEC-01 (production) + REQ-COV-06 (its coverage). Depends on 002 only for file-ordering determinism: both edit `scripts/forge-session.py` and `tests/test_state_verbs.py`, and 002 is what adds `import pytest` to that test file. The validator calls `.resolve()`, so a symlinked escape is caught; it returns the **original unresolved string**, so stored values are unchanged on the success path — no migration. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/04-production-validations.md",
+        "specs/verify-test-debt/05-coverage-backfill.md",
+        "specs/verify-test-debt/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "004",
+      "type": "test",
+      "priority": 2,
+      "title": "Pin the compliance eval's prelude criterion key set",
+      "description": "`eval/run-compliance-eval.py`'s `score_prelude` returns a criteria dict whose key set is not pinned, so a criterion could be silently dropped or renamed and the scorer would still report a pass. `BRANCH_CRITERIA` already exists as the pattern to mirror.\n\n1. Add a module-scope `PRELUDE_CRITERIA: Final[tuple[str, ...]]` to `eval/run-compliance-eval.py`, mirroring the shape and placement of the existing `BRANCH_CRITERIA`. The exact tuple contents and placement are specified in `04-production-validations.md` §5.3.\n\n2. Add `test_the_prelude_scorer_returns_exactly_the_four_specified_criteria` to `tests/test_compliance_eval.py`, written per `05-coverage-backfill.md` §4.3. It is a **two-sided** assertion mirroring the existing `BRANCH_CRITERIA` test: the scorer's returned key set must equal `PRELUDE_CRITERIA` exactly — neither a missing key nor an extra one may pass. Reuse that file's `_build` / `_transcript` wrappers and its `_load_module()` loader.\n\n3. Scope boundaries, from `04` §5.4 and `07-testing-strategy.md` §8: **probe-1 criterion pinning is an explicit non-goal.** REQ-COV-03 names the prelude criterion only. Do not extend the pin to probe 1, and do not touch any fixture under `eval/fixtures/` — PRD §6 freezes the compliance eval beyond this one change.\n\n4. `04` §5.1 records the corrected premise (resolving OQ-03) and §5.2 narrows the real gap: `resolver_line_identical` **is** already asserted via `all(criteria.values())`; the gap is the missing key-set pin, not a missing assertion. Do not re-add an assertion that already exists.",
+      "acceptanceCriteria": [
+        "`eval/run-compliance-eval.py` defines module-scope `PRELUDE_CRITERIA: Final[tuple[str, ...]]` mirroring `BRANCH_CRITERIA`",
+        "`tests/test_compliance_eval.py` defines `test_the_prelude_scorer_returns_exactly_the_four_specified_criteria`",
+        "The test asserts key-set equality in both directions — a dropped key and an added key each fail it",
+        "No file under `eval/fixtures/` is modified, and no probe-1 criterion is pinned",
+        "`ruff check scripts/ eval/` is clean",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T19:58:48.411Z",
+      "dependsOn": [],
+      "notes": "REQ-COV-03. The production constant and its test are paired because the test cannot be written against a constant that does not exist (`05` §10.2). Independent of items 002/003 — different files entirely. Typed `test` because the test is the deliverable; the paired `PRELUDE_CRITERIA` constant is the minimum production change required to write it, and is the only `eval/` edit in this feature — items 009 and 010 remain the strictly test-only items, and their \"no production source file is modified\" criterion is deliberately not carried here. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/04-production-validations.md",
+        "specs/verify-test-debt/05-coverage-backfill.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "005",
+      "type": "refactor",
+      "priority": 1,
+      "title": "Rewrite the capability prose guard: 43 collected items down to 4",
+      "description": "Replace `tests/test_capability_determination_prose.py` wholesale. It absorbed 39% of all fix lines across the prior epic's 9 rounds; the mechanism responsible was exact-markdown fidelity checking, which this rewrite bans outright.\n\nThe shipped file, top to bottom, is fully specified in `02-canon-and-prose-guard.md` §4.10:\n\n1. **Module docstring** with `PROTECTS` and `NON-GOALS` sections — reproduce the text in `02` §4.2 (also in `00-core-definitions.md` §5.1). The declared protection set and the shipped test set must be **identical**: four declared, four shipped. Use a docstring, not a module-level `PROTECTS`/`NON_GOALS` tuple pair — `00` §5.1 rejects the tuple form because it invites a meta-test on the declaration.\n2. **Imports and constants** per `02` §4.3. Keep importing `CANONICAL_EXIT_SITES` from `test_stage_exit_protocol`.\n3. **Helpers** `_normalised`, `_markdown_section`, `_capability_evidence`, `_site_evidence` per `02` §4.4.\n4. **Four tests, in `PROTECTS` order**, per `02` §4.5–§4.8: `test_the_canonical_rule_states_every_clause`, `test_every_surface_has_a_paragraph_or_pointer`, `test_the_guard_is_not_vacuous`, `test_this_guard_is_not_skippable`. **No test is parametrized** — test 2 walks the 9-site roster inside one test and reports one list.\n\nDelete: the 11 functions / 41 collected items in `02` §6.1; the entire AST self-inspection layer and its three helpers (§6.2); `SURFACES_WITHOUT_PROSE` and `MIN_CAPABILITY_SURFACES` (§6.3); the `ast`, `pytest`, and `collections.abc.Iterator` imports (§6.4).\n\n**No exemption constant may replace `SURFACES_WITHOUT_PROSE`** — anywhere, in any form. An empty or per-site allow-list recreates exactly the failure mode being removed.\n\nThe roster is all **9** canonical exit sites, no exclusions, carrying **10** contract paths. A site passes when **any one** of its `contract_paths` carries the evidence — a per-file rule falsely fails `forge-5-loop`, which owns two.",
+      "acceptanceCriteria": [
+        "`pytest tests/test_capability_determination_prose.py --collect-only` reports exactly 4 items",
+        "The module docstring carries `PROTECTS` and `NON-GOALS` sections whose protection list matches the four shipped tests one-for-one",
+        "The four tests are named `test_the_canonical_rule_states_every_clause`, `test_every_surface_has_a_paragraph_or_pointer`, `test_the_guard_is_not_vacuous`, `test_this_guard_is_not_skippable`, and none is parametrized",
+        "`SURFACES_WITHOUT_PROSE` and `MIN_CAPABILITY_SURFACES` do not exist, and no exemption or allow-list constant replaces them anywhere in the repo",
+        "The file has no AST self-inspection layer and does not import `ast`, `pytest`, or `collections.abc.Iterator`",
+        "The guard resolves paragraph-or-pointer against canon for all 9 sites, treating a site as passing when any one of its contract paths carries the evidence",
+        "`python3 -c \"import sys; sys.path.insert(0, 'tests'); from test_stage_exit_protocol import CANONICAL_EXIT_SITES; assert len(CANONICAL_EXIT_SITES) == 9\"` succeeds",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T19:33:57.636Z",
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "REQ-GUARD-04, -05, -06, -07 (and asserts REQ-GUARD-01/-02/-03, which item 001 lands in canon). Depends on 001 because `test_the_canonical_rule_states_every_clause` is red by design until the canon completion ships. REQ-GUARD-06 is load-bearing: reintroducing clause-fragment matching, bold-marker presence, or per-surface formatting equality is a **regression, not a hardening**, and the NON-GOALS block is what makes a verifier finding on that axis inadmissible. Dropping `test_the_roster_is_derived_not_listed` is deliberate (`02` §4.9): the hand-listing risk it guarded *was* `SURFACES_WITHOUT_PROSE`, and its non-vacuous form required the very module-scope traversal REQ-GUARD-07 deletes. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/verify-test-debt/02-canon-and-prose-guard.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "006",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Collapse mutation controls from 67 items to 7, preserving the stamp-verbatim floor",
+      "description": "In `tests/test_stage_exit_protocol.py`, all 7 mutation-control classes are **kept**; each is reduced from a full 9-site (or 18-item / 4-item) parametrization to **one collected item** mutating a single fixed representative site.\n\nThe seven classes, one item each, are tabulated in `03-machinery-trim.md` §2.1: remove the scripted invocation (9→1); duplicate terminal print instruction (9→1); duplicate scripted invocation (9→1); restore a retired bespoke block (18→1); hand-typed sentinel (9→1); drop a branch ownership token (4→1); drop the nested no-terminal-block rule (9→1). Total 67 → 7.\n\nThe representative site is **fixed, not rotating or randomised** — `03` §2.2 names it. A drawn site makes the same regression report differently on different runs; a fixed one means the failure is explainable from the test name alone. The complete replacement text for all seven surviving controls is in `03` §2.3.\n\n**Hard floor — REQ-TRIM-02.** Every positive stamp-verbatim test in this file is preserved: all **18** collected items, unchanged. The preserve list is `03` §3. `03` §2.4 names the constants and helpers the trim must NOT remove.\n\n**The export constraint — the single most likely breakage in this feature.** `tests/test_capability_determination_prose.py` imports `CANONICAL_EXIT_SITES` from this file. It MUST keep its name, its module scope, and its **9-entry** tuple; `CanonicalExitSite` MUST keep its `skill` and `contract_paths` fields; `_SITE_IDS` and `_BRANCH_SITES` may be trimmed in use but not deleted while any surviving `parametrize` reads them. These are different requirements (REQ-GUARD-04, REQ-TRIM-01) that do not reference each other — which is exactly how this kind of break ships. Run the import gate after this item.",
+      "acceptanceCriteria": [
+        "All 7 mutation-control classes from `03` §2.1 survive, each collecting exactly 1 item — 7 total, down from 67",
+        "Each surviving control mutates the single fixed representative site named in `03` §2.2, not a rotating or randomly drawn one",
+        "All 18 stamp-verbatim collected items in the file are intact and unchanged (REQ-TRIM-02)",
+        "The file's remaining 17 non-mutation, non-stamp-verbatim items are unchanged",
+        "`CANONICAL_EXIT_SITES` keeps its name and module scope and still yields 9 entries; `CanonicalExitSite` still has `skill` and `contract_paths`",
+        "`python3 -c \"import sys; sys.path.insert(0, 'tests'); from test_stage_exit_protocol import CANONICAL_EXIT_SITES; assert len(CANONICAL_EXIT_SITES) == 9\"` succeeds",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T20:08:51.429Z",
+      "dependsOn": [
+        "005"
+      ],
+      "notes": "REQ-TRIM-01 (the trim) and REQ-TRIM-02 (the preserve floor). Sequenced after 005 per `01-architecture-layout.md` §5.2 steps 3 then 4, so the import gate can be re-checked after **both** files have been edited. Rationale for one item per class (`03` §2.1): the per-site contract is identical by construction — one `_assert_exit_contract` body applied to every site — and `test_each_covered_skill_satisfies_the_scripted_exit_contract` already proves site-uniformity at full parametrization. Running each mutation against all 9 re-proves uniformity seven more times rather than testing seven different things. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/03-machinery-trim.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "007",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Replace the tuned proximity window with a structural block scan",
+      "description": "In `tests/test_state_verb_call_sites.py`, Guard 1 currently bounds each `state-*` call site with tuned integers (`LOOKBEHIND = 12`, `LOOKAHEAD = 3`, `CALL_SPAN = 3`) that must be re-tuned whenever canon prose is reflowed. Replace them with bounds derived from markdown structure.\n\n1. **Add three constants** (`03-machinery-trim.md` §4.1): `FENCE_RE = re.compile(r\"^\\s*```\")`, `HEADING_RE = re.compile(r\"^#{1,6} \")`, `EPIC_FLAG = \"--epic\"`, each `Final`-annotated. `CALL_RE`, `MIN_CALL_SITES`, `SKIP_STATUS_RE`, `SKIP_RECORDING_SURFACES`, `EPIC_MANDATE_CLAUSES`, `FAILURE_PROTOCOL_CLAUSES`, `ERROR_MESSAGE_PREFIXES` are unchanged, values and doc-comments alike. `EPIC_FLAG` is the **searched token, not an exemption list** — no exemption constant may be introduced here (`00-core-definitions.md` §4.2).\n\n2. **Fence-aware heading index** (`03` §4.2) — mandatory. The index MUST toggle on fence delimiters and ignore any `#` line while inside a fence; a bash comment has the same shape as a heading and is not a document boundary.\n\n3. **Fenced blocks that hold a call** (`03` §4.3), **region bounds** (`03` §4.4), **call-site enumeration** (`03` §4.5), **Guard 1 rewritten** (`03` §4.6). The bound is the fence **BLOCK**, not the call line: the Git Commit Protocol's commit-1/commit-2 `state-complete` pair sits in one fence and shares one region — bounding on the previous call line produces a false failure on exactly that pair (33/34 instead of 34/34).\n\n4. **Delete** (`03` §5): `LOOKBEHIND`, `LOOKAHEAD`, `CALL_SPAN`, their tuning test, the `inspect.getsource` meta-test, and the now-unused `inspect` import.\n\n5. **Rebind Guard 3** to the call's own fence block (`03` §5.4), **add the replacement mutation control** (`03` §6) covering the `state-artifact` case, and **fix the module docstring's** two narration defects (`03` §5.5).\n\n**Preserve verbatim (REQ-TRIM-06):** `test_the_epic_mandate_itself_is_still_documented` (`03` §7).\n\nOrder within the file: `03` §4 before `03` §6, `03` §4 before `03` §5.4.",
+      "acceptanceCriteria": [
+        "`FENCE_RE`, `HEADING_RE`, and `EPIC_FLAG` exist with `Final` annotations; `CALL_RE`, `MIN_CALL_SITES`, `SKIP_STATUS_RE`, `SKIP_RECORDING_SURFACES`, `EPIC_MANDATE_CLAUSES`, `FAILURE_PROTOCOL_CLAUSES`, `ERROR_MESSAGE_PREFIXES` are unchanged",
+        "`LOOKBEHIND`, `LOOKAHEAD`, `CALL_SPAN`, the window-tuning test, the `inspect.getsource` meta-test, and the `inspect` import are all gone",
+        "The heading index ignores `#` lines that appear inside a fence",
+        "Guard 1 passes on canon at 34/34 call sites, including both `state-complete` calls in the Git Commit Protocol's shared fence block",
+        "`test_the_epic_mandate_itself_is_still_documented` is preserved verbatim (REQ-TRIM-06)",
+        "A mutation control covering the `state-artifact` case replaces the deleted width bound",
+        "No exemption or per-site allow-list constant is introduced in this file",
+        "`pytest tests/test_state_verb_call_sites.py --collect-only` reports 9 items, down from 10",
+        "The module docstring no longer carries the two narration defects named in `03` §5.5",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T20:20:07.456Z",
+      "dependsOn": [
+        "006"
+      ],
+      "notes": "REQ-TRIM-03, -04, -05, -06. Detection strength is a **separate axis from tunability and is deliberately weaker** — `00-core-definitions.md` §6.4 records that as a declared boundary, not a parity claim, and §6.2 explains why no numeric census of the residual is stated. Do not attempt to restore per-site discrimination by adding an integer. `03` §4.8 names the two false-failure modes this design exists to prevent; §4.7 is the worked example covering the two deciding cases. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/verify-test-debt/03-machinery-trim.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "008",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Remove duplicated source-text assertions in test_stage_constants_parity.py",
+      "description": "In `tests/test_stage_constants_parity.py`, `test_the_exit_domains_are_derived_not_hand_listed` asserts the same properties twice: once at runtime against the loaded module, and again by grepping the script's source text. Remove **exactly** the source-text half, plus the comment that narrates only it.\n\nDelete from that test:\n- the `# The derivation must be textual too: …` comment,\n- `source = read(SESSION)`,\n- `assert \"EXIT_STAGES: Final[tuple[str, ...]] = get_args(ExitStage)\" in source`,\n- the `for alias in (\"LoopOutcome\", \"DocsOutcome\", \"VerifyOutcome\", \"FixOutcome\")` loop asserting `f\"frozenset(get_args({alias}))\" in source`.\n\nThe resulting test in full is given in `03-machinery-trim.md` §8 — it keeps the runtime checks `session.EXIT_STAGES == get_args(session.ExitStage)`, the length-9 assertion, and the `session.EXIT_OUTCOMES == {...}` dict comparison. Each removed assertion is proved by a runtime check **in the same test**, two lines above.\n\n**RETAINED, unchanged — do not touch:** `test_the_cli_stage_choices_are_the_whole_exit_domain`, including its `assert \"choices=EXIT_STAGES\" in source` and `assert \"_STAGE_EXIT_CLI_STAGES\" not in source`, its docstring, and its body. REQ-TRIM-07 scopes only to assertions that duplicate an **existing runtime check**; this one has no counterpart — nothing in this file establishes at runtime that the `--stage` argument's `choices` reads the shared constant, so removing it would delete coverage rather than duplication. Converting it to a runtime argparse-choices inspection is recorded as out of scope and must not be attempted.\n\n**No test is removed and no import becomes unused.** `read` and `SESSION` stay used by other tests in the file, and `ast` stays for `ast.literal_eval` constant extraction — not self-inspection — so this edit adds no ruff error.",
+      "acceptanceCriteria": [
+        "`test_the_exit_domains_are_derived_not_hand_listed` matches the full replacement in `03` §8 — runtime checks only, no `read(SESSION)` and no source-text assertions",
+        "`test_the_cli_stage_choices_are_the_whole_exit_domain` is unchanged, including both of its source-text assertions and its docstring",
+        "No test function is removed from the file and its collected-item count is unchanged",
+        "`read`, `SESSION`, and `ast` remain imported and used; no new `F401` appears",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T20:29:08.222Z",
+      "dependsOn": [
+        "007"
+      ],
+      "notes": "REQ-TRIM-07. Independent of items 006 and 007 in substance (`03` §12: \"§8 is independent of everything else here\") — chained only to keep the trim workstream sequential. The first removed assertion is additionally corroborated cross-file by `tests/test_stage_exit_protocol.py::test_exit_stages_is_the_runtime_tuple_derived_from_the_extracted_alias`, but that is corroboration; REQ-TRIM-07's basis is the same-test runtime check. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/03-machinery-trim.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "009",
+      "type": "test",
+      "priority": 2,
+      "title": "Backfill auto-verify corrupt-state arms and byte-level debt idempotency",
+      "description": "Two untested production behaviors, both landing in `tests/test_auto_verify.py` beside existing coverage of the same subject.\n\n**REQ-COV-01 — corrupt state × autoVerify on/off** (`05-coverage-backfill.md` §2.3). Two tests:\n- `test_a_corrupt_state_file_exits_2_with_no_payload_when_auto_verify_is_on`\n- `test_a_corrupt_state_file_closes_the_stage_normally_when_auto_verify_is_off`\n\nThese pin the **asymmetry** between the tolerant read path (`_read_state`) and the strict debt-write path (`_load_state_for_write` via `_schedule_auto_verify_debt`). `05` §2.1 documents the verified current behavior and §2.2 records the trade-off — **read §2.2 before filing anything as a defect**; the asymmetry is intentional.\n\n**REQ-COV-04 — debt-write idempotency at byte level** (`05` §5.3): `test_a_pending_marker_at_the_current_revision_is_left_byte_identical`. Note what already exists: `test_repeated_stage_exit_at_the_same_revision_is_byte_idempotent` already does byte-level idempotency including an explicit `updatedAt` check. The **uncovered arm** is a *seeded* `auto-verify-pending` marker — write the marker into state first, then assert the second `stage-exit` leaves the file byte-identical. `05` §5.2 spells out exactly what exists and what is missing; §5.4 explains why byte level rather than semantic equality.\n\n**Use the correct wrapper family.** `tests/test_auto_verify.py` has two, and only one can invoke `stage-exit`. Use `_exit_project`, `_stage_exit`, `_exit_ok`, `_tech_state`, `_read_entry` — the wrappers under that file's `# Item 012 — the 03 §4.1 stage-exit scheduling boundary` header. The `_rank` / `_rank_proc` / `_write_state` / `_completed_prd_state` family drives `rank-features` and the pure classifiers and **cannot** invoke `stage-exit`. Do not use `tests/conftest.py`'s `run_cli` fixture.\n\nBoth behaviors exist today — these tests pass against the current tree and add no production change.",
+      "acceptanceCriteria": [
+        "`tests/test_auto_verify.py` defines `test_a_corrupt_state_file_exits_2_with_no_payload_when_auto_verify_is_on` and `test_a_corrupt_state_file_closes_the_stage_normally_when_auto_verify_is_off`",
+        "The autoVerify-on arm asserts exit 2 with no payload on stdout; the autoVerify-off arm asserts the stage closes normally",
+        "`tests/test_auto_verify.py` defines `test_a_pending_marker_at_the_current_revision_is_left_byte_identical`, which seeds an `auto-verify-pending` marker before re-running `stage-exit`",
+        "The idempotency assertion is byte-level on the state file, not a semantic dict comparison",
+        "All three tests use the `_exit_project` / `_stage_exit` / `_exit_ok` / `_tech_state` / `_read_entry` wrapper family, and none uses `conftest.py`'s `run_cli`",
+        "No production source file is modified by this item, absent a REQ-FIX-02 trigger raised per `05` §9",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T20:39:20.818Z",
+      "dependsOn": [
+        "008"
+      ],
+      "notes": "REQ-COV-01, REQ-COV-04. These assert existing behavior and have no production dependency (`05` §10.2), so they are independent of items 002/003/004 — chained only for sequencing. Must land **before** item 011's REQ-BRIT-01 decorator touches this same file: `01-architecture-layout.md` §5.4 fixes add-before-rewrite so the brittleness pass sees the final set of functions. Any test covering several inputs is written with `@pytest.mark.parametrize` from the start so item 014's dedup pass has nothing to convert here. REQ-FIX-02 is a standing obligation (`05` §9), not a task. If a test written here surfaces a defect beyond REQ-FIX-01/REQ-SEC-01, do **not** write a test asserting the wrong behavior — stop and raise it against PRD §3.3 REQ-FIX-02, then fix it in this feature or record a position the way `05` §9's two rows are recorded. Silently pinning it is the one disallowed option. The two outcomes in that table are recorded positions and are **not** triggers. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/05-coverage-backfill.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "010",
+      "type": "test",
+      "priority": 2,
+      "title": "Backfill commit-2 flag precedence and unsafe epic back-pointer degradation",
+      "description": "The last two coverage gaps, in two different files. Both assert **existing, correct** behavior — no production change.\n\n**REQ-COV-05 — commit-2 ignores conflicting flags** (`05-coverage-backfill.md` §6.3). Add `test_commit_2_ignores_based_on_artifact_and_preserve_commit_hash` to `tests/test_state_verbs.py`. `state-complete`'s commit-2 path (invoked with `--commit-hash`) writes only the hash and touches nothing else; passing `--based-on`, `--artifact`, or `--preserve-commit-hash` alongside it is ignored by branch, **not rejected**. §6.1 documents the verified behavior and §6.2 what is already covered.\n\n**CRITICAL — `05` §6.4 names an assertion this test MUST NOT make. Read it before writing the test.** Asserting the wrong side here turns a deliberate precedence-by-branch design into a rejection contract the code does not implement.\n\n**REQ-COV-07 — unsafe epic back-pointer degradation** (`05` §8.3). Add `test_an_unsafe_epic_back_pointer_degrades_to_the_standalone_route` to `tests/test_stage_exit.py`. An on-disk `epic` value failing `SAFE_NAME_RE` causes `stage_exit` to degrade to the standalone route rather than resolving an epic path. §8.1 stresses this is a coverage test of correct existing behavior; §8.2 names the real surface and the guard already protecting it.\n\n**`05` §8.4 fixes the residual this test must deliberately leave unpinned:** it asserts the **degradation only** and must NOT pin `stage_exit`'s reconcile-command interpolation as golden. That non-goal is also recorded in `07-testing-strategy.md` §8.\n\nReuse each host file's own wrappers — `_run` / `_feature_dir` / `_state_of` in `test_state_verbs.py`, `_exit` / `_project` / `_epic_project` in `test_stage_exit.py`. Do not use `conftest.py`'s `run_cli`, and do not introduce a shared wrapper.",
+      "acceptanceCriteria": [
+        "`tests/test_state_verbs.py` defines `test_commit_2_ignores_based_on_artifact_and_preserve_commit_hash`, asserting the conflicting flags are ignored rather than rejected",
+        "That test does not make the assertion `05` §6.4 forbids",
+        "`tests/test_stage_exit.py` defines `test_an_unsafe_epic_back_pointer_degrades_to_the_standalone_route`",
+        "That test asserts the standalone-route degradation only and does not pin the reconcile-command interpolation as golden",
+        "Each test reuses its host file's existing CLI wrappers; neither uses `conftest.py`'s `run_cli`, and no shared wrapper is introduced",
+        "No production source file is modified by this item, absent a REQ-FIX-02 trigger raised per `05` §9",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T20:49:33.148Z",
+      "dependsOn": [
+        "009"
+      ],
+      "notes": "REQ-COV-05, REQ-COV-07. Completes the seven-gap backfill: with items 002, 003, 004 and 009, each of REQ-COV-01..07 now has at least one named test in the host file `01-architecture-layout.md` §4.2 assigns it. This item must land before items 011–015 rewrite existing tests in `test_state_verbs.py` and `test_stage_exit.py` (`01` §5.4: add before rewrite). REQ-FIX-02 is a standing obligation (`05` §9), not a task. If a test written here surfaces a defect beyond REQ-FIX-01/REQ-SEC-01, do **not** write a test asserting the wrong behavior — stop and raise it against PRD §3.3 REQ-FIX-02, then fix it in this feature or record a position the way `05` §9's two rows are recorded. Silently pinning it is the one disallowed option. The two outcomes in that table are recorded positions and are **not** triggers. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/05-coverage-backfill.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/07-testing-strategy.md",
+        "specs/verify-test-debt/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "011",
+      "type": "refactor",
+      "priority": 3,
+      "title": "Add the root-uid skip guard, narrow the token ban, widen the exit-1 guard, and unpin key order",
+      "description": "Four independent brittleness fixes, one per file, sharing a single verification step.\n\n**REQ-BRIT-01 — `tests/test_auto_verify.py`** (`06-brittleness-batch.md` §2). `test_an_injected_write_failure_exits_2_with_no_dispatch_directive` chmods a directory to `0o555` to force a write failure, but `0o555` does not stop root from writing, so the test fails as a false failure under root. Add the `@pytest.mark.skipif(hasattr(os, \"geteuid\") and os.geteuid() == 0, reason=\"a read-only directory stays writable as root\")` decorator **verbatim** as the siblings spell it (§2.2), and add the `import os` it needs (§2.4). The test body is unchanged.\n\n**REQ-BRIT-03 — `tests/test_stage_exit.py`** (§4). `test_docs_never_reimplements_the_epic_dependency_derivation` applies its token ban (`unmet_deps`, `parallelEligible`, `is_complete_for_orchestration`) to the **entire** `scripts/forge-session.py`. Narrow it to `_render_status`, whose property it actually asserts, using the three-slice idiom from the adjacent `test_docs_resolves_the_helper_beside_itself_and_never_a_bare_python3` (§4.2): start at the `def` line, stop at the next module-scope name, strip the docstring. The docstring strip matters most — `_render_status`'s docstring legitimately names the derivations it refuses to reimplement. This is the file's only unsliced ban.\n\n**REQ-BRIT-05 — `tests/test_state_verbs.py`** (§6). `test_the_script_has_no_exit_1_branch` uses two literal-spelling regexes that `return  1`, `return(1)`, `sys.exit( 1 )`, `raise SystemExit(1)`, `os._exit(1)` and `exit(1)` all evade. Replace them with the labelled pattern table in §6.2, so each spelling has a name the failure message can use. §6.3 records the dataflow evasion as a declared boundary — do not attempt to close it.\n\n**REQ-BRIT-06 — `tests/test_state_schema_conformance.py`** (§7). Convert the key-**order** pin to a key-**set** assertion per §7.2.\n\nEvery loosened assertion must still fail with a message naming the flag or behavior at fault. A bare `assert \"Error\" in stderr` is not acceptable.",
+      "acceptanceCriteria": [
+        "`test_an_injected_write_failure_exits_2_with_no_dispatch_directive` carries the root-uid `skipif` decorator verbatim as its siblings spell it, `tests/test_auto_verify.py` imports `os`, and the test body is unchanged",
+        "`test_docs_never_reimplements_the_epic_dependency_derivation` scans only `_render_status`'s executable body — sliced at the `def`, stopped at the next module-scope name, with the docstring stripped",
+        "Adding any of the three forbidden tokens to `_render_status`'s docstring no longer fails that test, while adding one to its executable body still does",
+        "`test_the_script_has_no_exit_1_branch` uses the labelled pattern table from `06` §6.2 and rejects `return  1`, `return(1)`, `sys.exit( 1 )`, `raise SystemExit(1)`, `os._exit(1)`, and `exit(1)`",
+        "`tests/test_state_schema_conformance.py` asserts the key **set**, not key order",
+        "Each of the four changed assertions fails with a message naming the specific flag or behavior at fault, not a bare `Error` substring",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T21:03:18.339Z",
+      "dependsOn": [
+        "003",
+        "010"
+      ],
+      "notes": "REQ-BRIT-01, -03, -05, -06, all constrained by REQ-OBS-01 (diagnostic preservation). Sequenced after the backfill per `01-architecture-layout.md` §5.4 — `05`'s tests are added before `06` rewrites existing tests in the three shared files. Item 003 is carried as an explicit dependency for that same §5.4 add-before-rewrite rule on `tests/test_state_verbs.py` (items 002 and 003 are the `05` backfill contributions to that file), and because it puts `import pytest` — which item 002 adds and item 014 needs for its decorators — in this chain's closure rather than leaving it to scheduling luck. The four sub-edits touch four different files with no shared symbols, which is why they are delegated in parallel. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 2,
+      "agentDelegation": {
+        "recommendedConcurrency": 4,
+        "strategy": "Four independent single-file edits with no shared symbols, sharing one verification run. Each sub-agent owns exactly one file and must not touch the others.",
+        "subtasks": [
+          "In tests/test_auto_verify.py, add the root-uid `@pytest.mark.skipif(hasattr(os, 'geteuid') and os.geteuid() == 0, reason='a read-only directory stays writable as root')` decorator to test_an_injected_write_failure_exits_2_with_no_dispatch_directive, copying the spelling verbatim from the sibling permission-dependent tests in the same suite, and add `import os`. Leave the test body unchanged. Spec: specs/verify-test-debt/06-brittleness-batch.md §2.",
+          "In tests/test_stage_exit.py, narrow test_docs_never_reimplements_the_epic_dependency_derivation from a whole-file token ban to a scan of `_render_status`'s executable body only. Copy the three-slice idiom from test_docs_resolves_the_helper_beside_itself_and_never_a_bare_python3 immediately above it: start at the `def _render_status(specs_dir` line, stop at the next module-scope name, then strip the docstring. Spec: specs/verify-test-debt/06-brittleness-batch.md §4.",
+          "In tests/test_state_verbs.py, replace the two ad-hoc regexes in test_the_script_has_no_exit_1_branch with the labelled pattern table specified in specs/verify-test-debt/06-brittleness-batch.md §6.2, so each banned spelling has a name the failure message can use. It must reject `return  1` (two spaces), `return 1  # comment`, `return(1)`, `sys.exit( 1 )`, `sys . exit(1)`, `raise SystemExit(1)`, `os._exit(1)`, and the builtin `exit(1)`. Do not attempt to catch the dataflow evasion (`code = 1; return code`) — §6.3 records it as a declared boundary.",
+          "In tests/test_state_schema_conformance.py, convert the key-order pin to a key-set assertion exactly as specified in specs/verify-test-debt/06-brittleness-batch.md §7.2. The failure message must still name which key is missing or unexpected."
+        ]
+      },
+      "specReferences": [
+        "specs/verify-test-debt/06-brittleness-batch.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "012",
+      "type": "refactor",
+      "priority": 3,
+      "title": "Replace the two false-positive token scanners in test_state_verbs.py",
+      "description": "Two guards in `tests/test_state_verbs.py` scan raw text and fail on legitimate prose that merely mentions the token they police.\n\n**`test_tempfile_is_imported_and_jsonschema_is_not`** (`06-brittleness-batch.md` §3.1). Currently a raw-text scan, so any comment or docstring mentioning `jsonschema` — including one explaining *why* it must not be imported — fails the guard. Replace it with an **import-scoped** scanner that inspects the module's import statements rather than its full text. The full replacement is specified in §3.1.\n\n**`test_every_canon_mention_of_amend_forbids_it`** (§3.2). Currently every occurrence of `--amend` anywhere in canon must be accompanied by forbidding language, so a single sentence that mentions `--amend` twice, or a heading naming it, trips the guard. Replace it with a **clause-scoped** scanner that evaluates each mention within its own clause. The full replacement is specified in §3.2.\n\nBoth replacements must keep their diagnostic value (REQ-OBS-01): the failure output alone must name **which** import or **which** canon mention is at fault and where, not merely report that a scan failed.\n\nThis item does not delete a test, does not change what either guard protects, and touches no file other than `tests/test_state_verbs.py`. Do not weaken either guard into a no-op: the import-scoped version must still fail when `jsonschema` is genuinely imported, and the clause-scoped version must still fail when a canon mention of `--amend` genuinely lacks forbidding language. `06` §3.1 and §3.2 each specify the positive and negative cases the replacement must still catch.",
+      "acceptanceCriteria": [
+        "`test_tempfile_is_imported_and_jsonschema_is_not` scans import statements rather than raw file text, and still fails when `jsonschema` is genuinely imported",
+        "A comment or docstring mentioning `jsonschema` no longer fails that test",
+        "`test_every_canon_mention_of_amend_forbids_it` evaluates each `--amend` mention within its own clause, and still fails when a mention genuinely lacks forbidding language",
+        "A single clause mentioning `--amend` more than once, and a heading naming it, no longer fail that test",
+        "Both tests fail with messages naming the specific import or canon mention at fault and its location",
+        "No test is deleted and no file other than `tests/test_state_verbs.py` is modified",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T21:13:32.801Z",
+      "dependsOn": [
+        "011"
+      ],
+      "notes": "REQ-BRIT-02, constrained by REQ-OBS-01. Both scanners are false-positive traps: they punish accurate prose about the very thing they police, which is how a guard trains contributors to avoid writing clear documentation. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/06-brittleness-batch.md",
+        "specs/verify-test-debt/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "013",
+      "type": "refactor",
+      "priority": 3,
+      "title": "Loosen exact-stderr equality across 5 sites and 11 comparisons",
+      "description": "Five test sites across two files assert **full string equality** against a CLI's stderr, so any wording change to an error message breaks a test whose subject is the behavior, not the prose. Convert each to a substring or regex assertion that still identifies the failing behavior.\n\nThe complete roster is `00-core-definitions.md` §9.1 — 5 sites, 11 runtime comparisons, 2 files:\n\n1. `tests/test_forge_root.py::test_forge_root_fails_actionably` — 1 comparison, against `FAILURE_MESSAGE` (`06-brittleness-batch.md` §5.2)\n2. `tests/test_state_verbs.py::test_commit_hash_against_an_incomplete_stage_exits_2` — 1 (§5.3)\n3. `tests/test_state_verbs.py::test_resumable_with_an_explicit_status_complete_exits_2` — 1 (§5.4)\n4. `tests/test_state_verbs.py::test_a_malformed_based_on_token_exits_2_naming_the_token` — 3, in a loop (§5.5)\n5. `tests/test_state_verbs.py::test_blocks_current_rejects_anything_but_true_or_false` — 5, in a loop (§5.6)\n\n`06` §5.1 gives the shared shape all five follow; §5.2–§5.6 give each site's exact replacement.\n\n**REQ-OBS-01 is the binding constraint, and it is what makes this item nontrivial.** Every one of the 11 loosened comparisons must still fail with a message identifying **which behavior broke and where**. The test: read the failure output alone, and it names the flag or behavior at fault. `assert \"Error\" in stderr` is **not acceptable** — that is a loosening that deletes the diagnostic instead of preserving it.\n\n**Scope boundary (`06` §1.2):** do not loosen any assertion outside this roster. Assertions that are already substring-based — for example `test_commit_hash_against_a_partial_stage_names_its_actual_status`, which already reads `assert \"status: 'in-progress'\" in result.stderr` — are left exactly as they are.\n\nSites 2–5 are all in `tests/test_state_verbs.py`; edit them in one pass rather than in parallel.",
+      "acceptanceCriteria": [
+        "All 5 sites in the `00` §9.1 roster are converted, covering all 11 runtime comparisons",
+        "No exact full-equality stderr comparison remains at any of the 5 sites",
+        "Each of the 11 loosened comparisons fails with a message naming the specific flag or behavior at fault; none is a bare `Error` substring check",
+        "Sites 4 and 5 keep all 3 and all 5 of their looped comparisons respectively — no case is dropped in the conversion",
+        "No assertion outside the `00` §9.1 roster is loosened, and `test_commit_hash_against_a_partial_stage_names_its_actual_status` is unchanged",
+        "Only `tests/test_forge_root.py` and `tests/test_state_verbs.py` are modified",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T21:25:09.065Z",
+      "dependsOn": [
+        "012"
+      ],
+      "notes": "REQ-BRIT-04, constrained by REQ-OBS-01. PRD v1's estimate of \"~15 sites spanning more than one file\" was superseded: the exhaustive roster is the 5-site / 11-comparison table in `00` §9.1, which also resolves OQ-01. If the roster in `00` §9.1 is ever corrected, `07-testing-strategy.md` §5 must be recomputed in the same edit (REQ-TRIAL-06) — but that is a spec-side rule, not work for this item. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/verify-test-debt/06-brittleness-batch.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "014",
+      "type": "refactor",
+      "priority": 3,
+      "title": "Parametrize the hash and corrupt-file families in test_state_verbs.py",
+      "description": "Convert hand-rolled loops in `tests/test_state_verbs.py` to `@pytest.mark.parametrize` **in place**. This deletes no coverage — every case that ran before still runs, now as its own collected item with its own id.\n\n**40-hex hash family** (`06-brittleness-batch.md` §8.2; roster in `00-core-definitions.md` §9.2). Five hand-rolled loops in this file, across two sub-families:\n- `_ACCEPTED_HASHES` (3 entries): `test_state_complete_accepts_every_40_hex_casing_verbatim`, `test_state_verify_commit_2_accepts_every_40_hex_casing_verbatim`\n- `_REJECTED_HASHES` (10 entries): `test_state_complete_rejects_a_short_or_malformed_hash_before_mutation`, `test_state_verify_commit_2_rejects_a_short_or_malformed_hash_before_mutation`, `test_epic_commit_2_rejects_a_short_or_malformed_hash_before_mutation`\n\n**The five loops MUST NOT be merged into one case.** They exercise three different verbs (`state-complete`, `state-verify` commit-2, epic commit-2) through different fixtures across two domains. Merging would delete the epic-target coverage. Each is parametrized over its own tuple, in place — 5 functions before, 5 after; 5 collected items before, 36 after (2×3 + 3×10).\n\n**Corrupt-file family** (`06` §8.3; roster in `00` §9.3). Parametrize the **two loops** and leave the **single-case site unchanged** — 3 functions before, 3 after:\n- `test_load_state_for_write_refuses_a_corrupt_state_file_byte_intact` — an in-process call with **one input and no loop**. Nothing to parametrize. **Leave it alone.**\n- `test_a_corrupt_or_malformed_epic_state_is_refused_byte_intact` — 5 malformation shapes → parametrize\n- `test_every_verb_refuses_a_corrupt_state_file_byte_intact` — 8 registered verbs → parametrize\n\n`07-testing-strategy.md` §5.3 records why the tech spec's \"3 hand-rolled → 1 parametrized\" is **not achievable without deleting coverage**: the three sites differ in call mechanism, not input, so merging needs a mechanism-selecting parameter and a branching body.\n\n**Never merge a family across files.** The already-parametrized sites in `tests/test_state_schema_conformance.py` are untouched. `test_load_state_for_write_refuses_a_non_object_state_file` is **out** of the corrupt-file family — it asserts the non-object refusal, not corrupt-JSON refusal.",
+      "acceptanceCriteria": [
+        "All five hash loops are parametrized in place over their own tuples; the file still has 5 hash functions and no two are merged",
+        "The hash family collects 36 items — 2 functions × 3 accepted hashes plus 3 functions × 10 rejected hashes",
+        "`test_a_corrupt_or_malformed_epic_state_is_refused_byte_intact` and `test_every_verb_refuses_a_corrupt_state_file_byte_intact` are parametrized, collecting 5 and 8 items respectively",
+        "`test_load_state_for_write_refuses_a_corrupt_state_file_byte_intact` is unchanged and still collects 1 item",
+        "`test_load_state_for_write_refuses_a_non_object_state_file` is unchanged and was not folded into the corrupt-file family",
+        "No test in `tests/test_state_schema_conformance.py` is modified",
+        "No case that ran before is dropped, and no test function is deleted",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T21:36:18.515Z",
+      "dependsOn": [
+        "013"
+      ],
+      "notes": "REQ-BRIT-07, part 1 of 2 (item 015 is the gate-selection family). `tests/test_state_verbs.py` had no `parametrize` usage and no `import pytest` before this work; item 002 adds the import — confirm it is present before adding decorators, since omitting it is a collection-time `NameError` that presents as the whole file vanishing from the run rather than as a test failure. Parametrizing expands collected items while holding or reducing function count — a rising collected count here is the expected expansion, not an accidental addition. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/verify-test-debt/06-brittleness-batch.md",
+        "specs/verify-test-debt/00-core-definitions.md",
+        "specs/verify-test-debt/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "015",
+      "type": "refactor",
+      "priority": 3,
+      "title": "Parametrize the gate-selection family in test_stage_exit.py",
+      "description": "Collapse the unparametrized gate-selection tests in `tests/test_stage_exit.py` into one parametrized test, in place.\n\n**The family boundary is pinned by the section header, not by a token** (`00-core-definitions.md` §9.4): a gate-selection site is a test function under the `# autoVerify effectiveness × gate selection` section header. That section contains exactly six:\n\n1. `test_auto_verify_off_outstanding_verify_gates_standard`\n2. `test_global_auto_verify_runs_in_stage_and_gates_none`\n3. `test_per_stage_override_beats_global`\n4. `test_non_boolean_auto_verify_fails_closed`\n5. `test_invalid_auto_verify_keys_surface`\n6. `test_a_manual_capability_gates_manual_print_on_every_host` — **already parametrized, leave unchanged**\n\nConvert sites 1–5 into a single parametrized test per `06-brittleness-batch.md` §8.4: 5 functions → 1 function, still collecting 5 items, one per case. Each case keeps its own id so a failure names which gate-selection scenario broke.\n\n**Seventeen tests in this file reference `verifyGate`; only these six are in the family.** The other eleven assert freshness, routing, or epic state and MUST NOT be pulled in. Do not widen the family by grepping for `verifyGate` — use the section header as the boundary.\n\nSite 6 is already parametrized and is **not touched** — `06` §1.2 states this document does not touch an already-parametrized site.\n\nThis deletes no coverage: every case that ran before still runs as its own collected item. Do not merge this family with any family in another file — `00` §9.5 makes within-file the binding rule.",
+      "acceptanceCriteria": [
+        "Sites 1–5 under the `# autoVerify effectiveness × gate selection` header are a single parametrized test function collecting 5 items, one per original case",
+        "`test_a_manual_capability_gates_manual_print_on_every_host` is unchanged",
+        "Each parametrized case carries an id that names its gate-selection scenario in the failure output",
+        "None of the other eleven `verifyGate`-referencing tests in the file is modified or absorbed into the family",
+        "No case that ran before is dropped",
+        "Only `tests/test_stage_exit.py` is modified",
+        "`python3 -m pytest tests -q` is green and `ruff check tests/` reports at most 19 errors",
+        "`bash scripts/validate.sh` reports \"All checks passed!\""
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T21:50:54.750Z",
+      "dependsOn": [
+        "014"
+      ],
+      "notes": "REQ-BRIT-07, part 2 of 2. Split from item 014 because the two parts land in different files; keeping them separate means a failure in one does not block the other's verification. `@pytest.mark.parametrize` is already an established idiom in this file, so no new convention is introduced. Narration states intent only (REQ-CANON-03).",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/06-brittleness-batch.md",
+        "specs/verify-test-debt/00-core-definitions.md"
+      ]
+    },
+    {
+      "id": "016",
+      "type": "chore",
+      "priority": 3,
+      "title": "Run the ordered gate list and reconcile the suite count",
+      "description": "Final verification pass over the whole feature. Run the six gates **in this order** (`07-testing-strategy.md` §3), then reconcile the counts.\n\n1. `python3 -m pytest tests -q` — green\n2. `python3 scripts/build-adapters.py`, then `--check` exits 0. If `build-adapters.py` produces any diff under `adapters/`, commit all six mirrors (`adapters/{claude,codex,copilot,cursor,gemini,pi}`) together, as item 001 does — a partial regeneration red-gates `validate.sh`. Otherwise this item modifies no file.\n3. `python3 scripts/check-spec-purity.py` — 0 violations\n4. `ruff check scripts/ eval/` — clean\n5. `ruff check tests/` — at most 19 errors\n6. `bash scripts/validate.sh` — \"All checks passed!\"\n\nStep 6 subsumes 1–5; the earlier steps exist for fast local feedback and for isolating which gate failed.\n\n**Plus the import gate** (§3.1), which the ordinary list does not catch because both files individually collect fine:\n\n```\npython3 -c \"import sys; sys.path.insert(0, 'tests'); from test_stage_exit_protocol import CANONICAL_EXIT_SITES; assert len(CANONICAL_EXIT_SITES) == 9, len(CANONICAL_EXIT_SITES)\"\n```\n\n**Count reconciliation.** `07` §5.4 derives an expected suite total of **1799** collected from the measured 1842 baseline: −39 prose guard, −60 mutation controls, −1 call-sites guard, +15 backfill, +42 dedup expansion. Compare the actual collected count against 1799. A landing near 1799 is the expected parametrization expansion, not an accidental addition. If the actual count differs by more than **±5 items**, **investigate and name which roster changed and why in the commit message** — a large divergence means a roster changed without §5 being recomputed. Do not adjust a test to hit the number. The ±5 figure is a backlog-side operational threshold for when an explanation is owed; `07` §5.4 deliberately states no tolerance, and this does not make one a spec figure subject to REQ-TRIAL-06 recomputation.\n\nThen walk the countable success criteria in `07` §6 and confirm each.\n\n**Explicit non-goal: do NOT write REQ-TRIAL-04 Session Log figures.** The verify-round count, narration-churn count, blocking-finding convergence sequence, and advisory-narration count for this stage are measured at feature close from the verification reports — they are not observable from inside the loop. Do not add, infer, or estimate them in `plans/remediation-stage-exit-coverage.md`.",
+      "acceptanceCriteria": [
+        "`python3 -m pytest tests -q` is green",
+        "`python3 scripts/build-adapters.py --check` exits 0",
+        "`python3 scripts/check-spec-purity.py` reports 0 violations",
+        "`ruff check scripts/ eval/` is clean",
+        "`ruff check tests/` reports at most 19 errors and no `F401` from a removed-usage import",
+        "`bash scripts/validate.sh` reports \"All checks passed!\"",
+        "The import gate command succeeds, confirming `CANONICAL_EXIT_SITES` still resolves with 9 entries",
+        "The actual collected count from `python3 -m pytest tests -q --collect-only` is recorded and compared against the 1799 expected by `07` §5.4; if it differs by more than ±5 items, the commit message names which roster changed and why. No test is adjusted to hit the number",
+        "Every countable criterion in `07` §6 is confirmed satisfied",
+        "No locking primitive, lockfile, or advisory-lock call appears anywhere in the feature's diff",
+        "No comment, docstring, or test narration in the feature's diff carries a *measurement* — a suite/site/item count, \"measured\", \"confirmed\", or any figure that must be recomputed when a roster changes. A count that restates an adjacent literal in the same file (e.g. \"the four prelude criteria\" above a four-element tuple) is definitional, not empirical, and is permitted.",
+        "No REQ-TRIAL-04 Session Log figures were written, inferred, or estimated by this item"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-04T22:02:26.493Z",
+      "dependsOn": [
+        "003",
+        "004",
+        "015"
+      ],
+      "notes": "REQ-QUAL-01, -02, -03, -04; REQ-CANON-01, -02, -03; REQ-CONC-01. Items 003 and 004 are carried as explicit dependencies (003 pulls 002 in transitively) because the 1799 reconciliation below counts their 10 collected backfill ids — REQ-COV-02's 2 in item 002, REQ-COV-06's 7 in item 003, REQ-COV-03's 1 in item 004 (`07` §5.2 assumption 1). Without those edges this gate becomes eligible the moment item 015 lands and would reconcile against 1799 while short by up to 10 items on any blocked or re-run path. The ruff budget is **non-increase, not zero** (REQ-QUAL-02): 19 is the accepted baseline and the tree sits at exactly 19 today, so there is no headroom — any new `F401` is a regression. Fewer than 19 is a successful outcome and becomes the new baseline; driving it to zero is explicitly out of scope. REQ-TRIAL-01 through REQ-TRIAL-06 are process requirements governing the verify/fix cycle and the trial's instrumentation — they are measured by forge-verify at feature close and have no backlog item by design. REQ-TRIAL-04's four figures per stage-version are written into `plans/remediation-stage-exit-coverage.md` § Session Log **at feature close, by the operator running the final forge-verify**, sourced from the per-severity totals in `specs/verify-test-debt/.verification/VERIFY-*.md` and the `07` §7.4 table — not by this item and not by any loop iteration. After a `git checkout`/`merge`/`pull`, adapter file modes can land as 0664 from the ambient umask and fail the mode test; re-running `build-adapters.py` restores 0644, and that is not a content defect.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/verify-test-debt/07-testing-strategy.md",
+        "specs/verify-test-debt/01-architecture-layout.md",
+        "specs/verify-test-debt/00-core-definitions.md"
+      ]
+    }
+  ]
+}
