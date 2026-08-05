@@ -1,12 +1,14 @@
-# Rauf runtime — transient files that must never be tracked
-**/.rauf/.loop.lock
-**/.rauf/state.json
-**/.rauf/DONE
-**/.rauf/CANCEL
-**/.rauf/iteration-status.json
-**/.rauf/rauf.log
-**/.rauf/events.ndjson
-**/.rauf/progress.md
+# Rauf runtime — deny-by-default (#195): the runner writes transient artifacts
+# (.loop.lock, state.json, DONE, CANCEL, iteration-status.json, rauf.log,
+# events.ndjson, progress.md, archive/, …) into .rauf/ at run time, and a
+# future artifact must not be able to reopen the gap an itemized list leaves.
+# Only the deliberately-authored files below are tracked. (`/*`, not `/`, so
+# the negations can re-include — git cannot re-include under an excluded dir.)
+**/.rauf/*
+!**/.rauf/RAUF.md
+!**/.rauf/REVIEW.md
+!**/.rauf/backlog.json
+!**/.rauf/backlog.schema.json
 **/backlog.json.bak
 
 # Local Claude Code session artifacts
@@ -29,7 +31,6 @@ installer/LICENSE
 # own verify toolchain. Deps are devDeps only — never shipped, never published.
 adapter-src/*/node_modules/
 
-**/.rauf/archive/
 __pycache__/
 *.pyc
 
