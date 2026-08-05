@@ -116,10 +116,24 @@
       "verifiedAt": "2026-08-05T03:56:48Z",
       "verifiedStageVersion": 1,
       "commitHash": "29ca73e03a0094087d8cef8b7365891806c4e2a5"
+    },
+    "forge-6-docs": {
+      "status": "complete",
+      "completedAt": "2026-08-05T13:23:45Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 2,
+        "forge-2-tech": 2,
+        "forge-3-specs": 1,
+        "forge-4-backlog": 1,
+        "forge-5-loop": 1
+      },
+      "artifacts": [],
+      "commitHash": null
     }
   },
   "currentStage": "forge-5-loop",
-  "updatedAt": "2026-08-05T03:56:56Z",
+  "updatedAt": "2026-08-05T13:23:45Z",
   "branch": "forge/verify-test-debt",
-  "notes": "PRD amendment needed: research superseded three figures. REQ-BRIT-04 exact-stderr roster is 5 sites/11 comparisons across 2 files (not ~15); REQ-BRIT-07 hash-matrix family is 4 sites (not 5); REQ-COV-03's resolver_line_identical IS asserted via all(criteria.values()) at run-compliance-eval.py:1883 — the real gap is a missing prelude key-set pin. Same figures appear in PRD sec 8 Success Criteria. Corrected rosters live in tech-spec.md."
+  "notes": "PRD amendment needed: research superseded three figures. REQ-BRIT-04 exact-stderr roster is 5 sites/11 comparisons across 2 files (not ~15); REQ-BRIT-07 hash-matrix family is 4 sites (not 5); REQ-COV-03's resolver_line_identical IS asserted via all(criteria.values()) at run-compliance-eval.py:1883 — the real gap is a missing prelude key-set pin. Same figures appear in PRD sec 8 Success Criteria. Corrected rosters live in tech-spec.md. || DOCS DELIBERATELY SKIPPED (2026-08-05, operator decision): forge-6-docs is recorded complete with NO artifacts and no commitHash because no documentation was generated — the stage never ran. This is a workaround, not a truthful status: the pipeline has no way to express 'docs intentionally skipped' (production stageEntry.status is pending|in-progress|complete|stale, with no 'skipped'; DocsOutcome is complete|blocked only; pipelineStatus is active|paused|abandoned), and complete:true/nextStage:null is reachable ONLY via forge-6-docs.status=complete. Read the empty artifacts array as the signal that this stage produced nothing. Gap filed for a 'skipped' docs outcome."
 }
