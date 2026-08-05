@@ -91,3 +91,29 @@ next; they are not blockers for this feature, which is complete.
 | [#193](https://github.com/garygentry/feature-forge/issues/193) | resolved items are never unblocked |
 | [#194](https://github.com/garygentry/feature-forge/issues/194) | no dependency-topology check on the backlog |
 | [#195](https://github.com/garygentry/feature-forge/issues/195) | `.gitignore` misses `**/.rauf/progress.md` — **resolved**; the rule is now in `.gitignore`. A `*.json.bak` rule was briefly added for the same class of stray artifact and then reverted as redundant with the pre-existing `**/backlog.json.bak` |
+| [#197](https://github.com/garygentry/feature-forge/issues/197) | no honest way to close a feature with documentation deliberately skipped — **this feature is the instance**. `forge-6-docs` is recorded `complete` with an empty `artifacts` array because the stage never ran; see §4 |
+
+## 4. Documentation was deliberately skipped
+
+`forge-6-docs` is recorded `complete` at v1 with an **empty `artifacts` array** and, in the
+state file, a `commitHash` pointing only at the bookkeeping commit. **No documentation was
+generated — the stage never ran.** This was an explicit operator decision on 2026-08-05.
+
+Read the empty `artifacts` array as the signal. The `status` field says `complete`, and that
+is a misstatement rather than a record of work done; it is the only way the pipeline can
+currently express this outcome:
+
+- production `stageEntry.status` is `pending | in-progress | complete | stale` — the
+  `skipped` value exists on **verify** entries only;
+- `DocsOutcome` is `Literal["complete", "blocked"]` — no skip or defer;
+- `pipelineStatus` is `active | paused | abandoned` — no terminal `complete`, and
+  `abandoned` would misrepresent shipped, verified work;
+- `next_stage()` walks `PRODUCTION_STAGES`, which includes `forge-6-docs`, so
+  `complete: true` / `nextStage: null` is reachable **only** via docs being `complete`.
+
+Filed as [#197](https://github.com/garygentry/feature-forge/issues/197), which proposes a
+`skipped` docs outcome so a future feature can close this way honestly — and notes that this
+feature's state should be migrated to the honest representation once it lands.
+
+If you are here because you expected `docs/architecture/verify-test-debt/` to exist: it does
+not, by design. Run `/feature-forge:forge-6-docs verify-test-debt` to generate it.
