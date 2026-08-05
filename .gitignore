@@ -35,3 +35,7 @@ __pycache__/
 
 # pi subagent run artifacts (transcripts/meta from forge-verifier fan-outs)
 .pi-subagents/
+
+# loop-runner backlog snapshots (a stale copy beside the live backlog misleads
+# a later verify or fix pass into acting on superseded item statuses)
+*.json.bak

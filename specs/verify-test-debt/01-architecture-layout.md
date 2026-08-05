@@ -22,7 +22,14 @@
 ## 1. No New Structure
 
 This feature adds **no** directory, package, module, class, CLI verb, flag, exit code, or
-JSON payload key.
+JSON payload key **to `scripts/forge-session.py` or `eval/run-compliance-eval.py`** — the
+two production files §3.2 owns.
+
+**One exception, outside that ownership: `scripts/validate-traceability.py`** (§3.4). It
+gained an `--allow-orphan` flag, `.traceability-allowlist` auto-discovery, and two `--json`
+payload keys. That change is an out-of-band gate unblock, owned by no requirement in this
+suite, and is inventoried in §2 and §3.4 so this document remains a complete file-ownership
+map.
 
 **Public API surface: unchanged.** The two production validations (§3.2) narrow the
 *accepted domain* of two existing flags; they change no success-path output. Every value
@@ -40,6 +47,14 @@ skills/
 
 scripts/
   forge-session.py                  EDIT — 2 validations, 1 signature widening
+  validate-traceability.py          EDIT — --allow-orphan flag, .traceability-allowlist
+                                           auto-discovery, 2 JSON keys (§3.4,
+                                           out-of-band gate unblock)
+
+specs/verify-test-debt/
+  .traceability-allowlist           NEW  — the three foreign ids this suite quotes (§3.4)
+
+.gitignore                          EDIT — ignore the runner's `**/.rauf/progress.md`
 
 eval/
   run-compliance-eval.py            EDIT — + PRELUDE_CRITERIA key-set pin
@@ -125,6 +140,30 @@ The **only** document that changes shipped behavior.
 | `test_state_schema_conformance.py` | `06` | — |
 
 The three shared files are the merge-risk surface. §5.3 fixes the order.
+
+### 3.4 Out-of-band gate unblock — `scripts/validate-traceability.py`
+
+Owned by **no requirement** in this suite, and deliberately recorded here rather than
+omitted, so §1 and §2 stay a complete map of what shipped.
+
+| File | Symbol | Change |
+|---|---|---|
+| `scripts/validate-traceability.py` | `ALLOWLIST_FILENAME`, `read_allowlist_file` | Read an optional `<specs-dir>/.traceability-allowlist`; one id per line, `#` comments and blank lines ignored |
+| `scripts/validate-traceability.py` | `main` | Add repeatable `--allow-orphan REQ-ID`; subtract allowlisted ids from the orphan set; report them as `ALLOWED FOREIGN REFERENCES` and unmatched entries as `STALE ALLOWLIST ENTRIES` |
+| `scripts/validate-traceability.py` | `main` (`--json`) | Add `allowed_orphans` and `unused_allowlist_entries` |
+| `specs/verify-test-debt/.traceability-allowlist` | — | Declare `REQ-DEBT-04`, `REQ-REL-01`, `REQ-STATE-01` |
+
+**Why it was necessary.** `bash scripts/validate.sh` was red at HEAD on three traceability
+orphans. All three are genuine quotations of test docstrings from the antecedent
+`stage-exit-coverage` feature, where they are *defined*; they are not requirements of this
+suite. Every backlog item's final acceptance criterion is a green `validate.sh`, so the
+whole backlog was unrunnable until the gate could distinguish a quoted foreign id from a
+real orphan.
+
+**Why the ids are not hardcoded.** This script ships into all six adapter bundles and into
+every consuming repo, where one suite's foreign ids are meaningless. The ids therefore live
+beside the suite that quotes them, and the mechanism stays generic. `TRACEABILITY.md`
+§ Coverage Verification records the same decision.
 
 ## 4. Placement Maps
 

@@ -1,39 +1,60 @@
-# verify-test-debt — Loop Handoff
+# verify-test-debt — Loop Record
 
-**Written:** 2026-08-04, after the first `forge-5-loop` run.
-**Purpose:** let a fresh session drive this feature to completion without reading
-the originating conversation. Everything needed is stated here or verifiable from
-disk with the commands below.
+> **This is a post-loop record, not an in-flight handoff.** An earlier revision of this
+> file was written mid-run and described a stalled loop with 0 of 16 items done. That
+> state is historical; §1 below is current. Nothing here asks to be acted on.
 
-**Branch:** `forge/verify-test-debt` · **HEAD:** `98c24eb` (`forge(verify-test-debt): forge-5-loop in-progress`)
+**Originally written:** 2026-08-04, after the first (stalled) `forge-5-loop` run.
+**Rewritten:** 2026-08-04, after the loop completed, by the `forge-fix` pass applying
+finding V-005 of `.verification/VERIFY-impl-2026-08-04.md`.
+
+**Branch:** `forge/verify-test-debt`
 
 ---
 
 ## 1. Where the feature stands
 
-Pipeline state (`specs/verify-test-debt/.pipeline-state.json`): stages 1 through
-4 are `complete`, all four verify gates `passed`. `forge-5-loop` is recorded
-`in-progress` at v1 — **0 of 16 backlog items are done.**
+`forge-5-loop` is **complete** at v1. **All 16 backlog items are `done`** — 0 pending,
+0 in-progress, 0 blocked, 0 needs-human. Verify with:
 
-Backlog (`rauf-stable status . --backlog specs/verify-test-debt --json`):
-
-```json
-{"pending": 13, "inProgress": 0, "blocked": 3, "needsHuman": 3, "deferred": 0, "done": 0, "total": 16}
+```
+rauf-stable status . --backlog specs/verify-test-debt --json
 ```
 
-## 2. What happened in the first run
+Each item landed as its own commit, prefixed `[rauf] NNN:`, through `bcb5cff`.
 
-Launched `rauf-stable loop run . --backlog specs/verify-test-debt --iterations 24 --review`.
-It used **5 of 24 iterations** and stopped with nothing selectable. It did **not**
-hit the iteration limit and did **not** circuit-break.
+The ordered gate list from `07-testing-strategy.md` §3 is green:
 
-Items `001`, `002`, `004` are the backlog's only roots. All three emitted
-`needs_human` for the **same** reason: `bash scripts/validate.sh` was red at HEAD on
-three pre-existing traceability orphans (`REQ-DEBT-04`, `REQ-REL-01`,
-`REQ-STATE-01`). Each item's own acceptance criteria passed; only the shared final
-AC — `validate.sh` reporting `All checks passed!` — failed.
+| Gate | Result |
+|---|---|
+| `bash scripts/validate.sh` | exit 0 — `All checks passed!` |
+| `python3 -m pytest tests -q` | 1797 passed, 2 skipped — **1799 collected**, matching `07` §5.4's prediction exactly |
+| `python3 scripts/build-adapters.py --check` | exit 0 |
+| `python3 scripts/check-spec-purity.py` | PASS — 0 violations |
+| `ruff check scripts/ eval/` | clean |
+| `ruff check tests/` | 19 errors, the accepted pre-existing baseline (`07` §3 gate 5 budget is ≤19) |
+| `CANONICAL_EXIT_SITES` import gate | resolves, 9 entries |
 
-Every remaining item descends from those roots, so the loop had nothing left to run:
+The two pytest skips are pre-existing and environment-gated
+(`tests/test_forge_bootstrap.py:919` — `mypy` and `cargo-clippy` absent), not this
+feature's.
+
+`forge-verify-impl` ran on 2026-08-04 and reported findings; see
+`.verification/VERIFY-impl-2026-08-04.md`. The implementation itself was found sound —
+every item's acceptance criteria hold against the code on disk.
+
+## 2. Why the first run stalled, and how it was resolved
+
+Recorded because the resolution changed a shipped script, and because the failure mode
+is worth recognizing again.
+
+The first launch used 5 of 24 iterations and stopped with nothing selectable — it did
+not hit the iteration limit and did not circuit-break. Items `001`, `002`, `004` are the
+backlog's only roots, and all three emitted `needs_human` for the **same** reason:
+`bash scripts/validate.sh` was red at HEAD on three traceability orphans
+(`REQ-DEBT-04`, `REQ-REL-01`, `REQ-STATE-01`). Each item's own acceptance criteria
+passed; only the shared final AC — a green `validate.sh` — failed. Every remaining item
+descends from those three roots, so one shared red gate halted the entire backlog:
 
 ```
 001 -> 005 -> 006 -> 007 -> 008 -> 009 -> 010 -+
@@ -42,98 +63,23 @@ Every remaining item descends from those roots, so the loop had nothing left to 
 004 --------------------------------------------------------------------------------+
 ```
 
-The `--review` pass never ran.
+**Resolution.** The operator chose to add an allowlist to `validate-traceability.py`.
+The three ids are genuine quotations of test docstrings from the antecedent
+`stage-exit-coverage` feature, where they are *defined*; they are not requirements of
+this suite. The script gained a repeatable `--allow-orphan REQ-ID` flag plus
+auto-discovery of `<specs-dir>/.traceability-allowlist`, with allowed ids reported as
+`ALLOWED FOREIGN REFERENCES` rather than silently dropped. The ids are deliberately
+**not** hardcoded — that file ships into every adapter bundle and consuming repo.
 
-## 3. The blocking decision — already made and already applied
+This change is inventoried in `01-architecture-layout.md` §3.4, recorded in
+`TRACEABILITY.md` § Coverage Verification, and documented for users in `README.md` and
+`CHANGELOG.md`. The tree was reconciled and the loop relaunched; it then ran to 16/16.
 
-The operator chose: **add an allowlist to `validate-traceability.py`.** That is
-done and verified. The three ids are genuine quotations of test docstrings from the
-antecedent `stage-exit-coverage` feature, where they are defined; they are not
-requirements of this suite. `TRACEABILITY.md` § Coverage Verification records this.
+## 3. Known process gaps (filed)
 
-Changes made (all currently **uncommitted**, see §4):
-
-- `scripts/validate-traceability.py` — added a repeatable `--allow-orphan REQ-ID`
-  flag plus auto-discovery of an optional `<specs-dir>/.traceability-allowlist`.
-  Allowed ids are subtracted from the orphan set but printed as
-  `ALLOWED FOREIGN REFERENCES`; an entry matching nothing is reported as
-  `STALE ALLOWLIST ENTRIES`. JSON output gained `allowed_orphans` and
-  `unused_allowlist_entries`. The ids are deliberately **not** hardcoded — this file
-  ships into every adapter and consuming repo.
-- `specs/verify-test-debt/.traceability-allowlist` — the three ids, with a comment
-  pointing at `TRACEABILITY.md`.
-- `adapters/*/scripts/validate-traceability.py` — regenerated (6 copies) so the
-  drift guard stays green.
-
-**Verified:** `bash scripts/validate.sh` exits 0 with `All checks passed!`. The
-traceability step reports `ALLOWED FOREIGN REFERENCES (3)` and all five spec suites
-pass. The baseline that stopped the loop is fixed.
-
-## 4. What is uncommitted, and why it blocks the next launch
-
-rauf refuses to launch with a dirty tree. The tree is dirty in three ways:
-
-**a) 84 staged files, ~660 insertions — the agents' own work from items 001/002/004.**
-Never committed, because each item's final AC failed. Includes
-`eval/run-compliance-eval.py`, `scripts/forge-session.py`,
-`tests/test_compliance_eval.py`, `tests/test_state_verbs.py`, and the adapter
-fan-out. Confirm with `git diff --cached --stat`.
-
-**b) 9 unstaged files** — the §3 allowlist fix (`scripts/validate-traceability.py`
-plus 6 regenerated adapter copies), the `state-complete` write to
-`.pipeline-state.json`, and rauf's own status edits to `backlog.json`.
-
-**c) 2 untracked files** — `specs/verify-test-debt/.traceability-allowlist` (must be
-committed; the validator reads it) and `specs/verify-test-debt/.rauf/progress.md`
-(runner runtime state that `.gitignore` misses — see issue #195; ignore it or add
-the ignore rule, do not commit it).
-
-## 5. Steps to drive this to completion
-
-Run in order. Do not skip step 3 — fixing the cause does not unblock the items, and
-a relaunch without it will select nothing and exit exactly as the first run did.
-
-**1. Reconcile the tree.** Review `git diff --cached --stat`, then commit the agents'
-work and the allowlist fix. Add `**/.rauf/progress.md` to `.gitignore` (or leave
-`progress.md` untracked and out of the commit). Verify `git status --short` is clean
-apart from ignored files.
-
-**2. Re-verify the baseline.** `bash scripts/validate.sh` must print
-`All checks passed!` and exit 0. It takes several minutes — run it backgrounded.
-
-**3. Unblock the three items.** `rauf-stable backlog unblock . --backlog specs/verify-test-debt`
-(or rely on `--retry-blocked` in step 4). Then **prove** it moved:
-`rauf-stable status . --backlog specs/verify-test-debt --json` must show
-`blocked: 0, needsHuman: 0`. An unchanged summary means recovery failed — stop and
-diagnose rather than launching.
-
-**4. Relaunch.** Iterations: 16 active items x 1.5 = **24**.
-
-```
-rauf-stable loop run . --backlog specs/verify-test-debt --iterations 24 --review --retry-blocked
-```
-
-Launch backgrounded, then arm a persistent Monitor on
-`specs/verify-test-debt/.rauf/events.ndjson` filtering
-`item_completed|item_blocked|needs_human|signal_parsed|loop_completed|loop_error|loop_cancelled|llm_stuck_warning`.
-Use `tail -F` (follow by name) — the runner rotates that file at the start of each run.
-
-**5. Supervise actively.** Because the backlog is a 13-deep serial chain behind 3
-roots, any single item stopping halts everything downstream. On a `needs_human`
-signal: surface it immediately, get the decision, apply it, unblock, and resume —
-do not end the session with the decision uncollected or uncommitted.
-
-**6. Close the stage.** When `done == 16`, record completion with
-`forge-session.py state-complete --feature verify-test-debt --stage forge-5-loop
---version 1 --status complete --based-on "forge-4-backlog=1" --artifact
-"specs/verify-test-debt/.rauf/state.json" --specs-dir ./specs`, offer
-`/feature-forge:forge-verify verify-test-debt impl`, then run the scripted
-`stage-exit` with the outcome selected from the authoritative counts.
-
-## 6. Known process gaps (filed, not yet fixed)
-
-These are why this handoff document is necessary rather than automatic. Expect to
-work around them; do not assume the tooling covers them.
+These are the tooling gaps that made this run need a hand-written record rather than
+producing one automatically. They are recorded for whoever works on the loop tooling
+next; they are not blockers for this feature, which is complete.
 
 | Issue | Gap |
 |---|---|
@@ -144,4 +90,4 @@ work around them; do not assume the tooling covers them.
 | [#192](https://github.com/garygentry/feature-forge/issues/192) | no post-run tree reconciliation |
 | [#193](https://github.com/garygentry/feature-forge/issues/193) | resolved items are never unblocked |
 | [#194](https://github.com/garygentry/feature-forge/issues/194) | no dependency-topology check on the backlog |
-| [#195](https://github.com/garygentry/feature-forge/issues/195) | `.gitignore` misses `**/.rauf/progress.md` |
+| [#195](https://github.com/garygentry/feature-forge/issues/195) | `.gitignore` misses `**/.rauf/progress.md` — **resolved**; the rule is now in `.gitignore`, alongside a `*.json.bak` rule added for the same class of stray runner artifact |

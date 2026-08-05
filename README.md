@@ -432,9 +432,12 @@ See [`references/ralph-loop-contract.md`](references/ralph-loop-contract.md).
 
 ```bash
 python3 scripts/validate-traceability.py <prd-path> <specs-dir> [--json]
+                                         [--allow-orphan REQ-ID ...]
 ```
 
 Validates requirement traceability between the PRD and implementation specs. Extracts `REQ-XXX-NN` identifiers from the PRD, checks that every requirement is referenced in at least one spec, reports orphaned references, and generates a per-requirement coverage map.
+
+A suite may legitimately mention a requirement id it does not own — most often when a spec quotes an antecedent feature's test docstrings verbatim. Declare such ids with a repeatable `--allow-orphan REQ-ID`, or list them one per line in `<specs-dir>/.traceability-allowlist` (blank lines and `#` comments ignored), which the validator discovers automatically. Allowed ids are subtracted from the orphan set but printed under `ALLOWED FOREIGN REFERENCES`, never silently dropped; an allowlist entry matching nothing is printed under `STALE ALLOWLIST ENTRIES`, which is advisory and does not fail the check. `--json` output gains `allowed_orphans` and `unused_allowlist_entries`.
 
 ## Hooks
 

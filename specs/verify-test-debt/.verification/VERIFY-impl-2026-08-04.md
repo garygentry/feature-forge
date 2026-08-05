@@ -596,20 +596,29 @@ them:
 
 ### User Decisions Required
 
-- **D1 (V-013) — configure a `smokeCommand`?** Never fabricate the command. Options: leave
-  `null` (the advisory stands as the record), or set a cold-process CLI smoke. Blocks only
-  Step 6.
-- **D2 (V-006) — stale-allowlist semantics.** (a) report-only wording change *(recommended,
-  lower churn)*, or (b) promote to a `validate.sh` WARNING. Do not fold into exit 1 without
-  an owner decision. Blocks only Step 5.
-- **D3 (V-004b) — change `--version`'s `help=` string?** (i) keep it and leave `04` §9's
-  `No help= string changed.` checkbox intact, or (ii) change it to `(positive integer)`,
-  strike the checkbox, regenerate adapters. Option (ii) alters `--help` output shipped in
-  six adapter bundles and the npm tarball. Blocks only the code half of Step 3.
-- **D4 (V-007, V-009, V-010) — write the optional tests, or record non-goals?** Each of
-  these adds collected items and therefore forces a same-commit recomputation of the derived
-  counts in `07-testing-strategy.md` (REQ-TRIAL-06). Declining is a legitimate answer, but
-  the position must be recorded in `00-core-definitions.md` §10.3 rather than left silent.
+All four were answered by the user on 2026-08-04, before any step was applied.
+
+- **D1 (V-013) — configure a `smokeCommand`?** **RESOLVED: set it to
+  `python3 scripts/forge-session.py doctor --json`.** Verified to exist and be read-only
+  before being offered. Runs in a fresh process and exits 0 on a healthy tree, so it catches
+  the class `validate.sh` cannot — a CLI that imports fine under pytest but is broken as a
+  real entrypoint. Applied in Step 7.
+- **D2 (V-006) — stale-allowlist semantics.** **RESOLVED: option (a), report-only wording.**
+  The printer line states that staleness is advisory and does not fail the check; zero
+  behavior change, no risk to consuming repos. Applied in Step 5.
+- **D3 (V-004b) — change `--version`'s `help=` string?** **RESOLVED: option (i), keep it
+  as-is.** `04` §9's `No help= string changed.` checkbox stays intact and no code changes.
+  The spec-prose correction in V-004 item 1 is still applied unconditionally. Rationale: a
+  user passing `0` already gets a clear exit-2 message, so the wart is minor, and changing
+  `--help` output shipped to six adapter bundles and the npm tarball is scope creep for a
+  test-debt feature. Step 3 therefore applies its spec half only.
+- **D4 (V-007, V-009, V-010) — write the optional tests, or record non-goals?**
+  **RESOLVED: V-007 only.** V-009 and V-010 are declined and recorded as non-goals in
+  `00-core-definitions.md` §10.3, per this section's own instruction that a declined item
+  must carry a stated position rather than be left silent. Step 6 therefore writes the
+  allowlist tests and recomputes `07` §5.2/§5.4, and does **not** touch
+  `test_state_verb_call_sites.py` or the `test_state_verbs.py` assertion. V-008 (docstrings)
+  is not decision-gated — it adds no collected items — and is applied regardless.
 
 Steps 1 and 2 need no decision and clear the only blocking finding.
 
@@ -730,3 +739,28 @@ Apply in order. Each step is self-contained.
 - **Rationale:** Separated because it edits the backlog artifact and the project config —
   neither of which any other step touches — and because V-013 is contingent on a user
   answer that may never come.
+
+## Fix Progress
+
+- Step 1: [APPLIED] 2026-08-04 — README `### validate-traceability.py` usage fence gained `[--allow-orphan REQ-ID ...]` plus a paragraph covering the allowlist file, its line format, the `ALLOWED FOREIGN REFERENCES` / `STALE ALLOWLIST ENTRIES` reporting, the advisory status of staleness, and the two new `--json` keys. CHANGELOG `## [Unreleased]` → `### Added` gained two bullets: the allowlist mechanism (including why the ids live beside the suite rather than in the validator), and the two shipped `forge-session.py` domain narrowings (`--version` ≥ 1, `--path` containment) that also reach npm via `adapters/`.
+- Step 2: [APPLIED] 2026-08-04 — added the canon pointer as a block quote under `### Traceability` in `skills/forge-verify/references/verification-checklists/specs.md`, immediately after CHECK-S38 (the check that files orphans). Placed there rather than in `references/shared-conventions.md` because that file loads on every skill invocation while this material is only needed by a verifier in specs mode; `MAX_BODY_LINES` was confirmed to bind skill bodies only, so `references/` carries no cap. `skills/forge-verify/SKILL.md` was left untouched (300/300). `python3 scripts/build-adapters.py` re-run; `--check` exits 0.
+- Step 3: [APPLIED] 2026-08-04 — V-002: `01-architecture-layout.md` §1 rescoped to the two files §3.2 owns, §2 tree gained `validate-traceability.py`, `.traceability-allowlist` and `.gitignore`, and a new §3.4 "Out-of-band gate unblock" records the change, why it was necessary (the shared final AC was a green `validate.sh`, so one red gate halted the whole backlog) and why the ids are not hardcoded. `04-production-validations.md` §9's cross-cutting checkbox rescoped to the same two files with a pointer to §3.4. V-004: §1.2's rationale rewritten — `--path` cites §3.7 (the dangling `§3.6` was wrong) and `--version`'s exemption now rests on "narrows an existing flag's domain" rather than a feature-dir-relative claim that never applied to it. V-003: docstring exit-code block and the `if not has_issues` summary line now state the allowlisted case truthfully. Per D3, no `help=` string changed and `04` §9's checkbox stands.
+- Step 4: [APPLIED] 2026-08-04 — V-005: `HANDOFF.md` rewritten as a post-loop record with an explicit header saying so; §1 now states 16/16 done with the green gate table, §2 keeps the stall diagnosis and its resolution as history, and the process-gaps table survives (renumbered §3, #195 marked resolved). V-012: `backlog.json.bak` diffed before deletion and confirmed strictly stale (one item `in_progress`/`completedAt: null` where the live file has it `done`) — exactly the confusion risk V-012 describes; removed, and `*.json.bak` added to `.gitignore`.
+- Step 5: [APPLIED] 2026-08-04 — V-006 under D2 option (a): the `STALE ALLOWLIST ENTRIES` line now names the file to prune and states "advisory; does not fail this check". Exit-code routing unchanged, so no consuming repo turns red on upgrade.
+- Step 6: [APPLIED] 2026-08-04 — V-008: Google-style docstrings added to `_site` (documenting its `AssertionError`) and `read_allowlist_file`; the two pre-existing undocumented siblings left alone as out-of-delta. V-007: new `tests/test_validate_traceability.py`, stdlib-only, driving the real CLI out-of-process so its exit codes are the ones `validate.sh` step 8 branches on. Acceptance evidence — non-vacuity established by mutation, not by inspection: short-circuiting `read_allowlist_file` to `set()` fails 4 of the 5, and the survivor is `test_an_undeclared_orphan_still_fails_the_gate`, which deliberately exercises no allowlist. The mutated file was restored and the restore verified by `git diff` before proceeding. REQ-TRIAL-06 discharged in the same pass: `07` §5.2 gained the new row, §5.4 carries the `1799 → +5 → 1804` arithmetic, and a new §5.5 records the addition. V-009 and V-010 declined per D4 and recorded as positions in `00-core-definitions.md` §10.3, each with the condition that would make it worth revisiting.
+- Step 7: [APPLIED] 2026-08-04 — V-011: item 016 AC11 rescoped from "carries a count" to "carries a *measurement*", explicitly permitting a definitional count that restates an adjacent literal; `tests/test_compliance_eval.py` and the prescribed test name left untouched, since both are bound by `05` §4.3 and item 004 AC2. V-013 under D1: `smokeCommand` set to `python3 scripts/forge-session.py doctor --json`, verified to exit 0 before being written; no other config key touched.
+
+### Verification of this fix pass
+
+Adapters were regenerated after the `validate-traceability.py` edits — the first full run
+caught the drift (`FAIL: adapters/ is out of date`) and it was fixed before recording.
+
+| Gate | Result |
+|---|---|
+| `bash scripts/validate.sh` | **exit 0** — `All checks passed!`, 38 gates |
+| `python3 -m pytest tests` | **1802 passed, 2 skipped** — 1804 collected |
+| Collected vs the recomputed `07` §5.4 figure (1804) | **delta 0** |
+| `ruff check scripts/ eval/` | exit 0 |
+| `ruff check tests/` | 19 — unchanged; the new test file added none |
+| `python3 scripts/build-adapters.py --check` | exit 0 |
+| `python3 scripts/forge-session.py doctor --json` (new `smokeCommand`) | **exit 0** |

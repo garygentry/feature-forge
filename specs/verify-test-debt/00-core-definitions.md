@@ -614,6 +614,31 @@ Recorded so a verifier resolves them against a position rather than filing them 
 - **`ruff check tests/` reaching zero.** The requirement is non-increase (≤19).
 - **Detection-strength parity** for the structural scan (§6.4).
 
+Two further non-goals were decided after `forge-5-loop` closed, when `forge-verify` in
+impl mode raised them. Both were offered to the operator and **declined**; they are
+recorded here, per this section's own purpose, so a later round resolves them against a
+stated position instead of re-filing them (findings V-009 and V-010 of
+`.verification/VERIFY-impl-2026-08-04.md`):
+
+- **A regression test for the fence-aware heading index** (V-009). `_heading_lines` in
+  `tests/test_state_verb_call_sites.py` is required to consult the fence flags (`03` §4.2),
+  and it does — but degrading it to a naive `^#{1,6} ` scan leaves that file green, because
+  canon currently has no unfenced `state-*` call site and so never takes the
+  `(index, index)` fallback where a fenced `#` could truncate a region. The invariant holds
+  today and was confirmed to hold across every canon file; what is absent is an assertion
+  preserving it. Declined because `03` §11/§13 budget that file at its current function
+  count and the exposure is future-regression only, not a live defect. Revisit if an
+  unfenced `state-*` call site ever lands in canon — that is the condition that makes the
+  gap reachable.
+- **Reaching zero exact-stderr equality comparisons** (V-010). REQ-BRIT-04 converted the
+  five roster sites in `00` §9.1, and item 002's new
+  `test_state_complete_rejects_a_non_positive_version_before_mutation` then added one more
+  — a site outside that roster, whose full-equality shape is prescribed verbatim by `05`
+  §3.2. The roster requirement is satisfied exactly as written; "zero such comparisons
+  repo-wide" was never the requirement. Declined as a deliberate exception rather than
+  converted, because converting it would put `05` §3.2 and the shipped test out of step for
+  no behavioral gain.
+
 ### 10.4 The cross-test-module import
 
 `tests/test_capability_determination_prose.py` imports `CANONICAL_EXIT_SITES` **from**

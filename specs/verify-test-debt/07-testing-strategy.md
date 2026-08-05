@@ -178,6 +178,7 @@ trim removes.
 | `test_state_verb_call_sites.py` | 10 items | **9** | **−1** (−2 deleted, +1 mutation control) |
 | REQ-COV backfill | — | **15** collected (10 named functions) | **+15** |
 | REQ-BRIT-07 dedup | 13 items | **55** | **+42** |
+| `test_validate_traceability.py` (post-verify, §5.5) | — | **5** collected (5 named functions) | **+5** |
 
 ### 5.3 The dedup row, computed
 
@@ -220,11 +221,16 @@ Parametrizing **expands** collected items while **reducing** function count. Bot
  +15  REQ-COV backfill     (10 named functions, 15 collected)
  +42  REQ-BRIT-07 dedup    (13 → 55 collected)
 ────
-1799  expected
+1799  expected at loop completion
+  +5  allowlist guard      (§5.5, added after impl verify)
+────
+1804  expected now
 ```
 
-**An implementer landing near 1799 is seeing the expected parametrization expansion, not an
-accidental addition.** This is the number REQ-QUAL-01's full-suite check is read against.
+**An implementer landing near this figure is seeing the expected parametrization expansion,
+not an accidental addition.** This is the number REQ-QUAL-01's full-suite check is read
+against. The loop closed at **1799**, exactly as predicted; the later `+5` is the
+post-verify addition recorded in §5.5 and is the only movement since.
 
 Two stated assumptions, each with its recompute rule:
 
@@ -241,6 +247,26 @@ Two stated assumptions, each with its recompute rule:
    loop alone; the epic loop contributes 4 more, so the corrupt-file expansion is **+11**.
    That expansion, together with the backfill's parametrized ids in assumption 1, is why
    §5.4 lands at 1799 rather than the tech spec's ≈1781.
+
+### 5.5 Post-verify addition — `test_validate_traceability.py`
+
+Added by the `forge-fix` pass applying finding V-007 of
+`.verification/VERIFY-impl-2026-08-04.md`, after `forge-5-loop` closed. Recorded here
+because it is the only change to the suite total since, and because §5.4's arithmetic is
+read as a live figure rather than a historical one.
+
+`scripts/validate-traceability.py` gained an `--allow-orphan` flag and
+`.traceability-allowlist` discovery (`01-architecture-layout.md` §3.4) with no test
+coverage at all. That code *subtracts ids from the orphan set* inside a blocking gate that
+ships to every adapter bundle, so a defect there turns a red gate green. The guard pins
+five behaviors: a declared id is reclassified rather than dropped; an undeclared orphan
+still exits 1; a stale entry is reported but does not move the exit code; `--allow-orphan`
+merges with the file; and comments and blank lines are stripped.
+
+It drives the real CLI out-of-process, so the exit codes it asserts are the ones
+`validate.sh` step 8 actually branches on. Non-vacuity was established by mutation:
+short-circuiting `read_allowlist_file` to return an empty set fails four of the five, and
+the survivor is the one that deliberately exercises no allowlist.
 
 ## 6. Countable Success Criteria (REQ-QUAL-04)
 

@@ -292,6 +292,17 @@ def _read_contract_surface(site: CanonicalExitSite) -> str:
 
 
 def _site(skill: str) -> CanonicalExitSite:
+    """Return the canonical exit site for ``skill``.
+
+    Args:
+        skill: The skill id, as it appears in ``CANONICAL_EXIT_SITES``.
+
+    Returns:
+        The matching site entry.
+
+    Raises:
+        AssertionError: ``skill`` is not a covered exit site.
+    """
     for site in CANONICAL_EXIT_SITES:
         if site.skill == skill:
             return site

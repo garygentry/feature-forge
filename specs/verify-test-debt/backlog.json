@@ -464,7 +464,7 @@
         "The actual collected count from `python3 -m pytest tests -q --collect-only` is recorded and compared against the 1799 expected by `07` §5.4; if it differs by more than ±5 items, the commit message names which roster changed and why. No test is adjusted to hit the number",
         "Every countable criterion in `07` §6 is confirmed satisfied",
         "No locking primitive, lockfile, or advisory-lock call appears anywhere in the feature's diff",
-        "No comment, docstring, or test narration in the feature's diff carries a count, \"measured\", \"confirmed\", or any other empirical claim",
+        "No comment, docstring, or test narration in the feature's diff carries a *measurement* — a suite/site/item count, \"measured\", \"confirmed\", or any figure that must be recomputed when a roster changes. A count that restates an adjacent literal in the same file (e.g. \"the four prelude criteria\" above a four-element tuple) is definitional, not empirical, and is permitted.",
         "No REQ-TRIAL-04 Session Log figures were written, inferred, or estimated by this item"
       ],
       "status": "done",

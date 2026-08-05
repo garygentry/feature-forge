@@ -17,8 +17,8 @@ Usage:
                                     [--allow-orphan REQ-ID ...]
 
 Exit codes:
-    0 = all requirements covered, no orphans
-    1 = gaps or orphans found
+    0 = all requirements covered; no orphans other than allowlisted ones
+    1 = uncovered requirements, or orphans that are not allowlisted
     2 = file not found or read error
 """
 
@@ -51,6 +51,13 @@ def read_allowlist_file(specs_dir: Path) -> set[str]:
     """Read <specs-dir>/.traceability-allowlist, if present.
 
     A missing file is not an error — most suites have no foreign ids at all.
+
+    Args:
+        specs_dir: The suite's specs directory, searched for the allowlist file.
+
+    Returns:
+        The declared foreign requirement ids; an empty set when the file is
+        absent or unreadable.
     """
     allowlist_path = specs_dir / ALLOWLIST_FILENAME
     if not allowlist_path.exists():
@@ -209,11 +216,15 @@ def main() -> int:
         if unused_allowlist:
             print(f"STALE ALLOWLIST ENTRIES ({len(unused_allowlist)}):")
             for req_id in unused_allowlist:
-                print(f"  - {req_id}: allowlisted but no longer referenced")
+                print(
+                    f"  - {req_id}: allowlisted but no longer referenced — remove it "
+                    f"from <specs-dir>/{ALLOWLIST_FILENAME} "
+                    f"(advisory; does not fail this check)"
+                )
             print()
 
         if not has_issues:
-            print("All requirements covered. No orphaned references.")
+            print("All requirements covered. No unallowlisted orphaned references.")
         else:
             total_issues = len(uncovered) + len(orphaned)
             print(f"Found {total_issues} issue(s).")

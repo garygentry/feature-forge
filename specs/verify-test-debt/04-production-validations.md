@@ -45,8 +45,10 @@ test.**
 ### 1.2 What this document does not change
 
 - **No argparse change.** `--version` keeps `type=int, required=True`; `--path` keeps
-  `required=True, action="append", dest="paths"`. Their `help=` strings are unchanged —
-  both already document the feature-dir-relative contract (§3.6).
+  `required=True, action="append", dest="paths"`. Their `help=` strings are unchanged.
+  `--path` already states its feature-dir-relative contract (§3.7); `--version`'s help is
+  left alone because this change narrows an existing flag's domain rather than giving it a
+  new meaning.
 - **No new exception type, no `try`/`except`.** Both rejections raise the existing
   `UsageError` and propagate to the existing top-level handler
   (`00-core-definitions.md` §8.1).
@@ -972,7 +974,10 @@ Confirm an implementation matches this document:
 - [ ] `scripts/forge-session.py` still has **no** `return 1` / `sys.exit(1)` path; both new
       rejections reach the existing `except UsageError` handler.
 - [ ] No new exception type, `try`/`except`, CLI verb, flag, exit code, or payload key
-      appears in the diff.
+      appears in the diff **for `scripts/forge-session.py` or `eval/run-compliance-eval.py`**
+      — the two files this document owns. `scripts/validate-traceability.py` is outside that
+      ownership and does add a flag and two payload keys; see
+      `01-architecture-layout.md` §3.4.
 - [ ] No `help=` string changed.
 - [ ] `.pipeline-state.json`'s schema is unchanged and no migration code exists.
 - [ ] `ruff check scripts/ eval/` is clean.
