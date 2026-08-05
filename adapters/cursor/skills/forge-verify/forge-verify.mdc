@@ -56,8 +56,7 @@ Pick based on how many checks the mode carries (see the per-mode totals in Step 
 
 ### Synthesize (parent session)
 
-The verifier(s) are read-only — they return findings as their response; **you** (the
-parent) assemble and write the single document to
+The verifier(s) are read-only — they return findings as their response. **Gate every return first** through "Truncated Verifier Returns" in `references/findings-template.md`: a return without the report structure is a dropped digest (issue #183) — resume the agent via `SendMessage` (or re-dispatch), and never synthesize, write a document, or record a verify result from a truncated return. Then **you** (the parent) assemble and write the single document to
 `{resolvedFeatureDir}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`. When you fanned out:
 1. Concatenate all instances' findings and **renumber `V-NNN` IDs uniquely** across the
    merged set.

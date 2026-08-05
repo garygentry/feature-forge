@@ -12,6 +12,8 @@ Usage:
     python3 epic-manifest.py render-status <epic> [--specs-dir DIR] [--json]
     python3 epic-manifest.py add-feature <epic> <name> --charter TEXT \
         [--depends-on A,B] [--specs-dir DIR] [--json]
+    python3 epic-manifest.py adopt-feature <epic> <name> [--charter TEXT] \
+        [--depends-on A,B] [--specs-dir DIR] [--json]
     python3 epic-manifest.py remove-feature <epic> <name> [--specs-dir DIR] [--json]
     python3 epic-manifest.py reorder <epic> --order A,B,C [--specs-dir DIR] [--json]
     python3 epic-manifest.py set-dep <epic> <name> --depends-on A,B [--specs-dir DIR] [--json]

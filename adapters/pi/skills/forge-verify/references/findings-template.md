@@ -2,6 +2,36 @@
 
 Loaded by the **parent orchestrator** role of `forge-verify` at Step 4 (write the findings document) and Step 6 (epic-mode state write). The `forge-verifier` leaf subagent MUST NOT load this file — it holds only orchestrator-facing material (see `SKILL.md` → "Which role are you?").
 
+## Truncated Verifier Returns (Synthesize gate)
+
+The Agent tool hands the parent **only the verifier's final message**. A verifier that
+ends its run on a status line instead of the report returns *that line* as the entire
+result — the digest it built exists in its transcript but never reaches you. Observed
+in the wild (issue #183): two ~130k-token, 40+-tool-call runs each returned a single
+plausible-sounding opening sentence ("I'll start by loading the pipeline state…") while
+the recovered digest contained two BLOCKER findings. The failure is quiet precisely
+because the returned line reads like progress, not like an error.
+
+**Gate every verifier return before using it.** A return is a **non-answer** when it
+lacks the report structure — no `# Verification Report:` header, no `## Findings`
+section, no `Checks Executed:` line (for a skeptic dispatch: no per-finding
+CONFIRMED/REFUTED verdicts). Length is the tell: a real report is rarely under ~20
+lines; a one-or-two-sentence return from a run that did real work is a dropped digest,
+not a clean result.
+
+On a non-answer:
+
+1. **Resume, don't re-run.** `SendMessage` to the returned agent id: *"Your run ended
+   without returning the report. Return your FINAL report now, from the work you
+   already did, in the Output Format — your final message is the only thing I
+   receive."* The agent replays from its transcript and typically returns the full
+   digest with zero further tool calls.
+2. **Re-dispatch** the same prompt only if the resume also fails or the id is gone.
+3. **Never** synthesize findings from a truncated return, write a findings document
+   around it, record a verify result (`state-verify`) from it, or present it to the
+   user as the verification outcome. A gate decision made on a dropped digest is the
+   #183 failure mode: BLOCKER findings silently converted into a pass.
+
 ## Findings Document Template (Step 4)
 
 Write findings to `{specsDir}/{feature}/.verification/VERIFY-{mode}-{YYYY-MM-DD}.md`

@@ -140,8 +140,8 @@ section, updated at every session close).
 | Track | Scope | Status |
 |---|---|---|
 | **S0** — land, reconcile, release 0.15.0 | verify-test-debt PR, CHANGELOG surgery, #195, this refresh, 0.15.0, AGENTS.md process note | **done** (2026-08-05) |
-| **S1** — issue closeout + two small fixes | verify-and-close #163 #172 #175 #176 with evidence; rescope #181; record #170/#171 split; fix #183; create milestones | pending ⟵ **next** |
-| **B** — forge-5-loop recovery (pipeline feature `loop-recovery`) | #196 (keystone decision record) #193 #192 #189 #190 #191 #194; release 0.16.0 at close | pending — highest value |
+| **S1** — issue closeout + two small fixes | verify-and-close #163 #172 #175 #176 with evidence; rescope #181; record #170/#171 split; fix #183; create milestones | **done** (2026-08-05) |
+| **B** — forge-5-loop recovery (pipeline feature `loop-recovery`) | #196 (keystone decision record) #193 #192 #189 #190 #191 #194; release 0.16.0 at close | pending — highest value ⟵ **next** |
 | **C** — contracts & state-integrity batch (direct PR) | #186 #187 #188 #182 #181-remainder #166 | pending |
 | **D** — skip-docs (pipeline feature `docs-skip`) | #197 mechanism → #165 option/config → #173 re-gate | pending |
 | **E** — zero-prompt loop config (direct PR) | #153 #164 (`loopRunner.reviewMode`/`.agentMode`); 0.17.0 with D | pending |
