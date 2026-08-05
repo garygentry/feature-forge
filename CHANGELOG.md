@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `forge-verifier` return contract is explicit, and every dispatcher gates against truncated returns (#183).** Two ~130k-token verifier runs each returned only their opening sentence — the Agent tool hands the parent nothing but the subagent's *final* message, so a run that ends on a status line silently drops its entire digest, and in the observed incident the recovered digest carried two BLOCKER findings that would otherwise have been converted into a pass. Three surfaces changed: `agents/forge-verifier.md` now states that the last message is the only thing the parent receives and that the final response must BE the complete Output Format report (never a summary, opening line, or "the report follows"); `skills/forge-verify` gained a parent-side **Truncated Verifier Returns** gate (new section in `references/findings-template.md`, wired into the Synthesize step) — a return without the report structure (`# Verification Report:` header, `## Findings`, `Checks Executed:`) is a non-answer: resume the agent via `SendMessage` (it replays the digest from its transcript with zero further tool calls) or re-dispatch, and never synthesize, write a findings document, or record a verify result from it; and `forge-5-loop`'s two impl-verify dispatch sites point at the same gate before anything is recorded. Ride-along: `epic-manifest.py`'s module docstring now lists the `adopt-feature` verb it already shipped.
+
 ## [0.15.0] — 2026-08-05
 
 ### Added
