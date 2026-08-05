@@ -788,3 +788,21 @@ artifacts this fix pass itself produced:
 `skills/forge-verify/SKILL.md` was independently measured at exactly **300** body lines
 against `MAX_BODY_LINES = 300`, confirming that routing the V-001 canon pointer into
 `references/verification-checklists/specs.md` was necessary, not merely preferable.
+
+### Confirmation pass — V-012 and the round-2 advisories
+
+A second clean-room pass, scoped to `cf995c5`'s claims only, **CONFIRMED** all five:
+V-012 genuinely resolved (`ls`, `find`, and `git status --porcelain --ignored` all agree
+the file is gone, not merely masked), NEW-1 (`.gitignore` byte-identical to its pre-fix
+blob `482508ff`, with `e02bd4e`'s rule untouched), NEW-2 (§1's bounded claim checked
+against every file the fix touched, and found accurate), NEW-3, and no regression.
+Independently measured at `cf995c5`: `validate.sh` exit 0, pytest 1802 passed / 2 skipped,
+**1804 collected — delta 0** against `07` §5.4, `build-adapters --check` exit 0,
+`check-spec-purity` 0 violations.
+
+**Verdict: `reverified` (advisory-only).** One advisory was raised and has been applied:
+
+- **A-001** (`inconsistency`) — a retraction orphan. `HANDOFF.md` §3's issue-#195 row,
+  written by `d18fb02`, announced the `*.json.bak` rule that `cf995c5` then reverted under
+  NEW-1, leaving the announcement behind. **Applied:** the row now records the rule as
+  briefly added and reverted as redundant, so the record matches `.gitignore`.

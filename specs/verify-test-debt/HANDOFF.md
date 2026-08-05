@@ -90,4 +90,4 @@ next; they are not blockers for this feature, which is complete.
 | [#192](https://github.com/garygentry/feature-forge/issues/192) | no post-run tree reconciliation |
 | [#193](https://github.com/garygentry/feature-forge/issues/193) | resolved items are never unblocked |
 | [#194](https://github.com/garygentry/feature-forge/issues/194) | no dependency-topology check on the backlog |
-| [#195](https://github.com/garygentry/feature-forge/issues/195) | `.gitignore` misses `**/.rauf/progress.md` — **resolved**; the rule is now in `.gitignore`, alongside a `*.json.bak` rule added for the same class of stray runner artifact |
+| [#195](https://github.com/garygentry/feature-forge/issues/195) | `.gitignore` misses `**/.rauf/progress.md` — **resolved**; the rule is now in `.gitignore`. A `*.json.bak` rule was briefly added for the same class of stray artifact and then reverted as redundant with the pre-existing `**/backlog.json.bak` |
