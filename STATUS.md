@@ -4,22 +4,27 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-07-27 (0.13.0 / installer 0.3.0 published to npm)._
+_Last updated: 2026-08-05 (0.15.0 / installer 0.3.2 cut; hardening pass S0 complete)._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.13.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.0** | `installer/package.json` (independent version line) |
-| npm | **`@garygentry/feature-forge@0.3.0`** (`latest`) | published 2026-07-27 via `npm-publish.yml` (run 30324289460) |
-| Commit | `chore(release): v0.13.0 / installer 0.3.0 (Pi support, rauf pin 0.13.0)` | |
+| Plugin | **0.15.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.3.2** | `installer/package.json` (independent version line) |
+| npm | **`@garygentry/feature-forge@0.3.2`** (`latest`) | publish dispatched post-merge 2026-08-05 via `npm-publish.yml` |
+| Commit | `chore(release): v0.15.0 / installer 0.3.2` | |
 
-CHANGELOG `[Unreleased]` is **empty** — 0.13.0 is the current section.
+CHANGELOG `[Unreleased]` is **empty** — 0.15.0 is the current section, and the previously
+missing `## [0.14.0]` heading was retroactively cut (the 0.14.0 release commit bumped
+versions without cutting `[Unreleased]`; see the AGENTS.md release-checklist note added
+alongside this entry).
 
 ### rauf coupling
 
-0.13.0 advances `RAUF_PIN` to **`@garygentry/rauf@0.13.0`** (published 2026-07-27), which is the
+`RAUF_PIN` remains **`@garygentry/rauf@0.13.0`** (re-verified resolving on npm 2026-08-05,
+per the note below). 0.13.0 advanced the pin to the rauf release that ships the `--agent pi`
+loop preset, which is the
 rauf release that ships the `--agent pi` loop preset. That coupling is load-bearing for this
 release: `forge-5-loop` discovers agents by probing `rauf agents --json`, so Pi loop support is
 delivered entirely by the runner — an older pinned rauf would never list `pi`. `minRunnerVersion`
@@ -33,6 +38,30 @@ before advancing it.
 
 ## Shipped recently
 
+- **0.15.0** / installer 0.3.2 (2026-08-05) — reconciliation release carrying **three feature
+  waves that had accumulated on main unreleased**:
+  - **stage-exit-coverage epic + P1 remediation (#184)** — scripted stage exits now cover all
+    nine pipeline-advancing skills (`stage-exit` enum widened to loop/docs, `forge-verify`/
+    `forge-fix` termini with `--served-stage` rejoin routing, epic edit-mode member routing,
+    durable `auto-verify-pending` debt, typed branch outcomes, `state-verify`). Closes the
+    gaps behind #163/#172/#175/#176 (issue closeout itself is Track S1).
+  - **Anti-churn verify-loop hardening (#185)** — R-05 severity floor, R-06 scoped re-verify +
+    decision immunity, R-07 round ledger + second-red escalation, R-08 narrative rule, R-09
+    entry-gate doctrine, GATE-P2 `escalation` eval scenario.
+  - **verify-test-debt (#198)** — 16-item rauf run paying down verification-test debt
+    (capability/mutation guard rewrites, coverage backfill, brittleness batch), the
+    `validate-traceability.py` foreign-id allowlist, and two state-verb hardenings
+    (`state-complete --version ≥ 1`, `state-artifact --path` containment). Docs stage
+    deliberately skipped → #197.
+  - Plus the S0 reconcile: retroactive `[0.14.0]` CHANGELOG cut + backfilled #184/#185
+    entries, deny-by-default `**/.rauf/*` gitignore (#195), and the AGENTS.md
+    release-checklist note.
+- **0.14.0** / installer 0.3.1 (2026-07-30, PR #177/#178) — **context-efficiency batch
+  (R1–R6)**: verification checklists split per verify mode, navigator's process-overview read
+  gated, runner contract split into always-loaded + agent-conditional halves, seven `state-*`
+  verbs retiring hand-written `.pipeline-state.json` edits (R4), `effective-config` resolving
+  the `loopRunner` block (R5), drift guards over every split surface. (Released without a
+  CHANGELOG cut — repaired in 0.15.0.)
 - **0.13.0** / installer 0.3.0 — **Pi (`@earendil-works/pi-coding-agent`) as the 6th supported
   agent.** `build-adapters.py` emits `adapters/pi/` as a self-contained Pi package: generated
   skills, package metadata, and a vendored `AskUserQuestion` compatibility extension (a patched
@@ -101,17 +130,36 @@ before advancing it.
     `specs/{epic}/{feature}/`, merges state preserving the stub's `epic`/`branch` back-pointers, removes
     the flat dir, manifest-adds if absent. Re-entrant; relocate-then-manifest ordering.
 
+## Hardening pass (Aug 2026)
+
+The active multi-session program: all 28 issues open as of 2026-08-05 were triaged into
+tracks (strategy + rationale in the local `plans/PLAN-hardening-2026-08.md`; durable
+cross-session state is GitHub issues + the `hardening/*` milestones created in S1 + this
+section, updated at every session close).
+
+| Track | Scope | Status |
+|---|---|---|
+| **S0** — land, reconcile, release 0.15.0 | verify-test-debt PR, CHANGELOG surgery, #195, this refresh, 0.15.0, AGENTS.md process note | **done** (2026-08-05) |
+| **S1** — issue closeout + two small fixes | verify-and-close #163 #172 #175 #176 with evidence; rescope #181; record #170/#171 split; fix #183; create milestones | pending ⟵ **next** |
+| **B** — forge-5-loop recovery (pipeline feature `loop-recovery`) | #196 (keystone decision record) #193 #192 #189 #190 #191 #194; release 0.16.0 at close | pending — highest value |
+| **C** — contracts & state-integrity batch (direct PR) | #186 #187 #188 #182 #181-remainder #166 | pending |
+| **D** — skip-docs (pipeline feature `docs-skip`) | #197 mechanism → #165 option/config → #173 re-gate | pending |
+| **E** — zero-prompt loop config (direct PR) | #153 #164 (`loopRunner.reviewMode`/`.agentMode`); 0.17.0 with D | pending |
+| **F** — verify fix-sweeps (pipeline feature) | #170 mechanical milestone, then #171 semantic | pending |
+| **G** — decisions & standalone | #180 single-writer decision; #167 adapter host-term translation (last) | pending |
+
+Sequencing: S1 next; B before D (both widen `EXIT_OUTCOMES`); E after D (shared schema
+surfaces); #167 deliberately last (pure generator churn). Standing constraints for every
+session: body caps (forge-verify 299/300, forge-0-epic 297, forge-5-loop 296 — prose goes
+to `references/`), adapters regen on every canon edit, schema + verb + conformance test for
+any new state surface (the R4 pattern), `bash scripts/validate.sh` green before every commit.
+
 ## Open issues
 
-_The snapshot below is as of 2026-07-14 and is **stale** — the tracker is no longer empty. Twelve
-issues were filed between 2026-07-19 and 2026-07-29, mostly surfaced by dogfooding the
-context-efficiency pipeline; see `plans/ROADMAP-post-context-efficiency.md` for the current
-review. Four of them (#172 / #175 / #176 / #163) are the stage-exit-coverage cluster that
-reclassified the item under "Scheduled" above._
-
-All of **#121 / #122 / #123 / #124 / #126 / #132 / #135** are closed — #123 was a duplicate of #122;
-the rest auto-closed with PRs #134/#137/#138/#139. The 0.13.0 / installer 0.3.0 publish is done;
-no release work is outstanding.
+_28 open as of 2026-08-05, all triaged into the hardening-pass tracks above. Four
+(#163 #172 #175 #176) are already implemented on main by #184 and await
+verify-and-close in S1; #181 is half-fixed (heredoc gone, schema still missing —
+remainder in Track C)._
 
 Two known non-blocking follow-ups, untracked (no issue filed):
 
@@ -124,39 +172,13 @@ Two known non-blocking follow-ups, untracked (no issue filed):
 
 ## Scheduled
 
-- **forge-5-loop exit → stage-exit migration (Option B) — RECLASSIFIED, now scheduled.** This was
-  triaged on 2026-07-14 as **do not build unless drift appears**, with a named re-open trigger:
-  "(a) the bespoke loop exit drifts from the scripted one and causes a real user-hit
-  inconsistency, or (b) a stage-exit semantics change makes two paths demonstrably costly."
-  **That trigger has since fired three times**, all filed after the triage:
-  - **#172** — `stage-exit` rejects `forge-6-docs`, so the skill's own text prescribes a command
-    the script refuses. Four consecutive runs in one epic hand-rolled the state write, producing a
-    real short-vs-full `commitHash` inconsistency and a 500-line diff from JSON round-tripping.
-    This is (a) — a user-hit inconsistency caused by a hand-rolled exit.
-  - **#175** — the state-aware next-stage override is gated on `stage in PRODUCTION_STAGES`, which
-    excludes `forge-0-epic`, so edit-mode re-entry routes the user back to `forge-1-prd` on a
-    member whose backlog is already complete.
-  - **#176** — the general form: exit determinism was hardened along the linear spine where
-    compliance was already easy, and left to model discretion exactly where the pipeline branches.
-    `forge-verify` and `forge-fix` have **no exit block at all**.
-
-  The 2026-07-14 finding of "no drift" was accurate **at the time** — it checked the loop exit
-  against `stage-exit-protocol.md` and found them single-sourced. What it did not check, and what
-  #176 reframes as the real defect, is exit **coverage**: `stage-exit --stage` accepts only
-  `forge-0-epic … forge-4-backlog`, so every skill outside that enum either hand-rolls its exit or
-  has none. The migration is therefore no longer "code-path convergence with no user-visible
-  benefit" — it is the fix for four filed issues.
-
-  Two things also made it cheaper than it was. `state-complete` (R4, 0.14.0) now owns the state
-  write and the staleness cascade, so widening `stage-exit` is mostly a next-stage-resolution
-  problem rather than a state-authoring one. And the 300-line body cap objection has a known
-  buy-back (V-012: relocate the Step 2d "Run mode" paragraph into `runner-contract.md`, ~10 lines).
-
-  Scheduled as **Phase 1** of the post-context-efficiency roadmap, sized to run through the forge
-  pipeline itself. Original triage context:
-  `plans/HANDOFF-triage-deferred-composite-and-loop-exit.md`. Still distinct from **chunk 5a**
-  under "Explicitly won't build" (that is the Stop-hook sentinel guard, not code-path convergence),
-  whose own re-open condition — a remote run showing post-sentinel drift — has **not** fired.
+Nothing outside the hardening pass. The previously scheduled **forge-5-loop exit →
+stage-exit migration (Option B)** — reclassified on 2026-07-29 after its re-open trigger
+fired three times (#172 #175 #176) — **shipped as the stage-exit-coverage epic (#184)**,
+released in 0.15.0. Original triage context:
+`plans/HANDOFF-triage-deferred-composite-and-loop-exit.md`. Still distinct from **chunk 5a**
+under "Explicitly won't build" (the Stop-hook sentinel guard), whose own re-open condition —
+a remote run showing post-sentinel drift — has **not** fired.
 
 ## Deferred / optional (not scheduled)
 
