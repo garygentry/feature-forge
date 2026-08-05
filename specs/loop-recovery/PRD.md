@@ -22,9 +22,10 @@ real: decisions persist, recovery provably unblocks, stranded work is reconciled
 the outcome vocabulary can express "resolved", reports attribute causes truthfully,
 systemic causes are consolidated, and fragile topologies are flagged before they run.
 
-**Who has this problem:** the operator answering needs-human prompts, and the main
+**Who has this problem:** the operator answering needs-human prompts; the main
 agent driving `forge-5-loop` — which is structurally forced to be a reporter rather
-than a driver.
+than a driver; and the backlog author at `forge-4-backlog`, whose fragile
+topologies pass both authoring and verification without comment (#194).
 
 **Why now:** these seven issues (GitHub milestone `hardening/B-loop-recovery`) were
 filed against the *current, hardened* code from a live run. This is the
@@ -69,6 +70,11 @@ implement in the order: DEC, TREE, UNB, OUT, ATTR, CLU, TOPO, EVAL.
   to a durable, per-backlog decision record at the moment it is collected — before
   it is acted on. A decision that exists only in conversation memory is a defect.
   - Priority: P0
+  - Notes: **Durability scope:** the record is untracked run-local state (the
+    standing #195 direction for runner-adjacent artifacts) — durable means it
+    survives session end and context clear; it is not expected to survive a fresh
+    clone and is not part of code review. Because it is untracked, decision writes
+    never dirty the working tree that REQ-TREE-01/REQ-OUT-03 inspect.
 - REQ-DEC-02: Each record MUST capture at minimum: the item id, the question, the
   answer, when it was decided, when/whether it was applied, and by what (session /
   actor).
@@ -85,6 +91,19 @@ implement in the order: DEC, TREE, UNB, OUT, ATTR, CLU, TOPO, EVAL.
   decisions are not yet applied (read-back is a first-class operation, not a
   side effect).
   - Priority: P0
+- REQ-DEC-06: A decision is recorded at collection on **every** branch — including
+  the "cancel the run early" branch and an operator who defers a consolidated
+  (REQ-CLU-02) decision. A recorded-but-unapplied decision is marked unapplied and
+  MUST be re-surfaced by the REQ-DEC-05 enumeration on the next launch.
+  - Priority: P0
+- REQ-DEC-07: **Record lifecycle:** an item MAY accumulate more than one decision
+  over time (a re-raised needs-human with a new question or revised answer);
+  records are append-only — a later decision never destroys an earlier one's audit
+  fields — and the REQ-DEC-05 unapplied set is the latest undecided-or-unapplied
+  entry per item. The record persists for the life of the backlog and is never
+  pruned automatically. Items answered by one consolidated decision (REQ-CLU-04)
+  remain independently re-decidable.
+  - Priority: P0
 
 ### 3.2 Post-run tree reconciliation (#192)
 
@@ -95,6 +114,13 @@ implement in the order: DEC, TREE, UNB, OUT, ATTR, CLU, TOPO, EVAL.
   that produced it, and driven to an explicit operator decision — commit per item,
   stash, or discard — as a required step, not a remark.
   - Priority: P0
+  - Notes: **Attribution basis:** best-effort from runner-native evidence (the
+    runner's state/event records of which items ran and when); reliable per-item
+    provenance is NOT a prerequisite. A change that cannot be attributed to an
+    item is not dropped — the unattributed set is presented as a single
+    consolidated decision. §5's rauf-side permission remains available if the
+    tech spec finds best-effort insufficient, but this requirement does not
+    spend it.
 - REQ-TREE-03: Discard MUST require explicit operator confirmation; it is never a
   default or an automatic action.
   - Priority: P0
@@ -111,12 +137,19 @@ implement in the order: DEC, TREE, UNB, OUT, ATTR, CLU, TOPO, EVAL.
   is not sufficient.
   - Priority: P0
 - REQ-UNB-02: After unblocking, the procedure MUST re-read the authoritative
-  backlog summary and verify the affected items actually left
-  `blocked`/`needsHuman`.
+  backlog summary and verify, **per item**, that each affected item actually left
+  `blocked`/`needsHuman`. The per-item identity test is authoritative; aggregate
+  counts are never a substitute (a count can be unchanged while items swap
+  states, and can move for unrelated reasons).
   - Priority: P0
-- REQ-UNB-03: An unchanged blocked/needs-human count after a recovery pass MUST be
-  treated and reported as a **failed recovery** — never as success.
+- REQ-UNB-03: Recovery succeeds only when **every** affected item left
+  `blocked`/`needsHuman`. Any affected item still blocked — including a partial
+  unblock where some items moved — MUST be treated and reported as a **failed
+  recovery**, naming the items that did and did not move. Never report success
+  the per-item test contradicts.
   - Priority: P0
+  - Notes: Partial is failed, not a distinct state — one test governs
+    REQ-UNB-02/-03 and REQ-OUT-03's gate.
 
 ### 3.4 An outcome for "decision made and applied" (#189)
 
@@ -129,8 +162,10 @@ implement in the order: DEC, TREE, UNB, OUT, ATTR, CLU, TOPO, EVAL.
   - Priority: P0
 - REQ-OUT-03: The resolved outcome MUST be gated on all of: every recorded
   needs-human item has a decision record (REQ-DEC), the working tree is clean
-  (REQ-TREE), and the items have been unblocked with counts moved (REQ-UNB).
-  Claiming it without those preconditions is a defect.
+  (REQ-TREE), and every affected item has left `blocked`/`needsHuman` per the
+  REQ-UNB-02 per-item test. Claiming it without those preconditions is a defect.
+  Untracked runner-state artifacts (the decision record among them, per
+  REQ-DEC-01) do not count toward the clean-tree precondition.
   - Priority: P0
 
 ### 3.5 Truthful pending attribution (#190)
@@ -159,6 +194,8 @@ implement in the order: DEC, TREE, UNB, OUT, ATTR, CLU, TOPO, EVAL.
   clusters (testable); the agent MAY merge or refine them by judgment before
   presenting — but the scripted assist is the required substrate, not optional.
   - Priority: P1
+  - Notes: The PRD constrains only that the helper is deterministic and its
+    clusters agent-refinable; the similarity criterion itself is OQ-4.
 - REQ-CLU-02: For any cluster of two or more items, the operator MUST be presented
   with **one** consolidated decision naming every affected item and the full
   dependency subtree the cluster gates.
@@ -202,49 +239,80 @@ implement in the order: DEC, TREE, UNB, OUT, ATTR, CLU, TOPO, EVAL.
   protects only against an interrupted write, not concurrent writers. Concurrent
   multi-session access is explicitly out of scope; no locking protocol is
   required or wanted.
-- REQ-REL-02: A failed decision-record write MUST be surfaced verbatim and MUST
-  NOT be reported as recorded (mirror of the `state-*` verbs' exit-2 protocol).
+  - Priority: P0
+- REQ-REL-02: A failed scripted recovery step — a decision-record write, or an
+  unblock operation that errors or is unavailable at the configured runner
+  version — MUST be surfaced verbatim and MUST NOT be reported as
+  recorded/succeeded (mirror of the `state-*` verbs' exit-2 protocol). A failed
+  unblock is thereby distinguishable from REQ-UNB-03's ran-but-nothing-moved
+  failure.
+  - Priority: P0
 
 ### 4.2 State integrity
 
 - REQ-STATE-01: Every new persistent surface follows the R4 pattern: JSON schema
   file, scripted verb writer, schema-conformance test. No hand-authored JSON, no
   schema-less state files (#181's lesson).
+  - Priority: P0
 
 ### 4.3 Observability / honesty
 
 - REQ-OBS-01: Every report surface this feature touches must be able to cite the
   authoritative counts it derived its claims from; a claim the counters contradict
   is a reportable defect (this generalizes REQ-ATTR-03).
+  - Priority: P0
 
 ### 4.4 Compatibility
 
 - REQ-COMPAT-01: Outcome-vocabulary and routing changes ripple into the stage-exit
   directive matrix and its tests deliberately — guard updates are expected and
   in scope, silent guard weakening is not.
-- REQ-COMPAT-02: Runs that never hit needs-human/blocked states behave exactly as
-  today (no new prompts, no new required steps on the happy path, beyond the
-  Step 2a depth line of REQ-TOPO-03).
+  - Priority: P0
+- REQ-COMPAT-02: Runs that never hit needs-human/blocked states produce no new
+  prompts and no new required *operator decisions*, beyond the Step 2a depth line
+  of REQ-TOPO-03. The REQ-TREE-01 detection step runs on every run but is silent
+  on a clean tree; REQ-TREE-02's decision fires only when the tree is dirty.
+  - Priority: P0
+
+### 4.5 Security
+
+- REQ-SEC-01: Decision records hold operator-authored free text and are treated
+  as repo-visible, non-sensitive content (untracked per REQ-DEC-01, but never
+  relied on as a secret store): prompts MUST NOT solicit secrets, the record
+  captures no credential material, and the applied-by field identifies the
+  session/actor only — never user identity beyond that.
+  - Priority: P0
+
+### 4.6 Performance
+
+- REQ-PERF-01: Topology computation (root count, max chain depth, per-root
+  fan-out) MUST be linear in backlog size and add no perceptible latency to
+  Step 2a at realistic backlog sizes (tens of items; the observed corpus is 16).
+  No further quantified targets apply — a local single-operator CLI has no
+  throughput or uptime dimension.
+  - Priority: P2
 
 ## 5. Constraints
 
-- **Body caps:** `forge-5-loop` body is at 287/300 lines after the pre-PRD
-  headroom buy-back; `forge-verify` is at 299/300. New prose lands in
-  `references/` files (checklists, runner-contract, result-reporting) with
-  one-line pointers from skill bodies. The topology CHECK goes in a checklist
-  file, never the forge-verify body.
-- **Canon/adapter discipline:** every canon edit regenerates adapters
+- **Body caps (MUST):** the 300-line/5000-word body cap is a hard CI gate.
+  `forge-5-loop` is at 287/300 after the pre-PRD headroom buy-back;
+  `forge-verify` is at 299/300. New prose MUST land in `references/` files
+  (checklists, runner-contract, result-reporting) with one-line pointers from
+  skill bodies; the topology CHECK MUST NOT land in the forge-verify body.
+- **Canon/adapter discipline (MUST):** every canon edit regenerates adapters
   (`python3 scripts/build-adapters.py`); every `scripts/*.py` edit passes
   `ruff check scripts/ eval/`; stage/status constants stay in parity across
-  `forge-session.py` and `epic-manifest.py` (parity tests enforce).
-- **Runner scope:** prefer existing runner surfaces (rauf `backlog unblock`,
-  `--retry-blocked`, `backlogSummary`). rauf-side changes ARE permitted when the
-  recovery flow genuinely needs a runner surface that does not exist — accepted
-  by the owner with the cost understood (second repo, second release train). Any
-  rauf change implies revisiting `loopRunner.minRunnerVersion`.
-- **Pipeline dogfood:** this feature runs through the forge pipeline itself
-  (forge-1-prd → forge-5-loop), so every stage is also a live test of the S0/S1
-  fixes.
+  `forge-session.py` and `epic-manifest.py` (parity tests enforce all three).
+- **Runner scope (SHOULD prefer forge-side):** prefer existing runner surfaces
+  (rauf `backlog unblock`, `--retry-blocked`, `backlogSummary`). rauf-side
+  changes ARE permitted when the recovery flow genuinely needs a runner surface
+  that does not exist — accepted by the owner with the cost understood (second
+  repo, second release train). Any rauf change implies revisiting
+  `loopRunner.minRunnerVersion`. REQ-TREE-02 explicitly does not spend this
+  permission (best-effort attribution suffices).
+- **Pipeline dogfood (MUST):** this feature runs through the forge pipeline
+  itself (forge-1-prd → forge-5-loop), so every stage is also a live test of
+  the S0/S1 fixes.
 
 ## 6. Out of Scope
 
@@ -268,19 +336,26 @@ implement in the order: DEC, TREE, UNB, OUT, ATTR, CLU, TOPO, EVAL.
 - **OQ-2 (→ tech spec):** exact location and name of the decision record file
   (issue #196 proposes `{backlogDir}/{stateDir}/forge-decisions.json`) and whether
   the clustering assist (REQ-CLU-01) lives in `forge-session.py` or a separate
-  helper.
+  helper. (The git-tracking question is settled: untracked run-local, per
+  REQ-DEC-01's durability note.)
 - **OQ-3 (→ tech spec):** the "large fraction" threshold for REQ-TOPO-02's
   advisory warning (the observed failure was 3 roots gating 81%).
+- **OQ-4 (→ tech spec):** the similarity criterion for REQ-CLU-01's candidate
+  clustering — what makes two needs-human reasons the same underlying cause, and
+  how the deterministic helper decides it.
 
 ## 8. Success Criteria
 
 1. All seven issues closeable with evidence: each requirement above traces to a
-   shipped, tested surface, and each issue's "Observed in" scenario, replayed,
-   now produces the required behavior (decision persisted; items provably
-   unblocked; tree reconciled; resolved outcome routed resume; starvation named;
-   one consolidated prompt; topology reported).
+   shipped, tested surface, and each issue's "Observed in" scenario, replayed
+   against a fixture backlog reproducing the observed topology (3 roots, 13-deep
+   chain, one shared blocking cause), now produces the required behavior
+   (decision persisted; items provably unblocked per item; tree reconciled;
+   resolved outcome routed resume; starvation named; one consolidated prompt;
+   topology reported).
 2. `bash scripts/validate.sh` green, including the new schema-conformance and
    directive-matrix tests; adapters regenerated and deterministic.
 3. The compliance eval's new loop-outcome fixture (REQ-EVAL-01) passes.
-4. A happy-path run (no needs-human, no blocked) is byte-equivalent to today's
-   behavior except the Step 2a depth line (REQ-COMPAT-02).
+4. A clean-tree happy-path run (no needs-human, no blocked, nothing stranded)
+   produces output equivalent to today's except the Step 2a depth line
+   (REQ-COMPAT-02), measured against a captured baseline from a pre-change run.

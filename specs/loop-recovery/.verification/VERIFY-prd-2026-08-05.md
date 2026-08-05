@@ -154,13 +154,14 @@ Deliberate deferrals honored, not re-filed: §7 OQ-1 (`partial-starved` vs `caus
 ### User Decisions Required
 Five findings record a **position** the PRD does not currently hold. A fresh agent should not invent these — surface each to the user as a short either/or and write the chosen answer. Do not design mechanisms for any of them.
 
-1. **V-001** — Is the decision record git-tracked (auditable, but every write dirties the tree that REQ-OUT-03 gates on) or untracked run-local state (clean tree, but the record dies on a fresh clone)?
-2. **V-002** — May REQ-TREE-02's file→item attribution require a new rauf-side surface (§5 permits it at the cost of a second release train and a `minRunnerVersion` bump), or is it best-effort with an unattributed fallback?
-3. **V-003** — Is a partial unblock (2 of 3 affected items move) a failed recovery, or a distinct reported state?
-4. **V-005** — Does a decision collected on the "cancel the run early" branch still get recorded and re-surfaced on the next launch?
-5. **V-006** — Security position for operator free text in the decision record: repo-visible/non-sensitive, or explicitly out of scope?
+1. **V-001** — RESOLVED (2026-08-05): untracked run-local state. Durable = survives session end and context clear; not expected to survive a fresh clone; keeps the #195 direction and never dirties the clean-tree gates.
+2. **V-002** — RESOLVED (2026-08-05): best-effort attribution from runner-native evidence with an unattributed-set fallback presented as one consolidated decision; the §5 rauf permission is not spent by REQ-TREE-02.
+3. **V-003** — RESOLVED (2026-08-05): per-item test authoritative; partial unblock is a failed recovery, reported with the items that did and did not move.
+4. **V-005** — RESOLVED (2026-08-05): always recorded — the cancel/defer branches persist the decision, marked unapplied, re-surfaced by REQ-DEC-05 on the next launch.
+5. **V-006** — RESOLVED (2026-08-05): non-sensitive position stated as REQ-SEC-01 (no secrets solicited, no credential material, actor field is session/actor only).
+6. **V-007 priorities** — RESOLVED (2026-08-05): all six §4 NFRs confirmed P0 (REQ-PERF-01, added by V-012's fix, is P2).
 
-All other steps are mechanical and can be applied directly.
+All other steps were mechanical and applied directly.
 
 ### Execution Steps
 
@@ -205,3 +206,12 @@ All other steps are mechanical and can be applied directly.
 - **Addresses:** V-010, V-011, V-012, V-013
 - **Action:** (a) Add the backlog-author actor to §1's "Who has this problem" sentence. (b) Prefix each §5 bullet's operative clause with MUST/SHOULD per V-011's suggested reading. (c) Name the fixture-backlog replay vehicle in SC 1 and the baseline-capture method in SC 4. (d) Add REQ-PERF-01 (P2) bounding topology-computation cost, or an explicit "not a concern at realistic backlog sizes" position.
 - **Depends on:** Step 3 (SC 4 is touched by both — apply Step 3's scoping first, then this step's measurement clause)
+
+## Fix Progress
+- Step 1: [APPLIED] 2026-08-05 — priorities added to all six §4 NFRs (all P0 per resolved V-007).
+- Step 2: [APPLIED] 2026-08-05 — REQ-UNB-02/-03 restated on the per-item identity test; partial = failed recovery (Notes line); REQ-OUT-03's third precondition aligned to the same wording.
+- Step 3: [APPLIED] 2026-08-05 — REQ-COMPAT-02 exemption clause rewritten (detection always runs, silent on clean tree; decision fires only on dirty tree); SC 4 scoped to the clean-tree happy path.
+- Step 4: [APPLIED] 2026-08-05 — REQ-DEC-01 durability note (untracked run-local); REQ-OUT-03 clean-tree clause excluding untracked runner-state artifacts; REQ-DEC-06 (cancel/defer path) and REQ-DEC-07 (append-only re-decision + retention) added; REQ-REL-02 generalized to failed unblock operations; §4.5 REQ-SEC-01 added; OQ-2 annotated with the settled tracking position.
+- Step 5: [APPLIED] 2026-08-05 — REQ-TREE-02 Notes line: best-effort runner-native attribution, unattributed-set fallback, §5 permission not spent.
+- Step 6: [APPLIED] 2026-08-05 — OQ-4 (clustering similarity criterion) added to §7; REQ-CLU-01 Notes line bounding the deferral.
+- Step 7: [APPLIED] 2026-08-05 — backlog-author actor added to §1; §5 bullets marked MUST/SHOULD; SC 1 names the fixture-backlog replay vehicle; SC 4 names the captured-baseline measurement; §4.6 REQ-PERF-01 (P2) added.
