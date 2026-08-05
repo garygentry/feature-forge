@@ -203,21 +203,12 @@ Follow the **Inform-user output template (Step 3c)** section of `references/runn
 ### 3d. Arm a Monitor on the event stream, and react to events
 
 Arm the **`Monitor` tool** on the structured event stream (the NDJSON file, or the
-human log as fallback) so events flow back into this session as they happen. Use
-**`persistent: true`** — runs can exceed `Monitor`'s maximum `timeout_ms` (1 hour),
-and a bounded timeout would silently stop watching a still-running loop. The filter
-MUST match every terminal and exception state, not just the happy path (silence is
-not success). Monitor the **structured** surface, never raw `RAUF_*` tokens.
-
-Each Monitor event arrives as a message; react per type — surface `needs_human` /
-`loop_error` immediately with a `PushNotification`, coalesce `item_completed` into
-milestones, and treat `llm_stuck_warning` as a hang warning. A `needs_human` /
-`blocked` signal does **not** pause the loop — the runner sets the item aside and
-keeps going.
-
-For the exact Monitor commands (NDJSON `jq` filter and the log-fallback `grep`
-prefixes), the coverage-complete filter event list, and the full per-event reaction
-rules, read `references/runner-contract.md`.
+human log as fallback) with **`persistent: true`**, a coverage-complete filter
+matching every terminal and exception state (silence is not success), and react to
+each event as it arrives. The exact Monitor commands, the filter event list, and the
+full per-event reaction rules (`needs_human` / `loop_error` surfaced immediately with
+a `PushNotification`, `item_completed` coalesced into milestones, `llm_stuck_warning`
+as a hang warning) are in `references/runner-contract.md` — follow them verbatim.
 
 ### 3f. Reach completion
 
