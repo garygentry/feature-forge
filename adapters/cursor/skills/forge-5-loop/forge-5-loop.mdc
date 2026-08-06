@@ -115,6 +115,10 @@ Verify the file exists on disk. If not, STOP and tell the user: "No backlog.json
 
 The runner commits each item onto the current branch. Skip if not a git repo or `branchPerFeature` is false. Otherwise run the **Branch Reconciliation** block in `references/shared-conventions.md` (it runs `reconcile-branch` and, on `warn-drift` — you are on the default branch — strongly recommends creating `{branchPrefix}{feature}` via the host's question mechanism before the loop commits; on `adopt-current` it updates the recorded branch to the current one, never pushing you back to a stale/imposed branch). Never hard-stop.
 
+### 1g. Stranded-Work Pre-flight (if using git)
+
+Run `git status --porcelain`. If it reports changes **and** `{backlogDir}/{loopRunner.stateDir}/state.json` exists from a previous run, **STOP**: name that run (its `startedAt`, `currentItem`, and `blockedItems` from `state.json`) and point the user at the **Post-Run Tree Reconciliation** section of `references/recovery-procedure.md` to commit / stash / discard the stranded work before relaunch — never auto-pass `--force`. If the tree is dirty with **no** prior-run `state.json`, keep today's behavior (surface it; let the user commit/stash or pass `--force`). A clean tree is silent. rauf's own launch refusal remains the backstop.
+
 ## Step 2: Construct the Loop Command
 
 ### 2a. Analyze Backlog

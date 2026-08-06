@@ -234,8 +234,8 @@
         "runner-contract.md:183 and references/ralph-loop-contract.md:61 no longer contain 'stage a post-run retry' / 'follow-up retry pass'; both name the Post-Run Recovery Procedure and decision-record at collection",
         "python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes (spec-purity: forge-5-loop body within the 300-line cap after 1g)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T15:16:12.631Z",
       "dependsOn": [
         "002",
         "003",

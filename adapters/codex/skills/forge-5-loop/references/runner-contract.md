@@ -179,8 +179,10 @@ high and the noise low:
   immediately** and send a **`PushNotification`** (an hours-long run means the user has
   likely stepped away). **Important — the loop is NOT paused:** the runner has set that
   item aside and kept working other items. So report *what* needs a human and *which*
-  item, then either (a) collect the user's answer via `AskUserQuestion` to **stage a
-  post-run retry**, or (b) offer to **cancel the run early** if the answer changes the
+  item, then either (a) collect the user's answer via `AskUserQuestion` and **record it via
+  `decision-record` now**, then run the **Post-Run Recovery Procedure**
+  (`references/recovery-procedure.md`) after the run ends, or (b) offer to **cancel the
+  run early** (also recorded via `decision-record` — a deferral) if the answer changes the
   whole plan. Do not tell the user the loop is waiting on their reply — it isn't.
 - **`item_blocked`** → surface the blocked item + reason now (visibility) and
   accumulate for the final summary. Use `{rendered statusJsonCommand}` to distinguish a

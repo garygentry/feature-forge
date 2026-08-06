@@ -58,9 +58,12 @@ defined authoritatively in rauf's
 > item aside and **keeps working other runnable items to completion** (rauf:
 > `runner.ts` needs_human handler). So a supervising session can surface those
 > events live (visibility) and cancel early, but it cannot inject an answer and
-> resume the set-aside item mid-run — resolution is a follow-up retry pass. A
-> first-class pause/resume-with-answer capability is a desirable runner
-> enhancement (see `plans/rauf-enhancement-recommendations.md`).
+> resume the set-aside item mid-run — resolution is the **Post-Run Recovery
+> Procedure** (`skills/forge-5-loop/references/recovery-procedure.md`): record the
+> answer via `decision-record` at the moment of collection, then drive recovery
+> from the record after the run ends. A first-class pause/resume-with-answer
+> capability is a desirable runner enhancement (see
+> `plans/rauf-enhancement-recommendations.md`).
 
 ## rauf is the default and reference implementation
 
