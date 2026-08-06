@@ -41,7 +41,7 @@
       "findingsCount": 4,
       "verifiedAt": "2026-08-06T00:52:25Z",
       "verifiedStageVersion": 1,
-      "commitHash": null
+      "commitHash": "ea0fcf49f9fbe20ea3bd0f7f30645bcf9582faad"
     }
   },
   "currentStage": "forge-2-tech",
