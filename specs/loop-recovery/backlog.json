@@ -210,8 +210,8 @@
         "The 'answer' subcommand is registered in the backlog subcommand table (registration assertion passes alongside the existing 'unblock' one)",
         "From /home/gary/workspace/rauf/packages/cli: `pnpm vitest run` passes including the new backlog-answer tests, and `pnpm typecheck` passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T15:04:01.345Z",
       "dependsOn": [],
       "notes": "CROSS-REPO: implement in /home/gary/workspace/rauf (pnpm + vitest), not feature-forge. This is the forge side's >= RECOVERY_MIN_RUNNER_VERSION apply mechanism; the forge side capability-gates on it (item 004's RECOVERY_MIN_RUNNER_VERSION='0.14.0') and degrades to `rauf backlog unblock` below the threshold, so it can land in parallel. Ships in the next rauf minor (assumed 0.14.0). Item 009 (the recovery procedure) references this surface. If the assumed rauf version at ship time differs from 0.14.0, update RECOVERY_MIN_RUNNER_VERSION in item 004's forge-session.py to the real release.",
       "estimatedIterations": 1,
