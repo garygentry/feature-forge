@@ -40,7 +40,7 @@
       "findingsFile": ".verification/VERIFY-tech-2026-08-05.md",
       "findingsCount": 11,
       "fixedAt": "2026-08-06T00:42:07Z",
-      "commitHash": null
+      "commitHash": "5a5ce13764739623ac290b4b42104aad2245d435"
     }
   },
   "currentStage": "forge-2-tech",
