@@ -87,10 +87,18 @@
         "backlog.json"
       ],
       "commitHash": "a84d11c394ac28a110310f9903ef7c64dc05a97e"
+    },
+    "forge-verify-backlog": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-backlog-2026-08-06.md",
+      "findingsCount": 1,
+      "verifiedAt": "2026-08-06T12:24:58Z",
+      "verifiedStageVersion": 1,
+      "commitHash": null
     }
   },
   "currentStage": "forge-4-backlog",
-  "updatedAt": "2026-08-06T04:52:34Z",
+  "updatedAt": "2026-08-06T12:24:58Z",
   "branch": "forge/loop-recovery",
   "notes": "Carry into forge-3-specs: tech re-verify advisories V-012..V-015 (VERIFY-tech-2026-08-05-round2.md) — esp. V-012: rename test_loop_accepts_exactly_the_five_loop_outcomes to ..._six_... when resolved lands (it goes green silently otherwise); V-015: vendor the three verify-test-debt blockedReason strings verbatim into test_decision_clustering.py (source .rauf archive is prunable; binding Jaccard pair clears 0.5 by only 0.028)."
 }
