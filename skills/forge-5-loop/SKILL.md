@@ -123,7 +123,7 @@ Run `git status --porcelain`. If it reports changes **and** `{backlogDir}/{loopR
 
 ### 2a. Analyze Backlog
 
-Run the **list command** (`loopRunner.listCommand`, default `rauf backlog list . --backlog {backlogDir} --json`) and count items by status: `pending`, `in_progress`, `done`, `blocked`.
+Run the **list command** (`loopRunner.listCommand`, default `rauf backlog list . --backlog {backlogDir} --json`) and count items by status: `pending`, `in_progress`, `done`, `blocked`. Pipe that same list-command JSON into `backlog-topology --items-stdin --json` (a `forge-session.py` verb — invoke it via Step 3a's `$R` fence) and read `maxChainDepth` to report alongside the iteration count; this is advisory only — no prompt, no operator decision.
 
 Calculate the iteration count: `ceil((pending + in_progress) * loopIterationMultiplier)` where `loopIterationMultiplier` comes from `forge.config.json` (default: 1.5). This headroom allows retries without exhausting iterations.
 
@@ -163,6 +163,7 @@ Backlog summary:
   - Done: {done}
   - Blocked: {blocked}
   - Iterations: {iterationCount} ({activeItems} items x {loopIterationMultiplier} multiplier)
+  - Max chain depth: {maxChainDepth} — depth bounds achievable progress regardless of iteration budget
 
 For the model-selection precedence (item.model > --model/options > project default >
 provider default), read references/runner-contract.md.

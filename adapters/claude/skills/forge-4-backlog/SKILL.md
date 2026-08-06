@@ -132,6 +132,36 @@ Interpret the result:
 >    (`validate` reports the project marker missing), likewise warn and continue
 >    — validation will run cleanly once `rauf install .` has been done.
 
+## Step 5b: Topology Report (advisory)
+
+After validation (or a recorded skip), report the backlog's dependency topology. Pipe the runner's **list command** (`loopRunner.listCommand`, rendered with `{resolvedBacklogDir}` — the rauf default shown below) into the topology verb. It is a pure function over the runner's item array and never takes a `backlog.json` path:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+rauf backlog list . --backlog {resolvedBacklogDir} --json | python3 "$R/scripts/forge-session.py" backlog-topology --items-stdin --json
+```
+
+ALWAYS print the metrics, citing the runner counts from the payload:
+
+```
+Topology: {itemCount} items, {rootCount} roots, max chain depth {maxChainDepth}.
+Per-root fan-out (gated subtree size): {id}→{gatedCount}, … (largest first).
+```
+
+Only when the payload's `warnings` array is non-empty, also render this block, including only the bullet(s) for warnings that actually fired:
+
+```
+⚠️ Fragile topology (advisory — does not block authoring):
+  - single-root-fanout: root {id} gates {gatedCount}/{itemCount} items (≥50%).
+  - chain-depth: max chain depth {maxChainDepth} is ≥50% of {itemCount} items.
+A single defect in a high-fan-out root or a long chain can strand most of the backlog
+(the loop-recovery incident: 3 roots gating 81%, 13-deep chain). Consider splitting the
+gating root's subtree or flattening the chain — this is a heads-up, not a gate.
+```
+
+This step is **guidance only — it never fails authoring**. If the topology command itself errors, note the error and continue to Step 6 (advisory).
+
 ## Step 6: Review with User
 
 Present a summary: total items N, dependency-chain depth, estimated loop iterations (`ceil(pendingItems * loopIterationMultiplier)`). Note whether validation passed or was skipped (runner not yet available).

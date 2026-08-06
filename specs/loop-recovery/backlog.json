@@ -176,8 +176,8 @@
         "skills/forge-5-loop/SKILL.md Step 2a renders a single maxChainDepth line on every run",
         "python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes (incl. spec-purity: forge-verify body stays 298/300, forge-4/forge-5 within cap)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T15:51:29.118Z",
       "dependsOn": [
         "004"
       ],
