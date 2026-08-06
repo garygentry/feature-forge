@@ -72,8 +72,8 @@
         "V-015: the three vendored blockedReason strings cluster into exactly one candidate; a comment records the measured Jaccard margin; two distinct causes do NOT merge",
         "tests/test_decision_clustering.py passes; python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T14:04:23.316Z",
       "dependsOn": [],
       "notes": "CLU lands before TOPO (01 §4 steps 6-7); both reuse the §2.1 helpers, so those helpers land here. Under-clustering is the deliberately-chosen failure direction — the agent holds merge authority, the scripted floor must never over-merge. CLUSTER_JACCARD_THRESHOLD is falsifiable against the incident via the vendored V-015 fixture.",
       "estimatedIterations": 1,

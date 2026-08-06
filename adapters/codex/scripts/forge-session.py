@@ -165,6 +165,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math  # noqa: F401
 import os
 import re
 import socket
@@ -422,6 +423,14 @@ VERIFY_MODE_TO_STAGE: Final[dict[str, str]] = {
     "backlog": "forge-4-backlog",
     "impl": "forge-5-loop",
 }
+#: Token-set Jaccard edge threshold for ``cluster_blocked``: two blocked items whose
+#: normalized blockedReason token sets score >= this join one systemic-cause cluster
+#: candidate. Calibrated against a real one-cause-three-phrasings incident — the
+#: binding pair clears 0.5 by only ~0.028, and tests/test_decision_clustering.py
+#: vendors those strings verbatim so a threshold change that would re-split the
+#: incident is caught. Under-clustering is the deliberately chosen failure direction:
+#: the agent holds merge authority, so the scripted floor must never over-merge.
+CLUSTER_JACCARD_THRESHOLD: Final[float] = 0.5
 #: The fixed final line of the NEXT-STEPS block. The stamp instructs the skill
 #: to print the block verbatim as its absolute last output — nothing after this.
 NEXT_STEPS_SENTINEL: Final = "─ forge: end of stage ─"
@@ -2046,6 +2055,217 @@ def _print_check_epic_base(payload: dict) -> None:
     print(f"check-epic-base {payload['feature']}: {payload['action']} — {payload['reason']}")
     if payload["action"] == "warn-detached-base":
         print(f"  → switch to the epic's home branch: {payload['homeBranch'] or '(unknown)'}")
+
+
+# --------------------------------------------------------------------------- #
+# Dependency graph & blocked-item clustering
+# --------------------------------------------------------------------------- #
+# Pure, stdlib-only flat functions over the loop runner's item array (the
+# `listCommand` JSON the caller already holds) — same precedent as
+# rank-features/reconcile-branch, no class. Nothing here reads backlog.json off
+# disk: single data source, so every derived claim cites the runner's
+# authoritative counts. All ordering flows through _id_key, never dict/hash
+# iteration, which is what makes the output deterministic and testable.
+
+
+def _id_key(item_id: object) -> tuple[int, object]:
+    """Deterministic sort key for backlog ids.
+
+    All-digit ids sort numerically ("2" before "10"); everything else sorts
+    lexically, after the numeric block. Used everywhere an ordering must not
+    depend on dict/hash iteration.
+
+    Args:
+        item_id: A backlog item id (usually ``str``; coerced defensively).
+
+    Returns:
+        A ``(bucket, value)`` tuple that is a total order across mixed id shapes.
+    """
+    s = str(item_id)
+    return (0, int(s)) if s.isdigit() else (1, s)
+
+
+def _build_dep_index(
+    items: list[dict],
+) -> tuple[dict[str, dict], dict[str, list[str]], dict[str, list[str]]]:
+    """Build the in-backlog dependency adjacency from ``dependsOn`` edges.
+
+    Edges pointing at ids **not present** in this backlog are dropped (an item
+    whose only ``dependsOn`` targets are external is therefore a root).
+
+    Args:
+        items: The runner's item array (each a dict with at least ``id``; optional
+            ``dependsOn``, ``status``, ``blockedReason``).
+
+    Returns:
+        ``(by_id, deps, dependents)`` where ``by_id`` maps id → item, ``deps`` maps
+        id → the ids it depends on (in-backlog only), and ``dependents`` maps id →
+        the ids that directly depend on it.
+    """
+    by_id = {str(it["id"]): it for it in items}
+    deps: dict[str, list[str]] = {
+        i: [str(d) for d in (by_id[i].get("dependsOn") or []) if str(d) in by_id]
+        for i in by_id
+    }
+    dependents: dict[str, list[str]] = {i: [] for i in by_id}
+    for i, ds in deps.items():
+        for d in ds:
+            dependents[d].append(i)
+    return by_id, deps, dependents
+
+
+def _transitive_dependents(
+    dependents: dict[str, list[str]],
+) -> dict[str, set[str]]:
+    """Memoized transitive-dependents (gated-subtree) closure for every node.
+
+    ``dependents[x]`` lists items that directly depend on ``x``; the returned map
+    gives, for each item, the set of items that **transitively** depend on it — the
+    gated subtree that item's completion would unblock ("gates").
+
+    Cycle-safe: a node re-encountered on the current DFS path contributes nothing
+    and is not memoized (rauf rejects cycles upstream, so this only hardens against
+    malformed input; it never fires on validated backlogs).
+
+    Args:
+        dependents: The reverse adjacency from :func:`_build_dep_index`.
+
+    Returns:
+        A map id → set of transitively-dependent ids. O(V + E) overall (each edge
+        is walked once thanks to memoization).
+    """
+    memo: dict[str, set[str]] = {}
+
+    def visit(node: str, on_path: set[str]) -> set[str]:
+        if node in memo:
+            return memo[node]
+        if node in on_path:  # cycle guard — unreachable on validated backlogs
+            return set()
+        on_path.add(node)
+        acc: set[str] = set()
+        for child in dependents[node]:
+            acc.add(child)
+            acc |= visit(child, on_path)
+        on_path.discard(node)
+        memo[node] = acc
+        return acc
+
+    for n in dependents:
+        visit(n, set())
+    return memo
+
+
+#: A token that is a pure number or item-id-shaped (``42``, ``req12``, ``t7``) —
+#: noise carrying no cause signal, dropped by _normalize_reason.
+_ID_SHAPED_TOKEN = re.compile(r"^(?:\d+|[a-z]*\d+)$")
+
+
+def _normalize_reason(text: str | None) -> set[str]:
+    """Normalize a ``blockedReason`` into its comparison token set.
+
+    Lowercases, splits on any run of non-alphanumeric characters, and drops noise
+    tokens — pure numbers and item-id-shaped tokens (``42``, ``req12``, ``t7``) —
+    which carry no cause signal and would spuriously separate or merge reasons.
+
+    Args:
+        text: The item's ``blockedReason`` (may be ``None``/empty).
+
+    Returns:
+        The set of meaningful lowercased tokens (possibly empty).
+    """
+    tokens = re.split(r"[^a-z0-9]+", (text or "").lower())
+    return {t for t in tokens if t and not _ID_SHAPED_TOKEN.match(t)}
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    """Jaccard similarity |A∩B| / |A∪B| of two token sets.
+
+    Symmetric and order-insensitive. Two empty sets score ``0.0`` — an item with
+    no meaningful reason tokens never clusters with anything.
+
+    Args:
+        a: First token set.
+        b: Second token set.
+
+    Returns:
+        A similarity in ``[0.0, 1.0]``.
+    """
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
+def cluster_blocked(items: list[dict]) -> list[dict]:
+    """Cluster blocked items by ``blockedReason`` similarity.
+
+    Union-find over every pair of ``status == "blocked"`` items whose normalized
+    token-set Jaccard is ``>= CLUSTER_JACCARD_THRESHOLD``. Each emitted component
+    carries its member ids, the members' raw reasons, the shared token core, and
+    the **union** of the members' gated subtrees for blast-radius framing.
+    Components of size 1 are emitted too — the recovery procedure consolidates
+    only components of >= 2, prompting singletons per item.
+
+    The result is the deterministic *substrate*: the agent may merge components it
+    judges to share a cause (under-clustering is the deliberately chosen failure
+    direction). It never reads disk; ``items`` is the runner's array.
+
+    Args:
+        items: The runner's ``listCommand`` item array.
+
+    Returns:
+        A list of cluster dicts, sorted by lowest member id:
+        ``{clusterId, memberIds, memberReasons, sharedTokens, gatedIds, gatedCount}``.
+    """
+    by_id, _deps, dependents = _build_dep_index(items)
+    gated = _transitive_dependents(dependents)
+    blocked = sorted(
+        (i for i, it in by_id.items() if it.get("status") == "blocked"),
+        key=_id_key,
+    )
+    tokens = {i: _normalize_reason(by_id[i].get("blockedReason")) for i in blocked}
+
+    parent = {i: i for i in blocked}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]  # path halving
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra == rb:
+            return
+        lo, hi = sorted((ra, rb), key=_id_key)  # lowest id is the component root
+        parent[hi] = lo
+
+    for idx, a in enumerate(blocked):
+        for b in blocked[idx + 1:]:
+            if _jaccard(tokens[a], tokens[b]) >= CLUSTER_JACCARD_THRESHOLD:
+                union(a, b)
+
+    groups: dict[str, list[str]] = {}
+    for i in blocked:
+        groups.setdefault(find(i), []).append(i)
+
+    clusters: list[dict] = []
+    for root in sorted(groups, key=_id_key):
+        members = sorted(groups[root], key=_id_key)
+        shared = set.intersection(*(tokens[m] for m in members)) if members else set()
+        union_gated: set[str] = set()
+        for m in members:
+            union_gated |= gated[m]
+        union_gated -= set(members)  # a member gating a sibling is not its own blast radius
+        clusters.append(
+            {
+                "clusterId": "c" + members[0],  # "c" + lowest member id: stable across runs
+                "memberIds": members,
+                "memberReasons": [by_id[m].get("blockedReason") or "" for m in members],
+                "sharedTokens": sorted(shared),
+                "gatedIds": sorted(union_gated, key=_id_key),
+                "gatedCount": len(union_gated),
+            }
+        )
+    return clusters
 
 
 # --------------------------------------------------------------------------- #
