@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "forge-decisions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "feature", "createdAt", "updatedAt", "decisions"],
+  "properties": {
+    "schemaVersion": { "type": "string", "enum": ["1"] },
+    "feature":       { "type": "string" },
+    "createdAt":     { "type": "string" },
+    "updatedAt":     { "type": "string" },
+    "decisions":     { "type": "array", "items": { "$ref": "#/definitions/decision" } }
+  },
+  "definitions": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "question", "answer", "deferred", "decidedAt",
+                   "recordedBy", "appliedAt", "appliedBy"],
+      "properties": {
+        "itemId":     { "type": "string" },
+        "question":   { "type": "string" },
+        "answer":     { "type": ["string", "null"] },
+        "deferred":   { "type": "boolean" },
+        "clusterId":  { "type": "string" },
+        "decidedAt":  { "type": "string" },
+        "recordedBy": { "type": "string" },
+        "appliedAt":  { "type": ["string", "null"] },
+        "appliedBy":  { "type": ["string", "null"] }
+      }
+    }
+  }
+}

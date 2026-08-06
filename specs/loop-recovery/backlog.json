@@ -18,8 +18,8 @@
         "python3 scripts/build-adapters.py has been run and the regenerated adapters/** are committed (no drift)",
         "bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T13:31:57.601Z",
       "dependsOn": [],
       "notes": "R4 pattern (REQ-STATE-01): schema file + scripted verb writer (item 002) + conformance test (item 002). This item is the schema + validator half. The schema is the source of truth the verbs write against. See 00 §4 for field semantics.",
       "estimatedIterations": 1,
@@ -46,7 +46,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001"],
+      "dependsOn": [
+        "001"
+      ],
       "notes": "The verb writer + conformance test complete the R4 pattern started in 001. Append-only: decision-apply is the sole mutator and only of appliedAt/appliedBy on the latest entry. Worked example in 02 §6. Do NOT hand-author forge-decisions.json anywhere — the conformance test's registry scan enforces it.",
       "estimatedIterations": 2,
       "specReferences": [
@@ -97,7 +99,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["003"],
+      "dependsOn": [
+        "003"
+      ],
       "notes": "Depends on 003 for _id_key/_build_dep_index/_transitive_dependents. The verb is a pure function over the runner's listCommand item array — all five consumers feed it that JSON, never a backlog.json path. RECOVERY_MIN_RUNNER_VERSION added here because it is the first module constant this feature needs; item 008 ships the rauf release it pins to.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -147,7 +151,10 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["004", "005"],
+      "dependsOn": [
+        "004",
+        "005"
+      ],
       "notes": "REQ-ATTR-04: starvation is a cause ANNOTATION on partial, not a new enum value. Depends on 005 (shares/extends _loop_route and the partial routing) and 004 (the report cites backlog-topology selectable/blockingRoots). Coordinate SKILL.md body-cap with items 005/007/009.",
       "estimatedIterations": 1,
       "specReferences": [
@@ -171,7 +178,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["004"],
+      "dependsOn": [
+        "004"
+      ],
       "notes": "Advisory topology surfaces (REQ-TOPO). Depends on 004 (the backlog-topology verb must exist). The three consumers are independent files, so agentDelegation parallelizes them; the count-literal bump + its test edit MUST stay together (subtask 2). Coordinate the forge-5-loop SKILL.md body-cap with items 005/006/009.",
       "estimatedIterations": 1,
       "agentDelegation": {
@@ -227,7 +236,14 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["002", "003", "004", "005", "006", "008"],
+      "dependsOn": [
+        "002",
+        "003",
+        "004",
+        "005",
+        "006",
+        "008"
+      ],
       "notes": "Capstone (REQ-DEC-04/05/06, REQ-CLU-02/03/04, REQ-TREE-01..04, REQ-UNB via 04, REQ-OUT-03 gate). Depends on every scripted surface it invokes (decision verbs 002, clustering 003, topology 004, resolved 005, starvation 006, rauf answer 008). recovery-procedure.md is a reference file (no 300-line body cap); only the ~5-line 1g addition to the SKILL body counts against the cap — coordinate with items 005/006/007 which also edit forge-5-loop/SKILL.md (budget ~293/300).",
       "estimatedIterations": 2,
       "specReferences": [
@@ -251,7 +267,9 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["005"],
+      "dependsOn": [
+        "005"
+      ],
       "notes": "REQ-EVAL-01: the resolved outcome must bite on every full compliance sweep. Depends on 005 (the resolved outcome + its fenced resume route must exist for the probe to drive/score). No adapter regen needed (eval/ + tests/ are outside the fanned-out canon roots), but validate.sh still runs ruff over eval/ and the pytest suite.",
       "estimatedIterations": 1,
       "specReferences": [

@@ -1,19 +1,21 @@
 """Hand-rolled stdlib JSON-Schema validator shared by the R4/R5 drift guards.
 
 `jsonschema` is absent in CI (and in this repo's dev environment), so the guards
-that prove `forge-session.py`'s state verbs and `effective-config` stay
-schema-conformant validate structurally instead — mirroring `epic-manifest.py`'s
+that prove `forge-session.py`'s state verbs, `effective-config`, and decision verbs
+stay schema-conformant validate structurally instead — mirroring `epic-manifest.py`'s
 `_schema_findings()` precedent. That keeps the schemas the single source of truth
 in CI rather than only in prose.
 
 The validator is deliberately minimal: it is a **drift guard**, not a general
-JSON-Schema engine. It supports exactly the draft-07 subset the two schemas use —
-`type`, `required`, `properties`, `enum`, `items`, `additionalProperties: false`,
-and `$ref` to `#/definitions/*`. If a future schema construct appears (e.g.
-`oneOf`), extend `_check` rather than reaching for `jsonschema`.
+JSON-Schema engine. It supports exactly the draft-07 subset the three schemas
+(pipeline-state, forge-config, forge-decisions) use — `type`, `required`,
+`properties`, `enum`, `items`, `additionalProperties: false`, and `$ref` to
+`#/definitions/*`. If a future schema construct appears (e.g. `oneOf`), extend
+`_check` rather than reaching for `jsonschema`.
 
-Both entry points return a list of human-readable violations; an empty list means
-valid, so `assert validate_state(s) == [], validate_state(s)` reports *what* drifted.
+All three entry points return a list of human-readable violations; an empty list
+means valid, so `assert validate_state(s) == [], validate_state(s)` reports *what*
+drifted.
 """
 
 from __future__ import annotations
@@ -28,6 +30,9 @@ _STATE_SCHEMA = json.loads(
 )
 _CONFIG_SCHEMA = json.loads(
     (REPO_ROOT / "references" / "forge-config-schema.json").read_text(encoding="utf-8")
+)
+_DECISIONS_SCHEMA = json.loads(
+    (REPO_ROOT / "references" / "forge-decisions-schema.json").read_text(encoding="utf-8")
 )
 
 _JSON_TYPES: dict[str, type | tuple[type, ...]] = {
@@ -122,3 +127,15 @@ def validate_effective_config(loop_runner: dict) -> list[str]:
         _CONFIG_SCHEMA,
         "$.loopRunner",
     )
+
+
+def validate_decisions(record: dict) -> list[str]:
+    """Validate a forge-decisions object against references/forge-decisions-schema.json.
+
+    Args:
+        record: An on-disk ``forge-decisions.json`` document.
+
+    Returns:
+        Human-readable violation strings; empty when the record conforms.
+    """
+    return _check(record, _DECISIONS_SCHEMA, _DECISIONS_SCHEMA, "$")
