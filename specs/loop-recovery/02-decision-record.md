@@ -423,9 +423,9 @@ def cmd_decision_list(
 
     With ``--unapplied`` returns the REQ-DEC-05 set (§4.1). Without it, echoes the
     full on-disk document. A missing record returns an empty result at exit 0
-    (nothing recorded yet is not a failure). This verb never mutates the file, so a
-    corrupt existing record is read tolerantly for a plain listing but still parsed
-    strictly for the unapplied computation — see below.
+    (nothing recorded yet is not a failure). This verb never mutates the file; it
+    parses an existing record **strictly** (exit 2 on corruption) for both the plain
+    and ``--unapplied`` forms — it never downgrades a corrupt record to ``{}``.
 
     Args:
         backlog_dir: The resolved backlog directory.

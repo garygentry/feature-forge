@@ -158,11 +158,15 @@ weakened silently, REQ-COMPAT-01):
 
 ### 4.2 Resolved routing + `--cause` matrix
 
-- **Resolved routes resume:** the hand-listed resume/recover parametrize at `:3207` gains
-  `"resolved"` on the **resume** side; the recover-routing parametrize at `:2358`
-  deliberately does **not** (resolved is not a recover outcome) and instead gains an
-  explicit resume-routing assertion for `resolved` (primary =
-  `/feature-forge:forge-5-loop {feature}`, never the navigator).
+- **Resolved routes resume — the hand-listed parametrizes that need `"resolved"`.** The
+  derived `NON_COMPLETE_LOOP_OUTCOMES` (`:2305`) auto-covers the derived tests, but three
+  **hand-listed** sites do not and must each gain `"resolved"`: the `EXIT_OUTCOMES`
+  mirror (`:626`), the resume-fence parametrize
+  `test_loop_partial_and_deferred_fence_the_loop_resume` (`:2348`, the resume-routing
+  assertion — primary = `/feature-forge:forge-5-loop {feature}`, never the navigator), and
+  the no-continuation invariant `test_a_non_complete_loop_outcome_still_offers_no_continuation`
+  (`:3207`, parametrized over all non-complete outcomes). The recover-fence parametrize
+  (`:2358`) deliberately does **not** gain it — `resolved` is not a recover outcome.
 - **`--cause` validity matrix:** `--cause dependency-starvation` is **accepted** on
   `--stage forge-5-loop --outcome partial` (swaps to the starvation sentence) and
   **exits 2** on every other stage/outcome combination — a table-driven test enumerates

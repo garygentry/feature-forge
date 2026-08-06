@@ -230,6 +230,11 @@ not re-specify it. The sequence:
   needs-human items — and is silent on a clean tree.
 - **Evaluate the `resolved` gate** (`00` §5.2, REQ-OUT-03) — all three must hold:
   1. `decision-list --unapplied` is **empty** for the affected items (step 1/4).
+     `decision-list --unapplied` returns the **global** latest-unapplied-per-item set
+     (no per-item filter, `02` §4.1/§5.1), so the procedure **intersects** that payload's
+     entries (each carries `itemId`) with this session's affected-item set and tests only
+     that intersection for emptiness — an unrelated item's stray deferral must not suppress
+     a legitimate `resolved`.
   2. `git status --porcelain` is **clean** (git-ignored `{stateDir}` artifacts are invisible
      to porcelain — the exclusion holds by construction, `00` §4).
   3. the per-item re-read (step 6) shows **every** affected item left `blocked`/`needsHuman`.
