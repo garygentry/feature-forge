@@ -18,7 +18,7 @@ Key architectural decisions (each detailed in §3):
 | D1 | Decision-record location (OQ-2) | `{backlogDir}/{stateDir}/forge-decisions.json` — default `specs/{feature}/.rauf/forge-decisions.json`, gitignored by the existing `**/.rauf/*` rule (#195) |
 | D2 | Decision-record surface | New `decision-*` verb family in `scripts/forge-session.py`, full R4 trio (schema + verbs + stdlib conformance test) |
 | D3 | Outcome vocabulary (OQ-1) | One new `LoopOutcome` value `resolved` (routes **resume**); starvation is a **cause annotation** on the existing `partial`, not a new enum value |
-| D4 | Apply mechanism | New rauf subcommand `rauf backlog answer` — the apply-only twin of `resume --answer` (rauf-side change, pre-authorized by PRD §5) |
+| D4 | Apply mechanism | New rauf subcommand `rauf backlog answer` (apply-only twin of `resume --answer`) for `humanAnswer` prompt-threading — the one capability `unblock` lacks; degraded fallback to `rauf backlog unblock` on older runners (rauf-side change, pre-authorized by PRD §5) |
 | D5 | Recovery prose home | New `skills/forge-5-loop/references/recovery-procedure.md`; body edits are one-line pointers only |
 | D6 | Topology warn thresholds (OQ-3) | Fixed constants, no config knob: warn when any single root gates ≥50% of items OR max chain depth ≥50% of item count |
 | D7 | Clustering criterion (OQ-4) | Normalized token-set Jaccard ≥ 0.5 with union-find, flat function in `forge-session.py` |
@@ -36,17 +36,28 @@ scripts/forge-session.py                 # decision-* verbs, backlog-topology ve
                                          #   cluster helper, LoopOutcome += "resolved",
                                          #   route/text tables, stage-exit --cause
 references/forge-decisions-schema.json   # NEW — decision-record JSON schema
-skills/forge-5-loop/SKILL.md             # pointer-only edits (293/300 → ≤300)
+skills/forge-5-loop/SKILL.md             # 287/300 body lines (per check-spec-purity.py
+                                         #   rule 4, not wc -l) → ≤300: pointer lines,
+                                         #   PLUS the Step 7 ladder edit at :271
+                                         #   (+= resolved) and the new ~5-line Step 1g
+                                         #   Stranded-Work Pre-flight (§3.5)
 skills/forge-5-loop/references/
   recovery-procedure.md                  # NEW — the named Post-Run Recovery Procedure
   result-reporting.md                    # ladder += resolved; starvation-conditional
                                          #   pending template; starved next-steps note
   runner-contract.md                     # :183 "stage a post-run retry" → named pointer
 references/ralph-loop-contract.md        # :61 "follow-up retry pass" → named pointer
+references/stage-exit-protocol.md        # :50 loop outcome-domain row += resolved
+                                         #   (REQ-COMPAT-01's directive matrix)
 skills/forge-4-backlog/SKILL.md          # topology report step (Step 5/6 slot)
 skills/forge-verify/references/verification-checklists/backlog.md   # CHECK-B28
-skills/forge-verify/SKILL.md             # "backlog: 27 checks" → 28 (in-line edit)
-eval/run-compliance-eval.py              # NEW probe: loop-outcome
+skills/forge-verify/SKILL.md             # BOTH count literals → 28: ":33 backlog 27"
+                                         #   (dimension groups) and ":171 backlog: 27
+                                         #   checks" (in-line edits, zero line growth)
+docs/architecture/stage-exit-coverage/cli-reference.md   # outcome table += resolved
+docs/architecture/stage-exit-coverage/architecture.md    # resume/recover split prose
+eval/run-compliance-eval.py              # NEW probe: loop-outcome (joins --probe all;
+                                         #   docstring/usage/argparse three→four)
 eval/fixtures/compliance/loop-outcome-resolved.json                 # NEW fixture
 tests/_state_schema.py                   # += validate_decisions() entry point
 tests/test_forge_decisions_schema.py     # NEW — structural schema tests
@@ -54,6 +65,13 @@ tests/test_decisions_schema_conformance.py  # NEW — R4 drift guard for decisio
 tests/test_backlog_topology.py           # NEW — topology metrics + warn thresholds
 tests/test_decision_clustering.py        # NEW — Jaccard clustering unit tests
 tests/test_stage_exit.py                 # mirrored EXIT_OUTCOMES += resolved; routing
+tests/test_stage_exit_protocol.py        # no code change — its canon-derived outcome-
+                                         #   domain assertion (:379-388) is what FORCES
+                                         #   the SKILL.md:271 ladder edit above
+tests/test_lifecycle_artifact_check.py   # "backlog 27"/"backlog: 27 checks" literal
+                                         #   assertions (:49-52) → 28
+tests/test_compliance_eval.py            # --probe all exact-equality list (:1953)
+                                         #   += run_loop_outcome_probe
 adapters/                                # regenerated (never hand-edited)
 ```
 
@@ -139,11 +157,18 @@ affected item left `blocked`/`needsHuman`. `stage-exit` does not re-verify the g
 server-side (it has no runner access); enforcement is procedural + eval-measured
 (§3.8) + directive-matrix-tested (REQ-COMPAT-01). Recorded as OTQ-1 in §10.
 
-**Ladder position** (`result-reporting.md`): `resolved` is evaluated **before**
-`needs-human` — first rung, gated on "the recovery procedure ran this session and its
-gate passed". A resolved stop must not re-trigger the needs-human branch its own
-recovery just cleared. New ladder: `resolved` → `needs-human` → `blocked` → `deferred`
-→ `partial` → `complete`.
+**Ladder position.** `resolved` is evaluated **before** `needs-human` — first rung,
+gated on "the recovery procedure ran this session and its gate passed". A resolved
+stop must not re-trigger the needs-human branch its own recovery just cleared. New
+ladder: `resolved` → `needs-human` → `blocked` → `deferred` → `partial` → `complete`.
+The ladder exists in **two places** and both change: the duplicate copy in the body at
+`skills/forge-5-loop/SKILL.md:271` (the surface `test_stage_exit_protocol.py:379-388`'s
+canon-derived outcome-domain assertion reads — the edit is mandatory, not optional
+prose) and the full rung definitions in `result-reporting.md`. `resolved` gains **no**
+Step 4b result-report template — Step 4b templates describe run results read from
+counts, while `resolved` is asserted by the recovery procedure whose own report
+(§3.4 step 6, §3.9) is the reporting surface — so `SKILL.md:232`'s "five verbatim
+result-report output templates" count is deliberately unchanged.
 
 **Starvation is an annotation, not an enum value** (REQ-ATTR-04 / OQ-1). Both
 `partial-starved` and `partial` would route identically (resume); a distinct value buys
@@ -167,9 +192,32 @@ only text at the cost of doubling the enum/routing/test/eval ripple. Instead:
 
 ### 3.3 Recovery must unblock — apply mechanism (REQ-UNB-01..03, REQ-DEC-04/05, REQ-REL-02) — D4, D8
 
-**New rauf surface** (PRD §5 pre-authorization spent here, deliberately):
-`rauf backlog answer <path> <id> "<text>" [--backlog <dir>] [--json]` — the apply-only
-twin of `resume --answer`'s injection block (`resume-commands.ts:301-313`):
+**What the existing surfaces can and cannot do.** `rauf backlog unblock <path> [id]`
+(available since well below the 0.6.0 floor) already clears `status`, `blockedReason`,
+`needsHuman`, and `deferred` for the item (`backlog.ts:432-433, 462-465, 480-483`) —
+it fully satisfies REQ-UNB-01's "the runner's unblock operation". What **no** existing
+non-relaunching surface can do is attach the operator's answer text where the next
+iteration will see it: `humanAnswer` prompt-threading (`prompt-builder.ts:217`, with
+auto-clear on completion at `backlog.ts:254-259`) is written only by `resume --answer`,
+which always relaunches. That threading gap — not unblocking — is D4's entire
+rationale.
+
+**Alternatives considered** (all rejected as the primary path):
+- `rauf resume --answer <id> "<text>"` — performs the exact apply wanted, but always
+  relaunches when eligible items remain, which both conflicts with the fenced-relaunch
+  exit model and makes the REQ-OUT-03 gate unevaluable before launch.
+- `rauf backlog unblock` + restating the answer in the item's `notes`/`description`
+  (via `backlog edit`) — works at today's floor but pollutes a permanent field with no
+  auto-clear and no dedicated prompt section; kept only as the shape of the degraded
+  path below, minus the field pollution (the answer stays in the decision record).
+- `rauf loop run . --retry-blocked` — unblocks *all* blocked items at launch,
+  indiscriminately and after the outcome was already selected; useful as an
+  operator-facing relaunch convenience, not as a per-item, pre-gate apply step.
+
+**New rauf surface** (PRD §5 pre-authorization spent here, deliberately, on the
+threading gap alone): `rauf backlog answer <path> <id> "<text>" [--backlog <dir>]
+[--json]` — the apply-only twin of `resume --answer`'s injection block
+(`resume-commands.ts:301-313`):
 
 ```ts
 updateItem(paths, itemId, {
@@ -180,18 +228,22 @@ updateItem(paths, itemId, {
 with **no relaunch**. Requires the item's current status to be `blocked` (exit non-zero
 otherwise; `blocked → pending` is already a legal transition in
 `VALID_STATUS_TRANSITIONS`). JSON output: `{ answered: "<id>", status: "pending" }`.
-This reuses the existing first-class channel end-to-end: `humanAnswer` is threaded into
-the next iteration's prompt as the "Human's Answer" section (`prompt-builder.ts:217`)
-and auto-cleared when the item completes (`backlog.ts:254-259`). Ships in the next rauf
-minor (assumed **0.14.0** — OTQ-2).
+Ships in the next rauf minor (assumed **0.14.0** — OTQ-2).
 
-**Version gating (D8).** `loopRunner.minRunnerVersion` stays `0.6.0`. A new forge-side
-constant `RECOVERY_MIN_RUNNER_VERSION = "0.14.0"` gates only the apply step: the
-recovery procedure probes `versionCommand` (`rauf version --json` → `{version}`) before
-applying; a runner below the threshold fails the recovery honestly per REQ-REL-02 —
-verbatim error, upgrade hint (`installHint` pin), no claim of success. rauf itself has
-no capability-negotiation surface (flat `{version}` only), so the compare is forge-side
-semver, mirroring the existing forge-4/forge-5 floor checks.
+**Version gating and the degraded path (D8, decision V-001).**
+`loopRunner.minRunnerVersion` stays `0.6.0`. A new forge-side constant
+`RECOVERY_MIN_RUNNER_VERSION = "0.14.0"` selects the apply mechanism — it never hard-
+fails recovery: the procedure probes `versionCommand` (`rauf version --json` →
+`{version}`; rauf has no capability-negotiation surface, so the compare is forge-side
+semver, mirroring the existing forge-4/forge-5 floor checks). At or above the
+threshold, apply = `rauf backlog answer` per item. Below it, apply **degrades** to
+`rauf backlog unblock` per item: the item is genuinely unblocked (the flag-clearing
+semantics above), the answer remains durable in `forge-decisions.json`, and the
+recovery report states explicitly that the answer was **not** injected into the next
+iteration's prompt, with the upgrade hint (`installHint` pin) attached. REQ-UNB-01..03
+are therefore satisfiable across the whole ≥0.6.0 floor. A runner invocation that
+*errors* (as opposed to predating the verb) still fails the recovery honestly per
+REQ-REL-02 — verbatim error, no claim of success.
 
 **The unblock proof (REQ-UNB-02/03).** After every apply, the procedure re-reads
 per-item state via `listCommand` (`rauf backlog list . --backlog {dir} --json`) and
@@ -223,9 +275,12 @@ Recovery Procedure**. Contents (authored at forge-3-specs granularity, summarize
    deferred, and cancel-early all write entries before anything acts on them
    (REQ-DEC-01/06). Consolidated answers write one entry per affected item sharing a
    `clusterId` (REQ-CLU-04); items stay independently re-decidable (REQ-DEC-07).
-5. **Apply** — version-gate probe, then `rauf backlog answer` per needs-human item /
-   `rauf backlog unblock` per plain blocked item; `decision-apply` stamps each record
-   only after its runner apply succeeded (REQ-UNB-01).
+5. **Apply** — version probe selects the mechanism (§3.3): at/above
+   `RECOVERY_MIN_RUNNER_VERSION`, `rauf backlog answer` per needs-human item; below it,
+   the degraded path — `rauf backlog unblock` per needs-human item with the
+   not-prompt-injected caveat in the report. Plain blocked items use
+   `rauf backlog unblock` at every version. `decision-apply` stamps each record only
+   after its runner apply succeeded (REQ-UNB-01).
 6. **Prove** — the per-item re-read test (§3.3). All moved → proceed; any non-mover →
    failed recovery report.
 7. **Gate & exit** — evaluate the `resolved` gate (§3.2); on pass, Step 7 selects
@@ -263,12 +318,18 @@ it is the tree half of "recovery"):
    stash / discard; everything unattributable is presented as **one** consolidated
    decision. Discard is never a default and requires its own explicit confirmation
    (REQ-TREE-03).
-4. **Launch blocker** — forge-5-loop's existing pre-flight dirty-tree check is extended
-   (one-line pointer in the body; prose in `recovery-procedure.md`): when the tree is
-   dirty **and** `{stateDir}/state.json` exists from a previous run, the precondition
-   failure names that run (`startedAt`, in-flight item ids) and routes to the
-   reconciliation section instead of the generic "uncommitted changes" message
-   (REQ-TREE-04).
+4. **Launch blocker** — forge-5-loop has **no** existing forge-side dirty-tree
+   pre-flight today; the only gate is rauf's own launch refusal ("Refusing to run the
+   loop with uncommitted changes…", `runner-contract.md:73-79`), whose message forge
+   cannot rewrite. REQ-TREE-04 therefore lands as a **new** body sub-step
+   `### 1g. Stranded-Work Pre-flight` in `skills/forge-5-loop/SKILL.md`, placed after
+   `1f Branch Pre-flight` and before Step 2: run `git status --porcelain`; if dirty
+   **and** `{stateDir}/state.json` exists from a previous run, STOP and render a
+   message naming that run (`startedAt`, `currentItem`, `blockedItems`) and pointing
+   at the reconciliation section of `references/recovery-procedure.md`; if dirty with
+   no prior-run state, keep today's behavior (surface it; never auto-`--force`).
+   rauf's own refusal remains the backstop for the non-recovery case. This is real
+   body-line growth (~5 lines), budgeted in §2 against the 287/300 body count.
 
 ### 3.6 Systemic-cause clustering (REQ-CLU-01, REQ-PERF-01) — D7
 
@@ -291,6 +352,23 @@ linear topology pass — comfortably within REQ-PERF-01. The helper is the *subs
 the agent may merge clusters it judges to share a cause (under-clustering is recoverable
 by judgment; the scripted floor is what's testable).
 
+**Alternatives considered (OQ-4).** Normalized exact equality (trivially explainable,
+but any rephrasing defeats it — the agent's judgment merge becomes the load-bearing
+step, which is what the scripted substrate exists to de-risk); shared-token-core
+containment / normalized-prefix grouping (cheaper but order- and phrasing-sensitive in
+ways a set measure is not); and the trivial baseline of one consolidated prompt for
+*all* needs-human items (maximal consolidation, but erases genuinely distinct causes
+and misframes blast radius). Token-set Jaccard was chosen as the simplest symmetric,
+order-insensitive measure; **under-clustering is the deliberately chosen failure
+direction**, since the agent holds merge authority but no scripted split authority.
+Semantically distant phrasings of one cause (e.g. "missing API key" vs "cannot
+authenticate") can fall below any token threshold — that residual is exactly what the
+agent's merge pass is for. **Calibration:** the one-cause-three-phrasings fixture in
+`tests/test_decision_clustering.py` (§8) is derived from the actual `blockedReason`
+strings of the observed verify-test-debt run, and `CLUSTER_JACCARD_THRESHOLD` is tuned
+so that fixture clusters into one candidate — the constant is falsifiable against the
+incident that motivated REQ-CLU, not asserted.
+
 ### 3.7 Topology computation and its three consumers (REQ-TOPO-01..03, REQ-PERF-01) — D6
 
 One pure function `compute_topology(items)` in `forge-session.py`, linear via memoized
@@ -312,9 +390,14 @@ Consumers:
 2. **forge-verify** (REQ-TOPO-02): new **CHECK-B28** in
    `references/verification-checklists/backlog.md`, modeled on CHECK-B26/B27's
    advisory-heuristic template: severity `improvement` (never `error`/`gap`, never
-   blocking), `not-applicable` when no trigger fires or the graph is trivial. Body edit
-   = the expected-count bump "backlog: 27 checks" → "28" (in-line character change,
-   zero line growth against the 298/300 body).
+   blocking), `not-applicable` when no trigger fires or the graph is trivial. For
+   parallel dimensioned dispatch, CHECK-B28 is assigned to the **dependency/ordering
+   sanity** group (group 2 of the backlog dimension groups at `SKILL.md:33-38`). Body
+   edits = **both** count literals, in-line with zero line growth against the 298/300
+   body (PRD §5's "299/300" is the same file measured by `wc -l`-style counting; 298 is
+   the check-spec-purity rule-4 measure): `SKILL.md:33` "backlog 27" → 28 and
+   `SKILL.md:171` "backlog: 27 checks" → 28 — `tests/test_lifecycle_artifact_check.py:
+   49-52` asserts both literals and is updated in the same change.
 3. **forge-5-loop Step 2a** (REQ-TOPO-03): one added line — surface `maxChainDepth`
    beside the computed iteration count ("depth bounds achievable progress regardless of
    iteration budget"). This line renders on every run and is the only new happy-path
@@ -323,12 +406,40 @@ Consumers:
 ### 3.8 Eval coverage (REQ-EVAL-01) — D8
 
 New lightweight probe `loop-outcome` in `eval/run-compliance-eval.py` plus fixture
-`eval/fixtures/compliance/loop-outcome-resolved.json` (schemaVersion-2 shape mirroring
-the existing compliance fixtures): drive a forge-5-loop close with `--outcome resolved`
-and score (a) exactly one sentinel (`─ forge: end of stage ─`), (b) nothing after it,
-(c) the primary command is the fenced relaunch `/feature-forge:forge-5-loop {feature}`.
-The branch-path probe is left untouched — its verify/fix/re-verify shape stays
-hardwired; generalizing it is out of scope for a sentinel-presence requirement.
+`eval/fixtures/compliance/loop-outcome-resolved.json`: drive a forge-5-loop close with
+`--outcome resolved` and score (a) exactly one sentinel (`─ forge: end of stage ─`),
+(b) nothing after it, (c) the primary command is the fenced relaunch
+`/feature-forge:forge-5-loop {feature}`. The fixture declares its **own** required-key
+set — `{"schemaVersion", "feature", "scenarios"}` with per-scenario
+`{"name", "outcome", "expectedPrimaryCommand"}` — and is read by its **own** loader
+sharing only the hard-fail `schemaVersion` guard idiom with the branch-path reader
+(`run-compliance-eval.py:996, 1109-1112`); it is not a "mirror" of
+`verify-fix-reverify.json`, whose `servedStage`/`verifyMode` keys don't apply here.
+The probe **joins `--probe all`** (decision V-004 — REQ-EVAL-01 must bite on every
+full sweep), which updates the exact-equality probe-list assertion in
+`tests/test_compliance_eval.py:1953-1954`, the module's "Three probes" docstring
+(line 9), the usage string (line 55), and the argparse `--probe` choices, all
+three→four. The branch-path probe is otherwise left untouched — its
+verify/fix/re-verify shape stays hardwired; generalizing it is out of scope for a
+sentinel-presence requirement.
+
+### 3.9 Citation basis for every new report surface (REQ-OBS-01)
+
+REQ-OBS-01 binds *every* report surface this feature touches, not just the pending
+template. Each new surface names the authoritative source it derived its claims from:
+
+| Report surface | Authoritative citation basis |
+|---|---|
+| Pending/starvation template (§3.2) | `backlogSummary` counts + `backlog-topology` output over the runner's `listCommand` JSON; iteration counters from `state.json` (`iteration`/`maxIterations`) |
+| Failed-recovery report (§3.3/§3.4 step 6) | The per-item `listCommand` re-read — movers and non-movers named from item `status` fields, never aggregate counts |
+| `resolved` outcome text (§3.2) | The three gate evaluations: `decision-list --unapplied` (empty), `git status --porcelain` (empty), and the per-item re-read (all affected items left `blocked`) |
+| Consolidated blast-radius prompt (§3.4 step 3) | `backlog-topology --cluster` gated-subtree output (member ids + counts) |
+| Tree-reconciliation presentation (§3.5) | `git status --porcelain` paths + `{stateDir}/state.json`/`events.ndjson` run evidence, with attributions explicitly presented as candidates |
+| Step 2a depth line (§3.7) | The same `backlog-topology` output (`maxChainDepth`) |
+
+A claim any of these sources contradicts is a reportable defect (REQ-OBS-01
+generalizing REQ-ATTR-03); the recovery procedure's prose in `recovery-procedure.md`
+carries this table's obligations verbatim.
 
 ## 4. Data Model
 
@@ -375,6 +486,13 @@ Semantics (REQ-DEC-02/06/07): `answer: null` + `deferred: true` records a deferr
 consolidated decision; timestamps are `_now_iso()` Z-suffixed UTC; `recordedBy`/
 `appliedBy` are session/actor labels only (REQ-SEC-01). Append-only: `decision-apply`
 touches only the latest entry for an item, and only its `appliedAt`/`appliedBy` fields.
+**Cancel-early shape (REQ-DEC-06):** the "cancel the run early" branch is recorded as
+a deferral — `answer: null`, `deferred: true`, `question` carrying the original
+needs-human text — with **no** distinct schema field; the cancellation rationale is
+conversational, never written into `answer`. It therefore re-surfaces via
+`decision-list --unapplied` on the next launch exactly like any other deferral
+(REQ-DEC-05/06), and `decision-record`'s flag surface stays `--answer A | --deferred`
+(§5.1) with no third form.
 
 Storage: single JSON file, atomic write-then-rename, single-writer assumption
 (REQ-REL-01 — no locking, by standing #180 direction). Concurrent sessions are out of
@@ -401,15 +519,21 @@ decision-apply  --backlog-dir D --item ID [--actor LABEL]
 ### 5.2 `backlog-topology` verb (forge-session.py)
 
 ```
-backlog-topology --backlog-file <path/to/backlog.json> [--cluster] --json
+backlog-topology (--items-json <path> | --items-stdin) [--cluster] --json
 ```
 
 Output: `{ itemCount, rootCount, roots: [{id, gatedCount, gatedIds}], maxChainDepth,
 selectable, starvation: {starved, blockingRoots: [{id, gatedCount}]} | null,
 warnings: ["single-root-fanout", "chain-depth"]…, clusters: […] }` — `clusters` only
-with `--cluster` (§3.6 shape). Reads the backlog file directly (statuses included), so
-one call serves forge-4-backlog, CHECK-B28 (read-only for the verifier), forge-5-loop
-Step 2a, the starvation report, and the consolidated-prompt blast radius.
+with `--cluster` (§3.6 shape). **Single data source (decision V-007):** the verb is a
+pure function over the runner's item array — the caller feeds it the
+`loopRunner.listCommand` output it already obtained (`rauf backlog list . --backlog
+{dir} --json`); it never reads `backlog.json` off disk, so every claim derived from it
+cites the runner's authoritative counts (REQ-ATTR-01, REQ-OBS-01). All five consumers
+pass the runner JSON they already have: forge-4-backlog (the runner is installed and
+invoked at its Step 5 validation), CHECK-B28's verifier (runs `listCommand` read-only),
+forge-5-loop Step 2a/4a, the starvation report, and the consolidated-prompt blast
+radius.
 
 ### 5.3 `stage-exit` extension
 
@@ -433,7 +557,7 @@ Existing surfaces this feature **depends on** (all verified from source):
 | `_now_iso()` | `forge-session.py:4083` | Z-suffixed UTC timestamps |
 | `LoopOutcome`/`EXIT_OUTCOMES` | `forge-session.py:374,398` | derived enum — single edit point |
 | `_LOOP_ROUTE_KIND`/`_LOOP_OUTCOME_TEXT`/`_loop_route()` | `forge-session.py:2952,2964,3117` | route/text tables + resume/recover dispatcher |
-| stdlib validator | `tests/_state_schema.py` | `_check()` is schema-generic; add `validate_decisions()` (two-line entry point) |
+| stdlib validator | `tests/_state_schema.py` | `_check()` is schema-generic; add a module-level `_DECISIONS_SCHEMA` load mirroring `_STATE_SCHEMA`/`_CONFIG_SCHEMA` (lines 26-31) plus a `validate_decisions()` wrapper (~12 lines with docstring); the module docstring's "Both entry points" and "state verbs and effective-config" scoping sentences are updated to cover three |
 | R4 guard template | `tests/test_state_schema_conformance.py` | out-of-process `_run()`, `VERB_INVOCATIONS`, registry-completeness regex |
 | gitignore rule | `.gitignore` (`**/.rauf/*`, #195) | covers the decision record with no edit |
 | `loopRunner` config | `references/forge-config-schema.json` | `stateDir` (default `.rauf`), `versionCommand`, `listCommand`, `statusJsonCommand`, `installHint`, `minRunnerVersion` (stays 0.6.0) |
@@ -442,7 +566,7 @@ Existing surfaces this feature **depends on** (all verified from source):
 | rauf per-item read-back | `rauf backlog list . --json` (`BacklogItem[]`: `status`, `needsHuman`, `blockedReason`, `humanAnswer`, `dependsOn`) | the REQ-UNB-02 per-item test |
 | rauf aggregate counts | `rauf status . --json` → `backlogSummary` (`needsHuman` = blocked ∧ needsHuman) | report counts only — never the unblock proof |
 | rauf run evidence | `{stateDir}/state.json` (`baseCommitHash`, `completedItems`, …), `{stateDir}/events.ndjson` (`item_selected`/`llm_spawned`/`llm_exited` w/ `itemId`) | best-effort tree attribution; no `rauf events` CLI exists — files parsed directly |
-| rauf unblock | `rauf backlog unblock <path> [id]` → `{unblockedCount, unblockedIds}` | plain-blocked path; does NOT clear `needsHuman` — needs-human items go through `backlog answer` |
+| rauf unblock | `rauf backlog unblock <path> [id]` → `{unblockedCount, unblockedIds}` | clears `status`, `blockedReason`, `needsHuman`, and `deferred` per item (`backlog.ts:432-433, 462-465, 480-483`); does **not** attach answer text, so it cannot thread a `humanAnswer` into the next prompt — plain-blocked path at every version, and the degraded needs-human apply below `RECOVERY_MIN_RUNNER_VERSION` (§3.3) |
 
 Surfaces that will **consume** this feature: forge-4-backlog (topology report),
 forge-verify (CHECK-B28), forge-5-loop (Step 2a depth, recovery procedure, resolved
@@ -500,11 +624,16 @@ Stdlib-only pytest (CI has no third-party deps; `jsonschema` behavioral tests us
   the roots (feeds SC-1's replay).
 - `tests/test_decision_clustering.py` — normalization cases, Jaccard boundary (0.5),
   union-find transitivity, deterministic ordering, one-cause-three-phrasings fixture.
-- `tests/test_stage_exit.py` — mirrored `EXIT_OUTCOMES` gains `resolved`; the
-  "exactly the five" test renamed and re-parametrized to six; `resolved` asserted into
-  the resume-routing test and the non-complete no-downstream bucket (incl. no
-  auto-verify debt); `--cause` validity matrix (accepted on loop/partial, exit 2
-  elsewhere) (REQ-COMPAT-01 — deliberate guard updates, no silent weakening).
+- `tests/test_stage_exit.py` — the mirrored `EXIT_OUTCOMES["forge-5-loop"]` tuple at
+  `:626` gains `resolved`, which automatically extends the derived
+  `NON_COMPLETE_LOOP_OUTCOMES` at `:2305` and with it
+  `test_no_non_complete_loop_outcome_claims_downstream_readiness` (`:2372`) and
+  `test_a_non_complete_loop_outcome_states_nothing_downstream_is_ready` (`:2473`);
+  the hand-listed resume/recover parametrize at `:3207` gains `resolved`; the
+  recover-routing parametrize at `:2358` deliberately does **not** (resolved routes
+  resume) and gains an explicit resume-routing case instead; plus the `--cause`
+  validity matrix (accepted on loop/partial, exit 2 elsewhere) (REQ-COMPAT-01 —
+  deliberate guard updates, no silent weakening).
 - Eval: `loop-outcome` probe + fixture (REQ-EVAL-01); run via the existing advisory
   harness.
 - rauf repo: `backlog answer` unit tests (happy path, not-blocked refusal, JSON shape)
@@ -524,7 +653,9 @@ drift, pytest, ruff, traceability) + `python3 scripts/forge-session.py doctor --
 - **rauf**: one new CLI subcommand shipping in the next rauf minor (assumed 0.14.0);
   `@garygentry/rauf` npm release + the feature-forge `installHint`/installer pin bump
   ride the normal release trains. `RECOVERY_MIN_RUNNER_VERSION` documents the
-  capability threshold; `loopRunner.minRunnerVersion` is **not** raised.
+  capability threshold that selects between `backlog answer` and the degraded
+  `backlog unblock` apply (§3.3) — recovery itself works on the whole ≥0.6.0 floor,
+  and `loopRunner.minRunnerVersion` is **not** raised.
 - **Internal ordering** (PRD §3 note): DEC (schema+verbs) → TREE → UNB (needs rauf
   0.14.0 available locally for e2e; unit tests stub the CLI) → OUT → ATTR → CLU →
   TOPO → EVAL. The rauf PR can land in parallel with DEC/TREE.
