@@ -268,7 +268,7 @@ python3 "$R/scripts/forge-session.py" state-verify --feature "{feature}" --stage
 
 Every loop run ends here, and ends here **exactly once** — standalone or epic member, complete or not.
 
-First select the single `LoopOutcome` with the ladder in `references/result-reporting.md` (`needs-human` → `blocked` → `deferred` → `partial` → `complete`, first match wins), reading it from Step 4a's authoritative counts and never from the runner's process exit code. If those counts were never obtained, follow that file's operational-failure rule instead: report the failure and its recovery and run no exit at all.
+First select the single `LoopOutcome` with the ladder in `references/result-reporting.md` (`resolved` → `needs-human` → `blocked` → `deferred` → `partial` → `complete`, first match wins), reading it from Step 4a's authoritative counts and never from the runner's process exit code. If those counts were never obtained, follow that file's operational-failure rule instead: report the failure and its recovery and run no exit at all.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 

@@ -666,16 +666,16 @@ def test_dropping_the_nested_no_terminal_block_rule_fails_the_guard():
 
 
 def test_the_loop_surface_covers_every_loop_outcome():
-    """All five LoopOutcome values have a documented selection rule.
+    """All six LoopOutcome values have a documented selection rule.
 
     Replaces the assertion that the loop stamps bespoke blocks: the loop's contract
-    surface is now the outcome ladder plus the single scripted invocation. The five
+    surface is now the outcome ladder plus the single scripted invocation. The six
     values come from `EXIT_OUTCOMES["forge-5-loop"]`, never from a copy here.
     """
     site = _site("forge-5-loop")
     surface = _read_contract_surface(site)
     outcomes = _exit_outcomes()["forge-5-loop"]
-    assert len(outcomes) == 5, f"expected five LoopOutcome values, found {sorted(outcomes)}"
+    assert len(outcomes) == 6, f"expected six LoopOutcome values, found {sorted(outcomes)}"
     for outcome in outcomes:
         assert f"`{outcome}`" in surface, (
             f"LoopOutcome {outcome!r} has no selection rule on the forge-5-loop surface"

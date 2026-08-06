@@ -623,7 +623,7 @@ EXIT_STAGES = (
 STATE_DRIVEN_STAGES = EXIT_STAGES[:5]
 BRANCH_STAGES = ("forge-verify", "forge-fix")
 EXIT_OUTCOMES = {
-    "forge-5-loop": ("complete", "partial", "blocked", "needs-human", "deferred"),
+    "forge-5-loop": ("complete", "partial", "blocked", "needs-human", "deferred", "resolved"),
     "forge-6-docs": ("complete", "blocked"),
     "forge-verify": ("passed", "findings", "skipped", "failed"),
     "forge-fix": (
@@ -2338,15 +2338,15 @@ def test_loop_requires_its_own_outcome_and_rejects_any_other(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize("outcome", LOOP_OUTCOMES, ids=LOOP_OUTCOMES)
-def test_loop_accepts_exactly_the_five_loop_outcomes(tmp_path: Path, outcome: str):
+def test_loop_accepts_exactly_the_six_loop_outcomes(tmp_path: Path, outcome: str):
     root = _project(tmp_path, config={})
     d = _loop(root, outcome)["directives"]
     assert d["outcome"] == outcome
     assert d["stage"] == "forge-5-loop"
 
 
-@pytest.mark.parametrize("outcome", ["partial", "deferred"])
-def test_loop_partial_and_deferred_fence_the_loop_resume(tmp_path: Path, outcome: str):
+@pytest.mark.parametrize("outcome", ["partial", "deferred", "resolved"])
+def test_loop_partial_deferred_and_resolved_fence_the_loop_resume(tmp_path: Path, outcome: str):
     """02 §7: state remains resumable, so the loop itself is the primary action."""
     root = _project(tmp_path, config={})
     payload = _loop(root, outcome)
@@ -2461,7 +2461,9 @@ def test_loop_outcome_text_sits_inside_the_block_above_the_sentinel(
     lines = block.splitlines()
     assert lines[0] == "**Next steps**"
     # The outcome text is line 2 — above the numbered guidance and the fence.
-    assert lines[1].startswith(("Every backlog item is done", "The loop"))
+    assert lines[1].startswith(
+        ("Every backlog item is done", "The loop", "The needs-human stop")
+    )
     assert "widget" in lines[1]
     assert block.count(SENTINEL) == 1
     assert lines[-1] == SENTINEL
@@ -3204,7 +3206,9 @@ def test_a_route_that_already_lands_on_the_epic_is_not_self_deferred(
         payload["nextSteps"]
 
 
-@pytest.mark.parametrize("outcome", ["partial", "deferred", "blocked", "needs-human"])
+@pytest.mark.parametrize(
+    "outcome", ["partial", "deferred", "resolved", "blocked", "needs-human"]
+)
 def test_a_non_complete_loop_outcome_still_offers_no_continuation(
     tmp_path: Path, outcome: str
 ) -> None:

@@ -77,15 +77,21 @@ Loop completed for {feature}.
 After Step 5's `state-complete`, select exactly **one** `LoopOutcome` from Step 4a's
 authoritative final counts. Walk this ladder in order and stop at the first match:
 
-1. **`needs-human`** — `needsHuman > 0`. This wins even when blocked items also
-   exist: a decision only a human can make outranks work that merely could not
-   proceed.
-2. **`blocked`** — otherwise, genuine `blocked > 0`.
-3. **`deferred`** — otherwise, runner-deferred items exist (the "false blocks" the
+1. **`resolved`** — the Post-Run Recovery Procedure
+   (`references/recovery-procedure.md`) ran this session and its gate passed: every
+   affected needs-human item has an applied decision record, the working tree is
+   clean, and each affected item left `blocked`/`needsHuman` per the per-item
+   re-read. This outranks `needs-human` so a stop the recovery just cleared is not
+   re-reported as still needing a human.
+2. **`needs-human`** — otherwise, `needsHuman > 0`. This wins even when blocked
+   items also exist: a decision only a human can make outranks work that merely
+   could not proceed.
+3. **`blocked`** — otherwise, genuine `blocked > 0`.
+4. **`deferred`** — otherwise, runner-deferred items exist (the "false blocks" the
    runner gave up on after retries).
-4. **`partial`** — otherwise, `pending`/`in_progress` items remain because the
+5. **`partial`** — otherwise, `pending`/`in_progress` items remain because the
    iteration limit was reached.
-5. **`complete`** — otherwise, and **only** when every item is `done`.
+6. **`complete`** — otherwise, and **only** when every item is `done`.
 
 This is a priority order, not a set. A run reporting both a needs-human and a blocked
 count renders both reports above and still exits `needs-human`.
@@ -95,8 +101,8 @@ reported only that its process finished; the final backlog state decides. A clea
 exit 0 that still leaves pending items is `partial`, never `complete` — and
 `complete` is legitimate only when the counts show every item `done`.
 
-**Retrying the non-complete outcomes.** `partial` and `deferred` fence the loop
-resume; `blocked` and `needs-human` fence the navigator. Whichever you land on, the
+**Retrying the non-complete outcomes.** `partial`, `deferred`, and `resolved` fence
+the loop resume; `blocked` and `needs-human` fence the navigator. Whichever you land on, the
 runner's own retry flags still apply to the next run — e.g. rauf's `--retry-blocked`
 picks the set-aside blocked and deferred items back up at Step 2d. Mention that as
 plain prose in the report if it helps; never as a second command block.

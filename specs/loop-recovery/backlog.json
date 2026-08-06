@@ -124,8 +124,8 @@
         "test_stage_exit.py: the EXIT_OUTCOMES mirror includes resolved; the outcome-count test is renamed to ..._six_... (no lingering 'five'/5-outcome literal); resume-fence and no-continuation parametrizes include resolved; recover-fence does not; test_stage_exit_protocol.py passes",
         "python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T14:37:18.392Z",
       "dependsOn": [],
       "notes": "REQ-COMPAT-01: a vocabulary change deliberately rippling into the directive matrix. The derived NON_COMPLETE_LOOP_OUTCOMES picks resolved up automatically once the EXIT_OUTCOMES mirror is updated, so the invariant tests parametrize over resolved with no per-test edit. Touches ~6 canon files + a test; kept atomic because the enum/routing/ladder/tests must land together. Coordinate the forge-5-loop SKILL.md body-cap budget with items 006/007/009 (target ~293/300).",
       "estimatedIterations": 2,

@@ -382,7 +382,9 @@ VerifyStatus = Literal[
 #: Which gate form a stage exit asks the caller to render.
 VerifyGate = Literal["none", "standard", "manual-print"]
 
-LoopOutcome = Literal["complete", "partial", "blocked", "needs-human", "deferred"]
+LoopOutcome = Literal[
+    "complete", "partial", "blocked", "needs-human", "deferred", "resolved"
+]
 DocsOutcome = Literal["complete", "blocked"]
 VerifyOutcome = Literal["passed", "findings", "skipped", "failed"]
 FixOutcome = Literal[
@@ -3381,6 +3383,7 @@ _LOOP_ROUTE_KIND: Final[dict[str, str]] = {
     "complete": "handoff",
     "partial": "resume",
     "deferred": "resume",
+    "resolved": "resume",
     "blocked": "recover",
     "needs-human": "recover",
 }
@@ -3413,6 +3416,13 @@ _LOOP_OUTCOME_TEXT: Final[dict[str, str]] = {
         "Nothing downstream is ready until those decisions are made. Run the "
         "navigator below to see the live pipeline state from disk and recover from "
         "there."
+    ),
+    "resolved": (
+        "The needs-human stop for {feature} was resolved — the recorded decisions "
+        "were applied and every affected item was verified, per item, to have left "
+        "blocked/needsHuman, with the working tree clean. The recorded state is "
+        "resumable and nothing downstream is ready: run the loop again below to "
+        "continue from where it stopped."
     ),
 }
 
