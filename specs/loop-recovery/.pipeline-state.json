@@ -42,10 +42,32 @@
       "verifiedAt": "2026-08-06T00:52:25Z",
       "verifiedStageVersion": 1,
       "commitHash": "ea0fcf49f9fbe20ea3bd0f7f30645bcf9582faad"
+    },
+    "forge-3-specs": {
+      "status": "complete",
+      "startedAt": "2026-08-06T00:57:28Z",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-decision-record.md",
+        "03-outcome-and-attribution.md",
+        "04-apply-and-unblock.md",
+        "05-recovery-procedure.md",
+        "06-clustering-and-topology.md",
+        "07-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "completedAt": "2026-08-06T03:59:08Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1
+      },
+      "commitHash": null
     }
   },
-  "currentStage": "forge-2-tech",
-  "updatedAt": "2026-08-06T00:52:25Z",
+  "currentStage": "forge-3-specs",
+  "updatedAt": "2026-08-06T03:59:08Z",
   "branch": "forge/loop-recovery",
   "notes": "Carry into forge-3-specs: tech re-verify advisories V-012..V-015 (VERIFY-tech-2026-08-05-round2.md) — esp. V-012: rename test_loop_accepts_exactly_the_five_loop_outcomes to ..._six_... when resolved lands (it goes green silently otherwise); V-015: vendor the three verify-test-debt blockedReason strings verbatim into test_decision_clustering.py (source .rauf archive is prunable; binding Jaccard pair clears 0.5 by only 0.028)."
 }
