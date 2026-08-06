@@ -97,8 +97,8 @@
         "The topology path never opens backlog.json off disk (reads only --items-json/--items-stdin)",
         "tests/test_backlog_topology.py passes (incl. the linear-perf guard); python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T14:15:58.906Z",
       "dependsOn": [
         "003"
       ],

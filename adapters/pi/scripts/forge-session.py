@@ -48,6 +48,8 @@ has to hand-write the JSON (and therefore no stage has to read the state schema)
         [--state-dir NAME] [--config PATH] [--json]
     python3 forge-session.py decision-apply --backlog-dir DIR --item ID [--actor LABEL] \
         [--state-dir NAME] [--config PATH] [--json]
+    python3 forge-session.py backlog-topology (--items-json PATH | --items-stdin) \
+        [--cluster] [--json]
 
 `rank-features` scans the specs tree for feature-shaped directories (those that
 directly contain a `.pipeline-state.json`, in both the flat
@@ -165,7 +167,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import math  # noqa: F401
+import math
 import os
 import re
 import socket
@@ -431,6 +433,19 @@ VERIFY_MODE_TO_STAGE: Final[dict[str, str]] = {
 #: incident is caught. Under-clustering is the deliberately chosen failure direction:
 #: the agent holds merge authority, so the scripted floor must never over-merge.
 CLUSTER_JACCARD_THRESHOLD: Final[float] = 0.5
+#: Advisory topology warn triggers for ``compute_topology`` — a single root whose
+#: gated subtree is >= ceil(ratio * itemCount) items trips "single-root-fanout";
+#: a dependsOn chain of >= ceil(ratio * itemCount) nodes trips "chain-depth".
+#: math.ceil keeps the ratios the single source of the thresholds even if a
+#: future ratio is non-half. Advisory only: no consumer blocks on them.
+TOPOLOGY_FANOUT_WARN_RATIO: Final[float] = 0.5
+TOPOLOGY_DEPTH_WARN_RATIO: Final[float] = 0.5
+#: The forge-side capability threshold for the runner's `backlog answer` apply
+#: surface: at or above this rauf version the recovery procedure applies answers
+#: via `rauf backlog answer`; below it, it degrades to `rauf backlog unblock`.
+#: It never hard-fails recovery, and it is NOT ``loopRunner.minRunnerVersion``
+#: (the install floor in references/forge-config-schema.json, which stays 0.6.0).
+RECOVERY_MIN_RUNNER_VERSION: Final[str] = "0.14.0"
 #: The fixed final line of the NEXT-STEPS block. The stamp instructs the skill
 #: to print the block verbatim as its absolute last output — nothing after this.
 NEXT_STEPS_SENTINEL: Final = "─ forge: end of stage ─"
@@ -2266,6 +2281,191 @@ def cluster_blocked(items: list[dict]) -> list[dict]:
             }
         )
     return clusters
+
+
+def _max_chain_depth(by_id: dict[str, dict], deps: dict[str, list[str]]) -> int:
+    """Longest ``dependsOn`` chain length (node count), memoized and cycle-safe.
+
+    Depth of a node = ``1 + max(depth(dep) …)`` over its in-backlog dependencies;
+    the result is the maximum over all nodes. A node re-seen on the current path
+    contributes ``0`` (cycle guard; unreachable on validated backlogs).
+
+    Args:
+        by_id: id → item, from :func:`_build_dep_index`.
+        deps: id → dependency ids, from :func:`_build_dep_index`.
+
+    Returns:
+        The longest chain length; ``0`` for an empty backlog.
+    """
+    memo: dict[str, int] = {}
+
+    def depth(node: str, on_path: set[str]) -> int:
+        if node in memo:
+            return memo[node]
+        if node in on_path:  # cycle guard
+            return 0
+        on_path.add(node)
+        d = 1 + max((depth(x, on_path) for x in deps[node]), default=0)
+        on_path.discard(node)
+        memo[node] = d
+        return d
+
+    return max((depth(n, set()) for n in by_id), default=0)
+
+
+def compute_topology(items: list[dict]) -> dict:
+    """Compute dependency-topology metrics + advisory warnings (REQ-TOPO-01..03).
+
+    Pure function over the runner's item array (single data source, decision
+    V-007) — it never reads ``backlog.json`` off disk, so every derived count
+    cites the runner's authoritative array (REQ-ATTR-01, REQ-OBS-01). Linear via
+    the memoized DFS helpers above (REQ-PERF-01).
+
+    Args:
+        items: The runner's ``listCommand`` item array. Each item may carry
+            ``id``, ``dependsOn`` (list of ids), and ``status`` (``pending``/
+            ``done``/``blocked``/…).
+
+    Returns:
+        The ``backlog-topology`` output shape (without ``clusters`` — that is
+        appended by the verb under ``--cluster``): ``{itemCount, rootCount,
+        roots, maxChainDepth, selectable, starvation, warnings}``.
+    """
+    by_id, deps, dependents = _build_dep_index(items)
+    item_count = len(by_id)
+    gated = _transitive_dependents(dependents)
+
+    roots = [i for i in by_id if not deps[i]]  # no in-backlog dependsOn edges
+    roots_out = sorted(
+        (
+            {
+                "id": r,
+                "gatedCount": len(gated[r]),
+                "gatedIds": sorted(gated[r], key=_id_key),
+            }
+            for r in roots
+        ),
+        key=lambda row: _id_key(row["id"]),
+    )
+
+    max_depth = _max_chain_depth(by_id, deps)
+
+    selectable = sum(
+        1
+        for i, it in by_id.items()
+        if it.get("status") == "pending"
+        and all(by_id[d].get("status") == "done" for d in deps[i])
+    )
+    pending = sum(1 for it in by_id.values() if it.get("status") == "pending")
+
+    fanout_threshold = math.ceil(TOPOLOGY_FANOUT_WARN_RATIO * item_count)
+    depth_threshold = math.ceil(TOPOLOGY_DEPTH_WARN_RATIO * item_count)
+
+    # A trivial graph (0-1 items, or no dependsOn edges at all) has no topology
+    # to warn about — a single node's depth of 1 would otherwise trip the
+    # ceil(0.5 * 1) = 1 depth threshold on every one-item backlog.
+    warnings: list[str] = []
+    if item_count > 1 and any(deps[i] for i in by_id):
+        if any(row["gatedCount"] >= fanout_threshold for row in roots_out):
+            warnings.append("single-root-fanout")
+        if max_depth >= depth_threshold:
+            warnings.append("chain-depth")
+
+    starvation = None
+    if selectable == 0 and pending > 0:
+        starvation = {
+            "starved": True,
+            "blockingRoots": [
+                {"id": row["id"], "gatedCount": row["gatedCount"]}
+                for row in roots_out
+                if row["gatedCount"] > 0 and by_id[row["id"]].get("status") != "done"
+            ],
+        }
+
+    return {
+        "itemCount": item_count,
+        "rootCount": len(roots),
+        "roots": roots_out,
+        "maxChainDepth": max_depth,
+        "selectable": selectable,
+        "starvation": starvation,
+        "warnings": warnings,
+    }
+
+
+def cmd_backlog_topology(items: list[dict], *, with_clusters: bool) -> dict:
+    """Assemble the ``backlog-topology`` payload.
+
+    Args:
+        items: The runner's ``listCommand`` item array.
+        with_clusters: When true, append the ``clusters`` section.
+
+    Returns:
+        The topology dict; with ``clusters`` appended iff ``with_clusters``.
+    """
+    result = compute_topology(items)
+    if with_clusters:
+        result["clusters"] = cluster_blocked(items)
+    return result
+
+
+def _load_topology_items(args: argparse.Namespace) -> list[dict]:
+    """Read and parse the runner item array for ``backlog-topology``.
+
+    Accepts either a top-level JSON array or an object with an ``items`` array
+    (rauf ``backlog list --json`` emits the array; the object form is tolerated
+    for forward-compatibility). All failures raise ``UsageError`` → exit 2,
+    never a partial/guessed result. This is the ONLY input path for the
+    topology verb — it never opens ``backlog.json`` off disk (single data
+    source, decision V-007).
+
+    Args:
+        args: Parsed namespace with ``items_stdin`` / ``items_json``.
+
+    Returns:
+        The item list.
+
+    Raises:
+        UsageError: unreadable ``--items-json``, invalid JSON, or a shape that is
+            neither an array nor an object carrying an ``items`` array.
+    """
+    if args.items_stdin:
+        raw = sys.stdin.read()
+    else:
+        try:
+            raw = Path(args.items_json).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise UsageError(f"cannot read --items-json {args.items_json}: {exc}") from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"invalid items JSON: {exc}") from exc
+    items = data.get("items", []) if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        raise UsageError("items JSON must be an array or an object with an 'items' array")
+    return items
+
+
+def _print_topology(payload: dict) -> None:
+    """Human-readable topology summary (machine consumers pass ``--json``)."""
+    print(
+        f"Topology: {payload['itemCount']} items, {payload['rootCount']} roots, "
+        f"max chain depth {payload['maxChainDepth']}, selectable {payload['selectable']}"
+    )
+    for row in sorted(payload["roots"], key=lambda r: -r["gatedCount"]):
+        print(f"  root {row['id']} gates {row['gatedCount']} item(s)")
+    for warning in payload["warnings"]:
+        print(f"  warning: {warning}")
+    starvation = payload.get("starvation")
+    if starvation:
+        blocking = ", ".join(r["id"] for r in starvation["blockingRoots"])
+        print(f"  starved: no selectable item; blocking roots: {blocking}")
+    for cluster in payload.get("clusters", []):
+        members = ", ".join(cluster["memberIds"])
+        print(
+            f"  cluster {cluster['clusterId']}: members {members} "
+            f"(gates {cluster['gatedCount']} item(s))"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -6425,6 +6625,24 @@ def main() -> int:
                           help="forge.config.json path")
     p_dapply.add_argument("--json", action="store_true", dest="json_output")
 
+    p_topo = sub.add_parser(
+        "backlog-topology",
+        help="Dependency-topology metrics + advisory warnings over a runner item array",
+    )
+    topo_src = p_topo.add_mutually_exclusive_group(required=True)
+    topo_src.add_argument(
+        "--items-json", help="Path to the loopRunner listCommand JSON output"
+    )
+    topo_src.add_argument(
+        "--items-stdin", action="store_true",
+        help="Read the listCommand JSON from stdin",
+    )
+    p_topo.add_argument(
+        "--cluster", action="store_true", dest="with_clusters",
+        help="Append blocked-item clusters for consolidated prompts",
+    )
+    p_topo.add_argument("--json", action="store_true", dest="json_output")
+
     args = parser.parse_args()
 
     try:
@@ -6660,6 +6878,12 @@ def main() -> int:
                 args.state_dir, Path(args.config), _default_schema_path(),
             )
             _emit(payload, args.json_output, _print_decision_apply)
+            return 0
+
+        if args.cmd == "backlog-topology":
+            items = _load_topology_items(args)
+            payload = cmd_backlog_topology(items, with_clusters=args.with_clusters)
+            _emit(payload, args.json_output, _print_topology)
             return 0
 
         raise UsageError(f"unknown command: {args.cmd}")
