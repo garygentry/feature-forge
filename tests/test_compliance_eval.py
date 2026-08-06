@@ -1946,15 +1946,28 @@ def test_branch_path_is_a_distinct_probe_choice_included_in_all(monkeypatch) -> 
     calls: list[str] = []
     monkeypatch.setattr(ce, "driver_path", lambda: "/usr/bin/claude")
     monkeypatch.setattr(ce, "_assert_prelude_in_sync", lambda: None)
-    for name in ("run_stage_exit_probe", "run_prelude_probe", "run_branch_probe"):
+    for name in (
+        "run_stage_exit_probe",
+        "run_prelude_probe",
+        "run_branch_probe",
+        "run_loop_outcome_probe",
+    ):
         monkeypatch.setattr(
             ce, name, (lambda label: lambda *a, **k: (calls.append(label), [])[1])(name)
         )
     assert ce.main(["--probe", "all", "--n", "1"]) == 0
-    assert calls == ["run_stage_exit_probe", "run_prelude_probe", "run_branch_probe"]
+    assert calls == [
+        "run_stage_exit_probe",
+        "run_prelude_probe",
+        "run_branch_probe",
+        "run_loop_outcome_probe",
+    ]
     calls.clear()
     assert ce.main(["--probe", "branch-path", "--n", "1"]) == 0
     assert calls == ["run_branch_probe"]
+    calls.clear()
+    assert ce.main(["--probe", "loop-outcome", "--n", "1"]) == 0
+    assert calls == ["run_loop_outcome_probe"]
 
 
 def test_branch_path_is_rejected_by_neither_argparse_nor_the_help() -> None:
@@ -2126,3 +2139,158 @@ def test_loader_rejects_an_escalation_whose_reverify_passes(tmp_path: Path) -> N
     data["scenarios"][2]["reverifyOutcome"] = "passed"
     with pytest.raises(RuntimeError, match="must\nreport findings|must report findings"):
         ce.load_branch_fixture(_write_fixture(tmp_path, data))
+
+
+# --- loop-outcome probe (REQ-EVAL-01) -----------------------------------------
+
+
+def _loop_fixture_dict() -> dict:
+    return json.loads(ce.LOOP_OUTCOME_FIXTURE_PATH.read_text(encoding="utf-8"))
+
+
+def _write_loop_fixture(tmp_path: Path, data: dict) -> Path:
+    path = tmp_path / "loop-fixture.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+@pytest.fixture()
+def loop_fixture() -> dict:
+    return ce.load_loop_outcome_fixture(ce.LOOP_OUTCOME_FIXTURE_PATH)
+
+
+@pytest.fixture()
+def loop_truth(tmp_path: Path, loop_fixture: dict) -> dict:
+    """Real ground truth from the real close, against a real fixture repository."""
+    root = tmp_path / "loop-truth"
+    root.mkdir()
+    ce.build_loop_outcome_fixture(root, loop_fixture)
+    return ce.expected_loop_exit(root, loop_fixture, loop_fixture["scenarios"][0])
+
+
+def test_the_shipped_loop_fixture_declares_the_resolved_route(loop_fixture: dict) -> None:
+    assert loop_fixture["schemaVersion"] == 1
+    scenario = loop_fixture["scenarios"][0]
+    assert scenario["outcome"] == "resolved"
+    assert scenario["expectedPrimaryCommand"] == (
+        f"/feature-forge:forge-5-loop {loop_fixture['feature']}"
+    )
+
+
+def test_loop_loader_hard_fails_on_a_foreign_schema_version(tmp_path: Path) -> None:
+    """The shared guard idiom: bool is not an int here, and no other version reads."""
+    for bad in (2, "1", True):
+        data = _loop_fixture_dict()
+        data["schemaVersion"] = bad
+        with pytest.raises(RuntimeError, match="schemaVersion"):
+            ce.load_loop_outcome_fixture(_write_loop_fixture(tmp_path, data))
+
+
+def test_loop_loader_rejects_branch_shaped_keys(tmp_path: Path) -> None:
+    """NOT a mirror of verify-fix-reverify.json: branch keys are unknown keys here."""
+    data = _loop_fixture_dict()
+    data["servedStage"] = "forge-1-prd"
+    with pytest.raises(RuntimeError, match="servedStage"):
+        ce.load_loop_outcome_fixture(_write_loop_fixture(tmp_path, data))
+    data = _loop_fixture_dict()
+    data["scenarios"][0]["expectedCommands"] = []
+    with pytest.raises(RuntimeError, match="expectedCommands"):
+        ce.load_loop_outcome_fixture(_write_loop_fixture(tmp_path, data))
+
+
+def test_loop_loader_rejects_a_complete_or_foreign_outcome(tmp_path: Path) -> None:
+    """`complete` routes a handoff, not the relaunch; a non-loop outcome is foreign."""
+    for bad, match in (
+        ("complete", "post-run facts"),
+        ("passed", "not a forge-5-loop outcome"),
+    ):
+        data = _loop_fixture_dict()
+        data["scenarios"][0]["outcome"] = bad
+        with pytest.raises(RuntimeError, match=match):
+            ce.load_loop_outcome_fixture(_write_loop_fixture(tmp_path, data))
+
+
+def test_loop_truth_fences_the_relaunch_and_ends_with_the_sentinel(
+    loop_fixture: dict, loop_truth: dict
+) -> None:
+    scenario = loop_fixture["scenarios"][0]
+    assert loop_truth["directives"]["primaryCommand"] == scenario["expectedPrimaryCommand"]
+    assert loop_truth["nextSteps"].rstrip().endswith(ce.SENTINEL)
+    assert f"```\n{scenario['expectedPrimaryCommand']}\n```" in loop_truth["nextSteps"]
+
+
+def test_loop_fixture_repo_holds_the_recovery_facts(
+    tmp_path: Path, loop_fixture: dict
+) -> None:
+    """The prompt's stated facts are on disk: an applied decision and a clean tree."""
+    root = tmp_path / "loop-run"
+    root.mkdir()
+    ce.build_loop_outcome_fixture(root, loop_fixture)
+    record = json.loads(
+        (root / "specs" / loop_fixture["feature"] / ".rauf" / "forge-decisions.json").read_text()
+    )
+    entry = record["decisions"][-1]
+    assert entry["itemId"] == ce.LOOP_FIXTURE_DECISION_ITEM
+    assert entry["appliedAt"] is not None
+    proc = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"], capture_output=True, text=True
+    )
+    assert proc.returncode == 0 and proc.stdout.strip() == ""
+
+
+def test_a_compliant_loop_close_scores_all_criteria(
+    loop_fixture: dict, loop_truth: dict
+) -> None:
+    scenario = loop_fixture["scenarios"][0]
+    text = "The recovery held and the counts are authoritative.\n\n" + loop_truth["nextSteps"]
+    transcript = {"ok": True, "final_text": text, "assistant_texts": [text]}
+    criteria = ce.score_loop_outcome(transcript, loop_truth, scenario)
+    assert tuple(criteria) == ce.LOOP_OUTCOME_CRITERIA
+    assert all(criteria.values()), criteria
+
+
+def test_trailing_text_after_the_loop_sentinel_fails(
+    loop_fixture: dict, loop_truth: dict
+) -> None:
+    scenario = loop_fixture["scenarios"][0]
+    text = loop_truth["nextSteps"] + "\n\nLet me know if you'd like me to continue!"
+    transcript = {"ok": True, "final_text": text, "assistant_texts": [text]}
+    criteria = ce.score_loop_outcome(transcript, loop_truth, scenario)
+    assert criteria["exactly_one_sentinel"] is True
+    assert criteria["nothing_after_sentinel"] is False
+
+
+def test_a_duplicated_loop_block_fails_the_single_sentinel_criterion(
+    loop_fixture: dict, loop_truth: dict
+) -> None:
+    scenario = loop_fixture["scenarios"][0]
+    transcript = {
+        "ok": True,
+        "final_text": loop_truth["nextSteps"],
+        "assistant_texts": [loop_truth["nextSteps"], loop_truth["nextSteps"]],
+    }
+    criteria = ce.score_loop_outcome(transcript, loop_truth, scenario)
+    assert criteria["exactly_one_sentinel"] is False
+
+
+def test_a_drifted_loop_primary_is_a_harness_defect_not_a_model_miss(
+    loop_fixture: dict, loop_truth: dict
+) -> None:
+    scenario = dict(loop_fixture["scenarios"][0])
+    scenario["expectedPrimaryCommand"] = f"/feature-forge:forge {loop_fixture['feature']}"
+    transcript = {"ok": True, "final_text": "x", "assistant_texts": ["x"]}
+    with pytest.raises(RuntimeError, match="drifted"):
+        ce.score_loop_outcome(transcript, loop_truth, scenario)
+
+
+def test_loop_prompt_supplies_the_facts_not_the_conclusion(loop_fixture: dict) -> None:
+    """The ladder must supply the outcome word; the prompt states only what is true."""
+    prompt = ce.loop_outcome_prompt(loop_fixture, loop_fixture["scenarios"][0])
+    assert "resolved" not in prompt.lower()
+    assert "Step 7" in prompt
+
+
+def test_loop_probe_reports_its_scenario_as_its_own_variant() -> None:
+    reports = ce.run_loop_outcome_probe(["model-x"], 0)  # n=0 drives no session
+    assert [(r.probe, r.variant) for r in reports] == [("loop-outcome", "resolved-resume")]
+    assert all(report.runs == 0 and report.rate is None for report in reports)

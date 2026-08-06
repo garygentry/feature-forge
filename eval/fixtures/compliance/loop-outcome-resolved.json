@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "feature": "widget-search",
+  "scenarios": [
+    {
+      "name": "resolved-resume",
+      "outcome": "resolved",
+      "expectedPrimaryCommand": "/feature-forge:forge-5-loop widget-search"
+    }
+  ]
+}

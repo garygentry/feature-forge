@@ -265,8 +265,8 @@
         "tests/test_compliance_eval.py's exact-equality --probe all list adds 'run_loop_outcome_probe' as the fourth entry, and a --probe loop-outcome case asserts it runs alone",
         "ruff check scripts/ eval/ passes; bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T15:31:14.206Z",
       "dependsOn": [
         "005"
       ],
