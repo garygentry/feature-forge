@@ -47,7 +47,7 @@ an epic member. Only the flags below are stage-specific; pass no others.
 |---|---|---|
 | `forge-0-epic` | `forge-0-epic` | `--next-feature "{member}"` when a concrete member exists |
 | `forge-1-prd` … `forge-4-backlog` | that stage's own id | none beyond identity/capability |
-| `forge-5-loop` | `forge-5-loop` | `--outcome` — one of `complete`, `partial`, `blocked`, `needs-human`, `deferred`, `resolved` |
+| `forge-5-loop` | `forge-5-loop` | `--outcome` — one of `complete`, `partial`, `blocked`, `needs-human`, `deferred`, `resolved`; optional `--cause dependency-starvation` with `--outcome partial` |
 | `forge-6-docs` | `forge-6-docs` | `--outcome` — `complete` or `blocked` |
 | direct `forge-verify` | `forge-verify` | `--owner direct`, `--outcome` (`passed`, `findings`, `skipped`, `failed`), and served-stage metadata |
 | nested `forge-verify` | `forge-verify` | `--owner nested`, plus the same outcome and served-stage metadata |

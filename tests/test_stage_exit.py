@@ -2648,6 +2648,73 @@ def test_every_loop_outcome_has_a_route_and_a_sentence() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 03 §5.3 — the --cause dependency-starvation validity matrix (REQ-ATTR-04)
+# --------------------------------------------------------------------------- #
+
+#: The sentence fragment only the starvation variant carries — its presence (or
+#: absence) is what distinguishes the two partial texts below.
+STARVED_MARKER = "the iteration limit was NOT the constraint"
+
+
+def test_cause_with_loop_partial_swaps_in_the_starved_text(tmp_path: Path) -> None:
+    """--cause dependency-starvation is accepted ONLY here, and only changes text."""
+    root = _project(tmp_path, config={})
+    payload = _loop(root, "partial", "widget", "--cause", "dependency-starvation")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["outcome"] == "partial"
+    assert d["primaryCommand"] == LOOP_RESUME, "the route is unchanged: still a resume"
+    assert f"```\n{LOOP_RESUME}\n```" in block
+    assert STARVED_MARKER in block
+    assert "unblock the roots named in the starvation report above" in block
+
+
+def test_partial_without_cause_renders_todays_text_verbatim(tmp_path: Path) -> None:
+    """Absent --cause, partial is byte-for-byte today's sentence — no ripple."""
+    session = _load_session()
+    root = _project(tmp_path, config={})
+    block = _loop(root, "partial")["nextSteps"]
+    assert session._LOOP_OUTCOME_TEXT["partial"].format(feature="widget") in block
+    assert STARVED_MARKER not in block
+
+
+@pytest.mark.parametrize(
+    "outcome", [o for o in LOOP_OUTCOMES if o != "partial"],
+    ids=[o for o in LOOP_OUTCOMES if o != "partial"],
+)
+def test_cause_is_rejected_for_every_other_loop_outcome(
+    tmp_path: Path, outcome: str
+) -> None:
+    """Any non-partial outcome exits 2 before any output (fail-closed, no sentinel)."""
+    root = _project(tmp_path, config={})
+    err = _rejected(root, "--feature", "widget", "--stage", "forge-5-loop",
+                    "--outcome", outcome, "--cause", "dependency-starvation")
+    assert "--cause dependency-starvation is valid only with" in err
+
+
+@pytest.mark.parametrize(
+    "stage", [s for s in EXIT_STAGES if s != "forge-5-loop"],
+    ids=[s for s in EXIT_STAGES if s != "forge-5-loop"],
+)
+def test_cause_is_rejected_for_every_other_stage(tmp_path: Path, stage: str) -> None:
+    """Even an otherwise-legal exit for any other stage exits 2 with --cause."""
+    root = _project(tmp_path, config={})
+    err = _rejected(root, "--feature", "widget", *_minimal_args(stage),
+                    "--cause", "dependency-starvation")
+    assert "--cause dependency-starvation is valid only with" in err
+
+
+def test_an_unknown_cause_value_is_rejected_by_argparse(tmp_path: Path) -> None:
+    """`choices` holds the value domain closed; only dependency-starvation parses."""
+    root = _project(tmp_path, config={})
+    for value in ("iteration-limit", "starvation", ""):
+        proc = _run(root, "--feature", "widget", "--stage", "forge-5-loop",
+                    "--outcome", "partial", "--cause", value)
+        assert proc.returncode == 2, (value, proc.stdout, proc.stderr)
+        assert proc.stdout == "", "rejection must precede any payload"
+        assert SENTINEL not in proc.stdout + proc.stderr
+
+
+# --------------------------------------------------------------------------- #
 # 07 §3.7 — epic edit-mode live member routing and safety (02 §9, issue #175)
 # --------------------------------------------------------------------------- #
 

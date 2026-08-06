@@ -229,7 +229,7 @@ is not configured. You will already have most of this from the live tally in 3e.
 ### 4b. Report Results
 
 Present a summary to the user. Pick **every** branch that applies (a run can be both
-blocked and needs-human) and render its report. The five verbatim result-report output templates — **all-done**, **needs-human**, **blocked**, **deferred**, and **pending** (iteration limit reached) — are in `references/result-reporting.md`, together with the Step 7 `LoopOutcome` ladder these same counts feed. The reports are descriptive only: they carry no next command, and the run does not end here. If the authoritative counts cannot be obtained at all (4a failed or its output does not parse), follow **Operational failure before the counts are known** in that same file: surface the failure and its recovery, and close nothing — no outcome, no stage exit, no terminal block.
+blocked and needs-human) and render its report. The five verbatim result-report output templates — **all-done**, **needs-human**, **blocked**, **deferred**, and **pending** (with a conditional cause) — are in `references/result-reporting.md`, together with the Step 7 `LoopOutcome` ladder these same counts feed. The reports are descriptive only: they carry no next command, and the run does not end here. If the authoritative counts cannot be obtained at all (4a failed or its output does not parse), follow **Operational failure before the counts are known** in that same file: surface the failure and its recovery, and close nothing — no outcome, no stage exit, no terminal block.
 
 ## Step 5: Update Pipeline State
 

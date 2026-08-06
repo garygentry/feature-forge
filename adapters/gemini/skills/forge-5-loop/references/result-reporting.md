@@ -64,13 +64,34 @@ Loop completed for {feature}.
   Deferred:  {deferred} items (no signal after retries — likely just need another pass)
 ```
 
-**Some items still pending (iteration limit reached):**
+**Some items still pending** — the parenthetical cause is chosen, never hardcoded:
 ```
 Loop completed for {feature}.
   Completed: {done}/{total}
-  Pending:   {pending} items (iteration limit reached)
+  Pending:   {pending} items ({cause})
   Blocked:   {blocked} items
 ```
+Render `{cause}` as "iteration limit reached" **only** when `iteration == maxIterations`
+AND `selectable > 0` — cite the `iteration`/`maxIterations` counters from
+`{loopRunner.stateDir}/state.json` and `selectable` from `backlog-topology --items-stdin
+--json` run over the same authoritative item JSON as the counts above. Otherwise —
+`selectable == 0` with items still pending while `iteration < maxIterations` — the
+iteration limit was NOT the constraint: drop the parenthetical and render this
+dependency-starvation report instead, naming each blocking root and its gated-subtree
+size from `backlog-topology`'s `starvation.blockingRoots[].{id, gatedCount}` and
+`itemCount`, then close the stage with `--cause dependency-starvation` in Step 7:
+```
+Loop stopped for {feature} with {pending} item(s) still pending, but the iteration
+limit was NOT the constraint ({iteration}/{maxIterations} iterations used).
+No pending item was selectable — every one is gated behind unblocked roots:
+  - {rootId}: {rootTitle} — gates {gatedCount}/{itemCount} items
+Unblock these roots (their subtrees free up on the next run), then run the loop again.
+```
+Both branches cite their authoritative source: the iteration-limit branch the
+`state.json` iteration counters, the starvation branch the backlog summary counts plus
+the `backlog-topology` output (`selectable`, `blockingRoots`, `gatedCount`,
+`itemCount`). A cause any of those counters contradicts — e.g. "iteration limit
+reached" while `iteration < maxIterations` — is a reportable defect.
 
 ## Selecting the one `LoopOutcome` (Step 7)
 

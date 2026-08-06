@@ -14,9 +14,9 @@ root navigator:
     python3 forge-session.py check-epic-base --feature F [--specs-dir DIR] \
         [--config FILE] [--epic E] [--json]
     python3 forge-session.py stage-exit --feature F --stage S [--owner direct|nested] \
-        [--outcome O] [--verify-mode M] [--served-stage S] \
-        [--verify-capability interactive|manual] [--specs-dir DIR] [--config FILE] \
-        [--epic E] [--next-feature N] [--host claude|generic|pi] [--json]
+        [--outcome O] [--cause dependency-starvation] [--verify-mode M] \
+        [--served-stage S] [--verify-capability interactive|manual] [--specs-dir DIR] \
+        [--config FILE] [--epic E] [--next-feature N] [--host claude|generic|pi] [--json]
     python3 forge-session.py effective-config [--config FILE] [--schema PATH] [--json]
 
 Plus the `state-*` write verbs, which author `.pipeline-state.json` so no stage
@@ -3426,6 +3426,17 @@ _LOOP_OUTCOME_TEXT: Final[dict[str, str]] = {
     ),
 }
 
+#: The starvation variant of the `partial` next-steps sentence (REQ-ATTR-02): names
+#: the unblock path instead of the iteration limit, which was NOT the binding
+#: constraint. Selected only by ``--cause dependency-starvation`` (REQ-ATTR-04).
+_LOOP_PARTIAL_STARVED_TEXT: Final[str] = (
+    "The loop stopped for {feature} with backlog items still pending, but the "
+    "iteration limit was NOT the constraint — no pending item was selectable because "
+    "unblocked root items gate the rest of the backlog. The recorded state is "
+    "resumable and nothing downstream is ready: unblock the roots named in the "
+    "starvation report above, then run the loop again below to continue."
+)
+
 #: The `complete` preamble, selected by where the handoff actually lands. The epic
 #: rows name the epic and its live rollup, so the operator can see WHY the handoff is
 #: this member's own documentation rather than another member (or vice versa).
@@ -3561,6 +3572,7 @@ def _loop_route(
     resolved: bool,
     verify_canonical: str,
     fix_canonical: str | None,
+    cause: str | None = None,
 ) -> tuple[str, str | None, str, bool]:
     """Route one loop result — the outcome table.
 
@@ -3585,6 +3597,10 @@ def _loop_route(
             else None. A live report outranks a fresh verify on the ``complete``
             handoff: findings already exist at this exact revision, so the fenced
             action is applying them, exactly as on a production re-exit.
+        cause: The already-validated attribution annotation — only
+            ``"dependency-starvation"`` with ``outcome == "partial"``, else None.
+            Swaps the partial next-steps sentence for the starvation variant; the
+            route itself is unchanged (partial stays a resume either way).
 
     Returns:
         `(primary_canonical, deferred_canonical, outcome_text, advancing)`, matching
@@ -3609,7 +3625,11 @@ def _loop_route(
             if kind == "resume"
             else f"/feature-forge:forge {feature}"
         )
-        return primary, None, _LOOP_OUTCOME_TEXT[outcome].format(feature=feature), False
+        if outcome == "partial" and cause == "dependency-starvation":
+            text = _LOOP_PARTIAL_STARVED_TEXT.format(feature=feature)
+        else:
+            text = _LOOP_OUTCOME_TEXT[outcome].format(feature=feature)
+        return primary, None, text, False
 
     handoff = successor_command or f"/feature-forge:forge {feature}"
     fields: dict[str, object] = {"feature": feature, "epic": epic}
@@ -3772,6 +3792,7 @@ def stage_exit(
     outcome: str | None = None,
     owner: str | None = None,
     verify_capability: str = "manual",
+    cause: str | None = None,
 ) -> StageExitPayload:
     """Compute a deterministic stage-exit payload.
 
@@ -3792,6 +3813,10 @@ def stage_exit(
             capability is permission, not tool presence: a dispatch permitted
             only once the user has asked is still `interactive`, because the
             `standard` gate's own prompt supplies that request.
+        cause: Pending-attribution annotation (`dependency-starvation`), valid
+            only with `--stage forge-5-loop --outcome partial` (REQ-ATTR-04).
+            It swaps the partial next-steps sentence for the starvation variant
+            and changes no routing.
 
     Returns:
         A JSON-serializable `StageExitPayload` dictionary.
@@ -3920,6 +3945,14 @@ def stage_exit(
         raise UsageError(
             f"--outcome {outcome!r} is not valid for {stage}; expected one of "
             f"{', '.join(sorted(allowed_outcomes))}"
+        )
+
+    # --cause is a forge-5-loop/partial-only attribution annotation (REQ-ATTR-04).
+    # argparse `choices` already restricts the value; this restricts the combination.
+    if cause is not None and not (stage == "forge-5-loop" and outcome == "partial"):
+        raise UsageError(
+            "--cause dependency-starvation is valid only with "
+            "--stage forge-5-loop --outcome partial"
         )
 
     # 5. Ownership: required for the branch skills, rejected for stages 0-6.
@@ -4260,6 +4293,7 @@ def stage_exit(
             resolved,
             verify_canonical,
             fix_canonical if live_findings_report else None,
+            cause,
         )
         if blocking_reconcile:
             # Same reconcile-first rule as every other advancing route — but the
@@ -6422,6 +6456,11 @@ def main() -> int:
     # argparse cannot express. `stage_exit` validates it against EXIT_OUTCOMES.
     p_exit.add_argument("--outcome", default=None,
                         help="Stage-specific outcome (loop/docs/verify/fix only)")
+    p_exit.add_argument(
+        "--cause", default=None, dest="cause", choices=("dependency-starvation",),
+        help="Pending-attribution cause; valid only with "
+             "--stage forge-5-loop --outcome partial",
+    )
     p_exit.add_argument("--owner", default=None, choices=get_args(ExitOwner),
                         help="Branch terminal ownership (forge-verify/forge-fix only)")
     p_exit.add_argument("--verify-capability", default="manual",
@@ -6741,6 +6780,7 @@ def main() -> int:
                 args.outcome,
                 args.owner,
                 args.verify_capability,
+                args.cause,
             )
             if args.json_output:
                 print(json.dumps(payload, indent=2, ensure_ascii=False))

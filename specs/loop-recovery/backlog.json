@@ -149,8 +149,8 @@
         "tests/test_stage_exit.py --cause validity matrix passes (accepted vs rejected pairs; rejection before payload)",
         "python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T14:59:07.303Z",
       "dependsOn": [
         "004",
         "005"
