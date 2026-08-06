@@ -44,8 +44,8 @@
         "tests/test_decisions_schema_conformance.py passes: registry-completeness scan covers every decision-* verb without disturbing the state-* guard; every verb's on-disk output passes validate_decisions()==[]; the record→defer→re-record→apply sequence holds append-only invariants",
         "python3 scripts/build-adapters.py run and adapters/** committed (no drift); bash scripts/validate.sh passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-06T13:53:39.704Z",
       "dependsOn": [
         "001"
       ],
