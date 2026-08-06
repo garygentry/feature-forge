@@ -36,15 +36,16 @@
       "commitHash": "67e15aaab08efb4eda83baf0e90a211760bde789"
     },
     "forge-verify-tech": {
-      "status": "findings-applied",
-      "findingsFile": ".verification/VERIFY-tech-2026-08-05.md",
-      "findingsCount": 11,
-      "fixedAt": "2026-08-06T00:42:07Z",
-      "commitHash": "5a5ce13764739623ac290b4b42104aad2245d435"
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-tech-2026-08-05-round2.md",
+      "findingsCount": 4,
+      "verifiedAt": "2026-08-06T00:52:25Z",
+      "verifiedStageVersion": 1,
+      "commitHash": null
     }
   },
   "currentStage": "forge-2-tech",
-  "updatedAt": "2026-08-06T00:42:07Z",
+  "updatedAt": "2026-08-06T00:52:25Z",
   "branch": "forge/loop-recovery",
-  "notes": "Carry into forge-2-tech: re-verify advisories V-014..V-016 (VERIFY-prd-2026-08-05-round2.md) — esp. V-015: the decision-record location chosen for OQ-2 must fall under an existing gitignore rule or the clean-tree gates break; V-014: cite the real per-obligation gates, not 'parity tests'."
+  "notes": "Carry into forge-3-specs: tech re-verify advisories V-012..V-015 (VERIFY-tech-2026-08-05-round2.md) — esp. V-012: rename test_loop_accepts_exactly_the_five_loop_outcomes to ..._six_... when resolved lands (it goes green silently otherwise); V-015: vendor the three verify-test-debt blockedReason strings verbatim into test_decision_clustering.py (source .rauf archive is prunable; binding Jaccard pair clears 0.5 by only 0.028)."
 }
