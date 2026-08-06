@@ -21,10 +21,23 @@
       "verifiedAt": "2026-08-05T21:06:23Z",
       "verifiedStageVersion": 1,
       "commitHash": "e646c002738e2cb85c3e532184fbfceddcdeeb69"
+    },
+    "forge-2-tech": {
+      "status": "complete",
+      "startedAt": "2026-08-05T21:35:54Z",
+      "artifacts": [
+        "tech-spec.md"
+      ],
+      "completedAt": "2026-08-06T00:01:45Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 1
+      },
+      "commitHash": null
     }
   },
-  "currentStage": "forge-1-prd",
-  "updatedAt": "2026-08-05T21:06:23Z",
+  "currentStage": "forge-2-tech",
+  "updatedAt": "2026-08-06T00:01:45Z",
   "branch": "forge/loop-recovery",
   "notes": "Carry into forge-2-tech: re-verify advisories V-014..V-016 (VERIFY-prd-2026-08-05-round2.md) — esp. V-015: the decision-record location chosen for OQ-2 must fall under an existing gitignore rule or the clean-tree gates break; V-014: cite the real per-obligation gates, not 'parity tests'."
 }
