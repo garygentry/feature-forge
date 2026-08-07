@@ -115,11 +115,15 @@ Verify the file exists on disk. If not, STOP and tell the user: "No backlog.json
 
 The runner commits each item onto the current branch. Skip if not a git repo or `branchPerFeature` is false. Otherwise run the **Branch Reconciliation** block in `references/shared-conventions.md` (it runs `reconcile-branch` and, on `warn-drift` — you are on the default branch — strongly recommends creating `{branchPrefix}{feature}` via `AskUserQuestion` before the loop commits; on `adopt-current` it updates the recorded branch to the current one, never pushing you back to a stale/imposed branch). Never hard-stop.
 
+### 1g. Stranded-Work Pre-flight (if using git)
+
+Run `git status --porcelain`. If it reports changes **and** `{backlogDir}/{loopRunner.stateDir}/state.json` exists from a previous run, **STOP**: name that run (its `startedAt`, `currentItem`, and `blockedItems` from `state.json`) and point the user at the **Post-Run Tree Reconciliation** section of `references/recovery-procedure.md` to commit / stash / discard the stranded work before relaunch — never auto-pass `--force`. If the tree is dirty with **no** prior-run `state.json`, keep today's behavior (surface it; let the user commit/stash or pass `--force`). A clean tree is silent. rauf's own launch refusal remains the backstop.
+
 ## Step 2: Construct the Loop Command
 
 ### 2a. Analyze Backlog
 
-Run the **list command** (`loopRunner.listCommand`, default `rauf backlog list . --backlog {backlogDir} --json`) and count items by status: `pending`, `in_progress`, `done`, `blocked`.
+Run the **list command** (`loopRunner.listCommand`, default `rauf backlog list . --backlog {backlogDir} --json`) and count items by status: `pending`, `in_progress`, `done`, `blocked`. Pipe that same list-command JSON into `backlog-topology --items-stdin --json` (a `forge-session.py` verb — invoke it via Step 3a's `$R` fence) and read `maxChainDepth` to report alongside the iteration count; this is advisory only — no prompt, no operator decision.
 
 Calculate the iteration count: `ceil((pending + in_progress) * loopIterationMultiplier)` where `loopIterationMultiplier` comes from `forge.config.json` (default: 1.5). This headroom allows retries without exhausting iterations.
 
@@ -159,6 +163,7 @@ Backlog summary:
   - Done: {done}
   - Blocked: {blocked}
   - Iterations: {iterationCount} ({activeItems} items x {loopIterationMultiplier} multiplier)
+  - Max chain depth: {maxChainDepth} — depth bounds achievable progress regardless of iteration budget
 
 For the model-selection precedence (item.model > --model/options > project default >
 provider default), read references/runner-contract.md.
@@ -203,21 +208,12 @@ Follow the **Inform-user output template (Step 3c)** section of `references/runn
 ### 3d. Arm a Monitor on the event stream, and react to events
 
 Arm the **`Monitor` tool** on the structured event stream (the NDJSON file, or the
-human log as fallback) so events flow back into this session as they happen. Use
-**`persistent: true`** — runs can exceed `Monitor`'s maximum `timeout_ms` (1 hour),
-and a bounded timeout would silently stop watching a still-running loop. The filter
-MUST match every terminal and exception state, not just the happy path (silence is
-not success). Monitor the **structured** surface, never raw `RAUF_*` tokens.
-
-Each Monitor event arrives as a message; react per type — surface `needs_human` /
-`loop_error` immediately with a `PushNotification`, coalesce `item_completed` into
-milestones, and treat `llm_stuck_warning` as a hang warning. A `needs_human` /
-`blocked` signal does **not** pause the loop — the runner sets the item aside and
-keeps going.
-
-For the exact Monitor commands (NDJSON `jq` filter and the log-fallback `grep`
-prefixes), the coverage-complete filter event list, and the full per-event reaction
-rules, read `references/runner-contract.md`.
+human log as fallback) with **`persistent: true`**, a coverage-complete filter
+matching every terminal and exception state (silence is not success), and react to
+each event as it arrives. The exact Monitor commands, the filter event list, and the
+full per-event reaction rules (`needs_human` / `loop_error` surfaced immediately with
+a `PushNotification`, `item_completed` coalesced into milestones, `llm_stuck_warning`
+as a hang warning) are in `references/runner-contract.md` — follow them verbatim.
 
 ### 3f. Reach completion
 
@@ -238,7 +234,7 @@ is not configured. You will already have most of this from the live tally in 3e.
 ### 4b. Report Results
 
 Present a summary to the user. Pick **every** branch that applies (a run can be both
-blocked and needs-human) and render its report. The five verbatim result-report output templates — **all-done**, **needs-human**, **blocked**, **deferred**, and **pending** (iteration limit reached) — are in `references/result-reporting.md`, together with the Step 7 `LoopOutcome` ladder these same counts feed. The reports are descriptive only: they carry no next command, and the run does not end here. If the authoritative counts cannot be obtained at all (4a failed or its output does not parse), follow **Operational failure before the counts are known** in that same file: surface the failure and its recovery, and close nothing — no outcome, no stage exit, no terminal block.
+blocked and needs-human) and render its report. The five verbatim result-report output templates — **all-done**, **needs-human**, **blocked**, **deferred**, and **pending** (with a conditional cause) — are in `references/result-reporting.md`, together with the Step 7 `LoopOutcome` ladder these same counts feed. The reports are descriptive only: they carry no next command, and the run does not end here. If the authoritative counts cannot be obtained at all (4a failed or its output does not parse), follow **Operational failure before the counts are known** in that same file: surface the failure and its recovery, and close nothing — no outcome, no stage exit, no terminal block.
 
 ## Step 5: Update Pipeline State
 
@@ -277,7 +273,7 @@ python3 "$R/scripts/forge-session.py" state-verify --feature "{feature}" --stage
 
 Every loop run ends here, and ends here **exactly once** — standalone or epic member, complete or not.
 
-First select the single `LoopOutcome` with the ladder in `references/result-reporting.md` (`needs-human` → `blocked` → `deferred` → `partial` → `complete`, first match wins), reading it from Step 4a's authoritative counts and never from the runner's process exit code. If those counts were never obtained, follow that file's operational-failure rule instead: report the failure and its recovery and run no exit at all.
+First select the single `LoopOutcome` with the ladder in `references/result-reporting.md` (`resolved` → `needs-human` → `blocked` → `deferred` → `partial` → `complete`, first match wins), reading it from Step 4a's authoritative counts and never from the runner's process exit code. If those counts were never obtained, follow that file's operational-failure rule instead: report the failure and its recovery and run no exit at all.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 

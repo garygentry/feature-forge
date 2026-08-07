@@ -6,7 +6,7 @@ catalog of descriptions. It cannot see what happens once a skill is driving, whi
 behavior the Claude 5 adaptation program is about. This harness measures that, over N runs
 per model, and reports a RATE rather than pass/fail.
 
-Three probes:
+Four probes:
 
 PROBE 1 — stage-exit compliance (`--probe stage-exit`)
     Drives a forge authoring stage to its close in a fresh headless session against a
@@ -39,6 +39,14 @@ PROBE 3 — branch path compliance (`--probe branch-path`)
     `stage-exit/cold`|`warm` cells: that baseline only ever measured the already-scripted
     linear authoring path and is not evidence for diversion compliance.
 
+PROBE 4 — loop outcome compliance (`--probe loop-outcome`)
+    Drives a forge-5-loop close whose Post-Run Recovery Procedure already succeeded —
+    the `resolved` route — and scores the terminal output on exactly three things:
+    exactly one sentinel line, nothing after it, and the fenced primary command being
+    the loop relaunch `/feature-forge:forge-5-loop {feature}` (the state is resumable
+    and nothing downstream is ready). Keeps the new outcome measured rather than
+    shipped on faith (REQ-EVAL-01 — the #176 lesson).
+
 Driver
 ------
 Both probes need the real host harness (system prompt, skill loading, tool loop), not a
@@ -52,8 +60,9 @@ driver prints "skipped" and exits 0. The only non-zero exit is a harness bug. Lo
 by default — this is deliberately NOT wired into `.github/workflows/eval.yml`.
 
 Usage:
-    python3 eval/run-compliance-eval.py [--probe stage-exit|r2-prelude|branch-path|all]
-                                        [--models A,B] [--n N] [--json] [--out FILE]
+    python3 eval/run-compliance-eval.py
+        [--probe stage-exit|r2-prelude|branch-path|loop-outcome|all]
+        [--models A,B] [--n N] [--json] [--out FILE]
 
 Each run costs real tokens (roughly $0.30–$1.00 at time of writing). The default N is
 deliberately small; the report prints observed cost so you can size a larger sweep.
@@ -1729,6 +1738,390 @@ def score_prelude(transcript: dict) -> dict[str, bool]:
 
 
 # --------------------------------------------------------------------------- #
+# Probe 4 — loop outcome compliance (the resolved close)
+# --------------------------------------------------------------------------- #
+
+
+#: The loop-outcome fixture. Nested under `compliance/` for the same reason as the
+#: branch fixture (below `run-eval.py`'s non-recursive glob); read by path, never
+#: globbed.
+LOOP_OUTCOME_FIXTURE_PATH = (
+    REPO_ROOT / "eval" / "fixtures" / "compliance" / "loop-outcome-resolved.json"
+)
+
+#: This fixture's OWN required-key sets. Deliberately NOT the branch fixture's: a loop
+#: close serves no stage and simulates no verify diversion, so `servedStage`/
+#: `verifyMode`/`expectedCommands` do not apply here and would be dead weight a future
+#: editor has to explain away.
+_LOOP_OUTCOME_TOP_KEYS: Final[frozenset[str]] = frozenset(
+    {"schemaVersion", "feature", "scenarios"}
+)
+_LOOP_OUTCOME_SCENARIO_KEYS: Final[frozenset[str]] = frozenset(
+    {"name", "outcome", "expectedPrimaryCommand"}
+)
+
+#: The exact criteria `score_loop_outcome` reports — REQ-EVAL-01's three checks, and
+#: nothing else. Declared once so the scorer, the report, and the tests all name the
+#: same set.
+LOOP_OUTCOME_CRITERIA: Final[tuple[str, ...]] = (
+    "exactly_one_sentinel",
+    "nothing_after_sentinel",
+    "primary_command_fenced",
+)
+
+#: The backlog item whose needs-human stop the seeded recovery answered.
+LOOP_FIXTURE_DECISION_ITEM: Final[str] = "002"
+LOOP_FIXTURE_QUESTION: Final[str] = (
+    "REQ-SEARCH-02: how should equal-relevance results order?"
+)
+LOOP_FIXTURE_ANSWER: Final[str] = "Break equal-relevance ties by name, ascending."
+
+#: A backlog parked exactly where a completed recovery leaves it: the affected item is
+#: `pending` again and carries its applied `humanAnswer`, nothing is blocked or
+#: needs-human, and pending work remains — so the close resumes the loop rather than
+#: handing anything off.
+LOOP_FIXTURE_BACKLOG: Final[dict] = {
+    "schemaVersion": "1",
+    "project": "widget-search",
+    "items": [
+        {"id": "001", "title": "Add the search endpoint", "status": "done",
+         "dependsOn": []},
+        {"id": LOOP_FIXTURE_DECISION_ITEM, "title": "Rank results by relevance",
+         "status": "pending", "humanAnswer": LOOP_FIXTURE_ANSWER, "dependsOn": ["001"]},
+        {"id": "003", "title": "Wire the empty-query reset", "status": "pending",
+         "dependsOn": [LOOP_FIXTURE_DECISION_ITEM]},
+    ],
+}
+
+#: The supplied post-recovery facts, keyed by the outcome the ladder should land on.
+#: The facts state what is on disk; the outcome word itself never appears — selecting
+#: it is the skill's job, and a prompt that names it would measure prompt-following
+#: instead (the escalation-prompt lesson). A scenario outcome without an entry here is
+#: a fixture error, not a silently-wrong prompt.
+_LOOP_SCENARIO_FACTS: Final[dict[str, str]] = {
+    "resolved": (
+        "A loop run for this feature stopped earlier because item "
+        f"{LOOP_FIXTURE_DECISION_ITEM} asked a question only a human could answer. "
+        "The Post-Run Recovery Procedure has ALREADY run to completion in this "
+        "session, and its gate passed on all three checks: the recorded decision for "
+        f"item {LOOP_FIXTURE_DECISION_ITEM} is applied (`decision-list --unapplied` "
+        "returns nothing for it), `git status --porcelain` is clean, and the per-item "
+        f"re-read shows item {LOOP_FIXTURE_DECISION_ITEM} left blocked/needsHuman — "
+        "it is pending again with its answer recorded, and no item is blocked or "
+        "needs-human. The authoritative final counts (Step 4a) are: 1 done, "
+        "2 pending, 0 in progress, 0 blocked, 0 needs-human, 0 deferred."
+    ),
+}
+
+
+class LoopOutcomeScenario(TypedDict):
+    """One deterministic loop-close compliance scenario.
+
+    Total. `outcome` is the fixture's INPUT — the post-run situation being supplied —
+    while `expectedPrimaryCommand` is the ground truth being scored.
+    """
+
+    # Stable scenario id, used in scorer output and progress ticks.
+    name: str
+    # The loop outcome whose close this scenario drives. Validated against the real
+    # `EXIT_OUTCOMES["forge-5-loop"]` domain and against `_LOOP_SCENARIO_FACTS`.
+    outcome: str
+    # The single command that MUST be primary (and fenced) at the terminus — for the
+    # resolved route, the loop relaunch `/feature-forge:forge-5-loop {feature}`.
+    expectedPrimaryCommand: str
+
+
+class LoopOutcomeFixture(TypedDict):
+    """Versioned offline input for the loop-outcome probe.
+
+    Total. Loaded only by this probe, by its OWN loader — it shares the hard-fail
+    `schemaVersion` guard idiom with the branch-path reader and nothing else.
+    """
+
+    # Fixture schema version. Literal[1] — a shape change bumps this rather than
+    # mutating version 1 in place, so an older probe fails loudly.
+    schemaVersion: Literal[1]
+    # Synthetic feature name built into the scratch repo. Never a real repo feature.
+    feature: str
+    # The scenarios to run. Non-empty; names must be unique.
+    scenarios: list[LoopOutcomeScenario]
+
+
+def _loop_fixture_fail(message: str) -> None:
+    """Raise the fixture-invariant error, keeping every call site one line."""
+    raise RuntimeError(f"{LOOP_OUTCOME_FIXTURE_PATH.name}: {message}")
+
+
+def load_loop_outcome_fixture(path: Path) -> LoopOutcomeFixture:
+    """Load and validate the loop-outcome fixture.
+
+    Args:
+        path: Exact JSON fixture path.
+
+    Returns:
+        A validated version-1 fixture with scenarios in file order.
+
+    Raises:
+        OSError: The fixture cannot be read.
+        json.JSONDecodeError: The fixture is malformed JSON.
+        RuntimeError: Its version, keys, outcome domain, or feature identity violate
+            this specification.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        _loop_fixture_fail(f"root must be an object, got {type(data).__name__}")
+    unknown = sorted(set(data) - _LOOP_OUTCOME_TOP_KEYS)
+    if unknown:
+        _loop_fixture_fail(f"unknown top-level key(s) {unknown}")
+    missing = sorted(_LOOP_OUTCOME_TOP_KEYS - set(data))
+    if missing:
+        _loop_fixture_fail(f"missing top-level key(s) {missing}")
+
+    version = data["schemaVersion"]
+    # `bool` is an `int` subclass, so True would otherwise validate as an integer —
+    # the same hard-fail guard idiom the branch-path reader uses.
+    if isinstance(version, bool) or version != 1:
+        _loop_fixture_fail(f"unsupported schemaVersion {version!r}; this probe reads version 1")
+
+    session = _load_session_module()
+    feature = data["feature"]
+    if not isinstance(feature, str) or not session.SAFE_NAME_RE.match(feature):
+        _loop_fixture_fail(f"feature {feature!r} is not a safe name")
+    loop_outcomes = session.EXIT_OUTCOMES["forge-5-loop"]
+
+    scenarios = data["scenarios"]
+    if not isinstance(scenarios, list) or not scenarios:
+        _loop_fixture_fail(f"scenarios must be a non-empty list, got {scenarios!r}")
+    names = [s.get("name") if isinstance(s, dict) else None for s in scenarios]
+    if len(names) != len(set(names)):
+        _loop_fixture_fail(f"scenario names must be unique, got {names}")
+    for scenario in scenarios:
+        if not isinstance(scenario, dict):
+            _loop_fixture_fail(
+                f"scenarios entries must be objects, got {type(scenario).__name__}"
+            )
+        name = scenario.get("name")
+        if not isinstance(name, str) or not name:
+            _loop_fixture_fail(f"scenario name must be a non-empty string, got {name!r}")
+        unknown = sorted(set(scenario) - _LOOP_OUTCOME_SCENARIO_KEYS)
+        if unknown:
+            _loop_fixture_fail(f"scenario {name!r} has unknown key(s) {unknown}")
+        missing = sorted(_LOOP_OUTCOME_SCENARIO_KEYS - set(scenario))
+        if missing:
+            _loop_fixture_fail(f"scenario {name!r} is missing key(s) {missing}")
+        outcome = scenario["outcome"]
+        if outcome not in loop_outcomes:
+            _loop_fixture_fail(
+                f"scenario {name!r} outcome {outcome!r} is not a forge-5-loop outcome"
+            )
+        if outcome not in _LOOP_SCENARIO_FACTS:
+            _loop_fixture_fail(
+                f"scenario {name!r} outcome {outcome!r} has no supplied post-run facts; "
+                "add a _LOOP_SCENARIO_FACTS entry before adding the scenario"
+            )
+        primary = scenario["expectedPrimaryCommand"]
+        if not isinstance(primary, str) or not primary:
+            _loop_fixture_fail(
+                f"scenario {name!r} expectedPrimaryCommand must be a non-empty string"
+            )
+        if feature not in primary:
+            _loop_fixture_fail(
+                f"scenario {name!r} expectedPrimaryCommand does not name {feature!r}"
+            )
+    return data  # type: ignore[return-value]
+
+
+def _decision_verb(root: Path, verb: str, *args: str) -> None:
+    """Run a real `decision-*` verb against the scratch repo.
+
+    The decision record is NEVER hand-authored — the R4 conformance rule for
+    `forge-decisions.json` (its verbs are the only writers) applies to fixtures too,
+    exactly as `_state_verify` applies it to `.pipeline-state.json`.
+    """
+    proc = subprocess.run(
+        [sys.executable, str(HELPER), verb, *args],
+        cwd=str(root), capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"{verb} failed on the loop fixture: {proc.stderr}")
+
+
+def build_loop_outcome_fixture(root: Path, fixture: LoopOutcomeFixture) -> None:
+    """Build a throwaway repo parked at the forge-5-loop close, recovery already done.
+
+    The recovery facts the prompt states are actually ON DISK, so a careful model
+    that re-checks them finds them true rather than questioning the fixture: the
+    decision record is seeded through the real `decision-record`/`decision-apply`
+    verbs, the answered item is pending again with its `humanAnswer`, `.rauf/` is
+    ignored exactly as the shipped `.gitignore` ignores it, and everything else is
+    committed so the tree is clean — the three facts the resolved gate names.
+
+    Raises:
+        OSError: Fixture files cannot be created.
+        RuntimeError: Fixture values are invalid or the repository cannot initialize.
+    """
+    feature = fixture["feature"]
+    session = _load_session_module()
+    if not isinstance(feature, str) or not session.SAFE_NAME_RE.match(feature):
+        raise RuntimeError(f"loop fixture feature {feature!r} is not a safe name")
+
+    feature_dir = root / "specs" / feature
+    feature_dir.mkdir(parents=True)
+    (root / "forge.config.json").write_text(
+        json.dumps(
+            {"specsDir": "specs", "gitCommitAfterStage": True, "commitPrefix": "feat"},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    # Mirrors the shipped repo layout: runtime `.rauf/` state (including the decision
+    # record) is untracked, so seeding it cannot dirty the tree the gate checks.
+    (root / ".gitignore").write_text("**/.rauf/*\n", encoding="utf-8")
+    (feature_dir / "backlog.json").write_text(
+        json.dumps(LOOP_FIXTURE_BACKLOG, indent=2) + "\n", encoding="utf-8"
+    )
+    # Schema-valid on purpose, for the same reason as the linear fixture: a defective
+    # state file measures tolerance for a broken artifact, not close compliance. The
+    # loop stage is legitimately still in-progress — every non-complete outcome
+    # resumes or recovers, so nothing has marked it complete.
+    (feature_dir / PIPELINE_STATE).write_text(
+        json.dumps(
+            {
+                "feature": feature,
+                "createdAt": FIXTURE_TIMESTAMP,
+                "updatedAt": FIXTURE_TIMESTAMP,
+                "pipelineStatus": "active",
+                "currentStage": "forge-5-loop",
+                "stages": {
+                    "forge-5-loop": {
+                        "status": "in-progress",
+                        "artifacts": [],
+                        "startedAt": FIXTURE_TIMESTAMP,
+                        "basedOnVersions": {},
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    backlog_dir = f"specs/{feature}"
+    _decision_verb(
+        root, "decision-record", "--backlog-dir", backlog_dir,
+        "--item", LOOP_FIXTURE_DECISION_ITEM,
+        "--question", LOOP_FIXTURE_QUESTION, "--answer", LOOP_FIXTURE_ANSWER,
+    )
+    _decision_verb(
+        root, "decision-apply", "--backlog-dir", backlog_dir,
+        "--item", LOOP_FIXTURE_DECISION_ITEM,
+    )
+    _git_init(root)
+
+
+def loop_outcome_prompt(fixture: LoopOutcomeFixture, scenario: LoopOutcomeScenario) -> str:
+    """Return the user turn that parks the model at the Step 7 close, post-recovery.
+
+    The recovery result is SUPPLIED rather than driven, exactly as the branch probe
+    supplies its branch results: what is under test is whether the model selects the
+    outcome from the ladder and closes through the scripted exit, not whether it can
+    run the recovery procedure itself.
+    """
+    feature = fixture["feature"]
+    skill = REPO_ROOT / "skills" / "forge-5-loop" / "SKILL.md"
+    reporting = REPO_ROOT / "skills" / "forge-5-loop" / "references" / "result-reporting.md"
+    protocol = REPO_ROOT / "references" / "stage-exit-protocol.md"
+    return (
+        f"You are the agent driving the feature-forge pipeline in this repository. "
+        f"Feature: `{feature}`. Specs dir: `specs`.\n\n"
+        f"{_LOOP_SCENARIO_FACTS[scenario['outcome']]}\n\n"
+        f"Everything before the stage close is done. Read {skill}, find "
+        f'"Step 7: Close the Stage", and carry out exactly that step as written — '
+        f"select the single LoopOutcome with the ladder in {reporting}, then close "
+        f"with whatever {protocol} specifies.\n\n"
+        f"Print the final NEXT-STEPS block byte-for-byte as your absolute last "
+        f"output, with nothing whatsoever after its final line."
+    )
+
+
+def expected_loop_exit(
+    root: Path, fixture: LoopOutcomeFixture, scenario: LoopOutcomeScenario
+) -> dict:
+    """Run the real close and return scorer ground truth.
+
+    Scoring against the script's own output cannot drift from the script — the same
+    reasoning as `expected_stage_exit`/`expected_branch_exit`.
+
+    Raises:
+        RuntimeError: The command exits non-zero or emits invalid JSON.
+    """
+    proc = subprocess.run(
+        [
+            sys.executable, str(HELPER), "stage-exit",
+            "--feature", fixture["feature"],
+            "--stage", "forge-5-loop",
+            "--outcome", scenario["outcome"],
+            "--specs-dir", "specs",
+            "--host", "claude",
+            "--json",
+        ],
+        cwd=str(root), capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"loop stage-exit failed for scenario {scenario['name']!r}: {proc.stderr}"
+        )
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"loop stage-exit emitted invalid JSON for {scenario['name']!r}: {exc}"
+        ) from exc
+
+
+def score_loop_outcome(
+    transcript: ParsedTranscript,
+    expected_payload: dict,
+    scenario: LoopOutcomeScenario,
+) -> dict[str, bool]:
+    """Score one loop close: one sentinel, nothing after it, the relaunch fenced.
+
+    Args:
+        transcript: Normalized session transcript.
+        expected_payload: Real `StageExitPayload` ground truth from the close.
+        scenario: The fixture scenario, for its `expectedPrimaryCommand` cross-check.
+
+    Returns:
+        Exactly the `LOOP_OUTCOME_CRITERIA`; compliance requires all true.
+
+    Raises:
+        RuntimeError: The ground-truth payload is malformed (the shared
+            `StageExitPayload` guard), or the script's primary command has drifted
+            from the fixture's `expectedPrimaryCommand` — a harness/fixture defect
+            per §7, never a model miss.
+    """
+    _directives, _next_steps, sentinel, primary = _branch_ground_truth(expected_payload)
+    if primary != scenario["expectedPrimaryCommand"]:
+        raise RuntimeError(
+            f"scenario {scenario['name']!r}: the script's primary command {primary!r} "
+            f"has drifted from the fixture's {scenario['expectedPrimaryCommand']!r}"
+        )
+    final_text = transcript.get("final_text") or ""
+    texts = transcript.get("assistant_texts") or []
+    return {
+        "exactly_one_sentinel": sum(t.count(sentinel) for t in texts) == 1,
+        # A suffix check alone is not enough: a final block preceded by its own
+        # earlier duplicate still ends with the sentinel while carrying content
+        # after one (§5.2) — the same lesson as the branch scorer.
+        "nothing_after_sentinel": (
+            final_text.count(sentinel) == 1 and final_text.rstrip().endswith(sentinel)
+        ),
+        "primary_command_fenced": _in_fenced_block(final_text, primary),
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
 
@@ -1865,6 +2258,40 @@ def run_branch_probe(models: list[str], n: int) -> list[ProbeReport]:
     return reports
 
 
+def run_loop_outcome_probe(models: list[str], n: int) -> list[ProbeReport]:
+    """Run every loop-outcome scenario in fresh repositories for every model/run.
+
+    Mirrors `run_branch_probe`'s two-repository shape: ground truth is derived by
+    running the real close in a separate repository from the one the model drives,
+    so deriving the expectation can never hand the model a close already fired.
+    """
+    fixture = load_loop_outcome_fixture(LOOP_OUTCOME_FIXTURE_PATH)
+    reports: list[ProbeReport] = []
+    for scenario in fixture["scenarios"]:
+        prompt = loop_outcome_prompt(fixture, scenario)
+        for model in models:
+            results: list[RunResult] = []
+            for index in range(n):
+                with tempfile.TemporaryDirectory(prefix="forge-eval-") as tmp:
+                    run_root = Path(tmp) / "run"
+                    run_root.mkdir()
+                    build_loop_outcome_fixture(run_root, fixture)
+                    truth_root = Path(tmp) / "truth"
+                    truth_root.mkdir()
+                    build_loop_outcome_fixture(truth_root, fixture)
+                    expected = expected_loop_exit(truth_root, fixture, scenario)
+                    transcript = run_session(run_root, prompt, model)
+                results.append(
+                    _to_result(
+                        "loop-outcome", model, scenario["name"], index, transcript,
+                        lambda t, e=expected, s=scenario: score_loop_outcome(t, e, s),
+                    )
+                )
+                _tick(results[-1])
+            reports.append(_probe_report("loop-outcome", model, scenario["name"], results))
+    return reports
+
+
 def _to_result(
     probe: str,
     model: str,
@@ -1934,12 +2361,13 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--probe",
-        choices=("stage-exit", "r2-prelude", "branch-path", "all"),
+        choices=("stage-exit", "r2-prelude", "branch-path", "loop-outcome", "all"),
         default="all",
         help=(
             "which probe to run; `branch-path` drives the verify -> fix -> re-verify "
             "diversion and reports successful-rejoin and recovery as separate variants, "
-            "never averaged into the linear stage-exit cells"
+            "never averaged into the linear stage-exit cells; `loop-outcome` drives the "
+            "forge-5-loop resolved close and scores its resume relaunch"
         ),
     )
     parser.add_argument("--models", default=",".join(DEFAULT_MODELS))
@@ -1978,6 +2406,8 @@ def main(argv: list[str]) -> int:
         report.probes.extend(run_prelude_probe(models, args.n))
     if args.probe in ("branch-path", "all"):
         report.probes.extend(run_branch_probe(models, args.n))
+    if args.probe in ("loop-outcome", "all"):
+        report.probes.extend(run_loop_outcome_probe(models, args.n))
     report.total_cost_usd = round(sum(p.cost_usd for p in report.probes), 4)
 
     payload = asdict(report)

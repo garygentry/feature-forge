@@ -187,8 +187,9 @@ written with a fresh `auto-verify-pending` marker, losing the report (REQ-EXIT-0
 Two production exits deliberately do **not** use the fixed successor table.
 
 **`forge-5-loop`** routes by its required `--outcome`. Only `complete` keeps verify-first
-ordering in front of the documentation/epic handoff. The other four outcomes
-(`partial`/`deferred` → resume the loop; `blocked`/`needs-human` → the navigator) suppress
+ordering in front of the documentation/epic handoff. The other five outcomes
+(`partial`/`deferred`/`resolved` → resume the loop; `blocked`/`needs-human` → the
+navigator) suppress
 *every* downstream signal — `nextStage`/`nextCommand` are `None`, `runInStageVerify` is
 `false`, no debt is scheduled, and `verifyGate` is `none`. A loop still in flight has no
 finished implementation to verify and nothing downstream may read as ready (REQ-PROD-02).

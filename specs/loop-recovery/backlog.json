@@ -1,0 +1,281 @@
+{
+  "schemaVersion": "1",
+  "project": "feature-forge",
+  "description": "loop-recovery: make forge-5-loop recover from a needs-human/blocked stop instead of losing the decision. Adds a durable per-backlog decision record (forge-decisions.json + decision-* verbs), the 'resolved' loop outcome, truthful dependency-starvation attribution, deterministic systemic-cause clustering + dependency-topology metrics, one new rauf 'backlog answer' subcommand (separate release train), and the named Post-Run Recovery Procedure that ties them together. Self-modifying: forge-side code lands in scripts/forge-session.py + skills/ + references/ (all fanned out to adapters/** via build-adapters.py) and must pass 'bash scripts/validate.sh'. Delivery order (dependency-corrected from 01 §4, which narrates DEC → TREE → UNB → OUT → ATTR → CLU → TOPO → EVAL): DEC → CLU/TOPO → OUT → ATTR → consumers → capstone (TREE/UNB) → EVAL — the dependsOn graph is the authoritative order.",
+  "items": [
+    {
+      "id": "001",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add forge-decisions.json schema + validate_decisions() wiring + structural test",
+      "description": "Create the R4 schema surface for the new decision record (foundation for all DEC work).\n\n1. Create references/forge-decisions-schema.json byte-for-byte from spec 00-core-definitions.md §4.1. It MUST use only the draft-07 subset tests/_state_schema.py supports: type, required, properties, enum, items, additionalProperties:false, and $ref to #/definitions/*. NO oneOf/anyOf/pattern/format. Top-level additionalProperties:false; required exactly [schemaVersion, feature, createdAt, updatedAt, decisions]; schemaVersion enum [\"1\"]; decisions.items.$ref → #/definitions/decision. The decision definition sets additionalProperties:false and required [itemId, question, answer, deferred, decidedAt, recordedBy, appliedAt, appliedBy] (clusterId optional — in properties, absent from required); answer/appliedAt/appliedBy typed [\"string\",\"null\"]; deferred boolean.\n2. In tests/_state_schema.py add a module-level _DECISIONS_SCHEMA load (mirroring the _STATE_SCHEMA/_CONFIG_SCHEMA loads at lines 26-31) and a validate_decisions(record) -> list[str] wrapper (~12 lines, mirroring validate_state) that returns _check(record, _DECISIONS_SCHEMA, _DECISIONS_SCHEMA, \"$\"). Update the module docstring's 'Both entry points' scoping to cover three schemas.\n3. Create tests/test_forge_decisions_schema.py (structural, no verbs/runner) mirroring tests/test_pipeline_state_schema.py: assert the required set, schemaVersion enum, the decision definition's additionalProperties:false + required 8 fields + optional clusterId, the nullable unions, and a guard that no oneOf/anyOf/pattern/format key appears anywhere.\n4. references/ is fanned out to adapters/**: run `python3 scripts/build-adapters.py` and commit the regenerated adapters/**.\n\nDo NOT implement the decision-* verbs here (that is item 002).",
+      "acceptanceCriteria": [
+        "references/forge-decisions-schema.json exists and matches spec 00 §4.1 exactly (draft-07 subset only; no oneOf/anyOf/pattern/format anywhere)",
+        "Top-level additionalProperties:false; required is exactly {schemaVersion, feature, createdAt, updatedAt, decisions}; schemaVersion enum is exactly [\"1\"]",
+        "The decision definition has additionalProperties:false, required is the 8 fields, clusterId is optional; answer/appliedAt/appliedBy accept [\"string\",\"null\"]; deferred is boolean",
+        "tests/_state_schema.py defines _DECISIONS_SCHEMA and validate_decisions() mirroring validate_state; the module docstring names three schemas",
+        "tests/test_forge_decisions_schema.py passes, including the no-unsupported-construct guard",
+        "python3 scripts/build-adapters.py has been run and the regenerated adapters/** are committed (no drift)",
+        "bash scripts/validate.sh passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T13:31:57.601Z",
+      "dependsOn": [],
+      "notes": "R4 pattern (REQ-STATE-01): schema file + scripted verb writer (item 002) + conformance test (item 002). This item is the schema + validator half. The schema is the source of truth the verbs write against. See 00 §4 for field semantics.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/loop-recovery/00-core-definitions.md",
+        "specs/loop-recovery/02-decision-record.md",
+        "specs/loop-recovery/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "002",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement decision-record / decision-list / decision-apply verbs + R4 conformance test",
+      "description": "Implement the three decision-* verbs in scripts/forge-session.py — the only writers/readers of forge-decisions.json. Full Python is given in spec 02-decision-record.md §2-§5; follow it.\n\n1. Add helpers: DECISIONS_FILENAME/DECISIONS_SCHEMA_VERSION Finals; _resolve_decisions_path (uses the existing resolve_loop_runner + _default_schema_path to get stateDir default '.rauf'); _read_decisions_for_write (missing → fresh skeleton; unparseable/non-object → UsageError, NEVER corrupt→{} downgrade); _new_decision_entry; _unapplied_decisions (latest entry per itemId with appliedAt is None, sorted by itemId); _default_actor (forge-5-loop@<host> via socket.gethostname — machine label, never user identity); and the three _print_* helpers.\n2. Implement cmd_decision_record (append one entry per --item; --answer XOR --deferred, both/neither raise UsageError; --cluster sets shared clusterId; mkdir parents before _commit_state), cmd_decision_list (plain echo or --unapplied filter; missing record → empty at exit 0; parse strictly, exit 2 on corruption; never calls _commit_state), cmd_decision_apply (stamp appliedAt/appliedBy on the LATEST entry for --item only; unknown id or already-applied → UsageError).\n3. Register the three subparsers (mutually-exclusive group required=True for --answer/--deferred on record) and add the three dispatch blocks, mirroring the state-note registration/dispatch. Reuse the target-agnostic _commit_state/_write_state; do NOT use _load_state_for_write/_resolve_feature_dir_for_write (those target .pipeline-state.json).\n4. Create tests/test_decisions_schema_conformance.py cloning tests/test_state_schema_conformance.py: out-of-process _run() via sys.executable against a temp backlog dir, validated through validate_decisions(); a registry-completeness regex keyed to the decision- prefix (re.findall(r'add_parser\\(\\s*\"(decision-[a-z-]+)\"', source)) that does NOT sweep in state-decision; the record→defer→re-record→apply append-only sequence; and the exit-2 failure cases.\n5. Run `python3 scripts/build-adapters.py` and commit adapters/** (forge-session.py is a fanned-out RUNTIME_HELPER).",
+      "acceptanceCriteria": [
+        "decision-record/decision-list/decision-apply are registered with the flags in spec 02 §3.3/§4.3/§5; --backlog-dir required, --state-dir defaults from resolve_loop_runner (.rauf)",
+        "decision-record appends one entry per --item; --answer and --deferred are mutually exclusive and exactly one required (both/neither exit 2 with an Error: line); --cluster writes a shared clusterId; first write seeds schemaVersion/feature/createdAt and (via _commit_state) updatedAt",
+        "forge-decisions.json lands at {backlog-dir}/.rauf/forge-decisions.json and does NOT appear in git status --porcelain",
+        "decision-list --unapplied --json returns the latest-entry-per-item set where appliedAt is null (deferrals included, applied items excluded), sorted by itemId; a missing record returns empty at exit 0; a corrupt record exits 2 with bytes untouched (no corrupt→{} downgrade)",
+        "decision-apply --item X stamps only appliedAt/appliedBy on X's latest entry and leaves every other field/entry byte-identical; unknown id or double-apply exits 2",
+        "tests/test_decisions_schema_conformance.py passes: registry-completeness scan covers every decision-* verb without disturbing the state-* guard; every verb's on-disk output passes validate_decisions()==[]; the record→defer→re-record→apply sequence holds append-only invariants",
+        "python3 scripts/build-adapters.py run and adapters/** committed (no drift); bash scripts/validate.sh passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T13:53:39.704Z",
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "The verb writer + conformance test complete the R4 pattern started in 001. Append-only: decision-apply is the sole mutator and only of appliedAt/appliedBy on the latest entry. Worked example in 02 §6. Do NOT hand-author forge-decisions.json anywhere — the conformance test's registry scan enforces it.",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/loop-recovery/02-decision-record.md",
+        "specs/loop-recovery/00-core-definitions.md",
+        "specs/loop-recovery/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "003",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add cluster_blocked() + shared dep-graph helpers + Jaccard clustering (CLU)",
+      "description": "Add the deterministic systemic-cause clustering substrate to scripts/forge-session.py. Full Python is in spec 06-clustering-and-topology.md §2; follow it. Pure, stdlib-only, no class.\n\n1. Add `import math` to the module import block (needed by item 004; add it here since CLU lands first).\n2. Add CLUSTER_JACCARD_THRESHOLD: Final[float] = 0.5 (module-level, with the other Finals).\n3. Add the shared dependency-graph helpers (used by both this item and item 004's compute_topology): _id_key (numeric ids sort numerically, else lexically after the numeric block), _build_dep_index (drops edges to ids not in the backlog), _transitive_dependents (memoized, cycle-safe DFS closure).\n4. Add clustering: _ID_SHAPED_TOKEN regex, _normalize_reason (lowercase, split on non-alphanumeric, drop pure-number ^\\d+$ and id-shaped ^[a-z]*\\d+$ tokens, return the token SET), _jaccard (two empty sets → 0.0), and cluster_blocked (union-find over status==\"blocked\" items whose pairwise Jaccard >= CLUSTER_JACCARD_THRESHOLD; process in _id_key order; root component at lowest member id; emit sorted by lowest member id; each cluster carries clusterId=\"c\"+lowest member id, memberIds, memberReasons, sharedTokens, and gatedIds/gatedCount = union of members' gated subtrees minus the members).\n5. Create tests/test_decision_clustering.py per spec 07 §7.2. CRITICAL (V-015): vendor the three real verify-test-debt blockedReason strings VERBATIM into the test file (do not read them from any .rauf archive) and assert they cluster into exactly ONE candidate; add a comment recording the measured Jaccard margin (~0.028 over the 0.5 threshold) so a future threshold change that would re-split the incident is caught. Also cover: normalization drops number/id-shaped tokens; Jaccard boundary (exactly 0.5 clusters, just below does not); union-find transitivity (A~B, B~C, A≁C → one cluster); determinism across shuffled input; and that two genuinely distinct causes do NOT merge (under-clustering ok, over-clustering not).\n6. Run `python3 scripts/build-adapters.py` and commit adapters/**.",
+      "acceptanceCriteria": [
+        "import math is present; CLUSTER_JACCARD_THRESHOLD == 0.5 is a module-level Final",
+        "cluster_blocked and the _id_key/_build_dep_index/_transitive_dependents/_normalize_reason/_jaccard helpers are module-level flat functions (no class), stdlib-only",
+        "cluster_blocked output matches 00 §8.3 shape; clusterId == \"c\"+lowest member id; gatedIds/gatedCount = union of members' gated subtrees minus members; output is deterministic across shuffled input (all ordering via _id_key)",
+        "Normalization drops pure-number and id-shaped tokens (42, req12, t7); comparison is over the token set; two empty sets score 0.0 and never cluster",
+        "Jaccard boundary: a pair at exactly 0.5 clusters, a pair just below does not; union-find transitivity yields one cluster {A,B,C}",
+        "V-015: the three vendored blockedReason strings cluster into exactly one candidate; a comment records the measured Jaccard margin; two distinct causes do NOT merge",
+        "tests/test_decision_clustering.py passes; python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T14:04:23.316Z",
+      "dependsOn": [],
+      "notes": "CLU lands before TOPO (01 §4 steps 6-7); both reuse the §2.1 helpers, so those helpers land here. Under-clustering is the deliberately-chosen failure direction — the agent holds merge authority, the scripted floor must never over-merge. CLUSTER_JACCARD_THRESHOLD is falsifiable against the incident via the vendored V-015 fixture.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/loop-recovery/06-clustering-and-topology.md",
+        "specs/loop-recovery/00-core-definitions.md",
+        "specs/loop-recovery/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "004",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add compute_topology() + backlog-topology verb + topology constants (TOPO)",
+      "description": "Add the dependency-topology metrics and the backlog-topology verb to scripts/forge-session.py. Full Python is in spec 06-clustering-and-topology.md §3-§4; follow it. Reuses the shared helpers from item 003.\n\n1. Add the module-level Finals: TOPOLOGY_FANOUT_WARN_RATIO=0.5, TOPOLOGY_DEPTH_WARN_RATIO=0.5, RECOVERY_MIN_RUNNER_VERSION=\"0.14.0\" (the forge-side capability threshold for item 008's rauf surface — NOT loopRunner.minRunnerVersion, which stays 0.6.0).\n2. Add _max_chain_depth (memoized, cycle-safe longest dependsOn chain) and compute_topology(items) returning the 00 §8 shape {itemCount, rootCount, roots (each {id, gatedCount, gatedIds}), maxChainDepth, selectable, starvation, warnings}. selectable = pending items whose in-backlog deps are all done. warnings: 'single-root-fanout' when any root gatedCount >= math.ceil(0.5*itemCount); 'chain-depth' when maxChainDepth >= math.ceil(0.5*itemCount). starvation set (starved=true + blockingRoots) when selectable==0 && pending>0. It NEVER reads backlog.json off disk (single data source, V-007).\n3. Add cmd_backlog_topology(items, *, with_clusters) (appends cluster_blocked under --cluster) and _load_topology_items (reads --items-json path or --items-stdin; accepts a top-level array or an object with an items array; all failures → UsageError exit 2). Register the backlog-topology subparser (a mutually-exclusive required group for --items-json/--items-stdin; plus --cluster and --json) and the dispatch block, beside the state-* registrations. Add a small _print_topology human printer.\n4. Create tests/test_backlog_topology.py per spec 07 §7.1: line/diamond/parallel-roots/trivial/cycle fixtures; the observed-incident fixture (16 items, 3 roots gating 81%, 13-deep chain) asserting warnings==['single-root-fanout','chain-depth'], maxChainDepth==13, starvation.starved true naming the 3 roots; selectable correctness; determinism across shuffled input; and a linear-perf guard on a synthetic ~1000-item chain.\n5. Run `python3 scripts/build-adapters.py` and commit adapters/**.",
+      "acceptanceCriteria": [
+        "TOPOLOGY_FANOUT_WARN_RATIO/TOPOLOGY_DEPTH_WARN_RATIO == 0.5 and RECOVERY_MIN_RUNNER_VERSION == \"0.14.0\" are module-level Finals; loopRunner.minRunnerVersion is unchanged (0.6.0)",
+        "compute_topology returns the 00 §8 shape; on the observed-incident fixture warnings == [\"single-root-fanout\",\"chain-depth\"] (both), maxChainDepth == 13, starvation.starved is true naming the blocking roots",
+        "selectable counts exactly the pending items whose in-backlog dependsOn are all done; thresholds use math.ceil(ratio*itemCount); output is deterministic across shuffled input",
+        "backlog-topology omits clusters without --cluster and includes them with it; neither/both of --items-json/--items-stdin is an argparse exit-2 error; unreadable/invalid/non-array input raises UsageError (exit 2 with an Error: line)",
+        "The topology path never opens backlog.json off disk (reads only --items-json/--items-stdin)",
+        "tests/test_backlog_topology.py passes (incl. the linear-perf guard); python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T14:15:58.906Z",
+      "dependsOn": [
+        "003"
+      ],
+      "notes": "Depends on 003 for _id_key/_build_dep_index/_transitive_dependents. The verb is a pure function over the runner's listCommand item array — all five consumers feed it that JSON, never a backlog.json path. RECOVERY_MIN_RUNNER_VERSION added here because it is the first module constant this feature needs; item 008 ships the rauf release it pins to.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/loop-recovery/06-clustering-and-topology.md",
+        "specs/loop-recovery/00-core-definitions.md",
+        "specs/loop-recovery/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "005",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add the 'resolved' loop outcome: routing, text, ladder, directive-matrix ripple",
+      "description": "Add the 'resolved' LoopOutcome and its full enum-to-report wiring. This is an ATOMIC derived-enum ripple — the pieces MUST land in one change or validate.sh fails. Full detail in spec 00 §5 and 03-outcome-and-attribution.md §2/§4/§7.\n\n1. scripts/forge-session.py: LoopOutcome Literal += \"resolved\" (single edit point; EXIT_OUTCOMES['forge-5-loop'] derives it). Add the two rows: _LOOP_ROUTE_KIND[\"resolved\"]=\"resume\" and the _LOOP_OUTCOME_TEXT[\"resolved\"] sentence (verbatim from 03 §2.1: recorded+applied, per-item verified left blocked/needsHuman, tree clean, resumable, nothing downstream ready). _loop_route() needs NO structural change — a resume-kinded resolved flows through the existing non-handoff branch.\n2. skills/forge-5-loop/SKILL.md:271 — the Step 7 ladder line gains resolved first: `resolved → needs-human → blocked → deferred → partial → complete`. (This is forced by test_stage_exit_protocol.py:379-388, which reads this backtick-tokened copy.) Leave SKILL.md:232's 'five templates' count unchanged (resolved gets NO Step-4b template).\n3. skills/forge-5-loop/references/result-reporting.md — add the resolved rung to the 'Selecting the one LoopOutcome' list, same six values, same order.\n4. references/stage-exit-protocol.md:50 — widen the loop outcome-domain row to include resolved (and the optional --cause note added by item 006 is fine to include now or leave to 006).\n5. docs/architecture/stage-exit-coverage/cli-reference.md (outcome table += resolved) and architecture.md (resume/recover split prose covers resolved).\n6. tests/test_stage_exit.py: EXIT_OUTCOMES['forge-5-loop'] mirror += \"resolved\"; V-012 rename test_loop_accepts_exactly_the_five_loop_outcomes → ..._six_... and add resolved to its parametrize (grep the repo for any other 'five'/5-outcome literal in test names/asserts and update in lockstep); add resolved to the resume-fence parametrize and the no-continuation parametrize; do NOT add it to the recover-fence parametrize.\n7. Run `python3 scripts/build-adapters.py` and commit adapters/**.",
+      "acceptanceCriteria": [
+        "LoopOutcome includes \"resolved\" (get_args has 6 members) and EXIT_OUTCOMES['forge-5-loop'] is derived, not hand-listed",
+        "_LOOP_ROUTE_KIND['resolved']=='resume'; stage-exit --stage forge-5-loop --outcome resolved fences /feature-forge:forge-5-loop {feature} and never the navigator; resolved carries no nextStage/nextCommand/runInStageVerify and no downstream-readiness claim",
+        "The ladder reads resolved → needs-human → blocked → deferred → partial → complete in BOTH skills/forge-5-loop/SKILL.md:271 (backtick-tokened) and references/result-reporting.md's rung list; SKILL.md:232 still says five templates",
+        "references/stage-exit-protocol.md lists resolved; docs/architecture/stage-exit-coverage/{cli-reference,architecture}.md cover resolved",
+        "test_stage_exit.py: the EXIT_OUTCOMES mirror includes resolved; the outcome-count test is renamed to ..._six_... (no lingering 'five'/5-outcome literal); resume-fence and no-continuation parametrizes include resolved; recover-fence does not; test_stage_exit_protocol.py passes",
+        "python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T14:37:18.392Z",
+      "dependsOn": [],
+      "notes": "REQ-COMPAT-01: a vocabulary change deliberately rippling into the directive matrix. The derived NON_COMPLETE_LOOP_OUTCOMES picks resolved up automatically once the EXIT_OUTCOMES mirror is updated, so the invariant tests parametrize over resolved with no per-test edit. Touches ~6 canon files + a test; kept atomic because the enum/routing/ladder/tests must land together. Coordinate the forge-5-loop SKILL.md body-cap budget with items 006/007/009 (target ~293/300).",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/loop-recovery/00-core-definitions.md",
+        "specs/loop-recovery/03-outcome-and-attribution.md",
+        "specs/loop-recovery/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "006",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add dependency-starvation attribution: --cause flag + conditional iteration-limit text",
+      "description": "Replace the hardcoded '(iteration limit reached)' attribution with a truthful, selectable-driven conditional, and add the stage-exit --cause annotation. Full detail in spec 03-outcome-and-attribution.md §5-§6.\n\n1. scripts/forge-session.py: add the stage-exit --cause argparse option (choices=(\"dependency-starvation\",), default None, in the stage-exit parser beside --outcome). Add validation in stage_exit() immediately after the outcome-domain check: if cause is not None and not (stage=='forge-5-loop' and outcome=='partial') raise UsageError — it must exit 2 BEFORE any payload/sentinel is emitted. Thread a keyword-defaulted cause:str|None=None through stage_exit() (after verify_capability) and into _loop_route(); pass args.cause in the dispatch tail. Add _LOOP_PARTIAL_STARVED_TEXT (verbatim from 03 §5.3) and, in _loop_route()'s non-handoff branch, select it when outcome=='partial' and cause=='dependency-starvation' (else the existing _LOOP_OUTCOME_TEXT[outcome]).\n2. skills/forge-5-loop/references/result-reporting.md: rewrite the pending template (currently ~:67/:71) so the parenthetical cause is chosen, not hardcoded — render '(iteration limit reached)' ONLY when iteration==maxIterations AND selectable>0; otherwise render the §5.2 dependency-starvation line naming blocking roots + per-root gated-subtree sizes (from backlog-topology) and close with --cause dependency-starvation. Carry the citation basis (state.json iteration counters + backlog-topology).\n3. skills/forge-5-loop/SKILL.md:232: change the pending Step-4b parenthetical from '(iteration limit reached)' to the conditional-cause wording, IN-LINE with zero net body-line growth.\n4. tests/test_stage_exit.py: add the --cause validity matrix — accepted only with forge-5-loop/partial (payload renders the starved sentence); exit 2 (empty stdout, Error: on stderr, before any output) for every other stage/outcome; argparse choices rejects any other --cause value.\n5. Run `python3 scripts/build-adapters.py` and commit adapters/**.",
+      "acceptanceCriteria": [
+        "--cause dependency-starvation is accepted only with --stage forge-5-loop --outcome partial (swaps in _LOOP_PARTIAL_STARVED_TEXT); it exits 2 BEFORE any output for every other stage/outcome; argparse choices rejects other values",
+        "Absent --cause, partial renders today's _LOOP_OUTCOME_TEXT['partial'] verbatim (no behavior change to any existing exit)",
+        "result-reporting.md renders '(iteration limit reached)' only when iteration==maxIterations AND selectable>0; otherwise the starvation line naming blocking roots + gatedCount/itemCount, closing with --cause dependency-starvation; both branches cite their authoritative source",
+        "skills/forge-5-loop/SKILL.md:232 conditional-cause edit is in-line with zero net body-line growth",
+        "tests/test_stage_exit.py --cause validity matrix passes (accepted vs rejected pairs; rejection before payload)",
+        "python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T14:59:07.303Z",
+      "dependsOn": [
+        "004",
+        "005"
+      ],
+      "notes": "REQ-ATTR-04: starvation is a cause ANNOTATION on partial, not a new enum value. Depends on 005 (shares/extends _loop_route and the partial routing) and 004 (the report cites backlog-topology selectable/blockingRoots). Coordinate SKILL.md body-cap with items 005/007/009.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/loop-recovery/03-outcome-and-attribution.md",
+        "specs/loop-recovery/00-core-definitions.md",
+        "specs/loop-recovery/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "007",
+      "type": "feature",
+      "priority": 2,
+      "title": "Wire the three topology consumers (forge-4 report, forge-verify CHECK-B28, forge-5 Step 2a)",
+      "description": "Surface the backlog-topology metrics at their three read sites. All are advisory (never block). Full detail in spec 06-clustering-and-topology.md §5. Each consumer pipes the listCommand JSON it already has into `forge-session.py backlog-topology --items-stdin --json`; none passes a backlog.json path.\n\nConsumer a (REQ-TOPO-01) — skills/forge-4-backlog/SKILL.md: add a topology-report step in the Step 5/6 slot (after Step 5 validation, before/within the Step 6 review). ALWAYS print the metrics line (itemCount/rootCount/maxChainDepth + per-root fan-out); render the '⚠️ Fragile topology' warning block ONLY when warnings is non-empty. Guidance only — do not fail authoring.\n\nConsumer b (REQ-TOPO-02) — skills/forge-verify/references/verification-checklists/backlog.md: add a new '### Dependency Topology' subsection with CHECK-B28 (advisory heuristic, severity improvement, never error/gap, never blocks, not-applicable on a trivial graph or when no trigger fires), modeled on CHECK-B26/B27. It must NOT land in the forge-verify body. Then bump BOTH count literals in skills/forge-verify/SKILL.md IN-LINE (zero line growth): :33 'backlog 27' → 'backlog 28' and :171 'backlog: 27 checks' → 'backlog: 28 checks'.\n\nConsumer c (REQ-TOPO-03) — skills/forge-5-loop/SKILL.md Step 2a: add ONE line surfacing maxChainDepth beside the existing iteration-count report (this is the only new happy-path output; adds no prompt).\n\nAlso edit tests/test_lifecycle_artifact_check.py:49-52 ('backlog: 27 checks' and 'backlog 27') → 28, in THIS change — no split-brain 27/28 across SKILL.md and the test.\n\nThen run `python3 scripts/build-adapters.py` and commit adapters/**.",
+      "acceptanceCriteria": [
+        "forge-4-backlog prints the topology metrics after Step 5 validation and renders the warning block only when warnings is non-empty; it never fails authoring on topology",
+        "CHECK-B28 exists in skills/forge-verify/references/verification-checklists/backlog.md as a severity-improvement, never-blocking, not-applicable-on-trivial check; it is NOT in the forge-verify SKILL body",
+        "Both forge-verify count literals read 28 (SKILL.md:33 and :171) and tests/test_lifecycle_artifact_check.py:49-52 assert 28 — no split-brain 27/28",
+        "skills/forge-5-loop/SKILL.md Step 2a renders a single maxChainDepth line on every run",
+        "python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes (incl. spec-purity: forge-verify body stays 298/300, forge-4/forge-5 within cap)"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T15:51:29.118Z",
+      "dependsOn": [
+        "004"
+      ],
+      "notes": "Advisory topology surfaces (REQ-TOPO). Depends on 004 (the backlog-topology verb must exist). The three consumers are independent files, so agentDelegation parallelizes them; the count-literal bump + its test edit MUST stay together (subtask 2). Coordinate the forge-5-loop SKILL.md body-cap with items 005/006/009.",
+      "estimatedIterations": 1,
+      "agentDelegation": {
+        "recommendedConcurrency": 3,
+        "strategy": "Three independent consumer files, no cross-dependencies, sharing one validate.sh verification and one final adapter regen (done by the main agent after all subtasks land).",
+        "subtasks": [
+          "Add the topology-report step to skills/forge-4-backlog/SKILL.md in the Step 5/6 slot: always print itemCount/rootCount/maxChainDepth + per-root fan-out from `backlog-topology --items-stdin --json`; render the fragile-topology warning block only when warnings is non-empty; guidance only, never fails authoring (spec 06 §5.1)",
+          "Add CHECK-B28 to skills/forge-verify/references/verification-checklists/backlog.md under a new '### Dependency Topology' subsection (advisory, severity improvement, never blocks, not-applicable on trivial graphs; spec 06 §5.2 text), and bump both count literals in skills/forge-verify/SKILL.md in-line (:33 'backlog 27'→'backlog 28', :171 'backlog: 27 checks'→'backlog: 28 checks') AND update tests/test_lifecycle_artifact_check.py:49-52 to 28 in the same change",
+          "Add the single maxChainDepth line to skills/forge-5-loop/SKILL.md Step 2a beside the iteration-count report, sourced from `backlog-topology --items-stdin --json` over the listCommand JSON Step 2a already fetched (spec 06 §5.3)"
+        ]
+      },
+      "specReferences": [
+        "specs/loop-recovery/06-clustering-and-topology.md",
+        "specs/loop-recovery/00-core-definitions.md",
+        "specs/loop-recovery/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "008",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add rauf 'backlog answer' subcommand (rauf repo, separate release train)",
+      "description": "CROSS-REPO ITEM. Work happens in the rauf repository at /home/gary/workspace/rauf, NOT in feature-forge. Add the one new runner surface: `rauf backlog answer <path> <id> \"<text>\" [--backlog <dir>] [--json]` — the apply-only twin of `resume --answer`'s injection block, with NO relaunch. Full TypeScript is in spec 04-apply-and-unblock.md §4; follow it.\n\n1. packages/cli/src/backlog-commands.ts: add and export handleBacklogAnswer(ctx), modeled exactly on handleBacklogUnblock. Validate args (<path> <id> <text> required → ExitCode.USAGE if missing). Resolve the backlog root/paths. Read the backlog and refuse unless the item's status is 'blocked' (not-found → USAGE with 'Item not found: <id>'; not-blocked → USAGE with 'Item <id> is not blocked (status: <status>)', mirroring unblockItems' guard). Then updateItem(paths, itemId, { humanAnswer: text, status: 'pending', needsHuman: false, blockedReason: null }) — NO relaunch, no detectResumeState. On ctx.globalFlags.json, outputJson({ answered: itemId, status: 'pending' }) and return SUCCESS; else a success() line.\n2. packages/cli/src/commands.ts: register a new { name: 'answer', description, usage, handler: handleBacklogAnswer } entry in the backlog subcommand table, alongside the unblock entry.\n3. packages/cli/src/backlog-commands.test.ts: add vitest cases — happy path (writes humanAnswer + status:'pending', clears needsHuman/blockedReason, JSON is exactly { answered, status:'pending' }, no relaunch), not-blocked refusal (exit 2 + message, nothing mutated), not-found refusal (exit 2), and a subcommand-registration assertion alongside the existing expect(names).toContain('unblock').\n\nDo NOT run feature-forge's bash scripts/validate.sh for this item — it lives in a different repo. Verify with rauf's own test suite.",
+      "acceptanceCriteria": [
+        "In /home/gary/workspace/rauf: `rauf backlog answer <path> <id> \"<text>\"` writes humanAnswer, sets status:'pending', clears needsHuman/blockedReason, does NOT relaunch; its --json output is exactly { \"answered\": \"<id>\", \"status\": \"pending\" }",
+        "`rauf backlog answer` on a not-blocked item exits non-zero with 'Item <id> is not blocked (status: <status>)'; on a missing item exits non-zero with a not-found message; neither mutates the backlog",
+        "The 'answer' subcommand is registered in the backlog subcommand table (registration assertion passes alongside the existing 'unblock' one)",
+        "From /home/gary/workspace/rauf/packages/cli: `pnpm vitest run` passes including the new backlog-answer tests, and `pnpm typecheck` passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T15:04:01.345Z",
+      "dependsOn": [],
+      "notes": "CROSS-REPO: implement in /home/gary/workspace/rauf (pnpm + vitest), not feature-forge. This is the forge side's >= RECOVERY_MIN_RUNNER_VERSION apply mechanism; the forge side capability-gates on it (item 004's RECOVERY_MIN_RUNNER_VERSION='0.14.0') and degrades to `rauf backlog unblock` below the threshold, so it can land in parallel. Ships in the next rauf minor (assumed 0.14.0). Item 009 (the recovery procedure) references this surface. If the assumed rauf version at ship time differs from 0.14.0, update RECOVERY_MIN_RUNNER_VERSION in item 004's forge-session.py to the real release.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/loop-recovery/04-apply-and-unblock.md",
+        "specs/loop-recovery/07-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "009",
+      "type": "feature",
+      "priority": 1,
+      "title": "Author recovery-procedure.md + Stranded-Work pre-flight + named-pointer edits",
+      "description": "Author the named Post-Run Recovery Procedure (prose reference the forge-5-loop agent follows) and make it reachable. This is the capstone — it orchestrates the scripted substrate from items 002-008. Full detail in spec 05-recovery-procedure.md (whole doc), with apply/prove references to 04 §5-§6 and the citation table in 00 §9.\n\n1. Create skills/forge-5-loop/references/recovery-procedure.md as a skill reference (no body-cap — it is a reference, not a body). Document all SEVEN ordered steps (enumerate → cluster → consolidated prompts → record-at-collection → apply → prove → gate&exit), each naming its exact CLI (decision-list/backlog-topology --cluster/decision-record/rauf backlog answer|unblock + version probe/decision-apply/listCommand re-read/stage-exit --outcome resolved), its decision point, its output, and its error behavior (any non-zero scripted step or runner error is surfaced verbatim and STOPS as a failed recovery, never claimed succeeded). Include: the fresh-session re-entry behavior (§3); the Post-Run Tree Reconciliation section (§4) with detect(silent on clean tree)/attribute(best-effort from state.json+events.ndjson, degrade-never-abort)/decide(AskUserQuestion, discard needs its OWN dedicated confirmation and is never a default)/launch-blocker; the resolved gate as the all-three conjunction (decision-list --unapplied empty for affected items, git status --porcelain clean, per-item re-read all left blocked/needsHuman); the version-gated apply + degraded unblock path (>= vs < RECOVERY_MIN_RUNNER_VERSION); and the REQ-OBS citation table (§7) carried byte-identical from 00 §9. Prompts MUST NOT solicit secrets (REQ-SEC-01).\n2. skills/forge-5-loop/SKILL.md: insert `### 1g. Stranded-Work Pre-flight (if using git)` (verbatim text from 05 §5) between `### 1f. Branch Pre-flight` and `## Step 2` (~5 real body lines).\n3. skills/forge-5-loop/references/runner-contract.md:183 — replace 'stage a post-run retry' with the named pointer (05 §6.1: record via decision-record now, then run the Post-Run Recovery Procedure).\n4. references/ralph-loop-contract.md:61 — replace 'follow-up retry pass' with the same named pointer (05 §6.2).\n5. Run `python3 scripts/build-adapters.py` and commit adapters/**.",
+      "acceptanceCriteria": [
+        "skills/forge-5-loop/references/recovery-procedure.md documents all seven steps in order (each naming its CLI, decision point, output, and error behavior); the REQ-OBS citation table §7 is byte-identical to spec 00 §9",
+        "The resolved gate is documented as all-three (decision-list --unapplied empty for the affected items, git status --porcelain clean, per-item re-read shows every affected item left blocked/needsHuman); any one failing falls the ladder through to needs-human/blocked",
+        "Post-Run Tree Reconciliation is present: clean tree is silent; attribution degrades (never aborts) on missing/unparseable state.json/events.ndjson; discard requires its own dedicated confirmation and is never a default; the apply step documents the version-gated answer vs degraded unblock paths",
+        "skills/forge-5-loop/SKILL.md has `### 1g. Stranded-Work Pre-flight` between 1f and Step 2: dirty tree + prior-run state.json → STOP naming the run; dirty + no prior state → today's surface-and-continue; clean → silent",
+        "runner-contract.md:183 and references/ralph-loop-contract.md:61 no longer contain 'stage a post-run retry' / 'follow-up retry pass'; both name the Post-Run Recovery Procedure and decision-record at collection",
+        "python3 scripts/build-adapters.py run and adapters/** committed; bash scripts/validate.sh passes (spec-purity: forge-5-loop body within the 300-line cap after 1g)"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T15:16:12.631Z",
+      "dependsOn": [
+        "002",
+        "003",
+        "004",
+        "005",
+        "006",
+        "008"
+      ],
+      "notes": "Capstone (REQ-DEC-04/05/06, REQ-CLU-02/03/04, REQ-TREE-01..04, REQ-UNB via 04, REQ-OUT-03 gate). Depends on every scripted surface it invokes (decision verbs 002, clustering 003, topology 004, resolved 005, starvation 006, rauf answer 008). recovery-procedure.md is a reference file (no 300-line body cap); only the ~5-line 1g addition to the SKILL body counts against the cap — coordinate with items 005/006/007 which also edit forge-5-loop/SKILL.md (budget ~293/300).",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/loop-recovery/05-recovery-procedure.md",
+        "specs/loop-recovery/04-apply-and-unblock.md",
+        "specs/loop-recovery/00-core-definitions.md",
+        "specs/loop-recovery/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "010",
+      "type": "feature",
+      "priority": 1,
+      "title": "Add the loop-outcome compliance probe + resolved fixture (REQ-EVAL-01)",
+      "description": "Ensure the new resolved outcome does not ship unmeasured (the #176 lesson). Full detail in spec 07-testing-strategy.md §6. No adapter regen — eval/ and tests/ are not fanned out to adapters/**.\n\n1. eval/run-compliance-eval.py: add run_loop_outcome_probe. It drives a forge-5-loop close with --outcome resolved and scores (a) exactly one sentinel line ('─ forge: end of stage ─'), (b) nothing after it, (c) the primary command is the fenced relaunch /feature-forge:forge-5-loop {feature}. Give it its OWN fixture loader that reads {schemaVersion, feature, scenarios} with per-scenario {name, outcome, expectedPrimaryCommand}, sharing only the hard-fail schemaVersion guard idiom with the branch-path reader — it is NOT a mirror of verify-fix-reverify.json.\n2. eval/fixtures/compliance/loop-outcome-resolved.json: create the resolved-route fixture with its own required-key set.\n3. Join --probe all in lockstep across all four sites: the module 'Three probes' docstring (line ~9) → 'Four probes'; the usage string (line ~55) → add |loop-outcome; the argparse --probe choices (line ~1936) → add 'loop-outcome'; the all dispatch (lines ~1976-1980) → report.probes.extend(run_loop_outcome_probe(...)).\n4. tests/test_compliance_eval.py: the exact-equality --probe all guard (:1948-1954) adds 'run_loop_outcome_probe' as the FOURTH entry (order matches the all dispatch); add a --probe loop-outcome case asserting it runs alone.",
+      "acceptanceCriteria": [
+        "run_loop_outcome_probe exists in eval/run-compliance-eval.py and eval/fixtures/compliance/loop-outcome-resolved.json exists declaring {schemaVersion, feature, scenarios} read by its own loader with a hard-fail schemaVersion guard",
+        "--probe all runs four probes ending in run_loop_outcome_probe; --probe loop-outcome runs it alone; the docstring, usage string, and argparse choices are all updated three→four in lockstep",
+        "tests/test_compliance_eval.py's exact-equality --probe all list adds 'run_loop_outcome_probe' as the fourth entry, and a --probe loop-outcome case asserts it runs alone",
+        "ruff check scripts/ eval/ passes; bash scripts/validate.sh passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-06T15:31:14.206Z",
+      "dependsOn": [
+        "005"
+      ],
+      "notes": "REQ-EVAL-01: the resolved outcome must bite on every full compliance sweep. Depends on 005 (the resolved outcome + its fenced resume route must exist for the probe to drive/score). No adapter regen needed (eval/ + tests/ are outside the fanned-out canon roots), but validate.sh still runs ruff over eval/ and the pytest suite.",
+      "estimatedIterations": 1,
+      "specReferences": [
+        "specs/loop-recovery/07-testing-strategy.md",
+        "specs/loop-recovery/01-architecture-layout.md"
+      ]
+    }
+  ]
+}

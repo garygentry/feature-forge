@@ -48,5 +48,5 @@ def test_forge4_cites_b27_lifecycle_guidance() -> None:
 
 def test_verify_skill_backlog_total_bumped() -> None:
     text = VERIFY_SKILL.read_text(encoding="utf-8")
-    assert "backlog: 27 checks" in text
-    assert "backlog 27" in text
+    assert "backlog: 28 checks" in text
+    assert "backlog 28" in text

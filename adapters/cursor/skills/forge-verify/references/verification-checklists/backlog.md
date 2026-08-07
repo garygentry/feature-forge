@@ -33,6 +33,35 @@ Detailed checklist for the **backlog** verification mode, loaded by the `forge-v
 - [ ] **CHECK-B18**: Items that depend on types/interfaces reference the item that creates them
 - [ ] **CHECK-B19**: Priority ordering is consistent with dependency ordering (dependencies should have equal or higher priority)
 
+### Dependency Topology
+- [ ] **CHECK-B28**: **Fragile dependency topology — a single root gates a large fraction of the
+  backlog, or the chain is deep** (#194). *Advisory heuristic — severity `improvement`, **never**
+  `error`/`gap`, and it **never blocks**. **not-applicable** when no trigger fires or the graph is
+  trivial (0–1 items, or no dependsOn edges at all).* A backlog where one root item gates most of
+  the tree, or whose critical chain is deep relative to its size, has a single point of near-total
+  failure: one defect in that root (or anywhere on the long chain) strands the dependent subtree —
+  the loop-recovery incident was 3 roots gating 81% of 16 items down a 13-deep chain, and it passed
+  both authoring and verification without comment. Verify by computing, never by eyeballing:
+  1. **Compute the topology.** Feed the runner's item array to the scripted metric:
+
+     ```
+     rauf backlog list . --backlog {resolvedBacklogDir} --json | python3 "$R/scripts/forge-session.py" backlog-topology --items-stdin --json
+     ```
+
+     Read `itemCount`, `rootCount`, `roots[].gatedCount`, `maxChainDepth`, and `warnings`. If
+     `itemCount <= 1` or there are no `dependsOn` edges, this check is **not-applicable**.
+  2. **Read the warnings, do not re-derive them.** The metric applies the fixed thresholds
+     (`single-root-fanout` when any root gates ≥50% of items; `chain-depth` when `maxChainDepth`
+     ≥50% of item count). If `warnings` is empty, record **pass** (topology computed, no fragile
+     shape). Do not invent a different threshold — the constants are canonical
+     (`forge-session.py`).
+  3. **Report each fired warning as one `improvement` finding.** For `single-root-fanout`, name the
+     root and its `gatedCount`/`itemCount` ("root 1 gates 13/16 items") and suggest splitting that
+     root's subtree or introducing an intermediate. For `chain-depth`, name
+     `maxChainDepth`/`itemCount` and suggest flattening. **Report, do not repair** — this is a
+     heads-up to the author, never a blocking gate. Cite the metric output the claim was derived
+     from.
+
 ### Completeness
 - [ ] **CHECK-B20**: There is an item for the initial package scaffold
 - [ ] **CHECK-B21**: There is an item for shared types and error hierarchy

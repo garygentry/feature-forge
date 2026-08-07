@@ -623,7 +623,7 @@ EXIT_STAGES = (
 STATE_DRIVEN_STAGES = EXIT_STAGES[:5]
 BRANCH_STAGES = ("forge-verify", "forge-fix")
 EXIT_OUTCOMES = {
-    "forge-5-loop": ("complete", "partial", "blocked", "needs-human", "deferred"),
+    "forge-5-loop": ("complete", "partial", "blocked", "needs-human", "deferred", "resolved"),
     "forge-6-docs": ("complete", "blocked"),
     "forge-verify": ("passed", "findings", "skipped", "failed"),
     "forge-fix": (
@@ -2338,15 +2338,15 @@ def test_loop_requires_its_own_outcome_and_rejects_any_other(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize("outcome", LOOP_OUTCOMES, ids=LOOP_OUTCOMES)
-def test_loop_accepts_exactly_the_five_loop_outcomes(tmp_path: Path, outcome: str):
+def test_loop_accepts_exactly_the_six_loop_outcomes(tmp_path: Path, outcome: str):
     root = _project(tmp_path, config={})
     d = _loop(root, outcome)["directives"]
     assert d["outcome"] == outcome
     assert d["stage"] == "forge-5-loop"
 
 
-@pytest.mark.parametrize("outcome", ["partial", "deferred"])
-def test_loop_partial_and_deferred_fence_the_loop_resume(tmp_path: Path, outcome: str):
+@pytest.mark.parametrize("outcome", ["partial", "deferred", "resolved"])
+def test_loop_partial_deferred_and_resolved_fence_the_loop_resume(tmp_path: Path, outcome: str):
     """02 §7: state remains resumable, so the loop itself is the primary action."""
     root = _project(tmp_path, config={})
     payload = _loop(root, outcome)
@@ -2461,7 +2461,9 @@ def test_loop_outcome_text_sits_inside_the_block_above_the_sentinel(
     lines = block.splitlines()
     assert lines[0] == "**Next steps**"
     # The outcome text is line 2 — above the numbered guidance and the fence.
-    assert lines[1].startswith(("Every backlog item is done", "The loop"))
+    assert lines[1].startswith(
+        ("Every backlog item is done", "The loop", "The needs-human stop")
+    )
     assert "widget" in lines[1]
     assert block.count(SENTINEL) == 1
     assert lines[-1] == SENTINEL
@@ -2643,6 +2645,73 @@ def test_every_loop_outcome_has_a_route_and_a_sentence() -> None:
     # Only `complete` may reach a production stage.
     assert [o for o, k in session._LOOP_ROUTE_KIND.items() if k == "handoff"] == \
         ["complete"]
+
+
+# --------------------------------------------------------------------------- #
+# 03 §5.3 — the --cause dependency-starvation validity matrix (REQ-ATTR-04)
+# --------------------------------------------------------------------------- #
+
+#: The sentence fragment only the starvation variant carries — its presence (or
+#: absence) is what distinguishes the two partial texts below.
+STARVED_MARKER = "the iteration limit was NOT the constraint"
+
+
+def test_cause_with_loop_partial_swaps_in_the_starved_text(tmp_path: Path) -> None:
+    """--cause dependency-starvation is accepted ONLY here, and only changes text."""
+    root = _project(tmp_path, config={})
+    payload = _loop(root, "partial", "widget", "--cause", "dependency-starvation")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["outcome"] == "partial"
+    assert d["primaryCommand"] == LOOP_RESUME, "the route is unchanged: still a resume"
+    assert f"```\n{LOOP_RESUME}\n```" in block
+    assert STARVED_MARKER in block
+    assert "unblock the roots named in the starvation report above" in block
+
+
+def test_partial_without_cause_renders_todays_text_verbatim(tmp_path: Path) -> None:
+    """Absent --cause, partial is byte-for-byte today's sentence — no ripple."""
+    session = _load_session()
+    root = _project(tmp_path, config={})
+    block = _loop(root, "partial")["nextSteps"]
+    assert session._LOOP_OUTCOME_TEXT["partial"].format(feature="widget") in block
+    assert STARVED_MARKER not in block
+
+
+@pytest.mark.parametrize(
+    "outcome", [o for o in LOOP_OUTCOMES if o != "partial"],
+    ids=[o for o in LOOP_OUTCOMES if o != "partial"],
+)
+def test_cause_is_rejected_for_every_other_loop_outcome(
+    tmp_path: Path, outcome: str
+) -> None:
+    """Any non-partial outcome exits 2 before any output (fail-closed, no sentinel)."""
+    root = _project(tmp_path, config={})
+    err = _rejected(root, "--feature", "widget", "--stage", "forge-5-loop",
+                    "--outcome", outcome, "--cause", "dependency-starvation")
+    assert "--cause dependency-starvation is valid only with" in err
+
+
+@pytest.mark.parametrize(
+    "stage", [s for s in EXIT_STAGES if s != "forge-5-loop"],
+    ids=[s for s in EXIT_STAGES if s != "forge-5-loop"],
+)
+def test_cause_is_rejected_for_every_other_stage(tmp_path: Path, stage: str) -> None:
+    """Even an otherwise-legal exit for any other stage exits 2 with --cause."""
+    root = _project(tmp_path, config={})
+    err = _rejected(root, "--feature", "widget", *_minimal_args(stage),
+                    "--cause", "dependency-starvation")
+    assert "--cause dependency-starvation is valid only with" in err
+
+
+def test_an_unknown_cause_value_is_rejected_by_argparse(tmp_path: Path) -> None:
+    """`choices` holds the value domain closed; only dependency-starvation parses."""
+    root = _project(tmp_path, config={})
+    for value in ("iteration-limit", "starvation", ""):
+        proc = _run(root, "--feature", "widget", "--stage", "forge-5-loop",
+                    "--outcome", "partial", "--cause", value)
+        assert proc.returncode == 2, (value, proc.stdout, proc.stderr)
+        assert proc.stdout == "", "rejection must precede any payload"
+        assert SENTINEL not in proc.stdout + proc.stderr
 
 
 # --------------------------------------------------------------------------- #
@@ -3204,7 +3273,9 @@ def test_a_route_that_already_lands_on_the_epic_is_not_self_deferred(
         payload["nextSteps"]
 
 
-@pytest.mark.parametrize("outcome", ["partial", "deferred", "blocked", "needs-human"])
+@pytest.mark.parametrize(
+    "outcome", ["partial", "deferred", "resolved", "blocked", "needs-human"]
+)
 def test_a_non_complete_loop_outcome_still_offers_no_continuation(
     tmp_path: Path, outcome: str
 ) -> None:

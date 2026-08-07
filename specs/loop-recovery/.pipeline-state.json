@@ -1,0 +1,125 @@
+{
+  "feature": "loop-recovery",
+  "createdAt": "2026-08-05T19:47:17Z",
+  "pipelineStatus": "active",
+  "stages": {
+    "forge-1-prd": {
+      "status": "complete",
+      "startedAt": "2026-08-05T19:47:17Z",
+      "artifacts": [
+        "PRD.md"
+      ],
+      "completedAt": "2026-08-05T19:48:01Z",
+      "version": 1,
+      "basedOnVersions": {},
+      "commitHash": "c27804540cd8216116a84cbe3942ef14ccb89367"
+    },
+    "forge-verify-prd": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-prd-2026-08-05-round2.md",
+      "findingsCount": 3,
+      "verifiedAt": "2026-08-05T21:06:23Z",
+      "verifiedStageVersion": 1,
+      "commitHash": "e646c002738e2cb85c3e532184fbfceddcdeeb69"
+    },
+    "forge-2-tech": {
+      "status": "complete",
+      "startedAt": "2026-08-05T21:35:54Z",
+      "artifacts": [
+        "tech-spec.md"
+      ],
+      "completedAt": "2026-08-06T00:01:45Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 1
+      },
+      "commitHash": "67e15aaab08efb4eda83baf0e90a211760bde789"
+    },
+    "forge-verify-tech": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-tech-2026-08-05-round2.md",
+      "findingsCount": 4,
+      "verifiedAt": "2026-08-06T00:52:25Z",
+      "verifiedStageVersion": 1,
+      "commitHash": "ea0fcf49f9fbe20ea3bd0f7f30645bcf9582faad"
+    },
+    "forge-3-specs": {
+      "status": "complete",
+      "startedAt": "2026-08-06T00:57:28Z",
+      "artifacts": [
+        "00-core-definitions.md",
+        "01-architecture-layout.md",
+        "02-decision-record.md",
+        "03-outcome-and-attribution.md",
+        "04-apply-and-unblock.md",
+        "05-recovery-procedure.md",
+        "06-clustering-and-topology.md",
+        "07-testing-strategy.md",
+        "TRACEABILITY.md"
+      ],
+      "completedAt": "2026-08-06T03:59:08Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1
+      },
+      "commitHash": "177fe9b94c8ff5debda39c2f9dbf44aab86239f0"
+    },
+    "forge-verify-specs": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-specs-2026-08-06.md",
+      "findingsCount": 3,
+      "verifiedAt": "2026-08-06T04:11:29Z",
+      "verifiedStageVersion": 1,
+      "commitHash": "26ed7d5a646eb2038d67fc9f8e63a0d1519ffa8b"
+    },
+    "forge-4-backlog": {
+      "status": "complete",
+      "startedAt": "2026-08-06T04:23:31Z",
+      "completedAt": "2026-08-06T04:52:10Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1,
+        "forge-3-specs": 1
+      },
+      "artifacts": [
+        "backlog.json"
+      ],
+      "commitHash": "a84d11c394ac28a110310f9903ef7c64dc05a97e"
+    },
+    "forge-verify-backlog": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-backlog-2026-08-06.md",
+      "findingsCount": 1,
+      "verifiedAt": "2026-08-06T12:24:58Z",
+      "verifiedStageVersion": 1,
+      "commitHash": "d34cff6b14aab061cc6e713264a1c008bb49975d"
+    },
+    "forge-5-loop": {
+      "status": "complete",
+      "startedAt": "2026-08-06T13:17:55Z",
+      "completedAt": "2026-08-06T16:03:52Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-4-backlog": 1
+      },
+      "artifacts": [
+        "specs/loop-recovery/.rauf/state.json"
+      ],
+      "commitHash": null
+    },
+    "forge-verify-impl": {
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-impl-2026-08-06.md",
+      "findingsCount": 2,
+      "verifiedAt": "2026-08-06T17:36:03Z",
+      "verifiedStageVersion": 1,
+      "commitHash": "ecc513bd49c95f0329561f767c921074ea527f24"
+    }
+  },
+  "currentStage": "forge-5-loop",
+  "updatedAt": "2026-08-06T17:36:16Z",
+  "branch": "forge/loop-recovery",
+  "notes": "Carry into forge-3-specs: tech re-verify advisories V-012..V-015 (VERIFY-tech-2026-08-05-round2.md) — esp. V-012: rename test_loop_accepts_exactly_the_five_loop_outcomes to ..._six_... when resolved lands (it goes green silently otherwise); V-015: vendor the three verify-test-debt blockedReason strings verbatim into test_decision_clustering.py (source .rauf archive is prunable; binding Jaccard pair clears 0.5 by only 0.028)."
+}

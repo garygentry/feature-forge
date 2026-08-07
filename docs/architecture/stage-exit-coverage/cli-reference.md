@@ -51,7 +51,7 @@ python3 <plugin-root>/scripts/forge-session.py stage-exit \
 |-----------|--------------------|-----------|-------------------------------------|------------------|
 | `forge-0-epic` | — (rejected) | rejected | rejected | accepted |
 | `forge-1-prd` … `forge-4-backlog` | — (rejected) | rejected | rejected | rejected |
-| `forge-5-loop` | `complete`, `partial`, `blocked`, `needs-human`, `deferred` | rejected | rejected | rejected |
+| `forge-5-loop` | `complete`, `partial`, `blocked`, `needs-human`, `deferred`, `resolved` | rejected | rejected | rejected |
 | `forge-6-docs` | `complete`, `blocked` | rejected | rejected | rejected |
 | `forge-verify` | `passed`, `findings`, `skipped`, `failed` | **required** | required (explicit or inferred) | rejected |
 | `forge-fix` | `no-findings`, `decisions`, `failed`, `applied`, `reverified`, `reverify-findings`, `deferred` | **required** | required (explicit or inferred) | rejected |
