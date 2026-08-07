@@ -329,14 +329,14 @@ recovery.
 ## 7. Report citations (REQ-OBS-01)
 
 Every report surface this procedure produces names the authoritative source it derived
-its claims from; a claim that source contradicts is a reportable defect. This table is
-carried from the feature's master citation-basis contract:
+its claims from; a claim that source contradicts is a reportable defect. Each report
+surface names the authoritative source it derives its claims from:
 
 | Report surface | Authoritative citation basis |
 |---|---|
-| Pending / starvation template (`03`) | `backlogSummary` counts + `backlog-topology` output over `listCommand` JSON; iteration counters from `state.json` (`iteration`/`maxIterations`) |
-| Failed-recovery report (`04`, §2 step 6) | The per-item `listCommand` re-read — movers/non-movers named from item `status`, never aggregate counts |
-| `resolved` outcome text (`03`) | The three gate evaluations: `decision-list --unapplied` (empty), `git status --porcelain` (empty), per-item re-read (all affected left `blocked`) |
+| Pending / starvation template | `backlogSummary` counts + `backlog-topology` output over `listCommand` JSON; iteration counters from `state.json` (`iteration`/`maxIterations`) |
+| Failed-recovery report (§2 step 6) | The per-item `listCommand` re-read — movers/non-movers named from item `status`, never aggregate counts |
+| `resolved` outcome text | The three gate evaluations: `decision-list --unapplied` (empty), `git status --porcelain` (empty), per-item re-read (all affected left `blocked`) |
 | Consolidated blast-radius prompt (§2 step 3) | `backlog-topology --cluster` gated-subtree output (member ids + counts) |
 | Tree-reconciliation presentation (§4) | `git status --porcelain` paths + `state.json`/`events.ndjson` run evidence, attributions explicitly presented as **candidates** |
-| Step 2a depth line (`06`) | The same `backlog-topology` output (`maxChainDepth`) |
+| Step 2a depth line | The same `backlog-topology` output (`maxChainDepth`) |
