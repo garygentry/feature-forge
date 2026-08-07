@@ -56,8 +56,8 @@ sub-agents for the independent subtasks, then wait for all of them before final 
 Conventions for agents contributing to this repository live in [`AGENTS.md`](AGENTS.md) —
 read it before building, testing, or opening a PR here.
 
-One that is routinely re-litigated: **`smokeCommand` is `null` by design.** `testCommand`
-(`bash scripts/validate.sh`) is a strict superset of any smoke this repo could run, and
-there is no bootable app runtime here. `CHECK-I21` is therefore `not-applicable` on this
-repo on purpose — report it as such and do **not** recommend configuring one. See
-AGENTS.md § "Verification conventions (forge-verify on this repo)".
+One worth noting: **`smokeCommand` is set to `python3 scripts/forge-session.py doctor --json`**
+(a real health smoke, exit-0 = pass), so `CHECK-I21` *runs* on this repo. `testCommand`
+(`bash scripts/validate.sh`) remains a strict superset for coverage, but the smoke is kept
+so that "clean" also proves the CLI runs. See AGENTS.md § "Verification conventions
+(forge-verify on this repo)".
