@@ -1270,6 +1270,18 @@ def _config_value(config_path: Path, key: str):
     return _load_config(config_path).get(key)
 
 
+def _config_duplicate_keys(config_path: Path) -> list[str]:
+    """Duplicate key names in the config file, for doctor's health report.
+
+    Empty on a missing/unreadable/invalid config — those conditions are
+    reported by doctor's ``configExists`` field, not here.
+    """
+    try:
+        return load_json_with_duplicates(config_path)[1]
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
 def auto_verify_for(config: dict, stage: str) -> bool:
     """Return the effective auto-verify setting for ``stage``.
 
@@ -1502,6 +1514,7 @@ def doctor_report(specs_dir: Path, config_path: Path) -> dict:
         "counts": _counts(specs_dir),
         "features": features,
         "invalidAutoVerifyKeys": invalid_auto_verify_keys(config),
+        "duplicateConfigKeys": _config_duplicate_keys(config_path),
         "rootSandbox": _root_sandbox_status(),
     }
 
@@ -1569,6 +1582,11 @@ def _print_doctor(report: dict) -> None:
     invalid = report.get("invalidAutoVerifyKeys") or []
     if invalid:
         print("  ! invalid autoVerifyStages keys (ignored): " + ", ".join(invalid))
+    duplicates = report.get("duplicateConfigKeys") or []
+    if duplicates:
+        print(
+            "  ! duplicate config keys (last value wins): " + ", ".join(duplicates)
+        )
     rs = report.get("rootSandbox") or {}
     if rs.get("isRoot"):
         if rs.get("isSandboxSet"):

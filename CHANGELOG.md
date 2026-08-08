@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`doctor` reports duplicate `forge.config.json` keys (#201).** A hand-edited config with a repeated key (last value wins) previously surfaced only as a per-invocation stderr warning — repeated on every `forge-session.py` call and absent from the one command whose job is config health. `doctor` now carries the duplicate key names the loader already computes: a `duplicateConfigKeys` list in the `--json` payload (`[]` = checked and clean, empty on a missing/unparseable config since `configExists` owns those findings) and a `! duplicate config keys (last value wins): …` line in the human report, alongside the existing `invalidAutoVerifyKeys` finding. The stderr warning is unchanged.
+
 ## [0.16.0] — 2026-08-08
 
 ### Added

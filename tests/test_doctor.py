@@ -233,6 +233,59 @@ def test_doctor_reports_root_sandbox_block(tmp_path: Path) -> None:
     assert rs["loopWillSetSandbox"] == (rs["isRoot"] and not rs["isSandboxSet"])
 
 
+def test_doctor_reports_duplicate_config_keys(tmp_path: Path) -> None:
+    """A hand-edited config with a repeated key surfaces in the payload (issue #201).
+
+    The per-invocation stderr warning was the only signal; doctor is the one
+    place to ask "is my config healthy?", so the duplicate names the loader
+    already computes must land in its JSON.
+    """
+    (tmp_path / "forge.config.json").write_text(
+        '{"autoVerify": true, "specsDir": "specs", "autoVerify": true}'
+    )
+
+    result = _doctor(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["duplicateConfigKeys"] == ["autoVerify"]
+
+
+def test_doctor_clean_config_reports_no_duplicate_keys(tmp_path: Path) -> None:
+    """``[]`` means checked-and-clean — the key is present even with no findings."""
+    (tmp_path / "forge.config.json").write_text("{}")
+
+    result = _doctor(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["duplicateConfigKeys"] == []
+
+
+def test_doctor_missing_config_reports_no_duplicate_keys(tmp_path: Path) -> None:
+    """No config file → empty list; absence is ``configExists``'s finding, not this one's."""
+    result = _doctor(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["configExists"] is False
+    assert report["duplicateConfigKeys"] == []
+
+
+def test_doctor_human_output_flags_duplicate_config_keys(tmp_path: Path) -> None:
+    """The human report prints the finding line naming each duplicated key."""
+    (tmp_path / "forge.config.json").write_text(
+        '{"autoVerify": true, "autoVerify": true}'
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(HELPER), "doctor"],
+        capture_output=True, text=True, cwd=str(tmp_path),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "! duplicate config keys (last value wins): autoVerify" in result.stdout
+
+
 def test_root_sandbox_status_root_without_flag(monkeypatch) -> None:
     """As root with IS_SANDBOX unset, the loop must supply the sandbox default."""
     module = _load_helper_module()
