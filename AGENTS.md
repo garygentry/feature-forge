@@ -44,15 +44,16 @@ feature-forge are versioned **independently** (no lockstep); the only coupling i
 
 ## Verification conventions (forge-verify on this repo)
 
-**`smokeCommand` is `null` by design — do not re-raise it.** `forge.config.json` sets
-`"testCommand": "bash scripts/validate.sh"`, which is a strict superset of the smoke a
-`smokeCommand` would run: it drives spec-purity, the adapter drift gate, the full pytest
-suite, the `adapter-src/pi` verify, ruff, traceability, and version-sync. This repo has
-no long-running server or wired app entrypoint to boot, so there is no runtime that
-`validate.sh` leaves unexercised. `CHECK-I21` therefore degrades to `not-applicable` on
-every impl-verify here **on purpose** (owner decision, 2026-07-29, finding V-013 of the
-`context-efficiency` impl verify). Report it as `not-applicable` and move on; do not
-recommend configuring one, and never fabricate a command.
+**`CHECK-I21` runs the configured `smokeCommand` on this repo.** `forge.config.json` sets
+`"smokeCommand": "python3 scripts/forge-session.py doctor --json"` — a legitimate,
+non-fabricated health smoke that exits 0 and emits valid health JSON. `CHECK-I21`
+runs it and passes iff exit 0. The heavier `"testCommand": "bash scripts/validate.sh"`
+remains a strict superset for coverage — it drives spec-purity, the adapter drift gate,
+the full pytest suite, the `adapter-src/pi` verify, ruff, traceability, and version-sync —
+but the smoke is retained because keeping it means "clean" also proves the CLI *runs*.
+(This supersedes the earlier `null`-by-design / `not-applicable` convention from owner
+decision 2026-07-29, finding V-013 of the `context-efficiency` impl verify; reinstated by
+finding V-001 of the `loop-recovery` impl verify.) Never fabricate a command.
 
 ## Repository Conventions
 
