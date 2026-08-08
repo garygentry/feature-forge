@@ -45,7 +45,7 @@ Detailed checklist for the **specs** verification mode, loaded by the `forge-ver
 - [ ] **CHECK-S26**: Import paths match actual package export maps
 
 ### Edge Cases and Non-Functional
-- [ ] **CHECK-S27**: Concurrent access scenarios are addressed if relevant
+- [ ] **CHECK-S27**: Concurrent access scenarios are addressed if relevant (a PRD position of "out of scope — single writer assumed" is a complete answer; for forge state writes the standing decision is `references/decisions/single-writer-threat-model.md` — cite it, do not design a mechanism)
 - [ ] **CHECK-S28**: Empty/null/undefined inputs are handled
 - [ ] **CHECK-S29**: Performance-sensitive paths are identified
 - [ ] **CHECK-S30**: Security considerations from PRD are reflected in implementation

@@ -4592,7 +4592,8 @@ def _write_state(state_path: Path, state: dict) -> None:
     the temp file onto the target. os.replace is atomic on POSIX within one
     filesystem, so an interrupted write never leaves a partial or corrupt state
     file. Concurrent multi-session mutation is out of scope (single writer
-    assumed, matching epic-manifest.py).
+    assumed, matching epic-manifest.py; decision record:
+    references/decisions/single-writer-threat-model.md, issue #180).
 
     Args:
         state_path: Destination path, e.g.
