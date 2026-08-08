@@ -4,21 +4,19 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-05 (0.15.0 / installer 0.3.2 cut; hardening pass S0 complete)._
+_Last updated: 2026-08-08 (0.16.0 / installer 0.3.3 merged to main — deliberately unpublished;
+cleanup-execution program underway, tracker: `plans/HANDOFF-cleanup-execution.md`)._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.15.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.2** | `installer/package.json` (independent version line) |
-| npm | **`@garygentry/feature-forge@0.3.2`** (`latest`) | publish dispatched post-merge 2026-08-05 via `npm-publish.yml` |
-| Commit | `chore(release): v0.15.0 / installer 0.3.2` | |
+| Plugin | **0.16.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.3.3** | `installer/package.json` (independent version line) |
+| npm | **`@garygentry/feature-forge@0.3.2`** (`latest`) — **0.3.3 NOT published** | one coordinated publish at program end (Phase F of the cleanup handoff); npm doesn't require intermediate versions |
+| Commit | `chore(release): v0.16.0 / installer 0.3.3 (#206)` = `bacf353` | |
 
-CHANGELOG `[Unreleased]` is **empty** — 0.15.0 is the current section, and the previously
-missing `## [0.14.0]` heading was retroactively cut (the 0.14.0 release commit bumped
-versions without cutting `[Unreleased]`; see the AGENTS.md release-checklist note added
-alongside this entry).
+CHANGELOG `[Unreleased]` is **empty** — 0.16.0 is the current section.
 
 ### rauf coupling
 
@@ -38,6 +36,11 @@ before advancing it.
 
 ## Shipped recently
 
+- **0.16.0** / installer 0.3.3 (2026-08-08, PR #206 — merged, **unpublished**) — Track B
+  close-out: **loop-recovery** pipeline feature (#204: autonomous-loop recovery — decision
+  records, failure clustering, topology, `resolved` outcome; closed #189–#194 #196) +
+  **V-001 smokeCommand docs reconcile** (#205). The 2026-08-08 branch/issue reconciliation
+  (13 branches deleted, 6 issues closed, #192 rescoped) preceded this cut.
 - **0.15.0** / installer 0.3.2 (2026-08-05) — reconciliation release carrying **three feature
   waves that had accumulated on main unreleased**:
   - **stage-exit-coverage epic + P1 remediation (#184)** — scripted stage exits now cover all
@@ -141,7 +144,7 @@ section, updated at every session close).
 |---|---|---|
 | **S0** — land, reconcile, release 0.15.0 | verify-test-debt PR, CHANGELOG surgery, #195, this refresh, 0.15.0, AGENTS.md process note | **done** (2026-08-05) |
 | **S1** — issue closeout + two small fixes | verify-and-close #163 #172 #175 #176 with evidence; rescope #181; record #170/#171 split; fix #183; create milestones | **done** (2026-08-05) |
-| **B** — forge-5-loop recovery (pipeline feature `loop-recovery`) | #196 (keystone decision record) #193 #192 #189 #190 #191 #194; release 0.16.0 at close | pending — highest value ⟵ **next** |
+| **B** — forge-5-loop recovery (pipeline feature `loop-recovery`) | #196 (keystone decision record) #193 #192 #189 #190 #191 #194; release 0.16.0 at close | **done** (2026-08-08: PR #204 merged, 0.16.0 cut via #206; #192 rescoped → Track C wiring fix) |
 | **C** — contracts & state-integrity batch (direct PR) | #186 #187 #188 #182 #181-remainder #166 | pending |
 | **D** — skip-docs (pipeline feature `docs-skip`) | #197 mechanism → #165 option/config → #173 re-gate | pending |
 | **E** — zero-prompt loop config (direct PR) | #153 #164 (`loopRunner.reviewMode`/`.agentMode`); 0.17.0 with D | pending |
@@ -156,10 +159,10 @@ any new state surface (the R4 pattern), `bash scripts/validate.sh` green before 
 
 ## Open issues
 
-_28 open as of 2026-08-05, all triaged into the hardening-pass tracks above. Four
-(#163 #172 #175 #176) are already implemented on main by #184 and await
-verify-and-close in S1; #181 is half-fixed (heredoc gone, schema still missing —
-remainder in Track C)._
+_19 open as of 2026-08-08 (post-reconciliation), all sequenced in
+`plans/HANDOFF-cleanup-execution.md` + `plans/WORKSTREAMS-open-issues-2026-08-08.md`;
+each carries a 2026-08-08 "Reconciliation sweep" evidence comment with current
+file:line pointers._
 
 Two known non-blocking follow-ups, untracked (no issue filed):
 
