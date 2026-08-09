@@ -4,8 +4,9 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-08 (0.16.0 / installer 0.3.3 merged to main — deliberately unpublished;
-cleanup-execution program underway, tracker: `plans/HANDOFF-cleanup-execution.md`)._
+_Last updated: 2026-08-09 (Track D docs-skip workstream landed on main — unreleased, rides
+the next cut; 0.16.0 / installer 0.3.3 remain deliberately unpublished; cleanup-execution
+program underway, tracker: `plans/HANDOFF-cleanup-execution.md`)._
 
 ## Current release
 
@@ -146,7 +147,7 @@ section, updated at every session close).
 | **S1** — issue closeout + two small fixes | verify-and-close #163 #172 #175 #176 with evidence; rescope #181; record #170/#171 split; fix #183; create milestones | **done** (2026-08-05) |
 | **B** — forge-5-loop recovery (pipeline feature `loop-recovery`) | #196 (keystone decision record) #193 #192 #189 #190 #191 #194; release 0.16.0 at close | **done** (2026-08-08: PR #204 merged, 0.16.0 cut via #206; #192 rescoped → Track C wiring fix) |
 | **C** — contracts & state-integrity batch (direct PR) | #186 #187 #188 #182 #181-remainder #166 | pending |
-| **D** — skip-docs (pipeline feature `docs-skip`) | #197 mechanism → #165 option/config → #173 re-gate | pending |
+| **D** — skip-docs (hand-sequenced 4-PR series) | #202 recovery → #197 mechanism → #203+#165 guard/config → #173 re-gate | **done** (2026-08-09: PRs #211–#214 merged, all five issues closed. `state-skip` verb + `docsStageEntry` schema + `docsStage` config + `_SKIP_PROTECTED_PRIOR` demotion guard + `docsStatus`-gated epic-doc offer. Unreleased — in `[Unreleased]` for the next cut) |
 | **E** — zero-prompt loop config (direct PR) | #153 #164 (`loopRunner.reviewMode`/`.agentMode`); 0.17.0 with D | pending |
 | **F** — verify fix-sweeps (pipeline feature) | #170 mechanical milestone, then #171 semantic | pending |
 | **G** — decisions & standalone | #180 single-writer decision; #167 adapter host-term translation (last) | **in progress** (2026-08-08: #180 decided + recorded via PR #209 — single writer assumed, detection-not-locking, `references/decisions/single-writer-threat-model.md`; unblocks Track C. #167 remaining, deliberately last) |
@@ -159,8 +160,8 @@ any new state surface (the R4 pattern), `bash scripts/validate.sh` green before 
 
 ## Open issues
 
-_17 open as of 2026-08-08 (post-reconciliation; Phase 1 closed #201 via PR #208 and
-#180 via PR #209), all sequenced in
+_12 open as of 2026-08-09 (Phase 1 closed #201/#180 via PRs #208/#209; Phase 2 closed
+#202/#197/#203/#165/#173 via PRs #211–#214), all sequenced in
 `plans/HANDOFF-cleanup-execution.md` + `plans/WORKSTREAMS-open-issues-2026-08-08.md`;
 each carries a 2026-08-08 "Reconciliation sweep" evidence comment with current
 file:line pointers._
