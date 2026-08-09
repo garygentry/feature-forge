@@ -180,13 +180,16 @@ high and the noise low:
   likely stepped away). **Important — the loop is NOT paused:** the runner has set that
   item aside and kept working other items. So report *what* needs a human and *which*
   item, then either (a) collect the user's answer via `AskUserQuestion` and **record it via
-  `decision-record` now**, then run the **Post-Run Recovery Procedure**
-  (`references/recovery-procedure.md`) after the run ends, or (b) offer to **cancel the
-  run early** (also recorded via `decision-record` — a deferral) if the answer changes the
-  whole plan. Do not tell the user the loop is waiting on their reply — it isn't.
+  `decision-record` now** — SKILL Step 4c's unconditional **Post-Run Recovery Procedure**
+  pass (`references/recovery-procedure.md`) applies it after the run ends — or (b) offer
+  to **cancel the run early** (also recorded via `decision-record` — a deferral) if the
+  answer changes the whole plan. Do not tell the user the loop is waiting on their reply
+  — it isn't.
 - **`item_blocked`** → surface the blocked item + reason now (visibility) and
   accumulate for the final summary. Use `{rendered statusJsonCommand}` to distinguish a
   genuine `blocked` from a runner-`deferred` "false block" (`backlogSummary.deferred`).
+  No action is needed now: Step 4c's recovery pass offers the unblock after the run
+  ends — a blocked-only run (no `needs_human` event) still enters it.
 - **`loop_error`** → a real failure (this is also what a circuit-breaker halt — too many
   consecutive infra failures — emits). Surface now and `PushNotification`. Offer
   inspection / `--force` / re-run as appropriate.
