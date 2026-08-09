@@ -138,6 +138,8 @@ List any gaps or inconsistencies found and resolve them.
 
 ## Step 6: Review with User
 
+This is a **blocking review** — per the **Stage Review Gate** in `references/shared-conventions.md`, do not proceed until the user confirms.
+
 Present a summary of all documents created as text, with key decisions highlighted. Then use the host's question mechanism to collect feedback — do NOT include these questions in your text output:
 
 "1. Does the level of detail match what you need? 2. Any areas that need more depth? 3. Any missing subsystems or concerns?"

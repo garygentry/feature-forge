@@ -191,6 +191,8 @@ Unresolved technical decisions.
 
 ## Step 6: Review with User
 
+This is a **blocking review** — per the **Stage Review Gate** in `references/shared-conventions.md`, do not proceed until the user confirms.
+
 Present the complete tech spec. Ask:
 - "Does this capture all the technical decisions correctly?"
 - "Any patterns from the existing codebase I missed?"

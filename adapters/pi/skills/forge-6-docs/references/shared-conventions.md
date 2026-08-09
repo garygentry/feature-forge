@@ -53,6 +53,17 @@ For genuinely comparable artifacts (competing module structures, two code snippe
 
 The **Branch Setup** block below is the reference pattern: a strong recommendation as the first option, rationale inline, the alternative still available, never a hard-stop.
 
+## Stage Review Gate
+
+Every authoring stage ends its "Review with User" step in exactly one of two shapes. Which shape a stage uses is declared **here, once** — each stage's review step points at this block by title, and the shape is never re-derived from the surrounding prose or inferred from how sibling stages behave (three stages block and one does not; majority-shape inference is precisely the failure this block exists to prevent):
+
+- **Blocking review (gate).** The stage presents the artifact and collects feedback through `AskUserQuestion`; it does **not** proceed until the user answers, iterating until they confirm. Stages: **forge-1-prd** (Step 5), **forge-2-tech** (Step 6), **forge-3-specs** (Step 6).
+- **Non-blocking review (invitation).** The stage states the artifact is ready and invites adjustments **as a statement, not a question** — and then **proceeds to the next step in the same turn unless the user asks for changes**. The invitation obliges the agent to *continue*: emitting the invitation sentence and stopping treats the non-gate as a gate and strands the stage `in-progress` with its completion step unrun — a defect, not caution. Stage: **forge-4-backlog** (Step 6).
+
+**Why the shapes differ.** A blocking review guards an artifact whose content was just authored from open-ended interview or synthesis — the user is the only authority on "complete", so the stage must wait. forge-4's backlog is *derived* from specs the user already approved, was planned interactively in its Step 3, and is machine-validated in its Step 5; a second hard gate would re-ask a settled question, and the loop never launches without forge-5-loop's own Step 2d confirmation anyway. The invitation is a courtesy checkpoint, not an approval gate (removed deliberately in #78's consistency sweep).
+
+A stage that changes shape changes it **in this block first**; the per-stage pointer stays a pointer.
+
 ## Configuration Reading
 
 Read `forge.config.json` from the project root. If it doesn't exist, use defaults.

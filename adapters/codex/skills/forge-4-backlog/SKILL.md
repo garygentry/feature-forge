@@ -165,7 +165,9 @@ This step is **guidance only — it never fails authoring**. If the topology com
 
 Present a summary: total items N, dependency-chain depth, estimated loop iterations (`ceil(pendingItems * loopIterationMultiplier)`). Note whether validation passed or was skipped (runner not yet available).
 
-State that the backlog is ready and invite adjustments before committing — a statement, not a forced gate: "Backlog is ready. Tell me if you want any items split, merged, or reordered; otherwise I'll record state and commit." Proceed to Step 7 unless the user asks for changes.
+This is a **non-blocking review (invitation)** — per the **Stage Review Gate** in `references/shared-conventions.md`: sibling stages block here; this stage deliberately does not, and the invitation obliges you to continue, not stop.
+
+State that the backlog is ready and invite adjustments before committing — a statement, not a forced gate: "Backlog is ready. Tell me if you want any items split, merged, or reordered; otherwise I'll record state and commit." **Proceed to Step 7 in this same turn** unless the user asks for changes — emitting the invitation and stopping strands the stage before Step 7 runs.
 
 ## Step 7: Update Pipeline State and Commit
 
