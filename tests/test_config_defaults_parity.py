@@ -40,6 +40,13 @@ def _schema_props() -> dict:
     return json.load(SCHEMA.open(encoding="utf-8"))["properties"]
 
 
+def test_docs_stage_is_a_declared_schema_property_with_prompt_default() -> None:
+    """#165: the docsStage gate config is a real schema contract, not skill folklore."""
+    docs = _schema_props()["docsStage"]
+    assert docs["enum"] == ["prompt", "skip"]
+    assert docs["default"] == "prompt"
+
+
 def test_forge_init_keys_are_all_schema_properties() -> None:
     """Every key forge-init.sh writes is a declared property in the schema."""
     init = _forge_init_config()

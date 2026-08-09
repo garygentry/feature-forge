@@ -1729,6 +1729,39 @@ def test_state_verify_terminal_writes_delete_the_scheduling_keys(tmp_path):
         assert "scheduledStageVersion" not in entry, status
 
 
+def test_state_verify_skipped_refuses_to_demote_a_resolved_status(tmp_path):
+    """#203: `skipped` over `passed`/`findings-applied` silently dropped an epic
+    member from the rollup and re-blocked its dependents. Fail closed."""
+    for prior, extra in (
+        ("passed", ("--verified-stage-version", "1")),
+        ("findings-applied", ()),
+    ):
+        specs = _verify_fixture(tmp_path / prior)
+        if prior == "findings-applied":
+            assert _verify(
+                specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+                "--findings-file", "verify/f.md", "--findings-count", "1",
+                "--verified-stage-version", "1",
+            ).returncode == 0
+        assert _verify(specs, "--stage", "forge-1-prd",
+                       "--status", prior, *extra).returncode == 0
+        before = _state_bytes(specs)
+
+        result = _verify(specs, "--stage", "forge-1-prd", "--status", "skipped")
+
+        assert result.returncode == 2, prior
+        assert "would demote" in result.stderr, prior
+        assert prior in result.stderr, "the error must name the current status"
+        assert _state_bytes(specs) == before, f"{prior}: mutated on a rejected write"
+
+
+def test_state_verify_skipped_over_skipped_stays_an_idempotent_refresh(tmp_path):
+    specs = _verify_fixture(tmp_path)
+    assert _verify(specs, "--stage", "forge-1-prd", "--status", "skipped").returncode == 0
+    assert _verify(specs, "--stage", "forge-1-prd", "--status", "skipped").returncode == 0
+    assert _entry(specs) == {"status": "skipped", "commitHash": None}
+
+
 def test_state_verify_skipped_clears_every_result_field(tmp_path):
     specs = _verify_fixture(tmp_path)
     assert _verify(
@@ -2716,7 +2749,8 @@ def test_a_legacy_manifest_without_a_revision_verifies_at_revision_1(tmp_path):
 
 
 def test_every_result_status_works_against_the_epic_target(tmp_path):
-    """pass / findings-reported / findings-applied / skipped, same as a feature."""
+    """pass / findings-reported / findings-applied / skipped, same as a feature —
+    including the #203 demotion guard: `skipped` may not replace a resolved status."""
     specs = _epic_fixture(tmp_path, revision=2)
     key = "forge-verify-epic"
 
@@ -2739,8 +2773,17 @@ def test_every_result_status_works_against_the_epic_target(tmp_path):
     assert "fixedAt" in applied
     assert "verifiedStageVersion" not in applied, "applied deliberately clears freshness"
 
-    assert _epic_verify(specs, "--status", "skipped").returncode == 0
-    skipped = _epic_state(specs)["stages"][key]
+    # The guard applies to the epic target too: skipped over findings-applied is
+    # a demotion and is refused (#203)...
+    result = _epic_verify(specs, "--status", "skipped")
+    assert result.returncode == 2
+    assert "would demote" in result.stderr
+    assert _epic_state(specs)["stages"][key]["status"] == "findings-applied"
+
+    # ...while a skip over an unresolved entry still records normally.
+    fresh = _epic_fixture(tmp_path / "fresh", revision=2)
+    assert _epic_verify(fresh, "--status", "skipped").returncode == 0
+    skipped = _epic_state(fresh)["stages"][key]
     assert skipped == {"status": "skipped", "commitHash": None}
 
 

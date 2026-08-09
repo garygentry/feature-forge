@@ -299,7 +299,11 @@ first:
   a stage's artifact commit.
 - **Skip for now** — go straight to the NEXT-STEPS block without verifying. Record this
   stage's verify status as `skipped` in pipeline state (via `state-verify`, never by hand)
-  **only** on an explicit skip — a skip does not go stale.
+  **only** on an explicit skip — a skip does not go stale. Exception: if the existing
+  entry records `passed` or `findings-applied` (a resolved result whose freshness has
+  merely lapsed), write **nothing** — `state-verify` refuses to demote a resolved status
+  to `skipped` (#203), and the recorded result stands on its own; the user's decline is
+  honored by simply not re-verifying.
 
 **Advancement is allowed only after a pass, or after an explicit skip has been
 persisted.** Choosing to stop, or losing the interaction, produces no advancing terminal
