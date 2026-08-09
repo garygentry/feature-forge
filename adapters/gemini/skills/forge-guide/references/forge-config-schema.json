@@ -67,6 +67,12 @@
       "default": true,
       "description": "When true (default), the /feature-forge:forge navigator auto-invokes the next pipeline stage via the Skill tool after the user confirms it, instead of only printing the command to copy. Set false to keep the old copy-paste behavior (the navigator suggests the command but never launches it). Ignored on non-Claude hosts, which always fall back to printing the command."
     },
+    "docsStage": {
+      "type": "string",
+      "enum": ["prompt", "skip"],
+      "default": "prompt",
+      "description": "How forge-6-docs' Documentation Decision Gate behaves at stage entry. \"prompt\" (default) asks generate-vs-skip once per run; \"skip\" records the stage as deliberately skipped with no prompt — the skill runs the state-skip verb and closes the pipeline honestly (stage-exit --outcome skipped), so docs are never implied-mandatory for teams that document differently. The gate's refuse-to-erase guard still applies: docs that already exist are never silently reclassified, whatever this is set to. Read directly by forge-6-docs (not part of loopRunner resolution); an unrecognized or absent value behaves as \"prompt\"."
+    },
     "autoVerify": {
       "type": "boolean",
       "default": false,

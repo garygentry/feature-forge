@@ -279,6 +279,15 @@ KNOWN_VERIFY_STATUSES: Final = frozenset(
 #: subset of KNOWN_VERIFY_STATUSES — not collapsible into it (different meaning).
 #: `auto-verify-pending` is deliberately ABSENT: owed-but-unrun debt is not resolved.
 _VERIFY_RESOLVED: Final = frozenset({"passed", "findings-applied", "skipped"})
+#: Prior verify statuses a `skipped` result write may NOT replace (#203). Mirrors
+#: epic-manifest.py's `_VERIFY_ORCH_COMPLETE`: these two statuses make an epic
+#: member complete-for-orchestration, so silently replacing one with `skipped`
+#: demoted the member out of the rollup and fabricated unmetDeps on every
+#: dependent — the observed 5/6 → 1/6 collapse. A deferral over one of these
+#: needs NO write: the recorded result already carries the outstanding state.
+#: NOT the same set as `_VERIFY_RESOLVED` (`skipped` re-writing `skipped` is a
+#: harmless idempotent refresh and stays legal).
+_SKIP_PROTECTED_PRIOR: Final = frozenset({"passed", "findings-applied"})
 #: Per-process dedupe for the unknown-verify-status diagnostic (#148) so a single
 #: bogus status is flagged once, not once per verify_state() call in a command.
 _UNKNOWN_VERIFY_WARNED: set[str] = set()
@@ -5965,6 +5974,20 @@ def cmd_state_verify(
         )
 
     prior = _verify_entry(state, verify_key)
+    if status == "skipped" and prior.get("status") in _SKIP_PROTECTED_PRIOR:
+        # The #203 demotion trap: `skipped` over a complete-for-orchestration
+        # status silently dropped the member from its epic rollup and re-blocked
+        # every dependent. Fail closed; a deferral needs no write at all.
+        raise UsageError(
+            f"--status skipped would demote {verify_key} from "
+            f"{prior.get('status')!r}: that status counts as resolved (and, for an "
+            f"epic member, complete-for-orchestration), so replacing it with "
+            f"skipped would drop the member from its epic rollup and re-block its "
+            f"dependents. A deferral needs no write — the recorded result already "
+            f"stands. Re-run verification to refresh it, or record --status passed "
+            f"(with the report attached) to accept residual findings. "
+            f"Nothing was written."
+        )
     if status == "auto-verify-pending" and prior.get("status") == "findings-reported":
         # `_verify_result_entry` REPLACES the entry, so scheduling over a report
         # for the current revision would delete its `findingsFile`/`findingsCount`

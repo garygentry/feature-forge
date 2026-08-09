@@ -194,7 +194,7 @@ python3 "$R/scripts/forge-session.py" state-note \
   --feature "{feature}" --note "<what the user volunteered>" --specs-dir "{specsDir}"
 ```
 
-The `state-verify` call for item 4 — **only** when verification was available and the user explicitly chose to skip it. A verifier that could not be dispatched is not a skip, so do not run this on an unavailable-tool path. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
+The `state-verify` call for item 4 — **only** when verification was available and the user explicitly chose to skip it. A verifier that could not be dispatched is not a skip, so do not run this on an unavailable-tool path. And only over an entry that is absent or unresolved: if `stages.forge-verify-backlog` already records `passed` or `findings-applied`, do **not** run the call — those statuses are resolved, the verb refuses to demote them to `skipped` (#203), and the existing result stands with nothing written. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
