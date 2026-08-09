@@ -961,6 +961,25 @@ def test_next_command_advances_past_a_completed_stage(run_cli, tmp_path) -> None
     assert out["nextCommand"] == "/feature-forge:forge-2-tech m1"
 
 
+def test_render_status_rows_carry_the_member_docs_status(run_cli, tmp_path) -> None:
+    """#173: the epic-doc offer gates on per-member DOCS state, so render-status
+    must expose it — `complete`, `skipped` (#197), or None when the stage has no
+    entry. Distinct from the orchestration rollup, which ignores docs."""
+    cases = (
+        ("absent", {}, None),
+        ("complete", {"forge-6-docs": _complete()}, "complete"),
+        ("skipped", {"forge-6-docs": {"status": "skipped",
+                                      "skippedAt": "2026-07-29T00:00:00Z"}}, "skipped"),
+    )
+    for label, docs_stage, expected in cases:
+        specs = tmp_path / label / "specs"
+        stages = {"forge-1-prd": _complete(), **docs_stage}
+        epic = _make_single_member_epic(specs, current_stage="forge-1-prd", stages=stages)
+        out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+        row = out["features"][0]
+        assert row["docsStatus"] == expected, label
+
+
 def test_next_command_never_reoffers_a_skipped_docs_stage(run_cli, tmp_path) -> None:
     """#197: `skipped` on forge-6-docs counts as done for next-stage derivation.
 
