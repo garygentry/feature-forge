@@ -199,6 +199,44 @@ second sentinel-terminated block **inside** an outer stage's exit, breaking the
 exactly-one-terminal-block rule — and the canon guard cannot catch it, because both
 wordings legitimately appear in the same file. Judge the token, not the phrasing.
 
+## Caller-side resumption: the declared resume point
+
+The `owner:` token and `terminalOwnedBy` arbitrate who prints — but they specify only
+the **callee** side: a nested skill stays quiet and returns its structured result. This
+section is the reciprocal, caller-side half of that contract.
+
+**On a sub-skill's return, the caller re-owns the terminal.** Every closing instruction
+in the callee's own body — its report-and-stop posture, its "confirm the result" close,
+its own next-steps habits — is void for this turn. The caller resumes at its **declared
+resume point**, in the same turn, and its remaining steps run to its own terminal.
+
+**Every Skill-tool delegation site declares, at the invocation, what happens on
+return.** Suppression without resumption is the failure mode this section closes: the
+callee's closing posture is the freshest instruction in context while the caller's next
+step is the oldest, so an undeclared return silently ends the run one layer too early —
+the caller's remaining steps (validation, state writes, commit, stage exit) dropped,
+with no error surfaced. An implicit "let it run to its natural stopping point" is that
+bug spelled politely, and it is banned on delegation sites. A site takes one of two
+declared postures:
+
+- **Delegate-and-resume** — the callee is a sub-step of the caller: the site names the
+  caller's own step that control returns to, and the caller continues there in the same
+  turn. The callee never owns the caller's terminal. The worked instance is
+  `forge-4-backlog` Step 4's **Return contract** for the `author-backlog` delegation
+  (control returns at Step 5; the sub-skill's direct-invocation posture — its approval
+  gate and its validate-and-confirm close — is explicitly disapplied on the delegated
+  path). New delegation sites follow that pattern rather than re-deriving it.
+- **Terminal handoff** — the caller's job ends at the invocation and the invoked skill
+  owns the terminal from there on (e.g. the navigator's `autoInvokeNextStage`
+  "continue in this session" advance into the next production stage). Declaring the
+  handoff is what keeps it distinct from an accidental drop.
+
+Scope: this contract governs **Skill-tool delegation within one session**. The
+truncated-verifier-return guard (forge-verify's `findings-template.md`, "Truncated
+Verifier Returns") is a different mechanism — it polices what an **Agent-dispatched
+subagent's** return payload must contain, not where a caller resumes. A dispatch site
+can be subject to both; satisfy each on its own terms.
+
 ## Directive consumption order
 
 `stage-exit` emits a DIRECTIVES object and (for a direct owner) a NEXT-STEPS block. The
