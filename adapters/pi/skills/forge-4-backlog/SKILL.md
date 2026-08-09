@@ -91,6 +91,8 @@ After presenting the plan as text, use `AskUserQuestion` following the **Decisio
 
 `author-backlog` owns all item-quality rules (granularity hard limits, self-contained descriptions, acceptance criteria, `agentDelegation`, the correct `type`/`status` enums, `dependsOn`, `specReferences`, the schema source). Do not re-encode them here — follow whatever it produces.
 
+**Return contract.** `author-backlog` is a sub-skill of this stage, not its terminal: when it returns, control returns to **this skill, at Step 5** — forge-4 still owns the stage and its terminal output. Two of the sub-skill's own instructions do not apply on this delegated path (it also serves direct user invocation, and those instructions are its direct-invocation posture): its wait-for-user-approval-before-writing gate is already satisfied by Step 3's approved plan — do not re-ask; and its closing "run `rauf backlog validate` … and confirm the validated result" posture is subsumed by Step 5, which owns validation (see Step 5's ownership note). Do not adopt the sub-skill's report-and-stop terminal — it is the freshest instruction in context after the return, but it belongs to the sub-skill: continue to Step 5 in the same turn; Steps 6 and 7 still run, and the stage closes only at Step 7's exit.
+
 > **If the rauf plugin / `author-backlog` skill is not available:** fall back to
 > authoring inline using the schema source rule (prefer the project's installed
 > `{stateDir}/backlog.schema.json`, else the published `$id`
@@ -106,6 +108,8 @@ After presenting the plan as text, use `AskUserQuestion` following the **Decisio
 > **Backlog schema & rauf contract are unchanged (REQ-COMPAT-03).** Epic membership adds **no** fields to backlog items — dependency edges live in the epic manifest, never in any backlog item. The JSON written here is byte-for-byte the same shape as a pre-epic standalone feature's backlog, and rauf is still launched against a single per-feature backlog path. Only the *path composition* changes (the `{feature}` segment in the backlog-directory rule above), not the schema or rauf's CLI surface.
 
 ## Step 5: Validate via the loop runner
+
+**Validation ownership.** This step is authoritative for validation, whether or not `author-backlog` already ran its own `rauf backlog validate`: this stage carries the degradation rules for a missing/old/not-set-up runner (below) that the sub-skill does not, and this step's result is what Step 6 reports. A validate the sub-skill already ran cleanly makes this a cheap idempotent re-run, never a reason to skip it — and the sub-skill's validate never discharges this step.
 
 Validate the generated backlog by running the runner's **validate command**
 (`loopRunner.validateCommand`), rendered with `{resolvedBacklogDir}` and `{specsDir}`
