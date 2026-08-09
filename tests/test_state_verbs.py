@@ -1900,6 +1900,125 @@ def test_state_verify_version_consuming_statuses_still_require_the_version(tmp_p
         assert _state_bytes(specs) == before, f"{status} mutated state"
 
 
+# --------------------------------------------------------------------------- #
+# state-skip (the ninth verb — the deliberate forge-6-docs skip, #197)
+# --------------------------------------------------------------------------- #
+
+
+def _skip(specs: Path, *extra: str, name: str = "demo") -> subprocess.CompletedProcess[str]:
+    """Run ``state-skip`` against ``specs`` for feature ``name``."""
+    return _run("state-skip", "--feature", name, "--stage", "forge-6-docs",
+                *extra, "--specs-dir", str(specs))
+
+
+def test_state_skip_records_a_deliberate_docs_skip(tmp_path):
+    """The honest terminal for a feature shipping without docs: `skipped`, never
+    a false `complete`, and no artifacts claimed."""
+    specs = _feature_dir(tmp_path).parent
+    assert _run("state-enter", "--feature", "demo", "--stage", "forge-6-docs",
+                "--specs-dir", str(specs)).returncode == 0
+
+    assert _skip(specs).returncode == 0
+    state = _state_of(tmp_path)
+    entry = state["stages"]["forge-6-docs"]
+    assert entry["status"] == "skipped"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", entry["skippedAt"])
+    assert entry["commitHash"] is None
+    assert "artifacts" not in entry and "completedAt" not in entry
+
+
+def test_state_skip_counts_as_done_for_next_stage_selection(tmp_path):
+    """1–5 complete + docs skipped reads `nextStage: null` — the pipeline is done
+    without forge-6-docs ever being re-offered (#197 acceptance)."""
+    specs = _feature_dir(tmp_path).parent
+    for stage in ("forge-1-prd", "forge-2-tech", "forge-3-specs",
+                  "forge-4-backlog", "forge-5-loop"):
+        assert _run("state-complete", "--feature", "demo", "--stage", stage,
+                    "--version", "1", "--artifact", "a.md",
+                    "--specs-dir", str(specs)).returncode == 0
+    state = _state_of(tmp_path)
+    assert FS.next_stage(state) == "forge-6-docs"
+
+    assert _skip(specs).returncode == 0
+    assert FS.next_stage(_state_of(tmp_path)) is None
+
+
+def test_state_skip_is_scoped_to_the_docs_stage(tmp_path):
+    """A skipped PRD/specs/loop stage is not a representable state."""
+    specs = _feature_dir(tmp_path).parent
+    result = _run("state-skip", "--feature", "demo", "--stage", "forge-1-prd",
+                  "--specs-dir", str(specs))
+    assert result.returncode == 2   # argparse choices
+    # The callable refuses too, so an in-process caller cannot bypass the CLI.
+    try:
+        FS.cmd_state_skip("demo", "forge-5-loop", specs, None)
+    except FS.UsageError as exc:
+        assert "scoped to forge-6-docs" in str(exc)
+    else:
+        raise AssertionError("cmd_state_skip accepted a non-docs stage")
+
+
+def test_state_skip_refuses_to_erase_recorded_docs_artifacts(tmp_path):
+    """Docs that exist are never silently reclassified as skipped."""
+    specs = _feature_dir(tmp_path).parent
+    assert _run("state-complete", "--feature", "demo", "--stage", "forge-6-docs",
+                "--version", "1", "--artifact", "README.md",
+                "--specs-dir", str(specs)).returncode == 0
+    before = _state_bytes(specs)
+
+    result = _skip(specs)
+    assert result.returncode == 2
+    assert "would erase" in result.stderr
+    assert _state_bytes(specs) == before, "mutated on a rejected write"
+
+
+def test_state_skip_corrects_the_artifactless_complete_workaround(tmp_path):
+    """A `complete` entry claiming NO artifacts is the dishonest pre-#197
+    workaround (`state-complete` with no `--artifact`); migrating it to
+    `skipped` is sanctioned."""
+    specs = _feature_dir(tmp_path).parent
+    assert _run("state-complete", "--feature", "demo", "--stage", "forge-6-docs",
+                "--version", "1", "--specs-dir", str(specs)).returncode == 0
+    assert _state_of(tmp_path)["stages"]["forge-6-docs"]["status"] == "complete"
+
+    assert _skip(specs).returncode == 0
+    entry = _state_of(tmp_path)["stages"]["forge-6-docs"]
+    assert entry["status"] == "skipped"
+    assert "version" not in entry and "completedAt" not in entry
+
+
+def test_docs_stage_entry_is_stage_entry_plus_the_skip_vocabulary():
+    """Schema drift guard: `docsStageEntry` is `stageEntry` plus EXACTLY the
+    `skipped` status and the `skippedAt` field — the two definitions must not
+    drift apart in any other way (#197's scoping note)."""
+    schema = json.loads(
+        (REPO_ROOT / "references" / "pipeline-state-schema.json").read_text(encoding="utf-8")
+    )
+    stages = schema["properties"]["stages"]["properties"]
+    assert stages["forge-6-docs"] == {"$ref": "#/definitions/docsStageEntry"}
+    for key, ref in stages.items():
+        if key != "forge-6-docs" and not key.startswith("forge-verify-"):
+            assert ref == {"$ref": "#/definitions/stageEntry"}, key
+
+    def strip_prose(node):
+        if isinstance(node, dict):
+            return {k: strip_prose(v) for k, v in node.items() if k != "description"}
+        if isinstance(node, list):
+            return [strip_prose(v) for v in node]
+        return node
+
+    docs = strip_prose(schema["definitions"]["docsStageEntry"])
+    assert docs["properties"]["status"]["enum"] == [
+        "pending", "in-progress", "complete", "stale", "skipped"
+    ]
+    reduced = json.loads(json.dumps(docs))
+    reduced["properties"]["status"]["enum"].remove("skipped")
+    del reduced["properties"]["skippedAt"]
+    assert reduced == strip_prose(schema["definitions"]["stageEntry"]), (
+        "docsStageEntry drifted from stageEntry beyond the skip vocabulary"
+    )
+
+
 def _state_bytes(specs: Path, name: str = "demo") -> bytes:
     """Raw bytes of a feature's state file (b"" when it does not exist yet)."""
     path = specs / name / FS.PIPELINE_STATE_FILENAME

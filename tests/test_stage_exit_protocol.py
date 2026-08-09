@@ -685,18 +685,19 @@ def test_the_loop_surface_covers_every_loop_outcome():
     )
 
 
-def test_the_docs_surface_covers_both_docs_outcomes():
-    """forge-6-docs closes through the script, with `complete` and `blocked` documented.
+def test_the_docs_surface_covers_every_docs_outcome():
+    """forge-6-docs closes through the script, with all three outcomes documented.
 
     Replaces the assertion that forge-6-docs is terminal: it is now the ninth covered
     exit, so the positive obligations are a single scripted invocation plus a documented
-    selection rule for each `DocsOutcome`.
+    selection rule for each `DocsOutcome` (`complete`, `blocked`, and the deliberate
+    `skipped` added by #197).
     """
     site = _site("forge-6-docs")
     surface = _read_contract_surface(site)
     outcomes = _exit_outcomes()["forge-6-docs"]
-    assert set(outcomes) == {"complete", "blocked"}, (
-        f"DocsOutcome is no longer complete|blocked: {sorted(outcomes)}"
+    assert set(outcomes) == {"complete", "blocked", "skipped"}, (
+        f"DocsOutcome is no longer complete|blocked|skipped: {sorted(outcomes)}"
     )
     for outcome in outcomes:
         assert f"`{outcome}`" in surface, (

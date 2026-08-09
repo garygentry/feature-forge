@@ -1235,14 +1235,16 @@ def _next_production_stage(state: dict) -> str | None:
     The epic-side mirror of ``next_stage()`` in forge-session.py, and for the same
     reason its docstring gives: "what runs next" is DERIVED from ``stages[].status``,
     never read from the stored ``currentStage``. A missing, pending, in-progress or
-    stale stage all count as "not done".
+    stale stage all count as "not done"; ``complete`` and ``skipped`` both count as
+    done (``skipped`` is legal only on forge-6-docs — schema ``docsStageEntry`` —
+    so a deliberately docs-skipped member is never re-offered forge-6-docs, #197).
     """
     stages = state.get("stages")
     if not isinstance(stages, dict):
         return _PRODUCTION_STAGES[0]
     for stage in _PRODUCTION_STAGES:
         entry = stages.get(stage)
-        if not isinstance(entry, dict) or entry.get("status") != "complete":
+        if not isinstance(entry, dict) or entry.get("status") not in ("complete", "skipped"):
             return stage
     return None
 

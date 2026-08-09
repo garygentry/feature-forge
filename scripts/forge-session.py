@@ -251,8 +251,15 @@ VERIFY_TOKEN_BY_STAGE: Final[dict[str, str]] = {
 #: there is no `forge-verify-*` key for it to write.
 VERIFY_STAGES: Final[tuple[str, ...]] = ("forge-0-epic", *VERIFY_TOKEN_BY_STAGE)
 
-#: A production stage status that counts as "done" for next-stage selection.
+#: The terminal status the completion writer records (and the commit-hash
+#: follow-up requires) — NOT the whole "done for selection" set below.
 _DONE_STATUS: Final = "complete"
+#: Production stage statuses that count as "done" for next-stage selection.
+#: `skipped` is legal only on forge-6-docs (schema: `docsStageEntry`) — an
+#: explicitly skipped documentation stage ends the pipeline without claiming
+#: artifacts it never produced (#197). Selection treats the status as done
+#: wherever it appears; the schema is what confines it to the docs stage.
+_DONE_STATUSES: Final = frozenset({_DONE_STATUS, "skipped"})
 #: The authoritative forge-verify status vocabulary. SOURCE OF TRUTH:
 #: references/pipeline-state-schema.json (definitions.verifyEntry.properties.status.enum).
 #: A status outside this set is unrecognized and must not be silently interpreted (#148).
@@ -385,7 +392,7 @@ VerifyGate = Literal["none", "standard", "manual-print"]
 LoopOutcome = Literal[
     "complete", "partial", "blocked", "needs-human", "deferred", "resolved"
 ]
-DocsOutcome = Literal["complete", "blocked"]
+DocsOutcome = Literal["complete", "blocked", "skipped"]
 VerifyOutcome = Literal["passed", "findings", "skipped", "failed"]
 FixOutcome = Literal[
     "no-findings",
@@ -780,9 +787,10 @@ def next_stage(state: dict) -> str | None:
     """Return the first production stage that is not yet complete (the next step).
 
     Walks ``PRODUCTION_STAGES`` in order and returns the first whose recorded
-    status is not ``complete`` (a missing/pending/in-progress/stale stage all
-    count as "not done"). Returns ``None`` when every production stage is
-    complete (nothing left to run).
+    status is not in ``_DONE_STATUSES`` (a missing/pending/in-progress/stale
+    stage all count as "not done"; ``complete`` and a forge-6-docs ``skipped``
+    both count as done). Returns ``None`` when every production stage is done
+    (nothing left to run).
 
     This is the derived "what runs next" value — the single source of truth for
     the next stage. It is intentionally distinct from the stored
@@ -791,7 +799,7 @@ def next_stage(state: dict) -> str | None:
     ``currentStage``.
     """
     for stage in PRODUCTION_STAGES:
-        if _stage_status(state, stage) != _DONE_STATUS:
+        if _stage_status(state, stage) not in _DONE_STATUSES:
             return stage
     return None
 
@@ -946,7 +954,7 @@ def verify_state(state: dict) -> tuple[str | None, str]:
     likewise ``stale``: verify rather than skip.
     """
     for stage in reversed(PRODUCTION_STAGES):
-        if _stage_status(state, stage) != _DONE_STATUS:
+        if _stage_status(state, stage) not in _DONE_STATUSES:
             continue
         token = VERIFY_TOKEN_BY_STAGE.get(stage)
         if token is None:
@@ -3317,6 +3325,36 @@ _DOCS_OUTCOME_TEXT: Final[dict[str, str]] = {
         "nor epic {epic} is complete. Only valid partial state was persisted. Open "
         "the epic dashboard below to see the epic's live state and recover from there."
     ),
+    # The `skipped` variants (#197): same routes as `complete`, honest wording — a
+    # deliberate skip closes the pipeline without any stage claiming artifacts it
+    # never produced, and the state says `skipped`, not `complete`.
+    "standalone-skipped": (
+        "Documentation was deliberately skipped for {feature} and recorded as "
+        "`skipped` in state, closing the pipeline without claiming docs that were "
+        "never written. The navigator command below is the authoritative completion "
+        "action — it confirms the finished state from disk. Docs can still be "
+        "generated later by re-running `{docs_stage}`. Optionally, you can start a "
+        "new feature with `{new_feature}` or group related work into an epic with "
+        "`{new_epic}`; neither is required to finish here."
+    ),
+    "epic-actionable-skipped": (
+        "Documentation was deliberately skipped for {feature} and recorded as "
+        "`skipped` in state. Epic {epic} has more work that can be started now "
+        "({complete}/{total} members complete), so the pipeline continues with the "
+        "next actionable member below."
+    ),
+    "epic-blocked-members-skipped": (
+        "Documentation was deliberately skipped for {feature} and recorded as "
+        "`skipped` in state, but no member of epic {epic} is actionable right now "
+        "({complete}/{total} members complete) — the remaining work is blocked by "
+        "unmet dependencies. Open the epic dashboard below to see what is holding "
+        "it up."
+    ),
+    "epic-complete-skipped": (
+        "Documentation was deliberately skipped for {feature} and recorded as "
+        "`skipped` in state, and every member of epic {epic} is now complete "
+        "({complete}/{total}). Open the epic dashboard below for its completion view."
+    ),
 }
 
 
@@ -3330,13 +3368,15 @@ def _docs_route(
     next member routes to that member's own live command, and anything else (blocked
     remaining work, or every member complete) routes to the epic dashboard, which is
     also the dashboard's completion view. A ``blocked`` docs outcome routes to
-    recovery and NEVER claims pipeline completion.
+    recovery and NEVER claims pipeline completion. A ``skipped`` outcome (#197)
+    takes exactly the routes ``complete`` takes — the pipeline still ends here —
+    but its wording says the docs were deliberately skipped, never that they exist.
 
     Args:
         feature: The feature whose documentation stage is closing.
         epic: The owning epic, or None for a standalone feature.
         specs_dir: Configured specs directory.
-        outcome: `complete` or `blocked`, already validated.
+        outcome: `complete`, `blocked`, or `skipped`, already validated.
         host: Host surface, used only to translate the INLINE secondary mentions —
             the primary command is translated by the renderer.
 
@@ -3351,12 +3391,11 @@ def _docs_route(
     rather than converting into a second failure.
     """
     if epic is None:
-        text = _DOCS_OUTCOME_TEXT[
-            "standalone-complete" if outcome == "complete" else "standalone-blocked"
-        ].format(
+        text = _DOCS_OUTCOME_TEXT[f"standalone-{outcome}"].format(
             feature=feature,
             new_feature=_host_command("/feature-forge:forge-1-prd <new-feature>", host),
             new_epic=_host_command("/feature-forge:forge-0-epic <new-epic>", host),
+            docs_stage=_host_command(f"/feature-forge:forge-6-docs {feature}", host),
         )
         return f"/feature-forge:forge {feature}", None, text, False
 
@@ -3365,6 +3404,7 @@ def _docs_route(
         text = _DOCS_OUTCOME_TEXT["epic-blocked"].format(feature=feature, epic=epic)
         return dashboard, None, text, False
 
+    skip_suffix = "-skipped" if outcome == "skipped" else ""
     status = _render_status(specs_dir, epic)
     rollup = status["rollup"]
     fields = {
@@ -3375,7 +3415,12 @@ def _docs_route(
     }
     next_command = status["nextCommand"]
     if status["actionable"] and next_command:
-        return next_command, None, _DOCS_OUTCOME_TEXT["epic-actionable"].format(**fields), True
+        return (
+            next_command,
+            None,
+            _DOCS_OUTCOME_TEXT["epic-actionable" + skip_suffix].format(**fields),
+            True,
+        )
     # Nothing actionable. Under the current derivation that coincides with "every
     # member complete" (a valid graph is acyclic, so an incomplete member always has
     # an actionable ancestor), but the two cases are named separately and the
@@ -3383,7 +3428,7 @@ def _docs_route(
     # reachable if a future derivation admits an unactionable incomplete member. Both
     # route to the same epic command either way; only the explanation differs.
     key = "epic-complete" if rollup["complete"] >= rollup["total"] else "epic-blocked-members"
-    return dashboard, None, _DOCS_OUTCOME_TEXT[key].format(**fields), False
+    return dashboard, None, _DOCS_OUTCOME_TEXT[key + skip_suffix].format(**fields), False
 
 
 #: The route each loop outcome takes. A COMPLETE map over
@@ -3510,8 +3555,10 @@ _RECONCILE_FIRST_TEXT: Final[dict[str, str]] = {
         "the continuation named under it."
     ),
     "forge-6-docs": (
-        "Documentation is complete for {feature}, but {count} blocking epic change "
-        "request{plural} recorded against epic {epic} must be reconciled first. "
+        # "closed", not "complete": this wording also serves a `skipped` docs
+        # outcome, which must never claim the docs exist (#197).
+        "The documentation stage is closed for {feature}, but {count} blocking epic "
+        "change request{plural} recorded against epic {epic} must be reconciled first. "
         "Handing off would build the next member on a decomposition that is about to "
         "change, so the reconcile below comes before the continuation named under it."
     ),
@@ -5199,6 +5246,62 @@ def cmd_state_complete(
     return echo
 
 
+def cmd_state_skip(feature: str, stage: str, specs_dir: Path, epic: str | None) -> dict:
+    """Record a deliberate skip of the documentation stage (#197).
+
+    Writes a REPLACEMENT ``stages.forge-6-docs`` entry ``{"status": "skipped",
+    "skippedAt": …, "commitHash": null}`` — the honest terminal for a feature
+    that ships without architecture docs. ``skipped`` counts as done for
+    next-stage selection (``_DONE_STATUSES``), so the pipeline reads
+    ``complete: true`` / ``nextStage: null`` without any stage claiming
+    artifacts it never produced.
+
+    Scoped to ``forge-6-docs`` on purpose: a skipped PRD or specs stage is a
+    different and much worse proposition, so both the CLI (``choices``) and this
+    callable refuse any other stage.
+
+    The skip must not DESTROY a record of docs that exist: a prior entry whose
+    ``artifacts`` list is non-empty is refused. A prior ``complete`` entry with
+    no recorded artifacts is exactly the dishonest workaround this verb replaces
+    (``state-complete`` with no ``--artifact``), so it may be corrected to
+    ``skipped`` — that is the sanctioned migration path for such state.
+
+    Args:
+        feature: Feature name.
+        stage: Must be ``"forge-6-docs"`` (kept explicit so the scoping shows up
+            in every call site).
+        specs_dir: Specs directory.
+        epic: Owning epic name, or None.
+
+    Returns:
+        The mutated state dict (for the --json echo).
+
+    Raises:
+        UsageError: A stage other than forge-6-docs, a prior entry recording
+            artifacts, an unknown feature directory, an unparseable state file,
+            or a failed atomic write (→ exit 2).
+    """
+    if stage != "forge-6-docs":
+        raise UsageError(
+            f"state-skip is scoped to forge-6-docs; a skipped {stage} is not a "
+            "representable pipeline state"
+        )
+    state_path, state = _load_state_for_write(specs_dir, feature, epic)
+    prior = state.get("stages", {}).get(stage)
+    if isinstance(prior, dict) and prior.get("artifacts"):
+        raise UsageError(
+            f"{stage} already records {len(prior['artifacts'])} artifact(s) "
+            f"(status: {prior.get('status')!r}); skipping now would erase the "
+            "record that docs exist. Re-run forge-6-docs to refresh them instead."
+        )
+    state.setdefault("stages", {})[stage] = {
+        "status": "skipped",
+        "skippedAt": _now_iso(),
+        "commitHash": None,
+    }
+    return _commit_state(state_path, state)
+
+
 def cmd_state_branch(feature: str, branch: str, specs_dir: Path, epic: str | None) -> dict:
     """Set the top-level ``branch`` field.
 
@@ -5952,6 +6055,14 @@ def _print_state_complete(
     )
 
 
+def _print_state_skip(state: dict, stage: str) -> None:
+    """Print the one-line human summary for `state-skip`."""
+    print(
+        f"recorded {stage} as skipped for {state['feature']} "
+        "(deliberate — no docs claimed)"
+    )
+
+
 def _print_state_branch(state: dict) -> None:
     """Print the one-line human summary for `state-branch`."""
     print(f"recorded branch for {state['feature']}: {state['branch']}")
@@ -6572,6 +6683,16 @@ def main() -> int:
     p_comp.add_argument("--epic", default=None, help="Epic name for a nested member")
     p_comp.add_argument("--json", action="store_true", dest="json_output")
 
+    p_skip = sub.add_parser(
+        "state-skip", help="Record forge-6-docs as deliberately skipped (#197)"
+    )
+    p_skip.add_argument("--feature", required=True, help="Feature name")
+    p_skip.add_argument("--stage", required=True, choices=("forge-6-docs",),
+                        help="The stage being skipped (only forge-6-docs is skippable)")
+    p_skip.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_skip.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_skip.add_argument("--json", action="store_true", dest="json_output")
+
     p_br = sub.add_parser("state-branch", help="Set the top-level branch field")
     p_br.add_argument("--feature", required=True, help="Feature name")
     p_br.add_argument("--branch", required=True, help="Branch name to record")
@@ -6862,6 +6983,17 @@ def main() -> int:
                 lambda state: _print_state_complete(
                     state, args.stage, args.commit_hash, args.resumable
                 ),
+            )
+            return 0
+
+        if args.cmd == "state-skip":
+            payload = cmd_state_skip(
+                args.feature, args.stage, Path(args.specs_dir), args.epic
+            )
+            _emit(
+                payload,
+                args.json_output,
+                lambda state: _print_state_skip(state, args.stage),
             )
             return 0
 
