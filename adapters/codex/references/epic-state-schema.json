@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Feature Forge Epic Verification State",
+  "description": "Epic-scoped verification state for a single epic. Lives at {specsDir}/{epic}/.epic-state.json. Written only by forge-session.py's `state-verify` verb for epic targets (`--stage forge-0-epic`, resolved through `_load_epic_state_for_write`) — never by hand. Deliberately NOT a member `.pipeline-state.json` variant: epic verification is epic-scoped, artifact freshness is judged against the epic manifest's `revision` (never a member production-stage `version`), and there is no fallback between the two state files in either direction (REQ-SEC-01).",
+  "type": "object",
+  "required": ["epic", "updatedAt", "stages"],
+  "properties": {
+    "epic": {
+      "type": "string",
+      "description": "Epic name (matches the directory name under specsDir). epic-manifest.json's own `epic` value is canonical on conflict — the writer refuses a mismatched identity rather than resolving it."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "stages": {
+      "type": "object",
+      "properties": {
+        "forge-verify-epic": { "$ref": "#/definitions/verifyEntry" }
+      }
+    }
+  },
+  "definitions": {
+    "verifyEntry": {
+      "type": "object",
+      "required": ["status"],
+      "description": "MIRROR of pipeline-state-schema.json#/definitions/verifyEntry (minus this description) — the repo's stdlib schema validator (tests/_state_schema.py) resolves same-file `#/definitions/*` refs only, so the definition is duplicated rather than cross-file-referenced, and tests/test_epic_state_schema_conformance.py pins the two definitions equal so they cannot drift. Edit them together.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "auto-verify-pending", "passed", "findings-reported", "findings-applied", "skipped"]
+        },
+        "findingsFile": {
+          "type": ["string", "null"],
+          "description": "Path to the verification findings document"
+        },
+        "findingsCount": {
+          "type": ["integer", "null"],
+          "description": "Number of findings reported"
+        },
+        "verifiedAt": { "type": ["string", "null"], "format": "date-time" },
+        "fixedAt": { "type": ["string", "null"], "format": "date-time" },
+        "commitHash": { "type": ["string", "null"], "description": "Git commit SHA of the verify/fix artifact commit. Recorded via the two-commit Git Commit Protocol (shared-conventions.md) so it points at the artifact commit, never an orphaned amend." },
+        "verifiedStageVersion": { "type": ["integer", "null"], "description": "The production stage's `version` at the moment this verify was resolved. The navigator's freshness ledger compares it to the stage's current `version`: equal means the verify is fresh; a mismatch (artifact revised since) or an absent field (legacy state) means stale, so auto-verify re-fires. Recorded by forge-verify/forge-fix when writing a passed/findings-applied status." },
+        "scheduledAt": { "type": ["string", "null"], "format": "date-time", "description": "UTC ISO-8601 timestamp at which unattended in-stage verification was scheduled for this entry. Written alongside the `auto-verify-pending` status and DELETED (not nulled) by any terminal result, so an absent field means 'not scheduled'." },
+        "scheduledStageVersion": { "type": ["integer", "null"], "minimum": 1, "description": "The artifact revision current when verification was scheduled — the production stage's `version` for a feature, the epic manifest's `revision` for an epic. Makes rescheduling idempotent (an identical revision does not rewrite the entry) and lets a read tell debt owed on the current artifact from debt stranded on an older one. Deleted by any terminal result." }
+      }
+    }
+  }
+}

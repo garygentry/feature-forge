@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from _forge_paths import REFERENCES, SCRIPTS, read
-from _state_schema import validate_state
+from _state_schema import validate_epic_state, validate_state
 
 FORGE_SESSION = SCRIPTS / "forge-session.py"
 STATE_SCHEMA = REFERENCES / "pipeline-state-schema.json"
@@ -399,7 +399,14 @@ def _epic_root(tmp_path: Path, epic: str = "auth-overhaul") -> Path:
 
 @pytest.mark.parametrize("value", ACCEPTED_HASHES)
 def test_epic_commit_2_records_the_hash_in_the_documented_minimal_shape(tmp_path, value):
-    """`.epic-state.json` has no schema (03 §1), so its shape is asserted literally."""
+    """The epic Commit-2 write stays in the minimal shape AND schema-conformant.
+
+    Written when `.epic-state.json` had no schema and its shape could only be
+    asserted literally; `references/epic-state-schema.json` (#181) now governs the
+    file, so the literal key-set pin is kept (the shape IS meant to be minimal) and
+    the schema validation is layered on top. Deeper writer conformance lives in
+    tests/test_epic_state_schema_conformance.py.
+    """
     specs = _epic_root(tmp_path / value[:8].lower())
     for argv in (
         ("--status", "passed", "--verified-stage-version", "1"),
@@ -412,6 +419,7 @@ def test_epic_commit_2_records_the_hash_in_the_documented_minimal_shape(tmp_path
     state = json.loads(
         (specs / "auth-overhaul" / ".epic-state.json").read_text(encoding="utf-8")
     )
+    assert validate_epic_state(state) == [], validate_epic_state(state)
     assert set(state) == {"epic", "updatedAt", "stages"}, sorted(state)
     assert state["epic"] == "auth-overhaul"
     entry = state["stages"]["forge-verify-epic"]

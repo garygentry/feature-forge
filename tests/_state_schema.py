@@ -7,13 +7,16 @@ stay schema-conformant validate structurally instead — mirroring `epic-manifes
 in CI rather than only in prose.
 
 The validator is deliberately minimal: it is a **drift guard**, not a general
-JSON-Schema engine. It supports exactly the draft-07 subset the three schemas
-(pipeline-state, forge-config, forge-decisions) use — `type`, `required`,
-`properties`, `enum`, `items`, `additionalProperties: false`, and `$ref` to
-`#/definitions/*`. If a future schema construct appears (e.g. `oneOf`), extend
-`_check` rather than reaching for `jsonschema`.
+JSON-Schema engine. It supports exactly the draft-07 subset the four schemas
+(pipeline-state, epic-state, forge-config, forge-decisions) use — `type`,
+`required`, `properties`, `enum`, `items`, `additionalProperties: false`, and
+`$ref` to `#/definitions/*` (same-file only — which is why epic-state MIRRORS
+pipeline-state's `verifyEntry` instead of cross-file-referencing it; the parity
+guard in tests/test_epic_state_schema_conformance.py keeps the copies equal).
+If a future schema construct appears (e.g. `oneOf`), extend `_check` rather than
+reaching for `jsonschema`.
 
-All three entry points return a list of human-readable violations; an empty list
+All entry points return a list of human-readable violations; an empty list
 means valid, so `assert validate_state(s) == [], validate_state(s)` reports *what*
 drifted.
 """
@@ -33,6 +36,9 @@ _CONFIG_SCHEMA = json.loads(
 )
 _DECISIONS_SCHEMA = json.loads(
     (REPO_ROOT / "references" / "forge-decisions-schema.json").read_text(encoding="utf-8")
+)
+_EPIC_STATE_SCHEMA = json.loads(
+    (REPO_ROOT / "references" / "epic-state-schema.json").read_text(encoding="utf-8")
 )
 
 _JSON_TYPES: dict[str, type | tuple[type, ...]] = {
@@ -127,6 +133,18 @@ def validate_effective_config(loop_runner: dict) -> list[str]:
         _CONFIG_SCHEMA,
         "$.loopRunner",
     )
+
+
+def validate_epic_state(state: dict) -> list[str]:
+    """Validate an epic-state object against `references/epic-state-schema.json`.
+
+    Args:
+        state: A `.epic-state.json` object.
+
+    Returns:
+        Human-readable violation strings; empty when the state conforms.
+    """
+    return _check(state, _EPIC_STATE_SCHEMA, _EPIC_STATE_SCHEMA, "$")
 
 
 def validate_decisions(record: dict) -> list[str]:

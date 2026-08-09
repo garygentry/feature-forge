@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from _state_schema import validate_epic_state
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HELPER = REPO_ROOT / "scripts" / "forge-session.py"
 FORGE_INIT = REPO_ROOT / "scripts" / "forge-init.sh"
@@ -1090,7 +1092,12 @@ def _epic_exit_project(
     epic_entry: dict | None = None,
     member: str | None = None,
 ) -> Path:
-    """An epic with a manifest, optionally an `.epic-state.json` and one member."""
+    """An epic with a manifest, optionally an `.epic-state.json` and one member.
+
+    The seeded epic state is schema-validated (#181): the fixture no longer pins a
+    literal shape of its own, it produces what `references/epic-state-schema.json`
+    says the file looks like.
+    """
     root = _exit_project(tmp_path, feature="my-epic")
     epic_dir = root / "specs" / "my-epic"
     manifest: dict = {"epic": "my-epic", "features": []}
@@ -1098,9 +1105,13 @@ def _epic_exit_project(
         manifest["revision"] = revision
     (epic_dir / "epic-manifest.json").write_text(json.dumps(manifest))
     if epic_entry is not None:
-        (epic_dir / ".epic-state.json").write_text(json.dumps(
-            {"epic": "my-epic", "stages": {"forge-verify-epic": epic_entry}}
-        ))
+        epic_state = {
+            "epic": "my-epic",
+            "updatedAt": "2026-08-09T00:00:00Z",
+            "stages": {"forge-verify-epic": epic_entry},
+        }
+        assert validate_epic_state(epic_state) == [], validate_epic_state(epic_state)
+        (epic_dir / ".epic-state.json").write_text(json.dumps(epic_state))
     if member is not None:
         (epic_dir / member).mkdir()
         (epic_dir / member / ".pipeline-state.json").write_text(json.dumps(

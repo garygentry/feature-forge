@@ -16,6 +16,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+from _state_schema import validate_epic_state
 from typing import Final
 
 import pytest
@@ -92,9 +94,15 @@ def _epic_project(
         manifest["revision"] = revision
     (epic_dir / "epic-manifest.json").write_text(json.dumps(manifest))
     if epic_entry is not None:
-        (epic_dir / ".epic-state.json").write_text(json.dumps(
-            {"epic": epic, "stages": {"forge-verify-epic": epic_entry}}
-        ))
+        # Schema-validated seed (#181): the fixture writes what the schema says
+        # the file looks like, never a literal shape of its own.
+        epic_state = {
+            "epic": epic,
+            "updatedAt": "2026-08-09T00:00:00Z",
+            "stages": {"forge-verify-epic": epic_entry},
+        }
+        assert validate_epic_state(epic_state) == [], validate_epic_state(epic_state)
+        (epic_dir / ".epic-state.json").write_text(json.dumps(epic_state))
     return root
 
 
@@ -3032,10 +3040,15 @@ def test_the_fallback_warning_is_entry_one_of_the_fixed_order(tmp_path: Path) ->
     """00 §4 fixed order: the epic-member fallback precedes the debt entries."""
     root = _edit_project(tmp_path, {"config-store": None})
     # Owed auto-verify debt with unusable scheduling metadata is `warnings` entry 2.
-    (root / "specs" / EDIT_EPIC / ".epic-state.json").write_text(json.dumps({
+    # (Schema-valid on purpose: the scheduling fields are optional, so this drifted
+    # entry is a conformant file the classifier must still warn about.)
+    debt_state = {
         "epic": EDIT_EPIC,
+        "updatedAt": "2026-08-09T00:00:00Z",
         "stages": {"forge-verify-epic": {"status": "auto-verify-pending"}},
-    }))
+    }
+    assert validate_epic_state(debt_state) == [], validate_epic_state(debt_state)
+    (root / "specs" / EDIT_EPIC / ".epic-state.json").write_text(json.dumps(debt_state))
     d = _edit_exit(root, "config-store")
     assert len(d["warnings"]) == 2
     assert d["warnings"][0] == _fallback_warning("config-store", EDIT_EPIC, "missing")
