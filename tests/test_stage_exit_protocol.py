@@ -241,6 +241,23 @@ _RETIRED_BLOCK_MARKERS = [
     "this is the one boundary where clearing before the next stage is optional",
 ]
 
+#: The caller-side resumption contract (#188): the reference's section heading and the
+#: two declared postures every Skill-tool delegation site must take.
+_CALLER_RESUME_HEADING = "## Caller-side resumption: the declared resume point"
+_DELEGATION_POSTURES: Final[tuple[str, ...]] = ("Delegate-and-resume", "Terminal handoff")
+#: The banned undeclared-return formulation on a delegation site (the navigator's old
+#: wording). The reference legitimately quotes it as the named anti-pattern, so the
+#: sweep below covers ``skills/`` only.
+_UNDECLARED_RETURN_MARKER = "natural stopping point"
+#: Known Skill-tool delegate-and-resume sites and the declared-resume phrase each pins.
+#: A site rewording its declaration must update this row — that is the point: the
+#: declaration is contract text, not prose color.
+_DECLARED_RESUME_SITES: Final[dict[str, str]] = {
+    "skills/forge-4-backlog/SKILL.md": "control returns to **this skill, at Step 5**",
+    "skills/forge/SKILL.md": "control returns to **this loop, at step 2**",
+    "skills/forge-5-loop/SKILL.md": "on return, control resumes here",
+}
+
 
 def _extract_block(name: str) -> str:
     """Return the text between ``<!-- BEGIN: {name} -->`` and ``<!-- END: {name} -->``."""
@@ -757,6 +774,57 @@ def test_no_canon_surface_carries_a_retired_bespoke_block():
                 f"{path.relative_to(REPO_ROOT)} carries retired bespoke-block prose "
                 f"({marker!r}) — close the stage with the scripted stamp instead"
             )
+
+
+def test_the_reference_carries_the_caller_side_resumption_contract():
+    """The caller-side half of `terminalOwnedBy` exists, with both declared postures.
+
+    #188: `terminalOwnedBy: "outer"` silences a callee; this section is the reciprocal
+    state — the caller re-owns the terminal and resumes at its declared resume point.
+    Losing the section reopens suppression-without-resumption.
+    """
+    text = REFERENCE.read_text(encoding="utf-8")
+    assert _CALLER_RESUME_HEADING in text, (
+        f"{REFERENCE.name} lost the caller-side resumption section "
+        f"({_CALLER_RESUME_HEADING!r}) — the callee-side contract is only half a contract"
+    )
+    for posture in _DELEGATION_POSTURES:
+        assert f"**{posture}**" in text, (
+            f"{REFERENCE.name}: the caller-side contract no longer names the "
+            f"{posture!r} posture"
+        )
+    assert "re-owns the terminal" in text, (
+        f"{REFERENCE.name}: the caller-side contract no longer states that the caller "
+        "re-owns the terminal on a sub-skill's return"
+    )
+
+
+def test_no_skill_leaves_a_delegation_at_a_natural_stopping_point():
+    """No skill keeps the undeclared-return formulation on a delegation site.
+
+    "Let it run to its natural stopping point" is the informal wording the declared
+    resume point replaces (#188). The sweep covers ``skills/`` only: the reference
+    itself quotes the phrase as the named anti-pattern.
+    """
+    for path in sorted((REPO_ROOT / "skills").rglob("*.md")):
+        body = path.read_text(encoding="utf-8")
+        assert _UNDECLARED_RETURN_MARKER not in body, (
+            f"{path.relative_to(REPO_ROOT)} still says {_UNDECLARED_RETURN_MARKER!r} — "
+            "declare the resume point (or the terminal handoff) per the caller-side "
+            "resumption contract in references/stage-exit-protocol.md"
+        )
+
+
+def test_known_delegation_sites_declare_their_resume_point():
+    """Each known Skill-tool delegate-and-resume site pins its declared resume point."""
+    for relpath, marker in _DECLARED_RESUME_SITES.items():
+        path = REPO_ROOT / relpath
+        assert path.is_file(), f"declared-resume site {relpath} no longer exists"
+        body = path.read_text(encoding="utf-8")
+        assert marker in body, (
+            f"{relpath} no longer declares its resume point ({marker!r}) — a delegation "
+            "site must state where control returns; update the site or this table"
+        )
 
 
 def test_no_skill_retains_the_old_in_stage_block():
