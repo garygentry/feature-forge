@@ -149,7 +149,7 @@ section, updated at every session close).
 | **D** — skip-docs (pipeline feature `docs-skip`) | #197 mechanism → #165 option/config → #173 re-gate | pending |
 | **E** — zero-prompt loop config (direct PR) | #153 #164 (`loopRunner.reviewMode`/`.agentMode`); 0.17.0 with D | pending |
 | **F** — verify fix-sweeps (pipeline feature) | #170 mechanical milestone, then #171 semantic | pending |
-| **G** — decisions & standalone | #180 single-writer decision; #167 adapter host-term translation (last) | pending |
+| **G** — decisions & standalone | #180 single-writer decision; #167 adapter host-term translation (last) | **in progress** (2026-08-08: #180 decided + recorded via PR #209 — single writer assumed, detection-not-locking, `references/decisions/single-writer-threat-model.md`; unblocks Track C. #167 remaining, deliberately last) |
 
 Sequencing: S1 next; B before D (both widen `EXIT_OUTCOMES`); E after D (shared schema
 surfaces); #167 deliberately last (pure generator churn). Standing constraints for every
@@ -159,7 +159,8 @@ any new state surface (the R4 pattern), `bash scripts/validate.sh` green before 
 
 ## Open issues
 
-_19 open as of 2026-08-08 (post-reconciliation), all sequenced in
+_17 open as of 2026-08-08 (post-reconciliation; Phase 1 closed #201 via PR #208 and
+#180 via PR #209), all sequenced in
 `plans/HANDOFF-cleanup-execution.md` + `plans/WORKSTREAMS-open-issues-2026-08-08.md`;
 each carries a 2026-08-08 "Reconciliation sweep" evidence comment with current
 file:line pointers._
