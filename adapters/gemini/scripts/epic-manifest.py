@@ -181,6 +181,12 @@ class FeatureStatus(TypedDict):
         blockingEpicChangeRequests: The subset of ``openEpicChangeRequests`` with
             ``blocksCurrent == true`` (pause-now, reconcile-before-specs). Always
             ``<= openEpicChangeRequests``.
+        docsStatus: The member's recorded ``stages["forge-6-docs"].status``, or
+            None when absent/malformed. DISTINCT from the orchestration rollup
+            (which reads forge-5-loop + impl verify and deliberately ignores
+            docs): consumers gating a DOCUMENTATION decision — the epic-level
+            doc offer (#173) — read this, treating ``complete`` and ``skipped``
+            (#197's deliberate skip) both as docs-settled.
     """
 
     name: str
@@ -190,6 +196,7 @@ class FeatureStatus(TypedDict):
     unmetDeps: list[str]
     openEpicChangeRequests: int
     blockingEpicChangeRequests: int
+    docsStatus: str | None
 
 
 class Rollup(TypedDict):
@@ -1205,6 +1212,13 @@ def derive_status(feature_dir: Path) -> FeatureStatus:
     open_count = len(open_reqs)
     blocking_count = sum(1 for r in open_reqs if r.get("blocksCurrent") is True)
 
+    # Docs state for the epic-level doc offer gate (#173). Read directly rather
+    # than folded into `derived`: docs completeness is deliberately invisible to
+    # the orchestration rollup, and conflating them is the bug this field fixes.
+    stages = state.get("stages", {})
+    docs = stages.get("forge-6-docs") if isinstance(stages, dict) else None
+    docs_status = docs.get("status") if isinstance(docs, dict) else None
+
     return {
         "name": name,
         "stage": stage,
@@ -1213,6 +1227,7 @@ def derive_status(feature_dir: Path) -> FeatureStatus:
         "unmetDeps": [],
         "openEpicChangeRequests": open_count,
         "blockingEpicChangeRequests": blocking_count,
+        "docsStatus": docs_status if isinstance(docs_status, str) else None,
     }
 
 

@@ -93,13 +93,13 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
 
 If `render-status` fails, skip the epic-level offer and proceed with the per-feature docs only; surface the error per the exit-1/exit-2 split in the **Feature Directory Resolution** block of `references/shared-conventions.md` (exit 1 → parse `{findings[]}` from stdout; exit 2 → surface the plain `Error:` stderr line verbatim).
 
-**Only if `rollup.total > 0 AND rollup.complete == rollup.total`** (every member is complete-for-orchestration; the `total > 0` guard excludes an empty epic), offer the extra doc as a statement the user can take or leave — not a forced question:
+**Gate the offer on per-member DOCS state, not the orchestration rollup (#173).** `rollup.complete` counts loop-completeness, so in an epic implemented before any docs were written it reads full on the *first* member's docs run — offering an epic doc that would be sourced from a fraction of its inputs. Instead, read each member row's `docsStatus` from the same `render-status` payload and offer **only if**: `rollup.total > 0`, AND every member **other than {feature}** has `docsStatus` of `complete` or `skipped` (#197's deliberate skip satisfies — those members will contribute no per-feature docs by decision, not by omission). The current member counts as satisfied by this in-flight run. This fires exactly once per epic, on its final docs run:
 
-"All {total} features in the '{epic}' epic are complete. I can also generate an **epic-level architecture document** spanning the features, alongside {feature}'s per-feature docs — say the word and I'll add it."
+"All {total} features in the '{epic}' epic now have their documentation settled. I can also generate an **epic-level architecture document** spanning the features, alongside {feature}'s per-feature docs — say the word and I'll add it."
 
-If the user asks for it, synthesize a doc at **`{docsDir}/{epic}/`** sourced from: the `EPIC.md` narrative, each member's per-feature docs, and the manifest contracts (each feature's `exposes`/`consumes`). When the epic-level doc is written, the Step 5 commit also stages `{docsDir}/{epic}/`.
+If the user asks for it, synthesize a doc at **`{docsDir}/{epic}/`** sourced from: the `EPIC.md` narrative, each member's per-feature docs (members whose docs were deliberately skipped contribute their manifest charter/contracts only), and the manifest contracts (each feature's `exposes`/`consumes`). When the epic-level doc is written, the Step 5 commit also stages `{docsDir}/{epic}/`.
 
-If not all members are complete (or the feature has no `epic` back-pointer), **do not offer** — the per-feature doc flow proceeds unchanged.
+If any other member's `docsStatus` is neither `complete` nor `skipped` (or the feature has no `epic` back-pointer), **do not offer** — the per-feature doc flow proceeds unchanged.
 
 Read `references/doc-conventions.md` for documentation standards.
 
