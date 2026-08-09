@@ -5457,10 +5457,12 @@ def _validated_findings_file(
 def _current_artifact_version(state: dict, stage: str) -> int:
     """Return the artifact revision a verify result is being recorded against.
 
-    For a feature target that is the selected production stage's ``version``. A
-    result other than ``skipped`` cannot be recorded without it: `passed` and
+    For a feature target that is the selected production stage's ``version``.
+    Only the statuses that consume it resolve it: `passed` and
     `findings-reported` write it into the freshness ledger, and
     `auto-verify-pending` writes it as the revision the debt is owed on.
+    `skipped` and `findings-applied` never read it and skip the lookup, so both
+    stay recordable on a completed stage with no recorded ``version``.
 
     Args:
         state: The loaded state document.
@@ -5565,7 +5567,8 @@ def _verify_result_entry(
     Args:
         status: The validated result status.
         prior: The existing entry (``{}`` when absent).
-        current: The current artifact revision, or None for ``skipped``.
+        current: The current artifact revision, or None for ``skipped`` and
+            ``findings-applied`` (which never consume it).
         findings_file: Validated relative report path, when supplied.
         findings_count: Validated non-negative count, when supplied.
         now: The shared ISO-8601 timestamp for this write.
@@ -5834,7 +5837,12 @@ def cmd_state_verify(
     if findings_file is not None:
         _validated_findings_file(findings_file, target_dir)
 
-    if status == "skipped":
+    if status in ("skipped", "findings-applied"):
+        # Neither status consumes the artifact revision: `skipped` records no
+        # freshness, and `findings-applied` deliberately clears it (the entry is
+        # built from the prior report plus `fixedAt`). Resolving it anyway would
+        # make both unrecordable on a completed stage whose `version` was never
+        # written — exactly the state that needs the recovery path (#202).
         current = None
     elif is_epic_target:
         # The epic's artifact revision is the manifest revision — never a member's

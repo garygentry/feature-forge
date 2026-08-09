@@ -1853,6 +1853,53 @@ def test_state_verify_findings_applied_rejects_a_verified_stage_version(tmp_path
     assert _state_bytes(specs) == before
 
 
+def _drop_stage_version(specs: Path, stage: str = "forge-1-prd", name: str = "demo") -> None:
+    """Strip ``version`` from a completed stage entry, as legacy records have it."""
+    path = specs / name / FS.PIPELINE_STATE_FILENAME
+    state = json.loads(path.read_text(encoding="utf-8"))
+    del state["stages"][stage]["version"]
+    path.write_text(json.dumps(state), encoding="utf-8")
+
+
+def test_state_verify_findings_applied_skips_the_version_lookup(tmp_path):
+    """`findings-applied` never consumes the artifact revision, so a completed
+    stage with no recorded ``version`` must not block it — it is the recovery
+    path for a demoted verify entry (#202)."""
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/f.md", "--findings-count", "3",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    _drop_stage_version(specs)
+
+    assert _verify(specs, "--stage", "forge-1-prd",
+                   "--status", "findings-applied").returncode == 0
+    entry = _entry(specs)
+    assert entry["status"] == "findings-applied"
+    assert entry["findingsFile"] == "verify/f.md" and entry["findingsCount"] == 3
+    assert "verifiedStageVersion" not in entry
+
+
+def test_state_verify_version_consuming_statuses_still_require_the_version(tmp_path):
+    """The hoist is exact: `passed`/`findings-reported`/`auto-verify-pending`
+    still refuse a stage whose completion never recorded a ``version``."""
+    for status, extra in (
+        ("auto-verify-pending", ()),
+        ("passed", ("--verified-stage-version", "1")),
+        ("findings-reported", ("--findings-file", "verify/f.md",
+                               "--findings-count", "1",
+                               "--verified-stage-version", "1")),
+    ):
+        specs = _verify_fixture(tmp_path / status)
+        _drop_stage_version(specs)
+        before = _state_bytes(specs)
+        result = _verify(specs, "--stage", "forge-1-prd", "--status", status, *extra)
+        assert result.returncode == 2, status
+        assert "no recorded version" in result.stderr, status
+        assert _state_bytes(specs) == before, f"{status} mutated state"
+
+
 def _state_bytes(specs: Path, name: str = "demo") -> bytes:
     """Raw bytes of a feature's state file (b"" when it does not exist yet)."""
     path = specs / name / FS.PIPELINE_STATE_FILENAME
