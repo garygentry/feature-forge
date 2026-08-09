@@ -392,7 +392,8 @@ def atomic_write(path: Path, data: dict) -> None:
     and fsyncs it, then ``os.replace`` swaps it into place. ``os.replace`` is
     atomic on POSIX within a single filesystem, so an interrupted write never
     leaves a partial or corrupt manifest (REQ-ROBUST-03). Concurrent multi-
-    session mutation is out of scope (single-writer assumed, PRD REQ-ROBUST-03).
+    session mutation is out of scope (single-writer assumed, PRD REQ-ROBUST-03;
+    decision record: references/decisions/single-writer-threat-model.md, #180).
 
     Args:
         path: The destination manifest path (e.g. {epic}/epic-manifest.json).
