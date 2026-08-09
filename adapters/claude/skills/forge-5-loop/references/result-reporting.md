@@ -99,11 +99,13 @@ After Step 5's `state-complete`, select exactly **one** `LoopOutcome` from Step 
 authoritative final counts. Walk this ladder in order and stop at the first match:
 
 1. **`resolved`** — the Post-Run Recovery Procedure
-   (`references/recovery-procedure.md`) ran this session and its gate passed: every
-   affected needs-human item has an applied decision record, the working tree is
-   clean, and each affected item left `blocked`/`needsHuman` per the per-item
-   re-read. This outranks `needs-human` so a stop the recovery just cleared is not
-   re-reported as still needing a human.
+   (`references/recovery-procedure.md`) ran this session with a **non-empty**
+   affected-item set and its gate passed: every affected needs-human item has an
+   applied decision record, the working tree is clean, and each affected item left
+   `blocked`/`needsHuman` per the per-item re-read. This outranks `needs-human` so a
+   stop the recovery just cleared is not re-reported as still needing a human. (Step
+   4c runs the procedure on every close, so an empty affected set is the common case —
+   it never selects `resolved`; fall through.)
 2. **`needs-human`** — otherwise, `needsHuman > 0`. This wins even when blocked
    items also exist: a decision only a human can make outranks work that merely
    could not proceed.

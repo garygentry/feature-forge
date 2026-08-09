@@ -1,9 +1,11 @@
 # forge-5-loop — Post-Run Recovery Procedure
 
 The named procedure that turns a needs-human / blocked loop stop into a resumable backlog
-without losing the operator's decision. It runs **after** a loop run ends — invoked from
-the `needs_human` / `item_blocked` live-event handling (`runner-contract.md`) and from
-Step 7's close path — and it runs again as the **re-entry point** on a fresh session (§3).
+without losing the operator's decision. It runs **after** a loop run ends — entered
+**unconditionally** from SKILL Step 4c on every run close, whatever the counts say (the
+`needs_human` / `item_blocked` live-event handling in `runner-contract.md` collects
+answers early for it, but is **not** the entry condition) — and it runs again as the
+**re-entry point** on a fresh session (§3).
 Its seven ordered steps: **enumerate → cluster → consolidated prompts →
 record-at-collection → apply → prove → gate & exit**.
 
@@ -41,9 +43,13 @@ ran-but-nothing-moved *proof* failure (step 6) because the former never reaches 
   The unapplied set is the **latest entry per `itemId` with `appliedAt == null`** —
   deferrals included, applied items excluded.
 - **Decision point:** if the unapplied set is **empty** and no item is
-  `blocked`/`needsHuman`, **exit the procedure — nothing to recover.** Combined with the
-  clean-tree silence of §4.1, this keeps a happy-path run free of any new prompt; the
-  only new happy-path output is the Step 2a depth line.
+  `blocked`/`needsHuman`, there is nothing to decide or apply: **skip steps 2–6 and go
+  straight to step 7 — never exit around it.** Step 7's §4 tree reconciliation still
+  runs (it is what catches work stranded without any signal), and its `resolved` gate
+  does not apply — **an empty affected set never selects `resolved`**; the SKILL Step 7
+  ladder falls through to its count-based rungs. Combined with the clean-tree silence
+  of §4.1, this keeps a happy-path run free of any new prompt; the only new happy-path
+  output is the Step 2a depth line.
 - **Output:** the unapplied-decision set (each entry's `itemId`, `question`,
   `answer|null`, `deferred`, `clusterId?`), and the live blocked/needs-human item set.
 - **Error:** a `decision-list` exit 2 (unknown dir, unparseable record) stops the
@@ -224,8 +230,9 @@ the next launch finds it.
 ## 4. Post-Run Tree Reconciliation
 
 Invoked from step 7 after the run ends and **before** any outcome is selected. It runs
-on **every** recovery pass — including passes with no needs-human items — because it is
-the "tree" half of recovery. Four sub-steps.
+on **every** recovery pass — including passes with no needs-human items, which step 1
+routes here directly, and SKILL Step 4c enters the procedure on every run close —
+because it is the "tree" half of recovery. Four sub-steps.
 
 ### 4.1 Detect
 
