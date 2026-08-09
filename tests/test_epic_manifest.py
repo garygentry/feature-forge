@@ -961,6 +961,33 @@ def test_next_command_advances_past_a_completed_stage(run_cli, tmp_path) -> None
     assert out["nextCommand"] == "/feature-forge:forge-2-tech m1"
 
 
+def test_next_command_never_reoffers_a_skipped_docs_stage(run_cli, tmp_path) -> None:
+    """#197: `skipped` on forge-6-docs counts as done for next-stage derivation.
+
+    A member with stages 1–5 complete, docs deliberately skipped, and an unapplied
+    impl findings report is still actionable — but the recommendation must be the
+    outstanding fix, never a re-run of the stage the operator explicitly skipped.
+    """
+    specs = tmp_path / "specs"
+    stages = {
+        stage: _complete()
+        for stage in ("forge-1-prd", "forge-2-tech", "forge-3-specs",
+                      "forge-4-backlog", "forge-5-loop")
+    }
+    stages["forge-6-docs"] = {"status": "skipped", "skippedAt": "2026-07-29T00:00:00Z"}
+    stages["forge-verify-impl"] = {
+        "status": "findings-reported",
+        "findingsFile": "verify/impl.md",
+        "findingsCount": 2,
+    }
+    epic = _make_single_member_epic(
+        specs, current_stage="forge-6-docs", stages=stages
+    )
+    out = run_cli("render-status", epic, "--specs-dir", str(specs), "--json").json()
+    assert out["nextCommand"] == "/feature-forge:forge-fix m1"
+    assert "forge-6-docs" not in (out["nextCommand"] or "")
+
+
 def test_next_command_is_independent_of_the_recorded_current_stage(
     run_cli, tmp_path
 ) -> None:

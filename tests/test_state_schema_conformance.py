@@ -3,7 +3,7 @@
 `references/pipeline-state-schema.json` stays the source of truth for
 `.pipeline-state.json` even though R4 removed the per-stage instruction to *read*
 it — no skill body loads the schema to author state any more, so nothing but a
-test keeps the eight `state-*` verbs honest. This module is that test.
+test keeps the nine `state-*` verbs honest. This module is that test.
 
 It differs from `tests/test_state_verbs.py` on purpose: that file asserts each
 verb's CLI contract (which fields it writes, which flags it rejects); this one
@@ -59,6 +59,7 @@ VERB_INVOCATIONS: dict[str, tuple[str, ...]] = {
     # `skipped` is the one result that needs no completed artifact behind it, so it
     # is the only invocation that works against a never-written state file.
     "state-verify": ("--stage", "forge-1-prd", "--status", "skipped"),
+    "state-skip": ("--stage", "forge-6-docs"),
 }
 
 
@@ -100,7 +101,7 @@ def test_the_guard_covers_every_registered_state_verb():
     assert registered == set(VERB_INVOCATIONS), (
         f"registered {sorted(registered)} != covered {sorted(VERB_INVOCATIONS)}"
     )
-    assert len(registered) == 8, f"expected eight state verbs, found {len(registered)}"
+    assert len(registered) == 9, f"expected nine state verbs, found {len(registered)}"
 
 
 @pytest.mark.parametrize("verb", sorted(VERB_INVOCATIONS))
@@ -548,8 +549,15 @@ INTENDED_SCHEDULING_PROPERTIES = {
 #: documentation fix with no effect on what validates — a raw-byte digest could only
 #: be re-pinned, which proves nothing, while this digest still proves the contract
 #: is untouched. Prose accuracy is asserted separately below.
+#:
+#: Re-pinned by #197 (the docs-skip vocabulary): `definitions.docsStageEntry` was
+#: added (stageEntry + `skipped` status + `skippedAt`) and `stages.forge-6-docs`
+#: re-pointed at it. That is the whole intended delta; the structural comparison in
+#: `test_docs_stage_entry_is_stage_entry_plus_the_skip_vocabulary` (in
+#: tests/test_state_verbs.py) pins it exactly, so this digest only ever moves again
+#: for a change some feature owns.
 SCHEMA_CONTRACT_OUTSIDE_VERIFY_ENTRY_SHA256 = (
-    "9c992b28296ddb59c4bd13d5af9d5d725f52f595271c01315466e61febb6fb88"
+    "a9b4e426085b7bd4adcbb99007f5bbf1cc646ebed9654532b4245ed4f77ea85a"
 )
 
 

@@ -624,7 +624,7 @@ STATE_DRIVEN_STAGES = EXIT_STAGES[:5]
 BRANCH_STAGES = ("forge-verify", "forge-fix")
 EXIT_OUTCOMES = {
     "forge-5-loop": ("complete", "partial", "blocked", "needs-human", "deferred", "resolved"),
-    "forge-6-docs": ("complete", "blocked"),
+    "forge-6-docs": ("complete", "blocked", "skipped"),
     "forge-verify": ("passed", "findings", "skipped", "failed"),
     "forge-fix": (
         "no-findings", "decisions", "failed", "applied", "reverified",
@@ -1914,7 +1914,8 @@ def _docs(cwd: Path, feature: str, outcome: str = "complete", *extra: str) -> di
 
 
 def test_docs_requires_its_own_outcome_and_rejects_any_other(tmp_path: Path) -> None:
-    """02 §8: `forge-6-docs` always uses stage-exit and takes `complete` or `blocked`."""
+    """02 §8: `forge-6-docs` always uses stage-exit and takes `complete`,
+    `blocked`, or `skipped` (#197)."""
     root = _project(tmp_path, config={})
     err = _rejected(root, "--feature", "widget", "--stage", "forge-6-docs")
     assert "forge-6-docs requires --outcome" in err
@@ -2024,6 +2025,50 @@ def test_docs_standalone_complete_fences_only_the_navigator(tmp_path: Path) -> N
                       "/feature-forge:forge-0-epic <new-epic>"):
         assert secondary in block
         assert secondary not in fenced
+
+
+def test_docs_skipped_standalone_routes_like_complete_with_honest_wording(
+    tmp_path: Path,
+) -> None:
+    """#197: a deliberate skip closes the pipeline on the same navigator route as
+    `complete`, but never claims the docs exist."""
+    root = _project(tmp_path, config={})
+    payload = _docs(root, "widget", "skipped")
+    block = payload["nextSteps"]
+    assert payload["directives"]["outcome"] == "skipped"
+    assert payload["directives"]["primaryCommand"] == "/feature-forge:forge widget"
+    assert block.count("```") == 2, "exactly one fence"
+    assert block.split("```")[1].strip() == "/feature-forge:forge widget"
+    assert "deliberately skipped" in block and "`skipped`" in block
+    assert "Documentation is complete" not in block
+    # Re-running docs later stays named as the recovery from a skip.
+    assert "/feature-forge:forge-6-docs widget" in block
+
+
+def test_docs_skipped_epic_member_routes_to_the_live_next_member(tmp_path: Path) -> None:
+    """A skipped member hands off exactly like a complete one — the epic goes on."""
+    root = _docs_epic_project(
+        tmp_path, [_member("alpha"), _member("beta", ("alpha",))], complete=("alpha",)
+    )
+    payload = _docs(root, "alpha", "skipped", "--epic", DOCS_EPIC)
+    d = payload["directives"]
+    assert d["primaryCommand"] == "/feature-forge:forge-1-prd beta"
+    assert "deliberately skipped" in payload["nextSteps"]
+    assert "Documentation is complete" not in payload["nextSteps"]
+
+
+def test_docs_skipped_with_every_member_complete_routes_to_the_dashboard(
+    tmp_path: Path,
+) -> None:
+    root = _docs_epic_project(
+        tmp_path,
+        [_member("alpha"), _member("beta", ("alpha",))],
+        complete=("alpha", "beta"),
+    )
+    payload = _docs(root, "beta", "skipped", "--epic", DOCS_EPIC)
+    assert payload["directives"]["primaryCommand"] == DASHBOARD
+    assert "deliberately skipped" in payload["nextSteps"]
+    assert "every member of epic my-epic is now complete (2/2)" in payload["nextSteps"]
 
 
 def test_docs_standalone_blocked_routes_to_navigator_recovery(tmp_path: Path) -> None:

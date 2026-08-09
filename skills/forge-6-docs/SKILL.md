@@ -21,6 +21,25 @@ Resolve the feature directory via the **Feature Directory Resolution** block in 
 
 Read `{resolvedFeatureDir}/.pipeline-state.json` to understand what exists.
 
+### Documentation Decision Gate
+
+Documentation is valuable but not mandatory: a feature may close with docs deliberately skipped, recorded honestly as `skipped` (never as a false `complete`). Before gathering sources, use `AskUserQuestion` to ask: **Generate docs (recommended)** — proceed with this skill as written · **Skip documentation for this feature** — close the stage with no docs, recorded as `skipped`; docs can still be generated later by re-running this stage.
+
+On **Skip documentation**, persist the skip through the `state-skip` verb — never by hand, and never via `state-complete` (which would claim a completion that did not happen). Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" state-skip \
+  --feature "{feature}" --stage forge-6-docs --specs-dir "{specsDir}"
+```
+
+If the verb exits 2, surface its plain `Error:` line verbatim — a refusal means the skip would erase a record of docs that already exist; do not force it. Ask the user how to proceed (typically: generate/refresh the docs normally).
+
+After a successful skip write: if `gitCommitAfterStage` is true, commit the state change (`git add {resolvedFeatureDir}/`, message `"{commitPrefix}({feature}): skip architecture docs"`) — a plain single commit; there is no artifact commit, so the two-commit hash follow-up does not apply. Then go **directly to Step 6** with `{DocsOutcome}` = `skipped`. Steps 1 (rest), 2, 3, 4, and 5 are all skipped — including the Impl-Verify Backstop: skipping docs generates nothing over unverified code, and any outstanding verification stays visible in state and keeps being surfaced by the navigator.
+
+On **Generate docs**, continue below.
+
 ### Gather Sources
 
 Load into context:
@@ -213,6 +232,7 @@ Every docs run ends here, and ends here **exactly once** — standalone or epic 
 Select `{DocsOutcome}` first, from what actually landed:
 
 - **`complete`** — the docs were written and Step 5's state (and commit, when `gitCommitAfterStage` is true) succeeded.
+- **`skipped`** — the user chose **Skip documentation** at the Documentation Decision Gate and the `state-skip` write succeeded. Routes exactly like `complete` (the pipeline still ends here), but the wording says the docs were deliberately skipped — never that they exist.
 - **`blocked`** — docs work could not complete. Persist only valid partial state, then run the same call with `blocked`; it routes to navigator/recovery and never claims the pipeline is finished. If the failure happened **before** a safe state write, report the failure and its recovery and run **no** exit at all — there is nothing durable for an exit to close over.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:

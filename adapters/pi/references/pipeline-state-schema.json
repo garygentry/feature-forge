@@ -127,7 +127,7 @@
         "forge-4-backlog": { "$ref": "#/definitions/stageEntry" },
         "forge-verify-backlog": { "$ref": "#/definitions/verifyEntry" },
         "forge-5-loop": { "$ref": "#/definitions/stageEntry" },
-        "forge-6-docs": { "$ref": "#/definitions/stageEntry" },
+        "forge-6-docs": { "$ref": "#/definitions/docsStageEntry" },
         "forge-verify-impl": { "$ref": "#/definitions/verifyEntry" },
         "forge-verify-prd": { "$ref": "#/definitions/verifyEntry" },
         "forge-verify-tech": { "$ref": "#/definitions/verifyEntry" }
@@ -154,6 +154,38 @@
         },
         "startedAt": { "type": ["string", "null"], "format": "date-time" },
         "completedAt": { "type": ["string", "null"], "format": "date-time" },
+        "commitHash": {
+          "type": ["string", "null"],
+          "description": "Git commit SHA of this stage's artifact commit (Commit 1 of the two-commit Git Commit Protocol in shared-conventions.md). Written by a small follow-up commit so it points at the artifact commit itself, never at an orphaned amend or the hash-recording commit. null until recorded (or when there was no new artifact commit)."
+        },
+        "basedOnVersions": {
+          "type": "object",
+          "description": "Upstream stage versions this artifact was built against",
+          "additionalProperties": { "type": "integer" }
+        }
+      }
+    },
+    "docsStageEntry": {
+      "type": "object",
+      "required": ["status"],
+      "description": "The forge-6-docs stage entry: identical to stageEntry except that `skipped` is a legal status and `skippedAt` records when the deliberate skip was written (by the `state-skip` verb, never by hand). `skipped` is a terminal, done-for-selection status — the pipeline ends without the stage claiming artifacts it never produced (#197). Deliberately scoped to the docs stage: a skipped PRD or specs stage is not a representable state, so the shared stageEntry enum does NOT carry `skipped`.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "in-progress", "complete", "stale", "skipped"]
+        },
+        "version": {
+          "type": "integer",
+          "description": "Incremented each time this stage's artifacts are revised"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Relative paths to artifacts produced by this stage"
+        },
+        "startedAt": { "type": ["string", "null"], "format": "date-time" },
+        "completedAt": { "type": ["string", "null"], "format": "date-time" },
+        "skippedAt": { "type": ["string", "null"], "format": "date-time", "description": "UTC ISO-8601 timestamp of the deliberate skip (status: skipped). Written by `state-skip`; absent on every other status." },
         "commitHash": {
           "type": ["string", "null"],
           "description": "Git commit SHA of this stage's artifact commit (Commit 1 of the two-commit Git Commit Protocol in shared-conventions.md). Written by a small follow-up commit so it points at the artifact commit itself, never at an orphaned amend or the hash-recording commit. null until recorded (or when there was no new artifact commit)."
