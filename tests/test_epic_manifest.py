@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from _state_schema import validate_epic_state
+
 # ---------------------------------------------------------------------------
 # §3.1 Valid manifest round-trip (REQ-EPIC-02/03)
 # ---------------------------------------------------------------------------
@@ -1506,15 +1508,26 @@ def _auto_pending(version: int | None = 1) -> dict:
     return entry
 
 
-def _write_epic_state(specs: Path, epic: str, entry: object) -> Path:
-    """Write the epic's own `.epic-state.json` carrying one `forge-verify-epic` entry."""
+def _write_epic_state(
+    specs: Path, epic: str, entry: object, *, conformant: bool = True
+) -> Path:
+    """Write the epic's own `.epic-state.json` carrying one `forge-verify-epic` entry.
+
+    By default the written state is validated against
+    `references/epic-state-schema.json` (#181), so ordinary fixtures cannot pin a
+    drifted shape. Pass ``conformant=False`` only where the test's POINT is a torn
+    or hand-edited entry the readers must tolerate.
+    """
     path = specs / epic / ".epic-state.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
+    state = {
         "epic": epic,
         "updatedAt": "2026-07-30T00:00:00Z",
         "stages": {"forge-verify-epic": entry},
-    }), encoding="utf-8")
+    }
+    if conformant:
+        assert validate_epic_state(state) == [], validate_epic_state(state)
+    path.write_text(json.dumps(state), encoding="utf-8")
     return path
 
 
@@ -1718,7 +1731,9 @@ def test_009_epic_verify_state_matrix(
 ) -> None:
     """Every 03 §5.2 epic-root classification, compared against manifest revision 2."""
     epic_dir = tmp_path / "an-epic"
-    _write_epic_state(tmp_path, "an-epic", entry)
+    # conformant=False: the matrix deliberately mixes valid entries with torn and
+    # hand-edited ones (null/list/dict/int statuses) the classifier must tolerate.
+    _write_epic_state(tmp_path, "an-epic", entry, conformant=False)
     assert helper_module.epic_verify_state(epic_dir, 2) == expected, label
 
 
@@ -1740,7 +1755,7 @@ def test_009_render_status_survives_a_torn_epic_state(run_cli, tmp_path) -> None
     epic = _make_single_member_epic(
         specs, current_stage="forge-1-prd", stages={"forge-1-prd": _complete()}
     )
-    _write_epic_state(specs, epic, {"status": ["findings-reported"]})
+    _write_epic_state(specs, epic, {"status": ["findings-reported"]}, conformant=False)
     result = run_cli("render-status", epic, "--specs-dir", str(specs), "--json")
     assert result.returncode == 0, result.stderr
     result.json()
