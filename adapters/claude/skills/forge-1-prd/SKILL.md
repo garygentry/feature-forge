@@ -129,6 +129,8 @@ After writing the PRD (this is the point where `{specsDir}/{feature}/` is first 
 
 ## Step 5: Review with User
 
+This is a **blocking review** — per the **Stage Review Gate** in `references/shared-conventions.md`, do not proceed until the user confirms.
+
 Present the complete PRD to the user. Ask:
 - "Does this capture everything? Any requirements missing?"
 - "Are the priorities correct?"
