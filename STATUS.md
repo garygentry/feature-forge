@@ -152,7 +152,7 @@ section, updated at every session close).
 | **D** — skip-docs (hand-sequenced 4-PR series) | #202 recovery → #197 mechanism → #203+#165 guard/config → #173 re-gate | **done** (2026-08-09: PRs #211–#214 merged, all five issues closed. `state-skip` verb + `docsStageEntry` schema + `docsStage` config + `_SKIP_PROTECTED_PRIOR` demotion guard + `docsStatus`-gated epic-doc offer. Unreleased — in `[Unreleased]` for the next cut) |
 | **E** — zero-prompt loop config (direct PR) | #153 #164 (`loopRunner.reviewMode`/`.agentMode`); 0.17.0 with D | **done** (2026-08-10: PR #224 merged — `reviewMode` (`prompt\|always\|never`) gates the Run-mode question, `agentMode` (`prompt\|auto`) gates the agent pick; defaults byte-identical to today; under `auto` the probe/verdict/alias-guard still run; retry-blocked keeps a narrow situational prompt under `always`/`never`; pinned by `tests/test_zero_prompt_loop_config.py`. Both issues closed. Unreleased — in `[Unreleased]` for the 0.17.0 cut) |
 | **F** — verify fix-sweeps (pipeline feature) | #170 mechanical milestone, then #171 semantic | pending |
-| **G** — decisions & standalone | #180 single-writer decision; #167 adapter host-term translation (last) | **in progress** (2026-08-08: #180 decided + recorded via PR #209 — single writer assumed, detection-not-locking, `references/decisions/single-writer-threat-model.md`; unblocks Track C. #167 remaining, deliberately last) |
+| **G** — decisions & standalone | #180 single-writer decision; #167 adapter host-term translation (last) | **done** (2026-08-08: #180 decided + recorded via PR #209 — single writer assumed, detection-not-locking, `references/decisions/single-writer-threat-model.md`; unblocks Track C. 2026-08-10: #167 via PR #226 — copied reference markdown is host-term translated per agent in the self-containment pass (Pi `/new`/`/skill:`/`--host pi`, others host-neutral, Claude byte-verbatim; JSON + exempt meta-docs untouched); host-neutrality guard now scans references and covers Pi. Unreleased — in `[Unreleased]` for the next cut) |
 
 Sequencing: S1 next; B before D (both widen `EXIT_OUTCOMES`); E after D (shared schema
 surfaces); #167 deliberately last (pure generator churn). Standing constraints for every
@@ -162,13 +162,13 @@ any new state surface (the R4 pattern), `bash scripts/validate.sh` green before 
 
 ## Open issues
 
-_3 open as of 2026-08-10 (Phase 1 closed #201/#180 via PRs #208/#209; Phase 2 closed
+_2 open as of 2026-08-10 (Phase 1 closed #201/#180 via PRs #208/#209; Phase 2 closed
 #202/#197/#203/#165/#173 via PRs #211–#214; Phase 3 / Track C closed
 #192/#186/#187/#188/#181/#182/#166 via PRs #216–#222; Phase 4 / Track E closed
-#153/#164 via PR #224), all sequenced in
+#153/#164 via PR #224; Phase 5 chunk 1 closed #167 via PR #226), all sequenced in
 `plans/HANDOFF-cleanup-execution.md` + `plans/WORKSTREAMS-open-issues-2026-08-08.md`;
 each carries a 2026-08-08 "Reconciliation sweep" evidence comment with current
-file:line pointers. Remaining: Track F #170/#171, standalone #167._
+file:line pointers. Remaining: Track F #170/#171._
 
 Two known non-blocking follow-ups, untracked (no issue filed):
 
