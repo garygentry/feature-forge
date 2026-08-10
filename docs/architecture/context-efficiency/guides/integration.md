@@ -150,8 +150,13 @@ So, when you add or move a reference file:
 
 1. **Cite it by literal path from at least one skill body.** Not from an agent file, and not
    only from another reference file.
-2. **Keep it host-neutral.** No Claude-only tool names, no literal `/clear` — five other
-   hosts read the same bytes.
+2. **Prefer host-neutral wording.** Since #167 the build host-term-translates reference
+   markdown for non-Claude bundles (Claude tool names, `/clear`, the stage-command
+   prefix), so a Claude-only term no longer ships verbatim to five other hosts — but the
+   translation is a fixed table, not a rewriter: phrasing it neutrally in the first place
+   still degrades best, and prose that *mentions* a host term (rather than uses it) can
+   garble under substitution. `tests/test_adapter_host_neutrality.py` scans the emitted
+   references and fails on leaked tokens.
 3. **Regenerate the adapters in the same commit:** `python3 scripts/build-adapters.py`.
    Adapter freshness is a hard gate — `scripts/validate.sh` runs a regen-and-diff check, so
    a canon edit without a regeneration fails CI.

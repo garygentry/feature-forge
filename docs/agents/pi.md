@@ -44,7 +44,7 @@ Pi invokes forge stages as skills:
 
 Do not use Claude plugin commands such as `/feature-forge:forge` in Pi.
 
-**Between stages, forge recommends starting a fresh session with Pi's `/new`** (Claude's equivalent is `/clear`). Every artifact is on disk, so the work survives it; a clean session is the recommended default at each stage boundary. Both the skill prose and the scripted stage-exit block (`forge-session.py --host pi`) name `/new` and emit `/skill:` next-commands. One residual: the copied `references/` files (e.g. `stage-exit-protocol.md`) are self-contained **verbatim** copies of canon and still show Claude's `/clear`/`/feature-forge:` — they are secondary model-facing guidance; the SKILL body is the primary instruction surface and is fully translated.
+**Between stages, forge recommends starting a fresh session with Pi's `/new`** (Claude's equivalent is `/clear`). Every artifact is on disk, so the work survives it; a clean session is the recommended default at each stage boundary. The skill prose, the scripted stage-exit block (`forge-session.py --host pi`), and the copied `references/` files (e.g. `stage-exit-protocol.md`) all name `/new` and emit `/skill:` commands — the reference closure is host-term translated at build time (#167), with a small exempt set (`templates/` scaffolding and two mention-heavy meta-docs) that stays verbatim and carries no host commands.
 
 ## Notes and limitations
 

@@ -36,7 +36,7 @@ I found that the codebase uses React and TanStack Router.
 
 ### Decision Support: Help the User Choose
 
-When an `AskUserQuestion` carries substantive options (a real choice — not a trivial yes/no confirmation), do not just list them. The interview stages have already done codebase research and integration analysis; surfacing that synthesis at the decision moment is the whole point. For every such question:
+When a question posed through `AskUserQuestion` carries substantive options (a real choice — not a trivial yes/no confirmation), do not just list them. The interview stages have already done codebase research and integration analysis; surfacing that synthesis at the decision moment is the whole point. For every such question:
 
 - **Lead with a recommended option.** Place it first and label it `(recommended)` (matching the `AskUserQuestion` "(Recommended)" convention).
 - **Put the trade-off in each option's `description`.** Say why you'd pick it and what you give up versus the alternatives — the cost, not just the benefit.
@@ -141,7 +141,7 @@ mkdir -p "<specsDir>"
 [ -f "<specsDir>/AGENTS.md" ] || cp "$R/references/templates/specs-hygiene/AGENTS.md" "<specsDir>/AGENTS.md"
 ```
 
-If the host is Claude (the `AskUserQuestion` tool is available), also ensure the Claude-framed variant:
+If the host is Claude (the Claude-native question tool is available), also ensure the Claude-framed variant:
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -406,7 +406,7 @@ Invoke this block **at the head of any post-entry step that writes a stage artif
 
 1. **Proceed** when `stages.{stage}.status` is `"in-progress"` (this session's Entry Stamp — you are finishing the run you started) or absent/`pending`. Run the write / exit normally.
 
-2. **Detect-and-refuse** when ALL of these hold: `stages.{stage}.status ∈ {"complete", "stale"}` **AND** the stage's artifacts (incl. `TRACEABILITY.md` for forge-3-specs) exist on disk **AND** a `commitHash` is recorded for the stage **AND** you did **not** author this stage earlier in the current session. This is a stale/replayed continuation of an already-finished, committed stage. Do **not** overwrite the artifact or re-run the exit. Route instead to the **Stage-Entry Guard**'s *Re-authoring* path: surface the same `AskUserQuestion` warning ("A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?"). Only on explicit confirmation re-enter from the Entry Stamp (the version bumps at exit); otherwise **stop** and report that the stage is already complete — cite the recorded `commitHash` and offer `/feature-forge:forge {feature}` to see true state.
+2. **Detect-and-refuse** when ALL of these hold: `stages.{stage}.status ∈ {"complete", "stale"}` **AND** the stage's artifacts (incl. `TRACEABILITY.md` for forge-3-specs) exist on disk **AND** a `commitHash` is recorded for the stage **AND** you did **not** author this stage earlier in the current session. This is a stale/replayed continuation of an already-finished, committed stage. Do **not** overwrite the artifact or re-run the exit. Route instead to the **Stage-Entry Guard**'s *Re-authoring* path: surface the same warning via `AskUserQuestion` ("A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?"). Only on explicit confirmation re-enter from the Entry Stamp (the version bumps at exit); otherwise **stop** and report that the stage is already complete — cite the recorded `commitHash` and offer `/feature-forge:forge {feature}` to see true state.
 
 When you cannot confirm you authored the current run, treat it as a replay and refuse: a false refuse costs one confirmation click; a false proceed overwrites a committed artifact and re-churns a stage version. `--force` follows Force Mode (skip the gate, treat as a deliberate re-author).
 

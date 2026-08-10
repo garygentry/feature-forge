@@ -37,7 +37,7 @@ The pipeline compiles a fuzzy feature idea into a machine-executable `backlog.js
 **Method:** Clean-context analysis producing actionable findings with an ordered fix plan.
 
 **Manual or automatic.** By default the navigator offers verification after each stage. Because
-it runs in a fresh, read-only subagent (clean-room by construction, never needs a `/clear`), it is
+it runs in a fresh, read-only subagent (clean-room by construction, never needs a session clear), it is
 safe to automate: set `autoVerify: true` (or per-stage via `autoVerifyStages`) in
 `forge.config.json` and the navigator runs `forge-verify` automatically once a stage completes,
 returning only a compact digest to the session. The freshness ledger (verify entries record the
@@ -118,7 +118,7 @@ they track the current model tier automatically.
 
 ### forge-verifier
 - **Purpose:** Read-only verification of pipeline artifacts
-- **Used by:** `forge-verify` skill (delegation via Agent tool)
+- **Used by:** `forge-verify` skill (delegation via host's subagent mechanism)
 - **Tools:** Read, Glob, Grep, Bash (read-only operations only)
 - **Model:** Opus (judgement-heavy gap/inconsistency analysis)
 - **Memory:** Project-scoped persistent memory — accumulates knowledge about recurring issues and project-specific patterns across sessions

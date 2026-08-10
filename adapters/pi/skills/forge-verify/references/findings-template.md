@@ -4,7 +4,7 @@ Loaded by the **parent orchestrator** role of `forge-verify` at Step 4 (write th
 
 ## Truncated Verifier Returns (Synthesize gate)
 
-The Agent tool hands the parent **only the verifier's final message**. A verifier that
+The host's subagent mechanism hands the parent **only the verifier's final message**. A verifier that
 ends its run on a status line instead of the report returns *that line* as the entire
 result — the digest it built exists in its transcript but never reaches you. Observed
 in the wild (issue #183): two ~130k-token, 40+-tool-call runs each returned a single
@@ -145,7 +145,7 @@ This is the one `state-*` call site where the member `--epic` rule does **not** 
 version — which is what keeps the result reading fresh rather than stale.
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{epic}" --stage forge-0-epic \
