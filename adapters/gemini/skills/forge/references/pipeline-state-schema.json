@@ -37,7 +37,7 @@
     },
     "notes": {
       "type": "string",
-      "description": "Free-form notes persisted between sessions (user can add context before stepping away)"
+      "description": "Free-form notes persisted between sessions (user can add context before stepping away). A single string with latest-note-wins semantics: `state-note` (its only sanctioned writer) OVERWRITES the previous value — an author folds any still-relevant earlier note into the one combined string. Read by the navigator dashboard AND by each downstream stage's Step 1 carried-over note check (forge-2-tech through forge-5-loop), which surfaces it as stage input; it never overrides artifacts or config."
     },
     "epicChangeRequests": {
       "type": "array",

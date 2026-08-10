@@ -18,6 +18,8 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 **Prerequisite check:** Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode and `forge-1-prd` is not `complete`, STOP and tell the user: "The PRD for '{feature}' isn't complete yet. Run `/feature-forge:forge-1-prd {feature}` first."
 
+**Carried-over note check.** If that state's top-level `notes` is a non-empty string, surface it verbatim before proceeding and treat it as input to this stage — it was persisted for exactly this cross-session handoff (often at the previous stage's exit). It never overrides the PRD or config; raise any conflict instead of silently following either side.
+
 After the prerequisite check, invoke the **Stage-Entry Guard** block in `references/shared-conventions.md` with `{stage}` = `forge-2-tech` — it detects an interrupted or already-complete tech-spec, runs the resume/restart or new-version gate, and stamps `status: "in-progress"` + `startedAt` + `currentStage` before the research and interview.
 
 Read `{resolvedFeatureDir}/PRD.md` into context. This is your foundation — every technology decision must trace back to a PRD requirement.
@@ -207,7 +209,7 @@ Before writing state or running the stage exit, invoke the **Stage-Completion Re
 Pipeline state is written by the `state-*` verbs — see the Pipeline State Protocol in `references/shared-conventions.md`.
 
 1. Record completion by running `state-complete` (below) with `--version`, one `--artifact` per file this stage produced, and `--based-on forge-1-prd=<current forge-1-prd version>`. It sets `status: "complete"`, `completedAt`, the version and `basedOnVersions`, and applies the downstream staleness cascade deterministically, so no downstream status is set by hand.
-2. **Offer a note — don't force one.** As a statement (not a blocking question), let the user know they can jot anything worth preserving across sessions and you'll store it in the `notes` field. If they volunteer something, store it; otherwise proceed.
+2. **Offer a note — don't force one.** As a statement (not a blocking question), let the user know they can jot anything worth preserving across sessions and you'll store it in the `notes` field. If they volunteer something, store it via `state-note` — it **overwrites** the single `notes` string (latest note wins), so fold any still-relevant existing note into the one combined string; otherwise proceed. The next stage's Step 1 reads and surfaces this note.
 3. If `gitCommitAfterStage` is true, follow the Git Commit Protocol in `references/shared-conventions.md`: stage files, attempt commit with message `"{commitPrefix}({feature}): complete tech-spec v{n}"` (marking `stages.forge-2-tech.status` `complete` with `commitHash: null` in that commit), then record the artifact-commit hash via the protocol's two-commit follow-up (never `--amend`) only on success. If commit fails, leave status as `in-progress`.
 4. **Close with the Stage Exit Protocol** (single-sourced in `references/stage-exit-protocol.md`; do not improvise a "Next steps" list):
 
