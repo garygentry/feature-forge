@@ -4,9 +4,10 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-09 (Track D docs-skip workstream landed on main — unreleased, rides
-the next cut; 0.16.0 / installer 0.3.3 remain deliberately unpublished; cleanup-execution
-program underway, tracker: `plans/HANDOFF-cleanup-execution.md`)._
+_Last updated: 2026-08-09 (Track C contracts batch fully landed on main — all seven issues
+across both Phase 3 batches, unreleased, rides the next cut; 0.16.0 / installer 0.3.3 remain
+deliberately unpublished; cleanup-execution program underway, tracker:
+`plans/HANDOFF-cleanup-execution.md`)._
 
 ## Current release
 
@@ -17,7 +18,8 @@ program underway, tracker: `plans/HANDOFF-cleanup-execution.md`)._
 | npm | **`@garygentry/feature-forge@0.3.2`** (`latest`) — **0.3.3 NOT published** | one coordinated publish at program end (Phase F of the cleanup handoff); npm doesn't require intermediate versions |
 | Commit | `chore(release): v0.16.0 / installer 0.3.3 (#206)` = `bacf353` | |
 
-CHANGELOG `[Unreleased]` is **empty** — 0.16.0 is the current section.
+CHANGELOG `[Unreleased]` carries the Phase 3 / Track C batch (#192 #186 #187 #188 #181 #182
+#166) awaiting the next cut.
 
 ### rauf coupling
 
@@ -146,7 +148,7 @@ section, updated at every session close).
 | **S0** — land, reconcile, release 0.15.0 | verify-test-debt PR, CHANGELOG surgery, #195, this refresh, 0.15.0, AGENTS.md process note | **done** (2026-08-05) |
 | **S1** — issue closeout + two small fixes | verify-and-close #163 #172 #175 #176 with evidence; rescope #181; record #170/#171 split; fix #183; create milestones | **done** (2026-08-05) |
 | **B** — forge-5-loop recovery (pipeline feature `loop-recovery`) | #196 (keystone decision record) #193 #192 #189 #190 #191 #194; release 0.16.0 at close | **done** (2026-08-08: PR #204 merged, 0.16.0 cut via #206; #192 rescoped → Track C wiring fix) |
-| **C** — contracts & state-integrity batch (direct PR) | #186 #187 #188 #182 #181-remainder #166 | pending |
+| **C** — contracts & state-integrity batch (direct PR) | #186 #187 #188 #182 #181-remainder #166 (+ rescoped #192) | **done** (2026-08-09: batch 1 PRs #216–#218 (#192 Step-4c unconditional recovery, #186 Stage Review Gate block, #187 forge-4 return contract); batch 2 PRs #219–#222 (#188 caller-side resumption contract, #181 epic-state schema + conformance, #182 downstream notes reads + overwrite settled, #166 set-charter mutator). All seven issues closed citing their PRs. Unreleased — in `[Unreleased]` for the next cut) |
 | **D** — skip-docs (hand-sequenced 4-PR series) | #202 recovery → #197 mechanism → #203+#165 guard/config → #173 re-gate | **done** (2026-08-09: PRs #211–#214 merged, all five issues closed. `state-skip` verb + `docsStageEntry` schema + `docsStage` config + `_SKIP_PROTECTED_PRIOR` demotion guard + `docsStatus`-gated epic-doc offer. Unreleased — in `[Unreleased]` for the next cut) |
 | **E** — zero-prompt loop config (direct PR) | #153 #164 (`loopRunner.reviewMode`/`.agentMode`); 0.17.0 with D | pending |
 | **F** — verify fix-sweeps (pipeline feature) | #170 mechanical milestone, then #171 semantic | pending |
@@ -160,11 +162,12 @@ any new state surface (the R4 pattern), `bash scripts/validate.sh` green before 
 
 ## Open issues
 
-_12 open as of 2026-08-09 (Phase 1 closed #201/#180 via PRs #208/#209; Phase 2 closed
-#202/#197/#203/#165/#173 via PRs #211–#214), all sequenced in
+_5 open as of 2026-08-09 (Phase 1 closed #201/#180 via PRs #208/#209; Phase 2 closed
+#202/#197/#203/#165/#173 via PRs #211–#214; Phase 3 / Track C closed
+#192/#186/#187/#188/#181/#182/#166 via PRs #216–#222), all sequenced in
 `plans/HANDOFF-cleanup-execution.md` + `plans/WORKSTREAMS-open-issues-2026-08-08.md`;
 each carries a 2026-08-08 "Reconciliation sweep" evidence comment with current
-file:line pointers._
+file:line pointers. Remaining: Track E #153/#164, Track F #170/#171, standalone #167._
 
 Two known non-blocking follow-ups, untracked (no issue filed):
 
