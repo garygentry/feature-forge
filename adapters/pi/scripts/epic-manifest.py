@@ -17,6 +17,7 @@ Usage:
     python3 epic-manifest.py remove-feature <epic> <name> [--specs-dir DIR] [--json]
     python3 epic-manifest.py reorder <epic> --order A,B,C [--specs-dir DIR] [--json]
     python3 epic-manifest.py set-dep <epic> <name> --depends-on A,B [--specs-dir DIR] [--json]
+    python3 epic-manifest.py set-charter <epic> <name> --charter TEXT [--specs-dir DIR] [--json]
     python3 epic-manifest.py set-status <epic> --status STATE [--specs-dir DIR] [--json]
 
 Exit codes:
@@ -1627,6 +1628,52 @@ def set_dep(
     return _bump_and_write(epic_dir, specs_dir, manifest)
 
 
+def set_charter(
+    epic_dir: Path, specs_dir: Path, name: str, charter: str
+) -> list[Finding]:
+    """Replace a member feature's charter text (#166).
+
+    The charter is the member field most likely to need revision after creation
+    (an ADR lands, a boundary moves, a member turns out to own more than
+    expected) — and it previously had no mutator, so edit mode had no sanctioned
+    path to rewrite one. Same shape as ``set_dep``: an atomic, re-validated,
+    revision-bumping replacement. EPIC.md prose is NOT touched — the agent
+    re-syncs the mirror afterward (edit-mode Step E5), exactly as for every
+    other mutation.
+
+    Args:
+        epic_dir: The epic subtree directory.
+        specs_dir: The configured specs directory.
+        name: The member feature to edit.
+        charter: The replacement charter text (argparse requires the flag; an
+            empty string is refused below — a charter is required prose, and
+            blanking it would only manufacture a schema-shaped hole).
+
+    Returns:
+        Empty list on success; blocking findings (not-found / empty-charter, or
+        anything re-validation raises) on refusal — manifest left unchanged.
+
+    Raises:
+        UsageError: Unsafe name, corrupt/missing manifest, or write failure.
+    """
+    if not charter.strip():
+        return [{"code": "empty-charter",
+                 "message": "refusing to blank a charter: pass non-empty --charter text",
+                 "feature": name}]
+    manifest = load_manifest(epic_dir)
+    by_name = {
+        f["name"]: f
+        for f in manifest.get("features", [])
+        if isinstance(f, dict) and isinstance(f.get("name"), str)
+    }
+    if name not in by_name:
+        return [{"code": "not-found",
+                 "message": f"feature {name!r} is not a member of epic {epic_dir.name!r}",
+                 "feature": name}]
+    by_name[name]["charter"] = charter
+    return _bump_and_write(epic_dir, specs_dir, manifest)
+
+
 def set_status(epic_dir: Path, specs_dir: Path, status: str) -> list[Finding]:
     """Set the epic-level lifecycle status.
 
@@ -1939,7 +1986,8 @@ def _dispatch(args: argparse.Namespace, specs_dir: Path) -> int:
         return 0
 
     # Mutators ---------------------------------------------------------------
-    if cmd in {"add-feature", "remove-feature", "reorder", "set-dep", "set-status"}:
+    if cmd in {"add-feature", "remove-feature", "reorder", "set-dep", "set-charter",
+               "set-status"}:
         epic_dir = contained_path(specs_dir, args.epic)
         if cmd == "add-feature":
             findings = add_feature(
@@ -1954,6 +2002,8 @@ def _dispatch(args: argparse.Namespace, specs_dir: Path) -> int:
             findings = set_dep(
                 epic_dir, specs_dir, args.name, _split_list(args.depends_on)
             )
+        elif cmd == "set-charter":
+            findings = set_charter(epic_dir, specs_dir, args.name, args.charter)
         else:  # set-status
             findings = set_status(epic_dir, specs_dir, args.status)
         if findings:
@@ -2047,6 +2097,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_setdep.add_argument("--depends-on", dest="depends_on", default="", help="Comma list")
     add_specs_dir(p_setdep)
     add_json(p_setdep)
+
+    # set-charter ----------------------------------------------------------- #
+    p_setcharter = sub.add_parser("set-charter", help="Replace a feature's charter")
+    p_setcharter.add_argument("epic")
+    p_setcharter.add_argument("name")
+    p_setcharter.add_argument("--charter", required=True, help="Replacement charter text")
+    add_specs_dir(p_setcharter)
+    add_json(p_setcharter)
 
     # set-status ------------------------------------------------------------ #
     p_setstatus = sub.add_parser("set-status", help="Set the epic lifecycle status")

@@ -30,6 +30,11 @@ python3 "$R/scripts/epic-manifest.py" reorder "{epic}" \
 python3 "$R/scripts/epic-manifest.py" set-dep "{epic}" "{feature}" \
   --depends-on "config-store,token-service" --specs-dir "{specsDir}"
 
+# Replace a member feature's charter (the field most likely to need revision after
+# creation — an ADR lands, a boundary moves). Refuses a blank charter (empty-charter).
+python3 "$R/scripts/epic-manifest.py" set-charter "{epic}" "{feature}" \
+  --charter "…" --specs-dir "{specsDir}"
+
 # Change epic lifecycle status (active|paused|abandoned|complete).
 python3 "$R/scripts/epic-manifest.py" set-status "{epic}" \
   --status paused --specs-dir "{specsDir}"
