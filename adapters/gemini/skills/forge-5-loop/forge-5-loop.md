@@ -41,13 +41,15 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 Read `{resolvedFeatureDir}/.pipeline-state.json`. If not in force mode, `stages.forge-4-backlog` must be `complete`. If not, STOP and tell the user: "Backlog hasn't been created yet. Run `/feature-forge:forge-4-backlog {feature}` first."
 
+If the state's `notes` is non-empty, surface it before proceeding and treat it as run input — often backlog-time constraints; it never overrides specs or config (raise any conflict).
+
 ### 1b. Verification Check
 
 Read `stages.forge-verify-backlog` and branch on its status — **four** cases, in this order (the pending case must be tested *before* the generic one, or owed-and-dropped debt gets reported as never-scheduled):
 
 1. **`passed`** — proceed with no prompt.
 2. **`findings-applied`** — fixes were applied but nothing re-verified them: this status deliberately clears freshness, so the backlog's verification is still outstanding, not silently satisfied. Use the host's question mechanism to offer: **Re-verify first (recommended)** (`/feature-forge:forge-verify {feature} backlog`) · **Continue without re-verifying**. On continue, write **nothing**: `state-verify` refuses demoting `findings-applied` to `skipped` (#203); the recorded status already says re-verification is outstanding.
-3. **`auto-verify-pending`** — automatic verification *was* scheduled for the backlog stage and the debt *was* durably recorded; it simply has not run. Say exactly that, naming the served stage and the retry command: *"{feature}: automatic verification is still pending for forge-4-backlog; run `/feature-forge:forge-verify {feature} backlog` to resolve it."* Then use the host's question mechanism to offer the same two choices as case 4. Never report this as "hasn't been verified yet" — "nobody ever asked for this" and "this was owed and dropped" are different facts and the operator acts on them differently.
+3. **`auto-verify-pending`** — automatic verification *was* scheduled for the backlog stage and the debt *was* durably recorded; it simply has not run. Say exactly that, naming the served stage and the retry command: *"{feature}: automatic verification is still pending for forge-4-backlog; run `/feature-forge:forge-verify {feature} backlog` to resolve it."* Then use the host's question mechanism to offer the same two choices as case 4. Never report this as "hasn't been verified yet" — "nobody ever asked for this" and "this was owed and dropped" are different facts.
 4. **Anything else** (absent, `pending`, `skipped`, `findings-reported`) — use the host's question mechanism to warn with the cost of skipping: "Backlog hasn't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — the loop implements items autonomously and commits as it goes, so a bad item (wrong scope, missing dependency, untestable acceptance criteria) is far cheaper to catch now than after several commits build on it. Continue anyway?"
 
 Cases 3 and 4 offer the same choices: **Verify first (recommended)** · **Continue without verifying**. The proceed-anyway path is unchanged.
@@ -124,7 +126,7 @@ Run `git status --porcelain`. If it reports changes **and** `{backlogDir}/{loopR
 
 Run the **list command** (`loopRunner.listCommand`, default `rauf backlog list . --backlog {backlogDir} --json`) and count items by status: `pending`, `in_progress`, `done`, `blocked`. Pipe that same list-command JSON into `backlog-topology --items-stdin --json` (a `forge-session.py` verb — invoke it via Step 3a's `$R` fence) and read `maxChainDepth` to report alongside the iteration count — advisory only: no prompt, no operator decision.
 
-Calculate the iteration count: `ceil((pending + in_progress) * loopIterationMultiplier)` where `loopIterationMultiplier` comes from `forge.config.json` (default: 1.5). This headroom allows retries without exhausting iterations.
+Calculate the iteration count: `ceil((pending + in_progress) * loopIterationMultiplier)` where `loopIterationMultiplier` comes from `forge.config.json` (default: 1.5, headroom for retries).
 
 If there are no pending or in_progress items, STOP and tell the user: "All backlog items are already done or blocked. Nothing to run."
 
@@ -136,8 +138,6 @@ If there are `blocked` items, note them — the user may want `--retry-blocked`.
 
 - If `backlogDir` is set in config: use the per-feature subpath `{backlogDir}/{feature}` (matching the 1e composition rule and forge-4-backlog §6.2).
 - Otherwise: use `{resolvedFeatureDir}` (the directory containing `backlog.json`).
-
-**Example:** If `specsDir` is `./specs` and feature is `auth`, `{backlogDir}` is `specs/auth`.
 
 ### 2c. Build Command
 
