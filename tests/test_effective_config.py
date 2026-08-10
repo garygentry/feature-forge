@@ -64,7 +64,7 @@ def test_missing_config_resolves_to_the_schema_defaults(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     resolved = json.loads(result.stdout)
     defaults = _schema_defaults()
-    assert len(defaults) == 22, f"schema no longer declares 22 defaults: {len(defaults)}"
+    assert len(defaults) == 24, f"schema no longer declares 24 defaults: {len(defaults)}"
     assert resolved == defaults
     assert resolved["name"] == "rauf"
     # Template defaults stay literal — effective-config resolves defaults, not

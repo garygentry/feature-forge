@@ -201,6 +201,18 @@
           "default": "",
           "description": "Project-default coding agent id, so a project can fix its agent once without specifying it every run. Empty string ⇒ no project default (the runner's own default — claude-cli for rauf — applies, behaving exactly as today). Overridden by the per-run agent selector (run > project precedence, resolved inside forge before the single --agent is emitted). Ignored when agentArgument is absent."
         },
+        "agentMode": {
+          "type": "string",
+          "enum": ["prompt", "auto"],
+          "default": "prompt",
+          "description": "Gates forge-5's Step 2d agent AskUserQuestion. \"prompt\" (default) presents the agent question — byte-identical to today. \"auto\" suppresses ONLY the interactive pick: the agent resolves from defaultAgent (or the runner default when unset), and the availability probe, the verdict classification (UNKNOWN hard-reject before side-effects / UNAVAILABLE proceed-or-choose / probe-failure handling), and the Claude-alias model guard ALL still run; the resolved 'Agent: {id} (source: …)' confirmation line still shows, so the choice is never hidden. Meaningless when agentArgument is absent/empty — that capability gate already removes the entire agent surface, and this field adds no second gate. An unrecognized value behaves as \"prompt\"."
+        },
+        "reviewMode": {
+          "type": "string",
+          "enum": ["prompt", "always", "never"],
+          "default": "prompt",
+          "description": "Gates forge-5's Step 2d Run-mode AskUserQuestion (rauf only — ignored when name != \"rauf\", where no Run-mode question exists). \"prompt\" (default) surfaces the question with the review pass pre-selected — byte-identical to today. \"always\" skips the question and appends --review unconditionally; the rendered command in the confirmation still shows --review, so the choice is never hidden. \"never\" skips the question and launches the bare rendered command. Under \"always\"/\"never\", a NARROWER situational retry-blocked question still surfaces when — and only when — the backlog has blocked items (the --review decision itself is fixed by the mode and never re-asked); with no blocked items the launch is prompt-free. An unrecognized value behaves as \"prompt\"."
+        },
         "preconditionFile": {
           "type": "string",
           "default": ".rauf.json",

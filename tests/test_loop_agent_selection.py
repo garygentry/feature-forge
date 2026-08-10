@@ -389,7 +389,9 @@ def test_schema_loop_runner_agent_defaults():
     assert props["agentArgument"]["default"] == "--agent {agent}"
     assert props["agentsProbeCommand"]["default"] == "{bin} agents --json"
     assert props["defaultAgent"]["default"] == ""
-    for field in ("agentArgument", "agentsProbeCommand", "defaultAgent"):
+    assert props["agentMode"]["default"] == "prompt"
+    assert props["agentMode"]["enum"] == ["prompt", "auto"]
+    for field in ("agentArgument", "agentsProbeCommand", "defaultAgent", "agentMode"):
         assert props[field]["type"] == "string"
 
 
