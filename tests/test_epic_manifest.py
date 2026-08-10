@@ -813,6 +813,57 @@ def test_mutator_set_status_valid_exit_0(run_cli, fixture_copy) -> None:
     assert out["status"] == "paused"
 
 
+def test_mutator_set_charter_clean_exit_0(run_cli, fixture_copy) -> None:
+    """set-charter replaces the member's charter, bumps revision, re-validates clean."""
+    specs = fixture_copy("valid-epic")
+    result = run_cli(
+        "set-charter", "auth-overhaul", "audit-log",
+        "--charter", "Rewritten audit charter after ADR-7.", "--specs-dir", str(specs),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    manifest = json.loads(_manifest_path(specs).read_text())
+    by_name = {f["name"]: f for f in manifest["features"]}
+    assert by_name["audit-log"]["charter"] == "Rewritten audit charter after ADR-7."
+    assert manifest["revision"] == 2
+    again = run_cli("validate", "auth-overhaul", "--specs-dir", str(specs), "--json")
+    assert again.returncode == 0 and again.json()["valid"] is True
+
+
+def test_mutator_set_charter_unknown_feature_exit_1_byte_identical(
+    run_cli, fixture_copy
+) -> None:
+    """set-charter on a non-member exits 1 (not-found) and writes nothing."""
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    before = manifest.read_bytes()
+    result = run_cli(
+        "set-charter", "auth-overhaul", "ghost",
+        "--charter", "Anything.", "--specs-dir", str(specs), "--json",
+    )
+    assert result.returncode == 1
+    assert {f["code"] for f in result.json()["findings"]} == {"not-found"}
+    assert manifest.read_bytes() == before
+
+
+def test_mutator_set_charter_blank_refused_byte_identical(run_cli, fixture_copy) -> None:
+    """A whitespace-only charter is refused (exit 1, empty-charter), file untouched.
+
+    Blanking a charter would only manufacture the schema-shaped hole re-validation
+    cannot see (charter is required but any string validates), so the mutator
+    refuses it up front.
+    """
+    specs = fixture_copy("valid-epic")
+    manifest = _manifest_path(specs)
+    before = manifest.read_bytes()
+    result = run_cli(
+        "set-charter", "auth-overhaul", "audit-log",
+        "--charter", "   ", "--specs-dir", str(specs), "--json",
+    )
+    assert result.returncode == 1
+    assert {f["code"] for f in result.json()["findings"]} == {"empty-charter"}
+    assert manifest.read_bytes() == before
+
+
 def test_mutator_unsafe_name_exit_2(run_cli, fixture_copy) -> None:
     """A mutator given an unsafe epic-name arg exits 2 before any write (REQ-SEC-02)."""
     specs = fixture_copy("valid-epic")
@@ -1137,6 +1188,8 @@ _INCREMENTING_MUTATIONS: list[tuple[str, list[str]]] = [
                  "--order", "audit-log,config-store,token-service,api-gateway"]),
     ("set-dep", ["set-dep", "auth-overhaul", "audit-log",
                  "--depends-on", "config-store"]),
+    ("set-charter", ["set-charter", "auth-overhaul", "audit-log",
+                     "--charter", "Rewritten audit charter after ADR-7."]),
     ("set-status", ["set-status", "auth-overhaul", "--status", "paused"]),
     ("adopt-feature", ["adopt-feature", "auth-overhaul", "flat-only",
                        "--charter", "Adopted leaf."]),
@@ -1414,13 +1467,19 @@ def _no_op_argv(mutator: str, kind: str) -> list[str]:
     if mutator == "reorder":
         return ["reorder", "auth-overhaul",
                 "--order", "config-store,token-service,api-gateway,audit-log"]
+    if mutator == "set-charter":
+        # Re-assert audit-log's fixture charter verbatim (the corruption edits
+        # only dependsOn, so the charter is untouched in both kinds).
+        return ["set-charter", "auth-overhaul", "audit-log", "--charter",
+                "Independent append-only audit log of auth events. "
+                "Has no build dependency on the other features."]
     # set-dep: re-assert exactly the dependency the corruption installed.
     if kind == "dangling-ref":
         return ["set-dep", "auth-overhaul", "audit-log", "--depends-on", "ghost"]
     return ["set-dep", "auth-overhaul", "config-store", "--depends-on", "api-gateway"]
 
 
-@pytest.mark.parametrize("mutator", ["set-status", "set-dep", "reorder"])
+@pytest.mark.parametrize("mutator", ["set-status", "set-dep", "set-charter", "reorder"])
 @pytest.mark.parametrize("kind", ["dangling-ref", "cycle"])
 def test_no_op_mutation_on_an_invalid_manifest_reports_the_findings(
     run_cli, fixture_copy, mutator, kind
@@ -1460,7 +1519,7 @@ def test_no_op_and_real_mutation_report_the_same_findings(
     assert manifest.read_bytes() == before_bytes
 
 
-@pytest.mark.parametrize("mutator", ["set-status", "set-dep", "reorder"])
+@pytest.mark.parametrize("mutator", ["set-status", "set-dep", "set-charter", "reorder"])
 def test_no_op_mutation_on_a_valid_manifest_still_succeeds_silently(
     run_cli, fixture_copy, mutator
 ) -> None:

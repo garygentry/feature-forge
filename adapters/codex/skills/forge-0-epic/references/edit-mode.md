@@ -80,6 +80,7 @@ Use `AskUserQuestion` to offer the edit operations, each mapping to one helper m
 | Remove a feature | `remove-feature` |
 | Reorder features | `reorder` |
 | Change a dependency edge | `set-dep` |
+| Rewrite a feature's charter | `set-charter` |
 | Change epic lifecycle status | `set-status` |
 
 For **add-feature**, first run `check-name "{feature}"` (exactly as C2) so no new duplicate is
@@ -97,7 +98,10 @@ exact `epic-manifest.py` mutator flag surface and per-subcommand exit-code handl
 **Contracts have no mutator.** `add-feature` seeds empty `exposes`/`consumes`. To populate the
 new feature's contracts, edit its `exposes`/`consumes` arrays **directly in the composed manifest
 entry** (exactly as creation C5 does), then re-run `validate "{epic}" --json` to confirm — there
-is intentionally no `--exposes-json`/`--consumes-json` flag.
+is intentionally no `--exposes-json`/`--consumes-json` flag. This carve-out is contracts-only:
+a **charter** rewrite goes through `set-charter` (#166), never a direct edit — the mutator gives
+it the same atomic write, re-validation, and revision bump as every other manifest mutation.
+After a charter change, patch the feature's EPIC.md section in E5 like any other mutation.
 
 **remove-feature leaves the member directory in place (§7.5).** The mutator drops only the
 manifest entry. The skill does **not** delete or relocate `{specsDir}/{epic}/{feature}/`. WARN the
