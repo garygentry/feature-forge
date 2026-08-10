@@ -100,9 +100,9 @@ Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: sur
 
 The stamp is shown with `--host claude`; the adapter build substitutes `pi`/`generic` per
 target, and §"Host and capability determination" below governs the value. The literal is
-deliberate — `scripts/build-adapters.py` keys its host translation on the exact string
-`--host claude`, and the stamp sites are compared byte-for-byte, so it is the one token in
-that line that is not a placeholder.
+deliberate — `scripts/build-adapters.py` keys its host translation on the exact canon
+value of that flag, and the stamp sites are compared byte-for-byte, so it is the one token
+in that line that is not a placeholder.
 
 ## Host and capability determination
 
@@ -110,8 +110,9 @@ Before the call, compute the two inputs independently. They are unrelated: **a h
 implies a capability**, and the script takes `--verify-capability` at face value.
 
 **`--host`** describes only the active adapter command surface — `claude`, `pi`, or
-`generic`. It selects command syntax (`/feature-forge:` vs `/skill:` vs host-neutral) and
-fresh-session wording (`/clear` vs `/new` vs neutral prose). Nothing else.
+`generic`. It selects command syntax (Claude's stage-command prefix vs Pi's `/skill:` vs
+host-neutral) and fresh-session wording (Claude's clear command vs Pi's `/new` vs neutral
+prose). Nothing else.
 
 **`--verify-capability interactive`** is passed only when **both** of these hold:
 
@@ -151,7 +152,8 @@ production successor** while verification is unresolved.
 - a capable Pi session is `--host pi --verify-capability interactive`, and receives the
   same logical gate a capable Claude session does;
 - Pi without a dispatchable verifier is `--host pi --verify-capability manual`;
-- a Claude session that cannot dispatch is `--host claude --verify-capability manual`.
+- a Claude session that cannot dispatch keeps the Claude host value with
+  `--verify-capability manual`.
 
 Interactive gate options keep their explicit labels, their recommended default, and their
 one-line trade-off descriptions (below). The manual path prints the verify command as the
@@ -400,8 +402,8 @@ directive is informational — you do **not** re-derive the wording:
   unchanged; the block appends a non-blocking reminder line ("You also flagged N epic
   change(s) to reconcile when convenient …"). This is *finish-then-edit*.
 
-Either way the added lines are host-neutral (no literal `/clear`) and sit **above** the
-sentinel; just print the NEXT-STEPS block verbatim as always.
+Either way the added lines are host-neutral (they name no fresh-session command) and sit
+**above** the sentinel; just print the NEXT-STEPS block verbatim as always.
 
 ### Deferred decisions — do not solicit next-stage decisions at this exit
 

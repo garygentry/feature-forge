@@ -4,7 +4,7 @@ The single source of truth for how every forge stage closes. **One** scripted co
 covers all **nine** covered direct exits — the seven production stages `forge-0-epic`
 through `forge-6-docs`, plus direct `forge-verify` and direct `forge-fix`. It replaces the
 old ad-hoc "Next steps:" bullet lists with one fixed, correctly-ordered sequence:
-**verify (if missing or stale) → `/clear` → run the next command.**
+**verify (if missing or stale) → `/new` → run the next command.**
 
 Two principles this protocol encodes (do not relitigate — they are locked product
 decisions):
@@ -18,7 +18,7 @@ decisions):
    session, so the findings digest and any fix decision land where the context to act on
    them still exists. This holds for auto-verify too: the stage skill dispatches the
    clean-room verify (and any autoFix) at stage end, in-session, before the exit — it is
-   **not** deferred to the navigator, which runs *after* the `/clear` with none of the
+   **not** deferred to the navigator, which runs *after* the `/new` with none of the
    authoring context. Clearing first throws that context away.
 
 ## How this file is used
@@ -90,19 +90,19 @@ resolves before running the command, exactly as elsewhere.
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-session.py" stage-exit {stage-exit-args} --specs-dir "{specsDir}" --host claude --verify-capability "{verify-capability}"
+python3 "$R/scripts/forge-session.py" stage-exit {stage-exit-args} --specs-dir "{specsDir}" --host pi --verify-capability "{verify-capability}"
 ```
 
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
 <!-- END: scripted-stage-exit-stamp -->
 
-The stamp is shown with `--host claude`; the adapter build substitutes `pi`/`generic` per
+The stamp is shown with `--host pi`; the adapter build substitutes `pi`/`generic` per
 target, and §"Host and capability determination" below governs the value. The literal is
-deliberate — `scripts/build-adapters.py` keys its host translation on the exact string
-`--host claude`, and the stamp sites are compared byte-for-byte, so it is the one token in
-that line that is not a placeholder.
+deliberate — `scripts/build-adapters.py` keys its host translation on the exact canon
+value of that flag, and the stamp sites are compared byte-for-byte, so it is the one token
+in that line that is not a placeholder.
 
 ## Host and capability determination
 
@@ -110,8 +110,9 @@ Before the call, compute the two inputs independently. They are unrelated: **a h
 implies a capability**, and the script takes `--verify-capability` at face value.
 
 **`--host`** describes only the active adapter command surface — `claude`, `pi`, or
-`generic`. It selects command syntax (`/skill:` vs `/skill:` vs host-neutral) and
-fresh-session wording (`/clear` vs `/new` vs neutral prose). Nothing else.
+`generic`. It selects command syntax (Claude's stage-command prefix vs Pi's `/skill:` vs
+host-neutral) and fresh-session wording (Claude's clear command vs Pi's `/new` vs neutral
+prose). Nothing else.
 
 **`--verify-capability interactive`** is passed only when **both** of these hold:
 
@@ -151,7 +152,8 @@ production successor** while verification is unresolved.
 - a capable Pi session is `--host pi --verify-capability interactive`, and receives the
   same logical gate a capable Claude session does;
 - Pi without a dispatchable verifier is `--host pi --verify-capability manual`;
-- a Claude session that cannot dispatch is `--host claude --verify-capability manual`.
+- a Claude session that cannot dispatch keeps the Claude host value with
+  `--verify-capability manual`.
 
 Interactive gate options keep their explicit labels, their recommended default, and their
 one-line trade-off descriptions (below). The manual path prints the verify command as the
@@ -281,7 +283,7 @@ reformat, merge, or summarize them, and never dump the state file they were deri
 
 Auto-verify is effective for this stage and verification is outstanding — verify **now,
 in this session** (principle #2 applied to auto-verify: the digest and any fix decision
-land here, where the authoring context still exists — not deferred to a post-`/clear`
+land here, where the authoring context still exists — not deferred to a post-`/new`
 navigator). The `auto-verify-pending` debt is already durable on disk at this point, so a
 declined or deferred gate leaves recorded debt rather than a silent pass.
 
@@ -290,7 +292,7 @@ declined or deferred gate leaves recorded debt rather than a silent pass.
    same path the navigator uses (`skills/forge-verify/SKILL.md`). Dispatch it
    **synchronously and await its digest inline** — do **not** run it in the background or
    announce it as "still running"; the digest and any fix decision must land in this
-   session. It inherits none of this session's context, so no `/clear` is needed and only
+   session. It inherits none of this session's context, so no `/new` is needed and only
    a compact digest returns.
    **If you may not dispatch unsolicited**, present the consent form of the Standard
    Verify Gate first and dispatch on the affirmative choice — see "Consent variant on a
@@ -400,8 +402,8 @@ directive is informational — you do **not** re-derive the wording:
   unchanged; the block appends a non-blocking reminder line ("You also flagged N epic
   change(s) to reconcile when convenient …"). This is *finish-then-edit*.
 
-Either way the added lines are host-neutral (no literal `/clear`) and sit **above** the
-sentinel; just print the NEXT-STEPS block verbatim as always.
+Either way the added lines are host-neutral (they name no fresh-session command) and sit
+**above** the sentinel; just print the NEXT-STEPS block verbatim as always.
 
 ### Deferred decisions — do not solicit next-stage decisions at this exit
 
@@ -418,7 +420,7 @@ a `deferredDecisions[]` entry on this feature's `.pipeline-state.json` by runnin
 epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-decision \
   --feature "{feature}" --question "<phrased for the target stage>" \

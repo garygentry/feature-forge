@@ -12,7 +12,7 @@ the write if it would introduce a cycle, dangling ref, duplicate, or schema viol
 flag surface (owned by 02 §7):
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 # Add a feature — seeds EMPTY exposes/consumes; contracts are populated below.
 python3 "$R/scripts/epic-manifest.py" add-feature "{epic}" "{feature}" \
@@ -66,7 +66,7 @@ helper exit `≥ 1`. All findings are surfaced **verbatim**.
 
 | Condition | Helper signal | Skill behavior |
 |-----------|---------------|----------------|
-| Epic name duplicates an existing name | `check-name` exit 1 (`duplicate-name`) | STOP creation; surface finding; ask for a new name via `AskUserQuestion` |
+| Epic name duplicates an existing name | `check-name` exit 1 (`duplicate-name`) | STOP creation; surface finding; ask for a new name via the host's question mechanism |
 | Member feature name duplicates | `check-name` exit 1 (`duplicate-name`) | Reject that name in C2 / add-feature; surface verbatim; re-prompt |
 | Unsafe name (`/`, `..`, absolute) | `check-name`/mutator exit 2 (`unsafe-name`) | Reject; surface; re-prompt |
 | Composed manifest has a cycle | `validate` exit 1 (`cycle`) | Surface verbatim; re-open the dependency interview (C4); never finalize |
@@ -74,7 +74,7 @@ helper exit `≥ 1`. All findings are surfaced **verbatim**.
 | Corrupt/unparseable manifest (edit) | `validate` exit 1 (`corrupt-json`) | Surface ALL findings verbatim; **refuse all mutation** until repaired; never auto-repair |
 | Existing manifest otherwise invalid (edit) | `validate` exit 1/2 | Surface ALL findings verbatim; **refuse all mutation** (E1) |
 | Mutator would introduce cycle/dangling ref/duplicate | mutator exit 1 | Abort the edit; manifest byte-identical (atomic refusal); surface finding |
-| Bad `--status` value | `set-status` exit 2 (argparse) | Surface; re-prompt via `AskUserQuestion` with the valid choices |
+| Bad `--status` value | `set-status` exit 2 (argparse) | Surface; re-prompt via the host's question mechanism with the valid choices |
 | Edit affects in-flight/completed feature | `render-status` derived status (`in-progress`/`complete`) | Warn naming the affected feature(s); require confirmation before applying (E4) |
 | `render-status` over an invalid graph | `render-status` exit ≥ 1 | Surface findings; STOP (do not mutate over an invalid graph) |
 | Git commit fails | — | Report; leave state `in-progress`; never bypass hooks (`--no-verify`/`--force`) |

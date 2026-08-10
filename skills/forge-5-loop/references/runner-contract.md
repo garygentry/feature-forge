@@ -31,7 +31,7 @@ pass after all iterations complete (an extra agent session that re-examines the
 finished work and can file follow-up backlog items). feature-forge treats **running
 with review as the recommended default** — a review pass is cheap relative to the
 loop it audits, and catches gaps before the pipeline moves on to docs. So Step 2d
-adds a **"Run mode"** question to the confirmation's `AskUserQuestion` surface with a
+adds a **"Run mode"** question, via `AskUserQuestion`, to the confirmation surface with a
 **fixed, non-improvised option order** (determinism is the point — the option set
 must not vary run-to-run):
 

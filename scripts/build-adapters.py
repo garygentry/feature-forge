@@ -710,9 +710,15 @@ def drop_all_claude_keys(
 # regex for the parameterized `subagent_type="<name>"` form. No fuzzy matching —
 # every replacement is an explicit constant (review: "avoid brittle regex if a
 # small set of known tokens can be replaced by constants"). The pass is applied
-# only to emitter bodies (skills + sub-agents); the verbatim references closure
-# (run_self_containment_pass) is unchanged, and the overlay tells non-Claude hosts
-# how to read any residual tool references in those bundled reference files.
+# to emitter bodies (skills + sub-agents) AND — since #167 — to the copied
+# reference-closure markdown (run_self_containment_pass step 2c), so a non-Claude
+# bundle's reference files no longer carry Claude-only commands either. The copy
+# itself stays byte-verbatim (_copytree_verbatim); translation is a separate,
+# deterministic post-copy pass over prose `.md` files only, with an explicit
+# exemption list (_REFERENCE_TRANSLATION_EXEMPT) for mention-heavy meta-docs and
+# project scaffolding where substitution would corrupt meaning. Claude bundles
+# remain fully verbatim. The overlay still tells non-Claude hosts how to map the
+# host-neutral phrasing onto their own tools.
 
 # (literal_old, replacement) — applied in order; longest/most-specific first so a
 # wrapper phrase is consumed before its bare token. Backticked forms precede bare.
@@ -765,8 +771,17 @@ _HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     # Claude slash-command surface → host-neutral phrasing. The Stage Exit Protocol
     # (references/stage-exit-protocol.md) stamps a literal `/clear` into every stage
     # closing; on a non-Claude host that is not a real command, so degrade it to a
-    # plain instruction. Backticked form precedes the bare token (longest-match-first)
-    # so `` `/clear` `` collapses cleanly without leaving stray backticks.
+    # plain instruction. Article/prefix-aware pairs come first (longest-match, #167):
+    # attributive canon uses ("a `/clear`", "the `/clear`", "post-/no-`/clear`") degrade
+    # to a readable noun phrase ("a session clear") instead of splicing the imperative
+    # sentence mid-clause ("needs a clear your session / start a fresh session"). The
+    # backticked form still precedes the bare token so `` `/clear` `` collapses cleanly
+    # without leaving stray backticks. Pi overrides ALL of these with its real `/new`
+    # (see _PI_OVERRIDDEN_HOST_TERMS — every LHS here must be listed there).
+    ("post-`/clear`", "post-clear"),
+    ("a `/clear`", "a session clear"),
+    ("the `/clear`", "the session clear"),
+    ("no `/clear`", "no session clear"),
     ("`/clear`", "clear your session / start a fresh session"),
     ("/clear", "clear your session / start a fresh session"),
     # Scripted Stage Exit host flag: the canon stamp invokes
@@ -855,12 +870,32 @@ _HOST_NOTES: dict[str, str] = {
 # host-neutral phrasing the generic table uses. Pi has an actual fresh-session command
 # (`/new`, verified against Pi's quickstart.md / extensions.md) and its own stage-exit
 # host value, so these degrade-to-prose rules are dropped for Pi and replaced below.
-_PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({"`/clear`", "/clear", "--host claude"})
+# EVERY `/clear`-bearing LHS in the base table must be listed here — a missed one would
+# win by table order on Pi and degrade to prose instead of `/new` (Pi's bare
+# `/clear` → `/new` rule covers all the article/prefix forms by substring).
+_PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({
+    "post-`/clear`",
+    "a `/clear`",
+    "the `/clear`",
+    "no `/clear`",
+    "`/clear`",
+    "/clear",
+    "--host claude",
+})
 
-_PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
+_PI_BASE_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
     pair for pair in _HOST_TERM_REPLACEMENTS
     if "AskUserQuestion" not in pair[0] and pair[0] not in _PI_OVERRIDDEN_HOST_TERMS
-) + (
+)
+
+# Import-time guard for the "every /clear-bearing LHS must be Pi-overridden" rule above:
+# a base pair that slips past the override set would run before Pi's own `/clear` → `/new`
+# rule (appended pairs come last) and degrade a real Pi command to generic prose.
+assert not [
+    old for old, _ in _PI_BASE_HOST_TERM_REPLACEMENTS if "/clear" in old or old == "--host claude"
+], "a /clear-bearing base pair leaked past _PI_OVERRIDDEN_HOST_TERMS into the Pi table"
+
+_PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = _PI_BASE_HOST_TERM_REPLACEMENTS + (
     # ONLY the slash-command prefix is rewritten. An unanchored `feature-forge:` rule would
     # also mangle diagnostic prose that is not a command — e.g. the install-root failure
     # `echo "feature-forge: cannot locate plugin root"` would become `skill: cannot locate
@@ -1368,6 +1403,9 @@ def run_self_containment_pass(
     native artifacts and BEFORE atomic publish (``02-generator-engine.md §4``).
     Applies to every agent uniformly — NOT per-emitter (``00-core-definitions.md §5``).
     Satisfies REQ-GEN-04 (self-containment) + REQ-GEN-05 (byte-identical resolver).
+    On non-Claude bundles, step (2c) then host-term-translates the copied reference
+    markdown (#167) — the closure is verbatim at copy time, translated as a distinct
+    deterministic pass; Claude bundles stay byte-verbatim throughout.
 
     Args:
         bundle_root: The agent's bundle dir (e.g. ``<repo>/adapters.tmp-<pid>/claude``).
@@ -1400,6 +1438,14 @@ def run_self_containment_pass(
     #      kept intact (scripts resolve via `$R`; the plugin path still uses it).
     for skill in skills:
         _fan_out_shared_references(skill, bundle_root, repo_root)
+
+    # (2c) Host-term translation of the copied reference markdown for NON-Claude bundles
+    #      (#167). Runs AFTER (1)/(2)/(2b) so bundle-root, skill-local, and fanned copies
+    #      are all translated identically; BEFORE (3) by convention only (.md never
+    #      collides with the runtime helpers, whose byte-identity assertion is untouched).
+    #      Claude bundles skip it entirely — their references remain byte-verbatim canon.
+    if bundle_root.name != "claude":
+        _translate_reference_host_terms(bundle_root, bundle_root.name)
 
     # (3) Byte-identical runtime-helper copies, NO header (§2.3, REQ-GEN-04/05). forge-root.sh
     #     plus every helper a skill invokes via the bootstrap prelude. `.sh` files are mode 0755
@@ -1622,6 +1668,54 @@ def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(entry, target)  # verbatim bytes; no stamp, no reflow
+
+
+# Reference-closure files EXEMPT from the host-term translation pass (#167). Each entry
+# is a reason-documented predicate over the path *relative to the bundle root*:
+#   - templates/ subtrees: project scaffolding forge-bootstrap copies verbatim into a NEW
+#     user project — project content, not agent-facing guidance; substitution could corrupt
+#     placeholders or Claude-targeted project files (e.g. templates/hygiene/CLAUDE.md).
+#   - vendor-construct-inventory.md: the REQ-VND-03 audit record — it *mentions* vendor
+#     constructs (`${CLAUDE_PLUGIN_ROOT}` dispositions) as data; rewriting them would
+#     falsify the audit.
+#   - portable-root.md: resolver documentation that reasons about the Claude-first prelude
+#     and its non-Claude translation; translating the doc itself would make it
+#     self-contradictory ("the one sanctioned appearance of that variable" over a rewritten
+#     block).
+# All three carry ZERO host-degradation tokens today (asserted by
+# tests/test_adapter_host_neutrality.py, which scans them WITHOUT exemption), so an edit
+# that introduces one surfaces as an explicit decision rather than silent drift.
+def _reference_translation_exempt(rel: Path) -> bool:
+    """True if a copied reference file must stay untranslated (see block comment)."""
+    if "templates" in rel.parts:
+        return True
+    return rel.name in {"vendor-construct-inventory.md", "portable-root.md"}
+
+
+def _translate_reference_host_terms(bundle_root: Path, agent_id: str) -> None:
+    """Host-term-translate the copied reference markdown of one non-Claude bundle (#167).
+
+    The self-containment copies (steps 1/2/2b) are byte-verbatim, so without this pass a
+    non-Claude bundle's reference files keep Claude-only commands (`/clear`,
+    `--host claude`) even though the SKILL bodies are translated. Applies the same
+    per-agent table as the emitter bodies (``translate_host_terms``) — Pi's real command
+    names (`/new`, `/skill:`, `--host pi`), host-neutral prose elsewhere — to every
+    ``.md`` file under a ``references/`` directory, bundle-root and skill-local alike.
+    Prose only: ``.json`` schemas and every other suffix are never touched, and the
+    exempt meta-docs (``_reference_translation_exempt``) stay verbatim. Deterministic
+    (sorted walk, fixed substitution table), so the regenerate-and-diff drift guard
+    stays byte-stable (REQ-DET-01). Never called for Claude bundles.
+    """
+    for path in sorted(bundle_root.rglob("*.md")):
+        rel = path.relative_to(bundle_root)
+        if "references" not in rel.parts:
+            continue
+        if _reference_translation_exempt(rel):
+            continue
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        translated = translate_host_terms(text, agent_id=agent_id)
+        if translated != text:
+            path.write_text(translated, encoding="utf-8", errors="surrogateescape")
 
 
 def _translate_pi_support_command_strings(bundle_root: Path, repo_root: Path) -> None:

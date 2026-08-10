@@ -114,7 +114,7 @@ green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge
 `forge-verify <feature>` dispatches the read-only `forge-verifier` subagent to find gaps,
 inconsistencies, and quality issues; it writes a findings doc, and `forge-fix` applies them.
 Because verification runs in a **fresh subagent**, it's clean-room by construction — it never
-needs a clear your session / start a fresh session, and it's safe to automate with `autoVerify: true`. When on, the just-completed
+needs a session clear, and it's safe to automate with `autoVerify: true`. When on, the just-completed
 authoring stage runs verify **in-stage** — in the same session, right before its exit block — so
 the digest and any fix land where the context still exists (the navigator only catches up if a
 host couldn't run it clean-room). Fixing stays human-gated unless `autoFix: true`. The cost is one

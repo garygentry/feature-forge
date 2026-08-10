@@ -9,14 +9,14 @@ Entered from Step 0 when `{specsDir}/{epic}/epic-manifest.json` already exists (
 branch). The edit branch mutates the manifest **only** through helper mutators — the skill never
 hand-rolls an in-place write. Every mutator is atomic (temp file + `os.replace`) and re-validates
 the edited graph internally, so a refused write leaves the manifest **byte-identical**. Every
-question goes through `AskUserQuestion`.
+question goes through the host's question mechanism.
 
 ## Step E1 — Load + Validate, Refuse if Invalid
 
 Before offering any edit, validate the existing manifest:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}" --json
 ```
@@ -40,7 +40,7 @@ report it and continue with the rest — do **not** abort edit mode over one bad
 E1's "report, never silently repair" posture).
 
 If any open requests exist, present them grouped (show `kind`, `target`, `rationale`,
-`blocksCurrent`, `raisedBy`), then for **each** request use `AskUserQuestion` to offer **Apply**,
+`blocksCurrent`, `raisedBy`), then for **each** request use the host's question mechanism to offer **Apply**,
 **Dismiss**, or **Skip for now**:
 
 - **Apply — simple kinds (`add-feature`, `redep`):** pre-fill the matching E2 operation and flow
@@ -52,7 +52,7 @@ If any open requests exist, present them grouped (show `kind`, `target`, `ration
   user through a **guided-manual** sequence — the relevant `set-dep` and/or direct `exposes`/
   `consumes` edits on the composed manifest entries (per E3's "Contracts have no mutator" rule),
   across **both** affected features — re-validating after each step. Confirm each mutation via
-  `AskUserQuestion`; never batch-apply.
+  the host's question mechanism; never batch-apply.
 - **Dismiss:** the user decides the epic is fine after all — flip the source request's `status` to
   `"dismissed"` (no manifest mutation). Explicit only; there is **no auto-expiry**.
 - **Skip for now:** leave the request `open`; it resurfaces on the next edit-mode entry and stays
@@ -72,7 +72,7 @@ requests exist, say nothing and proceed straight to E2.
 
 ## Step E2 — Choose Operation
 
-Use `AskUserQuestion` to offer the edit operations, each mapping to one helper mutator:
+Use the host's question mechanism to offer the edit operations, each mapping to one helper mutator:
 
 | Operation | Helper subcommand |
 |-----------|-------------------|
@@ -123,13 +123,13 @@ status is **not** `not-started`, warn the user. Read the **live** status (never 
 completion in prose):
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
 
 If the operation removes, reorders-around, or re-deps a feature whose derived status is
-`in-progress` or `complete`, use `AskUserQuestion` with an explicit warning naming the affected
+`in-progress` or `complete`, use the host's question mechanism with an explicit warning naming the affected
 in-flight/completed feature(s) and **require confirmation** before applying. Example: "`token-service`
 is already in-progress (forge-3-specs). Removing `config-store`, which it consumes `JWT_SECRET`
 from, may invalidate its in-flight specs. Proceed?" If `render-status` exits `≥ 1`, surface the
@@ -140,7 +140,7 @@ findings and STOP (do not mutate over an invalid graph).
 Patch **only** the affected feature/Contracts section(s) — the section(s) for the added, removed,
 or changed feature and any feature whose `dependsOn`/`consumes` changed — applying the §C6 mirror
 rule (one bullet per `exposes`/`consumes` entry). **Full regeneration happens only on explicit
-user request**: offer it via `AskUserQuestion` but default to the targeted patch. The skill keeps
+user request**: offer it via the host's question mechanism but default to the targeted patch. The skill keeps
 EPIC.md in sync but does not itself diff it against the manifest — drift detection is `forge-verify`
 epic mode CHECK-E06.
 
@@ -209,7 +209,7 @@ After a successful **edit-mode mutation** — the mutator returned exit `0` **an
 **Read live status again first.** The E4 `render-status` snapshot is stale by the time you get here — it was taken *before* the mutation, so a member the edit just unblocked (or just blocked) is misreported, and the whole point of routing from live state is lost. Re-read it **after** the mutation and the commit:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```

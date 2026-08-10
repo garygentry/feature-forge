@@ -323,6 +323,68 @@ def test_pi_support_files_use_skill_command_wording(fixture_copy):
     assert "/feature-forge:forge demo" in claude_helper.read_text(encoding="utf-8")
 
 
+def test_reference_host_term_translation_per_agent(fixture_copy):
+    """Copied reference markdown is host-term translated per agent (#167).
+
+    Pi gets its real commands (`/new`, `/skill:`, `--host pi`) and keeps
+    `AskUserQuestion` (the bundle ships a compatibility extension); the other
+    non-Claude targets get the host-neutral degradations; Claude stays
+    byte-verbatim. Non-prose reference files (.json) and the exempt meta-docs
+    (`_reference_translation_exempt`) stay untouched everywhere.
+    """
+    root = fixture_copy("minimal-canon")
+    shared = root / "references" / "shared-conventions.md"
+    shared.write_text(
+        shared.read_text()
+        + "\nClose with `/clear` via the `AskUserQuestion` tool; needs a `/clear`;"
+        + " then --host claude applies.\n",
+        encoding="utf-8",
+    )
+    # Non-prose sibling: substitution must never touch it (#167 AC).
+    schema = root / "references" / "fake-schema.json"
+    schema.write_text('{"hint": "run /clear next"}\n', encoding="utf-8")
+    # Exempt meta-doc + template scaffolding: mention-heavy by design, stay verbatim.
+    inventory = root / "references" / "vendor-construct-inventory.md"
+    inventory.write_text("Audit row: `/clear` is Claude-only.\n", encoding="utf-8")
+    template_dir = root / "references" / "templates"
+    template_dir.mkdir()
+    template = template_dir / "PROJECT.md"
+    template.write_text("Project doc mentioning `/clear`.\n", encoding="utf-8")
+
+    assert run_build(root).returncode == 0
+
+    claude_copy = root / "adapters" / "claude" / "references" / "shared-conventions.md"
+    assert claude_copy.read_bytes() == shared.read_bytes(), "claude refs must stay verbatim"
+
+    codex_copy = (root / "adapters" / "codex" / "references" / "shared-conventions.md").read_text()
+    assert "/clear" not in codex_copy
+    assert "AskUserQuestion" not in codex_copy
+    assert "clear your session / start a fresh session" in codex_copy
+    assert "needs a session clear" in codex_copy  # article-aware pair, not mid-clause splice
+    assert "--host generic" in codex_copy
+    assert "the host's question mechanism" in codex_copy
+
+    pi_copy = (root / "adapters" / "pi" / "references" / "shared-conventions.md").read_text()
+    assert "/clear" not in pi_copy
+    assert "needs a `/new`" in pi_copy
+    assert "--host pi" in pi_copy
+    assert "AskUserQuestion" in pi_copy  # preserved: the Pi bundle ships the extension
+
+    for agent in ("claude", "codex", "pi"):
+        agent_refs = root / "adapters" / agent / "references"
+        # .json is never touched by the reference pass (Pi's own `/feature-forge:` →
+        # `/skill:` support-file substitution still applies there — pre-#167 contract).
+        assert "/clear" in (agent_refs / "fake-schema.json").read_text(), (
+            f"{agent}: JSON reference was corrupted"
+        )
+        assert (agent_refs / "vendor-construct-inventory.md").read_bytes() == inventory.read_bytes(), (
+            f"{agent}: exempt meta-doc was translated"
+        )
+        assert (agent_refs / "templates" / "PROJECT.md").read_bytes() == template.read_bytes(), (
+            f"{agent}: template scaffolding was translated"
+        )
+
+
 def test_pi_bundle_includes_ask_user_question_extension(fixture_copy):
     """The Pi adapter is self-contained and ships the whole AskUserQuestion tree.
 
@@ -503,11 +565,19 @@ def test_cited_shared_references_fan_out_skill_local(fixture_copy, agent):
     # Bundle-root SHARED ref, cited by prose → now resolves from the skill dir.
     fanned = skill_refs / "shared-conventions.md"
     assert fanned.is_file(), f"{agent}: cited shared ref not fanned skill-local"
-    # Byte-identical to canon (verbatim copy, no header injected).
+    # Claude: byte-identical to canon (verbatim copy, no header injected). Non-Claude
+    # copies are host-term translated after the copy (#167) — a no-op for this fixture
+    # (no host terms; test_reference_host_term_translation_per_agent covers the pass).
     canon = (root / "references" / "shared-conventions.md").read_bytes()
-    assert fanned.read_bytes() == canon, f"{agent}: fanned shared ref not verbatim"
-    # The bundle-root copy is KEPT too (scripts resolve via `$R`; plugin path uses it).
-    assert (root / "adapters" / agent / "references" / "shared-conventions.md").is_file()
+    if agent == "claude":
+        assert fanned.read_bytes() == canon, "claude: fanned shared ref not verbatim"
+    # The bundle-root copy is KEPT too (scripts resolve via `$R`; plugin path uses it),
+    # and the fanned copy always matches it byte-for-byte (both translated identically).
+    bundle_copy = root / "adapters" / agent / "references" / "shared-conventions.md"
+    assert bundle_copy.is_file()
+    assert fanned.read_bytes() == bundle_copy.read_bytes(), (
+        f"{agent}: fanned shared ref diverges from the bundle-root copy"
+    )
 
     # The dynamic stacks/ tree is fanned whole (stack unknown at build time).
     assert (skill_refs / "stacks" / "python.md").is_file(), f"{agent}: stacks/ not fanned"
