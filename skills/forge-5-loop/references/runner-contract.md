@@ -47,6 +47,19 @@ Run mode:
      review pass and also unblocks/retries the previously blocked items.
 ```
 
+**`loopRunner.reviewMode` gate (`"prompt"` default | `"always"` | `"never"`).**
+The Run-mode question above is presented only when the effective
+`loopRunner.reviewMode` is `"prompt"` — the default, byte-identical to today.
+`"always"` **skips the question** and appends `--review` unconditionally; the
+confirmation's rendered command line still shows `--review`, so the choice is
+never hidden. `"never"` **skips the question** and launches the bare rendered
+command. Under `"always"`/`"never"`, when — and only when — the Step 2a tally has
+`blocked > 0`, present a **narrower situational question** in the question's
+place offering only the retry-blocked choice (on yes, additionally append
+`--retry-blocked`; the `--review` decision is already fixed by the mode and is
+**not** re-asked); with no blocked items, the Run-mode surface asks nothing. An
+unrecognized value behaves as `"prompt"`.
+
 Notes:
 
 - **Option 1 is the default** and the confirmation's rendered command line shows

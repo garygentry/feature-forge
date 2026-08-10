@@ -21,6 +21,22 @@ Step 3c are byte-identical to today (capability gate;
 item.provider  >  --agent (run selection)  >  loopRunner.defaultAgent (project)  >  runner default (claude-cli)
 ```
 
+**`loopRunner.agentMode` gate (`"prompt"` default | `"auto"`).** `"prompt"`
+presents the Step 2d agent question (SKILL sub-step b) — byte-identical to today.
+`"auto"` suppresses **only the interactive pick**: skip the agent question and
+resolve as if the user made no per-run selection (`run_selection = None`, so
+`defaultAgent` — or the runner default when unset — applies). Everything else on
+this surface **still runs under `"auto"`**: the single probe, the availability
+listing, the verdict classification below (UNKNOWN hard-reject before any loop
+side-effect, UNAVAILABLE with its proceed-anyway/choose-another question,
+probe-failure handling), and the Claude-only model-alias guard — those questions
+are safety surfaces, not the pick, and are never suppressed. The resolved
+`Agent: {id} (source: …)` line still shows in the confirmation and the Step 3c
+template, so the choice is never hidden. Meaningless when
+`loopRunner.agentArgument` is absent — the capability gate above already removes
+the entire surface, and `agentMode` adds no second gate. An unrecognized value
+behaves as `"prompt"`.
+
 **Run-layer mapping — why forge never re-implements rauf's resolver.** forge owns
 **only** its run and project layers and collapses them into **one** value
 (`resolve()`: `run_selection or defaultAgent or none`), which it emits as a single
