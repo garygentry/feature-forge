@@ -34,14 +34,15 @@
       "commitHash": "5b5d96ad5559b5713723aa29c639dfa3ecf9235f"
     },
     "forge-verify-tech": {
-      "status": "findings-applied",
-      "findingsFile": ".verification/VERIFY-tech-2026-08-10.md",
-      "findingsCount": 10,
-      "fixedAt": "2026-08-11T03:01:05Z",
-      "commitHash": "37628d40f8325b54afe77544ddf2946e3042b895"
+      "status": "passed",
+      "findingsFile": ".verification/VERIFY-tech-2026-08-10-round2.md",
+      "findingsCount": 3,
+      "verifiedAt": "2026-08-11T03:13:37Z",
+      "verifiedStageVersion": 1,
+      "commitHash": null
     }
   },
   "currentStage": "forge-2-tech",
-  "updatedAt": "2026-08-11T03:01:12Z",
+  "updatedAt": "2026-08-11T03:13:37Z",
   "branch": "forge/verify-fix-sweep"
 }
