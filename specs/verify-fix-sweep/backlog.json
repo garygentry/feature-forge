@@ -21,15 +21,15 @@
         "plan-coverage subcommand: exit 0 when fully covered; exit 1 when uncovered findings named; exit 0 with applicable=false when no plan section; exit 2 for unreadable document",
         "ruff check scripts/fix-sweep.py passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-11T22:41:36.392Z",
       "dependsOn": [],
+      "notes": "This is the largest item (~350-400 lines of Python). The spec documents are extremely detailed — 02-fix-sweep-script.md contains function signatures, docstrings, and verification checkboxes for every function. Follow them closely. The reflow-suppression filter concatenates added lines per file then delta-wide with single-space joins. The plan-coverage parser must skip lines inside fenced code blocks (FENCE_RE toggling). The diff parser must gate removed/added line recognition on an in-hunk flag to avoid confusing a content line starting with --- for a file header.",
       "estimatedIterations": 2,
       "specReferences": [
         "specs/verify-fix-sweep/00-core-definitions.md",
         "specs/verify-fix-sweep/02-fix-sweep-script.md"
-      ],
-      "notes": "This is the largest item (~350-400 lines of Python). The spec documents are extremely detailed — 02-fix-sweep-script.md contains function signatures, docstrings, and verification checkboxes for every function. Follow them closely. The reflow-suppression filter concatenates added lines per file then delta-wide with single-space joins. The plan-coverage parser must skip lines inside fenced code blocks (FENCE_RE toggling). The diff parser must gate removed/added line recognition on an in-hunk flag to avoid confusing a content line starting with --- for a file header."
+      ]
     },
     {
       "id": "002",
@@ -48,14 +48,16 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001"],
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "This is the second-largest item. The F-5 regression fixture is the headline test — build it first. Table-driven tests use @pytest.mark.parametrize. Test narration states intent, never measurement — docstrings cite the spec section they enforce ('(02 §4.3)'). The FORGE_FIX_SKILL and VERIFY_SKILL constants are defined here but used only by the prose guards added in item 008.",
       "estimatedIterations": 2,
       "specReferences": [
         "specs/verify-fix-sweep/05-testing-strategy.md",
         "specs/verify-fix-sweep/00-core-definitions.md",
         "specs/verify-fix-sweep/02-fix-sweep-script.md"
-      ],
-      "notes": "This is the second-largest item. The F-5 regression fixture is the headline test — build it first. Table-driven tests use @pytest.mark.parametrize. Test narration states intent, never measurement — docstrings cite the spec section they enforce ('(02 §4.3)'). The FORGE_FIX_SKILL and VERIFY_SKILL constants are defined here but used only by the prose guards added in item 008."
+      ]
     },
     {
       "id": "003",
@@ -73,11 +75,13 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001"],
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "This is a hard prerequisite for item 004 — without fix-sweep.py in RUNTIME_HELPERS, the fenced invocations in forge-fix SKILL.md fail on every non-Claude adapter. Do NOT run build-adapters.py or regenerate adapters/ — the single regeneration happens in item 009 after all canon edits.",
       "specReferences": [
         "specs/verify-fix-sweep/01-architecture-layout.md"
-      ],
-      "notes": "This is a hard prerequisite for item 004 — without fix-sweep.py in RUNTIME_HELPERS, the fenced invocations in forge-fix SKILL.md fail on every non-Claude adapter. Do NOT run build-adapters.py or regenerate adapters/ — the single regeneration happens in item 009 after all canon edits."
+      ]
     },
     {
       "id": "004",
@@ -99,11 +103,14 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["001", "003"],
+      "dependsOn": [
+        "001",
+        "003"
+      ],
+      "notes": "The anchor map in 03 §2 locates each insertion point by quoted text, not line number. Read the existing SKILL.md first to find the exact insertion points. The line budget in 03 §7 breaks down to 9 (Block A) + 22 (Block B) + 2 (Block C) = 33 lines. Keep paragraphs as single unwrapped lines — hard-wrapping would cost ~20 extra lines for no content. The re-run paragraph includes the disposition-aware clause about FIXED hits re-appearing — include the literal 'never leave it recorded as' which the prose guards pin.",
       "specReferences": [
         "specs/verify-fix-sweep/03-forge-fix-integration.md"
-      ],
-      "notes": "The anchor map in 03 §2 locates each insertion point by quoted text, not line number. Read the existing SKILL.md first to find the exact insertion points. The line budget in 03 §7 breaks down to 9 (Block A) + 22 (Block B) + 2 (Block C) = 33 lines. Keep paragraphs as single unwrapped lines — hard-wrapping would cost ~20 extra lines for no content. The re-run paragraph includes the disposition-aware clause about FIXED hits re-appearing — include the literal 'never leave it recorded as' which the prose guards pin."
+      ]
     },
     {
       "id": "005",
@@ -122,10 +129,10 @@
       "status": "pending",
       "completedAt": null,
       "dependsOn": [],
+      "notes": "This item is independent of the script chain (001-004) and can run in parallel. The prose is paste-ready — do not reword or 'improve' it; the exact literals are pinned by prose-guard tests. The cross-mode-leakage constraint means CHECK-I25 and CHECK-S39 are intentional near-duplicates that cannot reference each other — the relationship is recorded only in 04 §3.3/§3.4's cross-mode-leak warnings. impl.md MAY reference same-mode ids like CHECK-I01.",
       "specReferences": [
         "specs/verify-fix-sweep/04-verification-checks.md"
-      ],
-      "notes": "This item is independent of the script chain (001-004) and can run in parallel. The prose is paste-ready — do not reword or 'improve' it; the exact literals are pinned by prose-guard tests. The cross-mode-leakage constraint means CHECK-I25 and CHECK-S39 are intentional near-duplicates that cannot reference each other — the relationship is recorded only in 04 §3.3/§3.4's cross-mode-leak warnings. impl.md MAY reference same-mode ids like CHECK-I01."
+      ]
     },
     {
       "id": "006",
@@ -143,11 +150,13 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["005"],
+      "dependsOn": [
+        "005"
+      ],
+      "notes": "The em dash in CHECK-I21/I22's existing tag is U+2014 — preserve it verbatim. Read the file first to find exact anchor text since line numbers may have drifted. Each replacement replaces the same number of lines — verify with wc -l before and after. The two lines of headroom (298→300) remain unspent and available for a later change.",
       "specReferences": [
         "specs/verify-fix-sweep/04-verification-checks.md"
-      ],
-      "notes": "The em dash in CHECK-I21/I22's existing tag is U+2014 — preserve it verbatim. Read the file first to find exact anchor text since line numbers may have drifted. Each replacement replaces the same number of lines — verify with wc -l before and after. The two lines of headroom (298→300) remain unspent and available for a later change."
+      ]
     },
     {
       "id": "007",
@@ -164,11 +173,14 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["004", "006"],
+      "dependsOn": [
+        "004",
+        "006"
+      ],
+      "notes": "The heading-termination fix (D3) is critical — without it, the new CHECK-I24 degradation clauses would contain 'not-applicable' and 'never a hard fail', which are the same literals the existing I21/I22 tests assert, creating a false pass that masks a real removal of those clauses from the Runnability section. The dynamic cross-check test_skill_expected_count_table_matches_the_files re-verifies SKILL totals against the actual files, so a missed edit fails CI twice.",
       "specReferences": [
         "specs/verify-fix-sweep/05-testing-strategy.md"
-      ],
-      "notes": "The heading-termination fix (D3) is critical — without it, the new CHECK-I24 degradation clauses would contain 'not-applicable' and 'never a hard fail', which are the same literals the existing I21/I22 tests assert, creating a false pass that masks a real removal of those clauses from the Runnability section. The dynamic cross-check test_skill_expected_count_table_matches_the_files re-verifies SKILL totals against the actual files, so a missed edit fails CI twice."
+      ]
     },
     {
       "id": "008",
@@ -189,11 +201,16 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["002", "004", "005", "006"],
+      "dependsOn": [
+        "002",
+        "004",
+        "005",
+        "006"
+      ],
+      "notes": "The Step 6 byte-identity guard is the strongest C-1 protection — heading survival alone does not detect a body edit inside the Re-verify Gate section. For the outcome-table guard, assert the exact set of seven --outcome values — this detects both additions and removals. The no-cross-reference rule between CHECK-I25 and CHECK-S39 is enforced by the EXISTING test_no_cross_mode_leakage test, NOT by a new guard here.",
       "specReferences": [
         "specs/verify-fix-sweep/05-testing-strategy.md"
-      ],
-      "notes": "The Step 6 byte-identity guard is the strongest C-1 protection — heading survival alone does not detect a body edit inside the Re-verify Gate section. For the outcome-table guard, assert the exact set of seven --outcome values — this detects both additions and removals. The no-cross-reference rule between CHECK-I25 and CHECK-S39 is enforced by the EXISTING test_no_cross_mode_leakage test, NOT by a new guard here."
+      ]
     },
     {
       "id": "009",
@@ -213,11 +230,18 @@
       ],
       "status": "pending",
       "completedAt": null,
-      "dependsOn": ["003", "004", "005", "006", "007", "008"],
+      "dependsOn": [
+        "003",
+        "004",
+        "005",
+        "006",
+        "007",
+        "008"
+      ],
+      "notes": "The adapters/ regeneration MUST happen after all canon edits — regenerating mid-stream leaves stale content that fails the drift gate. The CHANGELOG entry follows the AGENTS.md publish rule: a canon edit that changes what the npm package ships gets an [Unreleased] entry. The version bump and actual npm publish are owner-gated and out of scope.",
       "specReferences": [
         "specs/verify-fix-sweep/01-architecture-layout.md"
-      ],
-      "notes": "The adapters/ regeneration MUST happen after all canon edits — regenerating mid-stream leaves stale content that fails the drift gate. The CHANGELOG entry follows the AGENTS.md publish rule: a canon edit that changes what the npm package ships gets an [Unreleased] entry. The version bump and actual npm publish are owner-gated and out of scope."
+      ]
     }
   ]
 }
