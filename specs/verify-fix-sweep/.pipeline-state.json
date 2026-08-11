@@ -32,9 +32,17 @@
         "forge-1-prd": 1
       },
       "commitHash": "5b5d96ad5559b5713723aa29c639dfa3ecf9235f"
+    },
+    "forge-verify-tech": {
+      "status": "findings-reported",
+      "findingsFile": ".verification/VERIFY-tech-2026-08-10.md",
+      "findingsCount": 10,
+      "verifiedAt": "2026-08-11T02:54:00Z",
+      "verifiedStageVersion": 1,
+      "commitHash": null
     }
   },
   "currentStage": "forge-2-tech",
-  "updatedAt": "2026-08-11T02:41:36Z",
+  "updatedAt": "2026-08-11T02:54:00Z",
   "branch": "forge/verify-fix-sweep"
 }
