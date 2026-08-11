@@ -67,10 +67,10 @@
       "findingsCount": 6,
       "verifiedAt": "2026-08-11T16:23:56Z",
       "verifiedStageVersion": 1,
-      "commitHash": null
+      "commitHash": "ef902865230bac708bac99cc9e331b7b7a44d264"
     }
   },
   "currentStage": "forge-3-specs",
-  "updatedAt": "2026-08-11T16:23:56Z",
+  "updatedAt": "2026-08-11T16:24:07Z",
   "branch": "forge/verify-fix-sweep"
 }
