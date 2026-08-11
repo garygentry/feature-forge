@@ -126,8 +126,8 @@
         "No cross-mode id leakage: impl.md has no CHECK-B or CHECK-S ids; specs.md has no CHECK-I ids; backlog.md has no CHECK-I or CHECK-S ids",
         "No host terms in the new prose (no product names, tool names, slash commands, AskUserQuestion)"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-11T23:32:53.479Z",
       "dependsOn": [],
       "notes": "This item is independent of the script chain (001-004) and can run in parallel. The prose is paste-ready — do not reword or 'improve' it; the exact literals are pinned by prose-guard tests. The cross-mode-leakage constraint means CHECK-I25 and CHECK-S39 are intentional near-duplicates that cannot reference each other — the relationship is recorded only in 04 §3.3/§3.4's cross-mode-leak warnings. impl.md MAY reference same-mode ids like CHECK-I01.",
       "specReferences": [
