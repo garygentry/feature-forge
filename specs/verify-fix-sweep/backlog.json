@@ -46,8 +46,8 @@
         "Cost-model shape pinned: bounded git calls (≤5), one file read per corpus file",
         "python3 -m pytest tests/test_fix_sweep.py passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-11T22:57:21.917Z",
       "dependsOn": [
         "001"
       ],
