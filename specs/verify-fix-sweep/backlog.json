@@ -199,8 +199,8 @@
         "RUNTIME_HELPERS contains fix-sweep.py guard present",
         "python3 -m pytest tests/test_fix_sweep.py passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-11T23:57:35.685Z",
       "dependsOn": [
         "002",
         "004",

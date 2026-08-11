@@ -5,8 +5,9 @@ Covers the two subcommands' behavior end-to-end over scratch git repositories in
 contracts, corpus boundaries, the skip-vs-failure classification, plan-coverage
 cardinality, output formats, determinism, and the cost model's shape.
 
-The prose guards over ``skills/forge-fix/SKILL.md`` and the verification checklists
-are added separately, alongside the canon edits they pin.
+The final section holds the prose guards over ``skills/forge-fix/SKILL.md``, the
+verification checklists, and ``skills/forge-verify/SKILL.md`` — the literals that make
+this feature's integration load-bearing.
 """
 
 from __future__ import annotations
@@ -1150,3 +1151,253 @@ def test_each_corpus_file_is_read_exactly_once(
 
     assert len(reads) == report["filesScanned"]
     assert len(set(reads)) == len(reads)
+
+
+# --------------------------------------------------------------------------- #
+# §2.11 Prose guards over the canon edits (pattern: test_lifecycle_artifact_check.py)
+#
+# Meta-guard contract: the protection set is the enumerated literals below and
+# nothing else. Exact-markdown fidelity of the surrounding prose, wording beyond
+# these literals, and resistance to every conceivable rewording are declared
+# non-goals (05 §2.11).
+# --------------------------------------------------------------------------- #
+
+STAGE_EXIT_PROTOCOL = REPO_ROOT / "references" / "stage-exit-protocol.md"
+BUILD_ADAPTERS = REPO_ROOT / "scripts" / "build-adapters.py"
+
+#: The seven `--outcome` values Step 7's table maps every path onto. This feature adds
+#: none and removes none (C-6), so the set is asserted exactly rather than by membership.
+FIX_OUTCOMES = frozenset(
+    {
+        "no-findings",
+        "decisions",
+        "failed",
+        "applied",
+        "reverified",
+        "reverify-findings",
+        "deferred",
+    }
+)
+
+#: The Step 1–7 headings verbatim — no renumbering and no retitling (C-1).
+STEP_HEADINGS = (
+    "## Step 1: Locate Findings and Establish the Served Stage",
+    "## Step 2: Parse Fix Execution Plan",
+    "## Step 3: Handle User Decisions",
+    "## Step 4: Execute Fix Steps",
+    "## Step 5: Record the Fixes Through `state-verify` and Commit",
+    "## Step 6: Re-verify Gate",
+    "## Step 7: Close the Stage",
+)
+
+#: `## Step 6: Re-verify Gate` through the next `## ` heading, captured from
+#: `skills/forge-fix/SKILL.md` as it stood before this feature's Step 2/4/5 insertions.
+#: The re-verify gate is out of scope for the change (C-1), and heading survival alone
+#: would not detect a body edit inside the section.
+STEP_6_PINNED = """\
+## Step 6: Re-verify Gate
+
+Fixes are applied and recorded as `findings-applied`. That status makes **no** claim of freshness: the writer clears `verifiedStageVersion`, so the served stage's verification stays **outstanding** in the navigator's ledger, and only a re-verify that passes resolves it. Because a re-verify is the one thing that confirms the fixes actually resolved the findings, on a **direct** invocation **prompt** for it rather than leaving it as a passive suggestion — this is the same **Standard Verify Gate** the stage skills stamp (`references/stage-exit-protocol.md`).
+
+**A nested owner presents no gate.** Return your structured result (served stage, outcome `applied`, findings file, steps applied) to the outer caller — it performs the mandatory re-verify itself — and print no terminal block of your own. This follows from the `owner:` token read at entry; it is never decided by how the invocation was phrased.
+
+On a **direct** invocation, present the gate with `AskUserQuestion` using these three options — but only when your verify capability is `interactive` (Step 7):
+- **Re-verify {feature} now** *(recommended)* — dispatch the clean-room `forge-verifier` subagent from this session in require-clean mode to confirm every finding is resolved. The dispatch is **scoped** per "Re-verify scope and convergence" in `references/stage-exit-protocol.md`: it confirms the prior report's findings against their acceptance evidence and examines this fix's delta — never a fresh full-checklist sweep — a finding with a recorded decision is never re-filed, and only an unresolved prior finding or a new blocking defect the fix introduced may block. The digest returns here so any remaining issue keeps its context. One-time — it does **not** change config. A clean-or-advisory-only result closes as `reverified`; unresolved prior findings or new blocking defects close as `reverify-findings` for the same served stage. **Escalation:** if that would be the second consecutive `reverify-findings` for this served stage (count the round-discriminated reports in `.verification/`), follow "Escalation (the round ledger)" in `references/stage-exit-protocol.md` before closing — present the digest and offer explicit acceptance of the residual findings; do not recommend another fix pass.
+- **Re-verify now + enable auto-verify going forward** — re-verify now **and** patch `"autoVerify": true` into `forge.config.json` in place (preserve formatting and every other key) so future stages verify automatically, no prompt. This complements the `forge-init` opt-in. **Do not auto-commit this config change** — treat it like `notes`: a user-facing edit the user commits on their own cadence, never folded into a stage's artifact commit. Its outcome mapping is identical to the option above.
+- **Skip for now** — an explicit deferral of the re-verify. It closes as **`deferred`**, never `reverified`: the fixes are recorded but nothing has confirmed them, and the served stage's verification stays outstanding until a re-verify passes, so the pipeline does not advance on this pass. Run `/feature-forge:forge {feature}` when you want pipeline status.
+
+**Manual capability is not a skip, and not a deferral.** When your capability is `manual` (Step 7 — no question mechanism **and** no permitted dispatch), do not run clean-room and do not fabricate a choice nobody made: close with `applied`, and the script prints `/feature-forge:forge-verify {feature} --served-stage {servedStage}` as the primary action for the user to run. Offer the auto-verify enable as plain text only if a config write is possible.
+
+**A re-verify that cannot run is an operational failure.** If the user chose to re-verify and the dispatch is refused, returns the `CLEAN_ROOM_UNAVAILABLE` sentinel, or returns no answer, the fixes remain recorded but nothing was confirmed: close with `failed`. Never report `reverified` on an unrun verify, and never treat an unavailable tool as an explicit user skip.
+"""
+
+
+def _section(text: str, heading: str, level: str = "\n## ") -> str:
+    """Return `heading` through (excluding) the next heading at `level`.
+
+    Heading-terminated rather than sliced to end-of-file, so a section appended
+    later cannot satisfy an assertion aimed at this one.
+    """
+    start = text.index(heading)
+    rest = text[start + len(heading) :]
+    end = rest.find(level)
+    return heading + (rest if end == -1 else rest[:end])
+
+
+def _bash_fences(text: str) -> list[str]:
+    """Return the bodies of every ```bash fence in `text`."""
+    return re.findall(r"^```bash\n(.*?)^```", text, flags=re.MULTILINE | re.DOTALL)
+
+
+def _dimension_bullet(text: str, mode: str) -> str:
+    """Return the `  - **{mode}** (…)` dimension-group bullet from the verify skill."""
+    start = text.index(f"  - **{mode}** (")
+    rest = text[start:]
+    end = rest.find("\n  - **")
+    return rest if end == -1 else rest[:end]
+
+
+def test_step_2_invokes_plan_coverage_from_a_bash_fence() -> None:
+    """The cardinality assertion is a runnable fenced invocation (03 §3.2)."""
+    fences = _bash_fences(FORGE_FIX_SKILL.read_text(encoding="utf-8"))
+    matching = [
+        fence
+        for fence in fences
+        if re.search(r'\$R/scripts/fix-sweep\.py"?\s+plan-coverage\b', fence)
+    ]
+    assert len(matching) == 1
+    assert "--json" in matching[0]
+
+
+def test_step_4_invokes_the_sweep_from_a_bash_fence() -> None:
+    """The closing sub-step's sweep is a runnable fenced invocation (03 §4.6)."""
+    fences = _bash_fences(FORGE_FIX_SKILL.read_text(encoding="utf-8"))
+    matching = [
+        fence for fence in fences if re.search(r'\$R/scripts/fix-sweep\.py"?\s+sweep\b', fence)
+    ]
+    assert len(matching) == 1
+    assert "scripts/fix-sweep.py" in matching[0]
+    assert "--json" in matching[0]
+
+
+def test_not_run_notice_wording_is_exact() -> None:
+    """The skip notice keeps its em dash and its `{reason}` placeholder (REQ-SWEEP-07)."""
+    text = FORGE_FIX_SKILL.read_text(encoding="utf-8")
+    assert "- Sweep: NOT RUN \u2014 no git delta ({reason})" in text
+
+
+def test_all_three_disposition_tokens_are_present() -> None:
+    """Every hit gets exactly one of the three dispositions (REQ-SWEEP-04)."""
+    text = FORGE_FIX_SKILL.read_text(encoding="utf-8")
+    for token in ("FIXED", "JUSTIFIED:", "FALSE-POSITIVE:"):
+        assert token in text
+
+
+def test_failed_fixed_rule_is_stated() -> None:
+    """A re-appearing `FIXED` hit must be re-dispositioned, never left as fixed (03 §4.6)."""
+    text = FORGE_FIX_SKILL.read_text(encoding="utf-8")
+    assert "never leave it recorded as" in text
+
+
+def test_staging_is_enumerated_and_bulk_staging_is_prohibited() -> None:
+    """Disposition edits are staged one path at a time (REQ-SWEEP-05, 03 §5.2)."""
+    text = FORGE_FIX_SKILL.read_text(encoding="utf-8")
+    assert "git add <path>" in text
+    for bulk in ("git add -A", "git add ."):
+        occurrences = list(re.finditer(re.escape(bulk), text))
+        assert occurrences
+        for match in occurrences:
+            preceding = text[max(0, match.start() - 40) : match.start()]
+            assert "never" in preceding
+
+
+def test_operator_escape_hatches_stay_out_of_the_skill() -> None:
+    """`--exclude` and `--min-chars` are operator knobs, not agent prose (03 §4.6)."""
+    text = FORGE_FIX_SKILL.read_text(encoding="utf-8")
+    assert "--exclude" not in text
+    assert "--min-chars" not in text
+
+
+def test_outcome_table_holds_exactly_the_seven_existing_values() -> None:
+    """Step 7's outcome vocabulary is unchanged by this feature (C-6)."""
+    step7 = _section(FORGE_FIX_SKILL.read_text(encoding="utf-8"), "## Step 7: Close the Stage")
+    rows = [
+        line
+        for line in step7.splitlines()
+        if line.startswith("|") and not line.startswith("|---") and "`--outcome`" not in line
+    ]
+    values = [row.split("|")[2].strip().strip("`") for row in rows]
+    assert len(values) == len(FIX_OUTCOMES)
+    assert set(values) == FIX_OUTCOMES
+
+
+def test_step_headings_survive_unrenumbered() -> None:
+    """Steps 1–7 keep their numbers and titles — the insertions renumber nothing (C-1)."""
+    text = FORGE_FIX_SKILL.read_text(encoding="utf-8")
+    for heading in STEP_HEADINGS:
+        assert f"\n{heading}\n" in text
+
+
+def test_step_6_reverify_gate_is_byte_identical_to_the_pinned_text() -> None:
+    """The re-verify gate is out of scope for this feature, body included (C-1)."""
+    section = _section(FORGE_FIX_SKILL.read_text(encoding="utf-8"), "## Step 6: Re-verify Gate")
+    assert section == STEP_6_PINNED
+
+
+def test_stage_exit_protocol_still_cites_forge_fix_step_6() -> None:
+    """The shared protocol's Step 6 citation is untouched by this feature (C-1)."""
+    text = STAGE_EXIT_PROTOCOL.read_text(encoding="utf-8")
+    assert "`skills/forge-fix/SKILL.md` Step 6" in text
+
+
+def test_check_b29_present_with_its_degradation_and_severity() -> None:
+    """Backlog work-order cardinality degrades to not-applicable and names omissions (04 §3.1)."""
+    text = (CHECKLISTS / "backlog.md").read_text(encoding="utf-8")
+    section = _section(text, "### Work-Order Cardinality", level="\n### ")
+    assert "**CHECK-B29**" in section
+    assert "(#170)" in section
+    assert "not-applicable" in section
+    assert "never a hard fail" in section
+    assert "`gap`" in section
+    assert "by name" in section
+    assert "Report, do not repair" in section
+
+
+def test_check_i24_present_with_its_degradation_and_severity() -> None:
+    """Impl work-order cardinality degrades to not-applicable and names omissions (04 §3.2)."""
+    text = (CHECKLISTS / "impl.md").read_text(encoding="utf-8")
+    section = _section(text, "### Work-Order Cardinality", level="\n### ")
+    assert "**CHECK-I24**" in section
+    assert "(#170)" in section
+    assert "not-applicable" in section
+    assert "never a hard fail" in section
+    assert "`gap`" in section
+    assert "by name" in section
+    assert "Report, do not repair" in section
+
+
+def test_check_i25_present_with_its_severity_ladder() -> None:
+    """Intra-artifact consistency is advisory until decision-bearing (04 §3.3)."""
+    text = (CHECKLISTS / "impl.md").read_text(encoding="utf-8")
+    section = _section(text, "### Internal Consistency", level="\n### ")
+    assert "**CHECK-I25**" in section
+    assert "(#170)" in section
+    assert "not-applicable" in section
+    assert "`inconsistency`" in section
+    assert "`error`" in section
+    assert "decision-bearing" in section
+    assert "Report, do not repair" in section
+
+
+def test_check_s39_present_with_its_severity_ladder() -> None:
+    """Intra-document consistency is advisory until decision-bearing (04 §3.4)."""
+    text = (CHECKLISTS / "specs.md").read_text(encoding="utf-8")
+    section = _section(text, "### Internal Consistency", level="\n### ")
+    assert "**CHECK-S39**" in section
+    assert "(#170)" in section
+    assert "not-applicable" in section
+    assert "`inconsistency`" in section
+    assert "`error`" in section
+    assert "decision-bearing" in section
+    assert "Report, do not repair" in section
+
+
+@pytest.mark.parametrize(
+    ("mode", "tag"),
+    [
+        ("backlog", "(owns CHECK-B29)"),
+        ("impl", "(owns CHECK-I24/I25)"),
+        ("specs", "(owns CHECK-S39)"),
+    ],
+)
+def test_new_checks_are_reachable_from_their_dimension_group(mode: str, tag: str) -> None:
+    """Each new check is tagged onto the dimension group that dispatches it (04 §4.3)."""
+    bullet = _dimension_bullet(VERIFY_SKILL.read_text(encoding="utf-8"), mode)
+    assert tag in bullet
+
+
+def test_runtime_helpers_distributes_the_sweep_script() -> None:
+    """Every adapter bundle ships `fix-sweep.py`, so the fenced invocations resolve (01 §5.1)."""
+    text = BUILD_ADAPTERS.read_text(encoding="utf-8")
+    tuple_body = _section(text, "RUNTIME_HELPERS", level="\n)")
+    assert '"fix-sweep.py"' in tuple_body
