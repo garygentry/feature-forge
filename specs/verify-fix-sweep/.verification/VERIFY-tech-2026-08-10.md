@@ -115,6 +115,13 @@ Verification quality note: many of the tech spec's repo claims *do* hold and wer
 ## Fix Execution Plan
 
 ### User Decisions Required
+
+> All four decisions RESOLVED 2026-08-10 (user chose the recommended option in each):
+> 1 → (a) enumerated `git add <path>` per disposition-edited file; 2 → (a) `adapters/`
+> exclusion conditional on drift-gate detection (`scripts/build-adapters.py` present);
+> 3 → Summary `Total findings: N` re-derived, mismatch = exit 1; 4 → untracked
+> non-ignored files included via `git ls-files --cached --others --exclude-standard`.
+
 1. **V-001 disposition-commit strategy.** Either (a) forge-fix Step 5 gains an explicit enumerated `git add <path>` for every disposition-edited file outside `{resolvedFeatureDir}` (recommended — preserves REQ-SWEEP-04's "corrected in the same pass" option and keeps the tree clean for the re-verify), or (b) out-of-feature-dir survivors become report-only and route to `decisions`. (a) requires amending §6.1's "no Step-5/6/7 text changes"; (b) narrows REQ-SWEEP-04.
 2. **V-006 consumer-repo default excludes.** Either (a) make the `adapters/` default **conditional** on the drift gate actually being present (recommended — the class REQ-SWEEP-03 defines, correct in both repo shapes), or (b) keep the hardcoded default and record it in §3.4 as a knowingly feature-forge-specific milestone-1 simplification with the false-exclusion risk stated.
 3. **V-004 scope of "claimed totals".** Whether `plan-coverage` re-derives only `## Summary`'s `Total findings: N` (recommended, minimal) or also the report header's `Checks Executed: N of M (X pass, Y fail, Z n/a)` arithmetic; and whether a mismatch is exit 1 or advisory.
@@ -187,3 +194,17 @@ Verification quality note: many of the tech spec's repo claims *do* hold and wer
 - **Addresses:** all
 - **Action:** Confirm `REQ-PERF-01` now appears literally in the tech spec and that all 16 PRD REQ ids are cited literally (no reliance on `REQ-CARD-02..04` range notation) so `scripts/validate-traceability.py` and CHECK-S38 both resolve them downstream. (Full traceability binds at forge-3-specs; this is the tech-stage spot check.)
 - **Depends on:** Steps 1–10
+
+## Fix Progress
+
+- Step 1: [APPLIED] 2026-08-10 — §3.7 corrected to 298/300 (per C-4) with 2-line headroom noted; §3.6 corrected to 134/300 (V-007)
+- Step 2: [APPLIED] 2026-08-10 — §3.2 rationale rewritten to state the true `git add {resolvedFeatureDir}/` staging scope; §3.6 gained the Step 5 enumerated disposition-staging bullet; §6.1 updated to name the Step 5 edit; §2 table row updated; §8 prose guard added (V-001, Decision 1a)
+- Step 3: [APPLIED] 2026-08-10 — §2 gained build-adapters.py + test_build_adapters.py rows; "four pinned tests" → five (§1, §6.5); new §6.7 RUNTIME_HELPERS integration point; §8 guard added (V-003)
+- Step 4: [APPLIED] 2026-08-10 — §3.7/§6.3 extended: dimension-group ownership tags on SKILL.md lines 43–48 with zero net new lines, rationale stated; §8 prose guard added (V-005)
+- Step 5: [APPLIED] 2026-08-10 — §3.5 claimed-totals re-derivation (mismatch = exit 1); §4.2 payload gained claimedTotal/actualTotal/totalMismatch; §5 exit codes updated; §6.2 cites template line 52; §8 mismatch unit added (V-004, Decision 3)
+- Step 6: [APPLIED] 2026-08-10 — §3.4 rewritten: `.verification/` unconditional, `adapters/` conditional on drift-gate detection (`scripts/build-adapters.py` present); §5 updated; §3.6 states the fenced invocation passes no `--exclude`; §8 non-gated-adapters unit added (V-006, Decision 2a)
+- Step 7: [APPLIED] 2026-08-10 — new §3.8 Performance (REQ-PERF-01): cost model, expected wall-clock, memory posture, milestone-acceptance observation in lieu of CI timing; §8 line added (V-002)
+- Step 8: [APPLIED] 2026-08-10 — §3.6 opening records the deliberate supersession of the PRD's "forge-fix Steps 5/6" parenthetical, C-1 binding content honored (V-008)
+- Step 9: [APPLIED] 2026-08-10 — §2 CHANGELOG row + §6.6 publish-worthiness sentence (V-009)
+- Step 10: [APPLIED] 2026-08-10 — §3.3/§3.4 state working-tree content source; corpus widened to `git ls-files --cached --others --exclude-standard`; §5 updated; §8 untracked-file unit added (V-010, Decision 4)
+- Step 11: [APPLIED] 2026-08-10 — verified all 16 PRD REQ ids cited literally in tech-spec.md (grep per id ≥ 1; REQ-CARD range notation removed from §3.7 heading)
