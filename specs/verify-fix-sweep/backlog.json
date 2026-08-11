@@ -73,8 +73,8 @@
         "ruff check scripts/build-adapters.py passes",
         "python3 -m pytest tests/test_build_adapters.py -k runtime_helpers passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-11T23:00:02.938Z",
       "dependsOn": [
         "001"
       ],

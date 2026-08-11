@@ -318,6 +318,7 @@ RUNTIME_HELPERS: tuple[str, ...] = (
     "forge-session.py",
     "validate-traceability.py",
     "forge-bootstrap.py",
+    "fix-sweep.py",  # NEW — invoked by forge-fix Steps 2 and 4
 )
 
 # The neutral, cross-agent bundle sentinel filename. forge-root.sh keys its is_root() predicate

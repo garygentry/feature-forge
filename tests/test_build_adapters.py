@@ -1024,7 +1024,7 @@ def test_claude_body_helpers_are_verbatim_passthrough():
 # --------------------------------------------------------------------------- #
 # 3.12 Mirrored duplicate-aware loader co-distribution (05 §5.1/§8.2, 07 §6.3)
 #
-# The loader is NOT a seventh runtime helper: it lives inside two scripts that are
+# The loader is NOT a runtime helper of its own: it lives inside two scripts that are
 # already in RUNTIME_HELPERS, so nothing new is emitted and no import has to resolve
 # inside a bundle (01-architecture-layout.md §3.4). These tests close that invariant at
 # the distribution boundary — `tests/test_json_loader_parity.py` closes it at the source
@@ -1042,16 +1042,18 @@ from test_json_loader_parity import mirrored_loader_pair  # noqa: E402
 LOADER_CONSUMERS = ("forge-session.py", "forge-bootstrap.py")
 
 
-def test_runtime_helpers_still_has_exactly_six_entries():
-    """No seventh helper was added: the loader ships inside two existing ones.
+def test_runtime_helpers_has_exactly_seven_entries():
+    """The loader added no helper of its own; `fix-sweep.py` is the seventh (#170).
 
     A `scripts/forge_json.py` would add an entry here and freeze its signature across
-    six shipped bundles — the design this feature explicitly rejected.
+    six shipped bundles — the design this feature explicitly rejected. The tuple grew
+    to seven only for `fix-sweep.py`, which forge-fix invokes as `$R/scripts/<x>` and
+    which therefore must ship in every non-Claude bundle (#170).
     """
     mod = _load_generator_module()
 
-    assert len(mod.RUNTIME_HELPERS) == 6, mod.RUNTIME_HELPERS
-    assert len(set(mod.RUNTIME_HELPERS)) == 6, "duplicate entry in RUNTIME_HELPERS"
+    assert len(mod.RUNTIME_HELPERS) == 7, mod.RUNTIME_HELPERS
+    assert len(set(mod.RUNTIME_HELPERS)) == 7, "duplicate entry in RUNTIME_HELPERS"
     assert set(LOADER_CONSUMERS) <= set(mod.RUNTIME_HELPERS)
     assert "forge_json.py" not in mod.RUNTIME_HELPERS
 
