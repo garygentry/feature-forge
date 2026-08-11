@@ -59,10 +59,10 @@
         "forge-1-prd": 1,
         "forge-2-tech": 1
       },
-      "commitHash": null
+      "commitHash": "2f37b9ee255f89d41521013da0072f208cb49f2e"
     }
   },
   "currentStage": "forge-3-specs",
-  "updatedAt": "2026-08-11T12:57:40Z",
+  "updatedAt": "2026-08-11T12:57:50Z",
   "branch": "forge/verify-fix-sweep"
 }
