@@ -148,8 +148,8 @@
         "The Step 3 parenthetical reads 'specs: 39 checks, backlog: 29 checks, impl: 25 checks'",
         "python3 scripts/check-spec-purity.py passes — body at 298 lines, zero net new lines"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-11T23:38:42.013Z",
       "dependsOn": [
         "005"
       ],
