@@ -18,7 +18,7 @@
       "status": "passed",
       "verifiedAt": "2026-08-11T00:47:03Z",
       "verifiedStageVersion": 1,
-      "commitHash": null
+      "commitHash": "906a361a607337026730ae974cd0ba61b529efe1"
     }
   },
   "currentStage": "forge-1-prd",
