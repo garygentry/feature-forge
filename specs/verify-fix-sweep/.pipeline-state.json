@@ -82,7 +82,7 @@
       "artifacts": [
         "backlog.json"
       ],
-      "commitHash": null
+      "commitHash": "3be327b"
     }
   },
   "currentStage": "forge-4-backlog",
