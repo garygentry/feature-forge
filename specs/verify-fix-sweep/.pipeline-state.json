@@ -68,9 +68,24 @@
       "verifiedAt": "2026-08-11T16:23:56Z",
       "verifiedStageVersion": 1,
       "commitHash": "ef902865230bac708bac99cc9e331b7b7a44d264"
+    },
+    "forge-4-backlog": {
+      "status": "complete",
+      "startedAt": "2026-08-11T17:00:09Z",
+      "completedAt": "2026-08-11T17:10:28Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-1-prd": 1,
+        "forge-2-tech": 1,
+        "forge-3-specs": 1
+      },
+      "artifacts": [
+        "backlog.json"
+      ],
+      "commitHash": null
     }
   },
-  "currentStage": "forge-3-specs",
-  "updatedAt": "2026-08-11T16:24:07Z",
+  "currentStage": "forge-4-backlog",
+  "updatedAt": "2026-08-11T17:10:28Z",
   "branch": "forge/verify-fix-sweep"
 }
