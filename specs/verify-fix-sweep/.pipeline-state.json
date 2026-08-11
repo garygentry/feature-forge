@@ -38,10 +38,10 @@
       "findingsFile": ".verification/VERIFY-tech-2026-08-10.md",
       "findingsCount": 10,
       "fixedAt": "2026-08-11T03:01:05Z",
-      "commitHash": null
+      "commitHash": "37628d40f8325b54afe77544ddf2946e3042b895"
     }
   },
   "currentStage": "forge-2-tech",
-  "updatedAt": "2026-08-11T03:01:05Z",
+  "updatedAt": "2026-08-11T03:01:12Z",
   "branch": "forge/verify-fix-sweep"
 }
