@@ -81,7 +81,7 @@ there; it has already run and closed out in Step 4 by the time Step 6 is reached
 |---|---|---|
 | A (Step 2) | `3. Check for a ` `` `## Fix Progress` `` ` section at the bottom of the findings document — if present, some steps were already applied in a previous interrupted run` | the `## Step 3: Handle User Decisions` heading |
 | B (Step 4) | `The evidence — what was probed, how, with what result — belongs in the findings document's ` `` `## Fix Progress` `` ` entry (and the commit message), which are the sanctioned records for acceptance evidence.` (the last sentence of the anti-churn paragraph) | the `## Step 5: Record the Fixes Through ` `` `state-verify` `` ` and Commit` heading |
-| C (Step 5) | `That is Commit 1, and the write above already recorded ` `` `commitHash: null` `` ` for it.` (the last sentence of the Git Commit Protocol paragraph) | the `**Two-commit provenance — never ` `` `--amend` `` `.**` paragraph |
+| C (Step 5) | the closing ```` ``` ```` of Step 5's `state-verify` fence | the `Then follow the Git Commit Protocol in ` `` `references/shared-conventions.md` `` `.` paragraph |
 
 Each insertion is separated from its neighbours by one blank line (already counted in the
 line budgets in §7).
@@ -89,16 +89,20 @@ line budgets in §7).
 **Placement notes that matter mechanically:**
 
 - Block A's fenced invocation sits at the **left margin**, not indented under the list item.
-  `scripts/check-spec-purity.py` rule 6 requires an `^R=` assignment anchored at column 0
-  inside every runnable shell fence; an indented prelude would fail that rule with
-  `unbound $R`. The existing Step 5 fences are at the margin for the same reason — match them.
+  Two `scripts/check-spec-purity.py` rules bind: rule 6 requires an `^R=` assignment anchored
+  at column 0 inside every runnable shell fence (shell variables do not survive across
+  fences), and rule 5 pins the prelude byte-identical to canon — an indented fence is not
+  even recognized by rule 6's column-0 fence scanner, and its indented second prelude line
+  trips rule 5 as `bootstrap prelude not byte-identical to canon`. The existing Step 5
+  fences are at the margin for the same reason — match them.
 - Block B goes **after** the anti-churn paragraph so the sweep is literally the last thing
   Step 4 says, matching "closing sub-steps" (tech-spec §3.6). It is prose, not a numbered
   item: Step 4's list is *per fix step* ("For each step in the 'Execution Steps' section, in
   order:") and the sweep runs **once**, after the last one.
-- Block C goes **after** the Git Commit Protocol paragraph and **before** the two-commit
-  provenance paragraph, so it reads as a qualifier on Commit 1's staging rather than
-  displacing the protocol reference.
+- Block C goes **before** the Git Commit Protocol paragraph, so the enumerated staging is
+  read before the stage-and-commit instruction it qualifies — an agent executing Step 5
+  linearly must see "stage the disposition-edited paths" before it reaches the sentence
+  that stages and commits.
 
 ## 3. Block A — Step 2 Plan-Coverage Gate (REQ-CARD-01)
 
@@ -164,9 +168,14 @@ defaults (`00-core-definitions.md` §5.2 — unconditional `.verification`, cond
 both this repository and a consumer repository. `--exclude` and `--min-chars` remain
 operator escape hatches, deliberately **not advertised in skill prose** (tech-spec §3.6, §5).
 
-**Exit 1 is normal.** A survivor-bearing sweep exits 1 by the standalone-script convention
-(`00-core-definitions.md` §6.3). The prose says so out loud because an agent that reads a
-non-zero exit as a tool failure would close `failed` on a working sweep.
+**Exit 1 is normal — when a payload came with it.** A survivor-bearing sweep exits 1 by
+the standalone-script convention (`00-core-definitions.md` §6.3). The prose says so out
+loud because an agent that reads a non-zero exit as a tool failure would close `failed` on
+a working sweep. The discriminator: exit 1 **with** a parseable JSON payload on stdout is
+the sweep working; exit 1 with **no** JSON object on stdout is a crash, not a finding —
+treat it as a tool failure, surface the stderr traceback, and close `failed`
+(`02-fix-sweep-script.md` §6; the "never partial" invariant makes the payload's presence a
+sound discriminator).
 
 ### 4.2 The sweep record (REQ-SWEEP-05)
 
@@ -190,10 +199,15 @@ option's description.
 A `FIXED` disposition edits files, and those edits join the same `git diff HEAD` delta — so a
 second sweep sees their removed lines as new needles. The prose therefore requires **one**
 re-run when (and only when) a disposition edited files, appends a **second** `- Sweep:`
-block, and matches already-dispositioned hits by `(file, matched text)` so they are not
-re-dispositioned. It caps the loop at one re-run explicitly: without that cap, a fix that
-rewrites a sentence can generate a fresh needle on every pass and never converge — the same
-divergence hazard R-06 addresses for the re-verify.
+block, and matches already-dispositioned hits by `(file, matched text)`. That suppression is
+**disposition-aware**: a re-run hit whose first-block disposition was `JUSTIFIED` or
+`FALSE-POSITIVE` legitimately re-appears and needs no second disposition. A re-run hit whose
+first-block disposition was **`FIXED` is a failed fix**, not an already-handled hit — the
+edit did not remove every occurrence. Re-disposition it: correct it now (still within the
+single re-run) or close `failed`; never leave it recorded as `FIXED`. The loop is capped at
+one re-run explicitly: without that cap, a fix that rewrites a sentence can generate a fresh
+needle on every pass and never converge — the same divergence hazard R-06 addresses for the
+re-verify.
 
 ### 4.5 Skip is visible (REQ-SWEEP-07)
 
@@ -225,7 +239,7 @@ python3 "$R/scripts/fix-sweep.py" sweep --json
 
 Detection is mechanical; disposition is judgment — a hit is a candidate, not automatically a defect. When you cannot classify a hit confidently, route that hit through `AskUserQuestion` following the same **Decision Support** protocol as Step 3: lead with a recommended disposition and put the trade-off in each option's description. A survivor left awaiting a user decision closes with `decisions` in Step 7; a survivor you can neither fix nor justify closes with `failed`; a fully dispositioned sweep leaves this pass on whatever outcome it otherwise maps to.
 
-**Re-run the sweep once when a disposition edited files.** Those edits joined the same delta, so run the same command again to confirm they introduced no fresh survivors, and append a second `- Sweep:` block for the re-run. A hit already dispositioned above — same file, same matched text — needs no second disposition; only a genuinely new hit does. One re-run is enough: do not loop.
+**Re-run the sweep once when a disposition edited files.** Those edits joined the same delta, so run the same command again to confirm they introduced no fresh survivors, and append a second `- Sweep:` block for the re-run. A hit already dispositioned `JUSTIFIED` or `FALSE-POSITIVE` — same file, same matched text — legitimately re-appears and needs no second disposition. A re-appearing hit that was dispositioned `FIXED` means the fix did not remove every occurrence: re-disposition it — correct it now, or close with `failed` — never leave it recorded as `FIXED`. One re-run is enough: do not loop. Exit 1 with no JSON payload on stdout is a crash, not survivors — surface the stderr traceback and close with `failed`.
 
 **The sweep is never silent.** When the payload reports `"skipped": true` (exit 0 — no delta was available), append the visible notice `- Sweep: NOT RUN — no git delta ({reason})` under `## Fix Progress`, using the payload's `reason` verbatim, and continue on this pass's normal outcome. A skip is not a failure; exit 2 is — surface its `Error:` line verbatim and close with `failed`.
 ````
@@ -240,7 +254,9 @@ Detection is mechanical; disposition is judgment — a hit is a candidate, not a
 | A survivor is neither fixable nor justifiable | exit 1 | Record what was attempted in `## Fix Progress` | `failed` |
 | No git delta available | exit 0, `skipped: true`, `reason` set | Append `- Sweep: NOT RUN — no git delta ({reason})` | (unchanged) |
 | Git failure inside a valid repo, bad flags | exit 2, `Error: …` on stderr | Surface the line verbatim | `failed` |
+| Exit 1 with **no** JSON payload on stdout | crash (unexpected exception) | Surface the stderr traceback; not survivors | `failed` |
 | Re-run after `FIXED` edits reports a fresh survivor | exit 1 on the second run | Disposition the new hit in the second `- Sweep:` block; do not start a third round | per the rows above |
+| Re-run re-reports a hit dispositioned `FIXED` | exit 1 on the second run | The fix did not land: correct it now, or record the attempt and stop | `failed` if still surviving |
 
 ## 5. Block C — Step 5 Enumerated Disposition Staging (REQ-SWEEP-05)
 
@@ -314,8 +330,9 @@ trailing blank excluded).
 | | **Total added** | **33** |
 
 **Projected: 167 / 300 body lines** — 133 lines of headroom. Words added are approximately
-**+600** (the paragraphs are long unwrapped lines, the repo's SKILL.md idiom), projecting
-**≈3,540 / 5,000 body words**.
+**+680** (the paragraphs are long unwrapped lines, the repo's SKILL.md idiom; the
+disposition-aware re-run and crash-discriminator clauses extend existing lines without
+adding any), projecting **≈3,620 / 5,000 body words**.
 
 Two budget notes:
 

@@ -26,6 +26,8 @@
 | REQ-SWEEP-07 | Skip is visible, never silent | §6.1 (skip shape), §7.2 (NOT-RUN notice) |
 | REQ-CARD-01 | Plan-coverage assertion, omissions named | §6.2, §7.1 |
 | REQ-CARD-04 | Graceful degradation to not-applicable | §6.2 (`applicable: false`) |
+| REQ-CARD-02 | Backlog-mode cardinality CHECK id/severity | §9 |
+| REQ-CARD-03 | Impl-mode cardinality CHECK id/severity | §9 |
 | REQ-CONS-01 | Internal-consistency CHECK IDs | §9 |
 | REQ-PERF-01 | Cost model bound to single corpus pass | §5.3 (blob model) |
 | REQ-OBS-01 | Hits name file, location, matched text | §6.1 (hit model) |
@@ -34,8 +36,10 @@
 
 ## 1. Scope and Conventions
 
-Python 3.10+, **standard library only** (C-3): `argparse`, `subprocess`, `json`, `re`,
-`pathlib`, `sys`, `datetime`. No third-party imports; `tests/` may import `pytest` only.
+Python 3.10+, **standard library only** (C-3): `argparse`, `bisect`, `json`, `re`,
+`subprocess`, `sys`, `pathlib`, `typing`. No third-party imports; `tests/` may import
+`pytest` only. `datetime` is deliberately absent: dates appear only in the sweep
+record, which the agent writes (§7.2).
 
 Project conventions this feature follows without deviation (established by
 `scripts/validate-traceability.py` and `scripts/check-spec-purity.py`):
@@ -141,7 +145,7 @@ Needles are the `-`-prefixed lines of the fix delta (excluding `---` file header
 parsed from `git diff HEAD --unified=0 --no-color`. `--unified=0` makes hunk headers
 (`@@ -a,b +c,d @@`) delimit exactly the changed runs, so a-side line numbers are
 computable without context-line bookkeeping. Parse contract detail:
-`02-fix-sweep-script.md` §3.
+`02-fix-sweep-script.md` §4.2.
 
 ### 4.3 Filters (applied in order, both counted in `droppedNeedles`)
 
@@ -166,17 +170,18 @@ MIN_NEEDLE_CHARS: Final[int] = 24
 Duplicate needles (identical `normalized` from different removed sites) are **kept
 distinct** — each carries its own `file`/`line` provenance, and a corpus hit reports
 the first extracted needle matching it (deterministic by extraction order; see
-`02-fix-sweep-script.md` §5).
+`02-fix-sweep-script.md` §4.6).
 
 ## 5. Corpus Model (REQ-SWEEP-03)
 
 ### 5.1 Path enumeration
 
 ```
-git ls-files --cached --others --exclude-standard
+git ls-files -z --cached --others --exclude-standard
 ```
 
-Tracked files **plus** untracked, non-ignored files — so a surviving claim in a file
+(`-z` so paths containing spaces, quotes, or newlines survive intact; no quoting mode
+can mangle them.) Tracked files **plus** untracked, non-ignored files — so a surviving claim in a file
 the fix pass itself just created is caught, while `.gitignore` keeps build noise out.
 
 ### 5.2 Exclusions
@@ -207,7 +212,8 @@ Exclusion rules, in evaluation order per path:
    until it is regenerated.
 3. Paths starting with any operator-supplied `--exclude <path-prefix>` (repeatable) —
    the consumer-repo escape hatch for their own drift-gated trees. Prefix match is
-   against the repo-relative POSIX path string.
+   against the repo-relative POSIX path string; an empty or whitespace-only prefix
+   is rejected (exit 2), never applied.
 
 **No pre-exclusion of historical corpora** (prior features' `specs/`, `CHANGELOG.md`,
 `STATUS.md`): the F-5 sibling survivor lived in a spec artifact, so recall wins; hits
@@ -233,7 +239,7 @@ class NormalizedFile(TypedDict):
             a match offset back to the 1-based line number in the ORIGINAL file.
             Concretely: a sorted list of (blob_offset, original_line) pairs; the
             match's line is the last pair whose blob_offset <= match offset
-            (bisect). Construction detail: 02-fix-sweep-script.md §4.
+            (bisect). Construction detail: 02-fix-sweep-script.md §4.5.
     """
 
     path: str
@@ -283,7 +289,18 @@ class SweepHit(TypedDict):
 
 
 class DroppedNeedles(TypedDict):
-    """Filter counters for the milestone-2 evidence archive (tech-spec §10)."""
+    """Filter counters for the milestone-2 evidence archive (tech-spec §10).
+
+    Keys:
+        belowFloor: Count of raw needles dropped because normalize(original) was
+            shorter than MIN_NEEDLE_CHARS (§4.3 filter 1). A needle counted here
+            is never tested for reflow.
+        reflowSuppressed: Count of raw needles dropped because their normalized
+            text appears in the delta's normalized added text (§4.3 filter 2).
+
+    Invariant: belowFloor + reflowSuppressed + len(needles) equals the raw
+    removed-line count extracted from the delta.
+    """
 
     belowFloor: int
     reflowSuppressed: int
@@ -402,11 +419,13 @@ Appended under `## Fix Progress` — the forge-fix-owned section the template do
 define — in the same section as the `[APPLIED]` step lines (REQ-SWEEP-05):
 
 ```
-- Sweep: {YYYY-MM-DD} — {K} needle(s), {N} survivor(s), {M} disposition(s)
-  - {file}:{line} — "{matched removed text}" → FIXED {YYYY-MM-DD}
+- Sweep: {date} — {K} needle(s), {N} survivor(s), {M} disposition(s)
+  - {file}:{line} — "{matched removed text}" → FIXED {date}
   - {file}:{line} — "{matched removed text}" → JUSTIFIED: {reason}
   - {file}:{line} — "{matched removed text}" → FALSE-POSITIVE: {reason}
 ```
+
+(`{date}` is ISO `YYYY-MM-DD`.)
 
 Or, when the payload is the skip shape (REQ-SWEEP-07):
 
@@ -484,20 +503,26 @@ class UsageError(Exception):
     """A caller/environment error that maps to exit 2.
 
     Raised for: an unreadable findings document, a git invocation that fails
-    inside a valid repository (timeout, non-zero exit on diff/ls-files), or
-    invalid flag combinations. The message is printed as `Error: {msg}` on
-    stderr; stdout stays empty (exit-2 convention, §6.3).
+    inside a valid repository (timeout, non-zero exit on diff/ls-files), a
+    repository with no working tree (a bare repo: `rev-parse --git-dir`
+    succeeds while `rev-parse --show-toplevel` fails), or invalid flag
+    combinations. The message is printed as `Error: {msg}` on stderr; stdout
+    stays empty (exit-2 convention, §6.3).
     """
 ```
 
 Classification rules (tech-spec §7):
 
 - `git rev-parse --git-dir` fails → **skip shape** (`reason: "not-a-git-repo"`), exit 0.
+- `git rev-parse --show-toplevel` fails in a valid repo (bare repository, no working
+  tree) → `UsageError`, exit 2.
 - `git rev-parse HEAD` fails in a valid repo (unborn branch) → **skip shape**
   (`reason: "no-head"`), exit 0.
 - Any *other* git failure (diff/ls-files non-zero, timeout) → `UsageError`, exit 2 —
   an operational failure, not a skip; forge-fix closes `failed`.
 - Undecodable corpus file → silently skipped, excluded from `filesScanned`.
+- Corpus file unreadable, vanished, or a directory entry (`OSError`) → silently
+  skipped, excluded from `filesScanned`.
 - Malformed findings document (no recognizable sections) → `applicable: false`,
   exit 0; unreadable path → `UsageError`, exit 2.
 

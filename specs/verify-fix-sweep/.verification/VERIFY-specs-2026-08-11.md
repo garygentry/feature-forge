@@ -244,10 +244,10 @@ Run shape: five parallel clean-room verifier instances (types/contracts S09–S1
 ## Fix Execution Plan
 
 ### User Decisions Required
-- **D1 (V-011)** — canonical date placeholder: align 00 §7.2 to `{date}` + "(ISO `YYYY-MM-DD`)" *(recommended: one-file edit, matches tech-spec §4.3 and shipped prose)*, or align 03's paste block to `{YYYY-MM-DD}`.
-- **D2 (V-027)** — Block C placement: move the anchor before the Git Commit Protocol paragraph *(recommended: fixes ordering at the source)*, or keep the anchor and lead the paste block with the ordering constraint.
-- **D3 (V-002)** — Runnability-guard remedy: heading-terminate the test slices *(recommended: keeps 04's end-of-file placement, touches only test specs)*, or move the new impl sections before `### Runnability` for byte-identical slices.
-- V-022's guard is pre-resolved by the `--min-chars` precedent; decline by recording a decision on V-022 rather than editing.
+- **D1 (V-011)** — RESOLVED 2026-08-11: `{date}` everywhere — align 00 §7.2 to `{date}` + "(ISO `YYYY-MM-DD`)"; matches tech-spec §4.3 and shipped prose.
+- **D2 (V-027)** — RESOLVED 2026-08-11: move Block C's anchor before the Git Commit Protocol paragraph.
+- **D3 (V-002)** — RESOLVED 2026-08-11: heading-terminate the test slices; end-of-file section placement stands.
+- V-022's guard is pre-resolved by the `--min-chars` precedent (accepted).
 
 ### Execution Steps
 
@@ -303,3 +303,10 @@ Apply in order. Each step is self-contained — a fresh agent can execute it fro
 - **Depends on:** Steps 1–6
 
 ## Fix Progress
+- Step 1: [APPLIED] 2026-08-11 — 00-core-definitions.md: stdlib list corrected (bisect/typing in, datetime out), three forward refs repointed (§4.2→02 §4.2, §4.3→02 §4.6, §5.3→02 §4.5), -z added to ls-files fence, empty-prefix rejection in §5.2 rule 3, DroppedNeedles Keys block + invariant, §7.2 {date} placeholder per D1, §10 bare-repo + corpus-OSError rows, coverage table +REQ-CARD-02/03
+- Step 2: [APPLIED] 2026-08-11 — 02-fix-sweep-script.md: §1.3 values-identical/comments-cite rule replaces "byte-aligned", §2.1 empty---exclude rejection bullet, §4.4 -z attribution reworded ("with -z added here"), §4.6 rationale softened to conditional + failed-FIXED pointer, §6 table gains three pinned exit-2 message shapes + --exclude row + unexpected-exception row, §10 grid mirrors the message shapes + bare-repo/--exclude rows
+- Step 3: [APPLIED] 2026-08-11 — 03-forge-fix-integration.md: §4.4 + §4.6 paste block + §4.7 gain the disposition-aware re-run rule (FIXED re-report = failed fix; JUSTIFIED/FALSE-POSITIVE re-appear legitimately) and the exit-1 payload discriminator (also §4.1); §2 placement bullet corrected to cite rules 5 AND 6 with the real failure modes; Block C anchor moved before the Git Commit Protocol paragraph per D2 (anchor map row C + third placement note rewritten); §7 word projection updated, line total unchanged at 33
+- Step 4: [APPLIED] 2026-08-11 — 04-verification-checks.md: §1 "five" → "four (+ build_adapters on the other chain)", §8 Consumed-by "five" → "four", §5.2 "Two comments" → "Three comments" adding test_lifecycle_artifact_check.py + D3 heading-termination note, §4.3a line-width sentence corrected (81 changed / 83 untouched)
+- Step 5: [APPLIED] 2026-08-11 — 01-architecture-layout.md: coverage table ids spelled out, §1 item 1 "(tech-spec §6, item 8)", §1 workstream 3 "four pinned tests (rows 10–13)", §3 graph re-parents row 8 above row 3 + explicit prerequisite sentence, §4.2 two fences w/ 33-line projection, §7 checkbox de-duplicates the adapters row
+- Step 6: [APPLIED] 2026-08-11 — 05-testing-strategy.md: header count corrected (five + one no-edit), §2.1 +GIT_UNAVAILABLE/GIT_TIMEOUT_SECONDS, new §2.5.1 four git-classification tests, §2.6 exact excludes lists + empty---exclude exit-2 case, §2.11 +`by name` literal + failed-FIXED clause guard + Step-6 byte-identity guard + stage-exit-protocol-untouched guard + cross-mode paragraph converted to a §3 reference, §3 rows rewritten per D3 (heading-terminated slices) / lifecycle comment refresh / build-adapters rename+docstring+regen requirement, §4 classification-coverage bullet, §5 milestone-acceptance bullet, §6 regen gate line + "not done done" close, §8 checkboxes corrected
+- Step 7: [APPLIED] 2026-08-11 — TRACEABILITY.md: delta #1 attribution fixed ("tech-spec §3.6"), delta #4 added (claimed totals = Total findings: N only; tech-spec §3.5 parenthetical = V-103 residual); validate-traceability re-run: 16/16 covered, 0 orphans, 01 now carries REQ-SWEEP-01..07 + REQ-CARD-02/03

@@ -13,9 +13,9 @@
 
 | REQ ID | Requirement | Section |
 |---|---|---|
-| REQ-SWEEP-01..07 | Sweep tool + fix-pass integration exist and are wired | §1, §2 (inventory rows 1–3), §3 |
+| REQ-SWEEP-01, REQ-SWEEP-02, REQ-SWEEP-03, REQ-SWEEP-04, REQ-SWEEP-05, REQ-SWEEP-06, REQ-SWEEP-07 | Sweep tool + fix-pass integration exist and are wired | §1, §2 (inventory rows 1–3), §3 |
 | REQ-CARD-01 | plan-coverage subcommand ships in the same script | §1, §2 row 1 |
-| REQ-CARD-02/03, REQ-CONS-01 | CHECKs land in checklist files + SKILL totals | §2 rows 4–8, §4 |
+| REQ-CARD-02, REQ-CARD-03, REQ-CONS-01 | CHECKs land in checklist files + SKILL totals | §2 rows 4–8, §4 |
 | REQ-PERF-01 | Single-process stdlib script, no services | §1 |
 | REQ-CONC-01 | No new writers; script is read-only | §1 |
 | (C-3) | stdlib-only, ships in `scripts/` | §1, §5 |
@@ -32,7 +32,7 @@ Three workstreams, all deterministic and model-free (C-2):
    `forge-session.py` verb (tech-spec §3.1: exit-convention mismatch, mega-file
    growth) and deliberately does not import from `forge-session.py` — it carries its
    own ~10-line bounded-subprocess git helper following the same conventions
-   (tech-spec §6.8).
+   (tech-spec §6, item 8).
 2. **forge-fix integration** — prose additions to Steps 2, 4, and 5 of
    `skills/forge-fix/SKILL.md`. **No step renumbering**: existing Steps 1–7 keep
    their numbers, so internal cross-references and
@@ -40,7 +40,8 @@ Three workstreams, all deterministic and model-free (C-2):
    valid.
 3. **Verification CHECKs** — four checklist entries (CHECK-B29/I24/I25/S39) in the
    uncapped checklist reference files, zero-net-new-line numeric/ownership edits to
-   `skills/forge-verify/SKILL.md`, and six pinned tests updated in lockstep.
+   `skills/forge-verify/SKILL.md`, and four pinned tests updated in lockstep
+   (§2 rows 10–13).
 
 ## 2. File Inventory (authoritative)
 
@@ -75,12 +76,11 @@ scripts/fix-sweep.py  (row 1)          ← no dependencies; build first
     │
     ├─→ tests/test_fix_sweep.py behavior tests (row 2)
     │
-    ├─→ skills/forge-fix/SKILL.md integration (row 3)
-    │       └─→ prose guards in test_fix_sweep.py (row 2)
-    │
-    └─→ scripts/build-adapters.py RUNTIME_HELPERS (row 8)
-            └─→ tests/test_build_adapters.py pin 6→7 (row 9)
-                    └─→ adapters/** regen (row 15)
+    └─→ scripts/build-adapters.py RUNTIME_HELPERS (row 8)   ← prerequisite of row 3
+            ├─→ tests/test_build_adapters.py pin 6→7 (row 9)
+            │       └─→ adapters/** regen (row 15)
+            └─→ skills/forge-fix/SKILL.md integration (row 3)
+                    └─→ prose guards in test_fix_sweep.py (row 2)
 
 checklist files (rows 5–7)  ← independent of the script; can build in parallel
     └─→ skills/forge-verify/SKILL.md totals+tags (row 4)
@@ -89,6 +89,9 @@ checklist files (rows 5–7)  ← independent of the script; can build in parall
 
 CHANGELOG.md (row 14)  ← last, summarizes the change
 ```
+
+Row 8 precedes row 3: without `"fix-sweep.py"` in `RUNTIME_HELPERS`, both fenced
+invocations fail on every non-Claude adapter (`03-forge-fix-integration.md` §8).
 
 Two independent chains join only at the single `adapters/**` regeneration — run
 `build-adapters.py` **once, after all canon edits land**, so the drift gate
@@ -120,9 +123,11 @@ Exact replacement strings: `04-verification-checks.md` §4.
 
 ### 4.2 `skills/forge-fix/SKILL.md` — 134/300 body lines
 
-Additions of ~25–35 lines (including one fenced invocation block with the standard
-plugin-root prelude) land inside existing Steps 2, 4, and 5 — comfortably under the
-cap. `scripts/check-spec-purity.py` measures the body (fenced code counts); CI's
+Additions of ~25–35 lines (including **two** fenced invocation blocks, one per
+subcommand — `check-spec-purity.py` rule 6 requires each shell fence to bind `$R`
+in-fence, so the prelude cannot be shared across steps; projected 33 lines, see
+`03-forge-fix-integration.md` §7) land inside existing Steps 2, 4, and 5 —
+comfortably under the cap. `scripts/check-spec-purity.py` measures the body (fenced code counts); CI's
 Quality Gate runs it, plain pytest does not — check locally. Exact prose:
 `03-forge-fix-integration.md`.
 
@@ -196,8 +201,8 @@ document in this suite (PRD Success Criteria).
 
 ## 7. Verification
 
-- [ ] `git status` after implementation shows changes to exactly the 15 inventory
-      rows (plus regenerated `adapters/**`).
+- [ ] `git status` after implementation shows changes to exactly the §2 inventory:
+      rows 1–14 plus row 15's regenerated `adapters/**` — nothing else.
 - [ ] `references/stage-exit-protocol.md`, `findings-template.md`,
       `forge-session.py`, and both schemas are untouched (C-1/C-6).
 - [ ] `grep -c "fix-sweep.py" scripts/build-adapters.py` ≥ 1; every

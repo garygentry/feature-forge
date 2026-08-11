@@ -2,7 +2,8 @@
 
 > How `verify-fix-sweep` is tested: one new test file (`tests/test_fix_sweep.py`)
 > covering the script's behavior plus prose guards over the skill/checklist edits, and
-> six existing pinned tests updated in lockstep with the checklist-count changes. All
+> five existing pinned tests updated in lockstep with the checklist-count changes (a
+> sixth file is listed in §3 as needing no edit). All
 > tests are pytest + stdlib — `jsonschema` is absent in CI, so a bare
 > `python3 -m pytest tests` must run everything here.
 >
@@ -81,7 +82,8 @@ Organized in the order below; each subsection is a commented section of the file
 Module loads via importlib; the 00-anchored constants exist with canonical values
 (`MIN_NEEDLE_CHARS == 24`, `VERIFICATION_SEGMENT == ".verification"`,
 `DRIFT_GATED_PREFIX == "adapters/"`, `DRIFT_GATE_SENTINEL ==
-"scripts/build-adapters.py"`); `UsageError` is defined and maps to exit 2.
+"scripts/build-adapters.py"`, `GIT_UNAVAILABLE == -1`, and `GIT_TIMEOUT_SECONDS`
+present); `UsageError` is defined and maps to exit 2.
 
 ### 2.2 F-5 regression fixture (PRD Success Criteria — the headline test)
 
@@ -135,14 +137,36 @@ Floor: a removed line normalizing to 23 chars yields no needle (`belowFloor` cou
 - A fresh `git init` with no commit (unborn HEAD) → `reason: "no-head"`, exit **0**.
 - Both payloads carry empty `needles`/`hits`, `baseline: null` (00 §6.1 skip shape).
 
+### 2.5.1 Git-failure classification (00 §10, 02 §3)
+
+The branch that justifies the feature's only code duplication (02 §3's WARNING: the
+skip-vs-failure distinction `_git_output` cannot make). Four tests covering the
+classification rows §2.5 does not:
+
+- `run_git(["rev-parse", "--git-dir"], tmp_path)` on a non-repo returns a non-zero
+  code — never an exception.
+- With `monkeypatch.setenv("PATH", "")` (no `git` resolvable), `run_git` returns
+  `GIT_UNAVAILABLE`, **and** a full `sweep` from a non-repo directory still emits the
+  skip shape with exit 0.
+- A bare repository (`git init --bare`) → exit **2**, empty stdout, one
+  `Error: repository has no working tree (bare repo): …` line on stderr.
+- Monkeypatched `run_git` returning non-zero for `ls-files` inside a valid repo →
+  `UsageError` → exit **2**, empty stdout.
+
+Together with §2.5, every row of 02 §3's five-row classification table is covered.
+
 ### 2.6 Corpus boundaries (REQ-SWEEP-03)
 
 - An **untracked, non-ignored** file carrying the claim is reported (`ls-files
   --others` inclusion); a `.gitignore`d file is not.
 - A repo whose `adapters/` has **no** `scripts/build-adapters.py` → `adapters/` **is**
-  swept (conditional default); with the sentinel present → excluded, and `excludes`
-  in the payload records what was applied.
+  swept (conditional default); with the sentinel present → excluded. The payload's
+  `excludes` is asserted **exactly**: gate present + `--exclude docs/` →
+  `[".verification/", "adapters/", "docs/"]` (00 §6.1's stated order); no gate, no
+  flag → `[".verification/"]`.
 - `--exclude docs/` drops `docs/` hits; prefix match is repo-relative.
+- `--exclude ""` exits **2** with an `Error:` line — an empty prefix must never be
+  applied (02 §2.1; it would silently empty the corpus).
 - A non-UTF-8 binary file is skipped silently, not counted in `filesScanned`, never
   fatal.
 
@@ -209,10 +233,18 @@ Guards over `skills/forge-fix/SKILL.md` (literals guaranteed by
   (REQ-SWEEP-04);
 - contains the enumerated-staging prose: `git add <path>` present, with `git add -A`
   and `git add .` appearing only in a prohibitive clause (REQ-SWEEP-05);
+- contains the disposition-aware re-run clause: the literal `never leave it recorded
+  as` (the failed-`FIXED` rule, 03 §4.4/§4.6);
 - contains **no** `--exclude` and **no** `--min-chars` (operator escape hatches stay
   out of skill prose);
 - Step 7's outcome table still holds exactly the seven existing `--outcome` values
-  (C-6) and headings `## Step 1:` … `## Step 7:` survive (C-1, no renumbering).
+  (C-6) and headings `## Step 1:` … `## Step 7:` survive (C-1, no renumbering);
+- `## Step 6: Re-verify Gate` through the next `## ` heading is **byte-identical** to
+  the pinned pre-change text — stored as a module constant in `tests/test_fix_sweep.py`
+  captured from `skills/forge-fix/SKILL.md` before the edit (C-1: heading survival
+  alone does not detect a body edit);
+- `references/stage-exit-protocol.md` is untouched by this feature and still contains
+  the literal `` `skills/forge-fix/SKILL.md` Step 6`` citation.
 
 Guards over the checklist files and `skills/forge-verify/SKILL.md` (literals
 guaranteed by `04-verification-checks.md` §5.3):
@@ -222,17 +254,17 @@ guaranteed by `04-verification-checks.md` §5.3):
   `### Internal Consistency`) is present with its degradation clause
   (`not-applicable`; `never a hard fail` for B29/I24) and severity literal
   (`` `gap` `` for B29/I24; `` `inconsistency` ``/`` `error` `` + `decision-bearing`
-  for I25/S39), plus `Report, do not repair` and the `(#170)` citation;
+  for I25/S39), plus `by name` (B29/I24 — the named-omissions property),
+  `Report, do not repair`, and the `(#170)` citation;
 - each new CHECK id appears in its owning dimension-group bullet in
   `VERIFY_SKILL` (`(owns CHECK-B29)`, `(owns CHECK-I24/I25)`, `(owns CHECK-S39)`) —
   reachability, 04 §4.3;
 - `build-adapters.py`'s `RUNTIME_HELPERS` contains `"fix-sweep.py"` (distribution,
   01 §5.1).
 
-**No I25↔S39 cross-reference:** `test_no_cross_mode_leakage` (regex
-`CHECK-{letter}\d\d` over each whole mode file) forbids the near-duplicate entries
-from citing each other; the relationship lives in `04-verification-checks.md` only.
-Do not "helpfully" add the cross-reference.
+(The I25↔S39 no-cross-reference rule is enforced by an **existing** test — see the
+`test_verification_checklists_split.py` row in §3; nothing about it is authored in
+`tests/test_fix_sweep.py`.)
 
 ## 3. Existing Pinned Tests — Lockstep Edits (six files)
 
@@ -243,11 +275,11 @@ against the files, so a missed edit fails CI twice.
 
 | File | Edit |
 |---|---|
-| `tests/test_verification_checklists_split.py` | `EXPECTED` rows: `"specs": ("S", 38)` → `39`, `"backlog": ("B", 28)` → `29`, `"impl": ("I", 23)` → `25`; inventory total `131` → `135` (both the assertion and its comment, in `test_split_preserves_the_full_check_inventory`) |
-| `tests/test_dev_runtime_smoke.py` | `"impl: 23 checks"` → `"impl: 25 checks"`, `"impl 23"` → `"impl 25"`; **refresh the stale comment** claiming `### Runnability` is impl.md's last section (it no longer is — end-of-file placement per 04 §5.2; the membership assertions themselves stay green) |
-| `tests/test_smoke_command.py` | same two literal bumps + same comment refresh |
-| `tests/test_lifecycle_artifact_check.py` | `"backlog: 28 checks"` → `"backlog: 29 checks"`, `"backlog 28"` → `"backlog 29"` |
-| `tests/test_build_adapters.py` | `len(mod.RUNTIME_HELPERS) == 6` → `7` (both the `len` and the `len(set(...))` de-dup assertion) |
+| `tests/test_verification_checklists_split.py` | `EXPECTED` rows: `"specs": ("S", 38)` → `39`, `"backlog": ("B", 28)` → `29`, `"impl": ("I", 23)` → `25`; inventory total `131` → `135` (both the assertion and its comment, in `test_split_preserves_the_full_check_inventory`). Note: its existing `test_no_cross_mode_leakage` (parametrized per mode; asserts a mode file matches only its own letter's `CHECK-{letter}\d\d` ids) is what forbids CHECK-I25 and CHECK-S39 from citing each other — no new test is written for that, and no cross-reference may be "helpfully" added (04 §5.1) |
+| `tests/test_dev_runtime_smoke.py` | `"impl: 23 checks"` → `"impl: 25 checks"`, `"impl 23"` → `"impl 25"`; **heading-terminate the Runnability slice** (D3): `_runnability()` becomes `text.split("### Runnability", 1)[1].split("\n### ", 1)[0]`, and `test_i23_present_and_advisory`'s `**CHECK-I23**` sub-slice is terminated the same way — impl.md gains sections after `### Runnability`, and an end-of-file slice would let CHECK-I24's `not-applicable`/`never a hard fail` literals satisfy the I21/I22 degradation assertions (V-002). Update the stale "last section" comment to state the slice is heading-terminated |
+| `tests/test_smoke_command.py` | same two literal bumps + the same heading-termination of the slice in `test_runnability_checks_degrade_gracefully()` + same comment update |
+| `tests/test_lifecycle_artifact_check.py` | `"backlog: 28 checks"` → `"backlog: 29 checks"`, `"backlog 28"` → `"backlog 29"`; **refresh the stale comment** at lines 31–32 claiming `backlog.md` ends with `### Artifact Lifecycle Consistency` (it no longer does — `### Work-Order Cardinality` is appended per 04 §3.1; the slice's membership assertions stay green) |
+| `tests/test_build_adapters.py` | `len(mod.RUNTIME_HELPERS) == 6` → `7` (both the `len` and the `len(set(...))` de-dup assertion); **rename** `test_runtime_helpers_still_has_exactly_six_entries` → `test_runtime_helpers_has_exactly_seven_entries` and **rewrite its docstring**: `fix-sweep.py` is the seventh helper (added by #170 for the fix sweep, 01 §5.1) while `scripts/forge_json.py` remains rejected — the surviving `assert "forge_json.py" not in mod.RUNTIME_HELPERS` pins that. Grep the file for `six`/`6` near `RUNTIME_HELPERS` when applying. The tuple edit also **requires regenerating `adapters/`**: `test_no_new_file_appears_under_an_adapter_scripts_dir` asserts each committed bundle's `scripts/` equals `RUNTIME_HELPERS`, so run `python3 scripts/build-adapters.py` and commit the regenerated tree or that test fails for every target |
 | `tests/test_adapter_host_neutrality.py` | **no edit expected** — new checklist prose is written host-neutral from the start (C-5); listed here so its failure is recognized as a prose defect in 04's text, not a test to update |
 
 ## 4. Coverage Targets
@@ -255,6 +287,8 @@ against the files, so a missed edit fails CI twice.
 - `scripts/fix-sweep.py`: every public function of 02's structure exercised;
   every exit-code row of 00 §6.3 hit at least once per subcommand; both filters'
   counters observed non-zero in at least one test.
+- Every row of 02 §3's five-row git-failure classification table is discharged by a
+  named test (§2.5 + §2.5.1).
 - Prose guards: every literal in §2.11's enumerated set asserted.
 - No coverage-percentage gate is added — the repo pins behavior, not percentages.
 
@@ -267,15 +301,25 @@ against the files, so a missed edit fails CI twice.
   conduct is prose-guarded (§2.11), not simulated.
 - **The verifier CHECKs' judgment quality** (C-2): they are checklist prose; only
   their presence, degradation clauses, reachability tags, and counts are guarded.
+- **Milestone acceptance (PRD §8, not automatable):** on the first real fix pass,
+  confirm the `- Sweep:` block lands under `## Fix Progress` with exactly one
+  disposition token per hit, and that a pass run outside a git repository records the
+  NOT-RUN notice and still closes exactly once through Step 7 (03 §11 "Behavioral
+  confirmation"); archive the JSON payload as milestone-2 boundary evidence
+  (tech-spec §10). #170 is not closed until this is observed.
 
 ## 6. Full Gate (definition of done)
 
 ```
+python3 scripts/build-adapters.py       # regenerate adapters/ — RUNTIME_HELPERS gained fix-sweep.py
 python3 -m pytest tests                 # includes test_fix_sweep.py + 5 updated pins
 bash scripts/validate.sh                # incl. adapter drift (step 6b) after regen
 ruff check scripts/ eval/               # CI-only gate — run locally
 python3 scripts/check-spec-purity.py    # forge-fix ≤300 body lines; forge-verify at 298
 ```
+
+Plus the manual milestone-acceptance observation (§5) — the automated gate alone is
+not "done done".
 
 ## 7. Dependencies
 
@@ -291,5 +335,9 @@ python3 scripts/check-spec-purity.py    # forge-fix ≤300 body lines; forge-ver
 - [ ] The F-5 fixture asserts all five PRD Success-Criteria outcomes (two survivors +
       generated-file hit reported; audit copy and gated tree silent).
 - [ ] Removing any single canon edit (a CHECK entry, an ownership tag, the NOT-RUN
-      line) fails at least one guard in §2.11.
-- [ ] All six §3 edits applied; `python3 -m pytest tests` green end-to-end.
+      line) **or any CHECK-I21/I22/I23 degradation clause** fails at least one guard
+      in §2.11 or §3.
+- [ ] All five §3 edits applied (the sixth row, `tests/test_adapter_host_neutrality.py`,
+      is a deliberate no-edit row — a failure there is a host-neutrality defect in 04's
+      prose, not a test to update) and adapters regenerated;
+      `python3 -m pytest tests` green end-to-end.

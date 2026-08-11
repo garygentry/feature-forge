@@ -39,8 +39,8 @@ zero orphans) at suite completion.
 
 1. **Two fenced invocation blocks, not one** (`03-forge-fix-integration.md` §7):
    `check-spec-purity.py` requires each shell fence to bind `$R` in-fence, so Step 2
-   and Step 4 each carry a prelude. The §3.6 line-estimate *range* (25–35) still
-   holds at 33 projected lines.
+   and Step 4 each carry a prelude. The tech-spec §3.6 line-estimate *range* (25–35)
+   still holds at 33 projected lines.
 2. **Six pinned test files, not five** (`05-testing-strategy.md` §3): the tech-spec §2
    table enumerates five; `tests/test_adapter_host_neutrality.py` is listed as a
    sixth row explicitly to record that it needs **no** edit (host-neutral prose is
@@ -48,3 +48,9 @@ zero orphans) at suite completion.
 3. **Hit identity** (`02-fix-sweep-script.md`): one hit per distinct `(file, needle)`
    at first match offset — chosen to align with the `(file, needle)` re-run
    disposition matching in `00-core-definitions.md` §7.2.
+4. **Claimed totals = `Total findings: N` only** (`00-core-definitions.md` §6.2,
+   `02-fix-sweep-script.md` §5.2): `plan-coverage` re-derives `## Summary`'s
+   `Total findings: N` and nothing else, per recorded Decision 3. Tech-spec §3.5's
+   "and the per-severity counts when present" parenthetical is a tech-spec residual
+   tracked as V-103 in `.verification/VERIFY-tech-2026-08-10-round2.md` — not a
+   specs-suite gap.

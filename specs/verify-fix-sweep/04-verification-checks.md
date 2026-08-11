@@ -52,8 +52,10 @@ body, per `00-core-definitions.md` §9:
   `CHECK-I24` are the *verify-pass-level* siblings; they share the incident class but
   no code.
 - **forge-fix SKILL.md**: `03-forge-fix-integration.md`.
-- **The five pinned test files** that move in lockstep with §4's numeric edits:
-  `05-testing-strategy.md` (pointers only in §5.2 here).
+- **The four pinned test files** that move in lockstep with §4's numeric edits
+  (a fifth, `tests/test_build_adapters.py`, moves with the `RUNTIME_HELPERS` edit on
+  the other chain — `01-architecture-layout.md` §5.1): `05-testing-strategy.md`
+  (pointers only in §5.2 here).
 - **`references/stage-exit-protocol.md`** and `findings-template.md` are **untouched**
   (C-1, `01-architecture-layout.md` §2).
 
@@ -425,7 +427,8 @@ replacement so the re-wrap is unambiguous.
 ```
 
 Line 1 is untouched. Lines 2–3 absorb the tag by pulling `traceability,` up onto line 2
-(the existing wrap point was already mid-phrase). Longest resulting line: 80 characters.
+(the existing wrap point was already mid-phrase). Longest changed line: 81 characters
+(line 2); line 1 is untouched at 83.
 Net lines: **0**. Net words: **+2**.
 
 #### 4.3b backlog group — append `(owns CHECK-B29)` to group (3)
@@ -566,9 +569,14 @@ and then assert **membership only** (`"not-applicable" in …`, `"never a hard f
 `"never mid-loop" in …`, `"smokeCommand" in …`, `"non-test" in …`, plus a
 `**CHECK-I23**`-anchored sub-slice). Appending §3.2 and §3.3 after `### Runnability`
 grows that slice but cannot falsify a membership assertion, so both tests stay green
-without modification. Two comments in those files state "`### Runnability` is impl.md's
-last section" and become stale — refreshing that comment is an editorial item for
-`05-testing-strategy.md`, not a behavioral change. (Alternative, if a reviewer prefers
+without modification. Three comments state a "last section" claim that becomes stale:
+the two "`### Runnability` is impl.md's last section" comments in those files, and
+`tests/test_lifecycle_artifact_check.py`'s comment that `backlog.md` ends with
+`### Artifact Lifecycle Consistency` (its
+`text.split("### Artifact Lifecycle Consistency", 1)[1]` slice is likewise
+membership-only and stays green). Refreshing them is an editorial item for
+`05-testing-strategy.md` — and per its D3 resolution the two impl slices are also
+heading-terminated so the guards keep their bite. (Alternative, if a reviewer prefers
 the slice to stay byte-identical: insert both new impl sections *before* `### Runnability`.
 That is also legal — the contiguity test sorts ids and is indifferent to document order —
 at the cost of non-monotonic section ordering. The recommendation stands at end-of-file.)
@@ -678,7 +686,7 @@ output), and the finding names which of the two statements the evidence supports
 consistent regeneration. Do not regenerate adapters as part of this document's work in
 isolation.
 
-**Consumed by:** `05-testing-strategy.md` (prose guards over §3's literals, and the five
+**Consumed by:** `05-testing-strategy.md` (prose guards over §3's literals, and the four
 pinned-count test edits listed in §5.2).
 
 ## 9. Verification

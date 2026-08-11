@@ -102,10 +102,13 @@ which the agent writes (00 §7.2).
 
 ### 1.3 Module-level constants
 
-Constants defined by `00-core-definitions.md` are reproduced here **verbatim** (a
-standalone, import-free single-file script has no shared module to import from — the
-same reason `epic-manifest.py` and `forge-session.py` keep byte-identical copies of
-`KNOWN_VERIFY_STATUSES`). Their doc comments must stay byte-aligned with 00 §4.3/§5.2.
+Constants defined by `00-core-definitions.md` are reproduced here (a standalone,
+import-free single-file script has no shared module to import from — the same reason
+`epic-manifest.py` and `forge-session.py` keep byte-identical copies of
+`KNOWN_VERIFY_STATUSES`). The **values** are byte-identical to 00 §4.3/§5.2; the `#:`
+doc comments in this section are the ones the shipped file carries — each cites its
+00 section rather than restating 00's rationale, so the rationale has exactly one
+home.
 
 ```python
 #: Minimum normalized length for a removed line to become a needle (REQ-SWEEP-02).
@@ -262,6 +265,10 @@ Notes binding the surface:
   argparse, which exits **2** with its own message — the intended exit-2 row (00 §6.3).
 - A `--min-chars` value below 1 is rejected in `main()` as `UsageError("--min-chars must
   be >= 1")` (argparse cannot express it without a custom type).
+- An `--exclude` value that is empty or whitespace-only is rejected in `main()` as
+  `UsageError("--exclude requires a non-empty path prefix")` — an empty prefix matches
+  every path and would silently empty the corpus, reporting a false clean (00 §5.2
+  rule 3).
 
 ### 2.2 `main()`
 
@@ -622,8 +629,9 @@ def list_corpus_paths(repo_root: Path) -> list[str]:
     """Enumerate candidate corpus paths: tracked plus untracked-not-ignored.
 
     Runs `git ls-files -z --cached --others --exclude-standard` (tech-spec §3.4's
-    command, NUL-terminated so paths containing spaces, quotes, or newlines
-    survive intact and no quoting mode can mangle them). During an unresolved
+    command, with `-z` added here — NUL-terminated so paths containing spaces,
+    quotes, or newlines survive intact and no quoting mode can mangle them; 00
+    §5.1 carries the same flag). During an unresolved
     merge, `--cached` lists a conflicted path once per stage; entries are
     de-duplicated preserving first appearance, then sorted lexicographically so
     the scan order — and therefore every tie-break in the output — is
@@ -789,8 +797,9 @@ reported **once per file**, at its **first** match offset. Rationale: dispositio
 recorded per file + needle (00 §7.2: a re-run matches previously dispositioned hits by
 `(file, needle)`), so reporting every occurrence in a file would generate hits the
 disposition vocabulary cannot address separately, and a second occurrence in the same
-file is always fixed by the same edit. A survivor in a *different* file is always a
-separate hit.
+file is normally fixed by the same edit — when it is not, the re-run's `FIXED`
+re-report is what catches it (`03-forge-fix-integration.md` §4.4). A survivor in a
+*different* file is always a separate hit.
 
 ```python
 def dedupe_needles(needles: list[Needle]) -> list[Needle]:
@@ -1039,16 +1048,18 @@ this feature does not modify it (`01-architecture-layout.md` §2).
 |---|---|---|
 | Not a git repository, or `git` missing from PATH | Skip payload, `reason="not-a-git-repo"` | 0 |
 | Valid repo, unborn branch (no HEAD) | Skip payload, `reason="no-head"` | 0 |
-| Bare repo (no working tree) | `UsageError` — nothing to sweep | 2 |
-| `git diff` / `git ls-files` non-zero or timed out | `UsageError`, message on stderr | 2 |
+| Bare repo (no working tree) | `UsageError` — `Error: repository has no working tree (bare repo): {repo_root}` | 2 |
+| `git diff` / `git ls-files` non-zero or timed out | `UsageError` — `Error: git {subcommand} failed ({rc}): {first line of git stderr}` | 2 |
 | Corpus file fails UTF-8 decode (binary) | Skipped silently; not counted in `filesScanned` | — |
 | Corpus file unreadable / vanished / is a directory entry | Skipped silently; not counted | — |
 | `--min-chars` below 1 | `UsageError` | 2 |
+| `--exclude` empty or whitespace-only | `UsageError` — `Error: --exclude requires a non-empty path prefix` | 2 |
 | Unknown flag / missing subcommand | argparse's own message | 2 |
-| `plan-coverage` path missing, unreadable, or not UTF-8 | `UsageError` | 2 |
+| `plan-coverage` path missing, unreadable, or not UTF-8 | `UsageError` — `Error: cannot read findings document: {path} ({reason})` | 2 |
 | `plan-coverage` document with no recognizable sections | `applicable: false` | 0 |
 | Survivors found | Report rendered | 1 |
 | Uncovered findings and/or claimed-total mismatch | Report rendered | 1 |
+| Unexpected exception (implementation bug) | Traceback on stderr, empty stdout — callers distinguish from "survivors found" by the **absent JSON payload** | 1 (Python default) |
 
 Two invariants over the whole table: **never silent** — a skip always produces a visible
 line (human mode) or `skipped: true` (JSON), which the agent converts into the Fix
@@ -1200,13 +1211,15 @@ Behavioral — exit-code matrix (the authoritative acceptance grid):
 | `git init`, no commit | `sweep` | 0 | `skipped:true`, `reason:"no-head"` |
 | Repo, delta, no survivors | `sweep` | 0 | `hits:[]`, `filesScanned>0`, `baseline:"HEAD"` |
 | Repo, delta, survivors | `sweep` | 1 | one hit per surviving (file, needle) |
-| `git ls-files` forced to fail | `sweep` | 2 | empty stdout, `Error: …` on stderr |
+| `git ls-files` forced to fail | `sweep` | 2 | empty stdout, `Error: git ls-files failed ({rc}): {first stderr line}` |
+| Bare repo (`git init --bare`) | `sweep` | 2 | empty stdout, `Error: repository has no working tree (bare repo): {repo_root}` |
 | `--min-chars 0` | `sweep` | 2 | `Error: --min-chars must be >= 1` |
+| `--exclude ""` | `sweep` | 2 | `Error: --exclude requires a non-empty path prefix` |
 | Full coverage, totals agree | `plan-coverage` | 0 | `applicable:true`, `uncovered:[]` |
 | One finding uncovered | `plan-coverage` | 1 | `uncovered:["V-016"]`, id printed by name |
 | Summary total disagrees | `plan-coverage` | 1 | `claimedTotal!=actualTotal`, `claimed N, actual M` printed |
 | No `## Fix Execution Plan` | `plan-coverage` | 0 | `applicable:false` |
-| Missing document path | `plan-coverage` | 2 | `Error: …` on stderr |
+| Missing document path | `plan-coverage` | 2 | `Error: cannot read findings document: {path} ({reason})` |
 
 Behavioral — matching semantics:
 
