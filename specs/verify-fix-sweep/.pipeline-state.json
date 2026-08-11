@@ -90,10 +90,10 @@
       "findingsCount": 2,
       "verifiedAt": "2026-08-11T19:07:42Z",
       "verifiedStageVersion": 1,
-      "commitHash": null
+      "commitHash": "e7dd96380317bf0bde893a8fe104444f18a9e830"
     }
   },
   "currentStage": "forge-4-backlog",
-  "updatedAt": "2026-08-11T19:07:42Z",
+  "updatedAt": "2026-08-11T19:07:59Z",
   "branch": "forge/verify-fix-sweep"
 }
