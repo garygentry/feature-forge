@@ -65,9 +65,10 @@ def test_checklist_has_runnability_section_with_i21_i22() -> None:
 def test_runnability_checks_degrade_gracefully() -> None:
     """CHECK-I21/I22 must be advisory (not-applicable), never a hard fail, and completion-only."""
     text = CHECKLISTS.read_text(encoding="utf-8")
-    # `### Runnability` is impl.md's last section, so slice to end-of-file (the old
-    # `## Epic Mode Checklist` terminator now lives in epic.md).
-    runnability = text.split("### Runnability", 1)[1]
+    # Heading-terminated at the next `### `: impl.md carries sections after
+    # `### Runnability`, and an end-of-file slice would let a later check's
+    # degradation wording satisfy the assertions below.
+    runnability = text.split("### Runnability", 1)[1].split("\n### ", 1)[0]
     lowered = runnability.lower()
     assert "not-applicable" in lowered
     assert "never a hard fail" in lowered
@@ -79,6 +80,6 @@ def test_runnability_checks_degrade_gracefully() -> None:
 
 def test_verify_skill_impl_total_and_dimension_updated() -> None:
     text = VERIFY_SKILL.read_text(encoding="utf-8")
-    assert "impl: 23 checks" in text
-    assert "impl 23" in text
+    assert "impl: 25 checks" in text
+    assert "impl 25" in text
     assert "runnability" in text.lower()

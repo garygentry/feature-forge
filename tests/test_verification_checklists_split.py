@@ -34,15 +34,16 @@ SKILL = FORGE_VERIFY / "SKILL.md"
 
 # Mode -> (CHECK-ID letter, expected count). Seeded from the pre-split
 # verification-checklists.md (130 unique IDs, the frozen REQ-R1-05 inventory);
-# grown since as checks were added (backlog +B28 → 131 total). This is the ONLY
-# place a count is written down — the SKILL's expected-count table is checked
-# against the counts read back out of the files, not against this.
+# grown since as checks were added (backlog +B28, then +B29/I24/I25/S39 → 135
+# total). This is the ONLY place a count is written down — the SKILL's
+# expected-count table is checked against the counts read back out of the files,
+# not against this.
 EXPECTED = {
     "prd": ("P", 15),
     "tech": ("T", 17),
-    "specs": ("S", 38),
-    "backlog": ("B", 28),
-    "impl": ("I", 23),
+    "specs": ("S", 39),
+    "backlog": ("B", 29),
+    "impl": ("I", 25),
     "epic": ("E", 10),
 }
 
@@ -94,10 +95,10 @@ def test_mode_checklist_is_complete_and_contiguous(mode):
 
 
 def test_split_preserves_the_full_check_inventory():
-    """The six files together carry the full 131-check inventory — none lost."""
+    """The six files together carry the full 135-check inventory — none lost."""
     counted = _counted()
-    assert sum(counted.values()) == 131, (
-        f"split inventory drifted from 131 unique CHECK-IDs: {counted}"
+    assert sum(counted.values()) == 135, (
+        f"split inventory drifted from 135 unique CHECK-IDs: {counted}"
     )
 
 

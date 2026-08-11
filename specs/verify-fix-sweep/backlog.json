@@ -171,8 +171,8 @@
         "test_lifecycle_artifact_check.py pins backlog at 29 checks and the stale last-section comment is refreshed",
         "python3 -m pytest tests/test_verification_checklists_split.py tests/test_dev_runtime_smoke.py tests/test_smoke_command.py tests/test_lifecycle_artifact_check.py passes"
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-08-11T23:45:32.125Z",
       "dependsOn": [
         "004",
         "006"
