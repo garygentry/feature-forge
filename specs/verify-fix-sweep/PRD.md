@@ -71,20 +71,36 @@ the mechanical/semantic boundary sits.
   - Priority: P0
   - Notes: Token-similarity scoring and semantic matching are out of scope
     (milestone 2, #171). The F-5 sibling was verbatim; normalized matching is the
-    milestone-1 recall target.
+    milestone-1 recall target. The recall boundary this fixes against
+    drift-gated regenerated trees is recorded on REQ-SWEEP-03.
 - REQ-SWEEP-03: The sweep corpus is **all git-tracked files repo-wide, including
-  generated output**, minus the `.verification/` findings documents.
+  generated output**, minus the `.verification/` findings documents and minus
+  **drift-gated regenerated trees** — trees regenerated wholesale from canonical
+  sources whose freshness a mechanical drift gate already enforces (in this
+  repository: `adapters/`, regenerated per C-5 and gated by `scripts/validate.sh`'s
+  adapter drift check).
   - Priority: P0
   - Notes: Findings documents quote the corrected claim by design — they are audit
-    records, not survivors. Generated output is explicitly in scope (F-5 reached
-    `src/generated/*.ts`).
+    records, not survivors. For drift-gated regenerated trees, **regeneration, not
+    the sweep, is the mirror's guarantee**: the #167 host-term translation pass
+    rewrites tokens in copied prose, so a translated wrong claim differs from the
+    removed canon text by more than normalization can bridge — sweeping such trees
+    would give false confidence, while the drift gate already fails the build until
+    they are regenerated. Generated output **without** such a gate stays in scope
+    (F-5 reached `src/generated/*.ts`, which had none). Other tracked audit corpora
+    (prior features' `specs/` artifacts, `CHANGELOG.md`, `STATUS.md`) are swept but
+    their hits are expected to disposition as "historical record" per REQ-SWEEP-04;
+    whether to pre-exclude them by path is a tech-spec decision.
 - REQ-SWEEP-04: Every reported survivor must be **dispositioned before the pass
   closes**: either corrected in the same pass, or explicitly justified with a
   recorded reason (deliberate quote, historical record, false positive). An
-  undispositioned survivor blocks closure.
+  undispositioned survivor prevents the pass from closing on an **advancing**
+  outcome — it routes through REQ-SWEEP-06's existing rows (`decisions` /
+  `failed`); the pass always closes exactly once
+  (`references/stage-exit-protocol.md`).
   - Priority: P0
   - Notes: Detection is mechanical; disposition is judgment. A hit is a candidate,
-    not automatically a defect.
+    not automatically a defect. Outcome routing: REQ-SWEEP-06.
 - REQ-SWEEP-05: Sweep results and every disposition are recorded in the findings
   document (the `## Fix Progress` section or an adjacent sweep record), so the
   sweep's evidence trail lives in the same sanctioned audit record as the fixes.
@@ -122,10 +138,11 @@ the mechanical/semantic boundary sits.
 
 ### 3.3 Internal-Consistency Check
 
-- REQ-CONS-01: A verification CHECK (verifier judgment, checklist prose) must flag
-  an artifact that states the same quantity or claim in more than one place
-  inconsistently — front matter vs body, summary block vs prose (the F-5 artifact
-  asserted "universal" while its own body stated 4-of-7 two sections below).
+- REQ-CONS-01: A verification CHECK (verifier judgment, checklist prose) in the
+  **specs and impl** checklists must flag an artifact that states the same
+  quantity or claim in more than one place inconsistently — front matter vs body,
+  summary block vs prose (the F-5 artifact asserted "universal" while its own body
+  stated 4-of-7 two sections below).
   - Priority: P1
   - Notes: Realized as checklist prose executed by the verifier at verify time; no
     mechanical extractor in milestone 1 (see Out of Scope). Severity follows the
@@ -154,6 +171,26 @@ the mechanical/semantic boundary sits.
   is required or wanted. This is the recorded position for CHECK-S27.
   - Priority: P0
 
+### 4.4 Security
+
+- REQ-SEC-01: Secret handling is **out of scope, by position**: the fix delta's
+  removed text is already in git history, and the findings document inherits the
+  repository's existing trust boundary — so survivor reports may echo matched text
+  verbatim (REQ-OBS-01) without elision. The sweep is not a secret-scrubbing tool;
+  removing a leaked secret routes through history rewrite, never through forge-fix.
+  - Priority: P0
+
+### 4.5 Accessibility
+
+Not applicable — the feature's surfaces are CLI output and markdown artifacts,
+inheriting the pipeline's existing text-only conventions; no new interaction
+surface is introduced.
+
+### 4.6 Scalability
+
+Not applicable beyond REQ-PERF-01 — the corpus is bounded by the repository's
+tracked-file set, and no multi-repo or service deployment surface exists.
+
 ## 5. Constraints
 
 - **C-1 (R-06 is untouched).** The corrected-claim sweep lives in the fix pass
@@ -167,8 +204,12 @@ the mechanical/semantic boundary sits.
   the repository's tooling constraint (AGENTS.md); no new dependencies.
 - **C-4 (word/line budgets).** New checklist prose lands in
   `references/`-tier files (e.g. `skills/forge-verify/references/verification-checklists/*.md`) — the
-  forge-verify SKILL.md body is at 299/300 lines and gains at most a pointer line.
-  forge-fix SKILL.md edits stay within the 300-line body cap.
+  forge-verify SKILL.md body is at 298/300 body lines as measured by
+  `scripts/check-spec-purity.py` (words 4447/5000), so it can absorb a pointer
+  line and the per-mode check-count edit. forge-fix SKILL.md edits stay within the
+  300-line body cap. Each new CHECK also updates the per-mode expected totals in
+  `skills/forge-verify/SKILL.md` and the two tests pinning them
+  (`tests/test_dev_runtime_smoke.py`, `tests/test_smoke_command.py`).
 - **C-5 (canon build discipline).** Canon edits regenerate `adapters/` and pass
   `bash scripts/validate.sh` plus `ruff check scripts/ eval/`. New reference prose
   must remain correct under the #167 host-term translation pass — reword or exempt
@@ -204,14 +245,23 @@ the mechanical/semantic boundary sits.
 
 - A regression-shaped test corpus reproduces F-5: a fix removes a claim from one
   artifact while an identical sentence (and a whitespace-reflowed variant) survives
-  in a sibling and in a generated file — the sweep reports both survivors by file
-  and location, and reports nothing for the `.verification/` audit copy.
+  in a sibling and in an un-gated generated file — the sweep reports both survivors
+  by file and location, reports nothing for the `.verification/` audit copy, and
+  reports nothing for a copy inside a drift-gated regenerated tree (deliberately
+  excluded per REQ-SWEEP-03).
 - A work list declaring 15 of 16 items produces an assertion failure that **names**
   the missing 16th item.
 - The fix pass cannot close with an undispositioned survivor: outcomes map per
   REQ-SWEEP-06 and the disposition trail is readable in the findings document.
+- The internal-consistency CHECK exists by ID in the specs and impl checklist files
+  named by REQ-CONS-01, and each ID appears in its mode's per-mode expected total.
+- A fix pass run without a git delta records the "sweep not run — no git delta"
+  notice in `## Fix Progress` and does not close silently (REQ-SWEEP-07).
+- An artifact set with no declared work list yields a not-applicable result, not a
+  failure (REQ-CARD-04).
 - `bash scripts/validate.sh` and `ruff check scripts/ eval/` green; adapters
   regenerated with no drift.
-- **Milestone acceptance (P5.3):** the sweep runs on at least one real fix pass and
-  its behavior is reviewed before milestone 2 (#171) begins — per the recorded owner
-  decision, #170 is not "done done" until this validation happens.
+- **Milestone acceptance (issue #170, STATUS.md Track F):** the sweep runs on at
+  least one real fix pass and its behavior is reviewed before milestone 2 (#171)
+  begins — per the recorded owner decision, #170 is not "done done" until this
+  validation happens.

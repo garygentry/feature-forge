@@ -15,15 +15,14 @@
       "commitHash": "960b9ab8013c2a5e02db5cf6a760cccb5c96b0ef"
     },
     "forge-verify-prd": {
-      "status": "findings-reported",
+      "status": "findings-applied",
       "findingsFile": ".verification/VERIFY-prd-2026-08-10.md",
       "findingsCount": 8,
-      "verifiedAt": "2026-08-11T00:31:17Z",
-      "verifiedStageVersion": 1,
-      "commitHash": "500eb044a4baf376fca24723761faec4784f89b5"
+      "fixedAt": "2026-08-11T00:42:30Z",
+      "commitHash": null
     }
   },
   "currentStage": "forge-1-prd",
-  "updatedAt": "2026-08-11T00:31:17Z",
+  "updatedAt": "2026-08-11T00:42:30Z",
   "branch": "forge/verify-fix-sweep"
 }

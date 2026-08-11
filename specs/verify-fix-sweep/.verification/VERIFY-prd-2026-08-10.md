@@ -84,9 +84,9 @@ Report contains blocking findings (2 gaps) → `findings-reported` / route to `f
 ## Fix Execution Plan
 
 ### User Decisions Required
-1. **V-001 — translated generated mirrors.** Choose the recorded position: (a) sweep adapters and accept host-term-translated misses as a known milestone-1 recall limit deferred to #171, or (b) exclude regenerated trees (`adapters/`) from the corpus and rely on C-5 regeneration + `validate.sh`'s adapter-drift gate. This changes both REQ-SWEEP-03's notes and §8 bullet 1's third variant. Do not let the fix agent invent a matching mechanism.
-2. **V-002 — security position.** Choose: (a) "out of scope, the removed text is already in git history and the findings document inherits the repository's trust boundary", or (b) an affirmative REQ-SEC-01 constraining what survivor reports may echo. Option (a) is a one-sentence amendment.
-3. **V-007(a) — REQ-CONS-01 mode.** Name the target checklist(s), or explicitly defer to the tech spec via §7.
+1. **V-001 — translated generated mirrors.** ✅ RESOLVED 2026-08-10 (owner): **(b) exclude drift-gated regenerated trees** — regeneration + the `validate.sh` adapter-drift gate, not the sweep, is the mirror's guarantee; generated output *without* such a gate stays in scope.
+2. **V-002 — security position.** ✅ RESOLVED 2026-08-10 (owner): **(a) out of scope, stated as REQ-SEC-01** — removed text is already in git history; the findings document inherits the repository's trust boundary; the sweep is not a secret-scrubbing tool (secret removal routes through history rewrite).
+3. **V-007(a) — REQ-CONS-01 mode.** ✅ RESOLVED 2026-08-10 (owner): **specs + impl** checklists host the internal-consistency CHECK.
 
 All other findings (V-003, V-004, V-005, V-006, V-007(b), V-008) can be applied directly with no decision.
 
@@ -127,3 +127,11 @@ All other findings (V-003, V-004, V-005, V-006, V-007(b), V-008) can be applied 
 - **Addresses:** V-005, V-006, and the §8 half of V-001
 - **Action:** In §8, (1) add the three bullets from V-005 covering REQ-CONS-01, REQ-SWEEP-07 and REQ-CARD-04; (2) extend bullet 1 with the translated-mirror variant implied by User Decision 1 (reported, or deliberately not reported); (3) replace "(P5.3)" in the last bullet with "(issue #170, STATUS.md Track F)".
 - **Depends on:** Step 2 (bullet 1 must match the position recorded there), Step 5
+
+## Fix Progress
+- Step 1: [APPLIED] 2026-08-10 — Added §4.4 Security (REQ-SEC-01, out-of-scope position per Decision 2), §4.5 Accessibility and §4.6 Scalability ("Not applicable" + reason). (V-002)
+- Step 2: [APPLIED] 2026-08-10 — REQ-SWEEP-03 rewritten: drift-gated regenerated trees excluded per Decision 1 (adapters/ named, C-5 + validate.sh drift gate cited; un-gated generated output stays in scope); historical-corpora sentence appended (V-008); REQ-SWEEP-02 Notes cross-references the recall boundary. (V-001, V-008)
+- Step 3: [APPLIED] 2026-08-10 — REQ-SWEEP-04 closure wording reconciled with the close-exactly-once exit contract; cross-reference to REQ-SWEEP-06 added. (V-003)
+- Step 4: [APPLIED] 2026-08-10 — C-4 re-measured and corrected (298/300 body lines, 4447/5000 words via check-spec-purity.py's algorithm); per-mode check-count totals + pinning tests sentence appended. (V-004, V-007b)
+- Step 5: [APPLIED] 2026-08-10 — REQ-CONS-01 pinned to the specs and impl checklists per Decision 3. (V-007a)
+- Step 6: [APPLIED] 2026-08-10 — §8: three new bullets (REQ-CONS-01 by-ID presence, REQ-SWEEP-07 no-git notice, REQ-CARD-04 not-applicable); bullet 1 extended with the drift-gated-mirror deliberately-not-reported variant; "(P5.3)" replaced with "(issue #170, STATUS.md Track F)". (V-005, V-006, V-001 §8)
