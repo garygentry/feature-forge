@@ -110,9 +110,14 @@
       "verifiedAt": "2026-08-12T01:26:20Z",
       "verifiedStageVersion": 1,
       "commitHash": "b6cfb95df6f2a4cf29770baba4c784cbc7c2e7da"
+    },
+    "forge-6-docs": {
+      "status": "skipped",
+      "skippedAt": "2026-08-12T01:59:20Z",
+      "commitHash": null
     }
   },
   "currentStage": "forge-5-loop",
-  "updatedAt": "2026-08-12T01:26:34Z",
+  "updatedAt": "2026-08-12T01:59:20Z",
   "branch": "forge/verify-fix-sweep"
 }
