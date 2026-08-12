@@ -1,0 +1,247 @@
+{
+  "schemaVersion": "1",
+  "project": "feature-forge",
+  "description": "Milestone 1 (mechanical) of hardening Track F (#170): a corrected-claim sweep for fix passes, a plan-coverage cardinality assertion, four new verification CHECKs, and full adapter distribution — so a false claim corrected in one artifact cannot survive elsewhere, a hand-authored work list cannot silently drop an item, and an internally contradictory artifact is flagged.",
+  "items": [
+    {
+      "id": "001",
+      "type": "feature",
+      "priority": 1,
+      "title": "Implement scripts/fix-sweep.py with sweep and plan-coverage subcommands",
+      "description": "Create `scripts/fix-sweep.py` as a standalone, Python 3.10+ stdlib-only script with two subcommands. This is the feature's one new code artifact — it exports no Python API and deliberately does NOT import from `scripts/forge-session.py` (it carries its own ~10-line bounded git helper).\n\nFollow the `scripts/validate-traceability.py` / `scripts/check-spec-purity.py` conventions exactly: `#!/usr/bin/env python3` shebang, module docstring with **Usage** and **Exit codes** sections, module-level constants annotated `Final` with `#:` doc comments, `TypedDict` for JSON-boundary shapes (no dataclasses, no Pydantic), Google-style docstrings on every public function, `def main() -> int` + `sys.exit(main())` entry pattern.\n\nConstants to define — the first four are byte-identical to `00-core-definitions.md` §4.3/§5.2; the remainder are per `02-fix-sweep-script.md` §1.3:\n- `MIN_NEEDLE_CHARS: Final[int] = 24`\n- `VERIFICATION_SEGMENT: Final[str] = \".verification\"`\n- `DRIFT_GATED_PREFIX: Final[str] = \"adapters/\"`\n- `DRIFT_GATE_SENTINEL: Final[str] = \"scripts/build-adapters.py\"`\n- `VERIFICATION_EXCLUDE_LABEL: Final[str] = \".verification/\"`\n- `GIT_TIMEOUT_SECONDS: Final[int] = 30`\n- `GIT_UNAVAILABLE: Final[int] = -1`\n- Regex constants: `_NON_ALNUM`, `HUNK_RE`, `H2_RE`, `H3_RE`, `FINDING_RE`, `STEP_RE`, `ADDRESSES_RE`, `FINDING_ID_RE`, `TOTAL_FINDINGS_RE`, `FENCE_RE`\n\nSix TypedDicts: `Needle`, `NormalizedFile`, `SweepHit`, `DroppedNeedles`, `SweepReport`, `PlanCoverageReport` — keys are camelCase at the JSON boundary. One exception class: `UsageError`.\n\nFunctions to implement (top-to-bottom order in the file):\n1. `normalize(text: str) -> str` — `_NON_ALNUM.sub(\" \", text.lower()).strip()`\n2. `run_git(args, repo_root) -> tuple[int, str, str]` — bounded subprocess wrapper, never classifies (callers decide skip vs error)\n3. `resolve_repo_root(start_dir) -> tuple[Path | None, str | None]` — probes rev-parse --git-dir, --show-toplevel, HEAD; returns (root, None) or (None, reason)\n4. `extract_needles(diff_text) -> tuple[list[Needle], dict[str, list[str]]]` — parses `git diff HEAD --unified=0 --no-color` for removed lines + added lines per file\n5. `filter_needles(raw, added_by_file, min_chars) -> tuple[list[Needle], DroppedNeedles]` — length floor then reflow/move suppression\n6. `list_corpus_paths(repo_root) -> list[str]` — `git ls-files -z --cached --others --exclude-standard`, deduplicated and sorted\n7. `applicable_excludes(repo_root, user_excludes) -> list[str]` — always .verification/, conditionally adapters/ when gate sentinel exists, plus --exclude values\n8. `is_excluded(path, excludes, user_excludes) -> bool` — segment match for .verification, prefix for adapters/ and user excludes\n9. `build_normalized_file(path, content) -> NormalizedFile` — normalize each line into a blob + offset→line map\n10. `line_for_offset(nf, offset) -> int` — bisect_right over offsets\n11. `dedupe_needles(needles) -> list[Needle]` — one representative per distinct normalized text, first extracted wins\n12. `scan_file(nf, original_lines, representatives) -> list[SweepHit]` — one hit per (file, needle), at first match offset\n13. `run_sweep(start_dir, user_excludes, min_chars) -> SweepReport` — orchestrates the full pipeline\n14. `parse_findings_doc(text) -> PlanCoverageReport` — single-pass state machine over findings headings, fences skipped\n15. `run_plan_coverage(doc_path) -> PlanCoverageReport`\n16. `render_sweep(report, json_output)` and `render_plan_coverage(report, json_output)`\n17. `_build_parser() -> argparse.ArgumentParser` — `sweep` and `plan-coverage` subparsers\n18. `main() -> int` — parse, dispatch, map UsageError/OSError to exit 2\n\nCLI: `fix-sweep.py sweep [--repo-root DIR] [--exclude PREFIX]... [--min-chars N] [--json]` and `fix-sweep.py plan-coverage FINDINGS_DOC [--json]`. Exit codes: 0=clean/skipped/not-applicable, 1=findings, 2=usage error. `--json` stores as `json_output`. Reject `--min-chars < 1` and empty `--exclude` as UsageError.\n\nCorpus matching: read each file whole from the working tree, normalize into a blob, `str.find` per needle per file. One hit per (file, needle) at first match offset. Hits sorted by (file, line). Self-file hits count. Files failing UTF-8 or OSError skipped silently, not counted in filesScanned.\n\nSet the executable bit: `chmod +x scripts/fix-sweep.py`.\n\nDo NOT touch any other file — only `scripts/fix-sweep.py` is created in this item.",
+      "acceptanceCriteria": [
+        "scripts/fix-sweep.py exists with executable bit set and #!/usr/bin/env python3 shebang",
+        "Module docstring contains Usage and Exit codes sections",
+        "Imports are stdlib only — no import of forge-session, no third-party packages",
+        "All six TypedDicts (Needle, NormalizedFile, SweepHit, DroppedNeedles, SweepReport, PlanCoverageReport) are defined with camelCase keys",
+        "UsageError is the only exception class defined",
+        "All module-level constants are annotated Final with #: doc comments",
+        "normalize('Universal among the tracked hyperscalers.') == normalize('universal, among   the\\ntracked  hyperscalers')",
+        "sweep subcommand: exit 0 with skipped=true in a non-repo directory; exit 0 with skipped=true reason=no-head in a fresh git init; exit 1 when survivors found; exit 2 for bare repo or git failure",
+        "plan-coverage subcommand: exit 0 when fully covered; exit 1 when uncovered findings named; exit 0 with applicable=false when no plan section; exit 2 for unreadable document",
+        "ruff check scripts/fix-sweep.py passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-11T22:41:36.392Z",
+      "dependsOn": [],
+      "notes": "This is the largest item (~350-400 lines of Python). The spec documents are extremely detailed — 02-fix-sweep-script.md contains function signatures, docstrings, and verification checkboxes for every function. Follow them closely. The reflow-suppression filter concatenates added lines per file then delta-wide with single-space joins. The plan-coverage parser must skip lines inside fenced code blocks (FENCE_RE toggling). The diff parser must gate removed/added line recognition on an in-hunk flag to avoid confusing a content line starting with --- for a file header.",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/verify-fix-sweep/00-core-definitions.md",
+        "specs/verify-fix-sweep/02-fix-sweep-script.md"
+      ]
+    },
+    {
+      "id": "002",
+      "type": "test",
+      "priority": 1,
+      "title": "Write tests/test_fix_sweep.py behavior tests (excluding prose guards)",
+      "description": "Create `tests/test_fix_sweep.py` with pytest + stdlib-only behavior tests for `scripts/fix-sweep.py`. This item covers §2.1–§2.10 of `05-testing-strategy.md`; prose guards (§2.11) are a separate item.\n\nFollow the `tests/test_forge_bootstrap.py` scratch-repo pattern exactly:\n- A local `_git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]` wrapper using `subprocess.run([\"git\", *args], cwd=str(repo), capture_output=True, text=True)`\n- `_set_git_identity(repo: Path)` setting `user.email` and `user.name` locally so commits work on CI runners\n- Repos created under `tmp_path`\n\nLoad the hyphenated module via `importlib.util.spec_from_file_location(\"fix_sweep\", REPO_ROOT / \"scripts\" / \"fix-sweep.py\")` in a module-scoped fixture. Unit tests call functions on the loaded module; CLI/exit-code tests run it as a subprocess `[sys.executable, str(SCRIPT), ...]`.\n\nModule constants:\n```python\nREPO_ROOT = Path(__file__).resolve().parent.parent\nSCRIPT = REPO_ROOT / \"scripts\" / \"fix-sweep.py\"\nFORGE_FIX_SKILL = REPO_ROOT / \"skills\" / \"forge-fix\" / \"SKILL.md\"\nVERIFY_SKILL = REPO_ROOT / \"skills\" / \"forge-verify\" / \"SKILL.md\"\nCHECKLISTS = REPO_ROOT / \"skills\" / \"forge-verify\" / \"references\" / \"verification-checklists\"\n```\n\nTest sections to implement:\n\n§2.1 Module foundation: constants exist with canonical values (MIN_NEEDLE_CHARS==24, VERIFICATION_SEGMENT==\".verification\", DRIFT_GATED_PREFIX==\"adapters/\", DRIFT_GATE_SENTINEL==\"scripts/build-adapters.py\", GIT_UNAVAILABLE==-1, GIT_TIMEOUT_SECONDS present); UsageError defined.\n\n§2.2 F-5 regression fixture: scratch repo with committed baseline containing the claim in specs/x/PRD.md, verbatim sibling in specs/other/PRD.md, whitespace-reflowed variant in docs/summary.md, un-gated generated copy in src/generated/foo.ts, copy in specs/x/.verification/VERIFY-impl-2026-01-01.md, copy in adapters/claude/skills/x.md with scripts/build-adapters.py as the gate sentinel. Fix = remove the claim from specs/x/PRD.md only. Assert: exit 1, hits for sibling + reflowed + generated with correct file/line/needle/sourceFile/sourceLine, no hits for .verification/ or adapters/, hits sorted by (file, line). Self-file variant: a second copy below in specs/x/PRD.md left unedited → reported.\n\n§2.3 Normalization and threshold units: parametrized over normalize(). Floor: 23 normalized chars dropped, 24 kept. --min-chars overrides.\n\n§2.4 Needle extraction and reflow suppression: hunk-header arithmetic, --- not a needle, reflow suppression (removed line reappearing in added text → no needle), duplicates have distinct provenance.\n\n§2.5 Skip paths: non-repo → reason=not-a-git-repo exit 0; fresh git init no commit → reason=no-head exit 0.\n\n§2.5.1 Git-failure classification: run_git on non-repo returns non-zero (not exception); monkeypatched empty PATH → GIT_UNAVAILABLE and sweep still skip-shapes exit 0; bare repo → exit 2; monkeypatched ls-files failure → exit 2.\n\n§2.6 Corpus boundaries: untracked non-ignored → hit; .gitignored → no hit; conditional adapters/ exclusion; --exclude prefix; --exclude \"\" → exit 2; binary skip.\n\n§2.7 plan-coverage: 16-findings/15-step → exit 1 uncovered=[\"V-016\"]; total mismatch claimed 16 actual 15; full coverage exit 0; no plan section → applicable=false exit 0; fenced ### V-NNN: not counted; unreadable → exit 2.\n\n§2.8 CLI/output: --json single JSON object, hit-line format regex, verbatim echo.\n\n§2.9 Determinism and read-only: two runs byte-identical; corpus mtimes unchanged.\n\n§2.10 Cost-model shape: monkeypatch counting — ≤5 git calls, one file read per corpus file.\n\nDo NOT add prose guards yet — that is item 008.",
+      "acceptanceCriteria": [
+        "tests/test_fix_sweep.py exists and uses the scratch-repo pattern with _git() and _set_git_identity()",
+        "Module loaded via importlib (not direct import) in a module-scoped fixture",
+        "F-5 regression fixture reports hits for sibling, reflowed, and generated-file copies but not for .verification/ or adapters/ copies",
+        "Skip paths tested: non-repo exit 0 with reason not-a-git-repo, no-HEAD exit 0 with reason no-head",
+        "plan-coverage tests: 16/15 names V-016, total mismatch, full coverage pass, not-applicable, fenced V-NNN skipped",
+        "Cost-model shape pinned: bounded git calls (≤5), one file read per corpus file",
+        "python3 -m pytest tests/test_fix_sweep.py passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-11T22:57:21.917Z",
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "This is the second-largest item. The F-5 regression fixture is the headline test — build it first. Table-driven tests use @pytest.mark.parametrize. Test narration states intent, never measurement — docstrings cite the spec section they enforce ('(02 §4.3)'). The FORGE_FIX_SKILL and VERIFY_SKILL constants are defined here but used only by the prose guards added in item 008.",
+      "estimatedIterations": 2,
+      "specReferences": [
+        "specs/verify-fix-sweep/05-testing-strategy.md",
+        "specs/verify-fix-sweep/00-core-definitions.md",
+        "specs/verify-fix-sweep/02-fix-sweep-script.md"
+      ]
+    },
+    {
+      "id": "003",
+      "type": "chore",
+      "priority": 1,
+      "title": "Add fix-sweep.py to RUNTIME_HELPERS and update test_build_adapters.py",
+      "description": "Two small edits to register `fix-sweep.py` for adapter distribution so non-Claude adapter bundles include it.\n\n1. In `scripts/build-adapters.py`, add `\"fix-sweep.py\"` to the `RUNTIME_HELPERS` tuple. Insert it after `\"forge-bootstrap.py\"` (last current entry) with a comment `# NEW — invoked by forge-fix Steps 2 and 4`. The resulting tuple should have 7 entries:\n```python\nRUNTIME_HELPERS: tuple[str, ...] = (\n    \"forge-root.sh\",\n    \"forge-init.sh\",\n    \"epic-manifest.py\",\n    \"forge-session.py\",\n    \"validate-traceability.py\",\n    \"forge-bootstrap.py\",\n    \"fix-sweep.py\",\n)\n```\n\n2. In `tests/test_build_adapters.py`:\n   - Find the test function `test_runtime_helpers_still_has_exactly_six_entries` (or similar name pinning 6). Rename it to `test_runtime_helpers_has_exactly_seven_entries`.\n   - Update its docstring to cite `fix-sweep.py` as the seventh helper added by #170.\n   - Change the length assertion from `len(mod.RUNTIME_HELPERS) == 6` to `== 7`.\n   - Also update the `len(set(...))` de-dup assertion from 6 to 7.\n   - Grep the file for any other occurrences of `six` or `6` near `RUNTIME_HELPERS` and update them.\n   - Ensure the surviving `assert \"forge_json.py\" not in mod.RUNTIME_HELPERS` stays.\n\nDo NOT regenerate adapters/ yet — that happens in item 009 after all canon edits land.",
+      "acceptanceCriteria": [
+        "scripts/build-adapters.py RUNTIME_HELPERS tuple contains \"fix-sweep.py\" and has 7 entries",
+        "tests/test_build_adapters.py pins the length at 7 (both len and len(set) assertions)",
+        "Test function renamed from six to seven in its name",
+        "assert \"forge_json.py\" not in mod.RUNTIME_HELPERS still present",
+        "ruff check scripts/build-adapters.py passes",
+        "python3 -m pytest tests/test_build_adapters.py -k runtime_helpers passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-11T23:00:02.938Z",
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "This is a hard prerequisite for item 004 — without fix-sweep.py in RUNTIME_HELPERS, the fenced invocations in forge-fix SKILL.md fail on every non-Claude adapter. Do NOT run build-adapters.py or regenerate adapters/ — the single regeneration happens in item 009 after all canon edits.",
+      "specReferences": [
+        "specs/verify-fix-sweep/01-architecture-layout.md"
+      ]
+    },
+    {
+      "id": "004",
+      "type": "feature",
+      "priority": 1,
+      "title": "Wire fix-sweep.py into skills/forge-fix/SKILL.md Steps 2, 4, and 5",
+      "description": "Insert three blocks of prose into `skills/forge-fix/SKILL.md` to integrate the sweep and plan-coverage tools into the fix pass. No step renumbering — Steps 1–7 keep their existing numbers and headings. No new `--outcome` values. The Step 6 re-verify gate is completely untouched (C-1).\n\nAll three blocks are paste-ready in `specs/verify-fix-sweep/03-forge-fix-integration.md` §3.2, §4.6, and §5.2. Copy them verbatim — the wording is load-bearing (host-neutrality, prose-guard literals, line-budget constraints).\n\n**Block A — Step 2 (plan-coverage gate):** Insert immediately AFTER the existing numbered item 3 (\"Check for a `## Fix Progress` section...\") and BEFORE the `## Step 3: Handle User Decisions` heading. The block is a new numbered item 4 with a fenced `bash` invocation of `$R/scripts/fix-sweep.py plan-coverage` plus routing prose for exit 0/1/2. The fence must be at the left margin (column 0) with the byte-identical canonical prelude — check-spec-purity.py rule 5 and 6 require this.\n\n**Block B — Step 4 (sweep + disposition):** Insert immediately AFTER the anti-churn paragraph ending \"...which are the sanctioned records for acceptance evidence.\" and BEFORE the `## Step 5` heading. This is a prose block (not a numbered list item): the sweep invocation fence, disposition prose with the three tokens (FIXED, JUSTIFIED:, FALSE-POSITIVE:), the sweep-record grammar fence, re-run semantics (one re-run only, capped explicitly, disposition-aware matching), and the skip-notice paragraph. Fence at left margin.\n\n**Block C — Step 5 (enumerated staging):** Insert immediately AFTER the closing ``` of Step 5's `state-verify` fence and BEFORE the \"Then follow the Git Commit Protocol\" paragraph. One paragraph requiring enumerated `git add <path>` for disposition-edited files, explicitly forbidding `git add -A` and `git add .`.\n\nAfter editing, confirm the body stays under 300 lines: `python3 scripts/check-spec-purity.py` must pass. Expected projection: ~167 body lines (134 existing + 33 added).\n\nDo NOT modify Step 6, Step 7, the outcome table, or any heading. Do NOT add `--exclude` or `--min-chars` to the invocation — they stay operator escape hatches.",
+      "acceptanceCriteria": [
+        "skills/forge-fix/SKILL.md contains a bash fence invoking $R/scripts/fix-sweep.py plan-coverage with --json flag",
+        "skills/forge-fix/SKILL.md contains a bash fence invoking $R/scripts/fix-sweep.py sweep with --json flag",
+        "Both bash fences use the byte-identical canonical prelude at column 0",
+        "The literal '- Sweep: NOT RUN — no git delta ({reason})' is present (em dash exact)",
+        "All three disposition tokens FIXED, JUSTIFIED:, FALSE-POSITIVE: are present",
+        "The literal 'git add <path>' is present and 'git add -A' and 'git add .' appear only in a prohibitive clause",
+        "Headings ## Step 1: through ## Step 7: survive with existing titles unchanged",
+        "## Step 6: Re-verify Gate content is completely untouched",
+        "No --exclude or --min-chars appears in the skill body",
+        "python3 scripts/check-spec-purity.py passes (body ≤300 lines)"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-11T23:26:25.031Z",
+      "dependsOn": [
+        "001",
+        "003"
+      ],
+      "notes": "The anchor map in 03 §2 locates each insertion point by quoted text, not line number. Read the existing SKILL.md first to find the exact insertion points. The line budget in 03 §7 breaks down to 9 (Block A) + 22 (Block B) + 2 (Block C) = 33 lines. Keep paragraphs as single unwrapped lines — hard-wrapping would cost ~20 extra lines for no content. The re-run paragraph includes the disposition-aware clause about FIXED hits re-appearing — include the literal 'never leave it recorded as' which the prose guards pin.",
+      "specReferences": [
+        "specs/verify-fix-sweep/03-forge-fix-integration.md"
+      ]
+    },
+    {
+      "id": "005",
+      "type": "chore",
+      "priority": 1,
+      "title": "Add CHECK-B29, CHECK-I24, CHECK-I25, CHECK-S39 to verification checklist files",
+      "description": "Append four new verification checklist entries to three files under `skills/forge-verify/references/verification-checklists/`. All prose is paste-ready in `specs/verify-fix-sweep/04-verification-checks.md` §3 — copy verbatim. The wording is load-bearing: host-neutral (C-5), contains guaranteed literals the prose guards pin, and must not cross-reference CHECK IDs from other modes.\n\n1. **backlog.md** — append at end of file (after the current final content, preserving the single trailing blank line):\n   - `### Work-Order Cardinality` section with `CHECK-B29` entry. Full text in 04 §3.1.\n\n2. **impl.md** — append at end of file in this order:\n   - `### Work-Order Cardinality` section with `CHECK-I24` entry. Full text in 04 §3.2.\n   - `### Internal Consistency` section with `CHECK-I25` entry. Full text in 04 §3.3.\n\n3. **specs.md** — append at end of file:\n   - `### Internal Consistency` section with `CHECK-S39` entry. Full text in 04 §3.4.\n\n**Critical constraints:**\n- IDs are next-in-sequence (current maxima: B28, I23, S38) — forced by the contiguity test.\n- No cross-mode leakage: impl.md must NOT name CHECK-S39 or CHECK-B29; specs.md must NOT name CHECK-I25; backlog.md references only CHECK-B ids. The cross-mode-leakage test (`test_verification_checklists_split.py::test_no_cross_mode_leakage`) fails on any other-mode id.\n- All prose must be host-neutral — no product names, no tool names, no slash commands. The `tests/test_adapter_host_neutrality.py` test enforces this after adapter regeneration.\n- Each entry contains: the CHECK ID in bold, `(#170)` citation, `not-applicable` degradation, severity literal (`gap` for B29/I24, `inconsistency`/`error` for I25/S39), `Report, do not repair` directive.\n\nDo NOT edit `skills/forge-verify/SKILL.md` — that is item 006. Do NOT regenerate adapters — item 009.",
+      "acceptanceCriteria": [
+        "backlog.md contains **CHECK-B29** under ### Work-Order Cardinality with not-applicable, never a hard fail, gap severity, by name, Report do not repair, and (#170)",
+        "impl.md contains **CHECK-I24** under ### Work-Order Cardinality and **CHECK-I25** under ### Internal Consistency",
+        "specs.md contains **CHECK-S39** under ### Internal Consistency",
+        "CHECK-I25 and CHECK-S39 carry inconsistency and error severity literals plus decision-bearing",
+        "No cross-mode id leakage: impl.md has no CHECK-B or CHECK-S ids; specs.md has no CHECK-I ids; backlog.md has no CHECK-I or CHECK-S ids",
+        "No host terms in the new prose (no product names, tool names, slash commands, AskUserQuestion)"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-11T23:32:53.479Z",
+      "dependsOn": [],
+      "notes": "This item is independent of the script chain (001-004) and can run in parallel. The prose is paste-ready — do not reword or 'improve' it; the exact literals are pinned by prose-guard tests. The cross-mode-leakage constraint means CHECK-I25 and CHECK-S39 are intentional near-duplicates that cannot reference each other — the relationship is recorded only in 04 §3.3/§3.4's cross-mode-leak warnings. impl.md MAY reference same-mode ids like CHECK-I01.",
+      "specReferences": [
+        "specs/verify-fix-sweep/04-verification-checks.md"
+      ]
+    },
+    {
+      "id": "006",
+      "type": "chore",
+      "priority": 1,
+      "title": "Update skills/forge-verify/SKILL.md totals and dimension-group ownership tags",
+      "description": "Apply three in-place edits to `skills/forge-verify/SKILL.md` per `04-verification-checks.md` §4. All three edits replace N lines with exactly N lines — zero net new lines. The body is at 298/300 lines; the two lines of headroom remain unspent.\n\n**Replacement 1 — dispatch-size bullet** (§4.2): Find the bullet `- **Large modes (specs 38, backlog 28, impl 23): parallel dimensioned fan-out.**` and change the numbers to `specs 39, backlog 29, impl 25`. One line → one line.\n\n**Replacement 2 — three dimension-group bullets** (§4.3a/b/c):\n\n2a. **specs group** (3 lines → 3 lines): Find the 3-line block starting `  - **specs** (\\`references/verification-checklists/specs.md\\`):` and replace with the version that appends `(owns CHECK-S39)` to group (3). Pull `traceability,` up onto line 2.\n\nBefore:\n```\n  - **specs** (`references/verification-checklists/specs.md`): (1) types/contracts,\n    (2) architecture/layout, (3) cross-reference &\n    traceability, (4) testing strategy, (5) integration.\n```\nAfter:\n```\n  - **specs** (`references/verification-checklists/specs.md`): (1) types/contracts,\n    (2) architecture/layout, (3) cross-reference & traceability (owns CHECK-S39),\n    (4) testing strategy, (5) integration.\n```\n\n2b. **backlog group** (3 lines → 3 lines): Find the 3-line block starting `  - **backlog**` and append `(owns CHECK-B29)` to group (3) on line 3.\n\nBefore:\n```\n  - **backlog** (`references/verification-checklists/backlog.md`): (1) item scoping &\n    acceptance criteria, (2) dependency/ordering sanity,\n    (3) spec coverage & traceability, (4) schema/enum correctness.\n```\nAfter:\n```\n  - **backlog** (`references/verification-checklists/backlog.md`): (1) item scoping &\n    acceptance criteria, (2) dependency/ordering sanity,\n    (3) spec coverage & traceability (owns CHECK-B29), (4) schema/enum correctness.\n```\n\n2c. **impl group** (3 lines → 3 lines): Find the 3-line block starting `  - **impl**` and append `(owns CHECK-I24/I25)` to group (1), rebalancing the wrap.\n\nBefore:\n```\n  - **impl** (`references/verification-checklists/impl.md`): (1) requirement coverage vs specs, (2) integration correctness,\n    (3) testing, (4) code-quality/conventions, (5) runnability (owns CHECK-I21/I22 —\n    the smoke command and the non-test-caller heuristic).\n```\nAfter:\n```\n  - **impl** (`references/verification-checklists/impl.md`): (1) requirement coverage vs specs (owns CHECK-I24/I25),\n    (2) integration correctness, (3) testing, (4) code-quality/conventions,\n    (5) runnability (owns CHECK-I21/I22 — the smoke command and the non-test-caller heuristic).\n```\n\n**Replacement 3 — Step 3 per-mode expected totals** (§4.4): Find the parenthetical `(prd: 15 checks, tech: 17 checks, specs: 38 checks, backlog: 28 checks, impl: 23 checks, epic: 10 checks)` and change specs to 39, backlog to 29, impl to 25. Substring replacement inside one long paragraph line.\n\nAfter all edits, confirm: `python3 scripts/check-spec-purity.py` passes (body still at 298 lines).",
+      "acceptanceCriteria": [
+        "The Large modes bullet reads 'specs 39, backlog 29, impl 25'",
+        "The specs dimension-group bullet contains '(owns CHECK-S39)' on group (3)",
+        "The backlog dimension-group bullet contains '(owns CHECK-B29)' on group (3)",
+        "The impl dimension-group bullet contains '(owns CHECK-I24/I25)' on group (1)",
+        "The Step 3 parenthetical reads 'specs: 39 checks, backlog: 29 checks, impl: 25 checks'",
+        "python3 scripts/check-spec-purity.py passes — body at 298 lines, zero net new lines"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-11T23:38:42.013Z",
+      "dependsOn": [
+        "005"
+      ],
+      "notes": "The em dash in CHECK-I21/I22's existing tag is U+2014 — preserve it verbatim. Read the file first to find exact anchor text since line numbers may have drifted. Each replacement replaces the same number of lines — verify with wc -l before and after. The two lines of headroom (298→300) remain unspent and available for a later change.",
+      "specReferences": [
+        "specs/verify-fix-sweep/04-verification-checks.md"
+      ]
+    },
+    {
+      "id": "007",
+      "type": "test",
+      "priority": 1,
+      "title": "Update four pinned test files in lockstep with checklist and SKILL changes",
+      "description": "Update four test files whose pinned literals must move in lockstep with the checklist-count changes from items 005 and 006, and the forge-fix SKILL changes from item 004. Each edit is a literal substitution. See `05-testing-strategy.md` §3 for the full specification.\n\n1. **tests/test_verification_checklists_split.py**:\n   - In the `EXPECTED` dict/table: change `\"specs\": (\"S\", 38)` → `39`, `\"backlog\": (\"B\", 28)` → `29`, `\"impl\": (\"I\", 23)` → `25`.\n   - Change the inventory total `131` → `135` in `test_split_preserves_the_full_check_inventory` (both the assertion value and any comment mentioning it).\n   - Do NOT add any cross-mode id references — the existing `test_no_cross_mode_leakage` test enforces this automatically.\n\n2. **tests/test_dev_runtime_smoke.py**:\n   - Change `\"impl: 23 checks\"` → `\"impl: 25 checks\"` and `\"impl 23\"` → `\"impl 25\"`.\n   - **Heading-terminate the Runnability slice** (D3 resolution): where `_runnability()` does `text.split(\"### Runnability\", 1)[1]`, change it to `text.split(\"### Runnability\", 1)[1].split(\"\\n### \", 1)[0]` so the slice stops at the next `###` heading. impl.md now has sections after `### Runnability` (from item 005), and an end-of-file slice would let CHECK-I24's `not-applicable`/`never a hard fail` literals satisfy the I21/I22 degradation assertions (a false pass).\n   - Also heading-terminate `test_i23_present_and_advisory`'s `**CHECK-I23**` sub-slice the same way.\n   - Update the stale comment claiming `### Runnability` is the last section — state it is heading-terminated instead.\n\n3. **tests/test_smoke_command.py**:\n   - Same two literal bumps: `\"impl: 23 checks\"` → `\"impl: 25 checks\"` and `\"impl 23\"` → `\"impl 25\"`.\n   - Same heading-termination of the Runnability slice in `test_runnability_checks_degrade_gracefully()`: split on `\"\\n### \"` after the `\"### Runnability\"` split.\n   - Same comment update.\n\n4. **tests/test_lifecycle_artifact_check.py**:\n   - Change `\"backlog: 28 checks\"` → `\"backlog: 29 checks\"` and `\"backlog 28\"` → `\"backlog 29\"`.\n   - Refresh the stale comment at lines 31–32 claiming backlog.md ends with `### Artifact Lifecycle Consistency` — it no longer does after item 005 appended `### Work-Order Cardinality`.\n\nAfter all edits, run `python3 -m pytest tests/test_verification_checklists_split.py tests/test_dev_runtime_smoke.py tests/test_smoke_command.py tests/test_lifecycle_artifact_check.py` to confirm.",
+      "acceptanceCriteria": [
+        "test_verification_checklists_split.py EXPECTED table reads specs 39, backlog 29, impl 25 and total 135",
+        "test_dev_runtime_smoke.py pins impl at 25 checks and the Runnability slice is heading-terminated with .split('\\n### ', 1)[0]",
+        "test_smoke_command.py pins impl at 25 checks with the same heading-termination",
+        "test_lifecycle_artifact_check.py pins backlog at 29 checks and the stale last-section comment is refreshed",
+        "python3 -m pytest tests/test_verification_checklists_split.py tests/test_dev_runtime_smoke.py tests/test_smoke_command.py tests/test_lifecycle_artifact_check.py passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-11T23:45:32.125Z",
+      "dependsOn": [
+        "004",
+        "006"
+      ],
+      "notes": "The heading-termination fix (D3) is critical — without it, the new CHECK-I24 degradation clauses would contain 'not-applicable' and 'never a hard fail', which are the same literals the existing I21/I22 tests assert, creating a false pass that masks a real removal of those clauses from the Runnability section. The dynamic cross-check test_skill_expected_count_table_matches_the_files re-verifies SKILL totals against the actual files, so a missed edit fails CI twice.",
+      "specReferences": [
+        "specs/verify-fix-sweep/05-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "008",
+      "type": "test",
+      "priority": 1,
+      "title": "Add prose guards to tests/test_fix_sweep.py",
+      "description": "Extend `tests/test_fix_sweep.py` (created in item 002) with prose guards per `05-testing-strategy.md` §2.11. These guards assert that the forge-fix SKILL, checklist files, and forge-verify SKILL contain the exact literals that make the feature's integration load-bearing. Pattern: `tests/test_lifecycle_artifact_check.py`.\n\nThe meta-guard contract: the protection set is the enumerated literals below and nothing else.\n\n**Guards over `skills/forge-fix/SKILL.md`:**\n- Contains `scripts/fix-sweep.py`, `sweep`, and `--json` inside a bash fence, and `plan-coverage` invoked as `$R/scripts/fix-sweep.py`\n- Contains the literal `- Sweep: NOT RUN \\u2014 no git delta ({reason})` (em dash U+2014 and `{reason}` placeholder exact)\n- Contains all three disposition tokens: `FIXED`, `JUSTIFIED:`, `FALSE-POSITIVE:`\n- Contains `git add <path>` and `git add -A` / `git add .` appear only in a prohibitive clause\n- Contains `never leave it recorded as` (the failed-FIXED rule)\n- Does NOT contain `--exclude` or `--min-chars`\n- Step 7's outcome table still holds exactly the seven existing `--outcome` values: `no-findings`, `decisions`, `failed`, `applied`, `reverified`, `reverify-findings`, `deferred`\n- Headings `## Step 1:` through `## Step 7:` survive with existing titles\n- `## Step 6: Re-verify Gate` through the next `##` heading is **byte-identical** to the pinned pre-change text — store a module constant in the test file captured from the SKILL before the edit\n- `references/stage-exit-protocol.md` is untouched and still contains the literal `` `skills/forge-fix/SKILL.md` Step 6``\n\n**Guards over checklist files and `skills/forge-verify/SKILL.md`:**\n- `**CHECK-B29**` in backlog.md under `### Work-Order Cardinality` with: `not-applicable`, `never a hard fail`, `` `gap` ``, `by name`, `Report, do not repair`, `(#170)`\n- `**CHECK-I24**` and `**CHECK-I25**` in impl.md with their respective degradation/severity literals\n- `**CHECK-S39**` in specs.md under `### Internal Consistency` with: `not-applicable`, `` `inconsistency` ``, `` `error` ``, `decision-bearing`, `Report, do not repair`, `(#170)`\n- Each new CHECK id appears in its owning dimension-group bullet in the forge-verify SKILL: `(owns CHECK-B29)`, `(owns CHECK-I24/I25)`, `(owns CHECK-S39)`\n- `build-adapters.py`'s `RUNTIME_HELPERS` contains `\"fix-sweep.py\"`\n\nFor the Step 6 byte-identity guard: before running the test suite the first time after item 004's edits, capture the `## Step 6: Re-verify Gate` section content from the live SKILL and store it as a module-level constant `STEP_6_PINNED`. The test then asserts that the section extracted from the current file matches this constant exactly.",
+      "acceptanceCriteria": [
+        "tests/test_fix_sweep.py contains prose guards asserting sweep and plan-coverage invocations in forge-fix SKILL.md",
+        "NOT-RUN wording guard asserts the exact em-dash literal including {reason} placeholder",
+        "Disposition tokens FIXED, JUSTIFIED:, FALSE-POSITIVE: are each guarded",
+        "Step 6 Re-verify Gate byte-identity is guarded against a pinned constant",
+        "stage-exit-protocol.md citation guard asserts the Step 6 reference is present",
+        "Each new CHECK id presence + degradation/severity literals are guarded in their checklist file",
+        "Ownership tags (owns CHECK-B29), (owns CHECK-I24/I25), (owns CHECK-S39) guarded in forge-verify SKILL",
+        "RUNTIME_HELPERS contains fix-sweep.py guard present",
+        "python3 -m pytest tests/test_fix_sweep.py passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-11T23:57:35.685Z",
+      "dependsOn": [
+        "002",
+        "004",
+        "005",
+        "006"
+      ],
+      "notes": "The Step 6 byte-identity guard is the strongest C-1 protection — heading survival alone does not detect a body edit inside the Re-verify Gate section. For the outcome-table guard, assert the exact set of seven --outcome values — this detects both additions and removals. The no-cross-reference rule between CHECK-I25 and CHECK-S39 is enforced by the EXISTING test_no_cross_mode_leakage test, NOT by a new guard here.",
+      "specReferences": [
+        "specs/verify-fix-sweep/05-testing-strategy.md"
+      ]
+    },
+    {
+      "id": "009",
+      "type": "chore",
+      "priority": 1,
+      "title": "Regenerate adapters, add CHANGELOG entry, and run full validation gate",
+      "description": "This is the closing item — run the single adapter regeneration after all canon edits have landed, add the CHANGELOG entry, and confirm every gate is green.\n\n1. **Regenerate adapters/** by running `python3 scripts/build-adapters.py`. This is run ONCE, after all canon edits (items 003, 004, 005, 006). The regeneration copies `scripts/fix-sweep.py` into every adapter bundle's `scripts/` directory, translates skill prose per adapter, and produces `adapters/*/scripts/fix-sweep.py`.\n\n2. **Verify adapter distribution:** confirm every `adapters/*/scripts/` directory contains `fix-sweep.py` (e.g. `ls adapters/*/scripts/fix-sweep.py`).\n\n3. **Add `[Unreleased]` CHANGELOG entry** to `CHANGELOG.md`. This is a publish-worthy change per AGENTS.md (canon edits regenerate adapters and change what the npm package ships). Add a concise entry under `[Unreleased]` describing: corrected-claim sweep for fix passes (`scripts/fix-sweep.py`), plan-coverage cardinality assertion, four new verification CHECKs (CHECK-B29/I24/I25/S39), forge-fix integration (Steps 2, 4, 5). Reference #170.\n\n4. **Run the full validation gate:**\n   - `bash scripts/validate.sh` — includes adapter drift check (step 6b) which must pass after regeneration\n   - `ruff check scripts/ eval/` — CI-only gate, run locally\n   - `python3 scripts/check-spec-purity.py` — forge-fix ≤300 body lines, forge-verify at 298\n   - `python3 -m pytest tests` — full test suite including all new and updated tests\n\n5. **Verify host-neutrality:** `python3 -m pytest tests/test_adapter_host_neutrality.py` must pass — the new checklist prose must contain no host terms in any adapter bundle.\n\nIf any gate fails, fix the issue and re-run until all pass.",
+      "acceptanceCriteria": [
+        "python3 scripts/build-adapters.py ran successfully (single regeneration)",
+        "Every adapters/*/scripts/ directory contains fix-sweep.py",
+        "CHANGELOG.md has an [Unreleased] entry describing the fix-sweep feature (#170)",
+        "bash scripts/validate.sh passes (including adapter drift check)",
+        "ruff check scripts/ eval/ passes",
+        "python3 scripts/check-spec-purity.py passes",
+        "python3 -m pytest tests passes (full suite)",
+        "python3 -m pytest tests/test_adapter_host_neutrality.py passes"
+      ],
+      "status": "done",
+      "completedAt": "2026-08-12T00:05:09.744Z",
+      "dependsOn": [
+        "003",
+        "004",
+        "005",
+        "006",
+        "007",
+        "008"
+      ],
+      "notes": "The adapters/ regeneration MUST happen after all canon edits — regenerating mid-stream leaves stale content that fails the drift gate. The CHANGELOG entry follows the AGENTS.md publish rule: a canon edit that changes what the npm package ships gets an [Unreleased] entry. The version bump and actual npm publish are owner-gated and out of scope.",
+      "specReferences": [
+        "specs/verify-fix-sweep/01-architecture-layout.md"
+      ]
+    }
+  ]
+}

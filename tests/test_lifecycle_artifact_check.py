@@ -28,8 +28,9 @@ def test_b27_present_and_advisory() -> None:
     text = CHECKLISTS.read_text(encoding="utf-8")
     assert "### Artifact Lifecycle Consistency" in text
     assert "**CHECK-B27**" in text
-    # backlog.md ends with this section, so slice to end-of-file (the old
-    # `## Implementation Mode Checklist` terminator now lives in impl.md).
+    # backlog.md no longer ends with this section — `### Work-Order Cardinality`
+    # follows it — but the assertions below are membership-only, so slicing to
+    # end-of-file stays correct.
     backlog = text.split("### Artifact Lifecycle Consistency", 1)[1]
     lowered = backlog.lower()
     assert "not-applicable" in lowered
@@ -48,5 +49,5 @@ def test_forge4_cites_b27_lifecycle_guidance() -> None:
 
 def test_verify_skill_backlog_total_bumped() -> None:
     text = VERIFY_SKILL.read_text(encoding="utf-8")
-    assert "backlog: 28 checks" in text
-    assert "backlog 28" in text
+    assert "backlog: 29 checks" in text
+    assert "backlog 29" in text

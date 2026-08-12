@@ -30,9 +30,10 @@ STACK_PROFILES = ["typescript", "python", "go", "rust", "_generic"]
 
 def _runnability() -> str:
     text = CHECKLISTS.read_text(encoding="utf-8")
-    # `### Runnability` is impl.md's last section, so slice to end-of-file (the old
-    # `## Epic Mode Checklist` terminator now lives in epic.md).
-    return text.split("### Runnability", 1)[1]
+    # Heading-terminated at the next `### `: impl.md carries sections after
+    # `### Runnability`, and an end-of-file slice would let a later check's
+    # degradation wording satisfy the CHECK-I21/I22 assertions below.
+    return text.split("### Runnability", 1)[1].split("\n### ", 1)[0]
 
 
 def test_i21_prose_recommends_dev_runtime_and_fix_mode_reverify() -> None:
@@ -48,7 +49,7 @@ def test_i21_prose_recommends_dev_runtime_and_fix_mode_reverify() -> None:
 def test_i23_present_and_advisory() -> None:
     runnability = _runnability()
     assert "**CHECK-I23**" in runnability
-    i23 = runnability.split("**CHECK-I23**", 1)[1]
+    i23 = runnability.split("**CHECK-I23**", 1)[1].split("\n### ", 1)[0]
     lowered = i23.lower()
     assert "never" in lowered and "hard fail" in lowered
     assert "not-applicable" in lowered
@@ -69,5 +70,5 @@ def test_every_stack_profile_has_bootstrap_wiring_section() -> None:
 
 def test_verify_skill_impl_total_bumped() -> None:
     text = VERIFY_SKILL.read_text(encoding="utf-8")
-    assert "impl: 23 checks" in text
-    assert "impl 23" in text
+    assert "impl: 25 checks" in text
+    assert "impl 25" in text
