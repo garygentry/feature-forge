@@ -124,3 +124,47 @@ Detailed checklist for the **backlog** verification mode, loaded by the `forge-v
   > provenance. Any item asserting a human-gated lifecycle state must trace — via `dependsOn` — to the
   > item that legitimately produces it, or assert the state through a dev-build / fixture path instead.
 
+### Work-Order Cardinality
+
+> **When this fires:** only when the backlog, or an artifact the backlog derives from,
+> **declares an enumerated per-item work list that claims to cover a set**. A backlog
+> with no such list yields **not-applicable** — absence of a declared list is never a
+> hard fail. The defect this catches is not a wrong item; it is a **missing** one, and
+> a missing entry is invisible to every reader who checks the entries that are present.
+
+- [ ] **CHECK-B29**: **A declared per-item work list covers the whole set it claims — name what is missing** (#170).
+  *Heuristic with a mechanical method — **not-applicable** when no enumerated per-item work
+  list is declared anywhere in the backlog or the artifacts it derives from; absence is
+  **never a hard fail**. A true omission is a `gap` (blocking): an unreviewed member is
+  missing coverage.* When the backlog — or an artifact it derives from, such as a
+  hand-authored work order, a per-item review sheet, a "one entry per item" table in a
+  plan the backlog cites, or a stated total in a summary line — declares an enumerated
+  list **claiming coverage of a set**, the list's cardinality must be **re-derived from
+  the actual member set** and never trusted from the list's own header, its numbering, or
+  a stated total. In the incident behind this check a hand-authored work order enumerated
+  **15 of 16** artifacts; it passed authoring and a full review, and the dropped
+  sixteenth would have been published unreviewed. Verify by re-deriving, never by
+  eyeballing:
+  1. **Find the declared lists.** Scan the backlog and the artifacts it cites for an
+     enumerated list that claims coverage of a nameable set — one entry per backlog item,
+     per spec document, per requirement id, per generated artifact, per file to touch. The
+     coverage claim reads as "one per …", "all …", "every …", "each …", or as a stated
+     total ("16 artifacts", "covers the full set"). If **no** such list exists, this check
+     is **not-applicable** — record it and move on.
+  2. **Re-derive the member set from its own source of record.** Build the actual set
+     independently of the list: backlog items from `backlog.json`, spec documents from the
+     spec directory listing, requirement ids from the PRD, artifacts from the paths the
+     items name. Count what you built; do not adopt any count the list asserts about
+     itself.
+  3. **Difference both directions and name every discrepancy.** Report each member of the
+     re-derived set that has **no** entry in the declared list **by name** — the item id,
+     file path, or requirement id — never as a count delta ("one short", "off by one"),
+     which hands the reader back exactly the derivation this check just performed. Report
+     the reverse direction too: a list entry naming something absent from the re-derived
+     set is a stale entry.
+  4. **Severity, and what to report.** A named omission is a `gap`. A stale entry, or a
+     stated total that disagrees with a list whose membership is nevertheless complete, is
+     an `inconsistency`. Every finding names the list, the source of record the set was
+     re-derived from, and each missing or stale member by name. **Report, do not repair** —
+     authoring the missing entry belongs to the fix pass.
+

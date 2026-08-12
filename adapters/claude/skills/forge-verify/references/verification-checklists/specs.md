@@ -64,3 +64,45 @@ Detailed checklist for the **specs** verification mode, loaded by the `forge-ver
 
 > **A quoted foreign requirement id is not an orphan.** A suite may legitimately mention a `REQ-` id it does not own — most often when a spec quotes an antecedent feature's test docstrings verbatim. Such ids may be declared, one per line, in `{resolvedFeatureDir}/.traceability-allowlist` (blank lines and `#` comments ignored), or passed as a repeatable `--allow-orphan REQ-ID` to `scripts/validate-traceability.py`. Allowed ids are reported as `ALLOWED FOREIGN REFERENCES` (`allowed_orphans` under `--json`) rather than silently dropped, and an entry matching nothing is reported as `STALE ALLOWLIST ENTRIES` (`unused_allowlist_entries`), which is advisory and does not fail the check. Before filing an orphaned reference as a finding, check whether it is already declared there — a declared id is a recorded decision, not a defect.
 
+### Internal Consistency
+
+> **When this fires:** on any single spec document that states the same quantity, scope
+> claim, or status **in more than one place** — a Requirement Coverage table vs the
+> sections it points at, a summary or overview paragraph vs the detail below it, a
+> Dependencies list vs the cross-references in the body, a stated count of documents or
+> types vs the list actually enumerated. It is **intra-document**: a contradiction
+> *between* two spec documents is already covered by the tech-spec-consistency and
+> cross-reference checks above. A document that states each quantity exactly once yields
+> **not-applicable**.
+
+- [ ] **CHECK-S39**: **One document, one answer — a quantity or claim restated inconsistently inside a single spec** (#170).
+  *Verifier judgment — read and compare; no extractor runs (deliberately, this milestone).
+  **not-applicable** when nothing is restated. Severity defaults to `inconsistency`
+  (advisory) and escalates to `error` only when the contradiction is decision-bearing, per
+  the severity conventions in the verify skill.* A spec document can contradict itself
+  while every cross-document check passes: in the incident behind this check, one artifact
+  asserted a claim held **universally**, while its own body — two sections below — stated
+  the correct **4-of-7** breakdown. The summary was the part downstream artifacts copied.
+  Verify by comparing the document against itself:
+  1. **Collect the restatements.** Note every place the document states a **count or
+     total** ("five documents", "N of M", "all three subcommands"), a **scope claim**
+     ("every", "all", "none", "only", "universal", "always", "never"), a **status claim**
+     ("out of scope", "deferred", "removed", "required"), or a **repeated identifier**
+     (a type name, a file path, a requirement id, a constant's value). Record each with its
+     location. Anything stated exactly once is not in scope for this check.
+  2. **Compare statements about the same subject.** Group by subject and compare within
+     each group. Watch specifically for: a Requirement Coverage table row pointing at a
+     section that no longer makes that claim; a count in an overview that disagrees with
+     the list enumerated below it; a scope word ("all", "universal", "never") that the
+     document's own breakdown contradicts; a constant given one value in a type definition
+     and another in prose.
+  3. **Decide which statement the document's own evidence supports.** Prefer the
+     **enumerated detail** — the table, the type definition, the numbered list — over the
+     summary that restates it. Name in the finding which statement the evidence supports,
+     so the fix does not have to re-derive it.
+  4. **Set severity deliberately.** Default to `inconsistency` (advisory). Escalate to
+     `error` only when the contradiction is **decision-bearing**: an implementer building
+     from the wrong statement writes different code, or the wrong statement is what a
+     downstream artifact or generated output copies. Quote both locations verbatim.
+     **Report, do not repair.**
+

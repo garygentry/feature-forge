@@ -35,6 +35,15 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 1. Read the "Fix Execution Plan" section of the findings document
 2. Identify all execution steps and their dependencies
 3. Check for a `## Fix Progress` section at the bottom of the findings document — if present, some steps were already applied in a previous interrupted run
+4. **Assert the plan covers every finding** before any fix executes. Exit 1 is that assertion firing, not a tool failure; only exit 2 is a tool failure. Run:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/fix-sweep.py" plan-coverage "{resolvedFeatureDir}/.verification/{findingsFile}" --json
+```
+
+Exit 0 with `"applicable": false` means the document declares no findings set or no plan to assert — proceed silently. Exit 1 → surface the **named** uncovered findings and any `claimed N, actual M` total mismatch, then resolve each one through the host's question mechanism per the **Decision Support** protocol in `references/shared-conventions.md`: either **author a covering execution step** into the Fix Execution Plan and execute it in this pass's Step 4, or **record an explicit justification** against that finding in the findings document. Never resolve a mismatch by editing the claimed total to match — re-derive which finding is missing and name it. Any finding still uncovered when you stop closes with `decisions` in Step 7, no advancement. Exit 2 → surface the `Error:` line verbatim and close with `failed`.
 
 ## Step 3: Handle User Decisions
 
@@ -61,6 +70,29 @@ For each step in the "Execution Steps" section, in order:
 
 **Shipped comments state intent, never measurement (anti-churn).** A fix pass writes **no empirical or quantified claims** into comments, docstrings, or test narration — no "measured", "probed and confirmed", no counts of what was checked, no blanket claims over enumerated cases. Every such claim is a fresh falsifiable surface for the next verify round; a chain of them is exactly how a fix loop stops converging. Shipped prose states what the code intends and what constraint binds it. The evidence — what was probed, how, with what result — belongs in the findings document's `## Fix Progress` entry (and the commit message), which are the sanctioned records for acceptance evidence.
 
+**Closing sub-step — sweep for surviving occurrences of what you just corrected.** After the last plan step is applied and BEFORE Step 5 commits anything, while the working tree is still dirty, sweep this fix's own delta for text you removed that survives elsewhere. Pass no flags beyond `--json` — the exclusions the script applies by default are the correct ones in both a plugin repository and a consumer repository. Exit 1 means survivors were found: that is the sweep working, not a tool failure. Run:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/fix-sweep.py" sweep --json
+```
+
+**Disposition every hit before Step 5.** Each hit names the file, the line, and the removed text it matched, so nothing needs re-deriving. Give every hit exactly one disposition — `FIXED` (you corrected the survivor now, in this pass, so the edit joins this same delta), `JUSTIFIED: {reason}` (it stands by decision: a deliberate quote, a historical or audit record), or `FALSE-POSITIVE: {reason}` (the match is not the corrected claim) — and record the sweep with its dispositions in the `## Fix Progress` section of the findings document, in this shape:
+
+```
+- Sweep: {date} — {K} needle(s), {N} survivor(s), {M} disposition(s)
+  - {file}:{line} — "{matched removed text}" → FIXED {date}
+  - {file}:{line} — "{matched removed text}" → JUSTIFIED: {reason}
+  - {file}:{line} — "{matched removed text}" → FALSE-POSITIVE: {reason}
+```
+
+Detection is mechanical; disposition is judgment — a hit is a candidate, not automatically a defect. When you cannot classify a hit confidently, route that hit through the host's question mechanism following the same **Decision Support** protocol as Step 3: lead with a recommended disposition and put the trade-off in each option's description. A survivor left awaiting a user decision closes with `decisions` in Step 7; a survivor you can neither fix nor justify closes with `failed`; a fully dispositioned sweep leaves this pass on whatever outcome it otherwise maps to.
+
+**Re-run the sweep once when a disposition edited files.** Those edits joined the same delta, so run the same command again to confirm they introduced no fresh survivors, and append a second `- Sweep:` block for the re-run. A hit already dispositioned `JUSTIFIED` or `FALSE-POSITIVE` — same file, same matched text — legitimately re-appears and needs no second disposition. A re-appearing hit that was dispositioned `FIXED` means the fix did not remove every occurrence: re-disposition it — correct it now, or close with `failed` — never leave it recorded as `FIXED`. One re-run is enough: do not loop. Exit 1 with no JSON payload on stdout is a crash, not survivors — surface the stderr traceback and close with `failed`.
+
+**The sweep is never silent.** When the payload reports `"skipped": true` (exit 0 — no delta was available), append the visible notice `- Sweep: NOT RUN — no git delta ({reason})` under `## Fix Progress`, using the payload's `reason` verbatim, and continue on this pass's normal outcome. A skip is not a failure; exit 2 is — surface its `Error:` line verbatim and close with `failed`.
+
 ## Step 5: Record the Fixes Through `state-verify` and Commit
 
 Never hand-author a verify entry, and never write a `verifiedStageVersion` value by hand. Record the fix pass with the `state-verify` verb described in the **Pipeline State Protocol** in `references/shared-conventions.md`, which owns its full flag surface, its status matrix, and the exit-2 failure protocol. `--stage` names the **served production stage** established in Step 1. `findings-applied` deliberately **clears** `verifiedStageVersion` and refuses `--verified-stage-version`: applying fixes is not verifying them, so the served stage's verification stays outstanding until a re-verify passes. Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline State Protocol; omitting it for a member is an error and must never fall back to a same-named flat feature.
@@ -72,6 +104,8 @@ python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{feature}" --stage "{servedStage}" --status findings-applied \
   --specs-dir "{specsDir}"
 ```
+
+**Stage every disposition-edited path explicitly.** Commit 1's staging scope is the feature directory only, so a survivor you fixed outside it (Step 4's sweep) would otherwise be left uncommitted. Before committing, run one `git add <path>` per file recorded as `FIXED` in the sweep record — enumerated, one path at a time, never `git add -A` and never `git add .`. Those fixes then ride Commit 1 alongside the findings document that records them, and the tree is left clean for the re-verify and for the next stage's dirty-tree check.
 
 Then follow the Git Commit Protocol in `references/shared-conventions.md`. If `gitCommitAfterStage` is true, stage files (`git add {resolvedFeatureDir}/` — or `{specsDir}/{epic}/` for an epic member so the member-state change commits atomically with the epic subtree) and commit with message `"{commitPrefix}({feature}): apply {mode} verification fixes"`. That is Commit 1, and the write above already recorded `commitHash: null` for it.
 
