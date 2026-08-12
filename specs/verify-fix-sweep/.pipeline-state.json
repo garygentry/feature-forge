@@ -93,11 +93,26 @@
       "commitHash": "e7dd96380317bf0bde893a8fe104444f18a9e830"
     },
     "forge-5-loop": {
-      "status": "in-progress",
-      "startedAt": "2026-08-11T22:18:01Z"
+      "status": "complete",
+      "startedAt": "2026-08-11T22:18:01Z",
+      "completedAt": "2026-08-12T00:13:24Z",
+      "version": 1,
+      "basedOnVersions": {
+        "forge-4-backlog": 1
+      },
+      "artifacts": [
+        "specs/verify-fix-sweep/.rauf/state.json"
+      ],
+      "commitHash": null
+    },
+    "forge-verify-impl": {
+      "status": "passed",
+      "verifiedAt": "2026-08-12T01:26:20Z",
+      "verifiedStageVersion": 1,
+      "commitHash": null
     }
   },
   "currentStage": "forge-5-loop",
-  "updatedAt": "2026-08-11T22:18:01Z",
+  "updatedAt": "2026-08-12T01:26:20Z",
   "branch": "forge/verify-fix-sweep"
 }
