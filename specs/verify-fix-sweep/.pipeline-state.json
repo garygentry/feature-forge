@@ -109,10 +109,10 @@
       "status": "passed",
       "verifiedAt": "2026-08-12T01:26:20Z",
       "verifiedStageVersion": 1,
-      "commitHash": null
+      "commitHash": "b6cfb95df6f2a4cf29770baba4c784cbc7c2e7da"
     }
   },
   "currentStage": "forge-5-loop",
-  "updatedAt": "2026-08-12T01:26:20Z",
+  "updatedAt": "2026-08-12T01:26:34Z",
   "branch": "forge/verify-fix-sweep"
 }
