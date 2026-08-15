@@ -4,30 +4,27 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-15 (hardening program COMPLETE — all 28 issues closed, all tracks done;
-0.17.0 / installer 0.3.4 published on npm; #230 fix landed post-release, unreleased on main;
-rauf 0.14.0 release + ff pin advance pending)._
+_Last updated: 2026-08-15 (0.18.0 release cut — rauf pin advance to 0.14.0 + #230 fix;
+hardening program COMPLETE, all 28 issues closed)._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.17.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.4** | `installer/package.json` (independent version line) |
-| npm | **`@garygentry/feature-forge@0.3.4`** (`latest`) | published 2026-08-12 |
-| Commit | `chore(release): v0.17.0 / installer 0.3.4 (#229)` = `e98efed` | |
+| Plugin | **0.18.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.3.5** | `installer/package.json` (independent version line) |
+| npm | publishing 0.3.5 | |
+| Commit | this release commit | |
 
-CHANGELOG `[Unreleased]` carries the #230 epic-branch-exit fix awaiting the next cut.
+CHANGELOG `[Unreleased]` is empty.
 
 ### rauf coupling
 
-`RAUF_PIN` remains **`@garygentry/rauf@0.13.0`** (re-verified resolving on npm 2026-08-05,
-per the note below). 0.13.0 advanced the pin to the rauf release that ships the `--agent pi`
-loop preset, which is the
-rauf release that ships the `--agent pi` loop preset. That coupling is load-bearing for this
-release: `forge-5-loop` discovers agents by probing `rauf agents --json`, so Pi loop support is
-delivered entirely by the runner — an older pinned rauf would never list `pi`. `minRunnerVersion`
-deliberately stays at 0.6.0; the Pi-specific requirement is prose in `COMPATIBILITY.md`.
+`RAUF_PIN` is **`@garygentry/rauf@0.14.0`** (verified resolving on npm 2026-08-15).
+0.14.0 ships `backlog answer` — the operator recovery verb for the loop-recovery feature —
+and the Codex stdin prompt delivery fix. `RECOVERY_MIN_RUNNER_VERSION` matches at `"0.14.0"`.
+`minRunnerVersion` deliberately stays at 0.6.0; agent-specific requirements are prose in
+`COMPATIBILITY.md`.
 
 Note for future releases: **feature-forge CI never checks that `RAUF_PIN` resolves** — every
 `os-matrix.yml` leg runs `--skip-rauf`, and `installer/test/rauf.test.ts` injects a `RegistryQuery`
@@ -75,7 +72,7 @@ before advancing it.
   read-only contract is tool-enforced), the installer accepts `-a pi` with scope-correct
   destinations plus an agents `mirror` placement, and `forge-root.sh` discovers Pi installs.
   Real agent-loaded code now lives under `adapter-src/<agent>/` and is verified in CI by its own
-  `verify` script. Also advances `RAUF_PIN` to `@garygentry/rauf@0.13.0` — see the coupling note
+  `verify` script. Also advances `RAUF_PIN` to `@garygentry/rauf@0.14.0` — see the coupling note
   above. A bare `install`/`update` now targets Pi wherever detected; one known issue is documented
   (a *damaged* Claude install alongside a healthy Pi install can resolve to the Pi bundle).
   CI's installer leg moved **Node 20 → 22** in the same release: on Node 20 the installer suite ran
