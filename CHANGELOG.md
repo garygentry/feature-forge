@@ -5,6 +5,12 @@ All notable changes to feature-forge are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Epic verify/fix branch exits now resolve the first actionable epic member instead of routing to the epic dashboard (#230).** A `stage-exit` serving `forge-0-epic` with an advancing outcome (e.g. after a successful verify or fix pass) unconditionally fell back to the epic dashboard — ignoring the member routing that standalone exits already performed. The exit now calls `_render_status` to find the first actionable member and routes to that member's live pipeline stage; the dashboard fallback fires only when no member is actionable or the status render fails, preserving the non-fabrication guarantee.
+
 ## [0.17.0] — 2026-08-12
 
 ### Added

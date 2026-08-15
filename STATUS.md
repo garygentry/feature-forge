@@ -4,22 +4,20 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-09 (Track C contracts batch fully landed on main — all seven issues
-across both Phase 3 batches, unreleased, rides the next cut; 0.16.0 / installer 0.3.3 remain
-deliberately unpublished; cleanup-execution program underway, tracker:
-`plans/HANDOFF-cleanup-execution.md`)._
+_Last updated: 2026-08-15 (hardening program COMPLETE — all 28 issues closed, all tracks done;
+0.17.0 / installer 0.3.4 published on npm; #230 fix landed post-release, unreleased on main;
+rauf 0.14.0 release + ff pin advance pending)._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.16.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.3** | `installer/package.json` (independent version line) |
-| npm | **`@garygentry/feature-forge@0.3.2`** (`latest`) — **0.3.3 NOT published** | one coordinated publish at program end (Phase F of the cleanup handoff); npm doesn't require intermediate versions |
-| Commit | `chore(release): v0.16.0 / installer 0.3.3 (#206)` = `bacf353` | |
+| Plugin | **0.17.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.3.4** | `installer/package.json` (independent version line) |
+| npm | **`@garygentry/feature-forge@0.3.4`** (`latest`) | published 2026-08-12 |
+| Commit | `chore(release): v0.17.0 / installer 0.3.4 (#229)` = `e98efed` | |
 
-CHANGELOG `[Unreleased]` carries the Phase 3 / Track C batch (#192 #186 #187 #188 #181 #182
-#166) awaiting the next cut.
+CHANGELOG `[Unreleased]` carries the #230 epic-branch-exit fix awaiting the next cut.
 
 ### rauf coupling
 
@@ -151,7 +149,7 @@ section, updated at every session close).
 | **C** — contracts & state-integrity batch (direct PR) | #186 #187 #188 #182 #181-remainder #166 (+ rescoped #192) | **done** (2026-08-09: batch 1 PRs #216–#218 (#192 Step-4c unconditional recovery, #186 Stage Review Gate block, #187 forge-4 return contract); batch 2 PRs #219–#222 (#188 caller-side resumption contract, #181 epic-state schema + conformance, #182 downstream notes reads + overwrite settled, #166 set-charter mutator). All seven issues closed citing their PRs. Unreleased — in `[Unreleased]` for the next cut) |
 | **D** — skip-docs (hand-sequenced 4-PR series) | #202 recovery → #197 mechanism → #203+#165 guard/config → #173 re-gate | **done** (2026-08-09: PRs #211–#214 merged, all five issues closed. `state-skip` verb + `docsStageEntry` schema + `docsStage` config + `_SKIP_PROTECTED_PRIOR` demotion guard + `docsStatus`-gated epic-doc offer. Unreleased — in `[Unreleased]` for the next cut) |
 | **E** — zero-prompt loop config (direct PR) | #153 #164 (`loopRunner.reviewMode`/`.agentMode`); 0.17.0 with D | **done** (2026-08-10: PR #224 merged — `reviewMode` (`prompt\|always\|never`) gates the Run-mode question, `agentMode` (`prompt\|auto`) gates the agent pick; defaults byte-identical to today; under `auto` the probe/verdict/alias-guard still run; retry-blocked keeps a narrow situational prompt under `always`/`never`; pinned by `tests/test_zero_prompt_loop_config.py`. Both issues closed. Unreleased — in `[Unreleased]` for the 0.17.0 cut) |
-| **F** — verify fix-sweeps (pipeline feature) | #170 mechanical milestone, then #171 semantic | pending |
+| **F** — verify fix-sweeps (pipeline feature) | #170 mechanical milestone, then #171 semantic | **done** (2026-08-12: #170 fix-sweep script via PR #228, #171 semantic sweep via same PR; both shipped in 0.17.0. Both issues closed) |
 | **G** — decisions & standalone | #180 single-writer decision; #167 adapter host-term translation (last) | **done** (2026-08-08: #180 decided + recorded via PR #209 — single writer assumed, detection-not-locking, `references/decisions/single-writer-threat-model.md`; unblocks Track C. 2026-08-10: #167 via PR #226 — copied reference markdown is host-term translated per agent in the self-containment pass (Pi `/new`/`/skill:`/`--host pi`, others host-neutral, Claude byte-verbatim; JSON + exempt meta-docs untouched); host-neutrality guard now scans references and covers Pi. Unreleased — in `[Unreleased]` for the next cut) |
 
 Sequencing: S1 next; B before D (both widen `EXIT_OUTCOMES`); E after D (shared schema
@@ -162,19 +160,13 @@ any new state surface (the R4 pattern), `bash scripts/validate.sh` green before 
 
 ## Open issues
 
-_2 open as of 2026-08-10 (Phase 1 closed #201/#180 via PRs #208/#209; Phase 2 closed
-#202/#197/#203/#165/#173 via PRs #211–#214; Phase 3 / Track C closed
-#192/#186/#187/#188/#181/#182/#166 via PRs #216–#222; Phase 4 / Track E closed
-#153/#164 via PR #224; Phase 5 chunk 1 closed #167 via PR #226), all sequenced in
-`plans/HANDOFF-cleanup-execution.md` + `plans/WORKSTREAMS-open-issues-2026-08-08.md`;
-each carries a 2026-08-08 "Reconciliation sweep" evidence comment with current
-file:line pointers. Remaining: Track F #170/#171._
+_0 open as of 2026-08-15. All 28 hardening-pass issues closed: Phase 1 (#201/#180),
+Phase 2 (#202/#197/#203/#165/#173), Phase 3 / Track C (#192/#186/#187/#188/#181/#182/#166),
+Phase 4 / Track E (#153/#164), Phase 5 (#167/#170/#171), plus Tracks S0/S1/B. Post-program
+fix #230 also closed (PR #231). Hardening program COMPLETE._
 
-Two known non-blocking follow-ups, untracked (no issue filed):
+One known non-blocking follow-up, untracked (no issue filed):
 
-- **rauf's `release:prepare` doesn't regenerate `adapters/pi/package.json`.** Until it does, every
-  future rauf release PR red-CIs on `pnpm pi:check` and needs a manual regen. Lives in the rauf
-  repo, not here, but it gates the next `RAUF_PIN` advance.
 - **`installer/tsconfig.json` `include` is `["src"]`**, so the installer's `.ts` tests are never
   type-checked — they only run under Node's native type stripping. A type error in a test file
   passes CI silently.
