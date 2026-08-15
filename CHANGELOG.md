@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-08-15
+
+### Changed
+
+- **rauf pin advanced to `@garygentry/rauf@0.14.0`.** The pinned runner now ships `backlog answer` — the operator recovery verb that threads a human's answer into the next loop iteration — which is the rauf half of the `loop-recovery` feature (forge-5-loop's Post-Run Recovery Procedure). `RECOVERY_MIN_RUNNER_VERSION` was already `"0.14.0"` in anticipation; the pin now matches.
+
 ### Fixed
 
 - **Epic verify/fix branch exits now resolve the first actionable epic member instead of routing to the epic dashboard (#230).** A `stage-exit` serving `forge-0-epic` with an advancing outcome (e.g. after a successful verify or fix pass) unconditionally fell back to the epic dashboard — ignoring the member routing that standalone exits already performed. The exit now calls `_render_status` to find the first actionable member and routes to that member's live pipeline stage; the dashboard fallback fires only when no member is actionable or the status render fails, preserving the non-fabrication guarantee.

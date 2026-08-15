@@ -93,7 +93,7 @@ CLI once, globally or on demand — this is a real decision (global writes to th
 
 **Verify the version meets the floor.** Run `rauf version` (on-demand: `npx @garygentry/rauf
 version`). It must be **≥ 0.6.0** (the agent-surface floor feature-forge requires; the installer
-pins `@garygentry/rauf@0.13.0`). If the command is not found after a global install, `rauf` is
+pins `@garygentry/rauf@0.14.0`). If the command is not found after a global install, `rauf` is
 not on your PATH — add `~/.local/bin` to PATH, or use the binary fallback:
 `curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`.
 
