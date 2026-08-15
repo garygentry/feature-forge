@@ -4232,12 +4232,33 @@ def stage_exit(
     # hands off the same way the epic's own exit does. Identical to the previous
     # behavior for every production exit, where `route_stage is stage`.
     if route_stage == "forge-0-epic" and next_feature is None:
-        # An epic exit that names no concrete member has nothing to hand off to.
-        # The dashboard is the same non-fabrication answer given to a named member
-        # that has finished every production stage: never invent a member, and
-        # never print a template the user cannot run.
-        next_stage_id = None
-        next_command = f"/feature-forge:forge-0-epic {feature}"
+        # A branch exit (verify/fix) that served forge-0-epic cannot carry
+        # --next-feature (the CLI rejects it for non-epic stages), so the member
+        # must be resolved HERE from live epic state.  Creation-mode exits pass
+        # --next-feature and skip this block entirely (#230).
+        try:
+            status = _render_status(specs_dir, feature)
+            actionable = status["actionable"]
+            if actionable:
+                resolved_member = actionable[0]
+                ms, mr = _epic_member_state(specs_dir, feature, resolved_member)
+                if mr is not None:
+                    next_stage_id = "forge-1-prd"
+                    next_command = f"/feature-forge:forge-1-prd {resolved_member}"
+                else:
+                    member_next = next_stage(ms)
+                    if member_next is None:
+                        next_stage_id = None
+                        next_command = f"/feature-forge:forge-0-epic {feature}"
+                    else:
+                        next_stage_id = member_next
+                        next_command = f"/feature-forge:{member_next} {resolved_member}"
+            else:
+                next_stage_id = None
+                next_command = f"/feature-forge:forge-0-epic {feature}"
+        except UsageError:
+            next_stage_id = None
+            next_command = f"/feature-forge:forge-0-epic {feature}"
     else:
         next_arg = next_feature or feature
         next_command = (
