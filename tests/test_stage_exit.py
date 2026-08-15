@@ -1842,6 +1842,169 @@ def test_the_branch_route_table_has_a_terminus_for_every_outcome() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Branch exit serving forge-0-epic — member resolution (#230)
+# --------------------------------------------------------------------------- #
+
+_EPIC_FOR_BRANCH = "my-epic"
+_BRANCH_DASHBOARD = f"/feature-forge:forge-0-epic {_EPIC_FOR_BRANCH}"
+
+
+def _branch_epic_project(
+    tmp_path: Path,
+    members: list[dict],
+    complete: tuple[str, ...] = (),
+    partial: dict[str, str] | None = None,
+) -> Path:
+    """An epic with real members for branch-exit-served-epic tests.
+
+    ``complete`` names members that have finished all production stages.
+    ``partial`` maps member names to their latest completed production stage,
+    creating state where the member is mid-pipeline.
+    """
+    root = tmp_path / "proj"
+    epic_dir = root / "specs" / _EPIC_FOR_BRANCH
+    epic_dir.mkdir(parents=True)
+    (root / "forge.config.json").write_text("{}")
+    (epic_dir / "EPIC.md").write_text("# epic\n")
+    (epic_dir / "epic-manifest.json").write_text(json.dumps({
+        "schemaVersion": 1,
+        "revision": 1,
+        "epic": _EPIC_FOR_BRANCH,
+        "description": "Epic for branch-exit member resolution tests.",
+        "status": "active",
+        "narrativeDoc": "EPIC.md",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "features": members,
+    }))
+    for entry in members:
+        name = entry["name"]
+        member_dir = epic_dir / name
+        member_dir.mkdir()
+        if name in complete:
+            state = {
+                "pipelineStatus": "active",
+                "epic": _EPIC_FOR_BRANCH,
+                "stages": {
+                    **{
+                        stage: {"status": "complete", "version": 1}
+                        for stage in PRODUCTION_STAGES[1:]
+                    },
+                    "forge-verify-impl": {
+                        "status": "passed", "verifiedStageVersion": 1,
+                    },
+                },
+            }
+            (member_dir / ".pipeline-state.json").write_text(json.dumps(state))
+            (member_dir / "PRD.md").write_text("# prd\n")
+        elif partial and name in partial:
+            last_done = partial[name]
+            idx = PRODUCTION_STAGES.index(last_done)
+            state = {
+                "pipelineStatus": "active",
+                "epic": _EPIC_FOR_BRANCH,
+                "stages": {
+                    stage: {"status": "complete", "version": 1}
+                    for stage in PRODUCTION_STAGES[1:idx + 1]
+                },
+            }
+            (member_dir / ".pipeline-state.json").write_text(json.dumps(state))
+            (member_dir / "PRD.md").write_text("# prd\n")
+    subprocess.run(["git", "init", "-qb", "main"], cwd=root, check=True)
+    return root
+
+
+def _branch_member(name: str, depends_on: tuple[str, ...] = ()) -> dict:
+    return {
+        "name": name,
+        "charter": f"Charter for {name}, long enough to satisfy the manifest schema.",
+        "dependsOn": list(depends_on),
+        "exposes": [],
+        "consumes": [],
+    }
+
+
+def _branch_epic_exit(
+    cwd: Path, stage: str, outcome: str, *, owner: str = "direct"
+) -> dict:
+    return _exit(
+        cwd, "--feature", _EPIC_FOR_BRANCH, "--stage", stage,
+        "--outcome", outcome, "--served-stage", "forge-0-epic",
+        "--owner", owner,
+    )
+
+
+def test_branch_exit_serving_epic_routes_to_first_actionable_member(
+    tmp_path: Path,
+) -> None:
+    """#230: reverified/passed branch exit serving forge-0-epic routes to
+    the first actionable member's live stage, not to the dashboard."""
+    root = _branch_epic_project(
+        tmp_path,
+        [_branch_member("alpha"), _branch_member("beta", ("alpha",))],
+    )
+    d = _branch_epic_exit(root, "forge-fix", "reverified")["directives"]
+    assert d["nextStage"] == "forge-1-prd"
+    assert d["nextCommand"] == f"/feature-forge:forge-1-prd alpha"
+
+
+def test_branch_exit_serving_epic_routes_to_members_live_stage(
+    tmp_path: Path,
+) -> None:
+    """When the first actionable member is mid-pipeline, the exit routes
+    to that member's actual next stage, not unconditionally to forge-1-prd."""
+    root = _branch_epic_project(
+        tmp_path,
+        [_branch_member("alpha"), _branch_member("beta", ("alpha",))],
+        partial={"alpha": "forge-2-tech"},
+    )
+    d = _branch_epic_exit(root, "forge-verify", "passed")["directives"]
+    assert d["nextStage"] == "forge-3-specs"
+    assert d["nextCommand"] == f"/feature-forge:forge-3-specs alpha"
+
+
+def test_branch_exit_serving_epic_falls_back_to_dashboard_when_all_complete(
+    tmp_path: Path,
+) -> None:
+    """All members complete → no actionable member → dashboard."""
+    root = _branch_epic_project(
+        tmp_path,
+        [_branch_member("alpha")],
+        complete=("alpha",),
+    )
+    d = _branch_epic_exit(root, "forge-fix", "reverified")["directives"]
+    assert d["nextStage"] is None
+    assert d["nextCommand"] == _BRANCH_DASHBOARD
+
+
+def test_branch_exit_serving_epic_skipped_outcome_also_resolves_member(
+    tmp_path: Path,
+) -> None:
+    """The `skipped` verify outcome is also advancing and should resolve."""
+    root = _branch_epic_project(
+        tmp_path,
+        [_branch_member("alpha")],
+    )
+    d = _branch_epic_exit(root, "forge-verify", "skipped")["directives"]
+    assert d["nextStage"] == "forge-1-prd"
+    assert d["nextCommand"] == f"/feature-forge:forge-1-prd alpha"
+
+
+def test_branch_exit_serving_epic_non_advancing_still_routes_to_branch(
+    tmp_path: Path,
+) -> None:
+    """Non-advancing outcomes (findings, applied, etc.) should NOT resolve a
+    member — they route back to fix/verify as before."""
+    root = _branch_epic_project(
+        tmp_path,
+        [_branch_member("alpha")],
+    )
+    d = _branch_epic_exit(root, "forge-verify", "findings")["directives"]
+    assert "forge-fix" in d["primaryCommand"]
+    assert "--served-stage forge-0-epic" in d["primaryCommand"]
+
+
+# --------------------------------------------------------------------------- #
 # 07 §3.6 — documentation live-state routing (02 §8)
 # --------------------------------------------------------------------------- #
 
