@@ -41,9 +41,10 @@ At the end of the 2026-08-23 implementation session:
    open for `RAUF-104`.
 - **Not started in code:** rauf native operator adapter, feature-forge direct-install migration,
    packaged cross-repository harness, and releases.
-- **Uncommitted feature-forge work exists:** native `SKILL.md` output, native `.agent.md` workers,
-  generated `adapters/copilot/plugin.json`, generated tree/fixtures, Copilot version-sync coverage,
-  changelog entry, and tests.
+- **Feature-forge native adapter milestone committed:** branch `docs/copilot-g2-contract`, commit
+   `7754a3b` (`feat(adapters): add native Copilot plugin output`) contains native `SKILL.md` output,
+   native `.agent.md` workers, the generated plugin manifest/tree/fixtures, Copilot version-sync
+   coverage, changelog entry, and tests. The worktree is clean.
 - **Rauf milestones committed:** branch `feat/copilot-g2-contract`, commits `45603b1`
    (`refactor(loop): neutralize stream event type`) and `921971c`
    (`feat(loop): parse Copilot JSONL output`), and `d63cdc4`
@@ -214,8 +215,9 @@ Continue the GitHub Copilot adaptation at RAUF-104, using
 plans/copilot-adaptation/README.md as the session runbook.
 
 Repository coordinates at handoff:
-- feature-forge: branch docs/copilot-g2-contract with this handoff committed; it still contains
-   intentional, unstaged Copilot adapter migration work. Preserve it exactly.
+- feature-forge: branch docs/copilot-g2-contract with adapter milestone 7754a3b
+   (feat(adapters): add native Copilot plugin output) and this handoff committed on top; worktree
+   clean at handoff.
 - ../rauf: branch feat/copilot-g2-contract at d63cdc4
    (feat(loop): add Copilot CLI provider); worktree clean at handoff.
 - Nothing has been pushed.
@@ -223,8 +225,8 @@ Repository coordinates at handoff:
 First read both repositories' AGENTS.md files, then the runbook, unified tracker, rauf source plan,
 and evidence/copilot-cli-child-contract-2026-08-23.md. Run the README's idempotent startup checks
 and inspect both worktrees before editing. Confirm rauf remains on feat/copilot-g2-contract at
-d63cdc4 and preserve feature-forge's unstaged adapter migration without resetting, staging,
-committing, or regenerating over it.
+d63cdc4 and feature-forge remains on docs/copilot-g2-contract with the native adapter milestone
+committed. Treat any later worktree changes as user/session work.
 
 Phase A and G2 are closed. RAUF-101 is complete and must not be repeated: AgentStreamEvent is the
 canonical internal type, ClaudeStreamEvent is the deprecated exported compatibility alias, and
