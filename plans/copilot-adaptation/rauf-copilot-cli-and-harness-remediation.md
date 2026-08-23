@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Phase 1 complete; Phase 2 failure classification next
+Status: Phase 1 complete; Phase 2 in progress at signal and git ownership
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -454,7 +454,7 @@ Exit criteria:
 
 ### Phase 2: Integrate runtime safety and failure classification
 
-Status: Not started; entry requires the dedicated provider and parser
+Status: In progress; failure classification complete, signal and git ownership next
 
 Primary files in `../rauf`:
 
@@ -471,9 +471,9 @@ Tasks:
 - [ ] Prove normal work and review passes both use the dedicated Copilot provider.
 - [ ] Preserve final-line RAUF signal neutralization and last-signal-wins behavior on
       reconstructed Copilot text.
-- [ ] Map Copilot auth, invalid-model, permission, credit/usage, timeout, and infrastructure
+- [x] Map Copilot auth, invalid-model, permission, credit/usage, timeout, and infrastructure
       failures into existing runner outcomes without routing them through Claude OAuth logic.
-- [ ] Decide whether any Copilot limit can implement provider-specific `checkUsage`; otherwise
+- [x] Decide whether any Copilot limit can implement provider-specific `checkUsage`; otherwise
       classify it as a documented non-Claude failure and keep the item recoverable where possible.
 - [ ] Ensure missing/malformed final messages cannot produce a false `RAUF_DONE`.
 - [ ] Prove the child cannot commit or push under the selected default policy, while rauf's
@@ -484,6 +484,15 @@ Tasks:
       is mistaken for the final control signal.
 - [ ] Confirm `iteration-status.json`, persisted events, and status health remain meaningful with
       Copilot tool/token events and degrade cleanly when fields are absent.
+
+Evidence (2026-08-23): rauf commit `7dd6f3d` adds a Copilot-owned classifier and an optional
+provider classification hook. Authentication, invalid model, permission denial, credit/limit, and
+other process failures use the existing pending/circuit-breaker infrastructure outcome; timeout
+uses the existing blocked timeout outcome; malformed or missing completion output uses retry/defer;
+and runner cancellation takes precedence as the existing loop-cancel outcome. Spawn errors retain
+the existing fatal execute-error path. `CopilotCliProvider` deliberately has no `checkUsage`. The
+affected 107 tests, loop typecheck, changed-file lint, and formatting passed. Signal and git
+ownership remain bounded to `RAUF-106`.
 
 Exit criteria:
 

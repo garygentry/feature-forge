@@ -211,6 +211,21 @@ provider; selection tests prove persisted item, project, and global `copilot` va
 unchanged. The focused registry/preset/selection suite passed 52 tests, all provider and selection
 tests passed 116 tests, and loop typecheck, changed-file lint, and formatting passed.
 
+## Failure Classification Implementation Evidence
+
+Rauf commit `7dd6f3d` on `feat/copilot-g2-contract` completes `RAUF-105`. A Copilot-owned pure
+classifier recognizes authentication, invalid-model, permission-denial, limit/credit, timeout,
+infrastructure, malformed-output, and missing-signal cases from the frozen process result channels.
+It maps them onto the runner's existing timeout, infrastructure circuit-breaker, and retry/defer
+outcomes rather than importing Claude OAuth/reset handling. Abort-driven cancellation takes
+precedence in the runner and retains the existing loop-cancel outcome; spawn errors retain the
+existing fatal execute-error path.
+
+The provider intentionally exposes no `checkUsage`: CLI 1.0.78 still offers no stable non-mutating
+balance/reset preflight. Focused tests prove exit-0 in-band permission denial, malformed nonzero
+JSONL, valid JSONL without a completion signal, provider-to-runner routing, and cancellation. The
+affected 107-test slice, loop typecheck, changed-file lint, and formatting passed.
+
 ## Remaining Runtime Observation
 
 No account credit exhaustion was intentionally induced. The stable contract is the absence of a
