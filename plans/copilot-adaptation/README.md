@@ -1,6 +1,6 @@
 # Copilot Adaptation Implementation Runbook
 
-Status: Active implementation; Phase A and G2 closed, Phase B at RAUF-106
+Status: Active implementation; Phase A and G2 closed, Phase B at RAUF-107
 Last updated: 2026-08-23
 Repositories: `feature-forge` and sibling `../rauf`
 
@@ -33,7 +33,7 @@ When documents conflict, use the unified plan for sequencing and the owning repo
 At the end of the 2026-08-23 implementation session:
 
 - **Active coordination phase:** Phase A, Contract Freeze, is complete; G0, G1, and G2 are closed.
-   Phase B is in progress; `RAUF-101` through `RAUF-105` are complete and `RAUF-106` is next.
+   Phase B is in progress; `RAUF-101` through `RAUF-106` are complete and `RAUF-107` is next.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
 - **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
    `ClaudeStreamEvent` as an exported compatibility alias, has a buffered Copilot JSONL parser,
@@ -50,7 +50,8 @@ At the end of the 2026-08-23 implementation session:
    (`feat(loop): parse Copilot JSONL output`), and `d63cdc4`
    (`feat(loop): add Copilot CLI provider`), `a4f50e0`
    (`feat(loop): register dedicated Copilot provider`), and `7dd6f3d`
-   (`feat(loop): classify Copilot failures`). The worktree is clean after `RAUF-105`.
+   (`feat(loop): classify Copilot failures`), and `fa3a624`
+   (`test(loop): prove Copilot signal and git boundaries`). The worktree is clean after `RAUF-106`.
 - **Verified:** Copilot CLI 1.0.78 cached local installation discovers all 13 feature-forge skills;
   a structured prompt session loads all three custom agents with expected tools and no warnings.
 - **New G1 evidence:** direct project/personal discovery, prefixed invocation, worker capability
@@ -101,6 +102,10 @@ At the end of the 2026-08-23 implementation session:
    infrastructure, malformed-output, missing-signal, cancellation, and spawn failure are routed
    through existing runner outcomes without Claude OAuth/reset semantics. `checkUsage` remains
    absent. The affected 107-test slice, loop typecheck, lint, and formatting passed.
+- **RAUF-106 verification:** Copilot metadata/tool/error tokens are excluded from signals, the
+   last assistant signal wins, fenced quoted tokens are neutralized, commit/push deny flags remain
+   bounded, and rauf creates exactly one post-signal commit. The focused 147-test slice, loop
+   typecheck, lint, and formatting passed.
 
 The snapshot is evidence, not a substitute for startup checks.
 
@@ -163,9 +168,9 @@ The next session should execute these bounded items in order:
 
 1. **Do not repeat the unchanged legacy-root probe.** It ran after a full host restart and failed;
    `operator-actions.md` is now a completed historical runbook.
-2. **Continue Phase B at `RAUF-106`.** Prove last-final-line signal handling excludes metadata,
-   tool arguments, errors, and quoted prose, then prove Copilot denies child commit/push while
-   rauf still owns the successful post-signal commit.
+2. **Continue Phase B at `RAUF-107`.** Add the mock and sanitized-fixture runtime matrix for done,
+   blocked, needs-human, no signal, malformed/unknown JSONL, nonzero exit, invalid model, auth,
+   permission, timeout, abort, process cleanup, direct, detached, resume, and review paths.
 3. **Do not start with installer or documentation changes.** Parser/provider behavior is the
    controlling runtime dependency.
 4. In parallel only when independent and G1 is closed, finish feature-forge `FORGE-101`/`FORGE-102`
@@ -221,21 +226,21 @@ starting unrelated downstream work.
 Use this prompt to resume at the next logical milestone in a new session:
 
 ```text
-Continue the GitHub Copilot adaptation at RAUF-106, using
+Continue the GitHub Copilot adaptation at RAUF-107, using
 plans/copilot-adaptation/README.md as the session runbook.
 
 Repository coordinates at handoff:
 - feature-forge: branch docs/copilot-g2-contract with adapter milestone 7754a3b
    (feat(adapters): add native Copilot plugin output) and this handoff committed on top; worktree
    clean at handoff.
-- ../rauf: branch feat/copilot-g2-contract at 7dd6f3d
-   (feat(loop): classify Copilot failures); worktree clean at handoff.
+- ../rauf: branch feat/copilot-g2-contract at fa3a624
+   (test(loop): prove Copilot signal and git boundaries); worktree clean at handoff.
 - Nothing has been pushed.
 
 First read both repositories' AGENTS.md files, then the runbook, unified tracker, rauf source plan,
 and evidence/copilot-cli-child-contract-2026-08-23.md. Run the README's idempotent startup checks
 and inspect both worktrees before editing. Confirm rauf remains on feat/copilot-g2-contract at
-7dd6f3d and feature-forge remains on docs/copilot-g2-contract with the native adapter milestone
+fa3a624 and feature-forge remains on docs/copilot-g2-contract with the native adapter milestone
 committed. Treat any later worktree changes as user/session work.
 
 Phase A and G2 are closed. RAUF-101 is complete and must not be repeated: AgentStreamEvent is the
@@ -266,15 +271,22 @@ retry/defer outcomes. Spawn errors retain the existing fatal execute-error path,
 `CopilotCliProvider` deliberately exposes no `checkUsage` because CLI 1.0.78 has no stable reset
 contract. The affected 107 tests, loop typecheck, lint, and formatting passed.
 
-Enter RAUF-106 only. State one local hypothesis and one falsifying focused check before editing.
-Prove the last valid final-line signal wins while tokens in metadata, tool arguments, errors, or
-quoted prose cannot complete an item. Prove the child cannot commit or push under the frozen
-Copilot permission policy while rauf's post-signal commit still succeeds. Immediately run the
-narrow signal/git ownership tests after the first substantive edit. Do not begin the RAUF-107
-runtime matrix, RAUF-108 installer/config/UI work, the native operator adapter, or feature-forge
-implementation in this slice. Keep rauf changes on `feat/copilot-g2-contract` and commit RAUF-106
-as its own logical milestone only after focused checks pass. Do not push, publish, tag, or alter
-the Copilot/Databricks plugin registry.
+RAUF-106 is complete and must not be repeated. Commit `fa3a624` makes signal neutralization aware
+of strict Markdown fences, proves Copilot metadata/tool/error tokens cannot supply a signal and the
+last assistant signal wins, asserts child commit/push denial without unrestricted grants, and
+proves rauf creates exactly one post-signal commit containing child-created work. The focused 147
+tests, loop typecheck, lint, and formatting passed.
+
+Enter RAUF-107 only. State one local hypothesis and one falsifying focused check before editing.
+Add mock and sanitized-fixture coverage for done, blocked, needs-human, no signal,
+malformed/unknown JSONL, nonzero exit, invalid model, auth, permission, timeout, abort, process
+cleanup, direct, detached, resume, and review paths. Reuse the frozen 1.0.78 contract and existing
+test-sandbox conventions; do not run authenticated probes unless a fixture gap cannot be resolved
+otherwise. Immediately run the narrow matrix check after the first substantive edit. Do not begin
+RAUF-108 installer/config/UI work, the native operator adapter, or feature-forge implementation in
+this slice. Keep rauf changes on `feat/copilot-g2-contract` and commit RAUF-107 as its own logical
+milestone only after focused checks pass. Do not push, publish, tag, or alter the
+Copilot/Databricks plugin registry.
 
 At session close, run focused rauf checks and git diff --check in both repositories, inspect both
 worktrees, remove disposable fixtures, and update the unified tracker, rauf source plan, evidence

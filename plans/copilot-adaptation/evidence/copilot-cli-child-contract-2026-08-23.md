@@ -226,6 +226,20 @@ balance/reset preflight. Focused tests prove exit-0 in-band permission denial, m
 JSONL, valid JSONL without a completion signal, provider-to-runner routing, and cancellation. The
 affected 107-test slice, loop typecheck, changed-file lint, and formatting passed.
 
+## Signal and Git Ownership Implementation Evidence
+
+Rauf commit `fa3a624` on `feat/copilot-g2-contract` completes `RAUF-106`. Copilot JSONL tests feed
+control tokens through session metadata, tool arguments/results, and error records and prove none
+enters reconstructed signal text. When assistant messages contain multiple valid signals, backward
+parsing selects the last one. The shared neutralizer now also defuses standalone tokens inside
+strict backtick or tilde Markdown fences, including marker-like lines that are not valid closers,
+while preserving a genuine signal after the fence closes.
+
+The Copilot provider test asserts both `git commit` and `git push` deny patterns and the absence of
+unrestricted tool/path flags. A runner integration test writes child-owned work, emits
+`RAUF_DONE`, and proves exactly one `[rauf]` commit contains that work. The focused 147-test slice,
+loop typecheck, changed-file lint, and formatting passed.
+
 ## Remaining Runtime Observation
 
 No account credit exhaustion was intentionally induced. The stable contract is the absence of a
