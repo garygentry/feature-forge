@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Assert the three feature-forge version fields agree (REQ-CI-05, REQ-OBS-01).
+"""Assert the four feature-forge version fields agree (REQ-CI-05, REQ-OBS-01).
 
-Within-repo version-sync gate. The three fields are the version-sync contract from
+Within-repo version-sync gate. The fields are the version-sync contract from
 00-core-definitions.md §5; installer/package.json is EXCLUDED (independent line).
 The gate prints every field and its value, flags conflicts, and exits non-zero on
 any mismatch (REQ-OBS-01 — no silent failure). The three fields were reconciled
@@ -25,7 +25,7 @@ import argparse
 import json
 from pathlib import Path
 
-#: The three synced fields (00 §5). Each: (repo-relative file, accessor label,
+#: The synced fields (00 §5). Each: (repo-relative file, accessor label,
 #: a function extracting the version string from the parsed JSON).
 FIELDS: tuple[tuple[str, str, "object"], ...] = (
     (".claude-plugin/plugin.json", "version", lambda d: d["version"]),
@@ -34,6 +34,7 @@ FIELDS: tuple[tuple[str, str, "object"], ...] = (
         "plugins[0].version",
         lambda d: d["plugins"][0]["version"],
     ),
+    ("adapters/copilot/plugin.json", "version", lambda d: d["version"]),
     ("adapters/gemini/gemini-extension.json", "version", lambda d: d["version"]),
 )
 
@@ -73,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root: Path = args.root.resolve()
 
-    print("version-sync: checking the three synced feature-forge fields (REQ-CI-05)...")
+    print("version-sync: checking the four synced feature-forge fields (REQ-CI-05)...")
     print(f"version-sync: excluded (independent line): {', '.join(EXCLUDED)}")
 
     versions: dict[str, str] = {}
@@ -94,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     distinct = set(versions.values())
     if len(distinct) == 1:
         only = next(iter(distinct))
-        print(f"version-sync: PASS — all three fields agree at {only}.")
+        print(f"version-sync: PASS — all four fields agree at {only}.")
         return 0
 
     # Mismatch — print the conflict explicitly (REQ-OBS-01: conflicting files+values).
@@ -102,10 +103,10 @@ def main(argv: list[str] | None = None) -> int:
     for label, value in versions.items():
         print(f"  CONFLICT  {label} = {value}")
     print(
-        "version-sync: reconcile all three fields to a single version (the conflicting "
+        "version-sync: reconcile all four fields to a single version (the conflicting "
         "values are printed above). marketplace.json is hand-edited; "
-        "gemini-extension.json is REGENERATED via scripts/build-adapters.py "
-        "(bump GEMINI_EXTENSION_VERSION). See 06-packaging-versioning-hygiene.md."
+        "Copilot and Gemini manifests are REGENERATED via scripts/build-adapters.py. "
+        "See 06-packaging-versioning-hygiene.md."
     )
     return 1
 

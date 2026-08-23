@@ -2,6 +2,7 @@
 # GENERATED — DO NOT EDIT. Source: skills/forge-fix/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-fix
 description: Apply fixes from the most recent forge-verify findings document. Use when user runs /feature-forge:forge-fix or asks to apply verification fixes for a forge feature. Do NOT trigger for general code fixes, bug fixes, or repairs outside the forge verification workflow.
+argument-hint: <feature-name> [--served-stage <production-stage>]
 ---
 
 # forge-fix — Apply Verification Fixes

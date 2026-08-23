@@ -2,6 +2,7 @@
 # GENERATED — DO NOT EDIT. Source: skills/forge-bootstrap/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-bootstrap
 description: Scaffold a brand-new empty repository to a pipeline-ready, green baseline (structure, toolchain, passing lint+test, forge.config.json), then optionally chain into the pipeline. Use when the user runs /feature-forge:forge-bootstrap or asks to bootstrap/scaffold a new empty project for forge. Do NOT trigger on a non-empty repo (that is forge-init), or for general project setup outside the forge pipeline.
+argument-hint: '[--mode-b] [--here|<target-dir>]'
 ---
 
 # Bootstrap a Greenfield Repo

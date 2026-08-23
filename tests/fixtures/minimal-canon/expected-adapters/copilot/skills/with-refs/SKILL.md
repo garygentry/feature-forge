@@ -2,6 +2,7 @@
 # GENERATED — DO NOT EDIT. Source: skills/with-refs/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: with-refs
 description: 'Build the thing: do it precisely.'
+argument-hint: '[target]'
 ---
 
 # With Refs

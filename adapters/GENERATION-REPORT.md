@@ -41,30 +41,15 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
-| `agents/forge-researcher.md` | `sub-agent key 'effort'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-researcher.md` | `sub-agent key 'maxTurns'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-researcher.md` | `sub-agent key 'model'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-researcher.md` | `sub-agent key 'tools'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-spec-writer.md` | `sub-agent key 'maxTurns'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-spec-writer.md` | `sub-agent key 'model'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-spec-writer.md` | `sub-agent key 'tools'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-verifier.md` | `sub-agent key 'maxTurns'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-verifier.md` | `sub-agent key 'memory'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-verifier.md` | `sub-agent key 'model'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-verifier.md` | `sub-agent key 'skills'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/forge-verifier.md` | `sub-agent key 'tools'` | no Copilot sub-agent construct (TQ-1) |
-| `skills/forge-0-epic/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-1-prd/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-2-tech/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-3-specs/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-4-backlog/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-5-loop/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-6-docs/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-bootstrap/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-fix/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-guide/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-verify/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
+| `agents/forge-researcher.md` | `sub-agent key 'effort'` | no equivalent Copilot custom-agent field |
+| `agents/forge-researcher.md` | `sub-agent key 'maxTurns'` | no equivalent Copilot custom-agent field |
+| `agents/forge-researcher.md` | `sub-agent key 'model'` | no equivalent Copilot custom-agent field |
+| `agents/forge-spec-writer.md` | `sub-agent key 'maxTurns'` | no equivalent Copilot custom-agent field |
+| `agents/forge-spec-writer.md` | `sub-agent key 'model'` | no equivalent Copilot custom-agent field |
+| `agents/forge-verifier.md` | `sub-agent key 'maxTurns'` | no equivalent Copilot custom-agent field |
+| `agents/forge-verifier.md` | `sub-agent key 'memory'` | no equivalent Copilot custom-agent field |
+| `agents/forge-verifier.md` | `sub-agent key 'model'` | no equivalent Copilot custom-agent field |
+| `agents/forge-verifier.md` | `sub-agent key 'skills'` | no equivalent Copilot custom-agent field |
 
 ## cursor
 

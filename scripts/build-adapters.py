@@ -127,6 +127,9 @@ FRONTMATTER_KEY_ORDER: tuple[str, ...] = (
     "globs",           # cursor .mdc
     "alwaysApply",     # cursor .mdc
     "tools",           # sub-agents, where representable
+    "agents",          # copilot: allowed nested custom agents
+    "user-invocable",  # copilot: picker visibility
+    "disable-model-invocation",  # copilot: subagent visibility
     "model",
     "maxTurns",
     "turnBudget",      # pi (mapped from maxTurns)
@@ -1123,45 +1126,92 @@ class CodexEmitter:
 
 
 # --------------------------------------------------------------------------- #
-# copilot emitter (03 §5, REQ-FMT-01..03, REQ-GEN-06) — TQ-1 (safe defaults)
+# copilot emitter (03 §5, REQ-FMT-01..03, REQ-GEN-06)
 # --------------------------------------------------------------------------- #
 #
-# TQ-1 resolution (03 §8): GitHub Copilot exposes no confirmed skill invocation-hint
-# field and no native sub-agent construct, so the documented safe default holds —
-# {name, description} skill frontmatter, hint drop-recorded, every sub-agent
-# claude_keys entry drop-recorded (body-only instruction file).
+# Current Copilot Agent Skills use ``skills/<name>/SKILL.md`` and support the
+# top-level ``argument-hint`` field. Plugin custom agents live at
+# ``agents/<name>.agent.md`` and use builtin tool aliases.
+
+_COPILOT_TOOL_MAP: dict[str, tuple[str, ...]] = {
+    "Read": ("read",),
+    "Glob": ("search",),
+    "Grep": ("search",),
+    "Bash": ("execute",),
+    "Write": ("edit",),
+}
+
+
+def _canon_tool_tokens(raw: object) -> list[str]:
+    """Split a canon ``tools`` scalar or YAML list into normalized tokens."""
+    if raw is None:
+        return []
+    items = raw.split(",") if isinstance(raw, str) else list(raw)  # type: ignore[arg-type]
+    return [str(token).strip() for token in items if str(token).strip()]
+
+
+def _copilot_map_tools(tokens: list[str], agent_name: str) -> list[str]:
+    """Map canon tools to Copilot aliases, failing on unknown capabilities."""
+    mapped_tools: list[str] = []
+    for token in tokens:
+        mapped = _COPILOT_TOOL_MAP.get(token)
+        if mapped is None:
+            raise ValueError(
+                f"agent '{agent_name}': canon tool '{token}' has no Copilot alias mapping "
+                f"(add it to _COPILOT_TOOL_MAP)"
+            )
+        for tool in mapped:
+            if tool not in mapped_tools:
+                mapped_tools.append(tool)
+    return mapped_tools
 
 
 class CopilotEmitter:
-    """Emitter for ``copilot``: skill copy with Copilot frontmatter.
+    """Emitter for native Copilot skills and custom agents.
 
-    Hint + sub-agent structural keys are TQ-1-unconfirmed → drop-recorded
-    (REQ-FMT-03 / REQ-GEN-06).
+    Canonical tool capabilities map to Copilot aliases. Other Claude-specific
+    structural keys remain drop-recorded (REQ-FMT-03 / REQ-GEN-06).
     """
 
     agent_id = "copilot"
 
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
-        """Emit ``skills/<name>/<name>.md`` with {name, description} + body."""
-        native = order_fields({"name": skill.name, "description": skill.description})
+        """Emit a native ``skills/<name>/SKILL.md`` with Copilot frontmatter."""
+        native = {"name": skill.name, "description": skill.description}
+        hint = hint_value(skill)
+        if hint is not None:
+            native["argument-hint"] = hint
         content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
             skill.body, "copilot"
         )
-        rel = f"skills/{skill.name}/{skill.name}.md"
-        drops: tuple[DropRecord, ...] = ()
-        if hint_value(skill) is not None:
-            drops = (DropRecord("copilot", skill.source_path, "argument-hint",
-                                "no known Copilot invocation-hint field (TQ-1)"),)
-        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+        rel = f"skills/{skill.name}/SKILL.md"
+        return EmitResult(files=(EmittedFile(rel, content),), drops=())
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
-        """Emit a body-only ``agents/<name>.md`` and drop-record every claude_keys."""
-        rel = f"agents/{agent.name}.md"
+        """Emit a subagent-only ``agents/<name>.agent.md`` with mapped tools."""
+        tokens = _canon_tool_tokens(agent.claude_keys.get("tools"))
+        native: dict[str, Any] = {
+            "name": agent.name,
+            "description": agent.description,
+            "tools": _copilot_map_tools(tokens, agent.name),
+            "agents": [],
+            "user-invocable": False,
+        }
+        rel = f"agents/{agent.name}.agent.md"
         content = render_frontmatter_block(
-            order_fields({"name": agent.name, "description": agent.description}),
+            order_fields(native),
             agent.source_path,
         ) + agent_body_for(agent.body, "copilot")
-        drops = drop_all_claude_keys(agent, "copilot", "no Copilot sub-agent construct (TQ-1)")
+        drops = tuple(
+            DropRecord(
+                "copilot",
+                agent.source_path,
+                f"sub-agent key '{key}'",
+                "no equivalent Copilot custom-agent field",
+            )
+            for key in agent.claude_keys
+            if key != "tools"
+        )
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
 
@@ -1197,14 +1247,6 @@ _PI_TOOL_MAP: dict[str, tuple[str, ...]] = {
 _PI_MAPPED_AGENT_KEYS: frozenset[str] = frozenset(
     {"tools", "maxTurns", "effort", "memory", "skills"}
 )
-
-
-def _canon_tool_tokens(raw: object) -> list[str]:
-    """Split a canon ``tools`` value (``"Read, Glob"`` scalar or a YAML list) into tokens."""
-    if raw is None:
-        return []
-    items = raw.split(",") if isinstance(raw, str) else list(raw)  # type: ignore[arg-type]
-    return [str(tok).strip() for tok in items if str(tok).strip()]
 
 
 def _pi_map_tools(tokens: list[str], agent_name: str) -> list[str]:
@@ -1482,8 +1524,29 @@ def run_self_containment_pass(
         json.dumps(sentinel, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
     )
 
+    if bundle_root.name == "copilot":
+        _write_copilot_plugin_manifest(bundle_root, repo_root)
     if bundle_root.name == "pi":
         _write_pi_package_assets(bundle_root)
+
+
+def _write_copilot_plugin_manifest(bundle_root: Path, repo_root: Path) -> None:
+    """Write the Copilot CLI plugin manifest for native skills and agents."""
+    manifest = {
+        "name": "feature-forge",
+        "description": (
+            "End-to-end feature planning, specification, backlog, verification, "
+            "and documentation workflows."
+        ),
+        "version": _bundle_version(repo_root),
+        "agents": "agents/",
+        "skills": "skills/",
+    }
+    safe_write(
+        bundle_root,
+        "plugin.json",
+        json.dumps(manifest, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
+    )
 
 
 

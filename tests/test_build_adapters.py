@@ -714,13 +714,12 @@ def test_description_byte_fidelity(fixture_copy):
     )
     assert canon_desc is not None
 
-    # Frontmatter-bearing targets. Native skill filename differs per emitter
-    # (03 §3.1/§4.1/§5.1): claude + codex → SKILL.md; copilot → <name>.md;
-    # cursor → <name>.mdc (06 §3.7 implementer note: same _frontmatter_value scan).
+    # Frontmatter-bearing targets. Native skill filename differs per emitter:
+    # claude + codex + copilot → SKILL.md; cursor → <name>.mdc.
     for agent, fname in [
         ("claude", "SKILL.md"),
         ("codex", "SKILL.md"),
-        ("copilot", "with-refs.md"),
+        ("copilot", "SKILL.md"),
         ("cursor", "with-refs.mdc"),
     ]:
         md = root / "adapters" / agent / "skills" / "with-refs" / fname
@@ -733,6 +732,55 @@ def test_description_byte_fidelity(fixture_copy):
     assert any(
         s.get("description") == canon_desc for s in manifest.get("skills", [])
     ), "gemini manifest description not byte-identical to canon"
+
+
+def test_copilot_emits_native_skill_with_argument_hint(fixture_copy):
+    """Copilot emits native SKILL.md and preserves its supported argument hint."""
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    skill_dir = root / "adapters" / "copilot" / "skills" / "with-refs"
+    native = skill_dir / "SKILL.md"
+    assert native.is_file()
+    assert not (skill_dir / "with-refs.md").exists()
+    assert _decode_scalar(_frontmatter_value(native, "argument-hint")) == "[target]"
+
+
+def test_copilot_emits_native_agents_with_mapped_tools(fixture_copy):
+    """Copilot agents use native filenames, strict aliases, and worker-only visibility."""
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    agents = root / "adapters" / "copilot" / "agents"
+    author = agents / "author.agent.md"
+    researcher = agents / "researcher.agent.md"
+    assert author.is_file()
+    assert researcher.is_file()
+    assert not (agents / "author.md").exists()
+    author_text = author.read_text("utf-8")
+    researcher_text = researcher.read_text("utf-8")
+    for tool in ("read", "search", "execute", "edit"):
+        assert f"- {tool}" in author_text
+    assert "- edit" not in researcher_text
+    assert "agents: []" in author_text
+    assert "user-invocable: false" in author_text
+
+
+def test_copilot_emits_plugin_manifest(fixture_copy):
+    """Copilot bundle declares its native skill and agent component roots."""
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    manifest = json.loads(
+        (root / "adapters" / "copilot" / "plugin.json").read_text("utf-8")
+    )
+    assert manifest == {
+        "name": "feature-forge",
+        "description": (
+            "End-to-end feature planning, specification, backlog, verification, "
+            "and documentation workflows."
+        ),
+        "version": "0.0.0",
+        "agents": "agents/",
+        "skills": "skills/",
+    }
 
 
 # --------------------------------------------------------------------------- #

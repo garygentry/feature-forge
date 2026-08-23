@@ -2,6 +2,7 @@
 # GENERATED — DO NOT EDIT. Source: skills/forge-5-loop/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-5-loop
 description: Execute the autonomous coding loop (rauf by default) against a forge feature's backlog. Use when user runs /feature-forge:forge-5-loop or /feature-forge:forge-5-rauf-loop, or asks to run rauf / run the loop / implement a forge feature after the backlog is created and verified. Do NOT trigger for general rauf usage, standalone loop runs, or implementation tasks outside the forge pipeline.
+argument-hint: <feature-name>
 ---
 
 # forge-5-loop — Autonomous Loop Executor

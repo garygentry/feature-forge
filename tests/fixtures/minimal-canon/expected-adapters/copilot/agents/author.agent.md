@@ -2,6 +2,13 @@
 # GENERATED — DO NOT EDIT. Source: agents/author.md. Regenerate: python3 scripts/build-adapters.py
 name: author
 description: Authors one artifact and returns it.
+tools:
+- read
+- search
+- execute
+- edit
+agents: []
+user-invocable: false
 ---
 
 You are an authoring sub-agent. `Write` appears ONLY here among the fixture

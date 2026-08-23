@@ -2,6 +2,7 @@
 # GENERATED — DO NOT EDIT. Source: skills/forge-4-backlog/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-4-backlog
 description: Generate a structured backlog.json from forge implementation specs, then validate it via the loop runner. Use when user runs /feature-forge:forge-4-backlog or asks to create a backlog for a forge feature after specs are complete. This is the canonical backlog generator for the forge pipeline. Do NOT trigger for standalone backlog creation outside the forge pipeline context.
+argument-hint: <feature-name>
 ---
 
 # forge-4-backlog — Backlog Generator (pipeline orchestrator)

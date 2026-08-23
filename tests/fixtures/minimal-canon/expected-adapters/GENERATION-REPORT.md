@@ -30,19 +30,15 @@ _No dropped constructs — every canonical construct is representable in this ag
 
 | Source | Construct | Reason |
 |--------|-----------|--------|
-| `agents/author.md` | `sub-agent key 'maxTurns'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/author.md` | `sub-agent key 'model'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/author.md` | `sub-agent key 'tools'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/researcher.md` | `sub-agent key 'effort'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/researcher.md` | `sub-agent key 'maxTurns'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/researcher.md` | `sub-agent key 'model'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/researcher.md` | `sub-agent key 'tools'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'maxTurns'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'memory'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'model'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'skills'` | no Copilot sub-agent construct (TQ-1) |
-| `agents/verifier.md` | `sub-agent key 'tools'` | no Copilot sub-agent construct (TQ-1) |
-| `skills/with-refs/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
+| `agents/author.md` | `sub-agent key 'maxTurns'` | no equivalent Copilot custom-agent field |
+| `agents/author.md` | `sub-agent key 'model'` | no equivalent Copilot custom-agent field |
+| `agents/researcher.md` | `sub-agent key 'effort'` | no equivalent Copilot custom-agent field |
+| `agents/researcher.md` | `sub-agent key 'maxTurns'` | no equivalent Copilot custom-agent field |
+| `agents/researcher.md` | `sub-agent key 'model'` | no equivalent Copilot custom-agent field |
+| `agents/verifier.md` | `sub-agent key 'maxTurns'` | no equivalent Copilot custom-agent field |
+| `agents/verifier.md` | `sub-agent key 'memory'` | no equivalent Copilot custom-agent field |
+| `agents/verifier.md` | `sub-agent key 'model'` | no equivalent Copilot custom-agent field |
+| `agents/verifier.md` | `sub-agent key 'skills'` | no equivalent Copilot custom-agent field |
 
 ## cursor
 

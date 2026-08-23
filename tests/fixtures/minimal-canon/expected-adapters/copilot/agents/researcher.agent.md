@@ -2,6 +2,12 @@
 # GENERATED — DO NOT EDIT. Source: agents/researcher.md. Regenerate: python3 scripts/build-adapters.py
 name: researcher
 description: 'Researches the codebase: thoroughly and concisely.'
+tools:
+- read
+- search
+- execute
+agents: []
+user-invocable: false
 ---
 
 You are a research sub-agent. The `effort` key appears ONLY here among the

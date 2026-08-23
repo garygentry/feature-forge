@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Native GitHub Copilot plugin foundation.** The generated Copilot adapter now ships a versioned `plugin.json`, native `skills/<name>/SKILL.md` files with preserved argument hints, and `agents/*.agent.md` custom agents. Canonical tools map fail-loud to Copilot aliases, worker agents are subagent-only, and runtime probes against Copilot CLI 1.0.78 verify all 13 skills plus all three least-privilege agents. The Copilot manifest is included in the product version-sync gate.
+
 ## [0.18.0] — 2026-08-15
 
 ### Changed

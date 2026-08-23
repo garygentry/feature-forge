@@ -1,0 +1,7 @@
+{
+  "name": "feature-forge",
+  "description": "End-to-end feature planning, specification, backlog, verification, and documentation workflows.",
+  "version": "0.0.0",
+  "agents": "agents/",
+  "skills": "skills/"
+}

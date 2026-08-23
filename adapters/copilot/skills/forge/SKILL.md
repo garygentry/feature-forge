@@ -2,6 +2,7 @@
 # GENERATED — DO NOT EDIT. Source: skills/forge/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge
 description: Feature-forge pipeline navigator and status dashboard. Use when the user references the forge pipeline, asks about forge status or progress, types /feature-forge:forge, or wants to check what stage a feature is at in the forge pipeline. Do NOT use for general feature requests, project status, or tasks unrelated to the forge development pipeline.
+argument-hint: <feature-name> (optional — lists all active features if omitted)
 ---
 
 # Feature Forge — Pipeline Navigator
