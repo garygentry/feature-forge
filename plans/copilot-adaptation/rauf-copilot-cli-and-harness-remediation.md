@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Phase 1 in progress; provider-neutral stream type complete
+Status: Phase 1 in progress; provider-neutral stream type and Copilot JSONL parser complete
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -387,7 +387,7 @@ provider-neutral stream type and parser; no rauf implementation changed during c
 
 ### Phase 1: Add the dedicated Copilot provider
 
-Status: In progress; provider-neutral stream type complete, Copilot JSONL parser next
+Status: In progress; provider-neutral stream type and Copilot JSONL parser complete, provider next
 
 Primary files in `../rauf`:
 
@@ -411,7 +411,14 @@ Tasks:
       focused stream/Codex tests pass, followed by loop lint, formatting, and all 408 loop tests,
       with no external event discriminator changes. Committed on rauf branch
       `feat/copilot-g2-contract` as `45603b1`.
-- [ ] Implement the JSONL parser from captured fixtures.
+- [x] Implement the JSONL parser from captured fixtures.
+      Evidence (2026-08-23): the incremental parser reconstructs only
+      `assistant.message.data.content`, owns chunk buffering and final-record flush, preserves raw
+      stdout, pairs schema-backed tool lifecycle events, ignores malformed/unknown and hostile
+      non-assistant records, and contains callback failures. Usage records do not emit token events
+      because no reliable input/output-token fields were captured. The focused three-parser suite
+      passed 23 tests; loop typecheck, lint, and changed-file formatting passed. Committed as
+      `921971c` on `feat/copilot-g2-contract`.
 - [ ] Implement `CopilotCliProvider` with the verified argv and large-prompt-safe transport.
 - [ ] Forward `ExecuteOptions.env`, timeout, abort signal, cwd, model, and stream callbacks.
 - [ ] Implement the selected permission/autonomy policy as explicit argv construction.

@@ -164,6 +164,20 @@ Copilot CLI parents; parents start and poll rauf rather than nesting the iterati
 - Map timeout, AbortSignal, and shutdown to process-group termination with descendant cleanup.
 - Use the detached machine-readable boundary for parent harnesses and filter parent-session markers.
 
+## Parser Implementation Evidence
+
+Rauf commit `921971c` on `feat/copilot-g2-contract` implements the bounded `RAUF-102` parser
+contract from sanitized 1.0.78 records. It buffers arbitrary chunks, flushes an unterminated final
+record, retains raw output, and reconstructs signal-bearing text only from string
+`assistant.message.data.content`. Captured tool execution lifecycle IDs and names map to paired
+provider-neutral events. Usage checkpoint/result records remain ignored for token telemetry because
+the captured consumption/cache fields do not provide a reliable input/output-token mapping.
+
+The fixture includes control tokens in metadata, tool arguments/results, errors, and unknown
+records; none enter reconstructed text. Malformed records and callback exceptions are non-fatal.
+The focused Copilot/Codex/Claude parser suite passed 23 tests, followed by loop typecheck, lint, and
+changed-file formatting.
+
 ## Remaining Runtime Observation
 
 No account credit exhaustion was intentionally induced. The stable contract is the absence of a

@@ -1,6 +1,6 @@
 # Copilot Adaptation Implementation Runbook
 
-Status: Active implementation; Phase A and G2 closed, Phase B ready
+Status: Active implementation; Phase A and G2 closed, Phase B at RAUF-103
 Last updated: 2026-08-23
 Repositories: `feature-forge` and sibling `../rauf`
 
@@ -33,18 +33,19 @@ When documents conflict, use the unified plan for sequencing and the owning repo
 At the end of the 2026-08-23 implementation session:
 
 - **Active coordination phase:** Phase A, Contract Freeze, is complete; G0, G1, and G2 are closed.
-   Phase B is in progress; `RAUF-101` is complete and `RAUF-102` is next.
+   Phase B is in progress; `RAUF-101` and `RAUF-102` are complete and `RAUF-103` is next.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
-- **Started in code:** rauf now uses the provider-neutral `AgentStreamEvent` internally and retains
-   `ClaudeStreamEvent` as an exported compatibility alias. The Copilot parser/provider remain open.
+- **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
+   `ClaudeStreamEvent` as an exported compatibility alias, and has a buffered Copilot JSONL parser.
+   The dedicated Copilot provider remains open.
 - **Not started in code:** rauf native operator adapter, feature-forge direct-install migration,
    packaged cross-repository harness, and releases.
 - **Uncommitted feature-forge work exists:** native `SKILL.md` output, native `.agent.md` workers,
   generated `adapters/copilot/plugin.json`, generated tree/fixtures, Copilot version-sync coverage,
   changelog entry, and tests.
-- **Rauf milestone committed:** branch `feat/copilot-g2-contract`, commit `45603b1`
-   (`refactor(loop): neutralize stream event type`). The worktree is clean. The commit contains an
-   SSH signature; local verification requires a `gpg.ssh.allowedSignersFile` configuration.
+- **Rauf milestones committed:** branch `feat/copilot-g2-contract`, commits `45603b1`
+   (`refactor(loop): neutralize stream event type`) and `921971c`
+   (`feat(loop): parse Copilot JSONL output`). The worktree is clean after `RAUF-102`.
 - **Verified:** Copilot CLI 1.0.78 cached local installation discovers all 13 feature-forge skills;
   a structured prompt session loads all three custom agents with expected tools and no warnings.
 - **New G1 evidence:** direct project/personal discovery, prefixed invocation, worker capability
@@ -80,6 +81,9 @@ At the end of the 2026-08-23 implementation session:
 - **RAUF-101 verification:** `pnpm --filter @rauf/loop typecheck` passed after building the core
    project reference with pinned Bun 1.3.10; the stream parser, Codex parser, and Codex provider
    focused suite passed 25 tests. Internal `ClaudeStreamEvent` usages are eliminated.
+- **RAUF-102 verification:** the Copilot/Codex/Claude parser suite passed 23 tests; loop typecheck,
+   lint, and changed-file formatting passed. The parser preserves raw output, reconstructs only
+   assistant content, flushes a trailing record, and contains malformed input/callback failures.
 
 The snapshot is evidence, not a substitute for startup checks.
 
@@ -142,8 +146,9 @@ The next session should execute these bounded items in order:
 
 1. **Do not repeat the unchanged legacy-root probe.** It ran after a full host restart and failed;
    `operator-actions.md` is now a completed historical runbook.
-2. **Continue Phase B at `RAUF-102`.** Implement the captured Copilot JSONL parser from sanitized
-   CLI 1.0.78 fixtures; do not begin the provider until the parser's focused checks pass.
+2. **Continue Phase B at `RAUF-103`.** Implement the dedicated `CopilotCliProvider` around the
+   completed parser and frozen CLI 1.0.78 child contract; do not begin registry replacement until
+   the provider's focused checks pass.
 3. **Do not start with installer or documentation changes.** Parser/provider behavior is the
    controlling runtime dependency.
 4. In parallel only when independent and G1 is closed, finish feature-forge `FORGE-101`/`FORGE-102`
@@ -199,20 +204,20 @@ starting unrelated downstream work.
 Use this prompt to resume at the next logical milestone in a new session:
 
 ```text
-Continue the GitHub Copilot adaptation at RAUF-102, using
+Continue the GitHub Copilot adaptation at RAUF-103, using
 plans/copilot-adaptation/README.md as the session runbook.
 
 Repository coordinates at handoff:
 - feature-forge: branch docs/copilot-g2-contract with this handoff committed; it still contains
    intentional, unstaged Copilot adapter migration work. Preserve it exactly.
-- ../rauf: branch feat/copilot-g2-contract at 45603b1
-   (refactor(loop): neutralize stream event type); worktree clean at handoff.
+- ../rauf: branch feat/copilot-g2-contract at 921971c
+   (feat(loop): parse Copilot JSONL output); worktree clean at handoff.
 - Nothing has been pushed.
 
 First read both repositories' AGENTS.md files, then the runbook, unified tracker, rauf source plan,
 and evidence/copilot-cli-child-contract-2026-08-23.md. Run the README's idempotent startup checks
 and inspect both worktrees before editing. Confirm rauf remains on feat/copilot-g2-contract at
-45603b1 and preserve feature-forge's unstaged adapter migration without resetting, staging,
+921971c and preserve feature-forge's unstaged adapter migration without resetting, staging,
 committing, or regenerating over it.
 
 Phase A and G2 are closed. RAUF-101 is complete and must not be repeated: AgentStreamEvent is the
@@ -220,21 +225,21 @@ canonical internal type, ClaudeStreamEvent is the deprecated exported compatibil
 stable external LoopEvent discriminators are unchanged. The focused loop typecheck, lint, all 408
 loop tests, and changed-file formatting passed.
 
-Enter RAUF-102 only. Start from the captured Copilot CLI 1.0.78 JSONL schema and the neighboring
-Codex/Claude parser patterns. State one local hypothesis and one falsifying focused check before
-editing. Add sanitized fixtures and the smallest incremental Copilot parser implementation that:
-- reconstructs signal-bearing text only from assistant.message.data.content;
-- tolerates malformed and unknown records;
-- flushes an unterminated final record through the provider-facing buffering contract;
-- emits tool/token telemetry only where the captured schema is reliable;
-- makes callback failures non-fatal; and
-- never treats metadata, tool arguments, errors, or quoted control tokens as assistant output.
+RAUF-101 and RAUF-102 are complete and must not be repeated. The parser in commit `921971c` owns
+chunk buffering/final flush, preserves raw output, reconstructs only assistant message content,
+pairs schema-backed tool lifecycle events, ignores unsupported usage telemetry, and contains
+malformed input/callback failures.
 
-Immediately run the narrow parser test after the first substantive edit. Do not begin
-CopilotCliProvider, registry replacement, installer/UI/docs work, or feature-forge implementation
-in this slice. Keep rauf changes on feat/copilot-g2-contract and commit RAUF-102 as its own logical
-milestone only after focused checks pass. Do not push, publish, tag, or alter the Copilot/Databricks
-plugin registry.
+Enter RAUF-103 only. Start from the frozen Copilot CLI 1.0.78 argv, bounded prompt-file transport,
+environment filter, cancellation/process-group contract, and the completed parser. State one local
+hypothesis and one falsifying focused check before editing. Implement the smallest dedicated
+`CopilotCliProvider` that forwards cwd, env, timeout, abort, optional model, and stream callbacks;
+uses the exact named permission/determinism flags; keeps the full prompt out of argv; preserves raw
+stdout/stderr; and removes its package-owned prompt file. Immediately run the narrow provider test
+after the first substantive edit. Do not begin registry replacement (`RAUF-104`), failure
+classification, installer/UI/docs work, or feature-forge implementation in this slice. Keep rauf
+changes on `feat/copilot-g2-contract` and commit `RAUF-103` as its own logical milestone only after
+focused checks pass. Do not push, publish, tag, or alter the Copilot/Databricks plugin registry.
 
 At session close, run focused rauf checks and git diff --check in both repositories, inspect both
 worktrees, remove disposable fixtures, and update the unified tracker, rauf source plan, evidence

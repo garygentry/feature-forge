@@ -43,7 +43,7 @@ discovery as interchangeable proofs. Each has a separate gate.
 | Phase | Status | Completed evidence | Next bounded work |
 | --- | --- | --- | --- |
 | A. Contract Freeze | Complete | G0, G1, and G2 closed; host schema/root decision, exact child argv, prompt transport, JSONL, permissions, cancellation, environment filtering, and detached parent topology captured | Enter Phase B at `RAUF-101` |
-| B. Rauf Runtime Provider | In progress | `RAUF-101`: canonical `AgentStreamEvent` with exported compatibility alias; focused typecheck and 25 parser/provider tests pass | Continue at `RAUF-102` |
+| B. Rauf Runtime Provider | In progress | `RAUF-101`: canonical `AgentStreamEvent`; `RAUF-102`: buffered Copilot JSONL parser with assistant-only reconstruction, safe tool telemetry, malformed-record tolerance, and raw-output preservation | Continue at `RAUF-103` |
 | C. Rauf Native Operator Adapter | Not started | Official root `agents/` and `skills/` plugin layout confirmed | Enter only after G1; begin `RAUF-201` |
 | D. Feature-Forge Native Adapter | In progress | Native manifest, 13 skills, three agents, fixtures, version gate, CLI discovery, and repository gate | Finish `FORGE-101`/`FORGE-102` residuals, then `FORGE-103` |
 | E. Repository Verification and Documentation | Not started | Feature-forge changelog entry started; interim gate green | Wait for Phases B–D exits |
@@ -51,7 +51,7 @@ discovery as interchangeable proofs. Each has a separate gate.
 | G. Release and Pin Sequence | Not started | No release action taken | Wait for G5; begin owner-gated `REL-001` |
 
 Gate status: **G0 closed; G1 closed by `COP-003` evidence and DEC-11; G2 closed by `COP-004` and
-`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is active at `RAUF-102`. Runtime
+`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is active at `RAUF-103`. Runtime
 prototyping completed during Phase D does not close later gates without its own required evidence.
 
 ## 2. Completion Claim
@@ -272,7 +272,7 @@ policy, bounded prompt transport, cancellation contract, environment filter, and
 
 ### Phase B: Rauf Runtime Provider
 
-Status: In progress. `RAUF-101` is complete; exit requires `RAUF-102`–`RAUF-108` plus the rauf
+Status: In progress. `RAUF-101` and `RAUF-102` are complete; exit requires `RAUF-103`–`RAUF-108` plus the rauf
 gate.
 
 - [x] **RAUF-101 — Neutralize shared stream types**
@@ -286,10 +286,18 @@ gate.
   passed. The complete loop package then passed typecheck, lint, formatting, and all 408 tests.
   Milestone: rauf branch `feat/copilot-g2-contract`, signed commit `45603b1`.
 
-- [ ] **RAUF-102 — Implement Copilot JSONL parser**
+- [x] **RAUF-102 — Implement Copilot JSONL parser**
   Repo: rauf. Depends on: RAUF-101, G2.
   Reconstruct assistant/final text only; emit tool/token events when reliable; preserve raw output;
   ignore unknown/malformed records; flush partial final lines; make callback failures non-fatal.
+  Evidence (2026-08-23): `CopilotJsonlParser` buffers arbitrary stdout chunks, flushes an
+  unterminated final record, preserves raw output, and reconstructs text exclusively from string
+  `assistant.message.data.content`. A sanitized 1.0.78 fixture proves metadata, tool arguments and
+  results, errors, unknown records, and malformed lines cannot enter reconstructed signal text.
+  Captured tool lifecycle IDs/names produce paired events; usage records intentionally produce no
+  token event because the frozen schema has no reliable input/output-token mapping. Callback
+  exceptions are non-fatal. The focused Copilot/Codex/Claude parser suite passed 23 tests, followed
+  by loop typecheck, lint, and changed-file formatting. Milestone: rauf commit `921971c`.
 
 - [ ] **RAUF-103 — Implement dedicated `CopilotCliProvider`**
   Repo: rauf. Depends on: RAUF-102, G2.
