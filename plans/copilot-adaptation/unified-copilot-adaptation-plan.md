@@ -43,7 +43,7 @@ discovery as interchangeable proofs. Each has a separate gate.
 | Phase | Status | Completed evidence | Next bounded work |
 | --- | --- | --- | --- |
 | A. Contract Freeze | Complete | G0, G1, and G2 closed; host schema/root decision, exact child argv, prompt transport, JSONL, permissions, cancellation, environment filtering, and detached parent topology captured | Enter Phase B at `RAUF-101` |
-| B. Rauf Runtime Provider | Not started | Current generic preset inspected | Enter only after G2; begin `RAUF-101` |
+| B. Rauf Runtime Provider | In progress | `RAUF-101`: canonical `AgentStreamEvent` with exported compatibility alias; focused typecheck and 25 parser/provider tests pass | Continue at `RAUF-102` |
 | C. Rauf Native Operator Adapter | Not started | Official root `agents/` and `skills/` plugin layout confirmed | Enter only after G1; begin `RAUF-201` |
 | D. Feature-Forge Native Adapter | In progress | Native manifest, 13 skills, three agents, fixtures, version gate, CLI discovery, and repository gate | Finish `FORGE-101`/`FORGE-102` residuals, then `FORGE-103` |
 | E. Repository Verification and Documentation | Not started | Feature-forge changelog entry started; interim gate green | Wait for Phases B–D exits |
@@ -51,7 +51,7 @@ discovery as interchangeable proofs. Each has a separate gate.
 | G. Release and Pin Sequence | Not started | No release action taken | Wait for G5; begin owner-gated `REL-001` |
 
 Gate status: **G0 closed; G1 closed by `COP-003` evidence and DEC-11; G2 closed by `COP-004` and
-`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B may enter at `RAUF-101`. Runtime
+`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is active at `RAUF-102`. Runtime
 prototyping completed during Phase D does not close later gates without its own required evidence.
 
 ## 2. Completion Claim
@@ -272,12 +272,19 @@ policy, bounded prompt transport, cancellation contract, environment filter, and
 
 ### Phase B: Rauf Runtime Provider
 
-Status: Not started. Entry requires G2. Exit requires `RAUF-101`–`RAUF-108` plus the rauf gate.
+Status: In progress. `RAUF-101` is complete; exit requires `RAUF-102`–`RAUF-108` plus the rauf
+gate.
 
-- [ ] **RAUF-101 — Neutralize shared stream types**
+- [x] **RAUF-101 — Neutralize shared stream types**
   Repo: rauf. Depends on: G2.
   Rename the internal `ClaudeStreamEvent` concept to a provider-neutral type, retaining an exported
   compatibility alias if required. Do not rename stable external loop event discriminators.
+  Evidence (2026-08-23): `AgentStreamEvent` is canonical across the parser, provider options,
+  Claude/Codex process paths, runner, tests, and package API documentation. The exported deprecated
+  `ClaudeStreamEvent` alias preserves package compatibility; external `LoopEvent` discriminators
+  are unchanged. `pnpm --filter @rauf/loop typecheck` passed, and 25 focused stream/Codex tests
+  passed. The complete loop package then passed typecheck, lint, formatting, and all 408 tests.
+  Milestone: rauf branch `feat/copilot-g2-contract`, signed commit `45603b1`.
 
 - [ ] **RAUF-102 — Implement Copilot JSONL parser**
   Repo: rauf. Depends on: RAUF-101, G2.
@@ -591,3 +598,4 @@ The unified initiative is complete only when:
 | 2026-08-23 | Root probe prepared | Replaced an escaped pasted script with literal validated Bash under `scripts/`, created the marketplace metadata, committed only the `/tmp` fixture as `d0c18ec`, installed plugin 0.18.0, byte-compared the cached hook/script, and cleared pre-restart output. Only the human-controlled full host restart remains. |
 | 2026-08-23 | Predeclared root probe failed | Fresh VS Code 1.134.0/Copilot Chat 0.62.0 registered the legacy plugin SessionStart hook but neither expanded nor exported `${PLUGIN_ROOT}`; Bash attempted `/scripts/plugin-root-probe.sh`, no output file was created, disposable resources were removed, and COP-003/G1 remain open. COP-004 was not started. |
 | 2026-08-23 | Agent Plugins 1.0 probe prepared | Rechecked the canonical schema and VS Code namespace contract, validated and installed disposable commit `1145ffb`, confirmed CLI discovery and byte-identical cached files, and cleared runtime output. A full VS Code/Agent Host restart is the remaining external boundary; COP-003/G1 remain open. |
+| 2026-08-23 | RAUF-101 implementation | Replaced internal `ClaudeStreamEvent` usage with canonical `AgentStreamEvent`, retained a deprecated exported compatibility alias, left external loop events unchanged, and passed loop typecheck/lint/formatting plus all 408 loop tests. Committed as rauf `45603b1` on `feat/copilot-g2-contract`; Phase B continues at `RAUF-102`. |

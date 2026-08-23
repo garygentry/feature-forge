@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Contract frozen; rauf implementation not started
+Status: Phase 1 in progress; provider-neutral stream type complete
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -387,7 +387,7 @@ provider-neutral stream type and parser; no rauf implementation changed during c
 
 ### Phase 1: Add the dedicated Copilot provider
 
-Status: Not started; entry requires completion of Phase 0/G2 evidence
+Status: In progress; provider-neutral stream type complete, Copilot JSONL parser next
 
 Primary files in `../rauf`:
 
@@ -404,8 +404,13 @@ Primary files in `../rauf`:
 
 Tasks:
 
-- [ ] Rename the shared stream callback type to a provider-neutral name, preserving an alias if
+- [x] Rename the shared stream callback type to a provider-neutral name, preserving an alias if
       needed for package compatibility.
+      Evidence (2026-08-23): `AgentStreamEvent` is canonical across internal consumers;
+      `ClaudeStreamEvent` remains a deprecated exported alias. The loop package typecheck and 25
+      focused stream/Codex tests pass, followed by loop lint, formatting, and all 408 loop tests,
+      with no external event discriminator changes. Committed on rauf branch
+      `feat/copilot-g2-contract` as `45603b1`.
 - [ ] Implement the JSONL parser from captured fixtures.
 - [ ] Implement `CopilotCliProvider` with the verified argv and large-prompt-safe transport.
 - [ ] Forward `ExecuteOptions.env`, timeout, abort signal, cwd, model, and stream callbacks.
