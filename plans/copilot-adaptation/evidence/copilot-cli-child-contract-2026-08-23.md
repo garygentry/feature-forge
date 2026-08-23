@@ -178,6 +178,29 @@ records; none enter reconstructed text. Malformed records and callback exception
 The focused Copilot/Codex/Claude parser suite passed 23 tests, followed by loop typecheck, lint, and
 changed-file formatting.
 
+## Provider Implementation Evidence
+
+Rauf commit `d63cdc4` on `feat/copilot-g2-contract` implements the bounded `RAUF-103` provider
+contract without changing registry ownership. `CopilotCliProvider` constructs the frozen 1.0.78
+argv with JSONL streaming, the named read/write/shell grants, commit/push denials, and all selected
+determinism flags. It omits the model by default and forwards an explicit model when supplied.
+
+The provider creates a mode-restricted package-owned temporary directory under the current
+workspace, writes the complete prompt there, and places only a short relative-path bootstrap in
+argv. A `finally` cleanup removes the directory after successful, nonzero, timed-out, cancelled,
+and spawn-failure outcomes. The child receives cwd, timeout, AbortSignal, stream callbacks, and an
+exact replacement environment that removes inherited `COPILOT_*` session/authority controls while
+retaining `COPILOT_HOME` and `COPILOT_GITHUB_TOKEN` when present. The shared detached process-group
+helper continues to own SIGTERM/SIGKILL tree cleanup.
+
+The provider feeds raw stdout chunks to the completed parser while returning the process helper's
+raw stdout, stderr, exit code, timeout marker, and duration unchanged, augmented only with
+reconstructed assistant text. Five provider tests cover exact argv, a large prompt absent from
+argv, file contents and cleanup, environment filtering, control forwarding, model omission and
+selection, captured-fixture parser/event wiring, and cleanup outcomes. The focused
+provider/parser/process suite passed 48 tests; loop typecheck, changed-file lint, and formatting
+also passed.
+
 ## Remaining Runtime Observation
 
 No account credit exhaustion was intentionally induced. The stable contract is the absence of a

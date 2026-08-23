@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Phase 1 in progress; provider-neutral stream type and Copilot JSONL parser complete
+Status: Phase 1 in progress; dedicated Copilot provider complete, registry replacement next
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -387,7 +387,7 @@ provider-neutral stream type and parser; no rauf implementation changed during c
 
 ### Phase 1: Add the dedicated Copilot provider
 
-Status: In progress; provider-neutral stream type and Copilot JSONL parser complete, provider next
+Status: In progress; dedicated provider complete, registry replacement next
 
 Primary files in `../rauf`:
 
@@ -419,11 +419,19 @@ Tasks:
       because no reliable input/output-token fields were captured. The focused three-parser suite
       passed 23 tests; loop typecheck, lint, and changed-file formatting passed. Committed as
       `921971c` on `feat/copilot-g2-contract`.
-- [ ] Implement `CopilotCliProvider` with the verified argv and large-prompt-safe transport.
-- [ ] Forward `ExecuteOptions.env`, timeout, abort signal, cwd, model, and stream callbacks.
-- [ ] Implement the selected permission/autonomy policy as explicit argv construction.
-- [ ] Reconstruct final response text for RAUF signal parsing.
-- [ ] Keep raw stdout/stderr and process outcome fields intact.
+- [x] Implement `CopilotCliProvider` with the verified argv and large-prompt-safe transport.
+- [x] Forward `ExecuteOptions.env`, timeout, abort signal, cwd, model, and stream callbacks.
+- [x] Implement the selected permission/autonomy policy as explicit argv construction.
+- [x] Reconstruct final response text for RAUF signal parsing.
+- [x] Keep raw stdout/stderr and process outcome fields intact.
+      Evidence (2026-08-23): the provider writes the full prompt to a private package-owned
+      workspace path, passes only a bounded file-loading bootstrap in argv, and removes the path
+      in `finally` across success, failure, timeout, and cancellation outcomes. It applies the
+      frozen 1.0.78 flags, filters inherited Copilot session controls, forwards process controls,
+      parses JSONL through `CopilotJsonlParser`, and returns untouched raw process fields plus
+      reconstructed assistant text. The focused provider/parser/process suite passed 48 tests;
+      loop typecheck, changed-file lint, and formatting passed. Committed as `d63cdc4` on
+      `feat/copilot-g2-contract`.
 - [ ] Register the dedicated provider under the existing `copilot` id.
 - [ ] Remove `copilot` from generic `PRESET_CONFIGS` and update preset counts/tests.
 - [ ] Keep PATH detection non-throwing; add an auth-aware probe only if Phase 0 finds a stable,

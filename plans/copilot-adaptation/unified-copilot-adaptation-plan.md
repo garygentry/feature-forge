@@ -43,7 +43,7 @@ discovery as interchangeable proofs. Each has a separate gate.
 | Phase | Status | Completed evidence | Next bounded work |
 | --- | --- | --- | --- |
 | A. Contract Freeze | Complete | G0, G1, and G2 closed; host schema/root decision, exact child argv, prompt transport, JSONL, permissions, cancellation, environment filtering, and detached parent topology captured | Enter Phase B at `RAUF-101` |
-| B. Rauf Runtime Provider | In progress | `RAUF-101`: canonical `AgentStreamEvent`; `RAUF-102`: buffered Copilot JSONL parser with assistant-only reconstruction, safe tool telemetry, malformed-record tolerance, and raw-output preservation | Continue at `RAUF-103` |
+| B. Rauf Runtime Provider | In progress | `RAUF-101`: canonical `AgentStreamEvent`; `RAUF-102`: buffered Copilot JSONL parser; `RAUF-103`: dedicated provider with frozen argv, bounded prompt-file transport, environment filtering, process-group controls, and cleanup | Continue at `RAUF-104` |
 | C. Rauf Native Operator Adapter | Not started | Official root `agents/` and `skills/` plugin layout confirmed | Enter only after G1; begin `RAUF-201` |
 | D. Feature-Forge Native Adapter | In progress | Native manifest, 13 skills, three agents, fixtures, version gate, CLI discovery, and repository gate | Finish `FORGE-101`/`FORGE-102` residuals, then `FORGE-103` |
 | E. Repository Verification and Documentation | Not started | Feature-forge changelog entry started; interim gate green | Wait for Phases B–D exits |
@@ -51,7 +51,7 @@ discovery as interchangeable proofs. Each has a separate gate.
 | G. Release and Pin Sequence | Not started | No release action taken | Wait for G5; begin owner-gated `REL-001` |
 
 Gate status: **G0 closed; G1 closed by `COP-003` evidence and DEC-11; G2 closed by `COP-004` and
-`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is active at `RAUF-103`. Runtime
+`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is active at `RAUF-104`. Runtime
 prototyping completed during Phase D does not close later gates without its own required evidence.
 
 ## 2. Completion Claim
@@ -272,7 +272,7 @@ policy, bounded prompt transport, cancellation contract, environment filter, and
 
 ### Phase B: Rauf Runtime Provider
 
-Status: In progress. `RAUF-101` and `RAUF-102` are complete; exit requires `RAUF-103`–`RAUF-108` plus the rauf
+Status: In progress. `RAUF-101` through `RAUF-103` are complete; exit requires `RAUF-104`–`RAUF-108` plus the rauf
 gate.
 
 - [x] **RAUF-101 — Neutralize shared stream types**
@@ -299,11 +299,21 @@ gate.
   exceptions are non-fatal. The focused Copilot/Codex/Claude parser suite passed 23 tests, followed
   by loop typecheck, lint, and changed-file formatting. Milestone: rauf commit `921971c`.
 
-- [ ] **RAUF-103 — Implement dedicated `CopilotCliProvider`**
+- [x] **RAUF-103 — Implement dedicated `CopilotCliProvider`**
   Repo: rauf. Depends on: RAUF-102, G2.
   Preserve provider id `copilot`; use the captured prompt transport and argv; forward cwd, env,
   model omission/selection, timeout, abort, and stream callbacks; disable prompts, remote control,
   export, and auto-update; enforce the approved filesystem/tool/git policy.
+  Evidence (2026-08-23): `CopilotCliProvider` uses the exact 1.0.78 determinism, JSONL, named-tool,
+  and git-denial argv; writes the full prompt to a mode-restricted package-owned temporary path
+  under the workspace; passes only a bounded bootstrap in argv; and removes the prompt directory
+  in `finally` after success, nonzero/timeout/cancellation results, and spawn failure. It filters
+  inherited `COPILOT_*` session/authority variables while retaining the two approved auth-location
+  inputs, forwards cwd/model/timeout/abort/stream callbacks through the shared detached process
+  helper, invokes `CopilotJsonlParser`, and preserves raw stdout/stderr and process fields. The
+  focused provider/parser/process suite passed 48 tests; loop typecheck, changed-file lint, and
+  formatting passed. Registry and preset ownership remain unchanged for `RAUF-104`. Milestone:
+  rauf commit `d63cdc4`.
 
 - [ ] **RAUF-104 — Replace the generic preset atomically**
   Repo: rauf. Depends on: RAUF-103.
