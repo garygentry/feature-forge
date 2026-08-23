@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Phase 1 in progress; dedicated Copilot provider complete, registry replacement next
+Status: Phase 1 complete; Phase 2 failure classification next
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -387,7 +387,7 @@ provider-neutral stream type and parser; no rauf implementation changed during c
 
 ### Phase 1: Add the dedicated Copilot provider
 
-Status: In progress; dedicated provider complete, registry replacement next
+Status: Complete; dedicated provider registered and generic preset removed
 
 Primary files in `../rauf`:
 
@@ -432,11 +432,17 @@ Tasks:
       reconstructed assistant text. The focused provider/parser/process suite passed 48 tests;
       loop typecheck, changed-file lint, and formatting passed. Committed as `d63cdc4` on
       `feat/copilot-g2-contract`.
-- [ ] Register the dedicated provider under the existing `copilot` id.
-- [ ] Remove `copilot` from generic `PRESET_CONFIGS` and update preset counts/tests.
-- [ ] Keep PATH detection non-throwing; add an auth-aware probe only if Phase 0 finds a stable,
+- [x] Register the dedicated provider under the existing `copilot` id.
+- [x] Remove `copilot` from generic `PRESET_CONFIGS` and update preset counts/tests.
+- [x] Keep PATH detection non-throwing; add an auth-aware probe only if Phase 0 finds a stable,
       non-secret, non-mutating mechanism.
-- [ ] Ensure unknown JSONL event types and callback exceptions cannot crash an iteration.
+- [x] Ensure unknown JSONL event types and callback exceptions cannot crash an iteration.
+
+Evidence (2026-08-23): rauf commit `a4f50e0` atomically moved the stable `copilot` id from the
+generic preset array to the dedicated provider's descriptor. A default-registry test proves one
+descriptor and dedicated construction; selection tests preserve item, project, and global values.
+The focused registry/preset/selection suite passed 52 tests, the full provider/selection suite
+passed 116 tests, and loop typecheck, changed-file lint, and formatting passed.
 
 Exit criteria:
 

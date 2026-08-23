@@ -201,6 +201,16 @@ selection, captured-fixture parser/event wiring, and cleanup outcomes. The focus
 provider/parser/process suite passed 48 tests; loop typecheck, changed-file lint, and formatting
 also passed.
 
+## Registry Replacement Evidence
+
+Rauf commit `a4f50e0` on `feat/copilot-g2-contract` completes the bounded `RAUF-104` registry
+change. `CopilotCliProvider` registers one descriptor under the existing `copilot` id with the
+`copilot` binary PATH probe, and the generic `PRESET_CONFIGS` entry was removed in the same commit.
+The default-registry test proves the descriptor is unique and its factory creates the dedicated
+provider; selection tests prove persisted item, project, and global `copilot` values resolve
+unchanged. The focused registry/preset/selection suite passed 52 tests, all provider and selection
+tests passed 116 tests, and loop typecheck, changed-file lint, and formatting passed.
+
 ## Remaining Runtime Observation
 
 No account credit exhaustion was intentionally induced. The stable contract is the absence of a
