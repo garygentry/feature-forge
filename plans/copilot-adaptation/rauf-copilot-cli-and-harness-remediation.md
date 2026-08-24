@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Phase 1 complete; Phase 2 in progress at mock runtime matrix
+Status: Phases 1 and 2 complete; Phase 3 provider-aware propagation next
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -454,7 +454,7 @@ Exit criteria:
 
 ### Phase 2: Integrate runtime safety and failure classification
 
-Status: In progress; failure classification and ownership boundaries complete, runtime matrix next
+Status: Complete; failure, ownership, runtime, topology, and observability matrix passed
 
 Primary files in `../rauf`:
 
@@ -468,21 +468,21 @@ Primary files in `../rauf`:
 
 Tasks:
 
-- [ ] Prove normal work and review passes both use the dedicated Copilot provider.
+- [x] Prove normal work and review passes both use the dedicated Copilot provider.
 - [x] Preserve final-line RAUF signal neutralization and last-signal-wins behavior on
       reconstructed Copilot text.
 - [x] Map Copilot auth, invalid-model, permission, credit/usage, timeout, and infrastructure
       failures into existing runner outcomes without routing them through Claude OAuth logic.
 - [x] Decide whether any Copilot limit can implement provider-specific `checkUsage`; otherwise
       classify it as a documented non-Claude failure and keep the item recoverable where possible.
-- [ ] Ensure missing/malformed final messages cannot produce a false `RAUF_DONE`.
+- [x] Ensure missing/malformed final messages cannot produce a false `RAUF_DONE`.
 - [x] Prove the child cannot commit or push under the selected default policy, while rauf's
       post-signal commit still works.
-- [ ] Add mock-Copilot sandbox scenarios for done, blocked, needs-human, no signal, malformed
-      JSONL, non-zero exit, timeout, and cancellation.
+- [x] Add mock-Copilot sandbox scenarios for done, blocked, needs-human, no signal, malformed
+      JSONL, and non-zero exit; cover timeout and cancellation with real process-group tests.
 - [x] Confirm no signal token embedded in JSON metadata, tool arguments, quoted prose, or errors
       is mistaken for the final control signal.
-- [ ] Confirm `iteration-status.json`, persisted events, and status health remain meaningful with
+- [x] Confirm `iteration-status.json`, persisted events, and status health remain meaningful with
       Copilot tool/token events and degrade cleanly when fields are absent.
 
 Evidence (2026-08-23): rauf commit `7dd6f3d` adds a Copilot-owned classifier and an optional
@@ -500,7 +500,17 @@ assistant signal wins. `neutralizeForDetection` now defuses standalone tokens in
 Markdown fences and preserves a genuine signal after closure. Provider tests assert explicit
 commit/push denial with no unrestricted grants, and the runner commits child-created work exactly
 once after `RAUF_DONE`. The focused 147 tests, loop typecheck, changed-file lint, and formatting
-passed. Mock runtime matrix and observability coverage remain bounded to `RAUF-107`.
+passed. Mock runtime matrix and observability coverage were left for `RAUF-107`.
+
+Evidence (2026-08-23): rauf commit `9bbc3e5` completes `RAUF-107` and Phase 2. The provider matrix
+covers done, blocked, needs-human, missing/malformed/unknown output, nonzero exit, auth, invalid
+model, permission, and timeout. Real detached Node process groups prove timeout and abort cleanup of
+descendants. Direct, detached, resume, and review paths preserve Copilot selection/structured text;
+the review row exposed and fixed raw-JSONL signal parsing. The sandbox's Copilot dispatcher now
+emits sanitized Copilot JSONL and its full 192-assertion verification passes, including provider
+identity, tool telemetry, graceful missing token telemetry, circuit breaking, state/event
+consistency, resume, and rauf-owned commits. The 161 loop and 100 CLI focused tests, both package
+typechecks, lint, formatting, shell syntax, and fixture parsing passed. Phase 3 begins at `RAUF-108`.
 
 Exit criteria:
 

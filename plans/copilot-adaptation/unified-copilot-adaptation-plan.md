@@ -43,7 +43,7 @@ discovery as interchangeable proofs. Each has a separate gate.
 | Phase | Status | Completed evidence | Next bounded work |
 | --- | --- | --- | --- |
 | A. Contract Freeze | Complete | G0, G1, and G2 closed; host schema/root decision, exact child argv, prompt transport, JSONL, permissions, cancellation, environment filtering, and detached parent topology captured | Enter Phase B at `RAUF-101` |
-| B. Rauf Runtime Provider | In progress | `RAUF-101`: canonical stream events; `RAUF-102`: buffered Copilot parser; `RAUF-103`: dedicated provider; `RAUF-104`: atomic registry replacement; `RAUF-105`: failure classification; `RAUF-106`: signal and git ownership boundaries | Continue at `RAUF-107` |
+| B. Rauf Runtime Provider | In progress | `RAUF-101`–`RAUF-106`: provider, parser, registration, failure, signal, and git boundaries; `RAUF-107`: mock/fixture runtime matrix including process cleanup and direct/detached/resume/review paths | Continue at `RAUF-108` |
 | C. Rauf Native Operator Adapter | Not started | Official root `agents/` and `skills/` plugin layout confirmed | Enter only after G1; begin `RAUF-201` |
 | D. Feature-Forge Native Adapter | In progress | Native manifest, 13 skills, three agents, fixtures, version gate, CLI discovery, and repository gate | Finish `FORGE-101`/`FORGE-102` residuals, then `FORGE-103` |
 | E. Repository Verification and Documentation | Not started | Feature-forge changelog entry started; interim gate green | Wait for Phases B–D exits |
@@ -51,7 +51,7 @@ discovery as interchangeable proofs. Each has a separate gate.
 | G. Release and Pin Sequence | Not started | No release action taken | Wait for G5; begin owner-gated `REL-001` |
 
 Gate status: **G0 closed; G1 closed by `COP-003` evidence and DEC-11; G2 closed by `COP-004` and
-`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is active at `RAUF-107`. Runtime
+`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is active at `RAUF-108`. Runtime
 prototyping completed during Phase D does not close later gates without its own required evidence.
 
 ## 2. Completion Claim
@@ -272,7 +272,7 @@ policy, bounded prompt transport, cancellation contract, environment filter, and
 
 ### Phase B: Rauf Runtime Provider
 
-Status: In progress. `RAUF-101` through `RAUF-106` are complete; exit requires `RAUF-107`–`RAUF-108` plus the rauf
+Status: In progress. `RAUF-101` through `RAUF-107` are complete; exit requires `RAUF-108` plus the rauf
 gate.
 
 - [x] **RAUF-101 — Neutralize shared stream types**
@@ -352,10 +352,19 @@ gate.
   `[rauf]` commit after `RAUF_DONE`. The focused 147-test slice, loop typecheck, lint, and
   formatting passed. Milestone: rauf commit `fa3a624`.
 
-- [ ] **RAUF-107 — Add mock and fixture runtime matrix**
+- [x] **RAUF-107 — Add mock and fixture runtime matrix**
   Repo: rauf. Depends on: RAUF-104..106.
   Cover done, blocked, needs-human, no signal, malformed/unknown JSONL, non-zero exit, invalid model,
   auth, permission, timeout, abort, process cleanup, direct, detached, resume, and review paths.
+  Evidence (2026-08-23): a table-driven provider matrix covers Copilot signals, malformed/unknown
+  JSONL, nonzero infrastructure exit, invalid model, auth, in-band permission denial, timeout, and
+  prompt cleanup. Real detached Node process groups prove timeout/abort descendant cleanup. Runner
+  coverage proves work and review use reconstructed provider text; this exposed and fixed review's
+  raw-JSONL parsing bug. CLI tests prove detached `copilot` forwarding and resume preservation.
+  The sandbox now emits Copilot JSONL instead of plain text and adds sanitized no-signal,
+  malformed/unknown, auth, model, and permission scenarios. The full sandbox passed 192 assertions;
+  161 loop and 100 CLI focused tests, both typechecks, lint, formatting, shell syntax, and fixture
+  parsing passed. Milestone: rauf commit `9bbc3e5`.
 
 - [ ] **RAUF-108 — Make install/config/UI provider-aware**
   Repo: rauf. Depends on: RAUF-104.
@@ -641,3 +650,4 @@ The unified initiative is complete only when:
 | 2026-08-23 | RAUF-104 implementation | Atomically removed the generic Copilot preset and registered the dedicated provider under the stable `copilot` id. Uniqueness, dedicated construction, and item/project/global value compatibility passed 52 focused tests; the 116-test provider/selection suite, loop typecheck, lint, and formatting also passed. Committed as rauf `a4f50e0`; Phase B continues at `RAUF-105`. |
 | 2026-08-23 | RAUF-105 implementation | Added provider-owned Copilot failure classification without Claude usage semantics, preserved existing timeout/cancel/infra/retry outcomes, explicitly omitted unsupported `checkUsage`, and passed the 107-test affected slice plus typecheck, lint, and formatting. Committed as rauf `7dd6f3d`; Phase B continues at `RAUF-106`. |
 | 2026-08-23 | RAUF-106 implementation | Made signal neutralization fence-aware, proved Copilot non-assistant records cannot supply control signals and the last assistant signal wins, asserted commit/push denial without unrestricted grants, and proved one rauf-owned post-signal commit. The 147-test focused slice plus typecheck, lint, and formatting passed. Committed as rauf `fa3a624`; Phase B continues at `RAUF-107`. |
+| 2026-08-23 | RAUF-107 implementation | Added the Copilot provider and sandbox runtime matrix, real timeout/abort descendant cleanup, direct/detached/resume/review coverage, and fixed review parsing to use reconstructed provider text. The sandbox passed 192 assertions; 261 focused tests and static checks passed. Committed as rauf `9bbc3e5`; Phase B continues at `RAUF-108`. |

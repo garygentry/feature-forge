@@ -240,6 +240,23 @@ unrestricted tool/path flags. A runner integration test writes child-owned work,
 `RAUF_DONE`, and proves exactly one `[rauf]` commit contains that work. The focused 147-test slice,
 loop typecheck, changed-file lint, and formatting passed.
 
+## Runtime Matrix Implementation Evidence
+
+Rauf commit `9bbc3e5` on `feat/copilot-g2-contract` completes `RAUF-107`. A table-driven provider
+matrix replays sanitized Copilot JSONL/process outcomes for done, blocked, needs-human, no signal,
+malformed and unknown records, nonzero infrastructure exit, invalid model, authentication,
+permission denial, and timeout. Real detached Node process groups prove both timer and AbortSignal
+termination remove marked descendants. CLI/runner tests cover direct, detached, resume, and review
+paths. The review row exposed that review parsed raw JSONL; the runner now prefers reconstructed
+provider text there just as it does for work iterations.
+
+The sandbox Copilot dispatcher now emits the captured `assistant.message` and tool lifecycle shapes
+instead of plain text. Sanitized sandbox scenarios cover normal signals, malformed/unknown output,
+authentication, invalid model, and permission denial; process tests own timeout/abort cleanup to
+avoid minute-long sleeps. The full sandbox passed 192 assertions with pinned Bun 1.3.10 and jq
+1.7.1 provisioned under `/tmp` and removed afterward. The 161 loop and 100 CLI focused tests, both
+package typechecks, lint, formatting, shell syntax, and direct fixture parsing passed.
+
 ## Remaining Runtime Observation
 
 No account credit exhaustion was intentionally induced. The stable contract is the absence of a
