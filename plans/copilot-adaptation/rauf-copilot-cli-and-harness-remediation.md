@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Phases 1 through 3 complete; Phase 4 native operator bundle next
+Status: Phases 1 through 3 complete; Phase 4 through runtime operator boundaries
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -572,7 +572,7 @@ Compiled CLI smokes and the full gate passed. Signed milestone: `5f3710b`.
 
 ### Phase 4: Generate native Copilot skills and agents
 
-Status: Generator complete in signed commit `db40ed0`; runtime operator-boundary proof next
+Status: Generator and runtime operator-boundary proof complete; instruction ownership next
 
 Primary files in `../rauf`:
 
@@ -594,8 +594,8 @@ Tasks:
 - [x] Preserve skill names/descriptions and validate folder/name consistency.
 - [x] Map agent names, descriptions, bodies, tool restrictions, invocation visibility, and nested
       agent policy through a fail-loud mapping.
-- [ ] Make `rauf-backlog-reviewer` read/search/execute capable but non-editing.
-- [ ] Make `rauf-loop-driver` capable of executing the rauf CLI while remaining a supervisor, not
+- [x] Make `rauf-backlog-reviewer` read/search/execute capable but non-editing.
+- [x] Make `rauf-loop-driver` capable of executing the rauf CLI while remaining a supervisor, not
       an iteration implementation agent.
 - [ ] Resolve each custom agent's dependency on `review-backlog` or `drive-rauf-loop` through a
       tested Copilot mechanism rather than an aspirational body reference.
@@ -612,6 +612,17 @@ Exit criteria:
 - Skill invocation and automatic discovery work in Copilot CLI and VS Code.
 - The loop driver can invoke rauf and the backlog reviewer cannot edit files.
 - A clean generation followed by `copilot:check` is a no-op.
+
+RAUF-202 evidence (2026-08-24): authenticated Copilot CLI 1.0.80 loaded
+`adapters/copilot` directly. The generated reviewer read a marker, searched its sentinel, executed
+a harmless `printf`, had no file-edit tool, and left the marker unchanged. The generated driver
+invoked and polled `scripts/bin/rauf status . --json`, observed schema-v1 `IDLE` status twice,
+refused item implementation, emitted no standalone RAUF signal, and changed no files. The generator
+now validates policy aliases against the frozen Copilot set and fails on unknown aliases; focused
+coverage injects `mystery-tool` and expects that failure. This closes unified `RAUF-202` only; the
+remaining Phase 4 bullets retain their existing owners and sequencing. `copilot:check`, ESLint,
+Prettier, and the full pinned-Bun-1.3.10 rauf gate passed 2,188 package tests plus 90
+repository-script tests.
 
 ### Phase 5: Preserve installed instruction ownership
 

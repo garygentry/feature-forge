@@ -1,6 +1,6 @@
 # Copilot Adaptation Implementation Runbook
 
-Status: Active implementation; Phases A and B complete, Phase C at RAUF-202
+Status: Active implementation; Phases A and B complete, Phase C at RAUF-203
 Last updated: 2026-08-24
 Repositories: `feature-forge` and sibling `../rauf`
 
@@ -34,7 +34,7 @@ When documents conflict, use the unified plan for sequencing and the owning repo
 At the end of the 2026-08-24 implementation session:
 
 - **Active coordination phase:** Phases A and B are complete; G0, G1, and G2 are closed. Phase C is
-   in progress; `RAUF-201` is complete and `RAUF-202` is next.
+   in progress; `RAUF-201` and `RAUF-202` are complete and `RAUF-203` is next.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
 - **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
    `ClaudeStreamEvent` as an exported compatibility alias, has a buffered Copilot JSONL parser,
@@ -63,6 +63,12 @@ At the end of the 2026-08-24 implementation session:
    generator tests, ESLint, and Prettier passed. The full rauf gate passed 2,277 package tests plus
    89 repository-script tests, along with build, schema/version/existing-adapter drift, typecheck,
    lint, formatting, and documentation checks.
+- **RAUF-202 verification:** authenticated Copilot CLI 1.0.80 loaded both generated operator agents.
+   The reviewer used read/search/execute, had no edit tool, and left its marker unchanged. The driver
+   invoked and polled schema-v1 rauf JSON status twice, refused iteration implementation and RAUF
+   signaling, and changed no files. Unknown policy aliases now fail generation; seven focused tests
+   passed with an injected `mystery-tool` rejection. `copilot:check`, ESLint, Prettier, and the full
+   Bun 1.3.10 rauf gate passed 2,188 package tests plus 90 repository-script tests.
 - **Verified:** Copilot CLI 1.0.78 cached local installation discovers all 13 feature-forge skills;
   a structured prompt session loads all three custom agents with expected tools and no warnings.
 - **New G1 evidence:** direct project/personal discovery, prefixed invocation, worker capability
@@ -188,11 +194,10 @@ The next session should execute these bounded items in order:
 
 1. **Do not repeat the unchanged legacy-root probe.** It ran after a full host restart and failed;
    `operator-actions.md` is now a completed historical runbook.
-2. **Continue Phase C at `RAUF-202` only.** Runtime-prove the backlog reviewer cannot edit and the
-   loop driver can invoke and poll rauf without becoming an iteration worker. Fail on unknown tool
-   aliases.
-3. **Do not begin `RAUF-203`, repository documentation, feature-forge implementation, release, or
-   publishing work.** Operator capability enforcement is the next bounded boundary.
+2. **Continue Phase C at `RAUF-203` only.** Preserve installed child instruction ownership across
+   `AGENTS.md`, `CLAUDE.md`, and `.rauf/RAUF.md` without exposing supervisor surfaces to iterations.
+3. **Do not begin `RAUF-204`, repository documentation, feature-forge implementation, release, or
+   publishing work.** Instruction ownership is the next bounded boundary.
 4. In parallel only when independent and G1 is closed, finish feature-forge `FORGE-101`/`FORGE-102`
    residuals, then `FORGE-103` through `FORGE-107` in dependency order.
 
@@ -246,84 +251,33 @@ starting unrelated downstream work.
 Use this prompt to resume at the next logical milestone in a new session:
 
 ```text
-Continue the GitHub Copilot adaptation at RAUF-202, using
+Continue the GitHub Copilot adaptation at RAUF-203, using
 plans/copilot-adaptation/README.md as the session runbook.
 
 Repository coordinates at handoff:
-- feature-forge: branch docs/copilot-g2-contract with adapter milestone 7754a3b
-   (feat(adapters): add native Copilot plugin output) and the RAUF-201 handoff committed on top;
-   the branch is pushed to origin.
-- ../rauf: branch feat/copilot-g2-contract at signed commit db40ed0
-   (feat(adapters): add native Copilot operator bundle); the branch is pushed to origin.
+- feature-forge: `origin/docs/copilot-g2-contract`; this tracked runbook, the unified tracker,
+  rauf source plan, and STATUS.md contain the current cross-repository state.
+- rauf: `origin/feat/copilot-g2-contract` at commit
+  `02f8e67846ccf1ae59443a75c310458d6236ea6d`
+  (`feat(adapters): enforce Copilot operator boundaries`).
 
 First read both repositories' AGENTS.md files, then the runbook, unified tracker, rauf source plan,
 and evidence/copilot-cli-child-contract-2026-08-23.md. Run the README's idempotent startup checks
-and inspect both worktrees before editing. Confirm rauf remains on feat/copilot-g2-contract at
-db40ed0 and feature-forge remains on the pushed docs/copilot-g2-contract branch with the native
-adapter milestone and RAUF-201 handoff committed. Treat any later worktree changes as user/session
-work.
+and inspect both worktrees before editing. Treat any later changes as user/session work.
 
-Phase A and G2 are closed. RAUF-101 is complete and must not be repeated: AgentStreamEvent is the
-canonical internal type, ClaudeStreamEvent is the deprecated exported compatibility alias, and
-stable external LoopEvent discriminators are unchanged. The focused loop typecheck, lint, all 408
-loop tests, and changed-file formatting passed.
+Phases A and B are complete. RAUF-101 through RAUF-202 are complete and must not be repeated.
+RAUF-201 generated the native four-skill/two-agent Copilot operator bundle. RAUF-202 added
+fail-loud tool-alias validation and authenticated Copilot CLI 1.0.80 runtime proof that the backlog
+reviewer can read/search/execute but not edit, while the loop driver can invoke and poll rauf JSON
+status yet refuses iteration implementation and RAUF signaling. Seven focused tests and the full
+pinned-Bun-1.3.10 rauf gate passed 2,188 package tests plus 90 repository-script tests.
 
-RAUF-101 and RAUF-102 are complete and must not be repeated. The parser in commit `921971c` owns
-chunk buffering/final flush, preserves raw output, reconstructs only assistant message content,
-pairs schema-backed tool lifecycle events, ignores unsupported usage telemetry, and contains
-malformed input/callback failures.
-
-RAUF-103 is complete and must not be repeated. The provider in commit `d63cdc4` owns the frozen
-Copilot 1.0.78 argv, bounded package-owned prompt file and unconditional cleanup, filtered exact
-child environment, shared timeout/abort process-group controls, parser wiring, and raw output
-preservation. Its focused provider/parser/process suite passed 48 tests, followed by loop
-typecheck, changed-file lint, and formatting.
-
-RAUF-104 is complete and must not be repeated. Commit `a4f50e0` atomically removed the generic
-Copilot preset and registered exactly one dedicated descriptor under the unchanged `copilot` id.
-Focused registry/preset/selection tests passed 52 tests; all provider and selection tests passed
-116 tests; loop typecheck, changed-file lint, and formatting passed. Existing item, project, and
-global provider values remain compatible.
-
-RAUF-105 is complete and must not be repeated. Commit `7dd6f3d` adds Copilot-owned failure
-classification through the existing timeout, cancellation, infrastructure circuit-breaker, and
-retry/defer outcomes. Spawn errors retain the existing fatal execute-error path, and
-`CopilotCliProvider` deliberately exposes no `checkUsage` because CLI 1.0.78 has no stable reset
-contract. The affected 107 tests, loop typecheck, lint, and formatting passed.
-
-RAUF-106 is complete and must not be repeated. Commit `fa3a624` makes signal neutralization aware
-of strict Markdown fences, proves Copilot metadata/tool/error tokens cannot supply a signal and the
-last assistant signal wins, asserts child commit/push denial without unrestricted grants, and
-proves rauf creates exactly one post-signal commit containing child-created work. The focused 147
-tests, loop typecheck, lint, and formatting passed.
-
-RAUF-107 is complete and must not be repeated. Commit `9bbc3e5` adds sanitized provider and
-sandbox matrices for Copilot outcomes, real timeout/abort descendant cleanup, and
-direct/detached/resume/review coverage. It also fixes review signal parsing to prefer reconstructed
-provider text. The full sandbox passed 192 assertions; 161 loop and 100 CLI focused tests, both
-typechecks, lint, formatting, shell syntax, and fixture parsing passed.
-
-RAUF-108 is complete and must not be repeated. Signed commit `5f3710b` replaces the false
-Claude-only install preflight with selected-provider binary checks, adds registry-validated
-`install/init --agent copilot`, preserves project precedence across reinstall/direct/detached/
-resume/review/web and compiled CLI paths, rejects dedicated Copilot `providerConfig`, and reports
-binary presence separately from tri-state authenticated readiness. Copilot auth remains unknown
-until execution because CLI 1.0.78 has no safe non-mutating auth probe. Compiled CLI smokes and the
-full gate passed 2,271 package tests plus 83 script tests.
-
-Phase B and RAUF-201 are complete and must not be repeated. Signed commit `db40ed0` generates
-the nine-file native bundle from four canonical skills and two canonical agents with provenance,
-deterministic ordering, fail-loud metadata/policy mapping, stale-file detection, and a mapping/drop
-report. Generation, no-op drift, six focused tests, ESLint, Prettier, and the full rauf gate passed
-with Bun 1.3.10.
-
-Enter RAUF-202 only. Before editing, state one falsifiable local hypothesis and one focused check
-that could disprove it. Runtime-prove that `rauf-backlog-reviewer` can read/search/execute but cannot
-edit, and that `rauf-loop-driver` can invoke and poll rauf while remaining a supervisor rather than
-an iteration worker. Unknown tool aliases must fail. Do not begin RAUF-203 instruction-ownership
-work, repository documentation, feature-forge implementation, release, or publishing in this
-slice. Keep rauf changes on `feat/copilot-g2-contract`. Do not push, publish, tag, or alter the
-Copilot/Databricks plugin registry.
+Execute RAUF-203 only. Preserve installed child instruction ownership across `AGENTS.md`,
+`CLAUDE.md`, and `.rauf/RAUF.md`; prove Copilot loads the child rules and update/uninstall changes
+only rauf-owned content without exposing supervisor customizations to the iteration child. Before
+editing, state one falsifiable local hypothesis and one focused check, then run that check
+immediately after the first substantive edit. Do not begin RAUF-204, feature-forge implementation,
+repository documentation, release, publishing, or unrelated plugin registration changes.
 
 At session close, run focused rauf checks and git diff --check in both repositories, inspect both
 worktrees, remove disposable fixtures, and update the unified tracker, rauf source plan, evidence
