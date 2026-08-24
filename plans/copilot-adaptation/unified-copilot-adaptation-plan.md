@@ -44,7 +44,7 @@ discovery as interchangeable proofs. Each has a separate gate.
 | --- | --- | --- | --- |
 | A. Contract Freeze | Complete | G0, G1, and G2 closed; host schema/root decision, exact child argv, prompt transport, JSONL, permissions, cancellation, environment filtering, and detached parent topology captured | Enter Phase B at `RAUF-101` |
 | B. Rauf Runtime Provider | Complete | `RAUF-101`–`RAUF-108`: dedicated provider/parser, failure/signal/git boundaries, runtime matrix, and provider-aware install/config/CLI/web propagation; full rauf gate green | Enter Phase C at `RAUF-201` |
-| C. Rauf Native Operator Adapter | Not started | Official root `agents/` and `skills/` plugin layout confirmed | Enter only after G1; begin `RAUF-201` |
+| C. Rauf Native Operator Adapter | In progress | `RAUF-201`: deterministic native bundle generator, four skills, two agents, provenance, stale detection, and mapping/drop report | Continue at `RAUF-202` |
 | D. Feature-Forge Native Adapter | In progress | Native manifest, 13 skills, three agents, fixtures, version gate, CLI discovery, and repository gate | Finish `FORGE-101`/`FORGE-102` residuals, then `FORGE-103` |
 | E. Repository Verification and Documentation | Not started | Feature-forge changelog entry started; interim gate green | Wait for Phases B–D exits |
 | F. Packaged Cross-Repository Verification | Not started | No harness artifact yet | Wait for G3; begin `INT-001` |
@@ -387,10 +387,19 @@ Status: Complete. `RAUF-101` through `RAUF-108` and the rauf gate passed on 2026
 Status: Not started. Entry requires G1. Exit requires `RAUF-201`–`RAUF-204` plus runtime discovery
 and behavioral tool-boundary proof.
 
-- [ ] **RAUF-201 — Generate native Copilot operator bundle**
+- [x] **RAUF-201 — Generate native Copilot operator bundle**
   Repo: rauf. Depends on: G1.
   Generate plugin manifest, four native skills, and two `.agent.md` files from canon with provenance,
   stale-file pruning, deterministic ordering, and a generated mapping/drop report.
+  Evidence (2026-08-24): `scripts/build-copilot-bundle.ts` generates the nine-file
+  `adapters/copilot/` Agent Plugins 1.0 bundle from all four canonical skills and both canonical
+  agents. Canonical frontmatter and agent policy mappings fail loud, source provenance is embedded,
+  output ordering is deterministic, and `findDrift` detects missing, changed, and stale files.
+  `copilot:generate`/`copilot:check` are available; the drift check is intentionally not wired into
+  `pnpm gate` until `RAUF-204`. Six focused tests, ESLint, Prettier, generation, and the no-op drift
+  check passed with Bun 1.3.10. The full rauf gate also passed 2,277 package tests and 89 script
+  tests plus build, schema/version/existing-adapter drift, typecheck, lint, formatting, and docs.
+  Milestone: signed rauf commit `db40ed0`, pushed on `feat/copilot-g2-contract`.
 
 - [ ] **RAUF-202 — Enforce operator agent boundaries**
   Repo: rauf. Depends on: RAUF-201.
@@ -662,3 +671,4 @@ The unified initiative is complete only when:
 | 2026-08-23 | RAUF-106 implementation | Made signal neutralization fence-aware, proved Copilot non-assistant records cannot supply control signals and the last assistant signal wins, asserted commit/push denial without unrestricted grants, and proved one rauf-owned post-signal commit. The 147-test focused slice plus typecheck, lint, and formatting passed. Committed as rauf `fa3a624`; Phase B continues at `RAUF-107`. |
 | 2026-08-23 | RAUF-107 implementation | Added the Copilot provider and sandbox runtime matrix, real timeout/abort descendant cleanup, direct/detached/resume/review coverage, and fixed review parsing to use reconstructed provider text. The sandbox passed 192 assertions; 261 focused tests and static checks passed. Committed as rauf `9bbc3e5`; Phase B continues at `RAUF-108`. |
 | 2026-08-23 | RAUF-108 implementation | Added registry-validated `install/init --agent copilot`, provider-aware preflight, reinstall and direct/detached/resume/review/web propagation, Copilot argv-config rejection, and split binary/auth readiness. Compiled CLI smokes and the full gate passed. Committed as signed rauf `5f3710b`; Phase B is complete and Phase C begins at `RAUF-201`. |
+| 2026-08-24 | RAUF-201 implementation | Added deterministic native Copilot generation for four skills and two agents, strict canonical/policy validation, provenance, stale-file detection, and a mapping/drop report. The generated nine-file bundle, six focused tests, ESLint, Prettier, no-op drift check, and full rauf gate passed. Signed commit `db40ed0` is pushed; Phase C continues at `RAUF-202`. |

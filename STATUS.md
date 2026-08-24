@@ -4,8 +4,7 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-15 (0.18.0 release cut — rauf pin advance to 0.14.0 + #230 fix;
-hardening program COMPLETE, all 28 issues closed)._
+_Last updated: 2026-08-24 (GitHub Copilot adaptation active; hardening program remains complete)._
 
 ## Current release
 
@@ -16,7 +15,17 @@ hardening program COMPLETE, all 28 issues closed)._
 | npm | publishing 0.3.5 | |
 | Commit | this release commit | |
 
-CHANGELOG `[Unreleased]` is empty.
+CHANGELOG `[Unreleased]` contains the native GitHub Copilot plugin foundation; it is not released.
+
+## Active initiative: GitHub Copilot adaptation
+
+The cross-repository feature-forge/rauf adaptation is active on local branches
+`docs/copilot-g2-contract` and `feat/copilot-g2-contract`. Contract freeze and rauf's dedicated
+Copilot runtime provider are complete. Feature-forge's native plugin foundation is implemented but
+its runtime-root, direct-install, migration, and package work remain open. Rauf's `RAUF-201` native
+operator bundle generator is complete; `RAUF-202` operator capability enforcement is next. No
+adaptation release or rauf pin advance has occurred. The controlling task tracker is
+`plans/copilot-adaptation/unified-copilot-adaptation-plan.md` on the adaptation branch.
 
 ### rauf coupling
 

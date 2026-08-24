@@ -572,7 +572,7 @@ Compiled CLI smokes and the full gate passed. Signed milestone: `5f3710b`.
 
 ### Phase 4: Generate native Copilot skills and agents
 
-Status: Contract corrected; generator implementation not started
+Status: Generator complete in signed commit `db40ed0`; runtime operator-boundary proof next
 
 Primary files in `../rauf`:
 
@@ -589,10 +589,10 @@ Tasks:
 
 - [x] Confirm root `plugin.json`, root `skills/`, root `agents/*.agent.md`, and custom-agent schema
       against current official documentation and Copilot CLI 1.0.78 runtime diagnostics.
-- [ ] Generate `plugin.json` and native `skills/<name>/SKILL.md` from canonical skills.
-- [ ] Generate root `agents/*.agent.md` from canonical agents.
-- [ ] Preserve skill names/descriptions and validate folder/name consistency.
-- [ ] Map agent names, descriptions, bodies, tool restrictions, invocation visibility, and nested
+- [x] Generate `plugin.json` and native `skills/<name>/SKILL.md` from canonical skills.
+- [x] Generate root `agents/*.agent.md` from canonical agents.
+- [x] Preserve skill names/descriptions and validate folder/name consistency.
+- [x] Map agent names, descriptions, bodies, tool restrictions, invocation visibility, and nested
       agent policy through a fail-loud mapping.
 - [ ] Make `rauf-backlog-reviewer` read/search/execute capable but non-editing.
 - [ ] Make `rauf-loop-driver` capable of executing the rauf CLI while remaining a supervisor, not
@@ -602,8 +602,8 @@ Tasks:
 - [ ] Replace canonical `Task tool` wording with host-neutral subagent wording where possible;
       retain Claude-specific specialization only in Claude output.
 - [ ] Decide project-local mirror versus plugin-only repository discovery.
-- [ ] Add `copilot:generate` and `copilot:check`; wire the check and tests into `pnpm gate`.
-- [ ] Emit a generated report naming source files, mappings, and deliberately unsupported fields.
+- [ ] Wire `copilot:check` and tests into `pnpm gate` (`copilot:generate` and `copilot:check` exist).
+- [x] Emit a generated report naming source files, mappings, and deliberately unsupported fields.
 - [ ] Add Copilot plugin version handling to release/version checks under the decision in D8.
 
 Exit criteria:
