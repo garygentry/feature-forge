@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Phases 1 and 2 complete; Phase 3 provider-aware propagation next
+Status: Phases 1 through 3 complete; Phase 4 native operator bundle next
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -522,7 +522,7 @@ Exit criteria:
 
 ### Phase 3: Make install, config, CLI, and UI provider-aware
 
-Status: Not started; entry requires dedicated provider registration
+Status: Complete; signed milestone `5f3710b` on 2026-08-23
 
 Primary files in `../rauf`:
 
@@ -541,25 +541,34 @@ Primary files in `../rauf`:
 
 Tasks:
 
-- [ ] Replace Claude-only installer preflight with a provider-aware check.
-- [ ] Decide whether `rauf install/init --agent copilot` should set the project default and
+- [x] Replace Claude-only installer preflight with a provider-aware check.
+- [x] Decide whether `rauf install/init --agent copilot` should set the project default and
       validate the selected binary; preserve the existing default when the flag is absent.
-- [ ] Preserve `provider: "copilot"` and any approved typed Copilot config across reinstall,
+- [x] Preserve `provider: "copilot"` and any approved typed Copilot config across reinstall,
       update, detached mode, resume, and web/server paths.
-- [ ] Reject arbitrary Copilot argv injection from `.rauf.json`.
-- [ ] Keep `rauf agents` detection honest: distinguish binary presence from authenticated
+- [x] Reject arbitrary Copilot argv injection from `.rauf.json`.
+- [x] Keep `rauf agents` detection honest: distinguish binary presence from authenticated
       end-to-end readiness if both can be known safely.
-- [ ] Keep help output dynamically sourced from the registry.
-- [ ] Document and test `--agent copilot --no-model` for Claude-authored backlogs.
-- [ ] If web users can select an agent, expose `copilot` through the same registry-backed surface
+- [x] Keep help output dynamically sourced from the registry.
+- [x] Document and test `--agent copilot --no-model` for Claude-authored backlogs.
+- [x] If web users can select an agent, expose `copilot` through the same registry-backed surface
       and avoid a second hard-coded agent list.
-- [ ] Regenerate schemas if a typed configuration field changes and run `schema:check`.
+- [x] Regenerate schemas if a typed configuration field changes and run `schema:check`.
 
 Exit criteria:
 
 - A fresh project can select Copilot without receiving a false "claude is required" warning.
 - Direct, detached, resume, and review flows preserve the Copilot selection and model policy.
 - Existing installations using the generic `copilot` preset require no marker migration.
+
+Implementation evidence (2026-08-23): the CLI validates `--agent` through the provider registry,
+persists only the stable ID, and leaves existing marker precedence unchanged when omitted. Web
+start/review/resume accept typed provider/model-policy fields through strict request schemas; the
+current UI has no agent selector and therefore continues to use the persisted project provider.
+Dedicated Copilot markers reject `providerConfig`, while `generic-cli` retains its existing typed
+configuration compatibility. Discovery exposes binary presence and tri-state authentication;
+Copilot reports authentication as unknown until execution because 1.0.78 has no safe status probe.
+Compiled CLI smokes and the full gate passed. Signed milestone: `5f3710b`.
 
 ### Phase 4: Generate native Copilot skills and agents
 

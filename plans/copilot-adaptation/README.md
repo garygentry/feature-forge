@@ -1,6 +1,6 @@
 # Copilot Adaptation Implementation Runbook
 
-Status: Active implementation; Phase A and G2 closed, Phase B at RAUF-108
+Status: Active implementation; Phases A and B complete, Phase C at RAUF-201
 Last updated: 2026-08-23
 Repositories: `feature-forge` and sibling `../rauf`
 
@@ -32,8 +32,8 @@ When documents conflict, use the unified plan for sequencing and the owning repo
 
 At the end of the 2026-08-23 implementation session:
 
-- **Active coordination phase:** Phase A, Contract Freeze, is complete; G0, G1, and G2 are closed.
-   Phase B is in progress; `RAUF-101` through `RAUF-107` are complete and `RAUF-108` is next.
+- **Active coordination phase:** Phases A and B are complete; G0, G1, and G2 are closed. Phase C is
+   next at `RAUF-201` and has not started.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
 - **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
    `ClaudeStreamEvent` as an exported compatibility alias, has a buffered Copilot JSONL parser,
@@ -51,8 +51,9 @@ At the end of the 2026-08-23 implementation session:
    (`feat(loop): add Copilot CLI provider`), `a4f50e0`
    (`feat(loop): register dedicated Copilot provider`), and `7dd6f3d`
    (`feat(loop): classify Copilot failures`), and `fa3a624`
-   (`test(loop): prove Copilot signal and git boundaries`), and `9bbc3e5`
-   (`test(loop): add Copilot runtime matrix`). The worktree is clean after `RAUF-107`.
+   (`test(loop): prove Copilot signal and git boundaries`), `9bbc3e5`
+   (`test(loop): add Copilot runtime matrix`), and `5f3710b`
+   (`feat(cli): make provider selection portable`). The worktree is clean after `RAUF-108`.
 - **Verified:** Copilot CLI 1.0.78 cached local installation discovers all 13 feature-forge skills;
   a structured prompt session loads all three custom agents with expected tools and no warnings.
 - **New G1 evidence:** direct project/personal discovery, prefixed invocation, worker capability
@@ -111,6 +112,11 @@ At the end of the 2026-08-23 implementation session:
    output, nonzero/auth/model/permission/timeout failures, process cleanup, telemetry, and direct,
    detached, resume, and review paths. Review now parses reconstructed provider text. The sandbox
    passed 192 assertions; 261 focused tests and static checks passed.
+- **RAUF-108 verification:** registry-validated install/init persist Copilot without changing
+   precedence; selected-binary preflight replaces the Claude-only warning; Copilot marker argv
+   config is rejected; direct/detached/resume/review/web and compiled CLI paths preserve provider
+   and model policy; binary presence and tri-state auth readiness are distinct. Compiled smokes and
+   the full gate passed 2,271 package tests plus 83 script tests.
 
 The snapshot is evidence, not a substitute for startup checks.
 
@@ -173,12 +179,11 @@ The next session should execute these bounded items in order:
 
 1. **Do not repeat the unchanged legacy-root probe.** It ran after a full host restart and failed;
    `operator-actions.md` is now a completed historical runbook.
-2. **Continue Phase B at `RAUF-108`.** Remove false Claude-only preflight; support
-   `install/init --agent copilot`; preserve Copilot selection across reinstall, detached, resume,
-   review, compiled CLI, and web paths; reject arbitrary argv injection; and distinguish binary
-   presence from authenticated readiness.
-3. **Do not start native operator-adapter or documentation-phase work.** Provider-aware
-   install/config/UI propagation is the active runtime boundary.
+2. **Enter Phase C at `RAUF-201` only.** Generate the native Copilot operator bundle from rauf's
+   canonical four skills and two agents with provenance, deterministic ordering, stale-file
+   pruning, and a mapping/drop report.
+3. **Do not begin `RAUF-202`, repository documentation, feature-forge implementation, release, or
+   publishing work.** Native bundle generation and drift coverage are the next bounded boundary.
 4. In parallel only when independent and G1 is closed, finish feature-forge `FORGE-101`/`FORGE-102`
    residuals, then `FORGE-103` through `FORGE-107` in dependency order.
 
@@ -232,21 +237,21 @@ starting unrelated downstream work.
 Use this prompt to resume at the next logical milestone in a new session:
 
 ```text
-Continue the GitHub Copilot adaptation at RAUF-108, using
+Continue the GitHub Copilot adaptation at RAUF-201, using
 plans/copilot-adaptation/README.md as the session runbook.
 
 Repository coordinates at handoff:
 - feature-forge: branch docs/copilot-g2-contract with adapter milestone 7754a3b
    (feat(adapters): add native Copilot plugin output) and this handoff committed on top; worktree
    clean at handoff.
-- ../rauf: branch feat/copilot-g2-contract at 9bbc3e5
-   (test(loop): add Copilot runtime matrix); worktree clean at handoff.
+- ../rauf: branch feat/copilot-g2-contract at 5f3710b
+   (feat(cli): make provider selection portable); worktree clean at handoff.
 - Nothing has been pushed.
 
 First read both repositories' AGENTS.md files, then the runbook, unified tracker, rauf source plan,
 and evidence/copilot-cli-child-contract-2026-08-23.md. Run the README's idempotent startup checks
 and inspect both worktrees before editing. Confirm rauf remains on feat/copilot-g2-contract at
-9bbc3e5 and feature-forge remains on docs/copilot-g2-contract with the native adapter milestone
+5f3710b and feature-forge remains on docs/copilot-g2-contract with the native adapter milestone
 committed. Treat any later worktree changes as user/session work.
 
 Phase A and G2 are closed. RAUF-101 is complete and must not be repeated: AgentStreamEvent is the
@@ -289,15 +294,23 @@ direct/detached/resume/review coverage. It also fixes review signal parsing to p
 provider text. The full sandbox passed 192 assertions; 161 loop and 100 CLI focused tests, both
 typechecks, lint, formatting, shell syntax, and fixture parsing passed.
 
-Enter RAUF-108 only. State one local hypothesis and one falsifying focused check before editing.
-Remove false Claude-only installer preflight; support `install/init --agent copilot`; preserve
-Copilot selection across reinstall, detached, resume, review, compiled CLI, and web paths; reject
-arbitrary argv injection; and distinguish binary presence from authenticated readiness. Immediately
-run the narrow install/config/provider-propagation check after the first substantive edit. Do not
-begin the native operator adapter, repository documentation phase, or feature-forge implementation
-in this slice. Keep rauf changes on `feat/copilot-g2-contract` and commit RAUF-108 as its own
-logical milestone only after focused checks pass. Do not push, publish, tag, or alter the
-Copilot/Databricks plugin registry.
+RAUF-108 is complete and must not be repeated. Signed commit `5f3710b` replaces the false
+Claude-only install preflight with selected-provider binary checks, adds registry-validated
+`install/init --agent copilot`, preserves project precedence across reinstall/direct/detached/
+resume/review/web and compiled CLI paths, rejects dedicated Copilot `providerConfig`, and reports
+binary presence separately from tri-state authenticated readiness. Copilot auth remains unknown
+until execution because CLI 1.0.78 has no safe non-mutating auth probe. Compiled CLI smokes and the
+full gate passed 2,271 package tests plus 83 script tests.
+
+Phase B is complete. Enter RAUF-201 only. Before editing, state one falsifiable local hypothesis
+and one focused check that could disprove it. Generate rauf's native Copilot operator bundle from
+the canonical four skills and two agents with provenance, deterministic ordering, stale-file
+pruning, and a generated mapping/drop report. Add focused generator/schema/drift tests and run them
+immediately after the first substantive edit. Do not begin RAUF-202 tool-boundary work, repository
+documentation, feature-forge implementation, release, or publishing in this slice. Keep rauf
+changes on `feat/copilot-g2-contract` and commit RAUF-201 as its own signed logical milestone only
+after focused checks pass. Do not push, publish, tag, or alter the Copilot/Databricks plugin
+registry.
 
 At session close, run focused rauf checks and git diff --check in both repositories, inspect both
 worktrees, remove disposable fixtures, and update the unified tracker, rauf source plan, evidence

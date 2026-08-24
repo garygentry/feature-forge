@@ -263,3 +263,24 @@ No account credit exhaustion was intentionally induced. The stable contract is t
 balance/reset preflight plus the captured usage event shapes; real limit diagnostics must be added
 as sanitized fixtures when naturally observed, without blocking the provider's generic limit
 classification.
+
+## Provider-Aware Propagation Evidence
+
+Rauf signed commit `5f3710b` completes `RAUF-108`. `install` and `init` validate `--agent copilot`
+against the registry, persist only the stable provider ID, and preserve that value on reinstall.
+The false unconditional Claude preflight is gone; preflight checks only the selected provider's
+binary. Existing project/item/run/global precedence and persisted `provider: "copilot"` require no
+migration.
+
+The dedicated Copilot provider rejects marker `providerConfig`, so project JSON cannot append
+arbitrary argv; `generic-cli` retains its existing configurable contract. Direct, detached, CLI
+resume/review, strict web start/review/resume, and compiled CLI paths preserve Copilot selection and
+the provider-default model policy. `rauf agents` now separates `binaryAvailable` from
+`authenticated`; Copilot reports `authenticated: null` because CLI 1.0.78 exposes no safe,
+non-mutating auth-status command. Authentication failures remain execution-time classified outcomes.
+
+A compiled Bun 1.3.10 binary installed, reinstalled, and initialized disposable projects with
+Copilot, then reported binary presence and unknown auth readiness through JSON. The final full gate
+passed build, schema/version/adapter drift, typecheck, lint, formatting, 2,271 package tests, 83
+repository-script tests, and documentation checks. All disposable fixtures and the compiled binary
+were removed.
