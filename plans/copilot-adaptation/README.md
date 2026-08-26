@@ -1,40 +1,40 @@
 # Copilot Adaptation Implementation Runbook
 
-Status: Active implementation; Phases A and B complete, Phase C at RAUF-203
-Last updated: 2026-08-24
+Status: Active implementation; TRACK-001 durable, Phase C at RAUF-202R
+Last updated: 2026-08-25
 Repositories: `feature-forge` and sibling `../rauf`
 
 This directory is the durable handoff surface for adapting both products to GitHub Copilot. Read
 this file first in every implementation session. The process is intentionally idempotent: repeating
 it identifies the same first unfinished task without regenerating, reverting, or duplicating work.
 
-> **Persistence boundary:** the repository's `.gitignore` excludes new files under `plans/`, but
-> files already tracked on this branch remain tracked. Check `git ls-files plans/copilot-adaptation`
-> before treating a plan or evidence file as durable: unlisted files persist only in this workspace
-> and are absent from fresh clones. Do not change `.gitignore`, force-add plans, or relocate them
-> without an explicit owner decision. Tracked implementation, tests, generated artifacts,
-> changelog, and repository gates remain the authoritative proof of completed product work.
+> **Persistence boundary:** `plans/copilot-adaptation/` is the explicit tracked exception to the
+> repository's general `plans/` ignore rule. Check `git ls-files plans/copilot-adaptation` before
+> treating a plan or evidence file as durable, and do not claim cross-machine continuity until the
+> intended files are committed and pushed. Tracked implementation, tests, generated artifacts,
+> sanitized evidence, changelog, and repository gates remain the proof of completed product work.
 
 ## Document Authority
 
-1. `unified-copilot-adaptation-plan.md` is the controlling tracker for decisions, task IDs,
-   dependencies, phase exits, cross-repository gates, and release order.
-2. `copilot-adapter-full-support.md` is detailed feature-forge design evidence and a local progress
-   ledger. It does not override the unified tracker.
-3. `rauf-copilot-cli-and-harness-remediation.md` is detailed rauf design evidence and a local
-   progress ledger. It does not override the unified tracker.
+1. `unified-copilot-adaptation-plan.md` controls task definitions, decisions, dependencies, phase
+   exits, cross-repository gates, support claims, and release order.
+2. `EXECUTION.md` is the mutable multi-session ledger: current cursor, operational states,
+   blockers, repository coordinates, evidence receipts, and exact remaining sequence.
+3. `copilot-adapter-full-support.md` and `rauf-copilot-cli-and-harness-remediation.md` are detailed
+   design/history references. Their historical checkboxes are not current-status authority.
 4. Each repository's `AGENTS.md` controls contribution, validation, and release mechanics inside
    that repository.
 
-When documents conflict, use the unified plan for sequencing and the owning repository's
-`AGENTS.md` for local execution.
+When documents conflict, use the unified plan for requirements, `EXECUTION.md` for current state,
+and the owning repository's `AGENTS.md` for local execution. Reconcile the conflict before editing.
 
 ## Current Snapshot
 
 At the end of the 2026-08-24 implementation session:
 
-- **Active coordination phase:** Phases A and B are complete; G0, G1, and G2 are closed. Phase C is
-   in progress; `RAUF-201` and `RAUF-202` are complete and `RAUF-203` is next.
+- **Active coordination phase:** Phases A and B are complete; G0, G1, and G2 are closed.
+   `TRACK-001` made the authoritative planning and runtime evidence fresh-clone durable. Phase C is
+   active at `RAUF-202R`, followed by `RAUF-203`.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
 - **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
    `ClaudeStreamEvent` as an exported compatibility alias, has a buffered Copilot JSONL parser,
@@ -43,8 +43,9 @@ At the end of the 2026-08-24 implementation session:
 - **Started in code:** rauf now generates a native Copilot operator bundle from its canonical four
    skills and two agents, with provenance, deterministic ordering, stale-file detection, strict
    policy mapping, and a generated mapping/drop report.
-- **Not started in code:** rauf operator-boundary runtime enforcement, feature-forge direct-install
-   migration, packaged cross-repository harness, and releases.
+- **Still open:** rauf operator skill-dependency/prose residuals, installed child-instruction
+   ownership, Copilot drift/version/package gates, feature-forge direct-install migration, the
+   packaged cross-repository harness, and releases.
 - **Feature-forge native adapter milestone committed:** branch `docs/copilot-g2-contract`, commit
    `7754a3b` (`feat(adapters): add native Copilot plugin output`) contains native `SKILL.md` output,
    native `.agent.md` workers, the generated plugin manifest/tree/fixtures, Copilot version-sync
@@ -145,6 +146,7 @@ Run these steps in order on every session, including resumed sessions:
    cd /home/gary/workspace/feature-forge
    cat AGENTS.md
    cat plans/copilot-adaptation/README.md
+   cat plans/copilot-adaptation/EXECUTION.md
    cat plans/copilot-adaptation/unified-copilot-adaptation-plan.md
    cat ../rauf/AGENTS.md
    ```
@@ -162,22 +164,20 @@ Run these steps in order on every session, including resumed sessions:
    Treat every pre-existing change as user/session work. Never reset, discard, or regenerate over it
    until its ownership and relation to the active task are understood.
 
-3. Reconcile temporary Copilot probes with the active handoff:
+3. Confirm the completed disposable root probes have not reappeared:
 
    ```bash
    copilot plugin list
+   copilot plugin marketplace list
    ```
 
-   While `COP-003` has the current restart handoff, preserve only the explicitly named
-   `feature-forge-g1-v1-probe@feature-forge-g1-v1` until its fresh-host evidence is captured. Any
-   other feature-forge plugin requires an ownership check before removal. Never uninstall an
-   intentional user installation.
+   The named G1 probes and `/tmp` fixtures were removed. Do not reinstall or repeat them. Never
+   uninstall an intentional user installation; investigate any unexpected entry before acting.
 
 4. Locate the active bounded task:
-   - Read the phase status table in the unified plan.
-   - Select the first `In progress` phase whose entry criteria are satisfied.
-   - Within it, select one open task whose dependencies are complete.
-   - If a task has progress notes, continue only its remaining acceptance bullets.
+   - Read the one `ACTIVE` row in `EXECUTION.md`.
+   - Confirm its dependencies against the unified plan.
+   - Continue only its remaining acceptance bullets.
    - Do not reopen completed evidence unless the relevant source, generated output, CLI version, or
      schema changed.
 
@@ -190,16 +190,13 @@ Run these steps in order on every session, including resumed sessions:
 
 ## Active Next Work
 
-The next session should execute these bounded items in order:
+The current cursor and complete order live only in `EXECUTION.md`:
 
-1. **Do not repeat the unchanged legacy-root probe.** It ran after a full host restart and failed;
-   `operator-actions.md` is now a completed historical runbook.
-2. **Continue Phase C at `RAUF-203` only.** Preserve installed child instruction ownership across
-   `AGENTS.md`, `CLAUDE.md`, and `.rauf/RAUF.md` without exposing supervisor surfaces to iterations.
-3. **Do not begin `RAUF-204`, repository documentation, feature-forge implementation, release, or
-   publishing work.** Instruction ownership is the next bounded boundary.
-4. In parallel only when independent and G1 is closed, finish feature-forge `FORGE-101`/`FORGE-102`
-   residuals, then `FORGE-103` through `FORGE-107` in dependency order.
+1. Complete `RAUF-202R`: operator agent-to-skill behavior, host-neutral delegation prose, and the
+   already-decided plugin-only topology.
+2. Complete `RAUF-203`, then proceed through the remaining ledger in dependency order.
+3. Do not repeat either completed root probe in `operator-actions.md`.
+4. Release tasks remain owner-gated even when every implementation and integration task is green.
 
 ## Task Completion Protocol
 
@@ -213,7 +210,8 @@ A task can change from `[ ]` to `[x]` only when all of the following are true:
   evidence location.
 - The owning repository's broader gate passes when the task closes a phase or changes a shared
   contract.
-- The unified plan contains a concise evidence note and the source plan status agrees.
+- The unified plan contains a concise evidence note and `EXECUTION.md` advances to exactly one new
+  cursor; source-plan history is updated only when its design or acceptance bullets changed.
 
 Partial work remains unchecked and receives a `Progress:` note naming exactly what remains.
 
@@ -224,13 +222,14 @@ Before ending any implementation session:
 1. Run the narrow check for the last edit and the owning repository gate when available.
 2. Run `git diff --check` and inspect `git status --short` in both repositories.
 3. Remove temporary fixtures, local plugin registrations, copied package trees, and secrets.
-4. Update all three status surfaces:
-   - the unified plan's dashboard/task progress/review log;
-   - the relevant source plan's phase status and checkboxes;
-   - this README's Current Snapshot and Active Next Work if the active boundary changed.
-5. Record blockers as a concrete failed criterion with evidence. Do not call a phase complete with an
+4. Update `EXECUTION.md` atomically: task state/evidence, repository heads, session receipt, and
+   exactly one next cursor. Update the unified task evidence/checkbox and root `STATUS.md` when a
+   task or phase materially changes repository status. Source plans remain design/history references.
+5. Confirm every required plan/evidence file is tracked; cross-machine durability also requires the
+   intended commit to be pushed.
+6. Record blockers as a concrete failed criterion with evidence. Do not call a phase complete with an
    unsupported required smoke cell.
-6. Do not commit, publish, tag, or dispatch release workflows unless the user explicitly requests
+7. Do not commit, publish, tag, or dispatch release workflows unless the user explicitly requests
    the repository's owner-gated action.
 
 ## Phase Advancement Rule
@@ -241,45 +240,14 @@ may begin only when:
 - its entry gate is closed;
 - the prior phase's outputs are present and verified;
 - no unresolved finding invalidates those outputs; and
-- status in this README, the unified plan, and the owning source plan agrees.
+- `EXECUTION.md`, the unified task state, and root `STATUS.md` agree at phase boundaries.
 
 If these conditions are not met, continue the current phase or record a blocker. Do not compensate by
 starting unrelated downstream work.
 
 ## Continuation Prompt
 
-Use this prompt to resume at the next logical milestone in a new session:
-
-```text
-Continue the GitHub Copilot adaptation at RAUF-203, using
-plans/copilot-adaptation/README.md as the session runbook.
-
-Repository coordinates at handoff:
-- feature-forge: `origin/docs/copilot-g2-contract`; this tracked runbook, the unified tracker,
-  rauf source plan, and STATUS.md contain the current cross-repository state.
-- rauf: `origin/feat/copilot-g2-contract` at commit
-  `02f8e67846ccf1ae59443a75c310458d6236ea6d`
-  (`feat(adapters): enforce Copilot operator boundaries`).
-
-First read both repositories' AGENTS.md files, then the runbook, unified tracker, rauf source plan,
-and evidence/copilot-cli-child-contract-2026-08-23.md. Run the README's idempotent startup checks
-and inspect both worktrees before editing. Treat any later changes as user/session work.
-
-Phases A and B are complete. RAUF-101 through RAUF-202 are complete and must not be repeated.
-RAUF-201 generated the native four-skill/two-agent Copilot operator bundle. RAUF-202 added
-fail-loud tool-alias validation and authenticated Copilot CLI 1.0.80 runtime proof that the backlog
-reviewer can read/search/execute but not edit, while the loop driver can invoke and poll rauf JSON
-status yet refuses iteration implementation and RAUF signaling. Seven focused tests and the full
-pinned-Bun-1.3.10 rauf gate passed 2,188 package tests plus 90 repository-script tests.
-
-Execute RAUF-203 only. Preserve installed child instruction ownership across `AGENTS.md`,
-`CLAUDE.md`, and `.rauf/RAUF.md`; prove Copilot loads the child rules and update/uninstall changes
-only rauf-owned content without exposing supervisor customizations to the iteration child. Before
-editing, state one falsifiable local hypothesis and one focused check, then run that check
-immediately after the first substantive edit. Do not begin RAUF-204, feature-forge implementation,
-repository documentation, release, publishing, or unrelated plugin registration changes.
-
-At session close, run focused rauf checks and git diff --check in both repositories, inspect both
-worktrees, remove disposable fixtures, and update the unified tracker, rauf source plan, evidence
-when applicable, and this README handoff with the exact next bounded task.
-```
+Use the prompt printed at the end of the session that created `EXECUTION.md`. On every later handoff,
+regenerate that prompt from the tracker rather than copying an older task-specific prompt. The prompt
+must name the current cursor, repository coordinates, durability checks, bounded execution rule,
+evidence protocol, and owner-gated release boundary.

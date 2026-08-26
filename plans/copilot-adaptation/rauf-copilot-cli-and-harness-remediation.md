@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Phases 1 through 3 complete; Phase 4 through runtime operator boundaries
+Status: Phases 1 through 3 complete; Phase 4 at operator dependency/prose residuals (`RAUF-202R`)
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -601,7 +601,7 @@ Tasks:
       tested Copilot mechanism rather than an aspirational body reference.
 - [ ] Replace canonical `Task tool` wording with host-neutral subagent wording where possible;
       retain Claude-specific specialization only in Claude output.
-- [ ] Decide project-local mirror versus plugin-only repository discovery.
+- [x] Use plugin-only repository discovery for the distributable bundle; accepted decision D7.
 - [ ] Wire `copilot:check` and tests into `pnpm gate` (`copilot:generate` and `copilot:check` exist).
 - [x] Emit a generated report naming source files, mappings, and deliberately unsupported fields.
 - [ ] Add Copilot plugin version handling to release/version checks under the decision in D8.
@@ -612,6 +612,9 @@ Exit criteria:
 - Skill invocation and automatic discovery work in Copilot CLI and VS Code.
 - The loop driver can invoke rauf and the backlog reviewer cannot edit files.
 - A clean generation followed by `copilot:check` is a no-op.
+
+Unified `RAUF-202R` owns the two remaining dependency/prose bullets above; they must close before
+installed-instruction or package-gate work advances.
 
 RAUF-202 evidence (2026-08-24): authenticated Copilot CLI 1.0.80 loaded
 `adapters/copilot` directly. The generated reviewer read a marker, searched its sentinel, executed

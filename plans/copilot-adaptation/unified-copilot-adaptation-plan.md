@@ -44,15 +44,15 @@ discovery as interchangeable proofs. Each has a separate gate.
 | --- | --- | --- | --- |
 | A. Contract Freeze | Complete | G0, G1, and G2 closed; host schema/root decision, exact child argv, prompt transport, JSONL, permissions, cancellation, environment filtering, and detached parent topology captured | Enter Phase B at `RAUF-101` |
 | B. Rauf Runtime Provider | Complete | `RAUF-101`–`RAUF-108`: dedicated provider/parser, failure/signal/git boundaries, runtime matrix, and provider-aware install/config/CLI/web propagation; full rauf gate green | Enter Phase C at `RAUF-201` |
-| C. Rauf Native Operator Adapter | In progress | `RAUF-201`–`RAUF-202`: deterministic native bundle plus runtime-proven operator boundaries and fail-loud tool aliases | Continue at `RAUF-203` |
+| C. Rauf Native Operator Adapter | In progress | `RAUF-201`–`RAUF-202`: deterministic native bundle plus runtime-proven operator boundaries and fail-loud tool aliases | Finish durability `TRACK-001`, then `RAUF-202R` and `RAUF-203` |
 | D. Feature-Forge Native Adapter | In progress | Native manifest, 13 skills, three agents, fixtures, version gate, CLI discovery, and repository gate | Finish `FORGE-101`/`FORGE-102` residuals, then `FORGE-103` |
 | E. Repository Verification and Documentation | Not started | Feature-forge changelog entry started; interim gate green | Wait for Phases B–D exits |
 | F. Packaged Cross-Repository Verification | Not started | No harness artifact yet | Wait for G3; begin `INT-001` |
 | G. Release and Pin Sequence | Not started | No release action taken | Wait for G5; begin owner-gated `REL-001` |
 
 Gate status: **G0 closed; G1 closed by `COP-003` evidence and DEC-11; G2 closed by `COP-004` and
-`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is complete; Phase C is next at
-`RAUF-201`. Runtime
+`COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is complete. `TRACK-001` is the durability
+cursor; Phase C resumes at `RAUF-202R`, then `RAUF-203`. Runtime
 prototyping completed during Phase D does not close later gates without its own required evidence.
 
 ## 2. Completion Claim
@@ -179,7 +179,7 @@ No task requires one commit spanning both repositories.
 | --- | --- | --- | --- | --- |
 | A. Contract Freeze | Both repos and source plans readable; no product implementation prerequisite | Only decisions, support matrix, host/CLI probes, sanitized fixtures, permission policy, and process topology (`COP-001`–`COP-005`) | `COP-001`–`COP-005` each have dated evidence; G0, G1, and G2 are explicitly pass or blocker; no unresolved choice can change layout, authority, or topology | B after G2; C and D after G1 |
 | B. Rauf Runtime Provider | G2 closed; rauf worktree reviewed; captured JSONL fixtures available | Dedicated provider, parser, registration, failure/signal/git behavior, tests, and provider-aware propagation (`RAUF-101`–`RAUF-108`) | All eight tasks complete; exactly one `copilot` descriptor; focused provider/runner tests and `pnpm gate` pass; generic preset removed without config migration | C or E after required dependencies |
-| C. Rauf Native Operator Adapter | G1 closed; rauf provider contract stable for child/supervisor separation | Generated operator plugin, two agent boundaries, installed child instructions, drift/version/package gates (`RAUF-201`–`RAUF-204`) | All four tasks complete; four skills/two agents discovered; behavioral tool denials pass; generation is idempotent; `pnpm gate` passes | E |
+| C. Rauf Native Operator Adapter | G1 closed; rauf provider contract stable for child/supervisor separation | Generated operator plugin, two agent boundaries, operator dependency/prose reconciliation, installed child instructions, drift/version/package gates (`RAUF-201`–`RAUF-204`, including `RAUF-202R`) | All five task rows complete; four skills/two agents discovered with tested skill dependencies; behavioral tool denials pass; child instructions are ownership-safe; generation is idempotent; `pnpm gate` passes | E |
 | D. Feature-Forge Native Adapter | G1 closed for completion; existing generator/installer ownership reviewed | Native generation, runtime roots, direct placements, fresh installs, migration, and package gates (`FORGE-101`–`FORGE-107`) | All seven tasks complete; plugin and direct layouts resolve; migration is fail-safe/idempotent; focused tests, drift check, and `bash scripts/validate.sh` pass | E |
 | E. Repository Verification and Documentation | B, C, and D exited | Product docs/changelogs plus clean repository/package preflights only (`RAUF-301`/`302`, `FORGE-201`/`202`) | All four tasks complete; docs describe only tested behavior; both clean gates and package-content checks pass; G3 closes | F |
 | F. Packaged Cross-Repository Verification | G3 closed; exact candidate artifacts available; external fixture owner named | Out-of-tree lifecycle, discovery/capability, success, needs-human/resume, containment, and parent-harness matrix (`INT-001`–`INT-007`) | All seven tasks complete from exact artifacts; no user-content loss/path escape/secret leak; every required smoke cell passes; G4 and G5 close | G |
@@ -382,10 +382,26 @@ Status: Complete. `RAUF-101` through `RAUF-108` and the rauf gate passed on 2026
   tests plus build, schema/version/adapter drift, typecheck, lint, formatting, and docs checks.
   Milestone: signed rauf commit `5f3710b`.
 
+### Cross-phase durability checkpoint
+
+- [x] **TRACK-001 — Make planning and runtime evidence fresh-clone durable**
+  Repo: feature-forge/shared. Depends on: RAUF-202.
+  Track and push every authoritative source plan and sanitized evidence file referenced by this
+  plan. Add a `RAUF-202` receipt containing the exact platform/version/commands/prompts/results and
+  cleanup state, reconcile stale cursor and plugin-format claims, and verify a fresh clone can read
+  the runbook, execution ledger, source plans, and evidence without ignored local files. The
+  operational acceptance and current state live in `EXECUTION.md`.
+  Evidence (2026-08-25): local session history retained only the 2026-08-24 summary, so the minimum
+  disposable reviewer/driver probes were rerun against rauf `02f8e67` with exact Copilot CLI 1.0.80
+  through `npx`. The tracked receipt records exact sanitized prompts/argv, stable hashes, dedicated
+  edit-tool denial, two schema-v1 status polls, hostile implementation/signal refusal, cleanup, and
+  clean registry/worktree state. All adaptation plans/evidence are visible to Git, the milestone is
+  pushed on `docs/copilot-g2-contract`, and fresh-clone readability passed.
+
 ### Phase C: Rauf Native Operator Adapter
 
-Status: In progress. Entry requires G1. Exit requires `RAUF-201`–`RAUF-204` plus runtime discovery
-and behavioral tool-boundary proof.
+Status: In progress. Entry requires G1. Exit requires `RAUF-201`–`RAUF-204`, including the
+`RAUF-202R` residual row, plus runtime discovery and behavioral tool-boundary proof.
 
 - [x] **RAUF-201 — Generate native Copilot operator bundle**
   Repo: rauf. Depends on: G1.
@@ -416,14 +432,25 @@ and behavioral tool-boundary proof.
   Prettier, and the full pinned-Bun-1.3.10 rauf gate passed 2,188 package tests plus 90
   repository-script tests.
 
+- [ ] **RAUF-202R — Reconcile operator dependency, prose, and evidence residuals**
+  Repo: rauf. Depends on: RAUF-202 and TRACK-001.
+  Resolve each operator agent's dependency on `review-backlog` or `drive-rauf-loop` through tested
+  Copilot behavior rather than an aspirational body reference. Replace portable canonical `Task
+  tool` wording with host-neutral delegation prose, retain host-specific specialization only in
+  host output, and record the accepted plugin-only repository topology from D7. Regenerate, run the
+  focused generator/runtime checks, and preserve a sanitized receipt.
+
 - [ ] **RAUF-203 — Preserve installed child instructions**
-  Repo: rauf. Depends on: RAUF-103.
-  Keep the host-neutral sentinel block in `AGENTS.md`, Claude specialization in `CLAUDE.md`, and child
-  ownership rules in `.rauf/RAUF.md`. Verify Copilot loads them and update/uninstall touches only
-  rauf-owned content.
+  Repo: rauf. Depends on: RAUF-202R.
+  Keep the host-neutral sentinel block in `AGENTS.md` and Claude specialization in `CLAUDE.md`.
+  Separately prove ordinary standalone Copilot loads the installed `AGENTS.md` block while the real
+  iteration provider retains `--no-custom-instructions` and receives `.rauf/RAUF.md` through the
+  generated prompt only. Define a managed/user ownership boundary for `.rauf/RAUF.md`; migrate old
+  files safely; preserve user content through install, update, repeated update, and uninstall; and
+  prove feature-forge and rauf sentinel regions coexist without exposing supervisor surfaces.
 
 - [ ] **RAUF-204 — Add adapter drift/version/package gates**
-  Repo: rauf. Depends on: RAUF-201.
+  Repo: rauf. Depends on: RAUF-203.
   Wire generation checks into `pnpm gate`, keep plugin version lockstep with rauf, and verify intended
   Copilot artifacts in compiled binary/npm/repository-source distribution.
 
@@ -437,8 +464,10 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   Emit `skills/<name>/SKILL.md`, preserve `argument-hint`, translate host terms and invocation prose,
   and generate a version-synchronized Agent Plugin manifest. Keep spec-pure canon unchanged unless a
   host-neutral correction benefits every adapter.
-  Progress: native filenames, argument hints, root plugin manifest, version-sync, fixtures, and CLI
-  cached-install discovery are implemented. Distribution-specific invocation prose remains open.
+  Progress: native filenames, argument hints, a Copilot-accepted legacy-format root manifest,
+  version-sync, fixtures, and CLI cached-install discovery are implemented. Distribution-specific
+  invocation prose remains open. The current manifest has no Agent Plugins 1.0 `$schema`; either
+  migrate and runtime-prove the 1.0 schema/layout or narrow all claims to the tested legacy format.
 
 - [ ] **FORGE-102 — Emit native Copilot custom agents**
   Repo: feature-forge. Depends on: FORGE-101.
@@ -446,8 +475,9 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   model, no nested worker delegation, tested visibility, and a real mechanism for the verifier's
   `forge-verify` dependency. Record unsupported model/turn/effort/memory fields accurately.
   Progress: native files, fail-loud tools, inherited model, `agents: []`, subagent-only visibility,
-  explicit drop records, and CLI runtime loading are implemented. The verifier skill dependency and
-  behavioral edit-denial/edit-success smokes remain open.
+  explicit drop records, CLI runtime loading, researcher/verifier edit denial, and writer edit
+  success are implemented. The verifier skill dependency, durable dispatch-pattern proof, and
+  removal of unsupported persistent-memory promises remain open.
 
 - [ ] **FORGE-103 — Resolve runtime assets in every layout**
   Repo: feature-forge. Depends on: FORGE-101.
@@ -467,7 +497,7 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   bundle per scope. Mark confidence `verified-current` only after runtime discovery passes.
 
 - [ ] **FORGE-106 — Implement fail-safe legacy migration**
-  Repo: feature-forge. Depends on: FORGE-104.
+  Repo: feature-forge. Depends on: FORGE-105.
   Apply new files first, verify results, remove only old manifest-owned orphans, remove an unchanged
   owned managed block, preserve modified content as `skip-modified`, write the new manifest last, and
   prove repeated update/uninstall idempotence. Never delete by filename alone.
@@ -682,4 +712,6 @@ The unified initiative is complete only when:
 | 2026-08-23 | RAUF-107 implementation | Added the Copilot provider and sandbox runtime matrix, real timeout/abort descendant cleanup, direct/detached/resume/review coverage, and fixed review parsing to use reconstructed provider text. The sandbox passed 192 assertions; 261 focused tests and static checks passed. Committed as rauf `9bbc3e5`; Phase B continues at `RAUF-108`. |
 | 2026-08-23 | RAUF-108 implementation | Added registry-validated `install/init --agent copilot`, provider-aware preflight, reinstall and direct/detached/resume/review/web propagation, Copilot argv-config rejection, and split binary/auth readiness. Compiled CLI smokes and the full gate passed. Committed as signed rauf `5f3710b`; Phase B is complete and Phase C begins at `RAUF-201`. |
 | 2026-08-24 | RAUF-201 implementation | Added deterministic native Copilot generation for four skills and two agents, strict canonical/policy validation, provenance, stale-file detection, and a mapping/drop report. The generated nine-file bundle, six focused tests, ESLint, Prettier, no-op drift check, and full rauf gate passed. Signed commit `db40ed0` is pushed; Phase C continues at `RAUF-202`. |
-| 2026-08-24 | RAUF-202 runtime boundary proof | On Linux x64/WSL2 with authenticated Copilot CLI 1.0.80, `--plugin-dir adapters/copilot --agent rauf:rauf-backlog-reviewer` produced `read=ok search=ok execute=ok`, exposed no file-edit tool, and left `/tmp/rauf-copilot-rauf202/reviewer/marker.txt` unchanged. `--agent rauf:rauf-loop-driver` ran `scripts/bin/rauf status . --json` twice, received schema-v1 `IDLE` JSON both times, returned `implementation=refused signal=none`, and modified no files. Unknown aliases now fail generation; focused tests inject `mystery-tool` and assert the diagnostic. `copilot:check`, ESLint, Prettier, and the full Bun 1.3.10 gate passed 2,188 package tests plus 90 script tests. Phase C continues at `RAUF-203`; no instruction-ownership work began. |
+| 2026-08-24 | RAUF-202 runtime boundary proof | On Linux x64/WSL2 with authenticated Copilot CLI 1.0.80, `--plugin-dir adapters/copilot --agent rauf:rauf-backlog-reviewer` produced `read=ok search=ok execute=ok`, exposed no file-edit tool, and left `/tmp/rauf-copilot-rauf202/reviewer/marker.txt` unchanged. `--agent rauf:rauf-loop-driver` ran `scripts/bin/rauf status . --json` twice, received schema-v1 `IDLE` JSON both times, returned `implementation=refused signal=none`, and modified no files. Unknown aliases now fail generation; focused tests inject `mystery-tool` and assert the diagnostic. `copilot:check`, ESLint, Prettier, and the full Bun 1.3.10 gate passed 2,188 package tests plus 90 script tests. Phase C continues through durability and `RAUF-202R` before `RAUF-203`; no instruction-ownership work began. |
+| 2026-08-24 | Seven-file durability and implementation audit | Added `EXECUTION.md` as the operational ledger, exposed `plans/copilot-adaptation/` to Git, added the incomplete `RAUF-202` receipt, clarified the legacy-versus-1.0 plugin claim, split operator dependency/prose residuals into `RAUF-202R`, separated standalone instructions from the isolated iteration prompt in `RAUF-203`, ordered migration after fresh-layout proof, and made `TRACK-001` the sole current cursor. |
+| 2026-08-25 | TRACK-001 durability closure | Recovered exact RAUF-202 evidence with minimal Copilot CLI 1.0.80 probes, reconciled the current cursor and plugin-format claims, tracked/pushed the authoritative plans and sanitized evidence, verified fresh-clone readability, and advanced the sole cursor to `RAUF-202R`. |

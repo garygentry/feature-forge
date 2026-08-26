@@ -14,8 +14,12 @@
 # Local Claude Code session artifacts
 .claude/
 
-# Internal dev planning notes — not part of the public/published surface
-plans/
+# Internal dev planning notes — not part of the public/published surface.
+# The Copilot adaptation is an explicit cross-machine exception: its tracker,
+# source plans, and sanitized evidence are required for multi-session continuity.
+plans/*
+!plans/copilot-adaptation/
+!plans/copilot-adaptation/**
 
 # Adapter build artefacts (forge-agent-adapters-build)
 .venv-adapters/

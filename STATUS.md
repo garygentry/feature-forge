@@ -26,9 +26,11 @@ its runtime-root, direct-install, migration, and package work remain open. Rauf'
 operator bundle generator and `RAUF-202` operator capability enforcement are complete; authenticated
 Copilot CLI 1.0.80 probes proved the reviewer read/search/execute and no-edit boundary plus the loop
 driver's invoke/poll and supervisor-only boundary. Unknown tool aliases fail generation, and the
-full Bun 1.3.10 gate passed. `RAUF-203` is next. No adaptation release or rauf pin advance has
-occurred. The controlling task tracker is
-`plans/copilot-adaptation/unified-copilot-adaptation-plan.md` on the adaptation branch.
+full Bun 1.3.10 gate passed. `TRACK-001` made the planning and exact runtime evidence
+fresh-clone durable; the execution cursor is now `RAUF-202R`, followed by `RAUF-203`. No adaptation
+release or rauf pin advance has occurred. Task definitions live in
+`plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
+`plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.
 
 ### rauf coupling
 
