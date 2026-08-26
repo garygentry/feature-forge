@@ -45,14 +45,14 @@ discovery as interchangeable proofs. Each has a separate gate.
 | A. Contract Freeze | Complete | G0, G1, and G2 closed; host schema/root decision, exact child argv, prompt transport, JSONL, permissions, cancellation, environment filtering, and detached parent topology captured | Enter Phase B at `RAUF-101` |
 | B. Rauf Runtime Provider | Complete | `RAUF-101`–`RAUF-108`: dedicated provider/parser, failure/signal/git boundaries, runtime matrix, and provider-aware install/config/CLI/web propagation; full rauf gate green | Enter Phase C at `RAUF-201` |
 | C. Rauf Native Operator Adapter | Complete | `RAUF-201`–`RAUF-204`: deterministic native bundle, runtime-proven boundaries, composed canonical operator skills, ownership-safe child instructions, and release-blocking drift/version/package gates | Enter/continue Phase D at `FORGE-101` |
-| D. Feature-Forge Native Adapter | In progress | Native manifest, 13 skills, three agents, fixtures, version gate, CLI discovery, and repository gate | Finish `FORGE-101`/`FORGE-102` residuals, then `FORGE-103` |
+| D. Feature-Forge Native Adapter | In progress | Native manifest, 13 skills, three agents, composed verifier dependency, memory-limit translation, exact-name CLI dispatch, fixtures, and version gate | Make the local `FORGE-102` milestone durable, then continue at `FORGE-103` |
 | E. Repository Verification and Documentation | Not started | Feature-forge changelog entry started; interim gate green | Wait for Phases B–D exits |
 | F. Packaged Cross-Repository Verification | Not started | No harness artifact yet | Wait for G3; begin `INT-001` |
 | G. Release and Pin Sequence | Not started | No release action taken | Wait for G5; begin owner-gated `REL-001` |
 
 Gate status: **G0 closed; G1 closed by `COP-003` evidence and DEC-11; G2 closed by `COP-004` and
 `COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is complete and `TRACK-001` is durable.
-Phase C is complete; the sole cursor continues Phase D at `FORGE-101`. Runtime
+Phase C is complete; the sole cursor continues Phase D at `FORGE-102`. Runtime
 prototyping completed during Phase D does not close later gates without its own required evidence.
 
 ## 2. Completion Claim
@@ -506,10 +506,16 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   Emit researcher, spec writer, and verifier `.agent.md` files with fail-loud tool mapping, inherited
   model, no nested worker delegation, tested visibility, and a real mechanism for the verifier's
   `forge-verify` dependency. Record unsupported model/turn/effort/memory fields accurately.
-  Progress: native files, fail-loud tools, inherited model, `agents: []`, subagent-only visibility,
-  explicit drop records, CLI runtime loading, researcher/verifier edit denial, and writer edit
-  success are implemented. The verifier skill dependency, durable dispatch-pattern proof, and
-  removal of unsupported persistent-memory promises remain open.
+  Progress (2026-08-25): local code and CLI 1.0.80 evidence now pass. The generator fail-loud
+  composes the complete host-translated canonical `forge-verify` body into `forge-verifier`, removes
+  the mapped `skills` field from drop records, and translates affirmative persistent-memory prose
+  into an explicit no-`MEMORY.md`-guarantee contract. One parent dispatched all three exact
+  namespaced workers in parallel; researcher/verifier edits were denied, the writer edited its one
+  assigned file, and the verifier recognized CHECK-I21/I22 from the composed contract. Evidence:
+  `evidence/forge-102-native-agent-dispatch-2026-08-25.md`. The task remains unchecked/ACTIVE until
+  the clean-shell full gate has passed (2,484 Python, 182 installer, 11 Pi-source tests). The task
+  remains unchecked/ACTIVE until the implementation/evidence milestone is authorized, pushed, and
+  fresh-clone durable.
 
 - [ ] **FORGE-103 — Resolve runtime assets in every layout**
   Repo: feature-forge. Depends on: FORGE-101.
@@ -751,3 +757,4 @@ The unified initiative is complete only when:
 | 2026-08-25 | RAUF-203 child instruction ownership closure | Rauf commit `f02f0e7` separates host-neutral AGENTS, Claude specialization, and isolated `.rauf/RAUF.md` prompt ownership; safely migrates and uninstalls managed instructions; preserves user and feature-forge sentinel content; passes Copilot CLI 1.0.80 standalone/isolation probes and the full gate. Phase C continues at `RAUF-204`. |
 | 2026-08-25 | RAUF-204 adapter gate/package closure | Rauf commit `8d65441` makes Copilot drift/distribution release-blocking, version-locks the generated plugin, and passes negative guards, compiled binary provider/install proof, exact npm launcher dry-run, and the full clean-home gate. Phase C exits; the cursor continues Phase D at `FORGE-101`. |
 | 2026-08-25 | FORGE-101 native skills/invocation closure | Feature-forge commit `74f269b` translates Copilot descriptions, bodies, references, and scripted exits to distribution-neutral invocation notation; explicitly retains the runtime-proven legacy five-field Copilot manifest; installed all 13 skills and loaded the overlay contract on CLI 1.0.80; and passed the clean-shell full gate. The cursor advances to `FORGE-102`. |
+| 2026-08-25 | FORGE-102 local custom-agent residual closure | The dirty-tree generator composes `forge-verify` fail-loud into `forge-verifier`, replaces unsupported persistent-memory promises with an explicit Copilot limitation, and passes exact-name parallel CLI 1.0.80 dispatch with researcher/verifier edit denial and writer edit success. The full gate passes; the task stays ACTIVE pending the authorized durable milestone. |

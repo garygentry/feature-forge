@@ -806,6 +806,77 @@ def test_copilot_emits_native_agents_with_mapped_tools(fixture_copy):
     assert "user-invocable: false" in author_text
 
 
+def test_copilot_composes_required_verifier_skill_and_removes_memory_promises(fixture_copy):
+    """The verifier receives a real skill contract without claiming persistent memory."""
+    root = fixture_copy("minimal-canon")
+    verifier = root / "agents" / "verifier.md"
+    forge_verifier = verifier.with_name("forge-verifier.md")
+    source = verifier.read_text("utf-8").replace("name: verifier", "name: forge-verifier")
+    source = source.replace(
+        "You are a verification sub-agent. The `memory` and `skills` keys appear ONLY\n"
+        "here among the fixture sub-agents, so the per-file drop-with-record test can\n"
+        "prove per-file enumeration rather than a hard-coded list.\n",
+        "You are a verification sub-agent.\n\n"
+        "## Using Your Memory\n\n"
+        "You have persistent memory in your `MEMORY.md` file. Use it to track:\n\n"
+        "- **Recurring patterns**: If you keep finding the same type of gap across features, "
+        "note it. Over time you'll learn this project's blind spots.\n"
+        "- **Project conventions**: As you review more specs, capture conventions that should "
+        "be consistent (naming patterns, error handling approaches, test strategies).\n"
+        "- **False positives to avoid**: If you've flagged something before and the user said "
+        "it was intentional, note it so you don't flag it again.\n\n"
+        "At the end of each verification pass, update your memory with any new patterns you've "
+        "observed. Keep `MEMORY.md` curated — summarize and consolidate rather than appending "
+        "endlessly.\n",
+    )
+    forge_verifier.write_text(source, encoding="utf-8")
+    verifier.unlink()
+    dependency_dir = root / "skills" / "forge-verify"
+    dependency_dir.mkdir()
+    (dependency_dir / "SKILL.md").write_text(
+        "---\nname: forge-verify\ndescription: Verify fixture artifacts.\n---\n\n"
+        "# Fixture Verify Contract\n\nDEPENDENCY_MARKER_42\n",
+        encoding="utf-8",
+    )
+
+    result = run_build(root)
+    assert result.returncode == 0, result.stderr
+    output = (
+        root / "adapters" / "copilot" / "agents" / "forge-verifier.agent.md"
+    ).read_text("utf-8")
+    assert "Source: agents/forge-verifier.md; skills/forge-verify/SKILL.md" in output
+    assert "## Required canonical skill contract: `forge-verify`" in output
+    assert "DEPENDENCY_MARKER_42" in output
+    assert "Copilot custom agents do not guarantee a persistent `MEMORY.md`" in output
+    for promise in (
+        "You have persistent memory",
+        "update your memory with",
+        "memory consolidation happens only",
+    ):
+        assert promise not in output
+
+    report = (root / "adapters" / "GENERATION-REPORT.md").read_text("utf-8")
+    copilot_section = report.split("## copilot", 1)[1].split("## cursor", 1)[0]
+    assert "agents/forge-verifier.md` | `sub-agent key 'skills'" not in copilot_section
+    assert "no persistent MEMORY.md guarantee" in copilot_section
+
+
+def test_copilot_required_verifier_skill_fails_loud_when_missing(fixture_copy):
+    """A declared verifier dependency cannot degrade to an inert dropped field."""
+    root = fixture_copy("minimal-canon")
+    verifier = root / "agents" / "verifier.md"
+    renamed = verifier.with_name("forge-verifier.md")
+    renamed.write_text(
+        verifier.read_text("utf-8").replace("name: verifier", "name: forge-verifier"),
+        encoding="utf-8",
+    )
+    verifier.unlink()
+
+    result = run_build(root)
+    assert result.returncode != 0
+    assert "agents/forge-verifier.md: unknown required Copilot skill 'forge-verify'" in result.stderr
+
+
 def test_copilot_emits_plugin_manifest(fixture_copy):
     """Legacy Copilot manifest declares roots and never masquerades as Agent Plugins 1.0."""
     root = fixture_copy("minimal-canon")
@@ -852,6 +923,22 @@ def test_drop_with_record_enumerates_per_file(fixture_copy, agent):
     )
     for token in ("effort:", "memory:", "skills:"):
         assert token not in bodies, f"{token!r} leaked into {agent} output"
+
+
+def test_committed_copilot_verifier_has_composed_dependency_and_memory_limit():
+    """The shipped worker contains forge-verify while promising no MEMORY.md updates."""
+    verifier = (ADAPTERS / "copilot" / "agents" / "forge-verifier.agent.md").read_text("utf-8")
+    assert "skills/forge-verify/SKILL.md" in verifier.split("---\n", 2)[1]
+    assert "## Required canonical skill contract: `forge-verify`" in verifier
+    assert "CHECK-I21/I22" in verifier
+    assert "no `MEMORY.md` update is promised" in verifier
+    for promise in (
+        "You have persistent memory",
+        "update your memory with",
+        "memory consolidation happens only",
+        "forge-verify skill pre-loaded",
+    ):
+        assert promise not in verifier
 
 
 def test_claude_retains_subagent_keys(fixture_copy):

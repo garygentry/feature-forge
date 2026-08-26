@@ -37,9 +37,13 @@ Rauf Phase C is complete. Pushed feature-forge commit `74f269b` closes `FORGE-10
 Copilot descriptions, bodies, references, and stage exits use distribution-neutral `invoke-skill:`
 notation with explicit plugin/direct mappings, and Copilot CLI 1.0.80 installed the generated bundle
 and discovered all 13 skills. The five-field manifest is deliberately retained as the tested legacy
-Copilot format; Agent Plugins 1.0 is not claimed. The clean-shell full gate passed. The execution
-cursor is now feature-forge `FORGE-102`; no adaptation release or rauf pin advance has occurred. Task
-definitions live in
+Copilot format; Agent Plugins 1.0 is not claimed. The clean-shell FORGE-101 gate passed. Local
+FORGE-102 work now composes the canonical `forge-verify` contract fail-loud into the generated
+verifier, replaces unsupported persistent-memory promises with an explicit Copilot limitation, and
+passes CLI 1.0.80 exact-name parallel dispatch with researcher/verifier edit denial and writer edit
+success. The clean-shell full gate passes (2,484 Python, 182 installer, 11 Pi-source tests). The
+execution cursor remains `FORGE-102` pending its authorized durable milestone; no adaptation release
+or rauf pin advance has occurred. Task definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.
 

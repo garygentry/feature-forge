@@ -288,7 +288,7 @@ Exit criteria:
 
 ### Phase 2: Native custom-agent emission
 
-Status: In progress; native files and metadata verified, behavioral dispatch/dependency proof open
+Status: Local implementation and CLI proof complete; durable milestone pending
 
 Primary files:
 
@@ -304,11 +304,12 @@ Tasks:
 - [x] Fail generation on an unmapped tool token.
 - [x] Set workers to `user-invocable: false` and `agents: []`.
 - [x] Preserve descriptions and bodies with Copilot host-term translation.
-- [ ] Resolve the verifier's `skills: [forge-verify]` dependency through a tested Copilot mechanism.
+- [x] Resolve the verifier's `skills: [forge-verify]` dependency through fail-loud canonical body composition, tested on Copilot CLI 1.0.80.
 - [x] Drop-record `model`, `maxTurns`, `effort`, and `memory` with accurate reasons.
-- [x] Verify that read-only agents cannot edit and that `forge-spec-writer` can edit; the tracked
-      host-contract evidence records the runtime result. Durable dispatch-pattern and verifier-skill
-      dependency proof remain open.
+- [x] Verify exact-name parallel dispatch, researcher/verifier edit denial, writer edit success,
+      and verifier recognition of a marker present only in the composed canonical skill contract.
+- [x] Translate Copilot output so it states that persistent `MEMORY.md` updates are not guaranteed,
+      without weakening canonical memory behavior for hosts that support it.
 
 Exit criteria:
 
@@ -316,6 +317,11 @@ Exit criteria:
 - The main Copilot agent can select each worker by exact name.
 - Tool access matches the canonical intent.
 - Parallel researcher, writer, and verifier dispatch patterns work where requested by skills.
+
+Local evidence (2026-08-25): `evidence/forge-102-native-agent-dispatch-2026-08-25.md` records
+Copilot CLI 1.0.80 exact-name parallel dispatch, inherited model selection, composed dependency
+recognition, tool boundaries, hashes, and cleanup. The clean-shell full repository gate passed; unified `FORGE-102` remains ACTIVE until an
+authorized commit/push makes this milestone durable.
 
 ### Phase 3: Runtime asset resolution
 
@@ -616,6 +622,7 @@ The initiative is complete when all of the following are true:
 | 2026-08-23 | Unified `COP-002` froze the floor-plus-current product/runtime matrix and initial Linux x64/WSL2 Copilot support boundary; cross-platform promotion requires runtime smokes. |
 | 2026-08-23 | Unified `COP-003` CLI/direct probes passed, including behavioral worker and subagent checks; VS Code/Agent Host and runtime `${PLUGIN_ROOT}` proof remain blocked on a fresh host session. |
 | 2026-08-23 | Fresh VS Code/Agent Host discovery, guide loading, and researcher delegation passed; a post-start hook was not dynamically registered, so unified `COP-003` remains open only on a predeclared hook/MCP `${PLUGIN_ROOT}` expansion probe. |
+| 2026-08-25 | FORGE-102 local residuals closed: generated verifier instructions now compose `forge-verify` fail-loud, remove affirmative persistent-memory promises, and pass exact-name parallel CLI 1.0.80 dispatch with intended edit boundaries. The full gate passes; only the authorized durable milestone remains pending. |
 | 2026-08-23 | Added the durable `operator-actions.md` handoff for the one remaining external G1 probe; no feature-forge or rauf implementation task advanced. |
 | 2026-08-23 | Executed the predeclared legacy hook after a full host restart; VS Code registered it but did not expand or export `${PLUGIN_ROOT}`, so the probe failed, cleanup completed, and unified `COP-003`/G1 remain open. |
 | 2026-08-23 | Executed the Agent Plugins 1.0 replacement hooks after a full restart; command-token expansion failed and the independent helper recorded `PLUGIN_ROOT=UNSET`. The dated fallback decision requires package self-location plus explicit `FEATURE_FORGE_ROOT`, closing unified `COP-003`/G1 and advancing to `COP-004`. |

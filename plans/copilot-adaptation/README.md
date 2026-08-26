@@ -46,8 +46,11 @@ At the end of the 2026-08-24 implementation session:
 - **Started in code:** rauf now generates a native Copilot operator bundle from its canonical four
    skills and two agents, with provenance, deterministic ordering, stale-file detection, strict
    policy mapping, and a generated mapping/drop report.
-- **Still open:** feature-forge custom-agent dependency/promise residuals, runtime roots,
-  direct-install migration, the packaged cross-repository harness, and releases.
+- **Locally complete, durability pending:** feature-forge `FORGE-102` custom-agent dependency,
+  memory-limit translation, and exact-name dispatch/tool-boundary residuals; the clean-shell full
+  repository gate passes. An authorized implementation push still precedes tracker closure.
+- **Still open:** runtime roots, direct-install migration, the packaged cross-repository harness,
+  and releases.
 - **Feature-forge native adapter milestone committed:** branch `docs/copilot-g2-contract`, commit
    `7754a3b` (`feat(adapters): add native Copilot plugin output`) contains native `SKILL.md` output,
    native `.agent.md` workers, the generated plugin manifest/tree/fixtures, Copilot version-sync
@@ -194,8 +197,9 @@ Run these steps in order on every session, including resumed sessions:
 
 The current cursor and complete order live only in `EXECUTION.md`:
 
-1. Complete `FORGE-102`: implement/test the verifier's real `forge-verify` dependency, remove
-   unsupported persistent-memory promises, and prove the required named dispatch/tool boundaries.
+1. Finish `FORGE-102` durability: request explicit authorization for the implementation/evidence
+   commit and push. Only after that push is durable,
+   close the tracker milestone and advance exactly one cursor to `FORGE-103`.
 2. Proceed through the remaining ledger in dependency order.
 3. Do not repeat either completed root probe in `operator-actions.md`.
 4. Release tasks remain owner-gated even when every implementation and integration task is green.

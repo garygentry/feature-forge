@@ -35,7 +35,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Mapping, Protocol
 
 import yaml
 
@@ -1208,14 +1208,113 @@ def _copilot_map_tools(tokens: list[str], agent_name: str) -> list[str]:
     return mapped_tools
 
 
+_COPILOT_REQUIRED_AGENT_SKILLS: Mapping[str, str] = {
+    "forge-verifier": "forge-verify",
+}
+
+
+_COPILOT_MEMORY_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    (
+        "This agent has read-only tools and persistent memory — it cannot modify files, "
+        "only analyze and report findings.",
+        "This agent has read-only tools and cannot modify files. Copilot custom agents "
+        "do not guarantee persistent memory or `MEMORY.md` updates.",
+    ),
+    (
+        "**Treat `MEMORY.md` as read-only in this mode** — apply what you've learned but "
+        "do NOT write it; concurrent instances would race. Memory consolidation happens "
+        "only on full-verifier runs.",
+        "**Do not rely on `MEMORY.md` in this mode** — Copilot custom agents do not "
+        "guarantee persistent memory or cross-session `MEMORY.md` updates. Use only the "
+        "current dispatch context and artifacts.",
+    ),
+    (
+        "## Using Your Memory\n\n"
+        "You have persistent memory in your `MEMORY.md` file. Use it to track:\n\n"
+        "- **Recurring patterns**: If you keep finding the same type of gap across features, "
+        "note it. Over time you'll learn this project's blind spots.\n"
+        "- **Project conventions**: As you review more specs, capture conventions that should "
+        "be consistent (naming patterns, error handling approaches, test strategies).\n"
+        "- **False positives to avoid**: If you've flagged something before and the user said "
+        "it was intentional, note it so you don't flag it again.\n\n"
+        "At the end of each verification pass, update your memory with any new patterns you've "
+        "observed. Keep `MEMORY.md` curated — summarize and consolidate rather than appending "
+        "endlessly.",
+        "## Persistent Memory on Copilot\n\n"
+        "Copilot custom agents do not guarantee a persistent `MEMORY.md` file or cross-session "
+        "updates. Do not read or update `MEMORY.md` as part of verification. Base every finding "
+        "on the current dispatch context and artifacts.",
+    ),
+    (
+        "- If you find zero issues, say so honestly — but also note in your memory that this "
+        "feature had a clean verification, which is unusual for complex features",
+        "- If you find zero issues, say so honestly, then double-check the current artifacts "
+        "because a clean verification is unusual for complex features",
+    ),
+    (
+        "- **Persistent memory** — it accumulates knowledge about this project's recurring "
+        "issues and patterns across sessions",
+        "- **No persistent-memory guarantee on Copilot** — base findings on the current "
+        "dispatch context and artifacts; no `MEMORY.md` update is promised",
+    ),
+    (
+        "- **The forge-verify skill pre-loaded** — so it has all verification checklists and "
+        "guidance at startup",
+        "- **The complete forge-verify contract embedded in its generated instructions** — "
+        "so the verification procedure is present without a host dependency field",
+    ),
+    (
+        "Tell parallel instances to treat their `MEMORY.md` as **read-only**\n"
+        "  (apply learned patterns, but do NOT write it — concurrent writers would race);\n"
+        "  memory consolidation is left to single-verifier runs.",
+        "Tell parallel instances not to rely on or update `MEMORY.md`; Copilot does not "
+        "guarantee persistent memory, so every instance uses only its current context.",
+    ),
+    (
+        "this skill is pre-loaded in your context.",
+        "the complete forge-verify contract is embedded in your generated context.",
+    ),
+    (
+        "Your pre-loaded `forge-verify` skill contains",
+        "The embedded `forge-verify` contract contains",
+    ),
+)
+
+_COPILOT_UNSUPPORTED_MEMORY_PROMISES: tuple[str, ...] = (
+    "You have persistent memory",
+    "update your memory with",
+    "memory consolidation happens only",
+    "memory consolidation is left",
+    "this skill is pre-loaded in your context",
+    "forge-verify skill pre-loaded",
+)
+
+
+def _copilot_memory_safe_text(text: str, source: str) -> str:
+    """Translate affirmative verifier-memory claims to Copilot's D5 limitation."""
+    for old, new in _COPILOT_MEMORY_TEXT_REPLACEMENTS:
+        text = text.replace(old, new)
+    leaked = [promise for promise in _COPILOT_UNSUPPORTED_MEMORY_PROMISES if promise in text]
+    if leaked:
+        raise ValueError(
+            f"{source}: unsupported Copilot persistent-memory promise remains: {leaked[0]!r}"
+        )
+    return text
+
+
 class CopilotEmitter:
     """Emitter for native Copilot skills and custom agents.
 
-    Canonical tool capabilities map to Copilot aliases. Other Claude-specific
+    Canonical tool capabilities map to Copilot aliases. ``forge-verifier`` receives
+    its required canonical skill through deterministic body composition because the
+    Copilot custom-agent schema has no dependency field. Other Claude-specific
     structural keys remain drop-recorded (REQ-FMT-03 / REQ-GEN-06).
     """
 
     agent_id = "copilot"
+
+    def __init__(self, skills: Mapping[str, SkillRecord] | None = None) -> None:
+        self._skills = dict(skills or {})
 
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
         """Emit a native ``skills/<name>/SKILL.md`` with Copilot frontmatter."""
@@ -1238,27 +1337,69 @@ class CopilotEmitter:
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
         """Emit a subagent-only ``agents/<name>.agent.md`` with mapped tools."""
         tokens = _canon_tool_tokens(agent.claude_keys.get("tools"))
+        dependency_name = _COPILOT_REQUIRED_AGENT_SKILLS.get(agent.name)
+        dependency: SkillRecord | None = None
+        provenance = agent.source_path
+        mapped_keys = {"tools"}
+        if dependency_name is not None:
+            declared = _canon_tool_tokens(agent.claude_keys.get("skills"))
+            if declared != [dependency_name]:
+                raise ValueError(
+                    f"{agent.source_path}: Copilot policy requires canonical skills: "
+                    f"[{dependency_name}], found {declared!r}"
+                )
+            dependency = self._skills.get(dependency_name)
+            if dependency is None:
+                raise ValueError(
+                    f"{agent.source_path}: unknown required Copilot skill '{dependency_name}'"
+                )
+            provenance = f"{agent.source_path}; {dependency.source_path}"
+            mapped_keys.add("skills")
+
+        description = translate_host_terms(agent.description, agent_id="copilot")
+        body = agent_body_for(agent.body, "copilot")
+        if "memory" in agent.claude_keys:
+            description = _copilot_memory_safe_text(description, agent.source_path)
+            body = _copilot_memory_safe_text(body, agent.source_path)
+
+        if dependency is not None:
+            dependency_body = translate_host_terms(dependency.body, agent_id="copilot")
+            if "memory" in agent.claude_keys:
+                dependency_body = _copilot_memory_safe_text(
+                    dependency_body, dependency.source_path
+                )
+            body = (
+                f"{body.rstrip()}\n\n"
+                f"## Required canonical skill contract: `{dependency.name}`\n\n"
+                "The Copilot custom-agent schema has no declarative skill-dependency "
+                "field. The generator therefore composes the complete canonical skill "
+                "below so its procedure is always present in this agent context. Follow "
+                "it as authoritative while retaining the read-only agent boundary above.\n\n"
+                f"{dependency_body.lstrip()}"
+            )
+
         native: dict[str, Any] = {
             "name": agent.name,
-            "description": translate_host_terms(agent.description, agent_id="copilot"),
+            "description": description,
             "tools": _copilot_map_tools(tokens, agent.name),
             "agents": [],
             "user-invocable": False,
         }
         rel = f"agents/{agent.name}.agent.md"
-        content = render_frontmatter_block(
-            order_fields(native),
-            agent.source_path,
-        ) + agent_body_for(agent.body, "copilot")
+        content = render_frontmatter_block(order_fields(native), provenance) + body
         drops = tuple(
             DropRecord(
                 "copilot",
                 agent.source_path,
                 f"sub-agent key '{key}'",
-                "no equivalent Copilot custom-agent field",
+                (
+                    "no persistent MEMORY.md guarantee for Copilot custom agents"
+                    if key == "memory"
+                    else "no equivalent Copilot custom-agent field"
+                ),
             )
             for key in agent.claude_keys
-            if key != "tools"
+            if key not in mapped_keys
         )
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
@@ -2122,7 +2263,9 @@ AGENT_TARGETS_REGISTRY: dict[str, type] = {
 }
 
 
-def build_emitters() -> dict[str, Emitter]:
+def build_emitters(
+    skills: Mapping[str, SkillRecord] | None = None,
+) -> dict[str, Emitter]:
     """Instantiate one emitter per target, validating registry coverage.
 
     Returns:
@@ -2135,7 +2278,14 @@ def build_emitters() -> dict[str, Emitter]:
     assert set(AGENT_TARGETS_REGISTRY) == set(AGENT_TARGETS), (
         "AGENT_TARGETS_REGISTRY must cover exactly AGENT_TARGETS (00 §1)"
     )
-    return {agent_id: AGENT_TARGETS_REGISTRY[agent_id]() for agent_id in AGENT_TARGETS}
+    return {
+        agent_id: (
+            CopilotEmitter(skills)
+            if agent_id == "copilot"
+            else AGENT_TARGETS_REGISTRY[agent_id]()
+        )
+        for agent_id in AGENT_TARGETS
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -2223,10 +2373,10 @@ def build_tree(root: Path, dest: Path) -> tuple[EmitResult, ...]:
         CanonError: Any unprocessable canon (00 §8) — aborts before publish so no
             partial ``adapters/`` is ever produced (REQ-ROB-01).
     """
-    emitters = build_emitters()  # §2
-
     skills = [parse_skill(p, root) for p in discover_skill_paths(root)]  # §1, §3
     agents = [parse_agent(p, root) for p in discover_agent_paths(root)]  # §1, §3
+    skills_by_name = {skill.name: skill for skill in skills}
+    emitters = build_emitters(skills_by_name)  # §2
 
     results: list[EmitResult] = []
     all_drops: list[DropRecord] = []
