@@ -482,12 +482,12 @@ full rauf gate.
 Status: In progress. Exit remains open until `FORGE-101`–`FORGE-107` all pass; the native generated
 foundation alone does not satisfy installer, migration, root-resolution, or package criteria.
 
-- [ ] **FORGE-101 — Emit native Copilot skills and plugin manifest**
+- [x] **FORGE-101 — Emit native Copilot skills and plugin manifest**
   Repo: feature-forge. Depends on: G1.
   Emit `skills/<name>/SKILL.md`, preserve `argument-hint`, translate host terms and invocation prose,
   and generate a version-synchronized Copilot plugin manifest. Keep spec-pure canon unchanged unless a
   host-neutral correction benefits every adapter.
-  Progress (2026-08-25, local pending authorized commit/push): native filenames, argument hints,
+  Evidence (2026-08-25): pushed feature-forge commit `74f269b` emits native filenames, argument hints,
   version-sync, fixtures, and CLI cached-install discovery are implemented. Copilot bodies,
   descriptions, references, and runtime stage exits now use distribution-neutral
   `invoke-skill: <name> [arguments]` notation; the overlay maps it to plugin
@@ -498,8 +498,8 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   installed the generated legacy bundle, discovered 13 skills, loaded `forge-guide` through its
   plugin-prefixed name, and returned the expected distribution contract. Exact evidence:
   `evidence/forge-101-native-skills-invocation-2026-08-25.md`. The clean-shell full gate passed
-  2,481 Python tests, 182 installer tests, and 11 Pi adapter-source tests. Task closure remains
-  pending authorized commit/push durability.
+  2,481 Python tests, 182 installer tests, and 11 Pi adapter-source tests. The milestone is pushed
+  and fresh-clone durable; the sole cursor advances to `FORGE-102`.
 
 - [ ] **FORGE-102 — Emit native Copilot custom agents**
   Repo: feature-forge. Depends on: FORGE-101.
@@ -750,3 +750,4 @@ The unified initiative is complete only when:
 | 2026-08-25 | RAUF-202R operator dependency closure | Rauf commit `4668553` composes each operator's canonical skill contract with fail-loud mapping, replaces portable `Task tool` wording, regenerates all affected adapters, preserves plugin-only topology, and passes exact Copilot CLI 1.0.80 behavior probes plus the full clean-home gate. Phase C continues at `RAUF-203`. |
 | 2026-08-25 | RAUF-203 child instruction ownership closure | Rauf commit `f02f0e7` separates host-neutral AGENTS, Claude specialization, and isolated `.rauf/RAUF.md` prompt ownership; safely migrates and uninstalls managed instructions; preserves user and feature-forge sentinel content; passes Copilot CLI 1.0.80 standalone/isolation probes and the full gate. Phase C continues at `RAUF-204`. |
 | 2026-08-25 | RAUF-204 adapter gate/package closure | Rauf commit `8d65441` makes Copilot drift/distribution release-blocking, version-locks the generated plugin, and passes negative guards, compiled binary provider/install proof, exact npm launcher dry-run, and the full clean-home gate. Phase C exits; the cursor continues Phase D at `FORGE-101`. |
+| 2026-08-25 | FORGE-101 native skills/invocation closure | Feature-forge commit `74f269b` translates Copilot descriptions, bodies, references, and scripted exits to distribution-neutral invocation notation; explicitly retains the runtime-proven legacy five-field Copilot manifest; installed all 13 skills and loaded the overlay contract on CLI 1.0.80; and passed the clean-shell full gate. The cursor advances to `FORGE-102`. |

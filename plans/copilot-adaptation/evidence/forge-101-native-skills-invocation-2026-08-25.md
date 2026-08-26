@@ -1,6 +1,6 @@
 # FORGE-101 Native Skills and Invocation Evidence — 2026-08-25
 
-Status: Local implementation, runtime proof, and full gate complete; task remains ACTIVE until authorized commit/push durability.
+Status: Complete; authorized implementation commit `74f269b` is pushed and the tracker advances to FORGE-102.
 
 ## Attribution and environment
 
@@ -128,4 +128,5 @@ A shell `EXIT` trap uninstalled `feature-forge@feature-forge-forge101-probe`, re
 - `copilot plugin marketplace list`: only built-in `copilot-plugins` and `awesome-copilot`;
 - probe path absent;
 - cleanup logs removed;
-- feature-forge and rauf branches otherwise retained their existing worktree state; no commit, push, merge, tag, release, publication, or rauf pin advance occurred.
+- the runtime probe itself performed no repository operation; afterward, explicit user authorization produced and pushed feature-forge implementation commit `74f269b`;
+- no merge, tag, release, publication, or rauf pin advance occurred.

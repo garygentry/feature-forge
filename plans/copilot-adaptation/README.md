@@ -1,6 +1,6 @@
 # Copilot Adaptation Implementation Runbook
 
-Status: Active implementation; rauf Phase C durable, Phase D at FORGE-101
+Status: Active implementation; rauf Phase C durable, Phase D at FORGE-102
 Last updated: 2026-08-25
 Repositories: `feature-forge` and sibling `../rauf`
 
@@ -36,7 +36,8 @@ At the end of the 2026-08-24 implementation session:
    `TRACK-001` made the authoritative planning and runtime evidence fresh-clone durable, and
    `RAUF-202R` closed operator dependency/prose residuals, `RAUF-203` closed child-instruction
    ownership, and `RAUF-204` closed drift/version/package gates. Phase C is complete; Phase D is
-   active at `FORGE-101`.
+   active at `FORGE-102` after pushed feature-forge commit `74f269b` closed distribution-aware
+   invocation and the legacy manifest claim.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
 - **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
    `ClaudeStreamEvent` as an exported compatibility alias, has a buffered Copilot JSONL parser,
@@ -45,8 +46,8 @@ At the end of the 2026-08-24 implementation session:
 - **Started in code:** rauf now generates a native Copilot operator bundle from its canonical four
    skills and two agents, with provenance, deterministic ordering, stale-file detection, strict
    policy mapping, and a generated mapping/drop report.
-- **Still open:** feature-forge native-format/invocation residuals, direct-install migration, the
-  packaged cross-repository harness, and releases.
+- **Still open:** feature-forge custom-agent dependency/promise residuals, runtime roots,
+  direct-install migration, the packaged cross-repository harness, and releases.
 - **Feature-forge native adapter milestone committed:** branch `docs/copilot-g2-contract`, commit
    `7754a3b` (`feat(adapters): add native Copilot plugin output`) contains native `SKILL.md` output,
    native `.agent.md` workers, the generated plugin manifest/tree/fixtures, Copilot version-sync
@@ -193,9 +194,8 @@ Run these steps in order on every session, including resumed sessions:
 
 The current cursor and complete order live only in `EXECUTION.md`:
 
-1. Close `FORGE-101` durably: distribution-aware invocation/reference translation and the explicit
-   legacy Copilot-format claim are implemented, runtime-proven, and full-gate green locally; obtain
-   authorization before committing/pushing and advancing the cursor.
+1. Complete `FORGE-102`: implement/test the verifier's real `forge-verify` dependency, remove
+   unsupported persistent-memory promises, and prove the required named dispatch/tool boundaries.
 2. Proceed through the remaining ledger in dependency order.
 3. Do not repeat either completed root probe in `operator-actions.md`.
 4. Release tasks remain owner-gated even when every implementation and integration task is green.

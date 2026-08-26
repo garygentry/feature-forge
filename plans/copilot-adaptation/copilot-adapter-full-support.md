@@ -257,7 +257,7 @@ Exit criteria:
 
 ### Phase 1: Native skill emission
 
-Status: Complete locally; pending authorized commit/push durability in the execution tracker
+Status: Complete and pushed in feature-forge commit `74f269b`
 
 Primary files:
 
