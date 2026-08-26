@@ -45,14 +45,14 @@ discovery as interchangeable proofs. Each has a separate gate.
 | A. Contract Freeze | Complete | G0, G1, and G2 closed; host schema/root decision, exact child argv, prompt transport, JSONL, permissions, cancellation, environment filtering, and detached parent topology captured | Enter Phase B at `RAUF-101` |
 | B. Rauf Runtime Provider | Complete | `RAUF-101`–`RAUF-108`: dedicated provider/parser, failure/signal/git boundaries, runtime matrix, and provider-aware install/config/CLI/web propagation; full rauf gate green | Enter Phase C at `RAUF-201` |
 | C. Rauf Native Operator Adapter | Complete | `RAUF-201`–`RAUF-204`: deterministic native bundle, runtime-proven boundaries, composed canonical operator skills, ownership-safe child instructions, and release-blocking drift/version/package gates | Enter/continue Phase D at `FORGE-101` |
-| D. Feature-Forge Native Adapter | In progress | `FORGE-101`–`FORGE-102`: native manifest/skills/agents, composed verifier dependency, memory-limit translation, exact-name CLI dispatch, fixtures, and version gate | Continue at `FORGE-103` runtime-root resolution |
+| D. Feature-Forge Native Adapter | In progress | `FORGE-101`–`FORGE-103`: native manifest/skills/agents, composed verifier dependency, memory-limit translation, exact-name dispatch, and runtime-root resolution across Copilot layouts | Continue at `FORGE-104` installer placement primitives |
 | E. Repository Verification and Documentation | Not started | Feature-forge changelog entry started; interim gate green | Wait for Phases B–D exits |
 | F. Packaged Cross-Repository Verification | Not started | No harness artifact yet | Wait for G3; begin `INT-001` |
 | G. Release and Pin Sequence | Not started | No release action taken | Wait for G5; begin owner-gated `REL-001` |
 
 Gate status: **G0 closed; G1 closed by `COP-003` evidence and DEC-11; G2 closed by `COP-004` and
 `COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is complete and `TRACK-001` is durable.
-Phase C is complete; the sole cursor continues Phase D at `FORGE-103`. Runtime
+Phase C is complete; the sole cursor continues Phase D at `FORGE-104`. Runtime
 prototyping completed during Phase D does not close later gates without its own required evidence.
 
 ## 2. Completion Claim
@@ -518,7 +518,7 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   composed contract marker, and tracker state. FORGE-102 is complete; the cursor advances exactly
   one task to FORGE-103.
 
-- [ ] **FORGE-103 — Resolve runtime assets in every layout**
+- [x] **FORGE-103 — Resolve runtime assets in every layout**
   Repo: feature-forge. Depends on: FORGE-101.
   Extend `forge-root.sh` for package self-location, explicit `${FEATURE_FORGE_ROOT}`, project and
   personal runtime roots, and subdirectory execution. Test complete/degraded roots, spaces, shell
@@ -530,8 +530,10 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   tests. Copilot CLI 1.0.80 runtime probes passed managed-plugin self-location, personal-direct,
   nested-project, and explicit-override resolution while competing roots existed. Focused checks
   pass 815 tests; cleanup and the clean-shell full gate pass (2,496 Python, 182 installer, 11 Pi
-  source tests). Evidence: `evidence/forge-103-runtime-root-resolution-2026-08-26.md`. The task
-  remains ACTIVE until an authorized push and fresh-clone durability pass.
+  source tests). Authorized commit `7cfdb31` is pushed; a fresh clone regenerated adapters,
+  reproduced all 815 focused checks and exact hashes, and remained clean. Evidence:
+  `evidence/forge-103-runtime-root-resolution-2026-08-26.md`. FORGE-103 is complete; the cursor
+  advances exactly one task to FORGE-104.
 
 - [ ] **FORGE-104 — Extend installer placement primitives**
   Repo: feature-forge. Depends on: G1.
@@ -768,3 +770,4 @@ The unified initiative is complete only when:
 | 2026-08-25 | RAUF-204 adapter gate/package closure | Rauf commit `8d65441` makes Copilot drift/distribution release-blocking, version-locks the generated plugin, and passes negative guards, compiled binary provider/install proof, exact npm launcher dry-run, and the full clean-home gate. Phase C exits; the cursor continues Phase D at `FORGE-101`. |
 | 2026-08-25 | FORGE-101 native skills/invocation closure | Feature-forge commit `74f269b` translates Copilot descriptions, bodies, references, and scripted exits to distribution-neutral invocation notation; explicitly retains the runtime-proven legacy five-field Copilot manifest; installed all 13 skills and loaded the overlay contract on CLI 1.0.80; and passed the clean-shell full gate. The cursor advances to `FORGE-102`. |
 | 2026-08-25 | FORGE-102 local custom-agent residual closure | The dirty-tree generator composes `forge-verify` fail-loud into `forge-verifier`, replaces unsupported persistent-memory promises with an explicit Copilot limitation, and passes exact-name parallel CLI 1.0.80 dispatch with researcher/verifier edit denial and writer edit success. The full gate and fresh-clone durability pass in pushed commit `fdc26ff`; FORGE-102 closes and the cursor advances to FORGE-103. |
+| 2026-08-26 | FORGE-103 runtime-root closure | Pushed commit `7cfdb31` resolves explicit override, package, managed/personal, and nested-project roots without generic `PLUGIN_ROOT`; Copilot CLI 1.0.80 passed four runtime layouts, degraded/adversarial fixtures and the full gate passed, and a fresh clone reproduced 815 focused tests plus exact hashes. The cursor advances to FORGE-104. |

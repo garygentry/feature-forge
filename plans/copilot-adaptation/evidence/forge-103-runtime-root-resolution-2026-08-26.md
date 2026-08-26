@@ -1,6 +1,6 @@
 # FORGE-103 Runtime-Root Resolution Evidence — 2026-08-26
 
-Status: Implementation, Linux/Copilot runtime probes, cleanup, and the full clean-shell repository gate pass in the uncommitted feature-forge worktree; FORGE-103 remains ACTIVE pending authorized push and fresh-clone durability.
+Status: Complete in pushed feature-forge commit `7cfdb31caf9abe083019919a29bcc752df818291`; Linux/Copilot runtime probes, cleanup, the full gate, and fresh-clone durability pass.
 
 ## Attribution and environment
 
@@ -160,15 +160,22 @@ Result: PASS.
 - Pi adapter source: 11 passed.
 - Spec purity, adapter drift, ruff, traceability, and four-field version sync: passed.
 
-## Cleanup and remaining closure work
+## Cleanup and durability
 
 The disposable plugin, marketplace, copied project/personal/degraded roots, raw JSONL outputs, and temporary workspaces were removed. Registry verification showed no installed plugins and only the built-in `copilot-plugins` and `awesome-copilot` marketplaces; every named fixture path was absent. No repository files were modified by the runtime probes.
 
 An independent read-only review found one unguarded-ancestor-loop defect and one stale inventory description. The loop now uses `cd ..||break`, a `BASH_ENV` failure-injection test proves it terminates when traversal fails, and the inventory identifies the neutral override first plus legacy Claude fallback at resolver step 4. No review findings remain open before the full gate.
 
-FORGE-103 remains ACTIVE until:
+With explicit user authorization, implementation commit `7cfdb31caf9abe083019919a29bcc752df818291` was pushed to `origin/docs/copilot-g2-contract`. A fresh single-branch clone then ran:
 
-1. the implementation/evidence is committed and pushed only with explicit user authorization;
-2. a fresh clone reproduces the focused checks and generated hashes.
+```bash
+python3 scripts/build-adapters.py
+pytest -q tests/test_adapter_host_neutrality.py tests/test_build_adapters.py \
+  tests/test_forge_root.py tests/test_clean_env_repro.py tests/test_compliance_eval.py
+python3 scripts/build-adapters.py --check
+git diff --check
+```
 
-No merge, tag, release, publication, rauf change, or `RAUF_PIN` advance is authorized or performed.
+Result: 815 passed; the clone stayed clean after regeneration. The resolver and generated Copilot skill hashes exactly matched `6a9f1598…` and `a4934e18…` above, the evidence file was present, and the pre-closure cursor remained FORGE-103 as expected. This closes FORGE-103; the separate tracker-closure commit advances exactly one cursor to FORGE-104.
+
+No merge, tag, release, publication, rauf change, or `RAUF_PIN` advance was authorized or performed.

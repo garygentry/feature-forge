@@ -326,8 +326,7 @@ complete and the cursor advances to `FORGE-103`.
 
 ### Phase 3: Runtime asset resolution
 
-Status: In progress; Linux/Copilot implementation, runtime probes, cleanup, and the full gate pass
-in the dirty worktree, pending authorized push and fresh-clone durability
+Status: Complete in pushed feature-forge commit `7cfdb31`; fresh-clone durability passes
 
 Primary files:
 
@@ -342,14 +341,15 @@ Tasks:
 - [x] Add ancestor probing for project-scoped Copilot runtime bundles when executing from a subdirectory.
 - [x] Keep degraded-install detection and core-asset checks intact.
 - [x] Verify spaces and shell metacharacters in installation paths.
-- [ ] Verify plugin, project, and personal layouts on supported Linux and applicable macOS/Windows CI surfaces.
+- [x] Verify plugin, project, and personal layouts on the initially supported Linux x64 surface; broader platform promotion remains gated by the unified cross-platform matrix.
 
 Progress (2026-08-26): Copilot CLI 1.0.80 passed managed-plugin, personal-direct, nested-project,
 and explicit-override probes while competing roots existed. A degraded Copilot-layout copy failed
 distinctly. The 815-test focused slice, cleanup, adapter drift check, and clean-shell full gate pass
 (2,496 Python, 182 installer, 11 Pi-source tests). Exact sanitized evidence is
-`evidence/forge-103-runtime-root-resolution-2026-08-26.md`; unified FORGE-103 remains ACTIVE pending
-an authorized push and fresh-clone durability.
+`evidence/forge-103-runtime-root-resolution-2026-08-26.md`. Authorized commit `7cfdb31` is pushed;
+a fresh clone regenerated adapters, reproduced all 815 focused checks and exact hashes, and remained
+clean. Unified FORGE-103 is complete and the cursor advances to FORGE-104.
 
 Exit criteria:
 
@@ -632,6 +632,7 @@ The initiative is complete when all of the following are true:
 | 2026-08-23 | Unified `COP-003` CLI/direct probes passed, including behavioral worker and subagent checks; VS Code/Agent Host and runtime `${PLUGIN_ROOT}` proof remain blocked on a fresh host session. |
 | 2026-08-23 | Fresh VS Code/Agent Host discovery, guide loading, and researcher delegation passed; a post-start hook was not dynamically registered, so unified `COP-003` remains open only on a predeclared hook/MCP `${PLUGIN_ROOT}` expansion probe. |
 | 2026-08-25 | FORGE-102 local residuals closed: generated verifier instructions now compose `forge-verify` fail-loud, remove affirmative persistent-memory promises, and pass exact-name parallel CLI 1.0.80 dispatch with intended edit boundaries. The full gate and fresh-clone durability pass in pushed commit `fdc26ff`; FORGE-102 is complete. |
+| 2026-08-26 | FORGE-103 closed in pushed commit `7cfdb31`: explicit override, self-location, Copilot managed/personal/project roots, guarded ancestor traversal, complete/degraded handling, adversarial paths, full gate, and fresh-clone hashes all pass without generic `PLUGIN_ROOT`. |
 | 2026-08-23 | Added the durable `operator-actions.md` handoff for the one remaining external G1 probe; no feature-forge or rauf implementation task advanced. |
 | 2026-08-23 | Executed the predeclared legacy hook after a full host restart; VS Code registered it but did not expand or export `${PLUGIN_ROOT}`, so the probe failed, cleanup completed, and unified `COP-003`/G1 remain open. |
 | 2026-08-23 | Executed the Agent Plugins 1.0 replacement hooks after a full restart; command-token expansion failed and the independent helper recorded `PLUGIN_ROOT=UNSET`. The dated fallback decision requires package self-location plus explicit `FEATURE_FORGE_ROOT`, closing unified `COP-003`/G1 and advancing to `COP-004`. |

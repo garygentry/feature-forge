@@ -44,8 +44,9 @@ implemented in the dirty worktree: explicit override, package self-location, man
 nested project roots, project-over-global bootstrap precedence, degraded detection, adversarial
 paths, and no generic `PLUGIN_ROOT` dependency. Copilot CLI 1.0.80 passed managed-plugin,
 personal-direct, nested-project, and explicit-override probes; cleanup and the full clean-shell gate
-pass (2,496 Python, 182 installer, 11 Pi-source tests). The cursor remains `FORGE-103` pending an
-authorized push and fresh-clone durability; no adaptation release or rauf pin advance has occurred.
+pass (2,496 Python, 182 installer, 11 Pi-source tests). Authorized commit `7cfdb31` is pushed and a
+fresh clone reproduces all 815 focused checks and exact hashes. FORGE-103 is complete; the cursor is
+`FORGE-104` for installer placement primitives. No adaptation release or rauf pin advance has occurred.
 Task definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.
