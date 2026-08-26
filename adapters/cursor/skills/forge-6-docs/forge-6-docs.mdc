@@ -31,7 +31,7 @@ Documentation is valuable but not mandatory: a feature may close with docs delib
 On **Skip documentation**, persist the skip through the `state-skip` verb — never by hand, and never via `state-complete` (which would claim a completion that did not happen). Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-skip \
   --feature "{feature}" --stage forge-6-docs --specs-dir "{specsDir}"
@@ -72,7 +72,7 @@ Cases 2–5 all pair a recommended first action with **Generate docs anyway**. O
 **"Generate docs anyway" persists the skip before docs can complete — in cases 2, 4, and 5 only.** An explicit choice to proceed without verification is recorded as `skipped` through `state-verify` — never by hand — **before** Step 2, so an unresolved result cannot be bypassed by this stage's terminal wording. Case 3 (`findings-applied`) is the exception spelled out above: its deferral writes nothing, because the verb refuses to demote a complete-for-orchestration status (#203). Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{feature}" --stage forge-5-loop --status skipped --specs-dir "{specsDir}"
@@ -87,7 +87,7 @@ If that verb exits 2, surface its plain `Error:` line verbatim and stop — the 
 If the resolved feature has an `epic` back-pointer in its `.pipeline-state.json`, run:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
@@ -216,7 +216,7 @@ Present the docs as text. Then use the host's question mechanism to collect feed
 Pipeline state is written by the `state-*` verbs — see the Pipeline State Protocol in `references/shared-conventions.md`. The `state-complete` call for item 1, with the portable plugin-root prelude. Add `--epic "{epic}"` when this feature is an epic member — required, per that same protocol:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-complete \
   --feature "{feature}" --stage forge-6-docs --version {n} \
@@ -241,7 +241,7 @@ Select `{DocsOutcome}` first, from what actually landed:
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-6-docs --outcome "{DocsOutcome}" --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
 ```

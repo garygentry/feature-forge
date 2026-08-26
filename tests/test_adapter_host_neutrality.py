@@ -63,6 +63,16 @@ PI_FORBIDDEN_TOKENS: tuple[str, ...] = (
 )
 
 
+def test_copilot_prelude_prefers_copilot_runtime_roots() -> None:
+    """A loaded Copilot plugin cannot be shadowed by another host's global install."""
+    body = (ADAPTERS_ROOT / "copilot" / "skills" / "forge" / "SKILL.md").read_text()
+    project = body.index('d="$PWD/.github/feature-forge"')
+    installed = body.index('"$HOME"/.copilot/installed-plugins/*/feature-forge')
+    personal = body.index('"$HOME/.copilot/feature-forge"')
+    other_hosts = body.index('"$HOME"/{.claude/skills,.agents/skills}/feature-forge')
+    assert project < installed < personal < other_hosts
+
+
 def _scan_paths(target: str) -> list[Path]:
     """Every committed skill body AND reference markdown of one adapter target.
 

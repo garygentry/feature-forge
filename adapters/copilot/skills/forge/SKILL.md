@@ -29,7 +29,7 @@ Read and follow `references/shared-conventions.md` for configuration reading (fe
 
 1. **Epics first.** Identify epic directories as any `{specsDir}/*/` that directly contains an `epic-manifest.json` **and no `.pipeline-state.json` of its own** (an epic root is never itself a feature). For each epic, run:
    ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}";do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;w=$PWD;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done;for d in "$HOME"/.copilot/installed-plugins/*/feature-forge "$HOME/.copilot/feature-forge" "$HOME"/{.claude/skills,.agents/skills}/feature-forge "$HOME"/.claude/plugins/{cache/*/feature-forge/*,*/feature-forge} "$w"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
    ```
@@ -37,7 +37,7 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
 2. **Standalone features below.** Scan the remaining `{specsDir}/*/` that directly contain a `.pipeline-state.json` **without** an `epic` back-pointer. A nested member's `.pipeline-state.json` is **attributed to its epic (Tier 1), never listed as a standalone feature**.
    - **Rank by recency.** Run the recency ranker so the most-recently-touched active feature is the default — the user rarely has to type a name (especially on mobile after a session clear):
      ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}";do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;w=$PWD;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done;for d in "$HOME"/.copilot/installed-plugins/*/feature-forge "$HOME/.copilot/feature-forge" "$HOME"/{.claude/skills,.agents/skills}/feature-forge "$HOME"/.claude/plugins/{cache/*/feature-forge/*,*/feature-forge} "$w"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" rank-features --specs-dir "{specsDir}" --json
      ```
@@ -102,7 +102,7 @@ After rendering a **per-feature** dashboard for an **active** pipeline (skip thi
 
 **2. Check the context window.** Run the context-usage helper so you can advise whether to continue here or start the next stage in a fresh session:
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}";do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;w=$PWD;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done;for d in "$HOME"/.copilot/installed-plugins/*/feature-forge "$HOME/.copilot/feature-forge" "$HOME"/{.claude/skills,.agents/skills}/feature-forge "$HOME"/.claude/plugins/{cache/*/feature-forge/*,*/feature-forge} "$w"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" context-usage --json
 ```
@@ -142,7 +142,7 @@ This applies whether the feature was named explicitly (`invoke-skill: forge {fea
 When the named argument is an epic (`{specsDir}/{name}/epic-manifest.json` exists), render the epic dashboard instead of a per-feature one. Run:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}";do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;w=$PWD;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done;for d in "$HOME"/.copilot/installed-plugins/*/feature-forge "$HOME/.copilot/feature-forge" "$HOME"/{.claude/skills,.agents/skills}/feature-forge "$HOME"/.claude/plugins/{cache/*/feature-forge/*,*/feature-forge} "$w"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
@@ -184,7 +184,7 @@ All of this is reconstructed **purely from disk** — the manifest plus each mem
 If the user says something like "note: switching to jose for JWT" or "remember: we decided X", update the `notes` field by running `state-note` (below). This helps preserve context across session clears. Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`.
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}";do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;w=$PWD;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done;for d in "$HOME"/.copilot/installed-plugins/*/feature-forge "$HOME/.copilot/feature-forge" "$HOME"/{.claude/skills,.agents/skills}/feature-forge "$HOME"/.claude/plugins/{cache/*/feature-forge/*,*/feature-forge} "$w"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-note --feature "{feature}" --note "<what the user said>" --specs-dir "{specsDir}"
 ```
@@ -223,7 +223,7 @@ Support these sub-commands for pipeline lifecycle management:
 
 - Set the manifest's top-level `status` (`paused` / `active` / `abandoned`) via the helper's `set-status` mutator — an atomic write that also bumps `updatedAt`:
   ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}";do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;w=$PWD;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done;for d in "$HOME"/.copilot/installed-plugins/*/feature-forge "$HOME/.copilot/feature-forge" "$HOME"/{.claude/skills,.agents/skills}/feature-forge "$HOME"/.claude/plugins/{cache/*/feature-forge/*,*/feature-forge} "$w"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" set-status "{epic}" --status paused --specs-dir "{specsDir}"
   ```

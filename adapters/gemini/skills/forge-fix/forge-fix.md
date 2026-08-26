@@ -38,7 +38,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 4. **Assert the plan covers every finding** before any fix executes. Exit 1 is that assertion firing, not a tool failure; only exit 2 is a tool failure. Run:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/fix-sweep.py" plan-coverage "{resolvedFeatureDir}/.verification/{findingsFile}" --json
 ```
@@ -73,7 +73,7 @@ For each step in the "Execution Steps" section, in order:
 **Closing sub-step — sweep for surviving occurrences of what you just corrected.** After the last plan step is applied and BEFORE Step 5 commits anything, while the working tree is still dirty, sweep this fix's own delta for text you removed that survives elsewhere. Pass no flags beyond `--json` — the exclusions the script applies by default are the correct ones in both a plugin repository and a consumer repository. Exit 1 means survivors were found: that is the sweep working, not a tool failure. Run:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/fix-sweep.py" sweep --json
 ```
@@ -98,7 +98,7 @@ Detection is mechanical; disposition is judgment — a hit is a candidate, not a
 Never hand-author a verify entry, and never write a `verifiedStageVersion` value by hand. Record the fix pass with the `state-verify` verb described in the **Pipeline State Protocol** in `references/shared-conventions.md`, which owns its full flag surface, its status matrix, and the exit-2 failure protocol. `--stage` names the **served production stage** established in Step 1. `findings-applied` deliberately **clears** `verifiedStageVersion` and refuses `--verified-stage-version`: applying fixes is not verifying them, so the served stage's verification stays outstanding until a re-verify passes. Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline State Protocol; omitting it for a member is an error and must never fall back to a same-named flat feature.
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{feature}" --stage "{servedStage}" --status findings-applied \
@@ -112,7 +112,7 @@ Then follow the Git Commit Protocol in `references/shared-conventions.md`. If `g
 **Two-commit provenance — never `--amend`.** Record the provenance of Commit 1 in a second `state-verify` call, passing the **full 40-character** hash — an abbreviation is refused rather than expanded, and this call touches nothing but `commitHash`. Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{feature}" --stage "{servedStage}" \
@@ -165,7 +165,7 @@ Add `--epic "{epic}"` when the feature is an epic member. Pass no other flags.
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-fix --owner "{owner}" --outcome "{FixOutcome}" --served-stage "{servedStage}" --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
 ```

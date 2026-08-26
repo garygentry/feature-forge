@@ -12,7 +12,7 @@ reading the manifest, EPIC.md, completed members' specs, and (for E10) sibling m
 committed tests.
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}";do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;w=$PWD;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done;for d in "$HOME"/.copilot/installed-plugins/*/feature-forge "$HOME/.copilot/feature-forge" "$HOME"/{.claude/skills,.agents/skills}/feature-forge "$HOME"/.claude/plugins/{cache/*/feature-forge/*,*/feature-forge} "$w"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}" --json
 ```

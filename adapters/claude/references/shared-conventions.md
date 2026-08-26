@@ -92,7 +92,7 @@ Extract these config values (use defaults if not present):
 Before any file I/O against a feature's artifacts, resolve its directory through the deterministic helper rather than hardcoding `{specsDir}/{feature}/`. This makes flat (`{specsDir}/{feature}/`) and nested (`{specsDir}/{epic}/{feature}/`) layouts both resolve from a bare feature name (REQ-DIR-03), with standalone features behaving exactly as today.
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 resolvedFeatureDir=$(python3 "$R/scripts/epic-manifest.py" \
   resolve "<feature>" --specs-dir "<specsDir>")
@@ -107,7 +107,7 @@ In both failure cases, do not fall back to a guessed path.
 **On `not-found`, check other branches before stopping.** With `branchPerFeature`, the feature's directory (and its `.pipeline-state.json`) may exist only on its topic branch — invisible from the default branch of a fresh clone. Before concluding the pipeline does not exist, run the read-only cross-branch discovery:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" discover-feature "<feature>" --specs-dir "<specsDir>" --json
 ```
@@ -135,7 +135,7 @@ Whenever a stage creates the specs tree for the first time (the first PRD or epi
 Run this after creating the feature/epic directory, before the stage's git commit:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 mkdir -p "<specsDir>"
 [ -f "<specsDir>/AGENTS.md" ] || cp "$R/references/templates/specs-hygiene/AGENTS.md" "<specsDir>/AGENTS.md"
@@ -144,7 +144,7 @@ mkdir -p "<specsDir>"
 If the host is Claude (the Claude-native question tool is available), also ensure the Claude-framed variant:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 [ -f "<specsDir>/CLAUDE.md" ] || cp "$R/references/templates/specs-hygiene/CLAUDE.md" "<specsDir>/CLAUDE.md"
 ```
@@ -164,7 +164,7 @@ After resolving the feature directory, check the feature's `.pipeline-state.json
 To obtain the manifest contracts and the live completion status of each dependency in one deterministic call, run `render-status` and read the per-feature `status` and the `consumes`/`exposes` arrays rather than re-deriving them:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" \
   render-status "<epic>" --specs-dir "<specsDir>" --json
@@ -179,7 +179,7 @@ If `render-status` fails, proceed with **only** EPIC.md + charter (a corrupt man
 Defense-in-depth for the split-brain-epic failure (Issue #125). Invoke this block in the authoring stages (`forge-1-prd`..`forge-4-backlog`) once the feature has resolved — right after **Epic Context Injection** for the stages that run it (`forge-1-prd`..`forge-3-specs`), and right after **Feature Directory Resolution** for `forge-4-backlog`. It confirms that a **resolved nested epic member** actually sits on a branch that contains the epic's manifest. Without this, a member reached from a branch cut *before* the epic-manifest commit (or that otherwise lacks it) would author specs against an epic decomposition that is not present — the exact drift that produces a disjoint, split-brain member. **Skip if not a git repo or `branchPerFeature` is false.**
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" check-epic-base --feature "{feature}" --specs-dir "{specsDir}" --json
 ```
@@ -211,7 +211,7 @@ If a `state-*` verb exits 2, surface the plain `Error:` line from stderr verbati
 **`auto-verify-pending` is not a skill-facing status.** It is written by `stage-exit`'s scheduling boundary, which records the debt automatically when auto-verify is effective for a stage. The value is accepted on this CLI so the entry stays inspectable and repairable, not so a skill can hand-schedule verification: no skill body and no reference passes it, and none should. Every other status in the list is the recorded *result* of a verification that ran (or was explicitly skipped); this one records that one was *owed*.
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{feature}" --stage "{served-production-stage}" --status "<status>" \
@@ -221,7 +221,7 @@ python3 "$R/scripts/forge-session.py" state-verify \
 Provenance follows the same two-commit sequence as `state-complete`: the result transition above writes `commitHash: null`, Commit 1 records the findings document and the state, and a second `state-verify` call records the full 40-hex hash of Commit 1 and touches nothing else (never `--amend`; an abbreviated hash is refused rather than expanded). Add `--epic "{epic}"` for an epic member — required, per the member rule above:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{feature}" --stage "{served-production-stage}" \
@@ -231,7 +231,7 @@ python3 "$R/scripts/forge-session.py" state-verify \
 Epic-scoped verification is the single exception to the member rule: with `--stage forge-0-epic`, `--feature` names the **epic** and `--epic` must be absent or exactly equal to it. That call writes `{specsDir}/{epic}/.epic-state.json` and never a member's `.pipeline-state.json`, and its freshness version is the epic manifest's `revision`, never a member's stage version:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{epic}" --stage forge-0-epic --status "<status>" \
@@ -253,7 +253,7 @@ Frame the choice with its cost: re-running re-derives this stage from the curren
 When an interview raises a concern that belongs to a *later stage of this same feature*, acknowledge it and persist it **immediately, at the moment it is raised** — not at stage closure — by running `state-note` with a concise one-line statement of the concern. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol above; omitting it for a member is an error and must never be allowed to fall back to a same-named flat feature.
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-note \
   --feature "{feature}" --note "<concise downstream concern>" \
@@ -297,7 +297,7 @@ Invoke this block at the **very start** of a pipeline entry point — `forge-1-p
 **Record the branch.** After this block resolves, record the resulting branch name in the feature's top-level `branch` field by running `state-branch` (create/update it when the state file is first written for this stage). Emit the call **once the feature directory exists** — i.e. after Feature Directory Resolution and the Entry Stamp, **not** at this block: Branch Setup runs at the very start of the entry point, before any directory resolution, and a brand-new standalone feature may have no directory yet. Add `--epic "{epic}"` to the call when this feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-branch \
   --feature "{feature}" --branch "<name>" --specs-dir "{specsDir}"
@@ -310,7 +310,7 @@ Downstream stages and `forge-5-loop` read it to detect drift back onto the defau
 The recorded `branch` is a **self-healing hint, not gospel.** A hosted environment (Claude.ai remote, cloud agents) can impose an arbitrary session branch (e.g. `claude/<slug>`) that Branch Setup silently records; the user may then move the work to the intended topic branch, leaving the recorded field stale. Every branch-aware mechanism (the `forge-5-loop` guard, `discover-feature`) keys off that field, so a stale value actively misleads — the loop would offer to switch you *back* to the imposed branch. Invoke this block from `forge-5-loop`'s pre-flight (and any stage that acts on the recorded branch) to reconcile deterministically. Skip if not a git repo or `branchPerFeature` is false.
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" reconcile-branch --feature "{feature}" --specs-dir "{specsDir}" --json
 ```
@@ -323,7 +323,7 @@ Act on the emitted `action` (source of truth is where the state actually resolve
 The `adopt-current` write, with the portable plugin-root prelude. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-branch \
   --feature "{feature}" --branch "{newBranch}" --specs-dir "{specsDir}"
@@ -349,7 +349,7 @@ When `gitCommitAfterStage` is true, follow this exact order to avoid state incon
 The two `state-complete` calls, with the portable plugin-root prelude. Add `--epic "{epic}"` to each when this feature is an epic member — required, per the Pipeline State Protocol:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 # Commit 1 — before `git commit`
 python3 "$R/scripts/forge-session.py" state-complete \
@@ -379,7 +379,7 @@ Invoke this block at the **start of an authoring stage** (`forge-1-prd`..`forge-
 **Entry Stamp** (fresh, restart, and re-author paths — NOT the resume path). Before authoring, record the entry stamp by running `state-enter` — one atomic write that sets `stages.{stage}.status` → `"in-progress"`, `stages.{stage}.startedAt` → current ISO-8601 UTC timestamp, top-level `currentStage` → `"{stage}"` (where the pipeline IS, per O1), and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-enter \
   --feature "{feature}" --stage "{stage}" --specs-dir "{specsDir}"
@@ -392,7 +392,7 @@ This write is **left uncommitted**: it is staged and committed as part of this s
 **Incremental artifact tracking:** When a stage writes multiple files (e.g. forge-3-specs writing a suite of spec documents), run `state-artifact --feature {feature} --stage {stage} --path <file>` after writing each file — not just at stage completion. This is what makes the Interrupted inventory above precise about which files were successfully written. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge "$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;for((;;));do d="$PWD/.github/feature-forge";test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";[ "${PWD#/}" ]||break;cd ..||break;done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-artifact \
   --feature "{feature}" --stage "{stage}" --path "<file>" --specs-dir "{specsDir}"

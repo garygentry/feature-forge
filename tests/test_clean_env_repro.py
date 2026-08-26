@@ -102,15 +102,22 @@ def _make_install_at(dirpath: Path) -> Path:
     return dirpath
 
 
-def _run_prelude(home: Path, workdir: Path, *, hint: str) -> subprocess.CompletedProcess[str]:
-    """Run the byte-pinned bootstrap prelude with ``$HOME``/``CLAUDE_PLUGIN_ROOT`` controlled."""
+def _run_prelude(
+    home: Path, workdir: Path, *, hint: str, feature_hint: str = ""
+) -> subprocess.CompletedProcess[str]:
+    """Run the byte-pinned prelude with both root hints and ``$HOME`` controlled."""
     script = _bootstrap_prelude() + '\nprintf \'%s\\n\' "$R"'
     return subprocess.run(
         ["bash", "-c", script],
         capture_output=True,
         text=True,
         cwd=str(workdir),
-        env={**os.environ, "HOME": str(home), "CLAUDE_PLUGIN_ROOT": hint, "FEATURE_FORGE_ROOT": ""},
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "CLAUDE_PLUGIN_ROOT": hint,
+            "FEATURE_FORGE_ROOT": feature_hint,
+        },
     )
 
 
@@ -133,6 +140,23 @@ def test_prelude_first_hint_resolves_via_claude_plugin_root(tmp_path: Path) -> N
     assert result.stdout.strip() == str(bundle)
 
 
+def test_prelude_feature_override_beats_legacy_hint(tmp_path: Path) -> None:
+    """The host-neutral operator override is the prelude's first resolver candidate."""
+    neutral = _make_install_at(tmp_path / "neutral override [v1] $root")
+    legacy = _make_install_at(tmp_path / "legacy")
+    home = tmp_path / "empty home"
+    home.mkdir()
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+
+    result = _run_prelude(
+        home, workdir, hint=str(legacy), feature_hint=str(neutral)
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(neutral)
+
+
 def test_prelude_stale_hint_is_skipped(tmp_path: Path) -> None:
     """A hint pointing at a dir without ``forge-root.sh`` is skipped; resolution falls through.
 
@@ -151,6 +175,65 @@ def test_prelude_stale_hint_is_skipped(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == str(install_root)
+
+
+def test_prelude_resolves_copilot_managed_plugin(tmp_path: Path) -> None:
+    """The prelude reaches a self-locating resolver in Copilot's managed plugin root."""
+    home = tmp_path / "home with spaces [copilot]"
+    install_root = _make_install_at(
+        home / ".copilot" / "installed-plugins" / "marketplace [current]" / "feature-forge"
+    )
+    workdir = tmp_path / "unrelated project"
+    workdir.mkdir()
+
+    result = _run_prelude(home, workdir, hint="")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(install_root)
+
+
+def test_prelude_resolves_copilot_project_from_nested_special_path(tmp_path: Path) -> None:
+    """The bounded ancestor bootstrap handles nested project roots and metacharacters."""
+    home = tmp_path / "empty home"
+    home.mkdir()
+    project = tmp_path / "project with spaces [draft] $v1;safe"
+    install_root = _make_install_at(project / ".github" / "feature-forge")
+    nested = project / "src [pkg]" / "deep;$dir"
+    nested.mkdir(parents=True)
+
+    result = _run_prelude(home, nested, hint="")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(install_root)
+
+
+def test_prelude_ancestor_walk_stops_when_parent_traversal_fails(tmp_path: Path) -> None:
+    """A failed ``cd ..`` cannot turn the bounded bootstrap walk into an infinite loop."""
+    home = tmp_path / "empty-home"
+    home.mkdir()
+    workdir = tmp_path / "project" / "nested"
+    workdir.mkdir(parents=True)
+    bash_env = tmp_path / "deny-cd.sh"
+    bash_env.write_text("cd() { return 1; }\n")
+    script = _bootstrap_prelude() + '\nprintf \'%s\\n\' "$R"'
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=2,
+        cwd=str(workdir),
+        env={
+            **os.environ,
+            "BASH_ENV": str(bash_env),
+            "HOME": str(home),
+            "CLAUDE_PLUGIN_ROOT": "",
+            "FEATURE_FORGE_ROOT": "",
+        },
+    )
+
+    assert result.returncode == 1
+    assert "cannot locate plugin root" in result.stderr
 
 
 def test_prelude_resolves_marketplace_cache_install(tmp_path: Path) -> None:

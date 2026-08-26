@@ -290,8 +290,8 @@ def test_prelude_scorer_accepts_a_byte_identical_command() -> None:
 def test_prelude_scorer_flags_a_drifted_but_working_resolver() -> None:
     """Reordered search paths still resolve here, but are not byte-identical."""
     drifted = ce.BOOTSTRAP_PRELUDE.replace(
-        '"${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge',
-        '"$HOME"/.claude/skills/feature-forge "${CLAUDE_PLUGIN_ROOT:-}"',
+        '"${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}"',
+        '"${CLAUDE_PLUGIN_ROOT:-}" "${FEATURE_FORGE_ROOT:-}"',
     )
     criteria = ce.score_prelude({"bash_commands": [drifted]})
     assert criteria["byte_identical"] is False

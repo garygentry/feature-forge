@@ -107,7 +107,7 @@ def _run(script: Path, env_overrides: dict[str, str]) -> subprocess.CompletedPro
         ["bash", str(script)],
         capture_output=True,
         text=True,
-        env={**os.environ, **env_overrides},
+        env={**os.environ, "FEATURE_FORGE_ROOT": "", **env_overrides},
     )
 
 
@@ -374,7 +374,7 @@ def test_forge_root_sentinel_only_cache_install_resolves(tmp_path):
 
 
 def test_forge_root_neutral_env_fallback(tmp_path):
-    """FEATURE_FORGE_ROOT names a valid root when self/candidate probes fail → step 3 (neutral)."""
+    """FEATURE_FORGE_ROOT names a valid root when self/candidate probes fail (neutral)."""
     valid_root = _make_fake_install(tmp_path / "valid")
     lone_dir = tmp_path / "lone" / "scripts"
     lone_dir.mkdir(parents=True)
@@ -390,6 +390,84 @@ def test_forge_root_neutral_env_fallback(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == str(valid_root)
+
+
+def test_forge_root_feature_override_beats_self_location(tmp_path):
+    """The explicit neutral operator override has higher precedence than self-location."""
+    self_root = _make_fake_install(tmp_path / "self")
+    override = _make_neutral_install(tmp_path / "operator override [v1] $root")
+    result = _run(
+        self_root / "scripts" / "forge-root.sh",
+        {
+            "HOME": str(tmp_path / "empty-home"),
+            "CLAUDE_PLUGIN_ROOT": "",
+            "FEATURE_FORGE_ROOT": str(override),
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(override)
+
+
+@pytest.mark.parametrize(
+    "relative_root",
+    [
+        ".github/feature-forge",
+        ".pi/skills/feature-forge",
+    ],
+)
+def test_forge_root_project_ancestor_special_paths(tmp_path, relative_root):
+    """Nested project discovery preserves spaces and shell metacharacters for existing hosts."""
+    project = tmp_path / "workspace with spaces [draft] $v1;safe"
+    candidate = _make_neutral_install(project / relative_root)
+    nested = project / "src [pkg]" / "deep;$dir"
+    nested.mkdir(parents=True)
+    result = subprocess.run(
+        ["bash", str(_lone_resolver(tmp_path))],
+        capture_output=True,
+        text=True,
+        cwd=str(nested),
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "empty home [none]"),
+            "CLAUDE_PLUGIN_ROOT": "",
+            "FEATURE_FORGE_ROOT": "",
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_forge_root_copilot_personal_candidate_probe(tmp_path):
+    """A direct Copilot personal runtime bundle resolves from ~/.copilot/feature-forge."""
+    home = tmp_path / "home with spaces [copilot]"
+    candidate = _make_neutral_install(home / ".copilot" / "feature-forge")
+    result = _run(
+        _lone_resolver(tmp_path),
+        {"HOME": str(home), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_forge_root_copilot_installed_plugin_candidate_probe(tmp_path):
+    """A managed Copilot plugin runtime bundle resolves from its package root."""
+    home = tmp_path / "home [copilot]"
+    candidate = _make_neutral_install(
+        home / ".copilot" / "installed-plugins" / "marketplace [current]" / "feature-forge"
+    )
+    result = _run(
+        _lone_resolver(tmp_path),
+        {"HOME": str(home), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_forge_root_has_no_generic_plugin_root_dependency():
+    """The Copilot resolver contract never reads the unavailable generic PLUGIN_ROOT variable."""
+    text = RESOLVER.read_text()
+    assert "${PLUGIN_ROOT" not in text
+    assert "$PLUGIN_ROOT" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -423,20 +501,30 @@ def test_forge_root_partial_install_reports_degraded(tmp_path):
 
 
 def test_forge_root_complete_root_wins_over_partial(tmp_path):
-    """A partial root earlier in the probe order does not shadow a complete root found later.
-
-    Self-location hits a partial install (remembered, not accepted); the resolver keeps
-    probing and resolves the complete root named by FEATURE_FORGE_ROOT (step 3) → exit 0.
-    """
-    partial = _make_partial_install(tmp_path / "partial")
-    complete = _make_fake_install(tmp_path / "complete")
+    """A partial override does not shadow a complete self-located root found later."""
+    partial = _make_partial_install(tmp_path / "partial override")
+    complete = _make_fake_install(tmp_path / "complete self")
     result = _run(
-        partial / "scripts" / "forge-root.sh",
+        complete / "scripts" / "forge-root.sh",
         {
             "HOME": str(tmp_path / "empty-home"),
             "CLAUDE_PLUGIN_ROOT": "",
-            "FEATURE_FORGE_ROOT": str(complete),
+            "FEATURE_FORGE_ROOT": str(partial),
         },
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == str(complete)
+
+
+def test_forge_root_partial_copilot_personal_reports_degraded(tmp_path):
+    """A partial Copilot personal runtime is diagnosed as degraded, never accepted."""
+    home = tmp_path / "home [copilot]"
+    partial = _make_partial_install(home / ".copilot" / "feature-forge")
+    result = _run(
+        _lone_resolver(tmp_path),
+        {"HOME": str(home), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""},
+    )
+    assert result.returncode == 1
+    assert "incomplete/degraded" in result.stderr
+    assert str(partial) in result.stderr
+    assert result.stdout.strip() == ""

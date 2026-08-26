@@ -793,12 +793,15 @@ _HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     # uses Claude's `/clear` wording. Non-Claude bundles must ask for the
     # host-neutral wording instead — translate the flag value, not just the prose.
     ("--host claude", "--host generic"),
-    # Bootstrap-prelude root hint: canon uses Claude's `${CLAUDE_PLUGIN_ROOT:-}` as
-    # the prelude's first resolver candidate. Non-Claude hosts set the neutral
-    # `${FEATURE_FORGE_ROOT}` instead (forge-root.sh already prefers it), so translate
-    # the hint in emitted bodies — otherwise the host-neutrality suite flags a residual
-    # `CLAUDE_PLUGIN_ROOT` in the non-Claude prelude. The verbatim forge-root.sh copy
-    # keeps its own sanctioned `${CLAUDE_PLUGIN_ROOT}` fallback (it is not body-translated).
+    # Bootstrap-prelude root hints: canon leads with the neutral operator override and
+    # retains Claude's legacy hint second. Non-Claude bodies remove that redundant legacy
+    # candidate as one exact quoted pair; the generic replacements remain for explanatory
+    # body prose outside the prelude. The verbatim forge-root.sh copy keeps its sanctioned
+    # `${CLAUDE_PLUGIN_ROOT}` fallback (it is not body-translated).
+    (
+        '"${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}"',
+        '"${FEATURE_FORGE_ROOT:-}"',
+    ),
     ("${CLAUDE_PLUGIN_ROOT:-}", "${FEATURE_FORGE_ROOT:-}"),
     ("${CLAUDE_PLUGIN_ROOT}", "${FEATURE_FORGE_ROOT}"),
 )
@@ -914,8 +917,38 @@ _PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({
 _COPILOT_BASE_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
     pair for pair in _HOST_TERM_REPLACEMENTS if pair[0] != "--host claude"
 )
+_CANON_BOOTSTRAP_COMMAND = (
+    'R="$(bash -c \'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" '
+    '"$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge '
+    '"$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},'
+    '.copilot/installed-plugins/*/feature-forge} "$PWD"/.agents/skills/feature-forge;do '
+    'test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;'
+    'for((;;));do d="$PWD/.github/feature-forge";'
+    'test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";'
+    '[ "${PWD#/}" ]||break;cd ..||break;done\')"'
+)
+_COPILOT_BOOTSTRAP_COMMAND = (
+    'R="$(bash -c \'for d in "${FEATURE_FORGE_ROOT:-}";do '
+    'test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;'
+    'w=$PWD;for((;;));do d="$PWD/.github/feature-forge";'
+    'test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";'
+    '[ "${PWD#/}" ]||break;cd ..||break;done;for d in '
+    '"$HOME"/.copilot/installed-plugins/*/feature-forge "$HOME/.copilot/feature-forge" '
+    '"$HOME"/{.claude/skills,.agents/skills}/feature-forge '
+    '"$HOME"/.claude/plugins/{cache/*/feature-forge/*,*/feature-forge} '
+    '"$w"/.agents/skills/feature-forge;do '
+    'test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done\')"'
+)
+
 _COPILOT_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
-    _COPILOT_BASE_HOST_TERM_REPLACEMENTS + (
+    (
+        # Copilot project scope outranks managed/personal scope, which in turn outranks
+        # other hosts' conventional roots. The saved original cwd retains Codex's existing
+        # project candidate after the bounded Copilot ancestor walk changes the subshell cwd.
+        (_CANON_BOOTSTRAP_COMMAND, _COPILOT_BOOTSTRAP_COMMAND),
+    )
+    + _COPILOT_BASE_HOST_TERM_REPLACEMENTS
+    + (
         ("/feature-forge:", "invoke-skill: "),
         ("--host claude", "--host copilot"),
     )

@@ -512,17 +512,26 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   into an explicit no-`MEMORY.md`-guarantee contract. One parent dispatched all three exact
   namespaced workers in parallel; researcher/verifier edits were denied, the writer edited its one
   assigned file, and the verifier recognized CHECK-I21/I22 from the composed contract. Evidence:
-  `evidence/forge-102-native-agent-dispatch-2026-08-25.md`. The task remains unchecked/ACTIVE until
-  The clean-shell full gate passed (2,484 Python, 182 installer, 11 Pi-source tests). Authorized
+  `evidence/forge-102-native-agent-dispatch-2026-08-25.md`. The clean-shell full gate passed
+  (2,484 Python, 182 installer, 11 Pi-source tests). Authorized
   commit `fdc26ff` is pushed, and a fresh clone reproduced the expected verifier hash, evidence,
   composed contract marker, and tracker state. FORGE-102 is complete; the cursor advances exactly
   one task to FORGE-103.
 
 - [ ] **FORGE-103 — Resolve runtime assets in every layout**
   Repo: feature-forge. Depends on: FORGE-101.
-  Extend `forge-root.sh` for self-location, `${PLUGIN_ROOT}`, `${FEATURE_FORGE_ROOT}`, project and
+  Extend `forge-root.sh` for package self-location, explicit `${FEATURE_FORGE_ROOT}`, project and
   personal runtime roots, and subdirectory execution. Test complete/degraded roots, spaces, shell
-  metacharacters, and all existing adapter layouts.
+  metacharacters, and all existing adapter layouts. Per DEC-11, do not depend on generic
+  `${PLUGIN_ROOT}`.
+  Progress (2026-08-26): the dirty worktree implements explicit-override → self-location → bounded
+  conventional/ancestor → legacy-Claude precedence, Copilot project-over-global bootstrap ordering,
+  managed/personal roots, degraded handling, byte-identical generated resolvers, and adversarial-path
+  tests. Copilot CLI 1.0.80 runtime probes passed managed-plugin self-location, personal-direct,
+  nested-project, and explicit-override resolution while competing roots existed. Focused checks
+  pass 815 tests; cleanup and the clean-shell full gate pass (2,496 Python, 182 installer, 11 Pi
+  source tests). Evidence: `evidence/forge-103-runtime-root-resolution-2026-08-26.md`. The task
+  remains ACTIVE until an authorized push and fresh-clone durability pass.
 
 - [ ] **FORGE-104 — Extend installer placement primitives**
   Repo: feature-forge. Depends on: G1.

@@ -103,17 +103,20 @@ SENTINEL = "─ forge: end of stage ─"
 #: scripts/check-spec-purity.py; `_assert_prelude_in_sync` fails loudly if they diverge,
 #: so this copy can never quietly rot into a probe that always passes.
 BOOTSTRAP_PRELUDE = (
-    'R="$(bash -c \'for d in "${CLAUDE_PLUGIN_ROOT:-}" '
-    '"$HOME"/.claude/skills/feature-forge '
-    '"$HOME"/.claude/plugins/cache/*/feature-forge/* '
-    '"$HOME"/.claude/plugins/*/feature-forge '
-    '"$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do '
-    '[ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done\')"\n'
+    'R="$(bash -c \'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" '
+    '"$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge '
+    '"$HOME"/{.claude/plugins/{cache/*/feature-forge/*,*/feature-forge},'
+    '.copilot/installed-plugins/*/feature-forge} '
+    '"$PWD"/.agents/skills/feature-forge;do '
+    'test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";done;'
+    'for((;;));do d="$PWD/.github/feature-forge";'
+    'test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh";'
+    '[ "${PWD#/}" ]||break;cd ..||break;done\')"\n'
     '[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }'
 )
 
 #: Inner line that marks a prelude occurrence (mirrors _PRELUDE_SENTINEL upstream).
-PRELUDE_SENTINEL = '[ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"'
+PRELUDE_SENTINEL = 'test -x "$d/scripts/forge-root.sh"&&exec "$d/scripts/forge-root.sh"'
 
 #: The compact form R2 substitutes at 2nd-and-subsequent call sites.
 #: Sentinel-free by construction.
@@ -1721,12 +1724,12 @@ def score_prelude(transcript: dict) -> dict[str, bool]:
     functional = PRELUDE_SENTINEL in executed and all(
         token in executed
         for token in (
+            "${FEATURE_FORGE_ROOT:-}",
             "${CLAUDE_PLUGIN_ROOT:-}",
-            "/.claude/skills/feature-forge",
-            "/.claude/plugins/cache/*/feature-forge/*",
-            "/.claude/plugins/*/feature-forge",
-            "/.agents/skills/feature-forge",
-            "./.agents/skills/feature-forge",
+            '"$HOME"/{.claude/skills,.agents/skills,.copilot}/feature-forge',
+            ".copilot/installed-plugins/*/feature-forge",
+            '"$PWD"/.agents/skills/feature-forge',
+            'd="$PWD/.github/feature-forge"',
         )
     )
     return {

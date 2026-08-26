@@ -326,7 +326,8 @@ complete and the cursor advances to `FORGE-103`.
 
 ### Phase 3: Runtime asset resolution
 
-Status: Not started; next feature-forge implementation phase after remaining native-agent residuals
+Status: In progress; Linux/Copilot implementation, runtime probes, cleanup, and the full gate pass
+in the dirty worktree, pending authorized push and fresh-clone durability
 
 Primary files:
 
@@ -336,12 +337,19 @@ Primary files:
 
 Tasks:
 
-- [ ] Add Copilot personal and project runtime candidates.
-- [ ] Use package self-location plus explicit `${FEATURE_FORGE_ROOT}` without weakening legacy Claude support; do not depend on `${PLUGIN_ROOT}` on the tested Copilot host.
-- [ ] Add ancestor probing for project-scoped Copilot runtime bundles if subdirectory execution requires it.
-- [ ] Keep degraded-install detection and core-asset checks intact.
-- [ ] Verify spaces and shell metacharacters in installation paths.
-- [ ] Verify plugin, project, and personal layouts on Linux, macOS, and Windows CI where applicable.
+- [x] Add Copilot personal and project runtime candidates.
+- [x] Use package self-location plus explicit `${FEATURE_FORGE_ROOT}` without weakening legacy Claude support; do not depend on `${PLUGIN_ROOT}` on the tested Copilot host.
+- [x] Add ancestor probing for project-scoped Copilot runtime bundles when executing from a subdirectory.
+- [x] Keep degraded-install detection and core-asset checks intact.
+- [x] Verify spaces and shell metacharacters in installation paths.
+- [ ] Verify plugin, project, and personal layouts on supported Linux and applicable macOS/Windows CI surfaces.
+
+Progress (2026-08-26): Copilot CLI 1.0.80 passed managed-plugin, personal-direct, nested-project,
+and explicit-override probes while competing roots existed. A degraded Copilot-layout copy failed
+distinctly. The 815-test focused slice, cleanup, adapter drift check, and clean-shell full gate pass
+(2,496 Python, 182 installer, 11 Pi-source tests). Exact sanitized evidence is
+`evidence/forge-103-runtime-root-resolution-2026-08-26.md`; unified FORGE-103 remains ACTIVE pending
+an authorized push and fresh-clone durability.
 
 Exit criteria:
 

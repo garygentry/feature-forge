@@ -64,20 +64,27 @@ accept_root() {  # $1 = candidate dir (already is_root)
   return 0
 }
 
-# ── Step 1: self-location — parent of this script's dir is the install root. ─────────────
-# This is the PRIMARY path: a bundle ships its own scripts/forge-root.sh, so the parent of
-# this script's dir is that bundle's root under any agent's layout.
+# ── Step 1: explicit operator override. ────────────────────────────────────────────────
+# FEATURE_FORGE_ROOT is the host-neutral, highest-precedence operator choice. A partial
+# override is remembered but does not mask a complete self-located/conventional install.
+if [ -n "${FEATURE_FORGE_ROOT:-}" ] && is_root "$FEATURE_FORGE_ROOT"; then
+  accept_root "$FEATURE_FORGE_ROOT"
+fi
+
+# ── Step 2: self-location — parent of this script's dir is the install root. ─────────────
+# This is the primary automatic path: a bundle ships its own scripts/forge-root.sh, so the
+# parent of this script's dir is that bundle's root under any agent's layout.
 self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 root="$(cd -- "$self_dir/.." && pwd -P)"
 if is_root "$root"; then
   accept_root "$root"
 fi
 
-# ── Step 2a: Claude marketplace-cache installs — ~/.claude/plugins/cache/<mp>/<plugin>/<ver>/.
+# ── Step 3a: Claude marketplace-cache installs — ~/.claude/plugins/cache/<mp>/<plugin>/<ver>/.
 # This is where Claude Code actually installs marketplace plugins (three segments below
 # plugins/, so the single-star plugins/*/feature-forge glob below can never match it). Version
 # dirs can coexist after upgrades, so probe newest plugin.json first — a stale version must
-# never shadow the current install. Deliberately ordered BEFORE the plugins/* glob: that glob
+# never shadow the current install. Deliberately ordered BEFORE the later plugins/* glob: it
 # can match the marketplace *clone* (~/.claude/plugins/marketplaces/<mp>/ when the marketplace
 # repo root is itself a plugin root), which may sit at a different commit than the installed
 # skills — the versioned cache install must always win to prevent that version skew.
@@ -88,12 +95,12 @@ while IFS= read -r manifest; do
   fi
 done < <(ls -t "$HOME"/.claude/plugins/cache/*/feature-forge/*/.claude-plugin/plugin.json 2>/dev/null || true)
 
-# ── Step 2: candidate-root probe (authoritative multi-agent root list; extend here first). ─
+# ── Step 3: candidate-root probe (authoritative multi-agent root list; extend here first). ─
 # Globs that match nothing expand to themselves; the is_root test rejects such literals. Covers
 # every supported agent's install destination under BOTH global ($HOME) and project ($PWD) scope,
 # matching the installer's per-agent layout: claude .claude/skills, codex .agents/skills, copilot
 # .github/feature-forge, cursor .cursor/rules, gemini .gemini/extensions, pi .pi/skills or
-# $PI_CODING_AGENT_DIR/skills. The cache glob repeats step 2a's path for a cache install that
+# $PI_CODING_AGENT_DIR/skills. The cache glob repeats step 3a's path for a cache install that
 # carries only the neutral bundle sentinel (no plugin.json for ls -t to key on).
 if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
   for candidate in \
@@ -117,6 +124,8 @@ for candidate in \
   "$HOME"/.claude/plugins/*/feature-forge \
   "$HOME/.agents/skills/feature-forge" \
   "$PWD/.agents/skills/feature-forge" \
+  "$HOME/.copilot/feature-forge" \
+  "$HOME"/.copilot/installed-plugins/*/feature-forge \
   "$HOME/.github/feature-forge" \
   "$PWD/.github/feature-forge" \
   "$HOME/.cursor/rules/feature-forge" \
@@ -141,34 +150,34 @@ for candidate in \
   fi
 done
 
-# Project-scoped Pi installs may be discovered from a subdirectory of the repository. Probe
-# ancestor .pi roots up to the filesystem root; this is bounded by path depth and avoids
-# recursive globs. Scoped to .pi ONLY — every other agent's project layout is probed at $PWD
-# in the fixed list above, and widening those to ancestors here would silently change
-# established discovery behaviour for agents this bundle did not introduce.
+# Project-scoped Pi and Copilot installs may be discovered from a subdirectory of the
+# repository. Probe ancestor roots up to the filesystem root; this is bounded by path depth
+# and avoids recursive globs. Other agents retain their established $PWD-only discovery.
 probe_dir="$PWD"
 while :; do
-  candidate="$probe_dir/.pi/skills/feature-forge"
-  if is_root "$candidate"; then
-    accept_root "$candidate"
-  fi
+  for candidate in \
+    "$probe_dir/.pi/skills/feature-forge" \
+    "$probe_dir/.github/feature-forge" \
+  ; do
+    if is_root "$candidate"; then
+      accept_root "$candidate"
+    fi
+  done
   [ "$probe_dir" = "/" ] && break
   next_probe_dir="$(dirname -- "$probe_dir")"
   [ "$next_probe_dir" = "$probe_dir" ] && break
   probe_dir="$next_probe_dir"
 done
 
-# ── Step 3: env fallback — neutral FEATURE_FORGE_ROOT, then the legacy CLAUDE_PLUGIN_ROOT. ─
-# The neutral override works for every agent; CLAUDE_PLUGIN_ROOT is kept only for backwards
-# compatibility with existing Claude installs (C-4).
-if [ -n "${FEATURE_FORGE_ROOT:-}" ] && is_root "$FEATURE_FORGE_ROOT"; then
-  accept_root "$FEATURE_FORGE_ROOT"
-fi
+# ── Step 4: legacy Claude environment fallback. ─────────────────────────────────────────
+# CLAUDE_PLUGIN_ROOT is retained only for backwards compatibility with existing Claude
+# installs (C-4). Copilot does not provide a usable PLUGIN_ROOT contract and never depends
+# on one; its package path self-locates after the bootstrap finds this script.
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && is_root "$CLAUDE_PLUGIN_ROOT"; then
   accept_root "$CLAUDE_PLUGIN_ROOT"
 fi
 
-# ── Step 4: failure. A sentinel-bearing but asset-incomplete root found along the way is a
+# ── Step 5: failure. A sentinel-bearing but asset-incomplete root found along the way is a
 # DEGRADED install (#152) — report it distinctly and actionably rather than the generic
 # cannot-locate message, so the operator knows to reinstall/update rather than reconfigure. ─
 if [ -n "$partial_root" ]; then

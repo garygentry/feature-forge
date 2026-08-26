@@ -4,7 +4,7 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-25 (GitHub Copilot adaptation active; hardening program remains complete)._
+_Last updated: 2026-08-26 (GitHub Copilot adaptation active; hardening program remains complete)._
 
 ## Current release
 
@@ -37,13 +37,16 @@ Rauf Phase C is complete. Pushed feature-forge commit `74f269b` closes `FORGE-10
 Copilot descriptions, bodies, references, and stage exits use distribution-neutral `invoke-skill:`
 notation with explicit plugin/direct mappings, and Copilot CLI 1.0.80 installed the generated bundle
 and discovered all 13 skills. The five-field manifest is deliberately retained as the tested legacy
-Copilot format; Agent Plugins 1.0 is not claimed. The clean-shell FORGE-101 gate passed. Local
-FORGE-102 work now composes the canonical `forge-verify` contract fail-loud into the generated
-verifier, replaces unsupported persistent-memory promises with an explicit Copilot limitation, and
-passes CLI 1.0.80 exact-name parallel dispatch with researcher/verifier edit denial and writer edit
-success. Pushed commit `fdc26ff` and a fresh-clone check make FORGE-102 durable; the clean-shell
-full gate passes (2,484 Python, 182 installer, 11 Pi-source tests). The execution cursor is now
-`FORGE-103` for runtime-root resolution; no adaptation release or rauf pin advance has occurred. Task definitions live in
+Copilot format; Agent Plugins 1.0 is not claimed. Pushed commit `fdc26ff` and a fresh-clone check
+make FORGE-102 durable: the generated verifier composes canonical `forge-verify`, translates the
+unsupported memory promise, and passed CLI 1.0.80 exact-name dispatch boundaries. FORGE-103 is now
+implemented in the dirty worktree: explicit override, package self-location, managed/personal and
+nested project roots, project-over-global bootstrap precedence, degraded detection, adversarial
+paths, and no generic `PLUGIN_ROOT` dependency. Copilot CLI 1.0.80 passed managed-plugin,
+personal-direct, nested-project, and explicit-override probes; cleanup and the full clean-shell gate
+pass (2,496 Python, 182 installer, 11 Pi-source tests). The cursor remains `FORGE-103` pending an
+authorized push and fresh-clone durability; no adaptation release or rauf pin advance has occurred.
+Task definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.
 
