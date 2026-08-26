@@ -31,8 +31,10 @@ fresh-clone durable, and rauf commit `4668553` closed `RAUF-202R` by composing e
 canonical skill contract and removing portable `Task tool` wording. `RAUF-203` instruction
 ownership is durable in pushed rauf commit `f02f0e7`: standalone Copilot loads the installed
 host-neutral AGENTS block, isolated iterations receive only the explicit RAUF prompt, and user
-content survives migration/update/uninstall. The execution cursor is now `RAUF-204` for Copilot
-adapter drift/version/package gates. No adaptation release or rauf pin advance has occurred. Task
+content survives migration/update/uninstall. Pushed rauf commit `8d65441` closes `RAUF-204` with
+release-blocking Copilot drift/version/package checks plus compiled-binary and npm dry-run proof.
+Rauf Phase C is complete; the execution cursor is now feature-forge `FORGE-101`. No adaptation
+release or rauf pin advance has occurred. Task
 definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.

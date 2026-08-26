@@ -572,7 +572,7 @@ Compiled CLI smokes and the full gate passed. Signed milestone: `5f3710b`.
 
 ### Phase 4: Generate native Copilot skills and agents
 
-Status: Generator and runtime operator-boundary proof complete; instruction ownership next
+Status: Complete through pushed RAUF-204 commit `8d65441`
 
 Primary files in `../rauf`:
 
@@ -603,9 +603,9 @@ Tasks:
 - [x] Replace canonical `Task tool` wording with host-neutral subagent wording where possible;
       retain Claude-specific specialization only in Claude output; affected adapters regenerated.
 - [x] Use plugin-only repository discovery for the distributable bundle; accepted decision D7.
-- [ ] Wire `copilot:check` and tests into `pnpm gate` (`copilot:generate` and `copilot:check` exist).
+- [x] Wire `copilot:check` and distribution checks into `pnpm gate`.
 - [x] Emit a generated report naming source files, mappings, and deliberately unsupported fields.
-- [ ] Add Copilot plugin version handling to release/version checks under the decision in D8.
+- [x] Add Copilot plugin version handling to release/version checks under decision D8.
 
 Exit criteria:
 
@@ -614,10 +614,11 @@ Exit criteria:
 - The loop driver can invoke rauf and the backlog reviewer cannot edit files.
 - A clean generation followed by `copilot:check` is a no-op.
 
-Unified `RAUF-202R` closed the dependency/prose bullets in rauf commit `4668553`; exact Copilot CLI
-1.0.80 behavior and gate evidence are in
-`evidence/rauf-202r-operator-dependencies-2026-08-25.md`. Installed-instruction work now advances at
-`RAUF-203`.
+Unified `RAUF-202R` closed dependency/prose in commit `4668553`, and `RAUF-203` closed installed
+child-instruction ownership in commit `f02f0e7`. `RAUF-204` now wires Copilot drift/distribution into
+the gate and version-locks the generated plugin; compiled binary and npm dry-run proofs passed. Exact
+commands and package contents are in `evidence/rauf-204-adapter-gates-packaging-2026-08-25.md`.
+Pushed commit `8d65441` closes Phase 4 and unified rauf Phase C; the cursor advances to `FORGE-101`.
 
 RAUF-202 evidence (2026-08-24): authenticated Copilot CLI 1.0.80 loaded
 `adapters/copilot` directly. The generated reviewer read a marker, searched its sentinel, executed
@@ -632,7 +633,7 @@ repository-script tests.
 
 ### Phase 5: Preserve installed instruction ownership
 
-Status: Implemented and runtime-proved locally; commit/push durability remains pending (`RAUF-203`)
+Status: Complete in pushed rauf commit `f02f0e7` (`RAUF-203`)
 
 Primary files in `../rauf`:
 

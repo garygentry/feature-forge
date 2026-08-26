@@ -1,6 +1,6 @@
 # Copilot Adaptation Implementation Runbook
 
-Status: Active implementation; RAUF-203 durable, Phase C at RAUF-204
+Status: Active implementation; rauf Phase C durable, Phase D at FORGE-101
 Last updated: 2026-08-25
 Repositories: `feature-forge` and sibling `../rauf`
 
@@ -34,8 +34,9 @@ At the end of the 2026-08-24 implementation session:
 
 - **Active coordination phase:** Phases A and B are complete; G0, G1, and G2 are closed.
    `TRACK-001` made the authoritative planning and runtime evidence fresh-clone durable, and
-   `RAUF-202R` closed operator dependency/prose residuals, and `RAUF-203` closed child-instruction
-   ownership. Phase C is active at `RAUF-204`.
+   `RAUF-202R` closed operator dependency/prose residuals, `RAUF-203` closed child-instruction
+   ownership, and `RAUF-204` closed drift/version/package gates. Phase C is complete; Phase D is
+   active at `FORGE-101`.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
 - **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
    `ClaudeStreamEvent` as an exported compatibility alias, has a buffered Copilot JSONL parser,
@@ -44,8 +45,8 @@ At the end of the 2026-08-24 implementation session:
 - **Started in code:** rauf now generates a native Copilot operator bundle from its canonical four
    skills and two agents, with provenance, deterministic ordering, stale-file detection, strict
    policy mapping, and a generated mapping/drop report.
-- **Still open:** rauf Copilot drift/version/package gates, feature-forge direct-install migration,
-  the packaged cross-repository harness, and releases.
+- **Still open:** feature-forge native-format/invocation residuals, direct-install migration, the
+  packaged cross-repository harness, and releases.
 - **Feature-forge native adapter milestone committed:** branch `docs/copilot-g2-contract`, commit
    `7754a3b` (`feat(adapters): add native Copilot plugin output`) contains native `SKILL.md` output,
    native `.agent.md` workers, the generated plugin manifest/tree/fixtures, Copilot version-sync
@@ -192,8 +193,8 @@ Run these steps in order on every session, including resumed sessions:
 
 The current cursor and complete order live only in `EXECUTION.md`:
 
-1. Complete `RAUF-204`: wire Copilot drift into the gate, enforce version lockstep, and verify
-   repository, compiled-binary, and package contents.
+1. Complete `FORGE-101`: finish distribution-aware invocation/reference translation and either
+   migrate/runtime-prove Agent Plugins 1.0 or keep all claims narrowed to the tested legacy format.
 2. Proceed through the remaining ledger in dependency order.
 3. Do not repeat either completed root probe in `operator-actions.md`.
 4. Release tasks remain owner-gated even when every implementation and integration task is green.
