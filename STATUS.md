@@ -41,9 +41,9 @@ Copilot format; Agent Plugins 1.0 is not claimed. The clean-shell FORGE-101 gate
 FORGE-102 work now composes the canonical `forge-verify` contract fail-loud into the generated
 verifier, replaces unsupported persistent-memory promises with an explicit Copilot limitation, and
 passes CLI 1.0.80 exact-name parallel dispatch with researcher/verifier edit denial and writer edit
-success. The clean-shell full gate passes (2,484 Python, 182 installer, 11 Pi-source tests). The
-execution cursor remains `FORGE-102` pending its authorized durable milestone; no adaptation release
-or rauf pin advance has occurred. Task definitions live in
+success. Pushed commit `fdc26ff` and a fresh-clone check make FORGE-102 durable; the clean-shell
+full gate passes (2,484 Python, 182 installer, 11 Pi-source tests). The execution cursor is now
+`FORGE-103` for runtime-root resolution; no adaptation release or rauf pin advance has occurred. Task definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.
 

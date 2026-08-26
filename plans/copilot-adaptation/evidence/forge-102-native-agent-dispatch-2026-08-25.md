@@ -1,6 +1,6 @@
 # FORGE-102 Native Agent Dispatch Evidence — 2026-08-25
 
-Status: Local implementation/runtime proof complete; FORGE-102 remains ACTIVE until the implementation milestone is authorized, committed, and pushed.
+Status: Complete; authorized implementation commit `fdc26ff` is pushed and fresh-clone durability passed.
 
 ## Attribution and environment
 
@@ -137,4 +137,5 @@ Result: PASS.
 - `copilot plugin marketplace list`: only built-in `copilot-plugins` and `awesome-copilot`.
 - No personal/project Copilot customization root was created or modified.
 - Rauf remained untouched at `8d65441`.
-- No commit, push, merge, tag, release, publication, or `RAUF_PIN` advance occurred.
+- The runtime probe itself performed no repository operation; afterward, explicit user authorization produced and pushed implementation commit `fdc26ff`.
+- No merge, tag, release, publication, or `RAUF_PIN` advance occurred.

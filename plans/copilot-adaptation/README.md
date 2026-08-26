@@ -1,6 +1,6 @@
 # Copilot Adaptation Implementation Runbook
 
-Status: Active implementation; rauf Phase C durable, Phase D at FORGE-102
+Status: Active implementation; rauf Phase C durable, Phase D at FORGE-103
 Last updated: 2026-08-25
 Repositories: `feature-forge` and sibling `../rauf`
 
@@ -36,8 +36,8 @@ At the end of the 2026-08-24 implementation session:
    `TRACK-001` made the authoritative planning and runtime evidence fresh-clone durable, and
    `RAUF-202R` closed operator dependency/prose residuals, `RAUF-203` closed child-instruction
    ownership, and `RAUF-204` closed drift/version/package gates. Phase C is complete; Phase D is
-   active at `FORGE-102` after pushed feature-forge commit `74f269b` closed distribution-aware
-   invocation and the legacy manifest claim.
+   active at `FORGE-103` after pushed feature-forge commits `74f269b` and `fdc26ff` closed native
+   invocation plus custom-agent dependency/memory/dispatch residuals.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
 - **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
    `ClaudeStreamEvent` as an exported compatibility alias, has a buffered Copilot JSONL parser,
@@ -46,11 +46,11 @@ At the end of the 2026-08-24 implementation session:
 - **Started in code:** rauf now generates a native Copilot operator bundle from its canonical four
    skills and two agents, with provenance, deterministic ordering, stale-file detection, strict
    policy mapping, and a generated mapping/drop report.
-- **Locally complete, durability pending:** feature-forge `FORGE-102` custom-agent dependency,
+- **FORGE-102 durable:** pushed commit `fdc26ff` closes custom-agent dependency,
   memory-limit translation, and exact-name dispatch/tool-boundary residuals; the clean-shell full
-  repository gate passes. An authorized implementation push still precedes tracker closure.
-- **Still open:** runtime roots, direct-install migration, the packaged cross-repository harness,
-  and releases.
+  repository gate and fresh-clone durability pass.
+- **Still open:** runtime roots (`FORGE-103`), direct-install migration, the packaged
+  cross-repository harness, and releases.
 - **Feature-forge native adapter milestone committed:** branch `docs/copilot-g2-contract`, commit
    `7754a3b` (`feat(adapters): add native Copilot plugin output`) contains native `SKILL.md` output,
    native `.agent.md` workers, the generated plugin manifest/tree/fixtures, Copilot version-sync
@@ -197,9 +197,8 @@ Run these steps in order on every session, including resumed sessions:
 
 The current cursor and complete order live only in `EXECUTION.md`:
 
-1. Finish `FORGE-102` durability: request explicit authorization for the implementation/evidence
-   commit and push. Only after that push is durable,
-   close the tracker milestone and advance exactly one cursor to `FORGE-103`.
+1. Continue only active `FORGE-103`: implement and test runtime-root resolution through package
+   self-location plus explicit `FEATURE_FORGE_ROOT`; do not depend on `PLUGIN_ROOT`.
 2. Proceed through the remaining ledger in dependency order.
 3. Do not repeat either completed root probe in `operator-actions.md`.
 4. Release tasks remain owner-gated even when every implementation and integration task is green.
