@@ -632,7 +632,7 @@ repository-script tests.
 
 ### Phase 5: Preserve installed instruction ownership
 
-Status: Not started; entry requires provider permission and child-role contracts
+Status: Implemented and runtime-proved locally; commit/push durability remains pending (`RAUF-203`)
 
 Primary files in `../rauf`:
 
@@ -646,16 +646,27 @@ Primary files in `../rauf`:
 
 Tasks:
 
-- [ ] Verify Copilot loads the installed root `AGENTS.md` in a child launched at the project root.
-- [ ] Ensure the cross-agent block describes delegation in host-neutral terms and the
+- [x] Verify Copilot loads the installed root `AGENTS.md` in a child launched at the project root.
+- [x] Ensure the cross-agent block describes delegation in host-neutral terms and the
       Claude-specific block remains the only place that mandates Claude's Task tool.
-- [ ] Ensure `.rauf/RAUF.md` tells any child that rauf owns commits and backlog/state mutation.
-- [ ] Add Copilot-specific unattended guidance only if it belongs in the child prompt; keep
-      provider argv details out of project instructions.
-- [ ] Preserve sentinel ownership, idempotent update, user content, and exact uninstall behavior.
-- [ ] Regenerate embedded artifacts and add a drift check if generation is not already enforced.
-- [ ] Prove feature-forge and rauf managed instruction blocks coexist in the same project without
+- [x] Ensure `.rauf/RAUF.md` tells any child that rauf owns commits and backlog/state mutation.
+- [x] Add Copilot-specific unattended guidance only if it belongs in the child prompt; keep
+      provider argv details out of project instructions. No Copilot-only prose was needed; provider
+      isolation remains in argv and the host-neutral contract is injected through the prompt.
+- [x] Preserve sentinel ownership, idempotent update, user content, and exact uninstall behavior.
+- [x] Regenerate embedded artifacts and retain the existing generated-output gate.
+- [x] Prove feature-forge and rauf managed instruction blocks coexist in the same project without
       overwriting one another.
+
+Evidence (2026-08-25): the complete `.rauf/RAUF.md` child contract is now tool-owned inside its
+managed sentinels, while explicit project-specific content survives install, legacy migration,
+repeated update, and uninstall. Malformed/duplicate boundaries fail closed. Standalone Copilot CLI
+1.0.80 loaded the installed root `AGENTS.md`; the isolated iteration-style run retained
+`--no-custom-instructions`, received only its explicit prompt nonce, and did not receive AGENTS or
+CLAUDE nonces. Focused tests, generation/drift checks, and the isolated-home full gate passed 2,194
+package tests plus 91 script tests. Exact commands, hashes, results, and cleanup are in
+`evidence/rauf-203-child-instruction-ownership-2026-08-25.md`. The unified task remains active until
+this implementation and receipt are committed and pushed.
 
 Exit criteria:
 

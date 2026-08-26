@@ -4,7 +4,7 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-24 (GitHub Copilot adaptation active; hardening program remains complete)._
+_Last updated: 2026-08-25 (GitHub Copilot adaptation active; hardening program remains complete)._
 
 ## Current release
 
@@ -28,8 +28,12 @@ Copilot CLI 1.0.80 probes proved the reviewer read/search/execute and no-edit bo
 driver's invoke/poll and supervisor-only boundary. Unknown tool aliases fail generation, and the
 full Bun 1.3.10 gate passed. `TRACK-001` made the planning and exact runtime evidence
 fresh-clone durable, and rauf commit `4668553` closed `RAUF-202R` by composing each operator's
-canonical skill contract and removing portable `Task tool` wording. The execution cursor is now
-`RAUF-203`. No adaptation release or rauf pin advance has occurred. Task definitions live in
+canonical skill contract and removing portable `Task tool` wording. `RAUF-203` instruction
+ownership is durable in pushed rauf commit `f02f0e7`: standalone Copilot loads the installed
+host-neutral AGENTS block, isolated iterations receive only the explicit RAUF prompt, and user
+content survives migration/update/uninstall. The execution cursor is now `RAUF-204` for Copilot
+adapter drift/version/package gates. No adaptation release or rauf pin advance has occurred. Task
+definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.
 
