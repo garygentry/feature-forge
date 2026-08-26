@@ -42,7 +42,12 @@ import { resolvePlacements } from "./placements.js"; // 02 (A4b second-root plac
 import { locateSource } from "./source.js"; // 03
 import { plan, resolveMode, type PlanContext } from "./plan.js"; // 04
 import { apply, type ApplyContext } from "./apply.js"; // 04
-import { manifestPath, readManifest, planUninstall } from "./manifest.js"; // 05
+import {
+  manifestPath,
+  readManifest,
+  planUninstall,
+  validatePlacementOwnership,
+} from "./manifest.js"; // 05
 import { preflightRauf, RAUF_PIN, type RegistryQuery } from "./rauf.js"; // 06
 import { sha256File, sha256String } from "./hash.js"; // 03 (list destination-drift hashing)
 import { extractManagedRegion } from "./placements.js"; // A4b managed-block drift
@@ -410,6 +415,12 @@ async function runOneAgent(
       // Nothing installed for this agent: not an error — an "ok, no-op" report.
       return { agent, detected: detection.detected, ok: true, actions: [], raufPin: null };
     }
+    const allowedPlacements = resolvePlacements(AGENT_TARGETS[agent], scope, {
+      home: env.home,
+      cwd: env.cwd,
+    });
+    const ownership = validatePlacementOwnership(m.value, allowedPlacements);
+    if (!ownership.ok) return failed(agent, detection.detected, ownership.error);
     const rp = planUninstall(m.value);
     if (!rp.ok) return failed(agent, detection.detected, rp.error);
     const ctx: ApplyContext = {
@@ -475,12 +486,28 @@ async function finishAgent(
   ctx: ApplyContext,
 ): Promise<AgentReport> {
   if (flags.dryRun) {
-    // Plan only: the actions shown are exactly what a real run performs (REQ-OPS-05). No writes.
-    return { agent, detected, ok: true, actions: planned.files, raufPin };
+    // Plan only: primary and placement actions are exactly what a real run performs. No writes.
+    return {
+      agent,
+      detected,
+      ok: true,
+      actions: planned.files,
+      ...(planned.placements && planned.placements.length > 0
+        ? { placements: planned.placements }
+        : {}),
+      raufPin,
+    };
   }
   const report = await apply(planned, ctx);
   if (!report.ok) return failed(agent, detected, report.error ?? unexpected(agent));
-  return { agent, detected, ok: true, actions: report.actions, raufPin };
+  return {
+    agent,
+    detected,
+    ok: true,
+    actions: report.actions,
+    ...(report.placements ? { placements: report.placements } : {}),
+    raufPin,
+  };
 }
 
 /** A failed single-agent report (REQ-OBS-03): ok:false + the structured error. */

@@ -540,6 +540,14 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   Support recursive native skill mirrors and agent mirrors with containment checks, dry-run parity,
   copy/symlink semantics, complete manifest ownership, and exact uninstall. Do not infer Copilot from
   a generic `.github` directory.
+  Progress (2026-08-26): the uncommitted implementation adds backward-compatible recursive mirrors,
+  Copilot project/personal native skill and agent placements, placement-aware reports, trusted
+  manifest containment, non-ownership of differing or byte-identical pre-existing files, recursive
+  orphan pruning, and copy/symlink/Windows lifecycle coverage while retaining the legacy managed
+  block for FORGE-106. Independent-review findings were fixed. The clean-shell full gate passes
+  2,496 Python tests (2 skipped), 201 installer tests, and 11 Pi-source tests. Evidence:
+  `evidence/forge-104-installer-placement-primitives-2026-08-26.md`. The task remains active until an
+  authorized commit/push and fresh-clone verification make closure durable.
 
 - [ ] **FORGE-105 — Implement fresh project and personal installs**
   Repo: feature-forge. Depends on: FORGE-102..104.

@@ -81,10 +81,10 @@ export type InstallKind = "skills" | "extension" | "rules" | "instructions";
  * dir) is always present and is never a placement; placements describe extra writes into a DIFFERENT
  * subtree than the primary bundle (a different top-level root for codex/copilot, or a sibling dir
  * under the same root for pi):
- * - "mirror"        — copy a subset of bundle files flat into a second dir (codex `.codex/agents/`,
- *                     where Codex loads custom agents — it does not read them from `.agents/skills`;
- *                     pi `~/.pi/agent/agents/` global or `.pi/agents/` project, which pi-subagents
- *                     scans but does not read from the `skills/feature-forge` bundle).
+ * - "mirror"        — copy a subset of bundle files into a second dir, either flat (custom-agent
+ *                     files) or recursively with paths below `sourcePrefix` preserved (native skill
+ *                     trees). Codex and Pi use flat custom-agent mirrors; Copilot needs recursive
+ *                     native skills plus flat custom agents.
  * - "managed-block" — write/merge a sentinel-delimited block into a (possibly user-owned) instructions
  *                     file (copilot `.github/copilot-instructions.md`), preserving the rest of the file.
  */
@@ -118,9 +118,14 @@ export interface PlacementSpec {
   readonly subpath: string;
   /**
    * "mirror" only: bundle-relative prefix selecting which source files to copy (e.g. "agents/").
-   * Files matching the prefix are copied FLAT (basename only) into the placement destination.
+   * The prefix itself is omitted from destination paths.
    */
   readonly sourcePrefix?: string;
+  /**
+   * "mirror" only: destination layout below `subpath`. `"recursive"` preserves the complete source
+   * path below `sourcePrefix`; the backward-compatible default `"flat"` uses only the basename.
+   */
+  readonly mirrorLayout?: "flat" | "recursive";
 }
 
 /**
@@ -169,8 +174,8 @@ export interface AgentTarget {
   /** How this agent consumes the bundle (REQ-SCALE-01; per-kind placement extended in A4b). */
   readonly installKind: InstallKind;
   /**
-   * Informational: the skill-file form this agent's bundle uses — "SKILL.md" (claude, codex),
-   * "<name>.md" (copilot/gemini), "<name>.mdc" (cursor). The installer copies the
+   * Informational: the skill-file form this agent's bundle uses — "SKILL.md" (claude, codex,
+   * copilot), "<name>.md" (gemini), "<name>.mdc" (cursor). The installer copies the
    * bundle verbatim (REQ-SCALE-02) and does not parse skill files, so this is documentation.
    */
   readonly skillFileForm: string;
@@ -369,8 +374,10 @@ export interface AgentReport {
   readonly detected: boolean;
   /** False iff this agent's operation failed (others still proceed — REQ-OBS-03). */
   readonly ok: boolean;
-  /** The actions performed (or planned, under `--dry-run`). */
+  /** Primary namespace actions performed (or planned, under `--dry-run`). */
   readonly actions: FileAction[];
+  /** Secondary placement actions, preserved identically in dry-run and real-run reports. */
+  readonly placements?: PlannedPlacement[];
   /** Present iff `ok` is false. */
   readonly error?: InstallerError;
   readonly raufPin?: string | null;
@@ -418,9 +425,10 @@ export interface RunReport {
  * A4 per-agent reality check (A0 re-verified vendor docs, 2026-06-26):
  *  - codex   — detects `.codex`, loads skills from `.agents/skills` (verified-current).
  *              The `.codex/agents/*.toml` second placement is added in A4b.
- *  - copilot — detects `.copilot`, but has no skills loader; the bundle is staged under
- *              `.github/feature-forge` and the managed instructions block (.github/
- *              copilot-instructions.md) is added in A4b (best-known).
+ *  - copilot — detects `.copilot`; direct installs recursively mirror native skills and flat custom
+ *              agents into scope-specific discovery roots. The complete runtime bundle remains
+ *              staged under `.github/feature-forge` until FORGE-105, and the legacy managed block is
+ *              retained until ownership-safe migration in FORGE-106 (best-known).
  *  - cursor  — `.cursor/rules/*.mdc` confirmed current (verified-current).
  *  - gemini  — `~/.gemini/extensions/feature-forge` global confirmed; project scope is
  *              best-known (project extension install is not clearly documented).
@@ -430,7 +438,7 @@ export interface RunReport {
 export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
   claude: { id: "claude", configDirName: ".claude", installBaseDir: ".claude", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "confirmed", docsUrl: "https://docs.claude.com/en/docs/claude-code/skills" },
   codex: { id: "codex", configDirName: ".codex", installBaseDir: ".agents", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://developers.openai.com/codex/skills", placements: [{ kind: "mirror", baseDir: ".codex", subpath: "agents", sourcePrefix: "agents/" }] },
-  copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "<name>.md", confidence: "best-known", docsUrl: "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions", placements: [{ kind: "managed-block", baseDir: ".github", subpath: "copilot-instructions.md" }] },
+  copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "SKILL.md", confidence: "best-known", docsUrl: "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions", placements: [{ kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "skills", sourcePrefix: "skills/", mirrorLayout: "recursive" }, { kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "agents", sourcePrefix: "agents/" }, { kind: "managed-block", baseDir: ".github", subpath: "copilot-instructions.md" }] },
   cursor: { id: "cursor", configDirName: ".cursor", installBaseDir: ".cursor", installSubpath: "rules", installKind: "rules", skillFileForm: "<name>.mdc", confidence: "verified-current", docsUrl: "https://cursor.com/docs/context/rules" },
   gemini: { id: "gemini", configDirName: ".gemini", installBaseDir: ".gemini", installSubpath: "extensions", installKind: "extension", skillFileForm: "<name>.md", confidence: "verified-current", projectConfidence: "best-known", docsUrl: "https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/index.md" },
   pi: { id: "pi", configDirName: ".pi", globalConfigDirName: ".pi/agent", projectConfigDirName: ".pi", installBaseDir: ".pi", globalInstallBaseDir: ".pi/agent", projectInstallBaseDir: ".pi", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://github.com/earendil-works/pi-coding-agent", placements: [{ kind: "mirror", baseDir: ".pi", globalBaseDir: ".pi/agent", projectBaseDir: ".pi", subpath: "agents", sourcePrefix: "agents/" }] },

@@ -31,6 +31,7 @@ import {
   type Scope,
 } from "./types.js";
 import { destinationFor } from "./agent-targets.js";
+import type { ResolvedPlacement } from "./placements.js";
 
 // ---------------------------------------------------------------------------
 // buildManifest
@@ -259,7 +260,9 @@ function validateManifest(x: unknown): ValidateResult {
   for (const f of o.files) {
     if (typeof f !== "object" || f === null) return { ok: false, reason: "invalid files[] entry" };
     const ff = f as Record<string, unknown>;
-    if (typeof ff.path !== "string") return { ok: false, reason: "files[].path not a string" };
+    if (typeof ff.path !== "string" || !isSafeRelativePath(ff.path)) {
+      return { ok: false, reason: "files[].path is not a safe relative path" };
+    }
     if (ff.sha256 !== undefined && typeof ff.sha256 !== "string") {
       return { ok: false, reason: "files[].sha256 not a string" };
     }
@@ -295,20 +298,66 @@ function validatePlacement(p: unknown): string | null {
   if (o.kind !== "mirror" && o.kind !== "managed-block") {
     return `invalid placement kind ${String(o.kind)}`;
   }
-  if (typeof o.root !== "string" || o.root.length === 0) return "placement missing root";
-  if (typeof o.destination !== "string" || o.destination.length === 0) {
-    return "placement missing destination";
+  if (typeof o.root !== "string" || !path.isAbsolute(o.root)) {
+    return "placement root is not absolute";
+  }
+  if (typeof o.destination !== "string" || !path.isAbsolute(o.destination)) {
+    return "placement destination is not absolute";
+  }
+  if (!isWithinOrEqual(o.root, o.destination)) {
+    return "placement destination escapes root";
   }
   if (!Array.isArray(o.files)) return "invalid placement files[]";
   for (const f of o.files) {
     if (typeof f !== "object" || f === null) return "invalid placement files[] entry";
     const ff = f as Record<string, unknown>;
-    if (typeof ff.path !== "string") return "placement files[].path not a string";
+    if (typeof ff.path !== "string" || !isSafeRelativePath(ff.path)) {
+      return "placement files[].path is not a safe relative path";
+    }
     if (ff.sha256 !== undefined && typeof ff.sha256 !== "string") {
       return "placement files[].sha256 not a string";
     }
   }
   return null;
+}
+
+/** True iff a manifest inventory path is non-empty, relative, and cannot traverse upward. */
+function isSafeRelativePath(p: string): boolean {
+  if (p.length === 0 || path.posix.isAbsolute(p) || path.win32.isAbsolute(p)) return false;
+  const normalized = path.posix.normalize(p.replaceAll("\\", "/"));
+  return normalized !== "." && normalized !== ".." && !normalized.startsWith("../");
+}
+
+/** Platform-correct containment check, admitting equality for a placement rooted at its destination. */
+function isWithinOrEqual(root: string, destination: string): boolean {
+  const rel = path.relative(path.resolve(root), path.resolve(destination));
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+/**
+ * Verify that every manifest-owned placement is one of the current target's trusted, scope-resolved
+ * placement boundaries. Call before uninstall: a manifest-provided root must never authorize itself.
+ */
+export function validatePlacementOwnership(
+  manifest: InstallManifest,
+  allowed: readonly ResolvedPlacement[],
+): Result<void> {
+  const trusted = new Set(allowed.map((p) => `${p.kind}\0${p.root}\0${p.destination}`));
+  const seen = new Set<string>();
+  for (const p of manifest.placements ?? []) {
+    const key = `${p.kind}\0${p.root}\0${p.destination}`;
+    if (!trusted.has(key) || seen.has(key)) {
+      return err({
+        code: "MANIFEST_CORRUPT",
+        agent: manifest.agent,
+        message: `install manifest contains an untrusted or duplicate placement destination: ${p.destination}`,
+        path: p.destination,
+        remedy: "remove the corrupt manifest and re-run install; no placement files were changed",
+      });
+    }
+    seen.add(key);
+  }
+  return ok(undefined);
 }
 
 // ---------------------------------------------------------------------------

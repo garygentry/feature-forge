@@ -16,6 +16,7 @@ import {
   manifestPath,
   planUninstall,
   readManifest,
+  validatePlacementOwnership,
   writeManifest,
 } from "../dist/manifest.js";
 import type { InstallManifest } from "../dist/types.js";
@@ -101,6 +102,52 @@ test("readManifest: MANIFEST_CORRUPT on schemaVersion mismatch", async () => {
     assert.ok(!r.ok);
     assert.equal(r.error.code, "MANIFEST_CORRUPT");
   });
+});
+
+test("readManifest rejects escaping primary and placement inventory paths", async () => {
+  await withSandbox(async (sb) => {
+    const p = path.join(sb.home, ".feature-forge.global.json");
+    fs.mkdirSync(sb.home, { recursive: true });
+    for (const manifest of [
+      copyManifest({ files: [{ path: "../../victim", sha256: "x" }] }),
+      copyManifest({
+        schemaVersion: 2,
+        placements: [{
+          kind: "mirror",
+          root: path.join(sb.home, ".copilot"),
+          destination: path.join(sb.home, ".copilot", "skills"),
+          files: [{ path: "../victim", sha256: "x" }],
+        }],
+      }),
+    ]) {
+      fs.writeFileSync(p, JSON.stringify(manifest), "utf8");
+      const r = readManifest(p);
+      assert.ok(!r.ok);
+      assert.equal(r.error.code, "MANIFEST_CORRUPT");
+    }
+  });
+});
+
+test("validatePlacementOwnership rejects a manifest-provided containment root", () => {
+  const manifest = copyManifest({
+    schemaVersion: 2,
+    agent: "copilot",
+    placements: [{
+      kind: "mirror",
+      root: "/tmp/attacker-chosen-root",
+      destination: "/tmp/attacker-chosen-root/skills",
+      files: [{ path: "victim", sha256: "x" }],
+    }],
+  });
+  const allowed = [{
+    kind: "mirror" as const,
+    root: "/home/u/.copilot",
+    destination: "/home/u/.copilot/skills",
+    spec: { kind: "mirror" as const, baseDir: ".copilot", subpath: "skills" },
+  }];
+  const result = validatePlacementOwnership(manifest, allowed);
+  assert.ok(!result.ok);
+  assert.equal(result.error.code, "MANIFEST_CORRUPT");
 });
 
 // --- writeManifest ----------------------------------------------------------

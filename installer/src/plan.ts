@@ -35,7 +35,7 @@ import {
   extractManagedRegion,
 } from "./placements.js";
 import { planUninstall } from "./manifest.js";
-import { isWindows } from "./fsutil.js";
+import { isWindows, resolveWithinNoSymlinks } from "./fsutil.js";
 
 /**
  * Everything the pure planner needs to diff source ⇆ destination ⇆ manifest for ONE agent
@@ -166,9 +166,11 @@ function buildPlan(ctx: PlanContext, withOrphans: boolean): Result<PlannedAction
       ? planSymlink(ctx)
       : planCopy(ctx, withOrphans);
 
-  // Secondary placements (A4b) are always copy-style regardless of the primary mode: a mirror is a
-  // few flat files and a managed-block is a merge, neither of which a whole-dir symlink expresses.
-  const placements = planPlacements(ctx, withOrphans);
+  // Secondary placements (A4b) are always copy-style regardless of the primary mode: native mirror
+  // leaves and managed-block merges live outside the whole-dir primary symlink.
+  const placementResult = planPlacements(ctx, withOrphans);
+  if (!placementResult.ok) return placementResult;
+  const placements = placementResult.value;
 
   const action: PlannedAction = {
     agent: ctx.agent,
@@ -186,16 +188,32 @@ function buildPlan(ctx: PlanContext, withOrphans: boolean): Result<PlannedAction
 // ---------------------------------------------------------------------------
 
 /** Plan every resolved secondary placement (A4b). `ctx.source` is non-null here. */
-function planPlacements(ctx: PlanContext, withOrphans: boolean): PlannedPlacement[] {
+function planPlacements(ctx: PlanContext, withOrphans: boolean): Result<PlannedPlacement[]> {
   const resolved = ctx.placements ?? [];
-  if (resolved.length === 0) return [];
+  if (resolved.length === 0) return ok([]);
   const source = ctx.source as LocatedSource;
   const priorByDest = priorPlacementIndex(ctx.priorManifest);
-  return resolved.map((rp) =>
-    rp.kind === "mirror"
-      ? planMirror(ctx, rp, source, priorByDest.get(rp.destination) ?? null, withOrphans)
-      : planManagedBlock(ctx, rp, source, priorByDest.get(rp.destination) ?? null),
-  );
+  const planned: PlannedPlacement[] = [];
+  for (const rp of resolved) {
+    // Validate the trusted placement boundary before ANY destination read. This also catches a
+    // malformed static target spec whose subpath resolves outside its declared root.
+    const destination = resolveWithinNoSymlinks(rp.root, rp.destination);
+    if (!destination.ok) return destination;
+    if (rp.kind === "mirror") {
+      const mirror = planMirror(
+        ctx,
+        rp,
+        source,
+        priorByDest.get(rp.destination) ?? null,
+        withOrphans,
+      );
+      if (!mirror.ok) return mirror;
+      planned.push(mirror.value);
+    } else {
+      planned.push(planManagedBlock(ctx, rp, source, priorByDest.get(rp.destination) ?? null));
+    }
+  }
+  return ok(planned);
 }
 
 /** Index prior-manifest placements by their absolute destination, for clean/orphan reconciliation. */
@@ -205,33 +223,48 @@ function priorPlacementIndex(prior: InstallManifest | null): Map<string, Placeme
   return m;
 }
 
-/** Diff a "mirror" placement: each selected bundle file vs its flat destination + recorded hash. */
+/** Diff a flat or recursive mirror placement against its destination + recorded inventory. */
 function planMirror(
   ctx: PlanContext,
   rp: ResolvedPlacement,
   source: LocatedSource,
   prior: Placement | null,
   withOrphans: boolean,
-): PlannedPlacement {
+): Result<PlannedPlacement> {
   const recorded = new Map<string, ManifestFile>();
   for (const f of prior?.files ?? []) recorded.set(f.path, f);
 
   const mirror = selectMirrorFiles(source, rp.spec);
-  const files: PlacementFileAction[] = mirror.map((mf) => {
-    const destAbs = path.join(rp.destination, mf.destRelpath);
-    const destHash = hashIfExists(destAbs);
+  const seen = new Set<string>();
+  const files: PlacementFileAction[] = [];
+  for (const mf of mirror) {
+    if (mf.destRelpath === "" || seen.has(mf.destRelpath)) {
+      return err({
+        code: "SOURCE_INVALID",
+        agent: ctx.agent,
+        message: `mirror source paths do not map uniquely below ${rp.destination}: ${mf.destRelpath || "<empty>"}`,
+        path: rp.destination,
+        remedy: "regenerate the adapter bundle and verify its mirror source layout",
+      });
+    }
+    seen.add(mf.destRelpath);
+    const resolved = resolveWithinNoSymlinks(rp.root, rp.destination, mf.destRelpath);
+    if (!resolved.ok) return resolved;
+    const destHash = hashIfExists(resolved.value);
     const manifestHash = recorded.get(mf.destRelpath)?.sha256;
     const action = classifyFile(mf.destRelpath, mf.srcHash, destHash, manifestHash, ctx.force);
-    return { relpath: mf.destRelpath, action, srcRelpath: mf.srcRelpath };
-  });
+    files.push({ relpath: mf.destRelpath, action, srcRelpath: mf.srcRelpath });
+  }
 
   if (withOrphans && prior !== null) {
     const live = new Set(mirror.map((mf) => mf.destRelpath));
     for (const f of prior.files) {
+      const resolved = resolveWithinNoSymlinks(rp.root, rp.destination, f.path);
+      if (!resolved.ok) return resolved;
       if (!live.has(f.path)) files.push({ relpath: f.path, action: "remove" });
     }
   }
-  return { kind: "mirror", root: rp.root, destination: rp.destination, files };
+  return ok({ kind: "mirror", root: rp.root, destination: rp.destination, files });
 }
 
 /** Diff a "managed-block" placement: render the block, compare its region to the on-disk region. */

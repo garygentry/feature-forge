@@ -137,6 +137,16 @@ test("detection is stat-based: only the seeded agent is detected", async () => {
   });
 });
 
+test("Copilot detection never infers installation from a generic .github directory", async () => {
+  await withSandbox(async (sb) => {
+    await mkdir(join(sb.cwd, ".github"), { recursive: true });
+
+    const result = detectAgent("copilot", sb.resolve("project"));
+    assert.equal(result.detected, false);
+    assert.deepEqual(result.configDirsProbed, [join(sb.cwd, ".copilot")]);
+  });
+});
+
 test("detectAgents returns all agents in AGENT_IDS order; only scopes to one", async () => {
   await withSandbox(async (sb) => {
     const all = detectAgents({ ...sb.resolve() });

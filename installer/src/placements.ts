@@ -1,8 +1,8 @@
 /**
  * Secondary install placements (A4b) — the second-root generalization the single-`destination`
  * install model can't express. Two kinds (see {@link PlacementKind}):
- *   - "mirror"        — codex copies the bundle's `agents/*.toml` FLAT into `.codex/agents/`, where
- *                       Codex loads custom agents (it does NOT read them from `.agents/skills`).
+ *   - "mirror"        — copy a selected bundle subtree either FLAT (custom agents) or recursively
+ *                       with paths below its source prefix preserved (native skill directories).
  *   - "managed-block" — copilot writes a sentinel-delimited pointer block into the (possibly
  *                       user-owned) `.github/copilot-instructions.md`, preserving the rest of it.
  *
@@ -57,7 +57,7 @@ export function resolvePlacements(
   });
 }
 
-/** One selected mirror source: the bundle-relative source and its FLAT destination basename. */
+/** One selected mirror source and its placement-destination-relative path. */
 export interface MirrorFile {
   readonly srcRelpath: string;
   readonly destRelpath: string;
@@ -66,14 +66,21 @@ export interface MirrorFile {
 
 /**
  * Select the bundle files a "mirror" placement copies (A4b): every `source.files` entry whose
- * POSIX relpath starts with `spec.sourcePrefix`, copied FLAT (basename only) into the destination.
- * Sorted by destination basename for deterministic plans. Pure.
+ * POSIX relpath starts with `spec.sourcePrefix`. Flat mirrors use the source basename; recursive
+ * mirrors preserve the complete path below the prefix. Sorted by destination relpath for
+ * deterministic plans and manifests. Pure.
  */
 export function selectMirrorFiles(source: LocatedSource, spec: PlacementSpec): MirrorFile[] {
   const prefix = spec.sourcePrefix ?? "";
   return source.files
     .filter((f) => f.relpath.startsWith(prefix))
-    .map((f) => ({ srcRelpath: f.relpath, destRelpath: path.posix.basename(f.relpath), srcHash: f.sha256 }))
+    .map((f) => ({
+      srcRelpath: f.relpath,
+      destRelpath: spec.mirrorLayout === "recursive"
+        ? f.relpath.slice(prefix.length)
+        : path.posix.basename(f.relpath),
+      srcHash: f.sha256,
+    }))
     .sort((a, b) => (a.destRelpath < b.destRelpath ? -1 : a.destRelpath > b.destRelpath ? 1 : 0));
 }
 

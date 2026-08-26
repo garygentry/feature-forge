@@ -42,21 +42,29 @@ npx @garygentry/feature-forge install --dry-run --json
 
 ## Per-agent install layout
 
-Each agent's bundle is installed where that agent actually loads it (project scope shown;
-`--global` resolves the same paths under `~`):
+Each agent's bundle is installed where that agent actually loads it (project scope shown; scope
+exceptions are noted below):
 
 | Agent   | Primary bundle                       | Second-root placement                                   |
 | ------- | ------------------------------------ | ------------------------------------------------------- |
 | claude  | `.claude/skills/feature-forge/`      | —                                                       |
 | codex   | `.agents/skills/feature-forge/`      | `.codex/agents/*.toml` (custom agents, mirrored flat)   |
-| copilot | `.github/feature-forge/`             | managed block in `.github/copilot-instructions.md`      |
+| copilot | `.github/feature-forge/`             | recursive `.github/skills/`, flat `.github/agents/`, and legacy managed block |
 | cursor  | `.cursor/rules/feature-forge/`       | —                                                       |
 | gemini  | `.gemini/extensions/feature-forge/`  | —                                                       |
-| pi      | `.pi/skills/feature-forge/`          | —                                                       |
+| pi      | `.pi/skills/feature-forge/`          | `.pi/agents/*.md` (custom agents, mirrored flat)        |
 
-For Pi, `--global` installs to `~/.pi/agent/skills/feature-forge/` and project scope installs to `./.pi/skills/feature-forge/`. The Pi bundle includes real `package.json` metadata plus the `AskUserQuestion` compatibility extension; run `/trust` (or use `--approve` in non-interactive tests) before relying on project-local Pi resources.
+For Pi, `--global` installs to `~/.pi/agent/skills/feature-forge/` and mirrors agents into
+`~/.pi/agent/agents/`; project scope uses `.pi/skills/feature-forge/` and `.pi/agents/`. The Pi
+bundle includes real `package.json` metadata plus the `AskUserQuestion` compatibility extension;
+run `/trust` (or use `--approve` in non-interactive tests) before relying on project-local Pi
+resources.
 
-The Copilot block is delimited by `<!-- feature-forge:managed:start -->` /
+Copilot's global native discovery mirrors use `~/.copilot/skills/` and `~/.copilot/agents/`.
+The complete global runtime-root migration is handled separately; the primary bundle remains at
+`~/.github/feature-forge/` in this transitional layout.
+
+The legacy Copilot block is delimited by `<!-- feature-forge:managed:start -->` /
 `<!-- feature-forge:managed:end -->` sentinels and merged without disturbing the rest of the
 file. `update` refreshes it (a hand-edited block is left alone unless `--force`); `uninstall`
 strips only the block, deleting the file only if nothing else remains.

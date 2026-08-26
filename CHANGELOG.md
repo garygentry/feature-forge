@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Direct Copilot installs now plan native discovery mirrors safely.** The installer supports recursive skill-tree mirrors and flat custom-agent mirrors in project and personal scopes, reports placement actions identically in dry-run and real-run JSON, records every owned leaf, preserves unowned modified files, validates manifest placement containment before uninstall, rejects symlink-ancestor escapes, and removes only recorded mirror content. Generic `.github/` directories remain insufficient for automatic Copilot detection.
+
 - **Copilot invocation prose is distribution-aware.** Generated Copilot descriptions, skill bodies, references, and stage-exit output use explicit `invoke-skill: <name> [arguments]` notation rather than assuming one slash name. Each skill maps that notation to plugin `/feature-forge:<name>` and direct `/<name>` forms. The five-field manifest is deliberately classified and runtime-proven as the legacy Copilot format; Agent Plugins 1.0 is not claimed.
 
 ## [0.18.0] — 2026-08-15

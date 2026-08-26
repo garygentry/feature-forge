@@ -32,7 +32,7 @@ export async function makeFixtureBundle(
   sb: Sandbox,
   agent: AgentId,
   skills: string[] = ["forge-1-prd"],
-  /** Custom-agent ids to materialize as `agents/<id>.toml` (A4b codex mirror source). Default: none. */
+  /** Custom-agent ids to materialize under `agents/` in the target's native form. Default: none. */
   agents: string[] = [],
 ): Promise<FixtureBundle> {
   const dir = join(sb.source, agent);
@@ -70,9 +70,8 @@ export async function makeFixtureBundle(
       JSON.stringify({ name: "feature-forge-pi", keywords: ["pi-package"], pi: { skills: ["./skills"], extensions: ["./extensions/ask-user-question/index.ts"] } }, null, 2) + "\n",
     );
   }
-  // Custom-agent source files for a "mirror" placement. codex loads `.toml`, pi loads `.md`;
-  // the mirror itself selects by path prefix, agnostic to extension.
-  const agentExt = agent === "pi" ? "md" : "toml";
+  // Custom-agent source files for a flat "mirror" placement in each target's native form.
+  const agentExt = agent === "pi" ? "md" : agent === "copilot" ? "agent.md" : "toml";
   for (const id of agents) {
     await mkdir(join(dir, "agents"), { recursive: true });
     await writeFile(join(dir, "agents", `${id}.${agentExt}`), `name = "${id}"\n# fixture custom agent\n`);

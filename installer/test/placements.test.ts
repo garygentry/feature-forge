@@ -17,6 +17,7 @@ import {
   removeBlock,
   extractManagedRegion,
 } from "../dist/placements.js";
+import { planInstall } from "../dist/plan.js";
 
 const opts = { home: "/h", cwd: "/p" };
 
@@ -32,12 +33,26 @@ test("resolvePlacements: codex mirror resolves to .codex/agents under the scope 
   assert.equal(global[0]!.destination, "/h/.codex/agents");
 });
 
-test("resolvePlacements: copilot managed-block targets .github/copilot-instructions.md", () => {
-  const r = resolvePlacements(AGENT_TARGETS.copilot, "project", opts);
-  assert.equal(r.length, 1);
-  assert.equal(r[0]!.kind, "managed-block");
-  assert.equal(r[0]!.root, "/p/.github");
-  assert.equal(r[0]!.destination, "/p/.github/copilot-instructions.md");
+test("resolvePlacements: copilot mirrors native discovery files and retains its legacy block", () => {
+  const project = resolvePlacements(AGENT_TARGETS.copilot, "project", opts);
+  assert.deepEqual(
+    project.map((p) => [p.kind, p.root, p.destination]),
+    [
+      ["mirror", "/p/.github", "/p/.github/skills"],
+      ["mirror", "/p/.github", "/p/.github/agents"],
+      ["managed-block", "/p/.github", "/p/.github/copilot-instructions.md"],
+    ],
+  );
+
+  const global = resolvePlacements(AGENT_TARGETS.copilot, "global", opts);
+  assert.deepEqual(
+    global.map((p) => [p.kind, p.root, p.destination]),
+    [
+      ["mirror", "/h/.copilot", "/h/.copilot/skills"],
+      ["mirror", "/h/.copilot", "/h/.copilot/agents"],
+      ["managed-block", "/h/.github", "/h/.github/copilot-instructions.md"],
+    ],
+  );
 });
 
 test("resolvePlacements: agents without a rule return []", () => {
@@ -79,6 +94,67 @@ test("selectMirrorFiles: picks agents/* flat, sorted, ignores non-prefixed", () 
   );
   assert.equal(mirror[0]!.srcRelpath, "agents/forge-researcher.toml");
   assert.equal(mirror[0]!.srcHash, "r");
+});
+
+test("placement planning rejects an escaping destination before reading or writing it", () => {
+  const target = {
+    ...AGENT_TARGETS.codex,
+    placements: [{
+      kind: "mirror" as const,
+      baseDir: ".codex",
+      subpath: "../../escape",
+      sourcePrefix: "agents/",
+    }],
+  };
+  const placements = resolvePlacements(target, "project", opts);
+  const result = planInstall({
+    agent: "codex",
+    scope: "project",
+    mode: "copy",
+    destination: "/p/.agents/skills/feature-forge",
+    source: {
+      root: "/src",
+      sourceHash: "x",
+      skills: ["forge"],
+      files: [{ relpath: "agents/forge.toml", sha256: "a" }],
+    },
+    priorManifest: null,
+    force: false,
+    placements,
+  });
+  assert.ok(!result.ok);
+  assert.equal(result.error.code, "PATH_ESCAPE");
+});
+
+test("selectMirrorFiles: recursive mirrors preserve paths below sourcePrefix", () => {
+  const source = {
+    root: "/src",
+    sourceHash: "x",
+    skills: ["forge-1-prd", "forge-2-tech"],
+    files: [
+      { relpath: "skills/forge-2-tech/SKILL.md", sha256: "two" },
+      { relpath: "skills/forge-1-prd/references/example.md", sha256: "ref" },
+      { relpath: "skills/forge-1-prd/SKILL.md", sha256: "one" },
+      { relpath: "agents/forge-verifier.agent.md", sha256: "agent" },
+    ],
+  };
+  const spec = {
+    kind: "mirror" as const,
+    baseDir: ".github",
+    subpath: "skills",
+    sourcePrefix: "skills/",
+    mirrorLayout: "recursive" as const,
+  };
+
+  const mirror = selectMirrorFiles(source as never, spec);
+  assert.deepEqual(
+    mirror.map((m) => [m.srcRelpath, m.destRelpath]),
+    [
+      ["skills/forge-1-prd/SKILL.md", "forge-1-prd/SKILL.md"],
+      ["skills/forge-1-prd/references/example.md", "forge-1-prd/references/example.md"],
+      ["skills/forge-2-tech/SKILL.md", "forge-2-tech/SKILL.md"],
+    ],
+  );
 });
 
 test("renderCopilotBlock: deterministic, lists sorted skills, points at .github/feature-forge", () => {

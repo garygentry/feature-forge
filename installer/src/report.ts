@@ -83,6 +83,12 @@ function renderAgent(subcommand: RunReport["subcommand"], a: AgentReport): strin
   for (const f of a.actions) {
     lines.push(`  ${actionVerb(f.action)} ${f.relpath}`);
   }
+  for (const placement of a.placements ?? []) {
+    lines.push(`  placement ${placement.kind}: ${placement.destination}`);
+    for (const f of placement.files) {
+      lines.push(`    ${actionVerb(f.action)} ${f.relpath}`);
+    }
+  }
   const note = confidenceNote(a);
   if (note) lines.push(`  ${note}`);
   if (a.raufPin) lines.push(`  rauf default runner pinned: ${a.raufPin}`);
