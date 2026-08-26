@@ -1,6 +1,6 @@
 # Copilot Adaptation Implementation Runbook
 
-Status: Active implementation; TRACK-001 durable, Phase C at RAUF-202R
+Status: Active implementation; TRACK-001 and RAUF-202R durable, Phase C at RAUF-203
 Last updated: 2026-08-25
 Repositories: `feature-forge` and sibling `../rauf`
 
@@ -33,8 +33,8 @@ and the owning repository's `AGENTS.md` for local execution. Reconcile the confl
 At the end of the 2026-08-24 implementation session:
 
 - **Active coordination phase:** Phases A and B are complete; G0, G1, and G2 are closed.
-   `TRACK-001` made the authoritative planning and runtime evidence fresh-clone durable. Phase C is
-   active at `RAUF-202R`, followed by `RAUF-203`.
+   `TRACK-001` made the authoritative planning and runtime evidence fresh-clone durable, and
+   `RAUF-202R` closed operator dependency/prose residuals. Phase C is active at `RAUF-203`.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
 - **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
    `ClaudeStreamEvent` as an exported compatibility alias, has a buffered Copilot JSONL parser,
@@ -192,9 +192,9 @@ Run these steps in order on every session, including resumed sessions:
 
 The current cursor and complete order live only in `EXECUTION.md`:
 
-1. Complete `RAUF-202R`: operator agent-to-skill behavior, host-neutral delegation prose, and the
-   already-decided plugin-only topology.
-2. Complete `RAUF-203`, then proceed through the remaining ledger in dependency order.
+1. Complete `RAUF-203`: installed child-instruction ownership, isolated provider prompt injection,
+   safe update/uninstall behavior, and sentinel coexistence.
+2. Proceed through the remaining ledger in dependency order.
 3. Do not repeat either completed root probe in `operator-actions.md`.
 4. Release tasks remain owner-gated even when every implementation and integration task is green.
 

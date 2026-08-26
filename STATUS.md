@@ -27,8 +27,9 @@ operator bundle generator and `RAUF-202` operator capability enforcement are com
 Copilot CLI 1.0.80 probes proved the reviewer read/search/execute and no-edit boundary plus the loop
 driver's invoke/poll and supervisor-only boundary. Unknown tool aliases fail generation, and the
 full Bun 1.3.10 gate passed. `TRACK-001` made the planning and exact runtime evidence
-fresh-clone durable; the execution cursor is now `RAUF-202R`, followed by `RAUF-203`. No adaptation
-release or rauf pin advance has occurred. Task definitions live in
+fresh-clone durable, and rauf commit `4668553` closed `RAUF-202R` by composing each operator's
+canonical skill contract and removing portable `Task tool` wording. The execution cursor is now
+`RAUF-203`. No adaptation release or rauf pin advance has occurred. Task definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.
 

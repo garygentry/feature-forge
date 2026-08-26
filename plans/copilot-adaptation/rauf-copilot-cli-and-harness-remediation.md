@@ -1,6 +1,6 @@
 # First-Class GitHub Copilot Support in Rauf
 
-Status: Phases 1 through 3 complete; Phase 4 at operator dependency/prose residuals (`RAUF-202R`)
+Status: Phases 1 through 3 complete; Phase 4 at installed instruction ownership (`RAUF-203`)
 Created: 2026-08-23
 Owners: rauf and feature-forge maintainers
 Target: GitHub Copilot CLI, GitHub Copilot in VS Code, and Copilot Agent Host
@@ -597,10 +597,11 @@ Tasks:
 - [x] Make `rauf-backlog-reviewer` read/search/execute capable but non-editing.
 - [x] Make `rauf-loop-driver` capable of executing the rauf CLI while remaining a supervisor, not
       an iteration implementation agent.
-- [ ] Resolve each custom agent's dependency on `review-backlog` or `drive-rauf-loop` through a
-      tested Copilot mechanism rather than an aspirational body reference.
-- [ ] Replace canonical `Task tool` wording with host-neutral subagent wording where possible;
-      retain Claude-specific specialization only in Claude output.
+- [x] Resolve each custom agent's dependency on `review-backlog` or `drive-rauf-loop` through a
+      tested Copilot mechanism rather than an aspirational body reference; commit `4668553`
+      composes each complete canonical skill contract with fail-loud dependency mapping.
+- [x] Replace canonical `Task tool` wording with host-neutral subagent wording where possible;
+      retain Claude-specific specialization only in Claude output; affected adapters regenerated.
 - [x] Use plugin-only repository discovery for the distributable bundle; accepted decision D7.
 - [ ] Wire `copilot:check` and tests into `pnpm gate` (`copilot:generate` and `copilot:check` exist).
 - [x] Emit a generated report naming source files, mappings, and deliberately unsupported fields.
@@ -613,8 +614,10 @@ Exit criteria:
 - The loop driver can invoke rauf and the backlog reviewer cannot edit files.
 - A clean generation followed by `copilot:check` is a no-op.
 
-Unified `RAUF-202R` owns the two remaining dependency/prose bullets above; they must close before
-installed-instruction or package-gate work advances.
+Unified `RAUF-202R` closed the dependency/prose bullets in rauf commit `4668553`; exact Copilot CLI
+1.0.80 behavior and gate evidence are in
+`evidence/rauf-202r-operator-dependencies-2026-08-25.md`. Installed-instruction work now advances at
+`RAUF-203`.
 
 RAUF-202 evidence (2026-08-24): authenticated Copilot CLI 1.0.80 loaded
 `adapters/copilot` directly. The generated reviewer read a marker, searched its sentinel, executed

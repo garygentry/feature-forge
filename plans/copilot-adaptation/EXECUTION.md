@@ -2,7 +2,7 @@
 
 Status: Active
 Last updated: 2026-08-25
-Current cursor: `RAUF-202R`
+Current cursor: `RAUF-203`
 Repositories:
 
 - feature-forge: `docs/copilot-g2-contract` tracking `origin/docs/copilot-g2-contract`
@@ -59,6 +59,7 @@ uncommitted local probe is insufficient.
 | Rauf provider | `RAUF-101`–`RAUF-108`; rauf commits `45603b1` through `5f3710b` |
 | Rauf native bundle | `RAUF-201`; rauf commit `db40ed0` |
 | Rauf operator boundaries | `RAUF-202`; rauf commit `02f8e67`; exact sanitized recovery receipt in `evidence/rauf-202-operator-boundaries-2026-08-24.md` |
+| Rauf operator dependencies/prose | `RAUF-202R`; rauf commit `4668553`; exact runtime receipt in `evidence/rauf-202r-operator-dependencies-2026-08-25.md` |
 | Feature-forge native foundation | feature-forge commit `7754a3b`; native skills/agents and legacy-format Copilot plugin manifest; `FORGE-101`/`102` remain partial |
 
 ## Open-work ledger
@@ -69,8 +70,8 @@ are closed, worktrees/files do not overlap, and each repository has one writer.
 | Order | ID | Repo | State | Depends on | Remaining acceptance / exit proof |
 | ---: | --- | --- | --- | --- | --- |
 | 1 | `TRACK-001` | feature-forge/shared | DONE | — | Authoritative plans/evidence are tracked on the adaptation branch; exact sanitized `RAUF-202` recovery evidence, cleanup, cursor reconciliation, and fresh-clone readability are verified in the 2026-08-25 receipt below. |
-| 2 | `RAUF-202R` | rauf | ACTIVE | `TRACK-001`, `RAUF-202` | Resolve each generated operator agent's skill dependency through tested Copilot behavior; replace canonical `Task tool` wording with host-neutral delegation wording where portable; record D7 plugin-only decision as complete; regenerate and prove discovery/drift. |
-| 3 | `RAUF-203` | rauf | OPEN | `RAUF-202R` | Preserve child instruction ownership. Standalone Copilot must load rauf's host-neutral `AGENTS.md`; the actual iteration provider must retain `--no-custom-instructions` and receive `.rauf/RAUF.md` through the prompt only. Define managed/user ownership for `.rauf/RAUF.md`; preserve user content through install/update/repeated-update/uninstall; isolate Claude and supervisor instructions; prove feature-forge/rauf sentinel coexistence. |
+| 2 | `RAUF-202R` | rauf | DONE | `TRACK-001`, `RAUF-202` | Commit `4668553` composes each required canonical skill into its Copilot operator agent with fail-loud dependency validation, host-neutral delegation wording, regenerated Codex/Copilot/Pi outputs, plugin-only topology, green runtime probes/drift/full gate, and exact evidence. |
+| 3 | `RAUF-203` | rauf | ACTIVE | `RAUF-202R` | Preserve child instruction ownership. Standalone Copilot must load rauf's host-neutral `AGENTS.md`; the actual iteration provider must retain `--no-custom-instructions` and receive `.rauf/RAUF.md` through the prompt only. Define managed/user ownership for `.rauf/RAUF.md`; preserve user content through install/update/repeated-update/uninstall; isolate Claude and supervisor instructions; prove feature-forge/rauf sentinel coexistence. |
 | 4 | `RAUF-204` | rauf | OPEN | `RAUF-203` | Add `copilot:check` to `pnpm gate`; lock plugin/product versions; verify repository, compiled binary, and npm/binary package contents; retain deterministic stale-file checks. |
 | 5 | `FORGE-101` | feature-forge | READY | `TRACK-001` | Finish distribution-aware invocation/reference translation. Accurately classify the current manifest as legacy Copilot format, or migrate and runtime-prove actual Agent Plugins 1.0 schema/layout; do not claim 1.0 from the current seven-field manifest. |
 | 6 | `FORGE-102` | feature-forge | OPEN | `FORGE-101` | Implement/test the verifier's `forge-verify` dependency; remove unsupported persistent-memory promises; retain durable researcher/verifier edit denial and writer edit success evidence; prove named dispatch patterns. |
@@ -175,4 +176,5 @@ A summary in this tracker links to the receipt; it does not replace it.
 | Date | Cursor | Result | Repository heads | Evidence / next cursor |
 | --- | --- | --- | --- | --- |
 | 2026-08-24 | `TRACK-001` | Tracker created after complete seven-file plan audit; newly added source/evidence files are present locally but still require Git tracking and a pushed commit for fresh-clone durability. | feature-forge `4cbd7e7`; rauf `02f8e67` | Continue `TRACK-001`, then `RAUF-202R`. |
-| 2026-08-25 | `TRACK-001` | Recovered the missing runtime contract through minimal disposable Copilot CLI 1.0.80 probes against rauf `02f8e67`; recorded exact prompts, argv, hashes, schema-v1 status JSON, tool denial, cleanup, and clean worktree/registry state. Reconciled stale cursor and legacy-versus-1.0 claims; the planning milestone was committed/pushed and read from a fresh clone. | feature-forge durability commit on `docs/copilot-g2-contract`; rauf `02f8e67` | `TRACK-001` done; continue `RAUF-202R`. |
+| 2026-08-25 | `TRACK-001` | Recovered the missing runtime contract through minimal disposable Copilot CLI 1.0.80 probes against rauf `02f8e67`; recorded exact prompts, argv, hashes, schema-v1 status JSON, tool denial, cleanup, and clean worktree/registry state. Reconciled stale cursor and legacy-versus-1.0 claims; the planning milestone was committed/pushed and read from a fresh clone. | feature-forge `bed40ca`; rauf `02f8e67` | `TRACK-001` done; continue `RAUF-202R`. |
+| 2026-08-25 | `RAUF-202R` | Added fail-loud required-skill composition for both Copilot operator agents, replaced portable `Task tool` wording, regenerated Codex/Copilot/Pi outputs, retained D7 plugin-only topology, and runtime-proved composed reviewer/driver rules on Copilot CLI 1.0.80. Full clean-home gate passed 2,188 package tests plus 91 script tests; exact receipt and cleanup are durable. | feature-forge tracker milestone on `docs/copilot-g2-contract`; rauf `4668553` | `RAUF-202R` done; continue `RAUF-203`. |
