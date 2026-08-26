@@ -6,7 +6,8 @@
 - Repository: `/home/gary/workspace/feature-forge`.
 - Branch: `docs/copilot-g2-contract`.
 - Base commit: `6a9c8a1b8d6cf0ab51396035c042c93293047915` (`0 0` against upstream before and after implementation).
-- Evidence state: uncommitted working tree; tracked patch identity `git diff --binary | sha256sum` = `3df1d3ec96f3955f0ce6c96237707d785df2aceccf529d8b3c4f692851243d55` (the untracked receipt itself is necessarily excluded).
+- Implementation commit: `c65b691dbd21cae9ef40309775b56fd739bd9b9f` (pushed to `origin/docs/copilot-g2-contract`).
+- Pre-commit tracked patch identity: `git diff --binary | sha256sum` = `3df1d3ec96f3955f0ce6c96237707d785df2aceccf529d8b3c4f692851243d55` (the then-untracked receipt itself was necessarily excluded).
 - No rauf repository files were read or changed during implementation.
 
 ## Environment
@@ -81,10 +82,18 @@ Actual result: PASS.
 - No adapter canon or generator input changed; `adapters/` remained byte-synchronized and was not regenerated.
 - No external Copilot plugins, marketplaces, personal/project install fixtures, registry entries, or package copies were created; all installer fixtures were hermetic temporary directories removed by the test harness.
 - No credentials, tokens, prompts containing secrets, or authenticated host state were used or recorded.
-- No files were staged, committed, pushed, merged, tagged, published, or released.
+- The authorized implementation/evidence commit was pushed; no merge, tag, publish, release, or `RAUF_PIN` advance occurred.
 
 ## Deferred work
 
 - FORGE-105: move/prove the complete personal runtime root, prove project/personal runtime discovery, update current documentation URL as required, and only then mark confidence `verified-current`.
 - FORGE-106: ownership-safe legacy managed-block and old personal-layout migration, including apply/verify/remove/write-last behavior.
-- Fresh-clone verification and durable closure require an authorized commit/push; until then FORGE-104 remains the active cursor.
+
+## Fresh-clone durability
+
+A disposable single-branch clone was created from GitHub after the authorized push. It resolved exact
+HEAD `c65b691dbd21cae9ef40309775b56fd739bd9b9f`, contained this evidence and the ACTIVE FORGE-104
+ledger row, ran `npm ci` plus the complete installer `npm test` suite (201 passed), passed
+`git diff --check`, and remained clean. The clone was removed by a shell trap.
+
+FORGE-104 is therefore durable and may close; the next ledger cursor is FORGE-105.

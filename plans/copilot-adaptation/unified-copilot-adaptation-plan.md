@@ -535,7 +535,7 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   `evidence/forge-103-runtime-root-resolution-2026-08-26.md`. FORGE-103 is complete; the cursor
   advances exactly one task to FORGE-104.
 
-- [ ] **FORGE-104 — Extend installer placement primitives**
+- [x] **FORGE-104 — Extend installer placement primitives**
   Repo: feature-forge. Depends on: G1.
   Support recursive native skill mirrors and agent mirrors with containment checks, dry-run parity,
   copy/symlink semantics, complete manifest ownership, and exact uninstall. Do not infer Copilot from
@@ -546,8 +546,9 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   orphan pruning, and copy/symlink/Windows lifecycle coverage while retaining the legacy managed
   block for FORGE-106. Independent-review findings were fixed. The clean-shell full gate passes
   2,496 Python tests (2 skipped), 201 installer tests, and 11 Pi-source tests. Evidence:
-  `evidence/forge-104-installer-placement-primitives-2026-08-26.md`. The task remains active until an
-  authorized commit/push and fresh-clone verification make closure durable.
+  `evidence/forge-104-installer-placement-primitives-2026-08-26.md`. Authorized commit `c65b691` is
+  pushed; a clean disposable clone at the exact commit passed all 201 installer tests and
+  `git diff --check`. FORGE-104 is complete and the cursor advances exactly one task to FORGE-105.
 
 - [ ] **FORGE-105 — Implement fresh project and personal installs**
   Repo: feature-forge. Depends on: FORGE-102..104.

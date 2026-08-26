@@ -39,14 +39,16 @@ notation with explicit plugin/direct mappings, and Copilot CLI 1.0.80 installed 
 and discovered all 13 skills. The five-field manifest is deliberately retained as the tested legacy
 Copilot format; Agent Plugins 1.0 is not claimed. Pushed commit `fdc26ff` and a fresh-clone check
 make FORGE-102 durable: the generated verifier composes canonical `forge-verify`, translates the
-unsupported memory promise, and passed CLI 1.0.80 exact-name dispatch boundaries. FORGE-103 is now
-implemented in the dirty worktree: explicit override, package self-location, managed/personal and
-nested project roots, project-over-global bootstrap precedence, degraded detection, adversarial
-paths, and no generic `PLUGIN_ROOT` dependency. Copilot CLI 1.0.80 passed managed-plugin,
-personal-direct, nested-project, and explicit-override probes; cleanup and the full clean-shell gate
-pass (2,496 Python, 182 installer, 11 Pi-source tests). Authorized commit `7cfdb31` is pushed and a
-fresh clone reproduces all 815 focused checks and exact hashes. FORGE-103 is complete; the cursor is
-`FORGE-104` for installer placement primitives. No adaptation release or rauf pin advance has occurred.
+unsupported memory promise, and passed CLI 1.0.80 exact-name dispatch boundaries. Pushed commit
+`7cfdb31` closes FORGE-103 with explicit override, package self-location, managed/personal and nested
+project roots, project-over-global bootstrap precedence, degraded detection, adversarial paths, and
+no generic `PLUGIN_ROOT` dependency; CLI 1.0.80 and fresh-clone proof passed. Pushed commit `c65b691`
+closes FORGE-104: the installer now supports recursive native Copilot skill mirrors, flat agent
+mirrors, placement-aware dry-run reports, proven-only manifest ownership, lexical and symlink-ancestor
+containment, copy/symlink/Windows lifecycle semantics, exact uninstall, and conservative detection.
+The clean-shell full gate passes (2,496 Python, 201 installer, 11 Pi-source tests), independent review
+is clear, and a fresh clone repeats all installer tests. The cursor is `FORGE-105` for fresh project
+and personal install/runtime proof. No adaptation release or rauf pin advance has occurred.
 Task definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.
