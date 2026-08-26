@@ -18,7 +18,7 @@ run pipeline stages; when the user is ready to act, point them at the right skil
 2. **Ground yourself in the canonical source before answering** — read the mapped
    reference file(s) below rather than answering from memory. These are the source
    of truth and stay current as the pipeline evolves.
-3. Answer concisely, then end with the concrete next command (`/feature-forge:forge-*`)
+3. Answer concisely, then end with the concrete next command (`invoke-skill: forge-*`)
    or doc pointer the user should go to.
 
 | Topic | Read first |
@@ -86,13 +86,13 @@ carry context across stages instead of reading upstream artifacts.
 | any | `forge-verify` → `forge-fix` | findings report → applied fixes |
 | any | `forge` | status dashboard / navigator |
 
-Drive the whole thing with the **navigator**: `/feature-forge:forge <feature>` shows the
+Drive the whole thing with the **navigator**: `invoke-skill: forge <feature>` shows the
 current stage and offers the next; with `autoInvokeNextStage` it launches it directly.
 
 ## Setup & configuration
 
-**First-time setup:** `/feature-forge:forge-init` (existing repo) creates `forge.config.json`
-with defaults. `/feature-forge:forge-bootstrap` scaffolds a *greenfield* (empty) repo to a
+**First-time setup:** `invoke-skill: forge-init` (existing repo) creates `forge.config.json`
+with defaults. `invoke-skill: forge-bootstrap` scaffolds a *greenfield* (empty) repo to a
 green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge install`.
 
 **Key `forge.config.json` knobs** (authoritative list: `references/forge-config-schema.json`):
@@ -166,7 +166,7 @@ a minimum runner version (the version gate is described in `references/ralph-loo
 - Re-running an upstream stage marks downstream stages **stale** — re-run them rather than
   reaching for `--force`, which skips prerequisite checks and should be rare.
 - Specs are pre-implementation artifacts, not living docs — don't cite them from generated code.
-- Use the navigator (`/feature-forge:forge <feature>`) to orient; use `forge-verify` to inspect.
+- Use the navigator (`invoke-skill: forge <feature>`) to orient; use `forge-verify` to inspect.
 
 ## Troubleshooting starters
 
@@ -175,7 +175,7 @@ a minimum runner version (the version gate is described in `references/ralph-loo
 - **Loop stopped mid-run:** check the signal — `BLOCKED`/`NEEDS_HUMAN` items are set aside, not
   failures; the loop keeps going.
 - **Downstream flagged stale:** an upstream stage was revised; re-run the downstream stage.
-- **Where am I?** `/feature-forge:forge <feature>` renders the full pipeline status.
+- **Where am I?** `invoke-skill: forge <feature>` renders the full pipeline status.
 
 For anything deeper, ground yourself in `references/process-overview.md` and
 `references/shared-conventions.md`, and point the *user* at the hosted docs site —
@@ -183,10 +183,14 @@ For anything deeper, ground yourself in `references/process-overview.md` and
 
 ---
 
-## Host execution notes
+## Host execution notes (GitHub Copilot)
 
-This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+This bundle uses distribution-neutral invocation notation because Copilot assigns different slash-command names to plugin and direct installations:
 
-- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
-- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
+- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and references is an instruction, not a literal command to paste. Preserve the named skill and its arguments.
+- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.
+- **Direct project/personal install:** invoke `/<name> [arguments]`.
+- **No universal slash name:** use the form matching the skill's discovery source. If the source is uncertain, use Copilot's skill-invocation mechanism or ask the user instead of guessing.
+- **User input:** Copilot has no structured question tool in this bundle — ask the question directly and wait for the answer before proceeding.
+- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. If it is unavailable, run that step inline only when the skill permits inline execution.
+- **Background / monitoring:** run long-lived commands in the foreground (or Copilot's background facility) and report progress as it arrives.

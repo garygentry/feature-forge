@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-0-epic/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-0-epic
-description: 'Create or edit a forge epic: decompose a large change into discrete member features with dependencies, charters, and structured contracts, producing epic-manifest.json + EPIC.md. Re-run on an existing epic to enter edit mode (add/remove/reorder features, change dependencies). Use when the user runs /feature-forge:forge-0-epic or explicitly asks to start/modify an epic. Do NOT trigger for single-feature PRD work (that is forge-1-prd) or for general project planning outside forge.'
+description: 'Create or edit a forge epic: decompose a large change into discrete member features with dependencies, charters, and structured contracts, producing epic-manifest.json + EPIC.md. Re-run on an existing epic to enter edit mode (add/remove/reorder features, change dependencies). Use when the user runs invoke-skill: forge-0-epic or explicitly asks to start/modify an epic. Do NOT trigger for single-feature PRD work (that is forge-1-prd) or for general project planning outside forge.'
 argument-hint: <epic-name>
 ---
 
@@ -256,7 +256,7 @@ Determine `{verify-capability}` per the **Host and capability determination** se
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-session.py" stage-exit --feature "{epic}" --stage forge-0-epic --next-feature "{first-actionable-feature}" --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
+python3 "$R/scripts/forge-session.py" stage-exit --feature "{epic}" --stage forge-0-epic --next-feature "{first-actionable-feature}" --specs-dir "{specsDir}" --host copilot --verify-capability "{verify-capability}"
 ```
 
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
@@ -304,10 +304,14 @@ section).
 
 ---
 
-## Host execution notes
+## Host execution notes (GitHub Copilot)
 
-This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+This bundle uses distribution-neutral invocation notation because Copilot assigns different slash-command names to plugin and direct installations:
 
-- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
-- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
+- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and references is an instruction, not a literal command to paste. Preserve the named skill and its arguments.
+- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.
+- **Direct project/personal install:** invoke `/<name> [arguments]`.
+- **No universal slash name:** use the form matching the skill's discovery source. If the source is uncertain, use Copilot's skill-invocation mechanism or ask the user instead of guessing.
+- **User input:** Copilot has no structured question tool in this bundle — ask the question directly and wait for the answer before proceeding.
+- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. If it is unavailable, run that step inline only when the skill permits inline execution.
+- **Background / monitoring:** run long-lived commands in the foreground (or Copilot's background facility) and report progress as it arrives.

@@ -15,7 +15,7 @@ Extend feature-forge's generated Copilot adapter from its current instruction-on
 - Native Agent Skills, including discovery, automatic loading, and slash invocation.
 - Native custom agents with least-privilege tools and subagent delegation.
 - Correct project and personal installation paths.
-- An Agent Plugins 1.0 package for managed distribution.
+- A tested legacy Copilot-format plugin for managed distribution; Agent Plugins 1.0 is not claimed.
 - Safe migration from the existing staged bundle and managed instruction block.
 - Runtime verification in addition to byte-level generator and installer tests.
 
@@ -86,10 +86,10 @@ Project and personal installations use Copilot's documented discovery paths. A c
 
 ### G4. Managed distribution
 
-The generated Copilot adapter must either become a runtime-proven Agent Plugins 1.0 package that can
-be installed and managed through current Copilot and VS Code plugin flows, or the initiative must
-explicitly narrow this goal to the tested legacy Copilot plugin format. The current seven-field
-manifest is accepted legacy format, not proven Agent Plugins 1.0.
+The generated Copilot adapter is a runtime-proven legacy Copilot-format package that can be installed
+and managed through current Copilot and VS Code plugin flows. FORGE-101 deliberately selected this
+narrower claim instead of migrating formats: the current five-field manifest declares root
+`skills`/`agents` paths and has no Agent Plugins 1.0 `$schema`, so it is not Agent Plugins 1.0.
 
 ### G5. Safe migration
 
@@ -112,8 +112,8 @@ Tests prove generated structure and installer behavior, while a documented smoke
 
 ### 5.1 Generated plugin bundle
 
-Target architecture, contingent on `FORGE-101` migrating and runtime-proving the Agent Plugins 1.0
-schema/layout; until then the emitted root manifest remains the tested legacy Copilot format:
+Selected legacy Copilot-format architecture (the Agent Plugins 1.0 schema/layout is explicitly out
+of the current support claim):
 
 ```text
 adapters/copilot/
@@ -179,7 +179,10 @@ The implementation must not emit instructions that claim one form works in the o
 2. Translate command prose to a distribution-neutral form and document both invocation forms in a short Copilot overlay.
 3. Make the npm installer deploy the plugin bundle through Copilot's plugin mechanism so only the prefixed form exists.
 
-Preferred initial direction: use the Agent Plugins bundle as the primary distribution and retain direct-install output as an explicitly documented compatibility mode. Keep command prose neutral where possible.
+Selected direction: use the tested legacy Copilot plugin as the primary distribution and retain
+direct-install output as an explicitly documented compatibility mode. Generated command prose uses
+`invoke-skill: <name> [arguments]` notation; the Copilot overlay maps it to plugin
+`/feature-forge:<name>` and direct `/<name>` forms without claiming either is universal.
 
 ### 5.4 Runtime root resolution
 
@@ -254,7 +257,7 @@ Exit criteria:
 
 ### Phase 1: Native skill emission
 
-Status: In progress; native emission complete, invocation/body translation residuals open
+Status: Complete locally; pending authorized commit/push durability in the execution tracker
 
 Primary files:
 
@@ -268,12 +271,12 @@ Tasks:
 - [x] Change Copilot skill output to `skills/<name>/SKILL.md`.
 - [x] Preserve `argument-hint` instead of recording it as dropped.
 - [x] Add supported Copilot keys to deterministic frontmatter ordering.
-- [ ] Add a Copilot-specific host overlay describing the real question and subagent mechanisms.
-- [ ] Translate Claude marketplace commands into the selected Copilot invocation contract.
-- [ ] Ensure Copilot reference Markdown receives the same command translation as skill bodies.
+- [x] Add a Copilot-specific host overlay describing distribution-aware invocation plus the real question and subagent mechanisms.
+- [x] Translate Claude marketplace commands into distribution-neutral `invoke-skill:` notation.
+- [x] Ensure Copilot reference Markdown receives the same command translation as skill bodies.
 - [x] Emit a Copilot-accepted legacy-format `plugin.json` with synchronized product version and metadata.
-- [ ] Either migrate to and runtime-prove the actual Agent Plugins 1.0 schema/layout, or narrow the
-      supported distribution claim and all user-facing terminology to the tested legacy format.
+- [x] Narrow the supported distribution claim and user-facing terminology to the runtime-proven
+      legacy Copilot format; do not claim Agent Plugins 1.0.
 - [x] Update the generation report so only genuinely unsupported fields remain.
 
 Exit criteria:
@@ -595,7 +598,7 @@ The initiative is complete when all of the following are true:
 - [ ] Project and personal installs use documented Copilot discovery roots.
 - [ ] The complete runtime bundle resolves from every supported Copilot deployment mode.
 - [ ] Existing Copilot installs migrate without losing user-authored instructions or customizations.
-- [ ] The generated adapter is a valid Agent Plugins 1.0 package.
+- [x] The generated adapter is a valid tested legacy Copilot-format package; Agent Plugins 1.0 is explicitly not claimed.
 - [ ] Plugin installation works in VS Code and Copilot CLI and is visible to Agent Host sessions.
 - [ ] Generator, installer, migration, resolver, and runtime smoke tests pass.
 - [ ] Documentation accurately describes invocation, installation, verification, and limitations.

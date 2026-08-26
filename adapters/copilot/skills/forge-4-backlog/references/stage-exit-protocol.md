@@ -92,13 +92,13 @@ resolves before running the command, exactly as elsewhere.
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-session.py" stage-exit {stage-exit-args} --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
+python3 "$R/scripts/forge-session.py" stage-exit {stage-exit-args} --specs-dir "{specsDir}" --host copilot --verify-capability "{verify-capability}"
 ```
 
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
 <!-- END: scripted-stage-exit-stamp -->
 
-The stamp is shown with `--host generic`; the adapter build substitutes `pi`/`generic` per
+The stamp is shown with `--host copilot`; the adapter build substitutes `pi`/`generic` per
 target, and §"Host and capability determination" below governs the value. The literal is
 deliberate — `scripts/build-adapters.py` keys its host translation on the exact canon
 value of that flag, and the stamp sites are compared byte-for-byte, so it is the one token
@@ -192,7 +192,7 @@ The dispatching caller states ownership in its invocation prompt using a literal
   terminal block.
 
 **Absent the token, the skill treats itself as `direct`.** A user-typed
-`/feature-forge:forge-verify` or `/feature-forge:forge-fix` is the only path that carries
+`invoke-skill: forge-verify` or `invoke-skill: forge-fix` is the only path that carries
 no dispatcher, so "no token" and "no dispatcher" are the same condition. The skill passes
 the resolved value straight through as `--owner direct|nested`.
 
@@ -391,7 +391,7 @@ features. The script has already folded the routing into the NEXT-STEPS block, s
 directive is informational — you do **not** re-derive the wording:
 
 - `required: true` (at least one `blocksCurrent: true` request) — the reconcile command
-  (`/feature-forge:forge-0-epic {epic}`) is promoted ahead of the ordinary production
+  (`invoke-skill: forge-0-epic {epic}`) is promoted ahead of the ordinary production
   successor, and that successor is demoted to a follow-up line ("After reconciling,
   continue the pipeline with …"). This is *reconcile-before-specs*: proceeding would author
   artifacts against a decomposition that is about to change. It is strongest when exiting

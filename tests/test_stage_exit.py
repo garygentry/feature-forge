@@ -447,6 +447,21 @@ def test_generic_next_steps_has_no_clear_token(tmp_path: Path) -> None:
     assert block.splitlines()[-1] == SENTINEL
 
 
+def test_copilot_next_steps_use_distribution_neutral_invocation(tmp_path: Path) -> None:
+    """Copilot output never guesses plugin-prefixed versus direct slash names."""
+    state = _state_with_verify("forge-2-tech", "forge-verify-tech", _FRESH_TECH_VERIFY)
+    root = _project(tmp_path, config={}, state=state)
+    payload = _exit(
+        root, "--feature", "widget", "--stage", "forge-2-tech", "--host", "copilot"
+    )
+    block = payload["nextSteps"]
+    assert "/clear" not in block
+    assert "```\ninvoke-skill: forge-3-specs widget\n```" in block
+    assert "/feature-forge:" not in block
+    assert payload["directives"]["nextCommand"] == "invoke-skill: forge-3-specs widget"
+    assert payload["directives"]["verifyCommand"] == "invoke-skill: forge-verify widget"
+
+
 def test_pi_next_steps_uses_new_command_and_skill_prefix(tmp_path: Path) -> None:
     """`--host pi` names Pi's real commands: `/new` for a fresh session, `/skill:` slash
     commands — never Claude's `/clear` or the `/feature-forge:` prefix (in the rendered

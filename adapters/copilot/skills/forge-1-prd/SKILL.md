@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-1-prd/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-1-prd
-description: Create a requirements PRD for a feature through structured interview. Use when user runs /feature-forge:forge-1-prd or explicitly asks to start the forge pipeline for a new feature. Do NOT trigger for general requirements discussions, project scoping outside forge, or PRD questions unrelated to the forge pipeline.
+description: 'Create a requirements PRD for a feature through structured interview. Use when user runs invoke-skill: forge-1-prd or explicitly asks to start the forge pipeline for a new feature. Do NOT trigger for general requirements discussions, project scoping outside forge, or PRD questions unrelated to the forge pipeline.'
 argument-hint: <feature-name> [--force-standalone]
 ---
 
@@ -33,7 +33,7 @@ R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-
 python3 "$R/scripts/forge-session.py" discover-feature "{feature}" --specs-dir "{specsDir}" --json
    ```
 2. **If any candidate has `isEpicMember: true` → HARD STOP.** This is not the soft switch/fetch/treat-as-new menu from the Feature Directory Resolution block — do **not** create any directory and do **not** fall through to the interview. Emit verbatim (filling `{epic}` and `{stateBranch}` from that candidate's `epic` and `stateBranch`):
-   > `{feature}` is a member of epic `{epic}` (recorded on branch `{stateBranch}`). You appear to be on a branch that does not contain that epic. Switch to `{stateBranch}` and run `/feature-forge:forge-1-prd {feature}` there, or pass `--force-standalone` to intentionally fork a detached standalone feature.
+   > `{feature}` is a member of epic `{epic}` (recorded on branch `{stateBranch}`). You appear to be on a branch that does not contain that epic. Switch to `{stateBranch}` and run `invoke-skill: forge-1-prd {feature}` there, or pass `--force-standalone` to intentionally fork a detached standalone feature.
 3. **If candidates exist but none are epic members** → keep today's soft behavior: this is the ordinary cross-branch-discovery case already handled by the Feature Directory Resolution block's **Candidates found** menu (switch / fetch+switch / treat-as-new / stop). Defer to it.
 4. **If nothing was found** (no candidates) → proceed to mint the flat standalone feature as today.
 5. **If `--force-standalone` was passed** → skip this guard entirely, log a one-line warning ("Forking `{feature}` as a detached standalone despite epic membership on `{stateBranch}`"), and proceed to create the flat feature. `--force-standalone` is distinct from `--force` and does **not** imply it (see the Force Mode note below).
@@ -108,7 +108,7 @@ python3 "$R/scripts/forge-session.py" state-note \
   --specs-dir "{specsDir}"
 ```
 
-**Epic-level concern (backflow):** The parking lot above is for concerns about a *later stage of THIS feature*. If instead the interview reveals the **epic decomposition itself** is wrong — a **sibling feature must be added**, a **frozen boundary between features must move**, a feature must **split**, or a **dependency edge is wrong** — that is an *epic-level* concern and does **not** go in `notes`. It only applies when this feature is an epic member (its `.pipeline-state.json` has an `epic` back-pointer); for a standalone feature there is no epic to reconcile, so treat the concern as same-feature or out of scope. To record one, run `state-ecr` (fenced below) with `--kind` (`add-feature`|`redep`|`move-boundary`|`split`), `--target`, `--rationale`, `--raised-by forge-1-prd` and `--blocks-current` — it appends the entry to the member state's `epicChangeRequests[]` array, filling in `raisedAt` (ISO-8601 UTC) and `status: "open"` for you. Set `blocksCurrent: true` when the change alters a contract (`exposes`/`consumes`) or dependency edge this feature relies on for its *next* stage (proceeding would build specs on a soon-to-change decomposition); `false` for a peer/downstream change this feature does not consume. When the change touches a contract/dep edge and the classification is genuinely ambiguous, confirm `blocksCurrent` with a single the host's question mechanism, defaulting to `true` (a false negative silently diverges two members' contracts). **Do not** edit `epic-manifest.json` here — recording is not applying; only `/feature-forge:forge-0-epic` edit mode mutates the epic. Then acknowledge without blocking: "That's an epic-level change — I've recorded it so `forge-0-epic` can reconcile it. [Blocking: We'll want to reconcile the epic before writing specs. | Non-blocking: We can finish this feature first and reconcile when convenient.]" and continue the interview.
+**Epic-level concern (backflow):** The parking lot above is for concerns about a *later stage of THIS feature*. If instead the interview reveals the **epic decomposition itself** is wrong — a **sibling feature must be added**, a **frozen boundary between features must move**, a feature must **split**, or a **dependency edge is wrong** — that is an *epic-level* concern and does **not** go in `notes`. It only applies when this feature is an epic member (its `.pipeline-state.json` has an `epic` back-pointer); for a standalone feature there is no epic to reconcile, so treat the concern as same-feature or out of scope. To record one, run `state-ecr` (fenced below) with `--kind` (`add-feature`|`redep`|`move-boundary`|`split`), `--target`, `--rationale`, `--raised-by forge-1-prd` and `--blocks-current` — it appends the entry to the member state's `epicChangeRequests[]` array, filling in `raisedAt` (ISO-8601 UTC) and `status: "open"` for you. Set `blocksCurrent: true` when the change alters a contract (`exposes`/`consumes`) or dependency edge this feature relies on for its *next* stage (proceeding would build specs on a soon-to-change decomposition); `false` for a peer/downstream change this feature does not consume. When the change touches a contract/dep edge and the classification is genuinely ambiguous, confirm `blocksCurrent` with a single the host's question mechanism, defaulting to `true` (a false negative silently diverges two members' contracts). **Do not** edit `epic-manifest.json` here — recording is not applying; only `invoke-skill: forge-0-epic` edit mode mutates the epic. Then acknowledge without blocking: "That's an epic-level change — I've recorded it so `forge-0-epic` can reconcile it. [Blocking: We'll want to reconcile the epic before writing specs. | Non-blocking: We can finish this feature first and reconcile when convenient.]" and continue the interview.
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -171,7 +171,7 @@ python3 "$R/scripts/forge-session.py" state-note \
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-1-prd --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
+python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-1-prd --specs-dir "{specsDir}" --host copilot --verify-capability "{verify-capability}"
 ```
 
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
@@ -185,10 +185,14 @@ Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: sur
 
 ---
 
-## Host execution notes
+## Host execution notes (GitHub Copilot)
 
-This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+This bundle uses distribution-neutral invocation notation because Copilot assigns different slash-command names to plugin and direct installations:
 
-- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
-- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
+- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and references is an instruction, not a literal command to paste. Preserve the named skill and its arguments.
+- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.
+- **Direct project/personal install:** invoke `/<name> [arguments]`.
+- **No universal slash name:** use the form matching the skill's discovery source. If the source is uncertain, use Copilot's skill-invocation mechanism or ask the user instead of guessing.
+- **User input:** Copilot has no structured question tool in this bundle — ask the question directly and wait for the answer before proceeding.
+- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. If it is unavailable, run that step inline only when the skill permits inline execution.
+- **Background / monitoring:** run long-lived commands in the foreground (or Copilot's background facility) and report progress as it arrives.

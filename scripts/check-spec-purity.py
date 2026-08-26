@@ -211,7 +211,7 @@ CITATION_GRANDFATHERED: tuple[str, ...] = (
     "references/stacks/rust.md",  # 2
     "references/stacks/typescript.md",  # 2
     "references/vendor-construct-inventory.md",  # 8
-    "scripts/build-adapters.py",  # 83
+    "scripts/build-adapters.py",  # 82
     "scripts/check-spec-purity.py",  # 25
     "scripts/check-version-sync.py",  # 5
     "scripts/forge-bootstrap.py",  # 49 — pre-existing at the feature's base

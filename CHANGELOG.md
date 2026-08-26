@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Native GitHub Copilot plugin foundation.** The generated Copilot adapter now ships a versioned `plugin.json`, native `skills/<name>/SKILL.md` files with preserved argument hints, and `agents/*.agent.md` custom agents. Canonical tools map fail-loud to Copilot aliases, worker agents are subagent-only, and runtime probes against Copilot CLI 1.0.78 verify all 13 skills plus all three least-privilege agents. The Copilot manifest is included in the product version-sync gate.
 
+### Changed
+
+- **Copilot invocation prose is distribution-aware.** Generated Copilot descriptions, skill bodies, references, and stage-exit output use explicit `invoke-skill: <name> [arguments]` notation rather than assuming one slash name. Each skill maps that notation to plugin `/feature-forge:<name>` and direct `/<name>` forms. The five-field manifest is deliberately classified and runtime-proven as the legacy Copilot format; Agent Plugins 1.0 is not claimed.
+
 ## [0.18.0] — 2026-08-15
 
 ### Changed

@@ -485,12 +485,21 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
 - [ ] **FORGE-101 — Emit native Copilot skills and plugin manifest**
   Repo: feature-forge. Depends on: G1.
   Emit `skills/<name>/SKILL.md`, preserve `argument-hint`, translate host terms and invocation prose,
-  and generate a version-synchronized Agent Plugin manifest. Keep spec-pure canon unchanged unless a
+  and generate a version-synchronized Copilot plugin manifest. Keep spec-pure canon unchanged unless a
   host-neutral correction benefits every adapter.
-  Progress: native filenames, argument hints, a Copilot-accepted legacy-format root manifest,
-  version-sync, fixtures, and CLI cached-install discovery are implemented. Distribution-specific
-  invocation prose remains open. The current manifest has no Agent Plugins 1.0 `$schema`; either
-  migrate and runtime-prove the 1.0 schema/layout or narrow all claims to the tested legacy format.
+  Progress (2026-08-25, local pending authorized commit/push): native filenames, argument hints,
+  version-sync, fixtures, and CLI cached-install discovery are implemented. Copilot bodies,
+  descriptions, references, and runtime stage exits now use distribution-neutral
+  `invoke-skill: <name> [arguments]` notation; the overlay maps it to plugin
+  `/feature-forge:<name>` and direct `/<name>` forms. The five-field manifest remains deliberately
+  classified as the tested legacy Copilot format. Official docs/schema confirm that Agent Plugins
+  1.0 would require the canonical `$schema`, implicit `skills/`, and Copilot agents under
+  `com.github.copilot/agents/`; this initiative does not claim that format. Copilot CLI 1.0.80
+  installed the generated legacy bundle, discovered 13 skills, loaded `forge-guide` through its
+  plugin-prefixed name, and returned the expected distribution contract. Exact evidence:
+  `evidence/forge-101-native-skills-invocation-2026-08-25.md`. The clean-shell full gate passed
+  2,481 Python tests, 182 installer tests, and 11 Pi adapter-source tests. Task closure remains
+  pending authorized commit/push durability.
 
 - [ ] **FORGE-102 — Emit native Copilot custom agents**
   Repo: feature-forge. Depends on: FORGE-101.

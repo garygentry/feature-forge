@@ -295,6 +295,48 @@ def test_pi_frontmatter_descriptions_use_skill_command_wording(fixture_copy):
     assert "/feature-forge:" not in pi_agent.split("---", 2)[1]
 
 
+def test_copilot_invocation_prose_is_distribution_aware(fixture_copy):
+    """Copilot emits neutral notation plus explicit plugin/direct invocation forms."""
+    root = fixture_copy("minimal-canon")
+    skill_path = root / "skills" / "with-refs" / "SKILL.md"
+    skill_path.write_text(
+        skill_path.read_text()
+        .replace(
+            'description: "Build the thing: do it precisely."',
+            'description: "Use when user runs /feature-forge:with-refs."',
+        )
+        .replace(
+            "# With Refs\n",
+            "# With Refs\n\nNext run `/feature-forge:forge-2-tech demo` carefully.\n",
+        ),
+        encoding="utf-8",
+    )
+    shared = root / "references" / "shared-conventions.md"
+    shared.write_text(
+        shared.read_text() + "\nNext: /feature-forge:forge-verify demo\n",
+        encoding="utf-8",
+    )
+
+    assert run_build(root).returncode == 0
+
+    native = (
+        root / "adapters" / "copilot" / "skills" / "with-refs" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    body, overlay = native.split("## Host execution notes (GitHub Copilot)", 1)
+    assert "description: 'Use when user runs invoke-skill: with-refs.'" in body
+    assert "`invoke-skill: forge-2-tech demo`" in body
+    assert "/feature-forge:" not in body
+    assert "`/feature-forge:<name> [arguments]`" in overlay
+    assert "`/<name> [arguments]`" in overlay
+    assert "No universal slash name" in overlay
+
+    copied_ref = (
+        root / "adapters" / "copilot" / "references" / "shared-conventions.md"
+    ).read_text(encoding="utf-8")
+    assert "invoke-skill: forge-verify demo" in copied_ref
+    assert "/feature-forge:" not in copied_ref
+
+
 def test_pi_support_files_use_skill_command_wording(fixture_copy):
     """Pi copied references/helpers can print next-step commands, so translate those too."""
     root = fixture_copy("minimal-canon")
@@ -765,12 +807,13 @@ def test_copilot_emits_native_agents_with_mapped_tools(fixture_copy):
 
 
 def test_copilot_emits_plugin_manifest(fixture_copy):
-    """Copilot bundle declares its native skill and agent component roots."""
+    """Legacy Copilot manifest declares roots and never masquerades as Agent Plugins 1.0."""
     root = fixture_copy("minimal-canon")
     assert run_build(root).returncode == 0
     manifest = json.loads(
         (root / "adapters" / "copilot" / "plugin.json").read_text("utf-8")
     )
+    assert "$schema" not in manifest
     assert manifest == {
         "name": "feature-forge",
         "description": (

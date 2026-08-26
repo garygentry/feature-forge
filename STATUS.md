@@ -33,8 +33,14 @@ ownership is durable in pushed rauf commit `f02f0e7`: standalone Copilot loads t
 host-neutral AGENTS block, isolated iterations receive only the explicit RAUF prompt, and user
 content survives migration/update/uninstall. Pushed rauf commit `8d65441` closes `RAUF-204` with
 release-blocking Copilot drift/version/package checks plus compiled-binary and npm dry-run proof.
-Rauf Phase C is complete; the execution cursor is now feature-forge `FORGE-101`. No adaptation
-release or rauf pin advance has occurred. Task
+Rauf Phase C is complete; the execution cursor is now feature-forge `FORGE-101`. Its local
+implementation and runtime receipt are prepared: generated Copilot descriptions, bodies,
+references, and stage exits use distribution-neutral `invoke-skill:` notation with explicit
+plugin/direct mappings, and Copilot CLI 1.0.80 installed the generated bundle and discovered all 13
+skills. The five-field manifest is deliberately retained as the tested legacy Copilot format;
+Agent Plugins 1.0 is not claimed. The clean-shell full gate passed; only authorized commit/push
+and fresh-clone durability still gate task closure. No adaptation release or rauf pin advance has
+occurred. Task
 definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.

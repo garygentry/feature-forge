@@ -86,6 +86,34 @@ def _cases() -> list[tuple[Path, tuple[str, ...]]]:
     return cases
 
 
+def test_copilot_invocation_prose_is_distribution_aware() -> None:
+    """Only the overlay names concrete plugin/direct slash forms for Copilot."""
+    paths = _scan_paths("copilot")
+    agents = sorted((ADAPTERS_ROOT / "copilot" / "agents").glob("*.agent.md"))
+    assert paths and agents, "committed Copilot adapter surface is incomplete"
+
+    for path in (*paths, *agents):
+        rel = path.relative_to(ADAPTERS_ROOT / "copilot")
+        if "templates" in rel.parts:
+            # Project scaffolding is target-specific user content, not Copilot guidance.
+            continue
+        text = path.read_text(encoding="utf-8")
+        guidance = text.split("## Host execution notes (GitHub Copilot)", 1)[0]
+        assert "/feature-forge:" not in guidance, (
+            f"{rel} assumes the plugin-only slash prefix outside the distribution overlay"
+        )
+
+    skill_bodies = [
+        p for p in paths
+        if "references" not in p.relative_to(ADAPTERS_ROOT / "copilot").parts
+    ]
+    for path in skill_bodies:
+        text = path.read_text(encoding="utf-8")
+        assert "`/feature-forge:<name> [arguments]`" in text
+        assert "`/<name> [arguments]`" in text
+        assert "No universal slash name" in text
+
+
 def test_scan_surface_discovered() -> None:
     """Sanity guard: the walk finds files so the token assertion can't pass vacuously."""
     for target in (*NON_CLAUDE_TARGETS, "pi"):

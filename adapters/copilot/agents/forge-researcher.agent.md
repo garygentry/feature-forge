@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: agents/forge-researcher.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-researcher
-description: Explores the codebase to understand package structure, integration points, existing patterns, and conventions. Use during feature planning, especially when running /feature-forge:forge-2-tech. Returns a distilled integration report without polluting the main conversation's context window.
+description: 'Explores the codebase to understand package structure, integration points, existing patterns, and conventions. Use during feature planning, especially when running invoke-skill: forge-2-tech. Returns a distilled integration report without polluting the main conversation''s context window.'
 tools:
 - read
 - search

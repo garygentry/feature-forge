@@ -844,6 +844,26 @@ _HOST_NOTES_NEUTRAL = (
     "- **Background / monitoring:** run long-lived commands in the foreground (or "
     "your host's background facility) and report progress as it arrives.\n"
 )
+_HOST_NOTES_COPILOT = (
+    "## Host execution notes (GitHub Copilot)\n\n"
+    "This bundle uses distribution-neutral invocation notation because Copilot assigns "
+    "different slash-command names to plugin and direct installations:\n\n"
+    "- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and "
+    "references is an instruction, not a literal command to paste. Preserve the named "
+    "skill and its arguments.\n"
+    "- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.\n"
+    "- **Direct project/personal install:** invoke `/<name> [arguments]`.\n"
+    "- **No universal slash name:** use the form matching the skill's discovery source. "
+    "If the source is uncertain, use Copilot's skill-invocation mechanism or ask the "
+    "user instead of guessing.\n"
+    "- **User input:** Copilot has no structured question tool in this bundle — ask the "
+    "question directly and wait for the answer before proceeding.\n"
+    "- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. "
+    "If it is unavailable, run that step inline only when the skill permits inline "
+    "execution.\n"
+    "- **Background / monitoring:** run long-lived commands in the foreground (or "
+    "Copilot's background facility) and report progress as it arrives.\n"
+)
 _HOST_NOTES_PI = (
     "## Host execution notes (Pi)\n\n"
     "This Pi bundle preserves Claude's `AskUserQuestion` references because it ships "
@@ -865,7 +885,7 @@ _HOST_NOTES_PI = (
 _HOST_NOTES: dict[str, str] = {
     "codex": _HOST_NOTES_CODEX,
     "gemini": _HOST_NOTES_NEUTRAL,
-    "copilot": _HOST_NOTES_NEUTRAL,
+    "copilot": _HOST_NOTES_COPILOT,
     "cursor": _HOST_NOTES_NEUTRAL,
     "pi": _HOST_NOTES_PI,
 }
@@ -886,6 +906,20 @@ _PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({
     "/clear",
     "--host claude",
 })
+
+# Copilot plugin installs and direct project/personal installs assign different slash
+# names to the same skill. Emitted prose therefore uses an explicit non-command notation;
+# the Copilot overlay maps that notation to both runtime forms without claiming either is
+# universal. Runtime stage-exit output selects the same notation via ``--host copilot``.
+_COPILOT_BASE_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
+    pair for pair in _HOST_TERM_REPLACEMENTS if pair[0] != "--host claude"
+)
+_COPILOT_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    _COPILOT_BASE_HOST_TERM_REPLACEMENTS + (
+        ("/feature-forge:", "invoke-skill: "),
+        ("--host claude", "--host copilot"),
+    )
+)
 
 _PI_BASE_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
     pair for pair in _HOST_TERM_REPLACEMENTS
@@ -929,7 +963,12 @@ def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
     text = _SUBAGENT_TYPE_QUOTED.sub(r"the \1 custom agent", text)
     text = _SUBAGENT_TYPE_BARE.sub(r"the \1 custom agent", text)
     text = _AGENT_CALL.sub(r"subagent\1call", text)
-    replacements = _PI_HOST_TERM_REPLACEMENTS if agent_id == "pi" else _HOST_TERM_REPLACEMENTS
+    if agent_id == "pi":
+        replacements = _PI_HOST_TERM_REPLACEMENTS
+    elif agent_id == "copilot":
+        replacements = _COPILOT_HOST_TERM_REPLACEMENTS
+    else:
+        replacements = _HOST_TERM_REPLACEMENTS
     for old, new in replacements:
         text = text.replace(old, new)
     return text
@@ -1130,8 +1169,11 @@ class CodexEmitter:
 # --------------------------------------------------------------------------- #
 #
 # Current Copilot Agent Skills use ``skills/<name>/SKILL.md`` and support the
-# top-level ``argument-hint`` field. Plugin custom agents live at
-# ``agents/<name>.agent.md`` and use builtin tool aliases.
+# top-level ``argument-hint`` field. This emitter deliberately retains the tested
+# legacy Copilot plugin format: its manifest declares ``skills``/``agents`` paths and
+# has no Agent Plugins 1.0 ``$schema``. Legacy plugin custom agents live at
+# ``agents/<name>.agent.md`` and use builtin tool aliases. Do not call this output
+# Agent Plugins 1.0 without migrating the manifest and Copilot-specific namespace.
 
 _COPILOT_TOOL_MAP: dict[str, tuple[str, ...]] = {
     "Read": ("read",),
@@ -1177,7 +1219,13 @@ class CopilotEmitter:
 
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
         """Emit a native ``skills/<name>/SKILL.md`` with Copilot frontmatter."""
-        native = {"name": skill.name, "description": skill.description}
+        native = {
+            "name": skill.name,
+            # Descriptions are startup/discovery prose too. A Claude marketplace command
+            # here would teach Copilot one distribution's slash name before the body and
+            # overlay load, so apply the same distribution-neutral translation.
+            "description": translate_host_terms(skill.description, agent_id="copilot"),
+        }
         hint = hint_value(skill)
         if hint is not None:
             native["argument-hint"] = hint
@@ -1192,7 +1240,7 @@ class CopilotEmitter:
         tokens = _canon_tool_tokens(agent.claude_keys.get("tools"))
         native: dict[str, Any] = {
             "name": agent.name,
-            "description": agent.description,
+            "description": translate_host_terms(agent.description, agent_id="copilot"),
             "tools": _copilot_map_tools(tokens, agent.name),
             "agents": [],
             "user-invocable": False,
@@ -1531,7 +1579,13 @@ def run_self_containment_pass(
 
 
 def _write_copilot_plugin_manifest(bundle_root: Path, repo_root: Path) -> None:
-    """Write the Copilot CLI plugin manifest for native skills and agents."""
+    """Write the tested legacy Copilot manifest for native skills and agents.
+
+    Agent Plugins 1.0 requires its canonical ``$schema``, discovers ``skills/``
+    implicitly, and locates Copilot agents under ``com.github.copilot/agents/``.
+    This legacy manifest instead declares root component paths explicitly; Copilot
+    CLI 1.0.80 runtime evidence for FORGE-101 pins that intentional classification.
+    """
     manifest = {
         "name": "feature-forge",
         "description": (

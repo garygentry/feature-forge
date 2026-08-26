@@ -16,7 +16,7 @@ root navigator:
     python3 forge-session.py stage-exit --feature F --stage S [--owner direct|nested] \
         [--outcome O] [--cause dependency-starvation] [--verify-mode M] \
         [--served-stage S] [--verify-capability interactive|manual] [--specs-dir DIR] \
-        [--config FILE] [--epic E] [--next-feature N] [--host claude|generic|pi] [--json]
+        [--config FILE] [--epic E] [--next-feature N] [--host claude|copilot|generic|pi] [--json]
     python3 forge-session.py effective-config [--config FILE] [--schema PATH] [--json]
 
 Plus the `state-*` write verbs, which author `.pipeline-state.json` so no stage
@@ -2529,7 +2529,7 @@ _STAGE_TO_VERIFY_MODE: Final[dict[str, str]] = {
 
 #: The `--host` domain: command syntax and fresh-session wording only. A host NEVER
 #: implies a verification capability (REQ-EXIT-07).
-EXIT_HOSTS: Final[tuple[str, ...]] = ("claude", "generic", "pi")
+EXIT_HOSTS: Final[tuple[str, ...]] = ("claude", "copilot", "generic", "pi")
 
 #: Stage id -> the noun phrase gate wording uses (the old {stage} stamp slot).
 STAGE_NOUN: Final[dict[str, str]] = {
@@ -2879,14 +2879,19 @@ def _epic_member_state(specs_dir: Path, epic: str, member: str) -> tuple[dict, s
 
 
 def _host_command(command: str, host: str) -> str:
-    """Rewrite a `/feature-forge:` slash command to the host's surface.
+    """Rewrite a canonical slash command to the selected host's invocation surface.
 
-    Pi's slash-command surface is `/skill:` (matching the adapter body's
-    `/feature-forge:` -> `/skill:` translation). The scripted stage-exit output bypasses
-    that body translation, so it rewrites the commands it emits here. No-op for
-    claude/generic, which keep the canonical `/feature-forge:` form.
+    Pi has one concrete ``/skill:`` surface. Copilot does not have one universal slash
+    name: plugin skills are prefixed while direct project/personal skills are not. Its
+    generated prose and runtime output therefore use ``invoke-skill:`` notation, which
+    the Copilot host overlay maps to the discovered distribution. Claude and generic
+    retain the canonical ``/feature-forge:`` form.
     """
-    return command.replace("/feature-forge:", "/skill:") if host == "pi" else command
+    if host == "pi":
+        return command.replace("/feature-forge:", "/skill:")
+    if host == "copilot":
+        return command.replace("/feature-forge:", "invoke-skill: ")
+    return command
 
 
 def _next_steps_block(
@@ -2909,10 +2914,10 @@ def _next_steps_block(
     Returns:
         A string whose final line is exactly `NEXT_STEPS_SENTINEL`.
 
-    The Claude wording uses the literal ``/clear`` slash-command; the generic
-    wording is host-neutral (matching the adapter build's host-term table, so
-    a non-Claude bundle invoking ``--host generic`` never instructs a fake
-    slash-command).
+    The Claude wording uses the literal ``/clear`` slash-command; generic and
+    Copilot wording is host-neutral. Copilot's command renderer additionally emits
+    distribution-neutral ``invoke-skill:`` notation rather than guessing whether a
+    plugin-prefixed or direct slash name is available.
 
     ``deferred_command`` is the caller's signal that ``primary_command`` is a
     verification/recovery action standing in front of a production successor: it

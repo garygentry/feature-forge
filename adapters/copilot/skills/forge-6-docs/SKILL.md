@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-6-docs/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-6-docs
-description: Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs /feature-forge:forge-6-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline.
+description: 'Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs invoke-skill: forge-6-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline.'
 argument-hint: <feature-name>
 ---
 
@@ -62,10 +62,10 @@ Also check `.pipeline-state.json` for `stages.forge-5-loop`. If it exists and ha
 Read `stages.forge-verify-impl` from `.pipeline-state.json` and branch on its status — **five** cases, in this order (the pending case must be tested *before* the absent/`skipped` one, or owed-and-dropped debt gets reported as never-scheduled):
 
 1. **`passed`** — verification ran and resolved clean (or advisory-only, report attached); proceed with no warning.
-2. **`findings-reported`** — blocking findings are live and **unresolved**: docs generated over them can document known defects as intended behavior. Use the host's question mechanism to offer: **Apply the findings first (recommended)** (`/feature-forge:forge-fix {feature} --served-stage forge-5-loop`) · **Generate docs anyway**. Proceeding is an explicit deferral, persisted per the skip rule below — the findings documents stay on disk and the deferral is a recorded decision.
-3. **`findings-applied`** — fixes landed but nothing re-verified them: this status deliberately clears freshness, so the implementation's verification is still outstanding, not silently satisfied. Use the host's question mechanism to offer: **Re-verify first (recommended)** (`/feature-forge:forge-verify {feature} impl`) · **Generate docs anyway**. On proceed, **write nothing to the verify entry** — the skip rule below does NOT apply to this case. `findings-applied` counts as complete-for-orchestration, so replacing it with `skipped` would demote the member out of its epic rollup and re-block dependents (`state-verify` refuses exactly that write — issue #203's 5/6 → 1/6 collapse). The recorded status already says re-verification is outstanding; proceeding is the deferral, and later gates keep surfacing it.
-4. **`auto-verify-pending`** — automatic verification *was* scheduled for the implementation stage and the debt *was* durably recorded; it simply has not run. Say exactly that, naming the served stage and the retry command: *"{feature}: automatic verification is still pending for forge-5-loop; run `/feature-forge:forge-verify {feature} impl` to resolve it."* Then use the host's question mechanism to offer the same two choices as case 5. Never report this as "hasn't been verified yet" — an **absent** entry means verification was never scheduled, `auto-verify-pending` means it was scheduled and never ran, and the operator acts on those two facts differently.
-5. **Absent, or `skipped`** — use the host's question mechanism to warn with the cost of skipping: "Implementation hasn't been verified yet. Recommended: run `/feature-forge:forge-verify {feature} impl` first to audit the loop's output — docs generated over unverified code can document bugs or gaps as if they were intended behavior, and readers will trust them. Generate docs anyway?"
+2. **`findings-reported`** — blocking findings are live and **unresolved**: docs generated over them can document known defects as intended behavior. Use the host's question mechanism to offer: **Apply the findings first (recommended)** (`invoke-skill: forge-fix {feature} --served-stage forge-5-loop`) · **Generate docs anyway**. Proceeding is an explicit deferral, persisted per the skip rule below — the findings documents stay on disk and the deferral is a recorded decision.
+3. **`findings-applied`** — fixes landed but nothing re-verified them: this status deliberately clears freshness, so the implementation's verification is still outstanding, not silently satisfied. Use the host's question mechanism to offer: **Re-verify first (recommended)** (`invoke-skill: forge-verify {feature} impl`) · **Generate docs anyway**. On proceed, **write nothing to the verify entry** — the skip rule below does NOT apply to this case. `findings-applied` counts as complete-for-orchestration, so replacing it with `skipped` would demote the member out of its epic rollup and re-block dependents (`state-verify` refuses exactly that write — issue #203's 5/6 → 1/6 collapse). The recorded status already says re-verification is outstanding; proceeding is the deferral, and later gates keep surfacing it.
+4. **`auto-verify-pending`** — automatic verification *was* scheduled for the implementation stage and the debt *was* durably recorded; it simply has not run. Say exactly that, naming the served stage and the retry command: *"{feature}: automatic verification is still pending for forge-5-loop; run `invoke-skill: forge-verify {feature} impl` to resolve it."* Then use the host's question mechanism to offer the same two choices as case 5. Never report this as "hasn't been verified yet" — an **absent** entry means verification was never scheduled, `auto-verify-pending` means it was scheduled and never ran, and the operator acts on those two facts differently.
+5. **Absent, or `skipped`** — use the host's question mechanism to warn with the cost of skipping: "Implementation hasn't been verified yet. Recommended: run `invoke-skill: forge-verify {feature} impl` first to audit the loop's output — docs generated over unverified code can document bugs or gaps as if they were intended behavior, and readers will trust them. Generate docs anyway?"
 
 Cases 2–5 all pair a recommended first action with **Generate docs anyway**. On **Verify first** / **Re-verify first**, invoke `feature-forge:forge-verify {feature} impl` with the literal `owner: nested` token in the dispatching prompt — this dispatch happens inside the docs stage, so **you** remain the sole terminal owner and the branch skill returns its structured result and prints no terminal block of its own (see "Branch ownership: the `owner:` token" in `references/stage-exit-protocol.md`); on **Apply the findings first**, dispatch `feature-forge:forge-fix` the same way (same token, same ownership). This mirrors `forge-4-backlog`'s pre-stage verification check and backstops a skipped or unresolved impl-verify regardless of how the loop ended.
 
@@ -243,7 +243,7 @@ Select `{DocsOutcome}` first, from what actually landed:
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-6-docs --outcome "{DocsOutcome}" --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
+python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-6-docs --outcome "{DocsOutcome}" --specs-dir "{specsDir}" --host copilot --verify-capability "{verify-capability}"
 ```
 
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
@@ -253,7 +253,7 @@ Add `--epic "{epic}"` when this feature is an epic member — required, per the 
 The script owns the routing for both outcomes, so append nothing to its block — no hand-off paragraph, no "start a new feature" list, no second command:
 
 - **Epic member** — the script reads live epic status **at exit time**, after this stage's own state write and commit. Do **not** reuse Step 1's `render-status` snapshot and do **not** pass a member you picked yourself: that snapshot predates the docs state it would be routing from. An actionable member gets its own live command fenced; nothing actionable routes to the epic dashboard; every member complete routes to the dashboard completion view.
-- **Standalone** — `complete` fences `/feature-forge:forge {feature}` as the authoritative completion action, and leaves starting a new feature (or grouping several with `/feature-forge:forge-0-epic`) as secondary unfenced text.
+- **Standalone** — `complete` fences `invoke-skill: forge {feature}` as the authoritative completion action, and leaves starting a new feature (or grouping several with `invoke-skill: forge-0-epic`) as secondary unfenced text.
 
 ## Gotchas
 
@@ -266,10 +266,14 @@ The script owns the routing for both outcomes, so append nothing to its block �
 
 ---
 
-## Host execution notes
+## Host execution notes (GitHub Copilot)
 
-This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+This bundle uses distribution-neutral invocation notation because Copilot assigns different slash-command names to plugin and direct installations:
 
-- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
-- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
+- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and references is an instruction, not a literal command to paste. Preserve the named skill and its arguments.
+- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.
+- **Direct project/personal install:** invoke `/<name> [arguments]`.
+- **No universal slash name:** use the form matching the skill's discovery source. If the source is uncertain, use Copilot's skill-invocation mechanism or ask the user instead of guessing.
+- **User input:** Copilot has no structured question tool in this bundle — ask the question directly and wait for the answer before proceeding.
+- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. If it is unavailable, run that step inline only when the skill permits inline execution.
+- **Background / monitoring:** run long-lived commands in the foreground (or Copilot's background facility) and report progress as it arrives.

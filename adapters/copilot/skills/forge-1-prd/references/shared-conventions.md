@@ -4,7 +4,7 @@ These conventions apply to every forge pipeline skill. Skills reference this fil
 
 ## Feature Name Requirement
 
-Every pipeline skill requires a feature name as the first argument (e.g., `/feature-forge:forge-1-prd auth`).
+Every pipeline skill requires a feature name as the first argument (e.g., `invoke-skill: forge-1-prd auth`).
 
 If no feature name is provided:
 1. STOP IMMEDIATELY
@@ -68,7 +68,7 @@ A stage that changes shape changes it **in this block first**; the per-stage poi
 
 Read `forge.config.json` from the project root. If it doesn't exist, use defaults.
 
-If `forge.config.json` does not exist and no `.pipeline-state.json` files exist anywhere in `{specsDir}/`, suggest: "No forge.config.json found. Run `/feature-forge:forge-init` to create one with defaults, or I'll use built-in defaults. Want me to continue with defaults?"
+If `forge.config.json` does not exist and no `.pipeline-state.json` files exist anywhere in `{specsDir}/`, suggest: "No forge.config.json found. Run `invoke-skill: forge-init` to create one with defaults, or I'll use built-in defaults. Want me to continue with defaults?"
 
 Extract these config values (use defaults if not present):
 - `specsDir` (default: `./specs`)
@@ -79,7 +79,7 @@ Extract these config values (use defaults if not present):
 - `branchPerFeature` (default: true)
 - `branchPrefix` (default: `forge/`)
 - `loopIterationMultiplier` (default: `1.5`)
-- `autoInvokeNextStage` (default: `true` — the `/feature-forge:forge` navigator auto-invokes the next stage via the host's skill-invocation mechanism after the user confirms; `false` keeps copy-paste behavior. Navigator-only.)
+- `autoInvokeNextStage` (default: `true` — the `invoke-skill: forge` navigator auto-invokes the next stage via the host's skill-invocation mechanism after the user confirms; `false` keeps copy-paste behavior. Navigator-only.)
 - `contextWindowTokens` (default: `null` — context window used by the navigator's context-usage check; `null` infers from the session model and falls back to 200000. Set to the model's window, e.g. `1000000` on a 1M model. Navigator-only.)
 - `contextWarnThreshold` (default: `0.7` — fraction of the window past which the navigator recommends a clean session. Navigator-only.)
 - `autoVerify` (default: `false` — when `true`, `forge-verify` runs automatically after a stage completes, no prompt. **In-stage-primary:** the just-completed authoring stage runs it itself, in-session, before the exit block (honoring the verify-before-clear principle). The navigator runs it only as a **catch-up** when verify is still pending (a host that could not dispatch a clean-room subagent, or a stage run before this behavior landed). Either way it runs in a fresh clean-room subagent, so it never needs a session clear and costs only a compact digest.)
@@ -406,7 +406,7 @@ Invoke this block **at the head of any post-entry step that writes a stage artif
 
 1. **Proceed** when `stages.{stage}.status` is `"in-progress"` (this session's Entry Stamp — you are finishing the run you started) or absent/`pending`. Run the write / exit normally.
 
-2. **Detect-and-refuse** when ALL of these hold: `stages.{stage}.status ∈ {"complete", "stale"}` **AND** the stage's artifacts (incl. `TRACEABILITY.md` for forge-3-specs) exist on disk **AND** a `commitHash` is recorded for the stage **AND** you did **not** author this stage earlier in the current session. This is a stale/replayed continuation of an already-finished, committed stage. Do **not** overwrite the artifact or re-run the exit. Route instead to the **Stage-Entry Guard**'s *Re-authoring* path: surface the same warning via the host's question mechanism ("A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?"). Only on explicit confirmation re-enter from the Entry Stamp (the version bumps at exit); otherwise **stop** and report that the stage is already complete — cite the recorded `commitHash` and offer `/feature-forge:forge {feature}` to see true state.
+2. **Detect-and-refuse** when ALL of these hold: `stages.{stage}.status ∈ {"complete", "stale"}` **AND** the stage's artifacts (incl. `TRACEABILITY.md` for forge-3-specs) exist on disk **AND** a `commitHash` is recorded for the stage **AND** you did **not** author this stage earlier in the current session. This is a stale/replayed continuation of an already-finished, committed stage. Do **not** overwrite the artifact or re-run the exit. Route instead to the **Stage-Entry Guard**'s *Re-authoring* path: surface the same warning via the host's question mechanism ("A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?"). Only on explicit confirmation re-enter from the Entry Stamp (the version bumps at exit); otherwise **stop** and report that the stage is already complete — cite the recorded `commitHash` and offer `invoke-skill: forge {feature}` to see true state.
 
 When you cannot confirm you authored the current run, treat it as a replay and refuse: a false refuse costs one confirmation click; a false proceed overwrites a committed artifact and re-churns a stage version. `--force` follows Force Mode (skip the gate, treat as a deliberate re-author).
 
@@ -414,6 +414,6 @@ When you cannot confirm you authored the current run, treat it as a replay and r
 
 If the user passes `--force` as an argument, skip prerequisite validation with a warning:
 
-> Force mode: skipping prerequisite checks. Pipeline state tracking may be incomplete — this stage may build on prior stages that were never completed or verified, so its output can be silently wrong. Recommend running `/feature-forge:forge {feature}` after to verify status.
+> Force mode: skipping prerequisite checks. Pipeline state tracking may be incomplete — this stage may build on prior stages that were never completed or verified, so its output can be silently wrong. Recommend running `invoke-skill: forge {feature}` after to verify status.
 
 Continue with the stage even if prior stages are not marked complete. Still read any existing artifacts (PRD.md, tech-spec.md, etc.) if they exist on disk — force mode skips the pipeline state check, not the artifact loading.

@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-bootstrap/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-bootstrap
-description: Scaffold a brand-new empty repository to a pipeline-ready, green baseline (structure, toolchain, passing lint+test, forge.config.json), then optionally chain into the pipeline. Use when the user runs /feature-forge:forge-bootstrap or asks to bootstrap/scaffold a new empty project for forge. Do NOT trigger on a non-empty repo (that is forge-init), or for general project setup outside the forge pipeline.
+description: 'Scaffold a brand-new empty repository to a pipeline-ready, green baseline (structure, toolchain, passing lint+test, forge.config.json), then optionally chain into the pipeline. Use when the user runs invoke-skill: forge-bootstrap or asks to bootstrap/scaffold a new empty project for forge. Do NOT trigger on a non-empty repo (that is forge-init), or for general project setup outside the forge pipeline.'
 argument-hint: '[--mode-b] [--here|<target-dir>]'
 ---
 
@@ -79,8 +79,8 @@ Read `CheckResult{eligible, disqualifying[], resumeMarker}`.
   Disqualifying files found:
     - package.json
     - src/index.ts
-  To set forge up on an existing project, run:  /feature-forge:forge-init
-  Then start the pipeline with:                 /feature-forge:forge-1-prd <feature>
+  To set forge up on an existing project, run:  invoke-skill: forge-init
+  Then start the pipeline with:                 invoke-skill: forge-1-prd <feature>
   ```
 
 - **`resumeMarker != null` → Partial-state detected.** A `.forge-bootstrap.json` sentinel
@@ -192,7 +192,7 @@ Bootstrap complete — pipeline-ready baseline.
   Kept:         (none — README/LICENSE generated fresh)
   Verification: green  (mypy ✓   pytest ✓)
   Commit:       baseline committed (a1b2c3d)
-  Next step:    /feature-forge:forge-1-prd <feature>
+  Next step:    invoke-skill: forge-1-prd <feature>
 ```
 
 Unverified variant:
@@ -241,10 +241,14 @@ no run ends silently:
 
 ---
 
-## Host execution notes
+## Host execution notes (GitHub Copilot)
 
-This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+This bundle uses distribution-neutral invocation notation because Copilot assigns different slash-command names to plugin and direct installations:
 
-- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
-- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
+- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and references is an instruction, not a literal command to paste. Preserve the named skill and its arguments.
+- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.
+- **Direct project/personal install:** invoke `/<name> [arguments]`.
+- **No universal slash name:** use the form matching the skill's discovery source. If the source is uncertain, use Copilot's skill-invocation mechanism or ask the user instead of guessing.
+- **User input:** Copilot has no structured question tool in this bundle — ask the question directly and wait for the answer before proceeding.
+- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. If it is unavailable, run that step inline only when the skill permits inline execution.
+- **Background / monitoring:** run long-lived commands in the foreground (or Copilot's background facility) and report progress as it arrives.

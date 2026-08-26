@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-4-backlog/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-4-backlog
-description: Generate a structured backlog.json from forge implementation specs, then validate it via the loop runner. Use when user runs /feature-forge:forge-4-backlog or asks to create a backlog for a forge feature after specs are complete. This is the canonical backlog generator for the forge pipeline. Do NOT trigger for standalone backlog creation outside the forge pipeline context.
+description: 'Generate a structured backlog.json from forge implementation specs, then validate it via the loop runner. Use when user runs invoke-skill: forge-4-backlog or asks to create a backlog for a forge feature after specs are complete. This is the canonical backlog generator for the forge pipeline. Do NOT trigger for standalone backlog creation outside the forge pipeline context.'
 argument-hint: <feature-name>
 ---
 
@@ -51,7 +51,7 @@ After the prerequisite check, invoke the **Stage-Entry Guard** block in `referen
 
 Then invoke the **Epic-Member Base Guard** block in `references/shared-conventions.md` (this stage does not run Epic Context Injection, so invoke it explicitly here). It self-gates to a no-op for standalone features; for a nested epic member on a branch that lacks the epic manifest it stops with a home-branch pointer (Issue #125).
 
-**Verification check.** Check whether the specs have been verified. If not, use the host's question mechanism to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
+**Verification check.** Check whether the specs have been verified. If not, use the host's question mechanism to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `invoke-skill: forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
 
 ## Step 2: Load All Specs
 
@@ -220,7 +220,7 @@ If that verb exits 2, surface its plain `Error:` line verbatim and stop — the 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-4-backlog --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
+python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-4-backlog --specs-dir "{specsDir}" --host copilot --verify-capability "{verify-capability}"
 ```
 
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
@@ -233,10 +233,14 @@ Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: sur
 
 ---
 
-## Host execution notes
+## Host execution notes (GitHub Copilot)
 
-This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+This bundle uses distribution-neutral invocation notation because Copilot assigns different slash-command names to plugin and direct installations:
 
-- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
-- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
+- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and references is an instruction, not a literal command to paste. Preserve the named skill and its arguments.
+- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.
+- **Direct project/personal install:** invoke `/<name> [arguments]`.
+- **No universal slash name:** use the form matching the skill's discovery source. If the source is uncertain, use Copilot's skill-invocation mechanism or ask the user instead of guessing.
+- **User input:** Copilot has no structured question tool in this bundle — ask the question directly and wait for the answer before proceeding.
+- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. If it is unavailable, run that step inline only when the skill permits inline execution.
+- **Background / monitoring:** run long-lived commands in the foreground (or Copilot's background facility) and report progress as it arrives.

@@ -193,8 +193,9 @@ Run these steps in order on every session, including resumed sessions:
 
 The current cursor and complete order live only in `EXECUTION.md`:
 
-1. Complete `FORGE-101`: finish distribution-aware invocation/reference translation and either
-   migrate/runtime-prove Agent Plugins 1.0 or keep all claims narrowed to the tested legacy format.
+1. Close `FORGE-101` durably: distribution-aware invocation/reference translation and the explicit
+   legacy Copilot-format claim are implemented, runtime-proven, and full-gate green locally; obtain
+   authorization before committing/pushing and advancing the cursor.
 2. Proceed through the remaining ledger in dependency order.
 3. Do not repeat either completed root probe in `operator-actions.md`.
 4. Release tasks remain owner-gated even when every implementation and integration task is green.
