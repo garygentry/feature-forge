@@ -45,14 +45,14 @@ discovery as interchangeable proofs. Each has a separate gate.
 | A. Contract Freeze | Complete | G0, G1, and G2 closed; host schema/root decision, exact child argv, prompt transport, JSONL, permissions, cancellation, environment filtering, and detached parent topology captured | Enter Phase B at `RAUF-101` |
 | B. Rauf Runtime Provider | Complete | `RAUF-101`–`RAUF-108`: dedicated provider/parser, failure/signal/git boundaries, runtime matrix, and provider-aware install/config/CLI/web propagation; full rauf gate green | Enter Phase C at `RAUF-201` |
 | C. Rauf Native Operator Adapter | Complete | `RAUF-201`–`RAUF-204`: deterministic native bundle, runtime-proven boundaries, composed canonical operator skills, ownership-safe child instructions, and release-blocking drift/version/package gates | Enter/continue Phase D at `FORGE-101` |
-| D. Feature-Forge Native Adapter | In progress | `FORGE-101`–`FORGE-103`: native manifest/skills/agents, composed verifier dependency, memory-limit translation, exact-name dispatch, and runtime-root resolution across Copilot layouts | Continue at `FORGE-104` installer placement primitives |
+| D. Feature-Forge Native Adapter | In progress | `FORGE-101`–`FORGE-105`: native manifest/skills/agents, composed verifier dependency, runtime-root resolution, safe native placement primitives, and runtime-proven fresh project/personal installs | Continue at `FORGE-106` fail-safe legacy migration |
 | E. Repository Verification and Documentation | Not started | Feature-forge changelog entry started; interim gate green | Wait for Phases B–D exits |
 | F. Packaged Cross-Repository Verification | Not started | No harness artifact yet | Wait for G3; begin `INT-001` |
 | G. Release and Pin Sequence | Not started | No release action taken | Wait for G5; begin owner-gated `REL-001` |
 
 Gate status: **G0 closed; G1 closed by `COP-003` evidence and DEC-11; G2 closed by `COP-004` and
 `COP-005`; G3 open, G4 open, G5 open, G6 open.** Phase B is complete and `TRACK-001` is durable.
-Phase C is complete; the sole cursor continues Phase D at `FORGE-104`. Runtime
+Phase C is complete; the sole cursor continues Phase D at `FORGE-106`. Runtime
 prototyping completed during Phase D does not close later gates without its own required evidence.
 
 ## 2. Completion Claim
@@ -550,21 +550,20 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   pushed; a clean disposable clone at the exact commit passed all 201 installer tests and
   `git diff --check`. FORGE-104 is complete and the cursor advances exactly one task to FORGE-105.
 
-- [ ] **FORGE-105 — Implement fresh project and personal installs**
+- [x] **FORGE-105 — Implement fresh project and personal installs**
   Repo: feature-forge. Depends on: FORGE-102..104.
   Install native discovery files into captured current paths and one complete namespaced runtime
   bundle per scope. Mark confidence `verified-current` only after runtime discovery passes.
-  Progress (2026-08-26): the dirty implementation retains the project runtime at
+  Progress (2026-08-26): pushed commit `797fc60` retains the project runtime at
   `.github/feature-forge`, moves fresh personal installs to `~/.copilot/feature-forge`, and reports
-  current GitHub Agent Skills documentation plus `verified-current`. Hermetic installer coverage
-  passes 201 tests. Copilot CLI 1.0.80 discovered the installed project/personal probe skill and
-  `forge-researcher` agent in both scopes; exact invocations resolved the project and personal
-  complete roots, ran the installed `doctor --json` helper, and returned PASS markers. Personal
-  install/uninstall cleanup passed. Independent review's forged-primary uninstall finding is fixed
-  with exact trusted primary-ownership validation; the expanded installer suite passes 203 tests.
-  Evidence:
-  `evidence/forge-105-fresh-project-personal-installs-2026-08-26.md`. Keep this row open until an
-  authorized commit/push and fresh-clone verification make the result durable.
+  current GitHub Agent Skills documentation plus `verified-current`. Copilot CLI 1.0.80 discovered
+  and invoked the installed project/personal probe skill and `forge-researcher` agent in both scopes,
+  resolved both complete roots, and ran the installed `doctor --json` helper. Independent review's
+  forged-primary uninstall finding is fixed with exact trusted primary-ownership validation. The
+  post-fix full gate passes 2,496 Python tests (2 skipped), 203 installer tests, and 11 Pi-source
+  tests; a clean disposable clone of the pushed exact commit repeats all 203 installer tests.
+  Evidence: `evidence/forge-105-fresh-project-personal-installs-2026-08-26.md`. FORGE-105 is
+  complete; the cursor advances exactly one task to FORGE-106.
 
 - [ ] **FORGE-106 — Implement fail-safe legacy migration**
   Repo: feature-forge. Depends on: FORGE-105.
@@ -791,3 +790,5 @@ The unified initiative is complete only when:
 | 2026-08-25 | FORGE-101 native skills/invocation closure | Feature-forge commit `74f269b` translates Copilot descriptions, bodies, references, and scripted exits to distribution-neutral invocation notation; explicitly retains the runtime-proven legacy five-field Copilot manifest; installed all 13 skills and loaded the overlay contract on CLI 1.0.80; and passed the clean-shell full gate. The cursor advances to `FORGE-102`. |
 | 2026-08-25 | FORGE-102 local custom-agent residual closure | The dirty-tree generator composes `forge-verify` fail-loud into `forge-verifier`, replaces unsupported persistent-memory promises with an explicit Copilot limitation, and passes exact-name parallel CLI 1.0.80 dispatch with researcher/verifier edit denial and writer edit success. The full gate and fresh-clone durability pass in pushed commit `fdc26ff`; FORGE-102 closes and the cursor advances to FORGE-103. |
 | 2026-08-26 | FORGE-103 runtime-root closure | Pushed commit `7cfdb31` resolves explicit override, package, managed/personal, and nested-project roots without generic `PLUGIN_ROOT`; Copilot CLI 1.0.80 passed four runtime layouts, degraded/adversarial fixtures and the full gate passed, and a fresh clone reproduced 815 focused tests plus exact hashes. The cursor advances to FORGE-104. |
+| 2026-08-26 | FORGE-104 installer placement closure | Pushed commit `c65b691` adds recursive native skills, flat agents, trusted lexical/symlink containment, proven-only ownership, dry-run parity, exact lifecycle, Windows fallback, and conservative detection. Full gate, independent review, and clean-clone installer verification pass. The cursor advances to FORGE-105. |
+| 2026-08-26 | FORGE-105 fresh direct-install closure | Pushed commit `797fc60` installs complete project/personal runtimes beside current native discovery mirrors, runtime-proves both scopes on Copilot CLI 1.0.80, promotes confidence to `verified-current`, and rejects forged primary ownership before uninstall. Post-fix full gate and clean-clone 203-test verification pass. The cursor advances to FORGE-106. |

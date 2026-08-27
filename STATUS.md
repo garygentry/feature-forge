@@ -46,14 +46,13 @@ no generic `PLUGIN_ROOT` dependency; CLI 1.0.80 and fresh-clone proof passed. Pu
 closes FORGE-104: the installer now supports recursive native Copilot skill mirrors, flat agent
 mirrors, placement-aware dry-run reports, proven-only manifest ownership, lexical and symlink-ancestor
 containment, copy/symlink/Windows lifecycle semantics, exact uninstall, and conservative detection.
-The clean-shell full gate passes (2,496 Python, 201 installer, 11 Pi-source tests), independent review
-is clear, and a fresh clone repeats all installer tests. `FORGE-105` is active in the dirty tree:
-fresh project and personal installs now carry one complete runtime at `.github/feature-forge` or
-`~/.copilot/feature-forge`; after fixing review's forged-primary uninstall finding, the focused
-installer suite passes 203/203, and Copilot CLI 1.0.80
-runtime-proved direct skill discovery, complete-root helper execution, and `forge-researcher`
-dispatch in both scopes. Commit/push and fresh-clone durability remain pending. No adaptation release
-or rauf pin advance has occurred.
+Pushed commit `797fc60` closes FORGE-105: fresh project and personal installs carry one complete
+runtime at `.github/feature-forge` or `~/.copilot/feature-forge`; Copilot CLI 1.0.80 runtime-proved
+direct skill discovery, complete-root helper execution, and `forge-researcher` dispatch in both
+scopes. Review's forged-primary uninstall finding is fixed; the post-fix full gate passes 2,496
+Python (2 skipped), 203 installer, and 11 Pi-source tests, and a clean clone repeats all installer
+tests. The cursor is `FORGE-106` for fail-safe legacy migration. No adaptation release or rauf pin
+advance has occurred.
 Task definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.

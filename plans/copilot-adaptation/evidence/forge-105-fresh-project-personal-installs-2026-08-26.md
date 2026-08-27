@@ -6,7 +6,8 @@
 - Repository: `/home/gary/workspace/feature-forge`.
 - Branch: `docs/copilot-g2-contract`.
 - Base commit: `5a401ca43df98e0f8e4e87bc5a360cde296e4e30` (`0 0` against upstream before implementation).
-- Current state: dirty implementation; keep FORGE-105 ACTIVE until an authorized commit/push and fresh-clone verification make it durable.
+- Implementation commit: `797fc60b60817af897d28ab57939a0a17d53c14a` (authorized and pushed to `origin/docs/copilot-g2-contract`).
+- Current state: implementation and fresh-clone verification are durable; FORGE-105 may close.
 - Pre-receipt tracked patch identity: `git diff --binary | sha256sum` = `7fa38a7b986414e9b2f90f0b4e06c80c1ca91a4ec299eb24bd020c5fada7c4ac`.
 - Final post-review-fix tracked patch identity: `f4939c2b59084335198e738c3ebd16c5c571baef5219acc4204089f0c07e1935` (the untracked receipt itself is excluded).
 - Rauf was not modified; FORGE-106 migration work was not started.
@@ -200,8 +201,13 @@ vendor-documented native skill roots from runtime-proven complete/agent layouts.
 and post-fix clean-shell full gate pass 203/203 after these fixes. A final targeted diff review
 confirmed both independent findings are resolved and found no remaining blocker.
 
-## Remaining closure gates
+## Fresh-clone durability and closure
 
-- With fresh explicit user authorization, commit and push FORGE-105.
-- Verify the pushed exact commit from a disposable fresh clone before marking FORGE-105 DONE and
-  advancing exactly one cursor to FORGE-106.
+After the authorized push, a disposable single-branch clone resolved exact HEAD
+`797fc60b60817af897d28ab57939a0a17d53c14a` at `0 0` against its remote branch. The clone contained
+the ACTIVE FORGE-105 ledger row and this receipt, reproduced the `.copilot` global target and primary
+ownership guard, ran `npm ci --ignore-scripts` plus the complete installer `npm test` suite (203
+passed), passed `git diff --check`, and remained clean. The disposable clone was removed by a trap.
+
+FORGE-105 is durable and may close. Advance exactly one cursor to FORGE-106; no merge, tag, release,
+publication, rauf modification, or `RAUF_PIN` change is authorized or performed.
