@@ -46,6 +46,7 @@ import {
   manifestPath,
   readManifest,
   planUninstall,
+  validatePrimaryOwnership,
   validatePlacementOwnership,
 } from "./manifest.js"; // 05
 import { preflightRauf, RAUF_PIN, type RegistryQuery } from "./rauf.js"; // 06
@@ -403,8 +404,8 @@ async function runOneAgent(
   env: CliEnv,
 ): Promise<AgentReport> {
   const mpath = manifestPath(agent, scope, { home: env.home, cwd: env.cwd });
-  // Containment boundary = the agent's install base dir (A4: decoupled from the detection dir,
-  // so codex contains under `.agents` and copilot under `.github`).
+  // Containment boundary = the scope-specific install base (A4: decoupled from detection;
+  // codex uses `.agents`, while Copilot uses project `.github` or personal `.copilot`).
   const agentRoot = agentRootFor(AGENT_TARGETS[agent], scope, { home: env.home, cwd: env.cwd });
 
   // uninstall path: manifest → planUninstall → apply.
@@ -415,6 +416,12 @@ async function runOneAgent(
       // Nothing installed for this agent: not an error — an "ok, no-op" report.
       return { agent, detected: detection.detected, ok: true, actions: [], raufPin: null };
     }
+    const primaryOwnership = validatePrimaryOwnership(m.value, {
+      agent,
+      scope,
+      destination: detection.destination,
+    });
+    if (!primaryOwnership.ok) return failed(agent, detection.detected, primaryOwnership.error);
     const allowedPlacements = resolvePlacements(AGENT_TARGETS[agent], scope, {
       home: env.home,
       cwd: env.cwd,

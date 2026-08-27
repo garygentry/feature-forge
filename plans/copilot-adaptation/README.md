@@ -36,8 +36,9 @@ At the end of the 2026-08-26 implementation session:
    `TRACK-001` made the authoritative planning and runtime evidence fresh-clone durable, and
    `RAUF-202R` closed operator dependency/prose residuals, `RAUF-203` closed child-instruction
    ownership, and `RAUF-204` closed drift/version/package gates. Phase C is complete; Phase D is
-   active at `FORGE-104` after pushed feature-forge commits `74f269b`, `fdc26ff`, and `7cfdb31`
-   closed native invocation, custom-agent residuals, and runtime-root resolution.
+   active at `FORGE-105` after pushed feature-forge commits `74f269b`, `fdc26ff`, `7cfdb31`, and
+   `c65b691` closed native invocation, custom-agent residuals, runtime-root resolution, and safe
+   installer placement primitives. Fresh project/personal runtime proof now passes in the dirty tree.
 - **Implemented but not yet a complete phase:** feature-forge Phase D native plugin foundation.
 - **Started in code:** rauf uses the provider-neutral `AgentStreamEvent` internally, retains
    `ClaudeStreamEvent` as an exported compatibility alias, has a buffered Copilot JSONL parser,
@@ -51,7 +52,13 @@ At the end of the 2026-08-26 implementation session:
 - **FORGE-103 durable:** pushed commit `7cfdb31` closes override/self-location and Copilot
   managed/personal/nested-project runtime roots without generic `PLUGIN_ROOT`; four CLI runtime
   layouts, degraded/adversarial fixtures, the full gate, and fresh-clone hashes pass.
-- **Still open:** installer placement/migration, the packaged cross-repository harness, and releases.
+- **FORGE-104 durable:** pushed commit `c65b691` closes recursive native skill/agent placements,
+  proven-only ownership, containment, dry-run parity, and exact lifecycle primitives.
+- **FORGE-105 active:** fresh project/personal installs now place one complete runtime at
+  `.github/feature-forge` or `~/.copilot/feature-forge`; Copilot CLI 1.0.80 discovers and invokes
+  native skills/agents in both scopes and resolves each installed runtime. Commit/fresh-clone
+  durability remains pending.
+- **Still open:** legacy migration, package gates, the cross-repository harness, and releases.
 - **Feature-forge native adapter milestone committed:** branch `docs/copilot-g2-contract`, commit
    `7754a3b` (`feat(adapters): add native Copilot plugin output`) contains native `SKILL.md` output,
    native `.agent.md` workers, the generated plugin manifest/tree/fixtures, Copilot version-sync

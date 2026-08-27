@@ -335,6 +335,31 @@ function isWithinOrEqual(root: string, destination: string): boolean {
 }
 
 /**
+ * Verify the manifest's primary ownership identity against the current trusted CLI target before
+ * uninstall. The manifest lives under a target-derived path, but its own agent/scope/destination
+ * fields must never authorize a broader removal boundary (for example `~/.copilot`).
+ */
+export function validatePrimaryOwnership(
+  manifest: InstallManifest,
+  expected: { readonly agent: AgentId; readonly scope: Scope; readonly destination: string },
+): Result<void> {
+  if (
+    manifest.agent !== expected.agent
+    || manifest.scope !== expected.scope
+    || manifest.destination !== expected.destination
+  ) {
+    return err({
+      code: "MANIFEST_CORRUPT",
+      agent: expected.agent,
+      message: `install manifest primary ownership does not match the trusted target destination: ${expected.destination}`,
+      path: manifest.destination,
+      remedy: "remove the corrupt manifest and re-run install; no primary or placement files were changed",
+    });
+  }
+  return ok(undefined);
+}
+
+/**
  * Verify that every manifest-owned placement is one of the current target's trusted, scope-resolved
  * placement boundaries. Call before uninstall: a manifest-provided root must never authorize itself.
  */

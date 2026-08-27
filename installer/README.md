@@ -60,9 +60,12 @@ bundle includes real `package.json` metadata plus the `AskUserQuestion` compatib
 run `/trust` (or use `--approve` in non-interactive tests) before relying on project-local Pi
 resources.
 
-Copilot's global native discovery mirrors use `~/.copilot/skills/` and `~/.copilot/agents/`.
-The complete global runtime-root migration is handled separately; the primary bundle remains at
-`~/.github/feature-forge/` in this transitional layout.
+For Copilot, `--global` installs one complete runtime bundle at
+`~/.copilot/feature-forge/` and native discovery mirrors at `~/.copilot/skills/` and
+`~/.copilot/agents/`. Project scope keeps the complete runtime at `.github/feature-forge/`
+alongside `.github/skills/` and `.github/agents/`. GitHub documents the native project/personal
+skill roots; the complete layout and skill/agent discovery are runtime-verified against Copilot CLI
+1.0.80.
 
 The legacy Copilot block is delimited by `<!-- feature-forge:managed:start -->` /
 `<!-- feature-forge:managed:end -->` sentinels and merged without disturbing the rest of the

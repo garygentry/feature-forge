@@ -359,7 +359,7 @@ Exit criteria:
 
 ### Phase 4: Installer deployment and migration
 
-Status: Not started; blocked by Phase 3 runtime-root contract
+Status: In progress; fresh placement/runtime proof passes, ownership-safe legacy migration remains open
 
 Primary files:
 
@@ -375,18 +375,24 @@ Primary files:
 
 Tasks:
 
-- [ ] Change Copilot to `verified-current` with the current vendor documentation URL.
-- [ ] Configure project roots under `.github` and personal roots under `.copilot`.
-- [ ] Preserve a namespaced complete runtime bundle in each scope.
-- [ ] Extend mirror placements to support recursive skill directories, not only flat files.
-- [ ] Mirror agents into `.github/agents` or `~/.copilot/agents`.
-- [ ] Track every native mirror file in the install manifest.
+- [x] Change Copilot to `verified-current` with the current vendor documentation URL.
+- [x] Configure project roots under `.github` and personal roots under `.copilot`.
+- [x] Preserve a namespaced complete runtime bundle in each scope.
+- [x] Extend mirror placements to support recursive skill directories, not only flat files.
+- [x] Mirror agents into `.github/agents` or `~/.copilot/agents`.
+- [x] Track every native mirror file in the install manifest.
 - [ ] Remove the managed instruction block from new-install behavior.
 - [ ] On update, remove an old managed block only when it matches the recorded feature-forge region; preserve external content.
 - [ ] Migrate old personal installs from `~/.github/feature-forge` to `~/.copilot/feature-forge`.
 - [ ] Remove old owned paths as orphans after a successful migration.
-- [ ] Preserve `--force`, dry-run, copy, symlink, containment, update, and uninstall semantics.
-- [ ] Reassess automatic detection separately from explicit `-a copilot`; do not treat any repository with `.github/` as a detected Copilot installation.
+- [x] Preserve `--force`, dry-run, copy, symlink, containment, update, and uninstall semantics.
+- [x] Reassess automatic detection separately from explicit `-a copilot`; do not treat any repository with `.github/` as a detected Copilot installation.
+
+FORGE-105 runtime progress (2026-08-26): Copilot CLI 1.0.80 discovered project and personal
+native skill mirrors from fresh installer output, invoked a disposable direct probe in each scope,
+resolved the corresponding complete runtime root, executed its installed `doctor --json` helper,
+and dispatched the mirrored `forge-researcher` agent in both scopes. The legacy-block removal and
+old-layout migration rows remain explicitly deferred to FORGE-106.
 
 Exit criteria:
 

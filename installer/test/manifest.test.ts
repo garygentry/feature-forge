@@ -16,6 +16,7 @@ import {
   manifestPath,
   planUninstall,
   readManifest,
+  validatePrimaryOwnership,
   validatePlacementOwnership,
   writeManifest,
 } from "../dist/manifest.js";
@@ -126,6 +127,26 @@ test("readManifest rejects escaping primary and placement inventory paths", asyn
       assert.equal(r.error.code, "MANIFEST_CORRUPT");
     }
   });
+});
+
+test("validatePrimaryOwnership requires the trusted agent, scope, and exact destination", () => {
+  const expected = {
+    agent: "copilot" as const,
+    scope: "global" as const,
+    destination: "/home/u/.copilot/feature-forge",
+  };
+  const valid = copyManifest({ ...expected });
+  assert.ok(validatePrimaryOwnership(valid, expected).ok);
+
+  for (const manifest of [
+    copyManifest({ ...expected, agent: "codex" }),
+    copyManifest({ ...expected, scope: "project" }),
+    copyManifest({ ...expected, destination: "/home/u/.copilot" }),
+  ]) {
+    const result = validatePrimaryOwnership(manifest, expected);
+    assert.ok(!result.ok);
+    assert.equal(result.error.code, "MANIFEST_CORRUPT");
+  }
 });
 
 test("validatePlacementOwnership rejects a manifest-provided containment root", () => {

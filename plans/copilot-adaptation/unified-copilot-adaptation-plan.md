@@ -554,6 +554,17 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   Repo: feature-forge. Depends on: FORGE-102..104.
   Install native discovery files into captured current paths and one complete namespaced runtime
   bundle per scope. Mark confidence `verified-current` only after runtime discovery passes.
+  Progress (2026-08-26): the dirty implementation retains the project runtime at
+  `.github/feature-forge`, moves fresh personal installs to `~/.copilot/feature-forge`, and reports
+  current GitHub Agent Skills documentation plus `verified-current`. Hermetic installer coverage
+  passes 201 tests. Copilot CLI 1.0.80 discovered the installed project/personal probe skill and
+  `forge-researcher` agent in both scopes; exact invocations resolved the project and personal
+  complete roots, ran the installed `doctor --json` helper, and returned PASS markers. Personal
+  install/uninstall cleanup passed. Independent review's forged-primary uninstall finding is fixed
+  with exact trusted primary-ownership validation; the expanded installer suite passes 203 tests.
+  Evidence:
+  `evidence/forge-105-fresh-project-personal-installs-2026-08-26.md`. Keep this row open until an
+  authorized commit/push and fresh-clone verification make the result durable.
 
 - [ ] **FORGE-106 — Implement fail-safe legacy migration**
   Repo: feature-forge. Depends on: FORGE-105.

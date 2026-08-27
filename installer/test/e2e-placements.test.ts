@@ -192,17 +192,31 @@ test("copilot update removes recursive mirror orphans and prunes only their empt
   });
 });
 
-test("copilot global native mirrors use ~/.copilot while the complete-root migration remains deferred", async () => {
+test("copilot global install writes one complete runtime plus native mirrors under ~/.copilot", async () => {
   await withSandbox(async (sb) => {
     await makeFixtureBundle(sb, "copilot", ["forge-1-prd"], ["forge-verifier"]);
     await seedConfigDir(sb, "copilot", "global");
 
     const r = await runCli2(["install", "-a", "copilot", "-g", "--source", sb.source], sb);
     assert.equal(r.exitCode, EXIT.SUCCESS);
+    assert.equal(r.agents[0]!.confidence, "verified-current");
+    assert.equal(r.agents[0]!.docsUrl, "https://docs.github.com/en/copilot/concepts/agents/about-agent-skills");
     assert.ok(await exists(join(sb.home, ".copilot/skills/forge-1-prd/SKILL.md")));
     assert.ok(await exists(join(sb.home, ".copilot/agents/forge-verifier.agent.md")));
-    // FORGE-105 owns moving/proving the complete personal runtime root.
-    assert.ok(await exists(join(sb.home, ".github/feature-forge/.feature-forge-bundle.json")));
+    assert.ok(await exists(join(sb.home, ".copilot/feature-forge/.feature-forge-bundle.json")));
+    assert.equal(await exists(join(sb.home, ".github/feature-forge")), false);
+
+    const mf = JSON.parse(await readFile(join(sb.home, ".copilot/.feature-forge.global.json"), "utf8"));
+    assert.equal(mf.destination, join(sb.home, ".copilot/feature-forge"));
+    assert.ok(mf.files.some((f: { path: string }) => f.path === "scripts/forge-root.sh"));
+    assert.equal(mf.placements.filter((p: { kind: string }) => p.kind === "mirror").length, 2);
+
+    const removed = await runCli2(["uninstall", "-a", "copilot", "-g", "--source", sb.source], sb);
+    assert.equal(removed.exitCode, EXIT.SUCCESS);
+    assert.equal(await exists(join(sb.home, ".copilot/feature-forge/.feature-forge-bundle.json")), false);
+    assert.equal(await exists(join(sb.home, ".copilot/.feature-forge.global.json")), false);
+    assert.equal(await exists(join(sb.home, ".copilot/skills/forge-1-prd")), false);
+    assert.equal(await exists(join(sb.home, ".copilot/agents/forge-verifier.agent.md")), false);
   });
 });
 
@@ -471,6 +485,32 @@ test("uninstall rejects a manifest-forged placement root before mutating owned f
     assert.equal(result.agents[0]!.error?.code, "MANIFEST_CORRUPT");
     assert.ok(await exists(join(sb.cwd, "forged/victim.txt")));
     assert.ok(await exists(join(sb.cwd, ".github/skills/forge-1-prd/SKILL.md")));
+    assert.ok(await exists(mfPath));
+  });
+});
+
+test("global copilot uninstall rejects a forged primary destination before touching user config", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "copilot", ["forge-1-prd"]);
+    await seedConfigDir(sb, "copilot", "global");
+    await runCli2(["install", "-a", "copilot", "-g", "--source", sb.source], sb);
+
+    const mfPath = join(sb.home, ".copilot/.feature-forge.global.json");
+    const mf = JSON.parse(await readFile(mfPath, "utf8"));
+    const userConfig = join(sb.home, ".copilot/config.json");
+    await writeFile(userConfig, "user configuration must survive\n");
+    mf.destination = join(sb.home, ".copilot");
+    mf.files = [{ path: "config.json", sha256: "forged" }];
+    await writeFile(mfPath, JSON.stringify(mf, null, 2));
+
+    const result = await runCli2(
+      ["uninstall", "-a", "copilot", "-g", "--source", sb.source],
+      sb,
+    );
+    assert.equal(result.exitCode, EXIT.FAILURE);
+    assert.equal(result.agents[0]!.error?.code, "MANIFEST_CORRUPT");
+    assert.equal(await readFile(userConfig, "utf8"), "user configuration must survive\n");
+    assert.ok(await exists(join(sb.home, ".copilot/feature-forge/.feature-forge-bundle.json")));
     assert.ok(await exists(mfPath));
   });
 });

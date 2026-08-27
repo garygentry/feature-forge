@@ -10,11 +10,19 @@ title: "feature-forge on Copilot"
 
 ## Install
 
-Install with the universal one-liner — this copies the generated `adapters/copilot/` bundle into
-Copilot's config directory:
+Install with the universal one-liner. Project scope writes one complete runtime bundle at
+`.github/feature-forge/` plus native discovery mirrors under `.github/skills/` and
+`.github/agents/`:
 
 ```bash
 npx @garygentry/feature-forge install -a copilot
+```
+
+Personal scope writes the complete runtime at `~/.copilot/feature-forge/` plus mirrors under
+`~/.copilot/skills/` and `~/.copilot/agents/`:
+
+```bash
+npx @garygentry/feature-forge install -a copilot --global
 ```
 
 To see the exact destination on your machine without writing anything, run:
@@ -23,19 +31,15 @@ To see the exact destination on your machine without writing anything, run:
 npx @garygentry/feature-forge install -a copilot --dry-run --json
 ```
 
-The `--dry-run --json` plan reports the resolved install destination — use that as the
-authoritative path. (The install destination is derived from the installer, not asserted here;
-see the note below.)
+The `--dry-run --json` plan reports the resolved complete-runtime destination and every native
+placement. GitHub documents project skills at `.github/skills/` and personal skills at
+`~/.copilot/skills/`; fresh project and personal installs are runtime-verified on Copilot CLI
+1.0.80 and therefore reported as `verified-current`.
 
-> **Note (install path — best-known):** Copilot has no native skills loader; its documented
-> customization surface is repository instructions (`.github/copilot-instructions.md` /
-> `AGENTS.md`). The installer stages the bundle under `.github/feature-forge/` so the workflow
-> files are available, and writes a managed block (delimited by
-> `<!-- feature-forge:managed:start -->` / `<!-- feature-forge:managed:end -->`) into
-> `.github/copilot-instructions.md` pointing Copilot at them — merged without disturbing any
-> existing content in that file. This path is **best-known**, not vendor-confirmed for skill
-> auto-discovery — the install report labels it as such. Use the `--dry-run --json` plan for
-> the exact resolved path.
+The transitional managed instruction block remains delimited by
+`<!-- feature-forge:managed:start -->` / `<!-- feature-forge:managed:end -->` and is merged
+without disturbing user content. Its ownership-safe migration is separate from the fresh-install
+layout.
 
 ## First-use check
 
@@ -43,9 +47,9 @@ see the note below.)
    ```bash
    npx @garygentry/feature-forge list -a copilot          # per-agent installed / up-to-date status
    ```
-2. Invoke a forge skill on Copilot and confirm it fires. Copilot-specific invocation: ask
-   Copilot Chat to "use feature-forge to run forge-init for a new feature" — Copilot should
-   select the installed `forge-init` skill from its adapter catalog.
+2. Run `copilot skill list --json` and confirm the direct skills are visible.
+3. Invoke one directly (for example `/forge-init`) and confirm it can resolve the complete
+   runtime bundle for the active scope.
 
 ## Loop runner (forge-5-loop)
 

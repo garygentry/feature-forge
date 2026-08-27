@@ -426,9 +426,9 @@ export interface RunReport {
  *  - codex   — detects `.codex`, loads skills from `.agents/skills` (verified-current).
  *              The `.codex/agents/*.toml` second placement is added in A4b.
  *  - copilot — detects `.copilot`; direct installs recursively mirror native skills and flat custom
- *              agents into scope-specific discovery roots. The complete runtime bundle remains
- *              staged under `.github/feature-forge` until FORGE-105, and the legacy managed block is
- *              retained until ownership-safe migration in FORGE-106 (best-known).
+ *              agents into scope-specific discovery roots, with one complete namespaced runtime at
+ *              `.github/feature-forge` (project) or `~/.copilot/feature-forge` (global). Current CLI
+ *              discovery is runtime-verified; the legacy managed block remains until FORGE-106.
  *  - cursor  — `.cursor/rules/*.mdc` confirmed current (verified-current).
  *  - gemini  — `~/.gemini/extensions/feature-forge` global confirmed; project scope is
  *              best-known (project extension install is not clearly documented).
@@ -438,7 +438,7 @@ export interface RunReport {
 export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
   claude: { id: "claude", configDirName: ".claude", installBaseDir: ".claude", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "confirmed", docsUrl: "https://docs.claude.com/en/docs/claude-code/skills" },
   codex: { id: "codex", configDirName: ".codex", installBaseDir: ".agents", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://developers.openai.com/codex/skills", placements: [{ kind: "mirror", baseDir: ".codex", subpath: "agents", sourcePrefix: "agents/" }] },
-  copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "SKILL.md", confidence: "best-known", docsUrl: "https://docs.github.com/en/copilot/how-tos/configure-custom-instructions/add-repository-instructions", placements: [{ kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "skills", sourcePrefix: "skills/", mirrorLayout: "recursive" }, { kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "agents", sourcePrefix: "agents/" }, { kind: "managed-block", baseDir: ".github", subpath: "copilot-instructions.md" }] },
+  copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", globalInstallBaseDir: ".copilot", projectInstallBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://docs.github.com/en/copilot/concepts/agents/about-agent-skills", placements: [{ kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "skills", sourcePrefix: "skills/", mirrorLayout: "recursive" }, { kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "agents", sourcePrefix: "agents/" }, { kind: "managed-block", baseDir: ".github", subpath: "copilot-instructions.md" }] },
   cursor: { id: "cursor", configDirName: ".cursor", installBaseDir: ".cursor", installSubpath: "rules", installKind: "rules", skillFileForm: "<name>.mdc", confidence: "verified-current", docsUrl: "https://cursor.com/docs/context/rules" },
   gemini: { id: "gemini", configDirName: ".gemini", installBaseDir: ".gemini", installSubpath: "extensions", installKind: "extension", skillFileForm: "<name>.md", confidence: "verified-current", projectConfidence: "best-known", docsUrl: "https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/index.md" },
   pi: { id: "pi", configDirName: ".pi", globalConfigDirName: ".pi/agent", projectConfigDirName: ".pi", installBaseDir: ".pi", globalInstallBaseDir: ".pi/agent", projectInstallBaseDir: ".pi", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://github.com/earendil-works/pi-coding-agent", placements: [{ kind: "mirror", baseDir: ".pi", globalBaseDir: ".pi/agent", projectBaseDir: ".pi", subpath: "agents", sourcePrefix: "agents/" }] },

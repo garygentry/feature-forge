@@ -45,14 +45,17 @@ test("A4: every destination is contained within its agentRootFor (REQ-SEC-02)", 
   }
 });
 
-test("A4: codex installs under .agents, copilot under .github (decoupled from detection dir)", () => {
-  // Detection still probes the agent's own config dir...
+test("A4: codex uses .agents while Copilot complete roots are scope-specific", () => {
+  // Detection still probes each agent's own config dir.
   assert.equal(AGENT_TARGETS.codex.configDirName, ".codex");
   assert.equal(AGENT_TARGETS.copilot.configDirName, ".copilot");
-  // ...but the install + containment root is the agent-neutral location.
   assert.equal(agentRootFor(AGENT_TARGETS.codex, "global", { home: "/h" }), "/h/.agents");
-  assert.equal(agentRootFor(AGENT_TARGETS.copilot, "global", { home: "/h" }), "/h/.github");
-  assert.equal(destinationFor(AGENT_TARGETS.copilot, "global", { home: "/h" }), "/h/.github/feature-forge");
+  // Copilot's project bundle is namespaced under .github; its personal bundle shares the
+  // documented ~/.copilot discovery root with the native skill/agent mirrors.
+  assert.equal(agentRootFor(AGENT_TARGETS.copilot, "project", { cwd: "/p" }), "/p/.github");
+  assert.equal(destinationFor(AGENT_TARGETS.copilot, "project", { cwd: "/p" }), "/p/.github/feature-forge");
+  assert.equal(agentRootFor(AGENT_TARGETS.copilot, "global", { home: "/h" }), "/h/.copilot");
+  assert.equal(destinationFor(AGENT_TARGETS.copilot, "global", { home: "/h" }), "/h/.copilot/feature-forge");
 });
 
 test("A4: confidenceFor applies the project-scope override (gemini) only on project scope", () => {
@@ -61,6 +64,8 @@ test("A4: confidenceFor applies the project-scope override (gemini) only on proj
   // Targets without an override return the same confidence in both scopes.
   assert.equal(confidenceFor(AGENT_TARGETS.claude, "project"), "confirmed");
   assert.equal(confidenceFor(AGENT_TARGETS.codex, "project"), "verified-current");
+  assert.equal(confidenceFor(AGENT_TARGETS.copilot, "global"), "verified-current");
+  assert.equal(confidenceFor(AGENT_TARGETS.copilot, "project"), "verified-current");
 });
 
 test("A4: detectAgent surfaces scope-effective confidence + docsUrl", () => {
@@ -99,9 +104,9 @@ test("resolveRoots honors overrides and resolves to absolute paths", () => {
 test("destinationFor matches the 5-agent x 2-scope table", () => {
   const cases: Array<[keyof typeof AGENT_TARGETS, "global" | "project", string, string]> = [
     ["claude", "global", "/home/.claude/skills/feature-forge", "/home"],
-    // A4: codex installs under the agent-neutral `.agents/skills`, copilot under `.github`.
+    // A4: codex installs under `.agents/skills`; Copilot's personal runtime shares `.copilot`.
     ["codex", "global", "/home/.agents/skills/feature-forge", "/home"],
-    ["copilot", "global", "/home/.github/feature-forge", "/home"],
+    ["copilot", "global", "/home/.copilot/feature-forge", "/home"],
     ["cursor", "global", "/home/.cursor/rules/feature-forge", "/home"],
     ["gemini", "global", "/home/.gemini/extensions/feature-forge", "/home"],
     ["pi", "global", "/home/.pi/agent/skills/feature-forge", "/home"],
@@ -121,6 +126,10 @@ test("destinationFor matches the 5-agent x 2-scope table", () => {
   assert.equal(
     destinationFor(AGENT_TARGETS.pi, "project", { cwd: "/proj" }),
     "/proj/.pi/skills/feature-forge",
+  );
+  assert.equal(
+    destinationFor(AGENT_TARGETS.copilot, "project", { cwd: "/proj" }),
+    "/proj/.github/feature-forge",
   );
 });
 
