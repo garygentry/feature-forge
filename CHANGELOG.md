@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pi post-fix verification now terminates on a clean report (#237).** The published npm manifest registers the bundled Forge agents with `pi-subagents`, and `state-verify` accepts and persists an attached zero-finding report for `passed`. Outcome-specific skill guidance and lifecycle regression coverage prevent a completed `findings-applied → passed` round from cycling back through verification.
+
 ## [0.18.0] — 2026-08-15
 
 ### Changed

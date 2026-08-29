@@ -131,10 +131,10 @@ violate REQ-STATE-02; per-feature status is always derived live from each member
 `.pipeline-state.json`).
 
 Set `stages.forge-verify-epic.status` to `findings-reported` when the report lists at
-least one **blocking** finding (`error`/`gap`), else `passed` — for an advisory-only
-report pass `--findings-file`/`--findings-count` alongside `--status passed`, exactly
-as in feature mode (the severity floor in `skills/forge-verify/SKILL.md`) — recording
-`findingsFile`, `findingsCount`, and `verifiedAt`.
+least one **blocking** finding (`error`/`gap`), else `passed`. Always attach the report
+and its total count, including count `0` for a clean report, exactly as in feature mode
+(the severity floor in `skills/forge-verify/SKILL.md`) — recording `findingsFile`,
+`findingsCount`, and `verifiedAt`.
 
 **Write it with `state-verify`, never by hand.** `--stage forge-0-epic` is the sanctioned
 epic writer: it creates the file lazily, mutates only `stages.forge-verify-epic` plus the
@@ -149,8 +149,8 @@ R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{epic}" --stage forge-0-epic \
-  --status "{passed|findings-reported}" \
-  --findings-file "{relative findings path}" --findings-count {n} \
+  --status "{outcome-specific status}" \
+  --findings-file "{relative findings path}" --findings-count {outcome-specific count} \
   --verified-stage-version {manifest revision} --specs-dir "{specsDir}"
 ```
 

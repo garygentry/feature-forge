@@ -53,6 +53,11 @@
       "./adapters/pi/extensions/ask-user-question/index.ts"
     ]
   },
+  "pi-subagents": {
+    "agents": [
+      "./adapters/pi/agents"
+    ]
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretest": "npm run build",
