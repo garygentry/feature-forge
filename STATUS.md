@@ -23,7 +23,9 @@ CHANGELOG `[Unreleased]` is empty.
 `RAUF_PIN` is **`@garygentry/rauf@0.14.0`** (verified resolving on npm 2026-08-15).
 0.14.0 ships `backlog answer` — the operator recovery verb for the loop-recovery feature —
 and the Codex stdin prompt delivery fix. `RECOVERY_MIN_RUNNER_VERSION` matches at `"0.14.0"`.
-`minRunnerVersion` deliberately stays at 0.6.0; agent-specific requirements are prose in
+`minRunnerVersion` was raised to 0.14.0 to match the pin and the recovery floor (#234), so
+the launch gate no longer accepts a runner too old for the recovery contract the package
+ships; agents needing a *newer* rauf than the floor are still recorded as prose in
 `COMPATIBILITY.md`.
 
 Note for future releases: **feature-forge CI never checks that `RAUF_PIN` resolves** — every

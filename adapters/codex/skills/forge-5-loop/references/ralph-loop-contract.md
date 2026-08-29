@@ -156,11 +156,13 @@ to today. Degradation is **silent, not an error**, keeping alternate (non-rauf)
 runners first-class. The gate condition is owned by
 `02-config-schema-and-gating.md`.
 
-Independently, the **version gate** floors at the runner version that ships the
-agent surface. For rauf that is **0.6.0** (`loopRunner.minRunnerVersion`): the
-`--agent` flag, the `agents` probe, and the preset agent registry are present in
-rauf source at 0.6.0. A successful gate therefore guarantees those surfaces
-exist before any run. See `## Version gating` and
+Independently, the **version gate** floors at the runner version the stage
+depends on. For rauf that is **0.14.0** (`loopRunner.minRunnerVersion`): the
+version the package pins and the floor for full needs-human recovery (0.14's
+`backlog answer`). The agent surface — the `--agent` flag, the `agents` probe,
+and the preset agent registry — has been present since rauf 0.6.0 and is
+subsumed by the higher floor, so a successful gate guarantees both the recovery
+and agent surfaces exist before any run. See `## Version gating` and
 `05-runner-discovery-version-gate.md`.
 
 **This document — the `## Agent selection` section, the `## Per-stage agent
@@ -210,9 +212,11 @@ belongs to execution only. If you find yourself adding `--agent` near a
 
 feature-forge requires a runner exposing `backlog validate` + backlog
 `schemaVersion`, and the unified exit-code/status contract it reads. The floor is
-now the **agent-surface floor**: the runner version that ships the `--agent`
-flag, the `agents` probe, and the preset agent registry. For rauf that is
-**0.6.0** (`loopRunner.minRunnerVersion`).
+now the **capability floor** the stage actually depends on: the version the
+package pins and the floor for full needs-human recovery (0.14's `backlog
+answer`). It subsumes the older agent-surface floor (the `--agent` flag, the
+`agents` probe, and the preset agent registry, present since 0.6.0). For rauf
+that is **0.14.0** (`loopRunner.minRunnerVersion`).
 `forge-5-loop` runs `{bin} version --json`, semver-compares the reported version
 against `minRunnerVersion`, and on a missing-or-too-old runner stops with
 `loopRunner.installHint` (the CLI install/upgrade command) — **before** invoking

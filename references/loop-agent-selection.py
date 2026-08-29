@@ -30,10 +30,15 @@ from typing import TypedDict
 #: alternate runner with a different default id is handled without edits (CON-04).
 RUNNER_DEFAULT_ID: str = "claude-cli"
 
-#: Minimum rauf version that ships the agent-selection surface (--agent flag, `rauf agents`
-#: probe, preset registry). Verified present in rauf source at VERSION 0.6.0
-#: (packages/core/src/version.ts == "0.6.0"). REQ-BIN-02; resolves OQ-01.
-MIN_RUNNER_VERSION: str = "0.6.0"
+#: Minimum rauf version the stage depends on (semver). Raised to 0.14.0 to match the
+#: version the package pins (installHint / installer RAUF_PIN) and the floor for full
+#: needs-human recovery: rauf 0.14's `backlog answer` injects a recorded answer into the
+#: next iteration (RECOVERY_MIN_RUNNER_VERSION in forge-session.py), and 0.14 moved the
+#: Codex prompt to stdin to avoid E2BIG on large backlog/spec prompts. The agent-selection
+#: surface (--agent flag, `rauf agents` probe, preset registry) predates this — it first
+#: shipped at 0.6.0 (packages/core/src/version.ts) — and is subsumed by the higher floor.
+#: REQ-BIN-02; resolves OQ-01.
+MIN_RUNNER_VERSION: str = "0.14.0"
 
 
 # ---------------------------------------------------------------------------

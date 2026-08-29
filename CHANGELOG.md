@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Loop-runner launch floor raised to rauf `0.14.0` (#234).** `loopRunner.minRunnerVersion` defaulted to `0.6.0` (the agent-selection-surface floor) while the same package pins `@garygentry/rauf@0.14.0` and requires 0.14's `backlog answer` for full post-run needs-human recovery (`RECOVERY_MIN_RUNNER_VERSION = "0.14.0"`). The Step 1c gate therefore green-lit rauf `0.13`, giving first-time users a passing compatibility verdict with a runner older than the version the package itself pins — after which needs-human recovery silently degraded to `backlog unblock` (the recorded answer never injected into the next iteration) and large Codex prompts kept the pre-0.14 argv-size (`E2BIG`) failure mode. The floor is now `0.14.0`, so the gate no longer accepts a runner too old for the recovery contract the stage describes; the agent-selection surface (present since 0.6.0) is subsumed by the higher floor. `RECOVERY_MIN_RUNNER_VERSION` now coincides with the floor but stays a conceptually distinct capability threshold (it only degrades recovery; the floor hard-stops the launch). Canonical change in `references/forge-config-schema.json` (the sole runtime-consumed default) with the executable-spec constant, the forge-5-loop gate prose, the ralph-loop contract, the mock-rauf fixture, and the `COMPATIBILITY.md` / `STATUS.md` / `README.md` / `AGENTS-SETUP.md` version references updated to match; adapters regenerated.
+
 ### Fixed
 
 - **Pi post-fix verification now terminates on a clean report (#237).** The published npm manifest registers the bundled Forge agents with `pi-subagents`, and `state-verify` accepts and persists an attached zero-finding report for `passed`. Outcome-specific skill guidance and lifecycle regression coverage prevent a completed `findings-applied → passed` round from cycling back through verification.
