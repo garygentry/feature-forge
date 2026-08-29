@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { AGENT_TARGETS } from "../dist/types.js";
 import {
   resolvePlacements,
+  resolveLegacyCopilotBlock,
   selectMirrorFiles,
   renderCopilotBlock,
   wrapBlock,
@@ -33,14 +34,13 @@ test("resolvePlacements: codex mirror resolves to .codex/agents under the scope 
   assert.equal(global[0]!.destination, "/h/.codex/agents");
 });
 
-test("resolvePlacements: copilot mirrors native discovery files and retains its legacy block", () => {
+test("resolvePlacements: fresh copilot uses only native mirrors; legacy block is cleanup-only", () => {
   const project = resolvePlacements(AGENT_TARGETS.copilot, "project", opts);
   assert.deepEqual(
     project.map((p) => [p.kind, p.root, p.destination]),
     [
       ["mirror", "/p/.github", "/p/.github/skills"],
       ["mirror", "/p/.github", "/p/.github/agents"],
-      ["managed-block", "/p/.github", "/p/.github/copilot-instructions.md"],
     ],
   );
 
@@ -50,9 +50,10 @@ test("resolvePlacements: copilot mirrors native discovery files and retains its 
     [
       ["mirror", "/h/.copilot", "/h/.copilot/skills"],
       ["mirror", "/h/.copilot", "/h/.copilot/agents"],
-      ["managed-block", "/h/.github", "/h/.github/copilot-instructions.md"],
     ],
   );
+  assert.equal(resolveLegacyCopilotBlock("project", opts).destination, "/p/.github/copilot-instructions.md");
+  assert.equal(resolveLegacyCopilotBlock("global", opts).destination, "/h/.github/copilot-instructions.md");
 });
 
 test("resolvePlacements: agents without a rule return []", () => {

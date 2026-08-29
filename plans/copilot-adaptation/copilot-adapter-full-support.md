@@ -381,18 +381,22 @@ Tasks:
 - [x] Extend mirror placements to support recursive skill directories, not only flat files.
 - [x] Mirror agents into `.github/agents` or `~/.copilot/agents`.
 - [x] Track every native mirror file in the install manifest.
-- [ ] Remove the managed instruction block from new-install behavior.
-- [ ] On update, remove an old managed block only when it matches the recorded feature-forge region; preserve external content.
-- [ ] Migrate old personal installs from `~/.github/feature-forge` to `~/.copilot/feature-forge`.
-- [ ] Remove old owned paths as orphans after a successful migration.
+- [x] Remove the managed instruction block from new-install behavior.
+- [x] On update, remove an old managed block only when it matches the recorded feature-forge region; preserve external content.
+- [x] Migrate old personal installs from `~/.github/feature-forge` to `~/.copilot/feature-forge`.
+- [x] Remove old owned paths as orphans after a successful migration.
 - [x] Preserve `--force`, dry-run, copy, symlink, containment, update, and uninstall semantics.
 - [x] Reassess automatic detection separately from explicit `-a copilot`; do not treat any repository with `.github/` as a detected Copilot installation.
 
-FORGE-105 runtime progress (2026-08-26): Copilot CLI 1.0.80 discovered project and personal
-native skill mirrors from fresh installer output, invoked a disposable direct probe in each scope,
-resolved the corresponding complete runtime root, executed its installed `doctor --json` helper,
-and dispatched the mirrored `forge-researcher` agent in both scopes. The legacy-block removal and
-old-layout migration rows remain explicitly deferred to FORGE-106.
+FORGE-106 local progress (2026-08-27): the installer now validates current and historical personal
+manifest identities, applies and hash-verifies the complete native layout before cleanup, migrates
+copy and symlink personal roots, removes only recorded old files, and treats unchanged/edited/
+malformed/missing managed regions according to the ownership contract. Deterministic apply and
+manifest-write failures are retryable; repeated update and exact uninstall pass. Independent review
+found no remaining blocker, and the full clean-shell gate passes 2,496 Python tests (2 skipped), 208
+installer tests, and 11 Pi-source tests. Evidence:
+`evidence/forge-106-fail-safe-legacy-migration-2026-08-27.md`. The task remains ACTIVE until an
+authorized commit/push and fresh-clone durability check.
 
 Exit criteria:
 

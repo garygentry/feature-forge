@@ -38,7 +38,7 @@ import {
   removeEmptyDirsWithin,
 } from "./fsutil.js";
 import { buildManifest, writeManifest } from "./manifest.js";
-import { wrapBlock, upsertBlock, removeBlock } from "./placements.js";
+import { wrapBlock, upsertBlock, removeBlock, extractManagedRegion } from "./placements.js";
 import type { LocatedSource } from "./source.js";
 
 /**
@@ -64,11 +64,21 @@ export interface ApplyContext {
   readonly now: string;
   /** Prior manifest (for preserving `installedAt` across updates, and carrying inventory). */
   readonly priorManifest: InstallManifest | null;
+  /** Trusted placement ownership inherited from a superseded cross-root manifest. */
+  readonly priorPlacements?: readonly Placement[];
+  /** Prior manifest used only to preserve installation timestamps across a root migration. */
+  readonly previousManifest?: InstallManifest;
   /**
    * Injectable per-file write seam (tests force a deterministic WRITE_DENIED). Default:
    * mkdir parent + `fs.copyFile`. Returns `Result` and never throws for expected errors.
    */
   readonly writeFileSeam?: (srcAbs: string, destAbs: string) => Promise<Result<void>>;
+  /** A superseded cross-root manifest deleted only after the new manifest commits successfully. */
+  readonly supersededManifestPath?: string;
+  /** Injectable final-manifest seam for deterministic write-last failure tests. */
+  readonly writeManifestSeam?: typeof writeManifest;
+  /** Injectable symlink seam for deterministic runtime copy-fallback verification tests. */
+  readonly symlinkDirSeam?: typeof symlinkDir;
 }
 
 /**
@@ -117,8 +127,11 @@ async function applyCopyInstall(
 
   const writeFile = ctx.writeFileSeam ?? defaultCopyFile;
   const inventory: ManifestFile[] = [];
+  const removals = planned.files.filter((fa) => fa.action === "remove");
 
-  for (const fa of planned.files) {
+  // Phase 1: materialize required new primary files. Orphan removals wait until native mirrors
+  // are applied and the complete new layout has been verified.
+  for (const fa of planned.files.filter((entry) => entry.action !== "remove")) {
     const resolved = resolveWithin(ctx.agentRoot, ctx.destination, fa.relpath);
     if (!resolved.ok) return fail(ctx, planned, resolved.error);
     const destAbs = resolved.value;
@@ -132,14 +145,26 @@ async function applyCopyInstall(
         inventory.push({ path: fa.relpath, sha256: sha256File(destAbs) });
         break;
       }
-      case "remove": {
-        const removed = await removePath(destAbs);
-        if (!removed.ok) return fail(ctx, planned, removed.error);
+      case "remove":
+        break; // filtered above; cleanup phase below owns removals
+      case "unchanged": {
+        let actual: string;
+        try {
+          actual = sha256File(destAbs);
+        } catch {
+          return fail(ctx, planned, {
+            code: "UNEXPECTED",
+            agent: ctx.agent,
+            message: `required installed file vanished before verification: ${destAbs}`,
+            path: destAbs,
+          });
+        }
+        const prior = priorByPath.get(fa.relpath);
+        if (prior !== undefined) inventory.push({ path: fa.relpath, sha256: actual });
         break;
       }
-      case "unchanged":
       case "skip-modified": {
-        // No write. Carry the prior inventory entry forward so the rewritten manifest is faithful.
+        // Intentional conflict: carry ownership only when the prior manifest already proved it.
         const prior = priorByPath.get(fa.relpath);
         if (prior !== undefined) inventory.push(prior);
         break;
@@ -147,14 +172,34 @@ async function applyCopyInstall(
     }
   }
 
-  // Secondary placements (A4b) execute regardless of the primary mode; collect their inventory.
-  const placementResult = await applyPlacements(planned.placements ?? [], ctx, source);
-  if (!placementResult.ok) return fail(ctx, planned, placementResult.error);
+  // Phase 2: apply desired native placements. Migration-only cleanup placements run later.
+  const desiredPlacements = (planned.placements ?? []).filter((p) => (p.retention ?? "always") === "always");
+  const cleanupPlacements = (planned.placements ?? []).filter((p) => (p.retention ?? "always") !== "always");
+  const desiredResult = await applyPlacements(desiredPlacements, ctx, source);
+  if (!desiredResult.ok) return fail(ctx, planned, desiredResult.error);
+
+  // Phase 3: verify every required new primary/mirror file before legacy-owned removal.
+  const verified = verifyRequiredLayout(planned, ctx, source, desiredPlacements);
+  if (!verified.ok) return fail(ctx, planned, verified.error);
+
+  // Phase 4: remove current-root orphans, then retired cross-root placements.
+  for (const fa of removals) {
+    const resolved = resolveWithin(ctx.agentRoot, ctx.destination, fa.relpath);
+    if (!resolved.ok) return fail(ctx, planned, resolved.error);
+    const removed = await removePath(resolved.value);
+    if (!removed.ok) return fail(ctx, planned, removed.error);
+  }
+  const cleanupResult = await applyPlacements(cleanupPlacements, ctx, source);
+  if (!cleanupResult.ok) return fail(ctx, planned, cleanupResult.error);
+  const retainedCleanup = cleanupResult.value.filter((_p, index) =>
+    cleanupPlacements[index]?.retention === "while-skipped"
+    && cleanupPlacements[index]!.files.some((f) => f.action === "skip-modified"));
+  const placementInventory = [...desiredResult.value, ...retainedCleanup];
 
   // No-op short-circuit (REQ-IDEM-01): every action — primary AND placement — unchanged ⇒ zero
   // writes, manifest untouched — UNLESS manifest metadata (raufPin) drifted, which must persist
   // even with no file change (F1) so report / on-disk manifest / a later `list` agree.
-  if (allUnchanged(planned) && !manifestNeedsRewrite(ctx)) {
+  if (planIsNoOp(planned, ctx) && !manifestNeedsRewrite(ctx)) {
     return success(ctx, planned);
   }
 
@@ -167,13 +212,57 @@ async function applyCopyInstall(
     skills: source.skills,
     sourceHash: source.sourceHash,
     raufPin: ctx.raufPin,
-    placements: placementResult.value,
-    previous: ctx.priorManifest,
+    placements: placementInventory,
+    previous: ctx.previousManifest ?? ctx.priorManifest,
     now: () => new Date(ctx.now),
   });
-  const wrote = writeManifest(ctx.manifestPath, manifest);
+  const wrote = (ctx.writeManifestSeam ?? writeManifest)(ctx.manifestPath, manifest);
   if (!wrote.ok) return fail(ctx, planned, wrote.error);
+  if (ctx.supersededManifestPath !== undefined && ctx.supersededManifestPath !== ctx.manifestPath) {
+    const removed = await removePath(ctx.supersededManifestPath);
+    if (!removed.ok) return fail(ctx, planned, removed.error);
+  }
   return success(ctx, planned);
+}
+
+/** Verify required new primary and native-mirror leaves after apply and before cleanup. */
+function verifyRequiredLayout(
+  planned: PlannedAction,
+  ctx: ApplyContext,
+  source: LocatedSource,
+  desiredPlacements: readonly PlannedPlacement[],
+): Result<void> {
+  const sourceByPath = new Map(source.files.map((f) => [f.relpath, f.sha256]));
+  for (const fa of planned.files) {
+    if (fa.relpath === "." || fa.action === "remove" || fa.action === "skip-modified") continue;
+    const resolved = resolveWithin(ctx.agentRoot, ctx.destination, fa.relpath);
+    if (!resolved.ok) return resolved;
+    const expected = sourceByPath.get(fa.relpath);
+    try {
+      if (expected === undefined || sha256File(resolved.value) !== expected) {
+        return err({ code: "UNEXPECTED", agent: ctx.agent, message: `required installed file failed verification: ${resolved.value}`, path: resolved.value });
+      }
+    } catch {
+      return err({ code: "UNEXPECTED", agent: ctx.agent, message: `required installed file is missing after apply: ${resolved.value}`, path: resolved.value });
+    }
+  }
+  for (const pl of desiredPlacements) {
+    if (pl.kind !== "mirror") continue;
+    for (const fa of pl.files) {
+      if (fa.action === "remove" || fa.action === "skip-modified") continue;
+      const resolved = resolveWithinNoSymlinks(pl.root, pl.destination, fa.relpath);
+      if (!resolved.ok) return resolved;
+      const expected = fa.srcRelpath === undefined ? undefined : sourceByPath.get(fa.srcRelpath);
+      try {
+        if (expected === undefined || sha256File(resolved.value) !== expected) {
+          return err({ code: "UNEXPECTED", agent: ctx.agent, message: `required native mirror failed verification: ${resolved.value}`, path: resolved.value });
+        }
+      } catch {
+        return err({ code: "UNEXPECTED", agent: ctx.agent, message: `required native mirror is missing after apply: ${resolved.value}`, path: resolved.value });
+      }
+    }
+  }
+  return ok(undefined);
 }
 
 /**
@@ -188,12 +277,27 @@ function manifestNeedsRewrite(ctx: ApplyContext): boolean {
   return prior.raufPin !== ctx.raufPin;
 }
 
-/** True iff every planned action — primary files and all placement files — is "unchanged". */
-function allUnchanged(planned: PlannedAction): boolean {
-  return (
-    planned.files.every((f) => f.action === "unchanged") &&
-    (planned.placements ?? []).every((p) => p.files.every((f) => f.action === "unchanged"))
-  );
+/**
+ * True iff the plan changes neither files nor ownership metadata. A retained, already-recorded
+ * edited legacy block is a stable conflict; an absent retired block still requires one rewrite to
+ * drop its obsolete ownership record.
+ */
+function planIsNoOp(planned: PlannedAction, ctx: ApplyContext): boolean {
+  if (!planned.files.every((f) => f.action === "unchanged")) return false;
+  const priorDestinations = new Set([
+    ...(ctx.priorPlacements ?? []).map((p) => p.destination),
+    ...(ctx.priorManifest?.placements ?? []).map((p) => p.destination),
+  ]);
+  return (planned.placements ?? []).every((p) => {
+    const retention = p.retention ?? "always";
+    if (retention === "always") return p.files.every((f) => f.action === "unchanged");
+    if (retention === "while-skipped") {
+      return priorDestinations.has(p.destination)
+        && p.files.length > 0
+        && p.files.every((f) => f.action === "skip-modified");
+    }
+    return false;
+  });
 }
 
 /** §5.3 copy-mode uninstall: remove recorded files, prune empty dirs, delete the manifest LAST. */
@@ -241,18 +345,15 @@ async function applySymlinkInstall(
   if (!resolved.ok) return fail(ctx, planned, resolved.error);
   const linkPath = resolved.value;
 
-  // Secondary placements (A4b) apply even in symlink mode — they live under a different root than the
-  // symlinked namespace dir. Run them first so a placement-only change still rewrites the manifest.
-  const placementResult = await applyPlacements(planned.placements ?? [], ctx, source);
-  if (!placementResult.ok) return fail(ctx, planned, placementResult.error);
-
+  const desiredPlacements = (planned.placements ?? []).filter((p) => (p.retention ?? "always") === "always");
+  const cleanupPlacements = (planned.placements ?? []).filter((p) => (p.retention ?? "always") !== "always");
   const primary = planned.files;
   const primaryUntouched =
     primary.every((f) => f.action === "unchanged") ||
     primary.every((f) => f.action === "skip-modified");
 
   // Nothing changed anywhere ⇒ zero writes, manifest untouched — unless raufPin drifted (F1).
-  if (allUnchanged(planned) && !manifestNeedsRewrite(ctx)) {
+  if (planIsNoOp(planned, ctx) && !manifestNeedsRewrite(ctx)) {
     return success(ctx, planned);
   }
 
@@ -267,13 +368,46 @@ async function applySymlinkInstall(
     const removed = await removePath(linkPath);
     if (!removed.ok) return fail(ctx, planned, removed.error);
 
-    const linked = await symlinkDir(source.root, linkPath);
+    const linked = await (ctx.symlinkDirSeam ?? symlinkDir)(source.root, linkPath);
     if (!linked.ok) return fail(ctx, planned, linked.error);
     effectiveMode = linked.value.mode;
     linkTarget = effectiveMode === "symlink" ? source.root : undefined;
-    // files[] lists the bundle-relative paths with sha256 OMITTED (no per-file copy exists, 00 §3).
-    files = source.files.map((f) => ({ path: f.relpath }));
+    files = effectiveMode === "symlink"
+      ? source.files.map((f) => ({ path: f.relpath }))
+      : source.files.map((f) => ({
+          path: f.relpath,
+          sha256: sha256File(path.join(linkPath, f.relpath)),
+        }));
   }
+
+  // Native mirrors follow the new primary. Verify both before any retired placement is removed.
+  const desiredResult = await applyPlacements(desiredPlacements, ctx, source);
+  if (!desiredResult.ok) return fail(ctx, planned, desiredResult.error);
+  try {
+    if (effectiveMode === "symlink") {
+      if (!fs.lstatSync(linkPath).isSymbolicLink()) throw new Error("not a symlink");
+    } else {
+      for (const file of source.files) {
+        if (sha256File(path.join(linkPath, file.relpath)) !== file.sha256) {
+          throw new Error(`hash mismatch: ${file.relpath}`);
+        }
+      }
+    }
+  } catch {
+    return fail(ctx, planned, {
+      code: "UNEXPECTED",
+      agent: ctx.agent,
+      message: `required primary ${effectiveMode} install failed verification: ${linkPath}`,
+      path: linkPath,
+    });
+  }
+  const verified = verifyRequiredLayout(planned, ctx, source, desiredPlacements);
+  if (!verified.ok) return fail(ctx, planned, verified.error);
+  const cleanupResult = await applyPlacements(cleanupPlacements, ctx, source);
+  if (!cleanupResult.ok) return fail(ctx, planned, cleanupResult.error);
+  const retainedCleanup = cleanupResult.value.filter((_p, index) =>
+    cleanupPlacements[index]?.retention === "while-skipped"
+    && cleanupPlacements[index]!.files.some((f) => f.action === "skip-modified"));
 
   const manifest = buildManifest({
     agent: ctx.agent,
@@ -284,14 +418,18 @@ async function applySymlinkInstall(
     skills: source.skills,
     sourceHash: source.sourceHash,
     raufPin: ctx.raufPin,
-    placements: placementResult.value,
+    placements: [...desiredResult.value, ...retainedCleanup],
     // Truthful record: a copy fallback must NOT carry link (copy-mode manifest invariant, 05).
     ...(linkTarget !== undefined ? { link: { target: linkTarget } } : {}),
-    previous: ctx.priorManifest,
+    previous: ctx.previousManifest ?? ctx.priorManifest,
     now: () => new Date(ctx.now),
   });
-  const wrote = writeManifest(ctx.manifestPath, manifest);
+  const wrote = (ctx.writeManifestSeam ?? writeManifest)(ctx.manifestPath, manifest);
   if (!wrote.ok) return fail(ctx, planned, wrote.error);
+  if (ctx.supersededManifestPath !== undefined && ctx.supersededManifestPath !== ctx.manifestPath) {
+    const removed = await removePath(ctx.supersededManifestPath);
+    if (!removed.ok) return fail(ctx, planned, removed.error);
+  }
   return success(ctx, planned);
 }
 
@@ -331,6 +469,7 @@ async function applyPlacements(
   source: LocatedSource,
 ): Promise<Result<Placement[]>> {
   const priorByDest = new Map<string, Placement>();
+  for (const p of ctx.priorPlacements ?? []) priorByDest.set(p.destination, p);
   for (const p of ctx.priorManifest?.placements ?? []) priorByDest.set(p.destination, p);
 
   const out: Placement[] = [];
@@ -361,7 +500,11 @@ async function applyMirror(
   const removedParents = new Set<string>();
 
   for (const fa of pl.files) {
-    const resolved = resolveWithinNoSymlinks(pl.root, pl.destination, fa.relpath);
+    // A retired whole-primary symlink is represented as relpath "."; unlinking that final node is
+    // safe and must not be mistaken for traversal through a symlink ancestor.
+    const resolved = fa.action === "remove" && fa.relpath === "."
+      ? resolveWithin(pl.root, pl.destination)
+      : resolveWithinNoSymlinks(pl.root, pl.destination, fa.relpath);
     if (!resolved.ok) return resolved;
     const destAbs = resolved.value;
 
@@ -453,8 +596,34 @@ async function applyManagedBlock(
   }
 
   if (fa.action === "remove") {
-    // Uninstall is handled by removePlacements; an install-plan never yields "remove" here.
-    return ok(carry());
+    let existing: string;
+    try {
+      existing = fs.readFileSync(fileAbs, "utf8");
+    } catch {
+      return ok({ kind: "managed-block", root: pl.root, destination: pl.destination, files: [] });
+    }
+    const current = extractManagedRegion(existing);
+    if (current === null) {
+      return ok({ kind: "managed-block", root: pl.root, destination: pl.destination, files: [] });
+    }
+    const recorded = fa.recordedSha256 ?? prior?.files.find((f) => f.path === basename)?.sha256;
+    if (!pl.forceRemoval && (recorded === undefined || sha256String(current) !== recorded)) {
+      return err({
+        code: "UNEXPECTED",
+        message: `managed feature-forge region changed before cleanup: ${fileAbs}`,
+        path: fileAbs,
+        remedy: "re-run the migration; use --force only to remove the sentinel-bounded region",
+      });
+    }
+    const stripped = removeBlock(existing);
+    if (stripped === "") {
+      const removed = await removePath(fileAbs);
+      if (!removed.ok) return removed;
+    } else {
+      const wrote = await writeText(fileAbs, stripped);
+      if (!wrote.ok) return wrote;
+    }
+    return ok({ kind: "managed-block", root: pl.root, destination: pl.destination, files: [] });
   }
 
   // create | overwrite — read existing (or treat as empty), upsert the block, write back.
@@ -487,6 +656,8 @@ async function removePlacements(
 ): Promise<Result<void>> {
   for (const pl of placements) {
     if (pl.kind === "managed-block") {
+      const fa = pl.files[0];
+      if (fa === undefined || fa.action === "unchanged" || fa.action === "skip-modified") continue;
       const resolved = resolveWithinNoSymlinks(pl.root, pl.destination);
       if (!resolved.ok) return resolved;
       const fileAbs = resolved.value;
@@ -495,6 +666,11 @@ async function removePlacements(
         existing = fs.readFileSync(fileAbs, "utf8");
       } catch {
         continue; // already gone — nothing to strip
+      }
+      const region = extractManagedRegion(existing);
+      if (region === null) continue;
+      if (!pl.forceRemoval && (fa.recordedSha256 === undefined || sha256String(region) !== fa.recordedSha256)) {
+        continue; // user-modified region: uninstall preserves it unless explicitly forced
       }
       const stripped = removeBlock(existing);
       if (stripped === "") {

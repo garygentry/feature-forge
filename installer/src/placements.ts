@@ -57,6 +57,26 @@ export function resolvePlacements(
   });
 }
 
+/**
+ * Resolve the retired Copilot managed-instruction placement. It is deliberately absent from
+ * `AGENT_TARGETS`: fresh installs must never create it. Migration and uninstall may trust this
+ * exact historical boundary only after a prior manifest proves ownership.
+ */
+export function resolveLegacyCopilotBlock(
+  scope: Scope,
+  opts?: ResolveOpts,
+): ResolvedPlacement {
+  const roots = resolveRoots(opts);
+  const scopeRoot = scope === "global" ? roots.home : roots.cwd;
+  const spec: PlacementSpec = {
+    kind: "managed-block",
+    baseDir: ".github",
+    subpath: "copilot-instructions.md",
+  };
+  const root = path.resolve(scopeRoot, ".github");
+  return { kind: "managed-block", root, destination: path.resolve(root, spec.subpath), spec };
+}
+
 /** One selected mirror source and its placement-destination-relative path. */
 export interface MirrorFile {
   readonly srcRelpath: string;

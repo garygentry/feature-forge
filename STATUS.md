@@ -4,7 +4,7 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-26 (GitHub Copilot adaptation active; hardening program remains complete)._
+_Last updated: 2026-08-27 (GitHub Copilot adaptation active; hardening program remains complete)._
 
 ## Current release
 
@@ -51,8 +51,12 @@ runtime at `.github/feature-forge` or `~/.copilot/feature-forge`; Copilot CLI 1.
 direct skill discovery, complete-root helper execution, and `forge-researcher` dispatch in both
 scopes. Review's forged-primary uninstall finding is fixed; the post-fix full gate passes 2,496
 Python (2 skipped), 203 installer, and 11 Pi-source tests, and a clean clone repeats all installer
-tests. The cursor is `FORGE-106` for fail-safe legacy migration. No adaptation release or rauf pin
-advance has occurred.
+tests. FORGE-106 is locally implemented but remains ACTIVE pending authorized commit/push and
+fresh-clone durability: current/legacy manifests are strictly validated; native files are applied and
+hash-verified before recorded old cleanup; managed-region edits are preserved as `skip-modified`;
+personal copy/symlink roots, dry-run, write-last recovery, repeated update, and exact uninstall pass.
+Independent review reports no blocker, and the full gate passes 2,496 Python (2 skipped), 208
+installer, and 11 Pi-source tests. No adaptation release or rauf pin advance has occurred.
 Task definitions live in
 `plans/copilot-adaptation/unified-copilot-adaptation-plan.md`; current operational state lives in
 `plans/copilot-adaptation/EXECUTION.md` on the adaptation branch.

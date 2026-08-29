@@ -570,6 +570,13 @@ foundation alone does not satisfy installer, migration, root-resolution, or pack
   Apply new files first, verify results, remove only old manifest-owned orphans, remove an unchanged
   owned managed block, preserve modified content as `skip-modified`, write the new manifest last, and
   prove repeated update/uninstall idempotence. Never delete by filename alone.
+  Progress (2026-08-27): the uncommitted implementation passes strict current/legacy ownership
+  validation, phased apply/verify/cleanup/write-last migration, copy/symlink personal-root moves,
+  managed-region conflict/force behavior, dry-run parity, deterministic failure recovery, repeated
+  update, and exact uninstall. Independent review has no remaining blocker; the full clean-shell gate
+  passes 2,496 Python tests (2 skipped), 208 installer tests, and 11 Pi-source tests. Evidence:
+  `evidence/forge-106-fail-safe-legacy-migration-2026-08-27.md`. Keep this row open until authorized
+  commit/push and fresh-clone durability proof.
 
 - [ ] **FORGE-107 — Add generator/installer/version/package gates**
   Repo: feature-forge. Depends on: FORGE-101..106.

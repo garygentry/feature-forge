@@ -354,6 +354,14 @@ export interface PlannedPlacement {
    * "managed-block" has a single entry whose `relpath` is the file basename (no `srcRelpath`).
    */
   readonly files: PlacementFileAction[];
+  /**
+   * Persistence policy for migration-only placements. Desired placements use the default `always`;
+   * retired placements are either omitted after cleanup (`never`) or retained only while a
+   * user-modified managed region is intentionally skipped (`while-skipped`).
+   */
+  readonly retention?: "always" | "while-skipped" | "never";
+  /** Migration-only authorization to remove an edited, but still sentinel-bounded, managed region. */
+  readonly forceRemoval?: boolean;
   /** "managed-block" only: the rendered block body (without sentinels) a create/overwrite writes. */
   readonly blockContent?: string;
 }
@@ -362,6 +370,8 @@ export interface PlannedPlacement {
 export interface PlacementFileAction extends FileAction {
   /** "mirror" only: bundle-relative source path to copy into `<destination>/<relpath>`. */
   readonly srcRelpath?: string;
+  /** Prior managed-region hash carried into a removal plan for apply-time TOCTOU validation. */
+  readonly recordedSha256?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -428,7 +438,7 @@ export interface RunReport {
  *  - copilot — detects `.copilot`; direct installs recursively mirror native skills and flat custom
  *              agents into scope-specific discovery roots, with one complete namespaced runtime at
  *              `.github/feature-forge` (project) or `~/.copilot/feature-forge` (global). Current CLI
- *              discovery is runtime-verified; the legacy managed block remains until FORGE-106.
+ *              discovery is runtime-verified; retired managed blocks are migration cleanup only.
  *  - cursor  — `.cursor/rules/*.mdc` confirmed current (verified-current).
  *  - gemini  — `~/.gemini/extensions/feature-forge` global confirmed; project scope is
  *              best-known (project extension install is not clearly documented).
@@ -438,7 +448,7 @@ export interface RunReport {
 export const AGENT_TARGETS: Readonly<Record<AgentId, AgentTarget>> = {
   claude: { id: "claude", configDirName: ".claude", installBaseDir: ".claude", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "confirmed", docsUrl: "https://docs.claude.com/en/docs/claude-code/skills" },
   codex: { id: "codex", configDirName: ".codex", installBaseDir: ".agents", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://developers.openai.com/codex/skills", placements: [{ kind: "mirror", baseDir: ".codex", subpath: "agents", sourcePrefix: "agents/" }] },
-  copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", globalInstallBaseDir: ".copilot", projectInstallBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://docs.github.com/en/copilot/concepts/agents/about-agent-skills", placements: [{ kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "skills", sourcePrefix: "skills/", mirrorLayout: "recursive" }, { kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "agents", sourcePrefix: "agents/" }, { kind: "managed-block", baseDir: ".github", subpath: "copilot-instructions.md" }] },
+  copilot: { id: "copilot", configDirName: ".copilot", installBaseDir: ".github", globalInstallBaseDir: ".copilot", projectInstallBaseDir: ".github", installSubpath: "", installKind: "instructions", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://docs.github.com/en/copilot/concepts/agents/about-agent-skills", placements: [{ kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "skills", sourcePrefix: "skills/", mirrorLayout: "recursive" }, { kind: "mirror", baseDir: ".github", globalBaseDir: ".copilot", projectBaseDir: ".github", subpath: "agents", sourcePrefix: "agents/" }] },
   cursor: { id: "cursor", configDirName: ".cursor", installBaseDir: ".cursor", installSubpath: "rules", installKind: "rules", skillFileForm: "<name>.mdc", confidence: "verified-current", docsUrl: "https://cursor.com/docs/context/rules" },
   gemini: { id: "gemini", configDirName: ".gemini", installBaseDir: ".gemini", installSubpath: "extensions", installKind: "extension", skillFileForm: "<name>.md", confidence: "verified-current", projectConfidence: "best-known", docsUrl: "https://github.com/google-gemini/gemini-cli/blob/main/docs/extensions/index.md" },
   pi: { id: "pi", configDirName: ".pi", globalConfigDirName: ".pi/agent", projectConfigDirName: ".pi", installBaseDir: ".pi", globalInstallBaseDir: ".pi/agent", projectInstallBaseDir: ".pi", installSubpath: "skills", installKind: "skills", skillFileForm: "SKILL.md", confidence: "verified-current", docsUrl: "https://github.com/earendil-works/pi-coding-agent", placements: [{ kind: "mirror", baseDir: ".pi", globalBaseDir: ".pi/agent", projectBaseDir: ".pi", subpath: "agents", sourcePrefix: "agents/" }] },

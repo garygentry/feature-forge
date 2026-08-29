@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Fresh Copilot installs now carry one complete runtime per scope.** Project installs keep the namespaced bundle at `.github/feature-forge/` beside native `.github/skills/` and `.github/agents/` mirrors; personal installs now use `~/.copilot/feature-forge/` beside `~/.copilot/skills/` and `~/.copilot/agents/`. Current GitHub documentation and Copilot CLI 1.0.80 runtime discovery promote both direct scopes to `verified-current`; legacy managed-block migration remains separate.
+- **Legacy direct Copilot installs migrate without deleting user content.** Updates apply and verify the native runtime, skill, and agent layout before removing manifest-owned legacy files; personal installs move from `~/.github/feature-forge` to `~/.copilot/feature-forge`. Unchanged recorded instruction regions are removed, edited regions report `skip-modified` unless `--force` removes only the sentinel-bounded block, fresh installs never create the obsolete block, and the new manifest is committed only after reconciliation.
+
+- **Fresh Copilot installs now carry one complete runtime per scope.** Project installs keep the namespaced bundle at `.github/feature-forge/` beside native `.github/skills/` and `.github/agents/` mirrors; personal installs now use `~/.copilot/feature-forge/` beside `~/.copilot/skills/` and `~/.copilot/agents/`. Current GitHub documentation and Copilot CLI 1.0.80 runtime discovery promote both direct scopes to `verified-current`; legacy managed-block cleanup is handled by the fail-safe update migration.
 
 - **Direct Copilot installs now plan native discovery mirrors safely.** The installer supports recursive skill-tree mirrors and flat custom-agent mirrors in project and personal scopes, reports placement actions identically in dry-run and real-run JSON, records every owned leaf, preserves unowned modified files, validates manifest placement containment before uninstall, rejects symlink-ancestor escapes, and removes only recorded mirror content. Generic `.github/` directories remain insufficient for automatic Copilot detection.
 

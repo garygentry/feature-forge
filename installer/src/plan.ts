@@ -54,8 +54,12 @@ export interface PlanContext {
   readonly source: LocatedSource | null;
   /** The prior manifest for this destination, or `null` if none exists (fresh install). */
   readonly priorManifest: InstallManifest | null;
+  /** Trusted placement ownership from a superseded cross-root manifest during migration. */
+  readonly priorPlacements?: readonly Placement[];
   /** `--force`: overwrite `skip-modified` destinations instead of skipping. */
   readonly force: boolean;
+  /** Cross-root migration rewrites equal untracked primary files before claiming ownership. */
+  readonly claimUntrackedPrimary?: boolean;
   /** The pinned rauf coordinate to surface on the plan (06); the planner only echoes it. */
   readonly raufPin?: string | null;
   /**
@@ -192,7 +196,7 @@ function planPlacements(ctx: PlanContext, withOrphans: boolean): Result<PlannedP
   const resolved = ctx.placements ?? [];
   if (resolved.length === 0) return ok([]);
   const source = ctx.source as LocatedSource;
-  const priorByDest = priorPlacementIndex(ctx.priorManifest);
+  const priorByDest = priorPlacementIndex(ctx.priorManifest, ctx.priorPlacements);
   const planned: PlannedPlacement[] = [];
   for (const rp of resolved) {
     // Validate the trusted placement boundary before ANY destination read. This also catches a
@@ -217,8 +221,12 @@ function planPlacements(ctx: PlanContext, withOrphans: boolean): Result<PlannedP
 }
 
 /** Index prior-manifest placements by their absolute destination, for clean/orphan reconciliation. */
-function priorPlacementIndex(prior: InstallManifest | null): Map<string, Placement> {
+function priorPlacementIndex(
+  prior: InstallManifest | null,
+  inherited?: readonly Placement[],
+): Map<string, Placement> {
   const m = new Map<string, Placement>();
+  for (const p of inherited ?? []) m.set(p.destination, p);
   for (const p of prior?.placements ?? []) m.set(p.destination, p);
   return m;
 }
@@ -300,16 +308,61 @@ function planManagedBlock(
   };
 }
 
-/** Hash of the managed region currently in the target file, or undefined if absent/unreadable. */
-function readManagedRegionHash(file: string): string | undefined {
+/**
+ * Plan removal of a retired managed region from proven prior ownership. An absent region is already
+ * reconciled; an unchanged region is removable; an edited region is preserved unless `--force`.
+ */
+export function planManagedBlockRemoval(
+  rp: ResolvedPlacement,
+  prior: Placement,
+  force: boolean,
+): PlannedPlacement {
+  const basename = path.basename(rp.destination);
+  const current = readManagedRegionState(rp.destination);
+  const recordedHash = prior.files.find((f) => f.path === basename)?.sha256;
+  const action: FileActionKind = current.kind === "absent"
+    ? "unchanged"
+    : current.kind === "hash" && recordedHash !== undefined && current.hash === recordedHash
+      ? "remove"
+      : current.kind === "hash" && force
+        ? "remove"
+        : "skip-modified";
+  return {
+    kind: "managed-block",
+    root: rp.root,
+    destination: rp.destination,
+    files: [{ relpath: basename, action, ...(recordedHash ? { recordedSha256: recordedHash } : {}) }],
+    retention: "while-skipped",
+    ...(force ? { forceRemoval: true } : {}),
+  };
+}
+
+type ManagedRegionState =
+  | { readonly kind: "absent" }
+  | { readonly kind: "hash"; readonly hash: string }
+  | { readonly kind: "conflict" };
+
+/** Distinguish a genuinely absent region from unreadable or malformed sentinel content. */
+function readManagedRegionState(file: string): ManagedRegionState {
   let content: string;
   try {
     content = fs.readFileSync(file, "utf8");
-  } catch {
-    return undefined;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "ENOENT"
+      ? { kind: "absent" }
+      : { kind: "conflict" };
   }
   const region = extractManagedRegion(content);
-  return region === null ? undefined : sha256String(region);
+  if (region !== null) return { kind: "hash", hash: sha256String(region) };
+  return content.includes("feature-forge:managed:")
+    ? { kind: "conflict" }
+    : { kind: "absent" };
+}
+
+/** Hash of a well-formed managed region, or undefined when absent/conflicted. */
+function readManagedRegionHash(file: string): string | undefined {
+  const state = readManagedRegionState(file);
+  return state.kind === "hash" ? state.hash : undefined;
 }
 
 /** Copy-mode per-file diff (spec 04 §6). `ctx.source` is non-null here. */
@@ -323,7 +376,10 @@ function planCopy(ctx: PlanContext, withOrphans: boolean): FileAction[] {
     const destAbs = path.join(ctx.destination, sf.relpath);
     const destHash = hashIfExists(destAbs);
     const manifestHash = manifestByPath.get(sf.relpath)?.sha256;
-    const kind = classifyFile(sf.relpath, sf.sha256, destHash, manifestHash, ctx.force);
+    const classified = classifyFile(sf.relpath, sf.sha256, destHash, manifestHash, ctx.force);
+    const kind = ctx.claimUntrackedPrimary && manifestHash === undefined && classified === "unchanged"
+      ? "overwrite"
+      : classified;
     actions.push({ relpath: sf.relpath, action: kind });
   }
 
