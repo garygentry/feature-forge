@@ -245,8 +245,8 @@
         },
         "minRunnerVersion": {
           "type": "string",
-          "default": "0.6.0",
-          "description": "Minimum runner version (semver). 0.6.0 is the AGENT-SURFACE FLOOR: the rauf version that ships the coding-agent selection surface (the --agent flag, the `agents` availability probe, and the preset agent registry) that this config's agentArgument/agentsProbeCommand consume. Flooring here guarantees a successful gate implies those surfaces exist. (0.5.0 was the prior grammar/contract-flip floor — unified exit codes, `loop run --detached`, explicit `review` signal, versioned events.ndjson — which predates the agent surface and so could not guarantee it.) forge-5 enforces this via versionCommand before any loop side-effects."
+          "default": "0.14.0",
+          "description": "Minimum runner version (semver). 0.14.0 is the CAPABILITY FLOOR the shipped stage actually depends on: it is the version the package pins (installHint / installer RAUF_PIN) AND the version needed for full post-run needs-human recovery — rauf 0.14's `backlog answer` injects a recorded answer into the next iteration (RECOVERY_MIN_RUNNER_VERSION in forge-session.py). Below it, recovery silently degrades to `backlog unblock` (answer not injected) and large Codex prompts retain the pre-0.14 argv-size (E2BIG) failure mode. Earlier surfaces are subsumed: 0.6.0 first shipped the coding-agent selection surface (--agent flag, `agents` availability probe, preset registry consumed by agentArgument/agentsProbeCommand); 0.5.0 added unified exit codes, `loop run --detached`, the explicit `review` signal, and versioned events.ndjson. Flooring at 0.14.0 guarantees a successful gate implies the recovery + agent surfaces both exist, so the gate no longer green-lights a runner older than the version the package itself pins. forge-5 enforces this via versionCommand before any loop side-effects."
         }
       }
     }

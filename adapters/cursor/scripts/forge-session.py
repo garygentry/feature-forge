@@ -461,8 +461,12 @@ TOPOLOGY_DEPTH_WARN_RATIO: Final[float] = 0.5
 #: The forge-side capability threshold for the runner's `backlog answer` apply
 #: surface: at or above this rauf version the recovery procedure applies answers
 #: via `rauf backlog answer`; below it, it degrades to `rauf backlog unblock`.
-#: It never hard-fails recovery, and it is NOT ``loopRunner.minRunnerVersion``
-#: (the install floor in references/forge-config-schema.json, which stays 0.6.0).
+#: It never hard-fails recovery. As of the 0.14.0 floor bump it now COINCIDES with
+#: ``loopRunner.minRunnerVersion`` (the install floor in
+#: references/forge-config-schema.json, also 0.14.0) — the launch gate was raised so
+#: it no longer green-lights a runner too old to inject a recovered answer — but the
+#: two remain conceptually distinct: this one selects the recovery apply surface and
+#: only degrades, while the install floor hard-stops the launch.
 RECOVERY_MIN_RUNNER_VERSION: Final[str] = "0.14.0"
 #: The fixed final line of the NEXT-STEPS block. The stamp instructs the skill
 #: to print the block verbatim as its absolute last output — nothing after this.
