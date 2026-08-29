@@ -5780,15 +5780,19 @@ def cmd_state_verify(
             write, so a contradictory call never lands a partial entry:
 
             - `passed` — REQUIRES `verified_stage_version`. MAY carry an attached
-              report (`findings_file` + `findings_count` together, count >= 1) in
-              two protocol cases: an ADVISORY-ONLY report (no blocking
-              `error`/`gap` findings), and residual findings the user explicitly
-              ACCEPTED at the round-ledger escalation (recorded first as a
-              `state-decision`; see "Escalation" in stage-exit-protocol.md).
-              Either way the stage resolves without routing to forge-fix and the
-              report stays attached. Half a pairing is refused: a file without a
-              count, a positive count without a file, or a file with a zero
-              count. Unaccepted blocking findings belong to `findings-reported`.
+              report (`findings_file` + `findings_count` together, count >= 0) in
+              three protocol cases: a CLEAN zero-finding round report (a fix
+              pass's re-verify — valid audit evidence that lets the stage advance
+              instead of stranding at `findings-applied`, #237), an ADVISORY-ONLY
+              report (no blocking `error`/`gap` findings, count >= 1), and
+              residual findings the user explicitly ACCEPTED at the round-ledger
+              escalation (recorded first as a `state-decision`; see "Escalation"
+              in stage-exit-protocol.md). In every case the stage resolves
+              without routing to forge-fix and the report stays attached. Half a
+              pairing is refused: a file without a count, or a positive count
+              without a file. A bare `passed` (neither flag) is also accepted and
+              records the report-free clean shape. Unaccepted blocking findings
+              belong to `findings-reported`.
             - `findings-reported` — REQUIRES all three of `verified_stage_version`,
               `findings_file`, and a non-negative `findings_count`.
             - `findings-applied` — REFUSES `verified_stage_version`. Applying fixes
