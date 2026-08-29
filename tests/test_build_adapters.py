@@ -482,11 +482,18 @@ def test_installer_pi_manifest_paths_resolve_in_the_generated_tree():
     """
     manifest = json.loads((REPO_ROOT / "installer" / "package.json").read_text(encoding="utf-8"))
     declared = manifest["pi"]["skills"] + manifest["pi"]["extensions"]
+    agent_dirs = manifest["pi-subagents"]["agents"]
     assert declared, "the pi block must declare something for pi install to find"
+    assert agent_dirs, "the published package must declare its Forge agents"
 
-    for entry in declared:
+    for entry in declared + agent_dirs:
         assert entry.startswith("./adapters/"), f"{entry} must be tarball-relative"
         assert (REPO_ROOT / entry).exists(), f"{entry} does not exist in the generated tree"
+
+    agents = REPO_ROOT / agent_dirs[0]
+    assert (agents / "forge-verifier.md").is_file()
+    assert (agents / "forge-researcher.md").is_file()
+    assert (agents / "forge-spec-writer.md").is_file()
 
 
 def test_pi_host_notes_name_the_real_subagent_dispatch_shape(fixture_copy):

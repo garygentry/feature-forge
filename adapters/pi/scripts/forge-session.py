@@ -461,8 +461,12 @@ TOPOLOGY_DEPTH_WARN_RATIO: Final[float] = 0.5
 #: The forge-side capability threshold for the runner's `backlog answer` apply
 #: surface: at or above this rauf version the recovery procedure applies answers
 #: via `rauf backlog answer`; below it, it degrades to `rauf backlog unblock`.
-#: It never hard-fails recovery, and it is NOT ``loopRunner.minRunnerVersion``
-#: (the install floor in references/forge-config-schema.json, which stays 0.6.0).
+#: It never hard-fails recovery. As of the 0.14.0 floor bump it now COINCIDES with
+#: ``loopRunner.minRunnerVersion`` (the install floor in
+#: references/forge-config-schema.json, also 0.14.0) — the launch gate was raised so
+#: it no longer green-lights a runner too old to inject a recovered answer — but the
+#: two remain conceptually distinct: this one selects the recovery apply surface and
+#: only degrades, while the install floor hard-stops the launch.
 RECOVERY_MIN_RUNNER_VERSION: Final[str] = "0.14.0"
 #: The fixed final line of the NEXT-STEPS block. The stamp instructs the skill
 #: to print the block verbatim as its absolute last output — nothing after this.
@@ -5694,8 +5698,9 @@ def _verify_result_entry(
     the one status that carries prior state forward — the report metadata — and it
     deliberately writes no ``verifiedStageVersion``: fixes landed, nothing
     re-verified them, so freshness stays unresolved until a later ``passed``.
-    ``passed`` may record NEW attached-report metadata of its own (the
-    advisory-only and escalation-acceptance rules in ``cmd_state_verify``).
+    ``passed`` may record NEW attached-report metadata of its own (a clean report,
+    an advisory-only report, or the escalation-acceptance rules in
+    ``cmd_state_verify``).
 
     Args:
         status: The validated result status.
@@ -5719,11 +5724,11 @@ def _verify_result_entry(
     if status == "passed":
         entry: dict = {"status": status}
         if findings_file is not None:
-            # An attached report — advisory-only, or residual findings the user
-            # explicitly accepted at the escalation gate — resolves as `passed`
-            # so it never routes to forge-fix, while the report stays attached
-            # for later pickup. A bare zero count records no report keys, keeping
-            # the plain "verified clean" shape byte-identical to before.
+            # An attached clean/advisory report, or residual findings the user
+            # explicitly accepted at the escalation gate, resolves as `passed`
+            # so it never routes to forge-fix while the audit artifact stays
+            # attached. A bare zero count records no report keys, preserving the
+            # legacy plain "verified clean" shape.
             entry["findingsFile"] = findings_file
             entry["findingsCount"] = findings_count
         entry["verifiedAt"] = now
@@ -5779,15 +5784,19 @@ def cmd_state_verify(
             write, so a contradictory call never lands a partial entry:
 
             - `passed` — REQUIRES `verified_stage_version`. MAY carry an attached
-              report (`findings_file` + `findings_count` together, count >= 1) in
-              two protocol cases: an ADVISORY-ONLY report (no blocking
-              `error`/`gap` findings), and residual findings the user explicitly
-              ACCEPTED at the round-ledger escalation (recorded first as a
-              `state-decision`; see "Escalation" in stage-exit-protocol.md).
-              Either way the stage resolves without routing to forge-fix and the
-              report stays attached. Half a pairing is refused: a file without a
-              count, a positive count without a file, or a file with a zero
-              count. Unaccepted blocking findings belong to `findings-reported`.
+              report (`findings_file` + `findings_count` together, count >= 0) in
+              three protocol cases: a CLEAN zero-finding round report (a fix
+              pass's re-verify — valid audit evidence that lets the stage advance
+              instead of stranding at `findings-applied`, #237), an ADVISORY-ONLY
+              report (no blocking `error`/`gap` findings, count >= 1), and
+              residual findings the user explicitly ACCEPTED at the round-ledger
+              escalation (recorded first as a `state-decision`; see "Escalation"
+              in stage-exit-protocol.md). In every case the stage resolves
+              without routing to forge-fix and the report stays attached. Half a
+              pairing is refused: a file without a count, or a positive count
+              without a file. A bare `passed` (neither flag) is also accepted and
+              records the report-free clean shape. Unaccepted blocking findings
+              belong to `findings-reported`.
             - `findings-reported` — REQUIRES all three of `verified_stage_version`,
               `findings_file`, and a non-negative `findings_count`.
             - `findings-applied` — REFUSES `verified_stage_version`. Applying fixes
@@ -5914,8 +5923,9 @@ def cmd_state_verify(
     elif status == "passed":
         if findings_file is not None and findings_count is None:
             raise UsageError(
-                "--status passed with an advisory --findings-file requires "
-                "--findings-count N (the number of advisory findings it lists)"
+                "--status passed with --findings-file requires --findings-count N "
+                "(zero for a clean report, or the number of advisory/residual "
+                "findings it lists)"
             )
         if findings_count is not None:
             if findings_count < 0:
@@ -5928,12 +5938,6 @@ def cmd_state_verify(
                     f"--findings-file <advisory report>: a positive count with no "
                     f"report to read is unrecoverable. Blocking findings belong to "
                     f"--status findings-reported instead."
-                )
-            if findings_count == 0 and findings_file is not None:
-                raise UsageError(
-                    "--status passed with --findings-file requires --findings-count "
-                    ">= 1: an attached report claiming zero findings is "
-                    "self-contradictory — omit both for a clean pass"
                 )
         if verified_stage_version is None:
             raise UsageError(

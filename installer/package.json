@@ -54,6 +54,11 @@
       "./adapters/pi/extensions/forge-loop-supervisor/index.ts"
     ]
   },
+  "pi-subagents": {
+    "agents": [
+      "./adapters/pi/agents"
+    ]
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretest": "npm run build",

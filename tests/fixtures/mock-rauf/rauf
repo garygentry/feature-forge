@@ -8,8 +8,8 @@ third-party deps — standard library only — so it runs anywhere python3 does.
 
 Subcommands (the only two forge invokes on the agent surface):
 
-  * ``version --json`` → prints ``{"version": "0.6.0"}`` and exits 0 — the
-    agent-surface version floor the Step 1c gate checks (spec 05).
+  * ``version --json`` → prints ``{"version": "0.14.0"}`` and exits 0 — the
+    capability version floor the Step 1c gate checks (spec 05).
   * ``agents --json``  → prints a canned ``{"agents": [...]}`` and exits 0
     (ALWAYS exit 0 — an unknown id is simply absent; a known-unavailable one is
     present with ``available: false``). The canned mix (spec 07 §3.2/§4):
@@ -58,7 +58,7 @@ AGENTS = {
     ]
 }
 
-VERSION = {"version": "0.6.0"}
+VERSION = {"version": "0.14.0"}
 
 
 def _record_argv(argv: list[str]) -> None:

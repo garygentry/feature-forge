@@ -2151,18 +2151,43 @@ def test_state_verify_passed_records_an_advisory_report(tmp_path):
     assert entry["commitHash"] is None
 
 
-def test_state_verify_passed_refuses_a_report_claiming_zero_findings(tmp_path):
-    """A file with a zero count is self-contradictory; omit both for a clean pass."""
+def test_state_verify_passed_records_a_clean_report(tmp_path):
+    """Every verification round has an audit artifact, including a clean pass."""
     specs = _verify_fixture(tmp_path)
-    before = _state_bytes(specs)
-    result = _verify(
+    assert _verify(
         specs, "--stage", "forge-1-prd", "--status", "passed",
-        "--findings-file", "verify/advisories.md", "--findings-count", "0",
+        "--findings-file", "verify/clean.md", "--findings-count", "0",
         "--verified-stage-version", "1",
-    )
-    assert result.returncode == 2
-    assert "self-contradictory" in result.stderr
-    assert _state_bytes(specs) == before, "mutated on a rejected write"
+    ).returncode == 0
+    entry = _entry(specs)
+    assert entry["status"] == "passed"
+    assert entry["findingsFile"] == "verify/clean.md"
+    assert entry["findingsCount"] == 0
+    assert entry["verifiedStageVersion"] == 1
+
+
+def test_state_verify_clean_report_completes_a_findings_applied_round(tmp_path):
+    """Regression #237: a clean post-fix report terminates instead of cycling."""
+    specs = _verify_fixture(tmp_path)
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-reported",
+        "--findings-file", "verify/round1.md", "--findings-count", "2",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "findings-applied",
+    ).returncode == 0
+    assert _verify(
+        specs, "--stage", "forge-1-prd", "--status", "passed",
+        "--findings-file", "verify/round2.md", "--findings-count", "0",
+        "--verified-stage-version", "1",
+    ).returncode == 0
+    entry = _entry(specs)
+    assert entry["status"] == "passed"
+    assert entry["findingsFile"] == "verify/round2.md"
+    assert entry["findingsCount"] == 0
+    assert entry["verifiedStageVersion"] == 1
+    assert "fixedAt" not in entry
 
 
 def test_state_verify_plain_passed_keeps_the_report_free_shape(tmp_path):

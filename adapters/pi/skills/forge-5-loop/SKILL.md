@@ -83,8 +83,8 @@ This gate runs **before** the runner version/setup gates (1c/1d) so a blocked fe
 Enforce `loopRunner.minRunnerVersion` **before** doing anything else with the runner. This is what turns "the runner is missing or too old" into a clear, actionable stop instead of a cryptic mid-run failure.
 
 1. Run the **version command** (`loopRunner.versionCommand`, default `rauf version --json`) via Bash.
-2. Parse `{ "version": "<semver>" }` from stdout. Do NOT use plain `rauf version` (its human output is `rauf v0.6.0` with a `v` prefix) — always the `--json` form.
-3. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.6.0`), numerically by major, then minor, then patch.
+2. Parse `{ "version": "<semver>" }` from stdout. Do NOT use plain `rauf version` (its human output is `rauf v0.14.0` with a `v` prefix) — always the `--json` form.
+3. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.14.0`), numerically by major, then minor, then patch.
 
 **Any of the following is a HARD GATE FAILURE — do NOT proceed to run the loop.** STOP, show `loopRunner.installHint`, and include the raw command output for diagnosis:
 
@@ -92,7 +92,7 @@ Enforce `loopRunner.minRunnerVersion` **before** doing anything else with the ru
 - Its stdout is not valid JSON, has no `version` field, or `version` is not a valid semver string.
 - The reported version is **< `minRunnerVersion`**.
 
-For the version-too-old case, phrase it concretely, e.g.: "Your rauf is {reported}, but feature-forge needs ≥ {minRunnerVersion} — 0.6.0 is the floor that ships the agent-selection surface (`--agent` / `rauf agents`) the loop relies on. {installHint}". When the gate fails because the output couldn't be parsed, say so and show what the command printed before the `installHint`.
+For the version-too-old case, phrase it concretely, e.g.: "Your rauf is {reported}, but feature-forge needs ≥ {minRunnerVersion} — 0.14.0 is the version the package pins and the floor for full needs-human recovery. {installHint}". When the gate fails because the output couldn't be parsed, say so and show what the command printed before the `installHint`.
 
 > `installHint` points at the runner **CLI** install/upgrade — distinct from
 > `setupHint` (1d), which installs the runner's per-project artifacts.

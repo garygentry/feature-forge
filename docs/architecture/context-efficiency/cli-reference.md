@@ -106,7 +106,7 @@ Effective loopRunner config:
   defaultAgent       : ''
   eventStreamCommand : '{bin} loop run . --backlog {backlogDir} --iterations {iterations} --ndjson'
   …
-  minRunnerVersion   : '0.6.0'
+  minRunnerVersion   : '0.14.0'
   name               : 'rauf'
   preconditionFile   : '.rauf.json'
   runCommand         : '{bin} loop run . --backlog {backlogDir} --iterations {iterations}'
@@ -121,7 +121,7 @@ $ python3 "$R/scripts/forge-session.py" effective-config --json
   "name": "rauf",
   "bin": "rauf",
   "runCommand": "{bin} loop run . --backlog {backlogDir} --iterations {iterations}",
-  "minRunnerVersion": "0.6.0",
+  "minRunnerVersion": "0.14.0",
   ...
 }
 ```

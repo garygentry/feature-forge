@@ -385,7 +385,7 @@ def test_gate_off_runs_no_probe_and_is_byte_identical(sel, tmp_path):
 def test_schema_loop_runner_agent_defaults():
     schema = json.loads(SCHEMA_PATH.read_text())
     props = schema["properties"]["loopRunner"]["properties"]
-    assert props["minRunnerVersion"]["default"] == "0.6.0"
+    assert props["minRunnerVersion"]["default"] == "0.14.0"
     assert props["agentArgument"]["default"] == "--agent {agent}"
     assert props["agentsProbeCommand"]["default"] == "{bin} agents --json"
     assert props["defaultAgent"]["default"] == ""
@@ -396,10 +396,13 @@ def test_schema_loop_runner_agent_defaults():
 
 
 def test_fixture_version_reports_floor():
-    """The mock-rauf `version --json` branch reports the 0.6.0 floor (spec 07 §4).
+    """The mock-rauf `version --json` branch reports the 0.14.0 floor (spec 07 §4).
 
     The fixture MUST implement this for the version-gate path; assert it here so the
     branch can't silently break (the schema test above only checks the JSON default).
+    This asserts the fixture's reported version, not the gate comparison itself (the
+    Step 1c semver check is prose-executed by the agent, not this module); pinning the
+    mock to exactly the floor keeps the fixture consistent with a boundary (>=) pass.
     """
     proc = subprocess.run(
         [sys.executable, str(MOCK_RAUF), "version", "--json"],
@@ -407,7 +410,7 @@ def test_fixture_version_reports_floor():
         text=True,
     )
     assert proc.returncode == 0
-    assert json.loads(proc.stdout) == {"version": "0.6.0"}
+    assert json.loads(proc.stdout) == {"version": "0.14.0"}
 
 
 # ── 3.6 Probe-failure edges (REQ-AVAIL-01, spec 04 §5) ──────────────────────

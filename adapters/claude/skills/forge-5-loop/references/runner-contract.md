@@ -70,8 +70,8 @@ Notes:
   separate open-ended option for that.
 - **Option 3 is conditional.** Include it only when the Step 2a tally has `blocked
   > 0`; otherwise present options 1 and 2 only.
-- **Version floor.** rauf's explicit `review` signal ships in 0.5.0, below the
-  `minRunnerVersion` floor (0.6.0) enforced at gate 1c — so `--review` is always
+- **Version floor.** rauf's explicit `review` signal ships in 0.5.0, well below the
+  `minRunnerVersion` floor (0.14.0) enforced at gate 1c — so `--review` is always
   available once the loop is cleared to launch. No extra version check is needed.
 - **Non-rauf runners.** When `loopRunner.name != "rauf"`, add **no** Run-mode
   question — present the bare rendered command and let the user adjust via "Other",
