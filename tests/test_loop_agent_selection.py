@@ -400,7 +400,9 @@ def test_fixture_version_reports_floor():
 
     The fixture MUST implement this for the version-gate path; assert it here so the
     branch can't silently break (the schema test above only checks the JSON default).
-    Reporting exactly the floor exercises the gate's boundary-pass (>= floor).
+    This asserts the fixture's reported version, not the gate comparison itself (the
+    Step 1c semver check is prose-executed by the agent, not this module); pinning the
+    mock to exactly the floor keeps the fixture consistent with a boundary (>=) pass.
     """
     proc = subprocess.run(
         [sys.executable, str(MOCK_RAUF), "version", "--json"],
