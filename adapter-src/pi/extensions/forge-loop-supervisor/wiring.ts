@@ -41,8 +41,10 @@ export interface WatchHandle {
 /** Injectable side effects. Production values live in index.ts. */
 export interface Deps {
 	/** Launch the runner DETACHED so it outlives the session. Returns nothing —
-	 *  the loop is owned by the runner's server, not by a tracked child. */
-	spawnDetached(bin: string, args: string[], cwd: string): void;
+	 *  the loop is owned by the runner's server, not by a tracked child. `onError`
+	 *  reports an ASYNCHRONOUS spawn failure (e.g. ENOENT for a bad bin, which
+	 *  Node surfaces on the child's 'error' event, not as a throw). */
+	spawnDetached(bin: string, args: string[], cwd: string, onError?: (message: string) => void): void;
 	/** Watch `filePath` for changes, calling `onChange` on each (real: fs.watch
 	 *  on its directory + backstop interval). */
 	watch(filePath: string, onChange: () => void): WatchHandle;
@@ -147,10 +149,20 @@ export function createExtension(pi: PiLike, deps: Deps) {
 	 *  guard against duplicate watchers). Does an initial poll to replay history. */
 	function startWatch(task: SupervisorTask): void {
 		if (watchers.has(task.stateDir)) return;
-		const handle = supervisor.attach(task, (onRecord) => new NdjsonTailer(task.eventsFile, onRecord));
-		const watch = deps.watch(task.eventsFile, () => handle.poll());
+		const handle = supervisor.attach(task, (onRecord, onRotate) =>
+			new NdjsonTailer(task.eventsFile, onRecord, undefined, onRotate, task.eventsIno),
+		);
+		// Poll, then tear the watcher down once a terminal event has closed the task
+		// (its wake was already sent inside poll). This stops the fs.watch + backstop
+		// interval for a finished loop and frees a relaunch on the same backlog — the
+		// detached runner is untouched, exactly as on session end.
+		const pump = () => {
+			handle.poll();
+			if (supervisor.progress(task.stateDir)?.closed) stopWatch(task.stateDir);
+		};
+		const watch = deps.watch(task.eventsFile, pump);
 		watchers.set(task.stateDir, { handle, watch });
-		handle.poll();
+		pump();
 	}
 
 	/** Stop watching a task (teardown / stop) WITHOUT touching the runner. */
@@ -218,7 +230,12 @@ export function createExtension(pi: PiLike, deps: Deps) {
 			if (p.agent) args.push("--agent", p.agent);
 
 			try {
-				deps.spawnDetached(bin, args, cwd);
+				// A synchronous throw is a definite failure. An ASYNC spawn error
+				// (ENOENT for a bad bin) arrives after this returns, so surface it as
+				// a notification when it fires rather than silently claiming success.
+				deps.spawnDetached(bin, args, cwd, (msg) =>
+					host.notify(`forge loop: failed to launch ${bin} — ${msg}. The loop did not start.`, "error"),
+				);
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
 				return textResult(`Failed to launch ${bin}: ${msg}`, { launched: false, stateDir, error: msg });

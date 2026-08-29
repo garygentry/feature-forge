@@ -1,5 +1,8 @@
 # forge-5-loop — Loop-Runner Contract (launch, supervision, model precedence)
 
+> **On Pi, do not perform Steps 3b–3f by hand.** Pi has no background or monitor surface; this bundle's `forge-loop-supervisor` extension IS the "background-execution mechanism" and "monitoring mechanism" these steps name. Call **`forge_loop_launch`** with the backlog dir (plus `review` / `agent` / `iterations` from config) — it launches the loop **detached** and supervises `events.ndjson` for you, reporting each completed item and waking this session on needs-human / blocked / stuck / review-failed / error / completion. **Read the rest of Steps 3b–3f, and the launch/monitor detail in `references/runner-contract.md`, as a description of what that tool does — not as commands to run.** Use `forge_loop_status` to check progress and `forge_loop_stop` only to deliberately stop the runner; full detail is in "Host execution notes (Pi)" at the end of this skill.
+
+
 This file holds the detailed loop-runner contract relocated out of
 `forge-5-loop/SKILL.md`: the event-stream vs. log-fallback **launch** detail
 (Steps 3b/3d/3e), the structured-surface **monitoring** caveats, and the **model

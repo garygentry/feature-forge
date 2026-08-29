@@ -37,6 +37,9 @@ interface ActiveTask {
 	task: SupervisorTask;
 	/** Running count of completed items, rebuilt from replayed history. */
 	done: number;
+	/** Highest item_completed seq already counted into `done` — guards the counter
+	 *  against a re-read double-count independently of the notify cursor. */
+	doneCursor: number;
 	/** Total backlog items, when the launcher recorded it (`task.total`). */
 	total?: number;
 	closed: boolean;
@@ -70,14 +73,26 @@ export class LoopSupervisor {
 	 */
 	attach(
 		task: SupervisorTask,
-		makeReader: (onRecord: (rec: RaufEvent) => void) => { poll(): void },
+		makeReader: (
+			onRecord: (rec: RaufEvent) => void,
+			onRotate: () => void,
+		) => { poll(): void },
 	): TaskHandle {
 		const existing = this.active.get(task.stateDir);
 		if (existing) return this.handleFor(task.stateDir);
 
-		const entry: ActiveTask = { task: { ...task }, done: 0, total: task.total, closed: task.closed };
+		const entry: ActiveTask = {
+			task: { ...task },
+			done: 0,
+			doneCursor: -1,
+			total: task.total,
+			closed: task.closed,
+		};
 		this.active.set(task.stateDir, entry);
-		const reader = makeReader((rec) => this.handleRecord(task.stateDir, rec));
+		const reader = makeReader(
+			(rec) => this.handleRecord(task.stateDir, rec),
+			() => this.handleRotate(task.stateDir),
+		);
 		return {
 			stateDir: task.stateDir,
 			poll: () => reader.poll(),
@@ -99,12 +114,21 @@ export class LoopSupervisor {
 		const alreadySeen = seq !== null && seq <= entry.task.lastSeq;
 		const cls = classifyEvent(rec);
 
-		// Maintain the done counter for every item_completed, replayed or live, so
-		// a reattached session shows the correct running total.
-		if (rec.type === "item_completed") entry.done += 1;
+		// Count completed items for the [N/M] line. Guard against double-counting a
+		// replayed item: only count when its seq is past the counter's cursor. On a
+		// fresh attach the cursor is -1 so the whole history counts; on a re-read of
+		// the same run (a spurious re-poll) already-counted items are skipped. A
+		// genuine new run arrives via handleRotate, which resets the cursor first.
+		if (rec.type === "item_completed") {
+			if (seq === null || seq > entry.doneCursor) {
+				entry.done += 1;
+				if (seq !== null) entry.doneCursor = seq;
+			}
+		}
 
 		if (alreadySeen) return; // replayed history — rebuilt state, never re-notify
 
+		let surfaced = true;
 		switch (cls) {
 			case "progress":
 				this.host.notify(formatProgress(rec, entry.done, entry.total), "info");
@@ -120,13 +144,33 @@ export class LoopSupervisor {
 				entry.task.closed = true;
 				break;
 			case "ignore":
+				surfaced = false;
 				break;
 		}
 
-		if (seq !== null && seq > entry.task.lastSeq) {
+		// Advance the cursor and persist ONLY for a surfaced event. A firehose
+		// (`ignore`) event must not trigger a disk write + session entry per record
+		// (rauf emits many per second); ignored events re-classify as `ignore` on
+		// any later replay, so not persisting their seq is harmless. A terminal
+		// event persists `closed`, letting a later session know the run is done.
+		if (surfaced && seq !== null && seq > entry.task.lastSeq) {
 			entry.task.lastSeq = seq;
 			this.host.persist({ ...entry.task });
 		}
+	}
+
+	/** A rotation was detected (rauf started a new run — event `seq` restarts at
+	 *  0). Reset the per-run cursor and counters so the new run is surfaced from
+	 *  its start instead of being swallowed by the previous run's high-water seq. */
+	private handleRotate(stateDir: string): void {
+		const entry = this.active.get(stateDir);
+		if (!entry) return;
+		entry.task.lastSeq = -1;
+		entry.doneCursor = -1;
+		entry.done = 0;
+		entry.closed = false;
+		entry.task.closed = false;
+		this.host.persist({ ...entry.task });
 	}
 
 	private handleFor(stateDir: string): TaskHandle {

@@ -12,7 +12,7 @@
  * tracked pid — the mirror deliberately stores no pid.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { SupervisorTask } from "./types.js";
@@ -42,6 +42,7 @@ export function readMirror(stateDir: string): SupervisorTask | null {
 				eventsFile: parsed.eventsFile,
 				launchedAt: typeof parsed.launchedAt === "string" ? parsed.launchedAt : "",
 				total: typeof parsed.total === "number" ? parsed.total : undefined,
+				eventsIno: typeof parsed.eventsIno === "number" ? parsed.eventsIno : undefined,
 				lastSeq: typeof parsed.lastSeq === "number" ? parsed.lastSeq : -1,
 				closed: parsed.closed === true,
 			};
@@ -57,9 +58,18 @@ export function readMirror(stateDir: string): SupervisorTask | null {
 export function writeMirror(task: SupervisorTask): void {
 	const path = mirrorPath(task.stateDir);
 	try {
+		// Stamp the CURRENT events-file inode so a later session can tell whether the
+		// file was rotated (a new run) while it was away — see SupervisorTask.eventsIno.
+		let eventsIno = task.eventsIno;
+		try {
+			eventsIno = statSync(task.eventsFile).ino;
+		} catch {
+			// events file not present yet — keep whatever the task carried (if any)
+		}
+		const record: SupervisorTask = { ...task, eventsIno };
 		mkdirSync(dirname(path), { recursive: true });
 		const tmp = `${path}.tmp-${process.pid}`;
-		writeFileSync(tmp, `${JSON.stringify(task, null, 2)}\n`, "utf8");
+		writeFileSync(tmp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
 		renameSync(tmp, path);
 	} catch {
 		// Best-effort durability; a failed mirror write must not break the tool.

@@ -37,15 +37,15 @@ const BACKSTOP_MS = 2000;
 const DEBOUNCE_MS = 120;
 
 const productionDeps: Deps = {
-	spawnDetached(bin, args, cwd) {
+	spawnDetached(bin, args, cwd, onError) {
 		// detached + unref + ignored stdio: the child is fully decoupled from the
 		// Pi process and survives session shutdown. rauf hands the loop to its
 		// server and this launcher exits quickly; a non-self-detaching runner still
 		// stays off the session.
 		const child = spawn(bin, args, { cwd, detached: true, stdio: "ignore" });
-		child.on("error", () => {
-			/* ENOENT &c. surface later via forge_loop_status / absent events */
-		});
+		// ENOENT (bad bin) and other spawn failures arrive here asynchronously —
+		// report them so a launch that never happened does not look successful.
+		child.on("error", (err) => onError?.(err instanceof Error ? err.message : String(err)));
 		child.unref();
 	},
 	watch(filePath, onChange): WatchHandle {

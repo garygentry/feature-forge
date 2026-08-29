@@ -53,6 +53,12 @@ export interface SupervisorTask {
 	stateDir: string;
 	/** Absolute path to the watched event file (`<stateDir>/events.ndjson`). */
 	eventsFile: string;
+	/** Inode of `eventsFile` when the mirror was last written. On reattach the
+	 *  tailer seeds its rotation check from this: a different inode means the file
+	 *  was rotated (a NEW run — rauf renames the old file to archive/ and recreates
+	 *  it) while no session was watching, so the per-run cursor must reset instead
+	 *  of stale-swallowing the new run. Absent on a fresh launch. */
+	eventsIno?: number;
 	/** ISO timestamp of the launch (for display + staleness reasoning). */
 	launchedAt: string;
 	/** Total backlog items at launch, when known — enables the `[N/M]` progress

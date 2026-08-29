@@ -18,6 +18,7 @@
  */
 
 import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 
 import type { RaufEvent } from "./types.js";
 
@@ -25,18 +26,37 @@ export class NdjsonTailer {
 	private offset = 0;
 	private ino: number | null = null;
 	private partial = "";
+	// A StringDecoder holds back an incomplete trailing multibyte sequence between
+	// reads, so a UTF-8 character split across two polls (e.g. an accented char or
+	// emoji in an event's `reason`/`title`) decodes correctly instead of turning
+	// into replacement chars on each half.
+	private decoder = new StringDecoder("utf8");
 
 	/**
 	 * @param filePath  Absolute path to the NDJSON file (may not exist yet).
 	 * @param onRecord  Called once per successfully-parsed JSON line, in order.
 	 * @param onError   Optional; called with a short reason when a line is
 	 *                  skipped as malformed (for observability/tests).
+	 * @param onRotate  Optional; called when a rotation is detected (a new inode,
+	 *                  or the file shrank below the cursor) — the signal a NEW run
+	 *                  has started, so the consumer can reset per-run state (rauf's
+	 *                  event `seq` restarts at 0 each run).
+	 * @param initialIno  Optional; the inode the file had when the consumer last
+	 *                  watched it (from the persisted mirror). Seeding it lets the
+	 *                  FIRST poll on reattach detect a rotation that happened while
+	 *                  no session was watching — the current file having a
+	 *                  different inode fires `onRotate`, so a stale cursor from a
+	 *                  previous run does not silently swallow the new run.
 	 */
 	constructor(
 		private readonly filePath: string,
 		private readonly onRecord: (rec: RaufEvent) => void,
 		private readonly onError?: (reason: string) => void,
-	) {}
+		private readonly onRotate?: () => void,
+		initialIno?: number,
+	) {
+		this.ino = typeof initialIno === "number" ? initialIno : null;
+	}
 
 	/**
 	 * Read whatever is new since the last poll and dispatch each complete record.
@@ -60,10 +80,17 @@ export class NdjsonTailer {
 		}
 
 		// Rotation: a new inode, or the file shrank below our cursor (truncate /
-		// replace). Re-read from the top of whatever file is there now.
+		// replace). Re-read from the top of whatever file is there now, reset the
+		// multibyte decoder, and signal the consumer so it can reset per-run state
+		// (rauf restarts `seq` at 0 each run — without this a stale cursor from a
+		// previous run would silently swallow the whole new run). This only fires
+		// on a genuine rotation: the first poll has ino === null, so neither branch
+		// trips on initial attach.
 		if ((this.ino !== null && ino !== this.ino) || size < this.offset) {
 			this.offset = 0;
 			this.partial = "";
+			this.decoder = new StringDecoder("utf8");
+			this.onRotate?.();
 		}
 		this.ino = ino;
 
@@ -76,7 +103,9 @@ export class NdjsonTailer {
 			const length = size - this.offset;
 			const buf = Buffer.allocUnsafe(length);
 			const read = readSync(fd, buf, 0, length, this.offset);
-			chunk = buf.subarray(0, read).toString("utf8");
+			// Decode through the StringDecoder so a multibyte char straddling this
+			// read's end is held back until its continuation bytes arrive next poll.
+			chunk = this.decoder.write(buf.subarray(0, read));
 			this.offset += read;
 		} catch {
 			return; // transient read failure; try again next poll

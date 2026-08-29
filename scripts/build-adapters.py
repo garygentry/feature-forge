@@ -962,6 +962,55 @@ def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
     return text
 
 
+# Injected into the Pi forge-5-loop SKILL body and its runner-contract reference so
+# the loop is driven by the forge-loop-supervisor extension's tools, not the generic
+# "background it + arm a Monitor" prose. Without it the step-by-step body (Steps
+# 3b-3f) still describes the Claude-shaped MANUAL path — background `runCommand`,
+# arm a monitor/tail — and only the appended _HOST_NOTES_PI overlay countermands it:
+# a body-vs-appendix contradiction of exactly the shape #235 reported. The redirect
+# is placed BEFORE the manual prose so the authoritative tool-based instruction is
+# the first thing the model reads in the step. Pi-safe already (no Claude tokens),
+# so it passes through translate_host_terms unchanged.
+_PI_SUPERVISE_REDIRECT = (
+    "> **On Pi, do not perform Steps 3b–3f by hand.** Pi has no background or "
+    "monitor surface; this bundle's `forge-loop-supervisor` extension IS the "
+    "\"background-execution mechanism\" and \"monitoring mechanism\" these steps "
+    "name. Call **`forge_loop_launch`** with the backlog dir (plus `review` / "
+    "`agent` / `iterations` from config) — it launches the loop **detached** and "
+    "supervises `events.ndjson` for you, reporting each completed item and waking "
+    "this session on needs-human / blocked / stuck / review-failed / error / "
+    "completion. **Read the rest of Steps 3b–3f, and the launch/monitor detail in "
+    "`references/runner-contract.md`, as a description of what that tool does — not "
+    "as commands to run.** Use `forge_loop_status` to check progress and "
+    "`forge_loop_stop` only to deliberately stop the runner; full detail is in "
+    "\"Host execution notes (Pi)\" at the end of this skill.\n"
+)
+#: Header the redirect is inserted after in the forge-5-loop SKILL body.
+_PI_FORGE5_STEP3B_ANCHOR = "### 3b. Launch Background Process\n"
+
+
+def inject_pi_supervise_redirect(content: str, *, at_top: bool) -> str:
+    """Insert the Pi supervise redirect ahead of the manual launch/monitor prose.
+
+    For the SKILL body, anchor immediately after the Step 3b header so the FIRST
+    thing under that step is the authoritative tool-based instruction. For the
+    runner-contract reference (``at_top``), put it right after the H1 title. If the
+    expected anchor is absent the content is returned unchanged — the drift guard
+    (``build-adapters.py --check``) then surfaces the stale anchor loudly.
+    """
+    block = _PI_SUPERVISE_REDIRECT + "\n"
+    if at_top:
+        head, _, rest = content.partition("\n")
+        return f"{head}\n\n{block}{rest}" if rest else content
+    if _PI_FORGE5_STEP3B_ANCHOR in content:
+        return content.replace(
+            _PI_FORGE5_STEP3B_ANCHOR,
+            _PI_FORGE5_STEP3B_ANCHOR + "\n" + block,
+            1,
+        )
+    return content
+
+
 def skill_body_for(body: str, agent_id: str) -> str:
     """Body for a skill on ``agent_id``: verbatim for Claude; translated + overlay else."""
     if agent_id == "claude":
@@ -1339,6 +1388,12 @@ class PiEmitter:
         content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
             skill.body, "pi"
         )
+        # forge-5-loop's generic body describes the Claude-shaped manual background +
+        # monitor path; on Pi that work is done by the forge-loop-supervisor extension.
+        # Insert the tool redirect at Step 3b so the body routes through the tools
+        # instead of being contradicted only by the trailing overlay (#235/#236).
+        if skill.name == "forge-5-loop":
+            content = inject_pi_supervise_redirect(content, at_top=False)
         rel = f"skills/{skill.name}/SKILL.md"
         drops: tuple[DropRecord, ...] = ()
         if hint_value(skill) is not None:
@@ -1756,6 +1811,12 @@ def _translate_reference_host_terms(bundle_root: Path, agent_id: str) -> None:
             continue
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
         translated = translate_host_terms(text, agent_id=agent_id)
+        # On Pi, forge-5-loop's runner-contract details the Claude-shaped manual
+        # launch + monitor recipe; the supervisor extension does that work, so front
+        # the file with the same tool redirect the SKILL carries (#235/#236) rather
+        # than leaving a standalone manual recipe that contradicts it.
+        if agent_id == "pi" and rel.name == "runner-contract.md" and "forge-5-loop" in rel.parts:
+            translated = inject_pi_supervise_redirect(translated, at_top=True)
         if translated != text:
             path.write_text(translated, encoding="utf-8", errors="surrogateescape")
 
