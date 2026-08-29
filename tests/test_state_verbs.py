@@ -2151,18 +2151,23 @@ def test_state_verify_passed_records_an_advisory_report(tmp_path):
     assert entry["commitHash"] is None
 
 
-def test_state_verify_passed_refuses_a_report_claiming_zero_findings(tmp_path):
-    """A file with a zero count is self-contradictory; omit both for a clean pass."""
+def test_state_verify_passed_records_a_clean_zero_findings_report(tmp_path):
+    """A clean zero-finding round report is valid audit evidence (#237): a fix
+    pass's re-verify must record `passed` with the report attached and count 0,
+    so the stage advances instead of staying `findings-applied` and being
+    re-served forever. Both report fields are persisted."""
     specs = _verify_fixture(tmp_path)
-    before = _state_bytes(specs)
-    result = _verify(
+    assert _verify(
         specs, "--stage", "forge-1-prd", "--status", "passed",
-        "--findings-file", "verify/advisories.md", "--findings-count", "0",
+        "--findings-file", "verify/round2.md", "--findings-count", "0",
         "--verified-stage-version", "1",
-    )
-    assert result.returncode == 2
-    assert "self-contradictory" in result.stderr
-    assert _state_bytes(specs) == before, "mutated on a rejected write"
+    ).returncode == 0
+    entry = _entry(specs)
+    assert entry["status"] == "passed"
+    assert entry["findingsFile"] == "verify/round2.md"
+    assert entry["findingsCount"] == 0
+    assert entry["verifiedStageVersion"] == 1
+    assert entry["commitHash"] is None
 
 
 def test_state_verify_plain_passed_keeps_the_report_free_shape(tmp_path):

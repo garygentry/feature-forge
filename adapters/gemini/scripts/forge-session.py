@@ -5719,10 +5719,12 @@ def _verify_result_entry(
     if status == "passed":
         entry: dict = {"status": status}
         if findings_file is not None:
-            # An attached report — advisory-only, or residual findings the user
-            # explicitly accepted at the escalation gate — resolves as `passed`
-            # so it never routes to forge-fix, while the report stays attached
-            # for later pickup. A bare zero count records no report keys, keeping
+            # An attached report — a clean zero-finding round report (a fix pass's
+            # re-verify, #237), an advisory-only report, or residual findings the
+            # user explicitly accepted at the escalation gate — resolves as `passed`
+            # so it never routes to forge-fix, while the report stays attached for
+            # later pickup. The count (0 for a clean report) is persisted alongside.
+            # A bare `passed` with no --findings-file records no report keys, keeping
             # the plain "verified clean" shape byte-identical to before.
             entry["findingsFile"] = findings_file
             entry["findingsCount"] = findings_count
@@ -5914,8 +5916,8 @@ def cmd_state_verify(
     elif status == "passed":
         if findings_file is not None and findings_count is None:
             raise UsageError(
-                "--status passed with an advisory --findings-file requires "
-                "--findings-count N (the number of advisory findings it lists)"
+                "--status passed with --findings-file requires --findings-count N "
+                "(the number of findings it lists — 0 for a clean report)"
             )
         if findings_count is not None:
             if findings_count < 0:
@@ -5929,12 +5931,12 @@ def cmd_state_verify(
                     f"report to read is unrecoverable. Blocking findings belong to "
                     f"--status findings-reported instead."
                 )
-            if findings_count == 0 and findings_file is not None:
-                raise UsageError(
-                    "--status passed with --findings-file requires --findings-count "
-                    ">= 1: an attached report claiming zero findings is "
-                    "self-contradictory — omit both for a clean pass"
-                )
+            # A zero-finding report IS valid audit evidence, not a contradiction: a
+            # clean re-verify after a fix pass must be able to record `passed` with the
+            # round's report attached (else the entry stays `findings-applied` and the
+            # stage is re-served forever — issue #237). `passed --findings-file R
+            # --findings-count 0` is therefore accepted and both fields are persisted;
+            # a bare `passed` with neither flag still records the report-free clean shape.
         if verified_stage_version is None:
             raise UsageError(
                 "--status passed requires --verified-stage-version <current version>"

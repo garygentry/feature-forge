@@ -468,9 +468,27 @@ def test_installer_pi_manifest_paths_resolve_in_the_generated_tree():
     declared = manifest["pi"]["skills"] + manifest["pi"]["extensions"]
     assert declared, "the pi block must declare something for pi install to find"
 
+    # ``pi-subagents.agents`` is a top-level sibling of ``pi`` (not nested inside it),
+    # mirroring the generated adapters/pi/package.json. Without it, ``pi install
+    # npm:@garygentry/feature-forge`` never registers the packaged forge agents
+    # (forge-verifier et al.), so a post-fix re-verify can't find the verifier and
+    # forge-verify loops (#237). The published root manifest — not the nested adapter
+    # manifest — is what Pi loads, so the coupling is asserted here too.
+    assert "subagents" not in manifest["pi"], "third-party key must stay out of the pi block"
+    subagent_agents = manifest["pi-subagents"]["agents"]
+    assert subagent_agents, "pi-subagents.agents must declare the packaged agents dir"
+    declared += subagent_agents
+
     for entry in declared:
         assert entry.startswith("./adapters/"), f"{entry} must be tarball-relative"
         assert (REPO_ROOT / entry).exists(), f"{entry} does not exist in the generated tree"
+
+    # The declared agents dir must actually carry the packaged forge agents, so a Pi
+    # install can discover forge-verifier (the agent whose absence triggered #237).
+    agents_dir = REPO_ROOT / manifest["pi-subagents"]["agents"][0]
+    assert agents_dir.is_dir(), "the declared pi-subagents agents dir must exist"
+    agent_names = {p.stem for p in agents_dir.glob("*.md")}
+    assert "forge-verifier" in agent_names, "forge-verifier must be discoverable via the installer manifest"
 
 
 def test_pi_host_notes_name_the_real_subagent_dispatch_shape(fixture_copy):

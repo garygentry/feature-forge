@@ -1744,6 +1744,31 @@ def test_the_findings_applied_passed_path_rejoins_production(tmp_path: Path) -> 
     assert d["verifyState"] == "fresh"
 
 
+def test_the_findings_applied_clean_report_passed_path_rejoins_production(
+    tmp_path: Path,
+) -> None:
+    """#237: a fix pass's re-verify writes a CLEAN round report (Step 4 always
+    writes one), so it records `passed` WITH the report attached and count 0 —
+    not a bare pass. Before the fix that combination was rejected as
+    self-contradictory, the `passed` write never landed, the entry stayed
+    `findings-applied`, and stage-exit re-served forge-verify forever. Assert the
+    attached-clean-report pass now lands and stage-exit advances to production."""
+    root = _served_project(tmp_path)
+
+    _report_findings(root)
+    _state_verify(root, "--status", "findings-applied")
+    assert _branch(root, "forge-fix", "applied")["directives"][
+        "primaryCommand"] == VERIFY_BRANCH
+
+    # The clean re-verify attaches its zero-finding round report (count 0).
+    _state_verify(root, "--status", "passed",
+                  "--findings-file", "verify/round2.md", "--findings-count", "0",
+                  "--verified-stage-version", str(SERVED_VERSION))
+    d = _branch(root, "forge-verify", "passed")["directives"]
+    assert d["primaryCommand"] == SUCCESSOR_COMMAND
+    assert d["verifyState"] == "fresh"
+
+
 def test_the_findings_applied_findings_path_stays_in_recovery(tmp_path: Path) -> None:
     """07 §3.3: findings → applied → findings never reaches a production stage."""
     root = _served_project(tmp_path)
