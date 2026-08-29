@@ -486,8 +486,58 @@ describe("wiring: launch / supervise / stop / lifecycle", () => {
 		await h.tools.get("forge_loop_launch").execute("id", { backlogDir: "specs/auth" }, undefined, undefined, h.ctx);
 		const res = await h.tools.get("forge_loop_stop").execute("id", { backlogDir: "specs/auth" }, undefined, undefined, h.ctx);
 		assert.equal(res.details.stopped, true);
-		assert.ok(h.execCalls.some((c) => c.args.join(" ") === "loop stop"), "stop runs `rauf loop stop`");
+		assert.ok(
+			h.execCalls.some((c) => c.args.join(" ") === "loop stop --backlog specs/auth"),
+			"stop runs `rauf loop stop` scoped to the backlog",
+		);
 		assert.equal(h.watches[0].closed, true);
+		rmSync(cwd, { recursive: true, force: true });
+	});
+
+	test("stop refuses to kill a loop it never supervised (#codex-2)", async () => {
+		const cwd = tmp();
+		const h = harness(cwd);
+		// Nothing launched, no args: must NOT run `rauf loop stop` (which would kill
+		// whatever loop happens to be in this project).
+		const res = await h.tools.get("forge_loop_stop").execute("id", {}, undefined, undefined, h.ctx);
+		assert.equal(res.details.stopped, false);
+		assert.equal(h.execCalls.length, 0, "no stop command was run");
+		rmSync(cwd, { recursive: true, force: true });
+	});
+
+	test("status scopes the runner query to the supervised backlog (#codex-2)", async () => {
+		const cwd = tmp();
+		mkdirSync(join(cwd, "specs/auth/.rauf"), { recursive: true });
+		const h = harness(cwd);
+		await h.tools.get("forge_loop_launch").execute("id", { backlogDir: "specs/auth" }, undefined, undefined, h.ctx);
+		await h.tools.get("forge_loop_status").execute("id", {}, undefined, undefined, h.ctx);
+		assert.ok(
+			h.execCalls.some((c) => c.args.join(" ") === "status --json --backlog specs/auth"),
+			"status queries the runner scoped to the backlog",
+		);
+		rmSync(cwd, { recursive: true, force: true });
+	});
+
+	test("a brand-new session reattaches from the disk mirror alone (#codex-3)", async () => {
+		const cwd = tmp();
+		const stateDir = join(cwd, "specs/auth/.rauf");
+		mkdirSync(stateDir, { recursive: true });
+		const eventsFile = join(stateDir, "events.ndjson");
+		writeFileSync(eventsFile, nl({ type: "item_completed", title: "A", seq: 0 }));
+		// A previous session left a mirror; the NEW session has NO forge-loop-task entry.
+		writeFileSync(join(stateDir, ".forge-supervisor.json"), JSON.stringify({
+			backlogDir: "specs/auth", stateDir, eventsFile, launchedAt: "t0", total: 3, lastSeq: 0, closed: false,
+		}));
+
+		const h = harness(cwd); // ctx.sessionManager.getEntries() returns [] (no entries)
+		h.on.get("session_start")({ type: "session_start", reason: "startup" }, h.ctx);
+		assert.equal(h.watches.length, 1, "discovered the mirror by scanning cwd and reattached");
+		assert.equal(h.control.supervisor.progress(stateDir).done, 1, "rebuilt state from the mirror's run");
+
+		// A new terminal event past the cursor wakes the freshly-reattached session.
+		appendFileSync(eventsFile, nl({ type: "loop_completed", completedCount: 1, blockedCount: 0, seq: 1 }));
+		h.watches[0].onChange();
+		assert.equal(h.sent.length, 1, "the reattached session is woken by the new terminal event");
 		rmSync(cwd, { recursive: true, force: true });
 	});
 

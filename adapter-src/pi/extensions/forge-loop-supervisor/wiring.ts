@@ -20,7 +20,7 @@ import { join } from "node:path";
 
 import { Type } from "typebox";
 
-import { clearMirror, readMirror, writeMirror } from "./registry.js";
+import { clearMirror, discoverMirrors, readMirror, writeMirror } from "./registry.js";
 import { LoopSupervisor, type TaskHandle } from "./supervisor.js";
 import { NdjsonTailer } from "./tailer.js";
 import type { SupervisorHost, SupervisorTask } from "./types.js";
@@ -107,7 +107,7 @@ function resolveDir(cwd: string, dir: string): string {
  * control object (used by tests) exposing the live supervisor and watcher map.
  */
 export function createExtension(pi: PiLike, deps: Deps) {
-	const watchers = new Map<string, { handle: TaskHandle; watch: WatchHandle }>();
+	const watchers = new Map<string, { handle: TaskHandle; watch: WatchHandle; backlogDir: string }>();
 	let ui: UiLike | null = null;
 
 	const host: SupervisorHost = {
@@ -161,7 +161,7 @@ export function createExtension(pi: PiLike, deps: Deps) {
 			if (supervisor.progress(task.stateDir)?.closed) stopWatch(task.stateDir);
 		};
 		const watch = deps.watch(task.eventsFile, pump);
-		watchers.set(task.stateDir, { handle, watch });
+		watchers.set(task.stateDir, { handle, watch, backlogDir: task.backlogDir });
 		pump();
 	}
 
@@ -286,10 +286,15 @@ export function createExtension(pi: PiLike, deps: Deps) {
 					: [...watchers.keys()][0];
 
 			const progress = stateDir ? supervisor.progress(stateDir) : null;
+			// Scope the runner query to the supervised backlog so status reflects the
+			// right loop, not whatever sits at the default project root.
+			const backlogDir = p.backlogDir ?? (stateDir ? watchers.get(stateDir)?.backlogDir : undefined);
 			let runnerLine = "";
 			if (pi.exec) {
+				const statusArgs = ["status", "--json"];
+				if (backlogDir) statusArgs.push("--backlog", backlogDir);
 				try {
-					const res = await pi.exec(p.bin || "rauf", ["status", "--json"], { cwd, timeout: 15000 });
+					const res = await pi.exec(p.bin || "rauf", statusArgs, { cwd, timeout: 15000 });
 					runnerLine = res.code === 0 ? ` Runner: ${res.stdout.trim()}` : ` Runner status exited ${res.code}.`;
 				} catch {
 					runnerLine = " (could not query the runner for authoritative status)";
@@ -333,10 +338,27 @@ export function createExtension(pi: PiLike, deps: Deps) {
 					? resolveDir(cwd, join(p.backlogDir, ".rauf"))
 					: [...watchers.keys()][0];
 
+			// Refuse a blind stop: with nothing supervised AND no explicit target we
+			// must NOT run `rauf loop stop`, which would kill whatever loop happens to
+			// be running in this project — one this extension never launched. Require
+			// a supervised task or an explicit backlogDir/stateDir.
+			const watcherRec = stateDir ? watchers.get(stateDir) : undefined;
+			if (!watcherRec && !p.backlogDir && !p.stateDir) {
+				return textResult(
+					"No forge loop is being supervised in this session, and no backlog/stateDir was given — nothing to stop. Ending the session already leaves any detached loop running by design; pass a backlogDir to stop a specific loop.",
+					{ stopped: false },
+				);
+			}
+
+			// Scope the stop to the specific backlog so it targets the intended loop,
+			// not the default project root.
+			const backlogDir = p.backlogDir ?? watcherRec?.backlogDir;
 			let stopLine = "";
 			if (pi.exec) {
+				const stopArgs = ["loop", "stop"];
+				if (backlogDir) stopArgs.push("--backlog", backlogDir);
 				try {
-					const res = await pi.exec(p.bin || "rauf", ["loop", "stop"], { cwd, timeout: 30000 });
+					const res = await pi.exec(p.bin || "rauf", stopArgs, { cwd, timeout: 30000 });
 					stopLine = res.code === 0 ? "Runner stop requested." : `Runner stop exited ${res.code}: ${res.stderr.trim()}`;
 				} catch (e) {
 					stopLine = `Could not run the stop command: ${e instanceof Error ? e.message : String(e)}`;
@@ -366,18 +388,26 @@ export function createExtension(pi: PiLike, deps: Deps) {
 		const consider = (task: SupervisorTask | null) => {
 			if (!task || seen.has(task.stateDir) || watchers.has(task.stateDir)) return;
 			seen.add(task.stateDir);
-			// Prefer the on-disk mirror (most current lastSeq/closed); fall back to
-			// the session entry's own copy.
+			// Prefer the on-disk mirror (most current lastSeq/closed/eventsIno); fall
+			// back to the session entry's own copy.
 			const fresh = readMirror(task.stateDir) ?? task;
 			if (fresh.closed) return; // already surfaced its terminal — nothing to resume
 			startWatch(fresh);
 		};
+		// (1) Session entries carry tasks across reload/resume/fork within a session
+		// lineage (pi.appendEntry survives those).
 		const entries = c.sessionManager?.getEntries?.() ?? [];
 		for (const entry of entries) {
 			if (entry?.type === "custom" && entry?.customType === TASK_ENTRY_TYPE) {
 				consider(entry.data as SupervisorTask);
 			}
 		}
+		// (2) A BRAND-NEW session file has no such entry, so also discover the disk
+		// mirrors under the project root — this is what lets a fresh session reattach
+		// to a loop a previous session launched (issue #236's "reconcile after
+		// session restart"). Bounded scan; `consider` dedups and skips closed tasks.
+		const cwd = c.cwd ?? process.cwd();
+		for (const task of discoverMirrors(cwd)) consider(task);
 	});
 
 	// Cleanup on shutdown: close every watcher, but LEAVE the detached runner

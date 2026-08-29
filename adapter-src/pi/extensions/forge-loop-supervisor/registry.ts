@@ -12,14 +12,33 @@
  * tracked pid — the mirror deliberately stores no pid.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { SupervisorTask } from "./types.js";
 
+/** The mirror filename, discoverable by scanning (see {@link discoverMirrors}). */
+export const MIRROR_NAME = ".forge-supervisor.json";
+
+/** Directory names never worth descending into during a mirror scan. */
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "archive", ".pi", ".claude"]);
+/** How deep the scan descends from the project root — mirrors live at
+ *  `<backlogDir>/.rauf/.forge-supervisor.json`, so a shallow bound reaches the
+ *  common `specs/<feature>/.rauf/` layout without walking the whole tree. */
+const SCAN_MAX_DEPTH = 5;
+
 /** Path of the registry mirror for a runner state directory. */
 export function mirrorPath(stateDir: string): string {
-	return join(stateDir, ".forge-supervisor.json");
+	return join(stateDir, MIRROR_NAME);
 }
 
 /** Read the mirrored task for a state dir, or null if absent/unreadable/corrupt.
@@ -83,4 +102,34 @@ export function clearMirror(stateDir: string): void {
 	} catch {
 		// best-effort
 	}
+}
+
+/**
+ * Find every supervised-task mirror under `root`, so a BRAND-NEW Pi session (a
+ * fresh session file with no `forge-loop-task` entry of its own) can still
+ * rediscover and reattach to a loop a previous session launched. Bounded, cheap,
+ * and failure-tolerant: skips heavy directories, caps depth, and treats any
+ * unreadable dir or corrupt mirror as absent rather than throwing.
+ */
+export function discoverMirrors(root: string): SupervisorTask[] {
+	const found: SupervisorTask[] = [];
+	const walk = (dir: string, depth: number): void => {
+		if (depth > SCAN_MAX_DEPTH) return;
+		let entries: import("node:fs").Dirent[];
+		try {
+			entries = readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const entry of entries) {
+			if (entry.isFile() && entry.name === MIRROR_NAME) {
+				const task = readMirror(dir); // mirror lives AT <stateDir>/<MIRROR_NAME>
+				if (task) found.push(task);
+			} else if (entry.isDirectory() && !SKIP_DIRS.has(entry.name)) {
+				walk(join(dir, entry.name), depth + 1);
+			}
+		}
+	};
+	walk(root, 0);
+	return found;
 }
