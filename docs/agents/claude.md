@@ -80,9 +80,10 @@ Backlog **`validate`** (forge-4-backlog / forge-verify) is **agent-agnostic** �
 `validate` verb and never passes an agent (`--agent`, `{agent}`, or any id). Only execution
 (forge-5-loop) carries the agent dimension.
 
-feature-forge floors the runner at **rauf 0.6.0** (`loopRunner.minRunnerVersion`) — the version
-that ships the `--agent` flag, the `agents` probe, and the preset agent registry — and checks
-`rauf version --json` before any run.
+feature-forge floors the runner at **rauf 0.14.0** (`loopRunner.minRunnerVersion`) — the version
+the package pins and the floor for full needs-human recovery (it subsumes the older 0.6.0
+agent-surface floor: the `--agent` flag, the `agents` probe, and the preset agent registry) — and
+checks `rauf version --json` before any run.
 *(rauf is published to npm as [`@garygentry/rauf`](https://www.npmjs.com/package/@garygentry/rauf) —
 install the CLI with `npx @garygentry/rauf` (or `npm i -g @garygentry/rauf`), or its binary script:
 `curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`.)*

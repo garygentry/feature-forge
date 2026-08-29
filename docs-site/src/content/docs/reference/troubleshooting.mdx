@@ -27,7 +27,7 @@ complete). Pass `--force` to skip the gate and restart from scratch.
 The [loop stage](/pipeline/stage-5-loop/) has a few preconditions. Common causes when it refuses to launch:
 
 - The backlog hasn't been created and verified yet.
-- The loop runner (rauf) is missing, or older than the required `minRunnerVersion` (`0.6.0`).
+- The loop runner (rauf) is missing, or older than the required `minRunnerVersion` (`0.14.0`).
 - The runner isn't set up in the project — rauf needs a `.rauf.json`, created by running `rauf install .`.
 - There are uncommitted changes. The runner refuses a dirty tree, so the stage commits pipeline state before launching.
 

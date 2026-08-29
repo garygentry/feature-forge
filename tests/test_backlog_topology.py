@@ -82,15 +82,19 @@ class TestTopologyConstants:
     def test_recovery_min_runner_version(self):
         assert FS.RECOVERY_MIN_RUNNER_VERSION == "0.14.0"
 
-    def test_loop_runner_min_version_floor_unchanged(self):
-        """RECOVERY_MIN_RUNNER_VERSION is a capability threshold, NOT the install
-        floor — loopRunner.minRunnerVersion in the config schema stays 0.6.0."""
+    def test_loop_runner_min_version_floor_matches_recovery(self):
+        """The launch floor was raised to 0.14.0 so it no longer green-lights a
+        runner too old to inject a recovered answer; it now COINCIDES with
+        RECOVERY_MIN_RUNNER_VERSION. The two stay conceptually distinct (one hard-
+        stops the launch, the other only selects the recovery apply surface), but
+        the floor must never sit below the recovery threshold again."""
         schema = json.loads(
             (FORGE_SESSION.parent.parent / "references" / "forge-config-schema.json")
             .read_text(encoding="utf-8")
         )
         min_version = schema["properties"]["loopRunner"]["properties"]["minRunnerVersion"]
-        assert min_version["default"] == "0.6.0"
+        assert min_version["default"] == "0.14.0"
+        assert min_version["default"] == FS.RECOVERY_MIN_RUNNER_VERSION
 
 
 # --------------------------------------------------------------------------- #
