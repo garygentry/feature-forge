@@ -143,7 +143,7 @@ backlog size).
 ## Arm a Monitor on the event stream (Step 3d)
 
 Arm the **host's monitoring mechanism** on the structured event stream so events flow back into
-this session as they happen. Use **`persistent: true`** — runs can exceed the host's monitoring mechanism's
+this session as they happen. Use **a continuous watch** — runs can exceed the host's monitoring mechanism's
 maximum `timeout_ms` (1 hour), and a bounded timeout would silently stop watching a
 still-running loop.
 
@@ -189,7 +189,7 @@ high and the noise low:
   rather than echoing every line. For an exact breakdown, run the one-shot
   `{rendered statusJsonCommand}` and report `done/total` from `backlogSummary`.
 - **`needs_human`** (or `signal_parsed` with `signal: "needs_human"`) → **surface
-  immediately** and send a **`PushNotification`** (an hours-long run means the user has
+  immediately** and send a **an automatic session wake** (an hours-long run means the user has
   likely stepped away). **Important — the loop is NOT paused:** the runner has set that
   item aside and kept working other items. So report *what* needs a human and *which*
   item, then either (a) collect the user's answer via `AskUserQuestion` and **record it via
@@ -204,7 +204,7 @@ high and the noise low:
   No action is needed now: Step 4c's recovery pass offers the unblock after the run
   ends — a blocked-only run (no `needs_human` event) still enters it.
 - **`loop_error`** → a real failure (this is also what a circuit-breaker halt — too many
-  consecutive infra failures — emits). Surface now and `PushNotification`. Offer
+  consecutive infra failures — emits). Surface now and an automatic session wake. Offer
   inspection / `--force` / re-run as appropriate.
 - **Stall detection** → rauf emits an **`llm_stuck_warning`** event when an iteration
   stops making progress; the filter above includes it, so surface it live (a hang

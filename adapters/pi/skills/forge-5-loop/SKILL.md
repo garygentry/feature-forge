@@ -207,16 +207,16 @@ Follow the **Inform-user output template (Step 3c)** section of `references/runn
 ### 3d. Arm a Monitor on the event stream, and react to events
 
 Arm the **host's monitoring mechanism** on the structured event stream (the NDJSON file, or the
-human log as fallback) with **`persistent: true`**, a coverage-complete filter
+human log as fallback) with **a continuous watch**, a coverage-complete filter
 matching every terminal and exception state (silence is not success), and react to
 each event as it arrives. The exact Monitor commands, the filter event list, and the
 full per-event reaction rules (`needs_human` / `loop_error` surfaced immediately with
-a `PushNotification`, `item_completed` coalesced into milestones, `llm_stuck_warning`
+an automatic session wake, `item_completed` coalesced into milestones, `llm_stuck_warning`
 as a hang warning) are in `references/runner-contract.md` — follow them verbatim.
 
 ### 3f. Reach completion
 
-Step 4 is reached when the backgrounded process exits (its completion notification is authoritative); the `loop_completed` / `loop_error` / `loop_cancelled` event is the live heads-up that it's imminent. Stop the Monitor (it ends on its own when `tail` sees the process-ended log, or via `TaskStop`) and proceed to Step 4. Do NOT foreground-sleep or poll — the harness drives both the Monitor events and the completion notification.
+Step 4 is reached when the backgrounded process exits (its completion notification is authoritative); the `loop_completed` / `loop_error` / `loop_cancelled` event is the live heads-up that it's imminent. Stop the Monitor (it ends on its own when `tail` sees the process-ended log, or via the supervisor's own teardown) and proceed to Step 4. Do NOT foreground-sleep or poll — the harness drives both the Monitor events and the completion notification.
 
 ## Step 4: Check Results
 
@@ -296,7 +296,7 @@ Add `--epic "{epic}"` when this feature is an epic member — required, per the 
 - `{backlogDir}` is a **directory path**, not a file path. Pass `specs/auth`, not `specs/auth/backlog.json`.
 - rauf resolves `RAUF.md` with fallback (`{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`). State files (state.json, {loopRunner.logFile}, etc.) land at `{backlogDir}/{loopRunner.stateDir}/`, isolated per backlog dir, so concurrent features don't collide.
 - If the session disconnects mid-loop, the runner process continues independently — check results later with the status / list commands. A stale lock from a previous run may need `--force` to clear.
-- Never run the run command in the foreground (without the host's background-execution mechanism) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the host's monitoring mechanism (3d) — `persistent: true`, the **structured** surface (`events.ndjson`), never raw `RAUF_*` tokens (they false-match in agent prose). A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting. See `references/runner-contract.md` for the full monitoring rules.
+- Never run the run command in the foreground (without the host's background-execution mechanism) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the host's monitoring mechanism (3d) — a continuous watch, the **structured** surface (`events.ndjson`), never raw `RAUF_*` tokens (they false-match in agent prose). A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting. See `references/runner-contract.md` for the full monitoring rules.
 - The version gate (1c) uses the `--json` form on purpose; never parse `rauf version`'s human output.
 - **Implementation artifacts must not cite specs.** The loop should **read** specs and `backlog.json` freely — they are the source of truth, and the backlog rightly cites specs for provenance. But artifacts the loop **writes into the target repo** (source code, generated `SKILL.md`/agent files, configs, code comments) must be **self-contained**: no references to feature-forge spec files (no `See specs/{feature}/NN-*.md`, no "source spec" provenance notes) — specs are pre-implementation inputs that may be archived or deleted once the feature ships. This applies only to shipped implementation output, never to the backlog or spec documents, which keep citing specs.
 
@@ -309,4 +309,7 @@ This Pi bundle preserves Claude's `AskUserQuestion` references because it ships 
 - **User input:** use `AskUserQuestion` for genuine user decisions. It supports multiple questions, option descriptions, recommended ordering, multi-select, previews, and free-form Other/custom answers.
 - **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a skill directly, print the exact `/skill:<name> ...` command for the user to run.
 - **Subagents:** this bundle declares its custom agents (`forge-researcher`, `forge-spec-writer`, `forge-verifier`) as package agents. If a `subagent` tool is registered, dispatch one with `{ agent: "forge-verifier", task: "..." }`, or fan several out concurrently with `{ tasks: [{ agent: "forge-spec-writer", task: "..." }, ...] }`. If no `subagent` tool is available, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground and report progress as it arrives.
+- **Background / monitoring (forge-5-loop):** Pi has no built-in background bash, persistent monitor, or push-notification, so do **not** run the loop runner in the foreground and do **not** try to arm one. This bundle registers a **forge-loop-supervisor** extension that IS the "background-execution mechanism" and "monitoring mechanism" Steps 3b–3f refer to. Concretely:
+  - **Launch (Step 3b):** call **`forge_loop_launch`** with the backlog dir (and `review` / `agent` / `iterations` as resolved from config). It starts the loop **detached** — it runs in rauf's server and outlives this session — and returns immediately; you do not build or redirect a command yourself.
+  - **Supervise (Steps 3d–3f):** the extension then watches the runner's `events.ndjson` for you. It reports each completed item as one quiet line and **wakes this session automatically** on needs-human, blocked, stuck, review-failed, error, and completion — so do **not** arm a monitor, set a continuous tail, send a notification, poll, or foreground-sleep, and do not treat any manual stop as the terminal signal. When completion wakes you, go straight to Step 4 and read the authoritative counts with the status/list command. Use **`forge_loop_status`** to check progress on demand.
+  - **Stop / session end:** **`forge_loop_stop`** deliberately stops the runner; use it only when the user wants the loop to actually stop. Ending the Pi session does **not** stop the loop (it is detached), and the next session **reattaches automatically** without re-reporting what you already saw.
