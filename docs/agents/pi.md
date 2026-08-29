@@ -1,6 +1,6 @@
 # Pi setup
 
-feature-forge ships a generated Pi package under `adapters/pi/`. It contains Pi skills plus an `AskUserQuestion` compatibility extension so the interactive forge interview flow can use Pi's TUI instead of falling back to prose prompts.
+feature-forge ships a generated Pi package under `adapters/pi/`. It contains Pi skills plus two bundled extensions: an `AskUserQuestion` compatibility extension so the interactive forge interview flow can use Pi's TUI instead of falling back to prose prompts, and a `forge-loop-supervisor` extension so `forge-5-loop` can run the loop runner without blocking the session (Pi has no built-in background/monitor surface).
 
 ## Install
 
@@ -49,6 +49,7 @@ Do not use Claude plugin commands such as `/feature-forge:forge` in Pi.
 ## Notes and limitations
 
 - Interactive input uses the bundled `AskUserQuestion` compatibility tool — a vendored snapshot of `@juicesharp/rpiv-ask-user-question` (see `adapter-src/pi/UPSTREAM.md`). In a terminal it renders a tabbed questionnaire with previews, multi-select, per-option notes, and a final review. On RPC/ACP hosts that report a UI but cannot render a custom overlay (the VSCode pendant, Zed, Paseo) it degrades to sequential select/input dialogs rather than failing. In genuinely non-interactive print/JSON runs it still fails clearly rather than hanging or picking a default.
+- The loop stage (`forge-5-loop`) uses the bundled **`forge-loop-supervisor`** extension (first-party, not vendored) rather than a foreground run. `forge_loop_launch` starts the runner detached — it runs in rauf's server and outlives the Pi session — and the extension watches the runner's `events.ndjson`, reporting each completed item quietly and waking the session only on needs-human / blocked / stuck / review-failed / error / completion. `forge_loop_status` checks progress; `forge_loop_stop` deliberately stops the runner. Ending the session leaves the detached loop running; the next session reattaches automatically without re-reporting.
 - Pi has no `Skill` dispatch tool; forge stages are invoked as `/skill:<name>` commands.
 - If `forge-root.sh` cannot find the bundle in a custom package layout, set `FEATURE_FORGE_ROOT` to the generated `adapters/pi` bundle root.
 

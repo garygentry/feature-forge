@@ -58,8 +58,16 @@ FORBIDDEN_TOKENS: tuple[str, ...] = (
 PI_FORBIDDEN_TOKENS: tuple[str, ...] = (
     "the the ",
     "The the ",
-    "/clear",            # Pi's fresh-session command is /new
-    "/feature-forge:",   # Pi's skill-invocation prefix is /skill:
+    "/clear",              # Pi's fresh-session command is /new
+    "/feature-forge:",     # Pi's skill-invocation prefix is /skill:
+    # forge-5-loop's Claude-shaped supervision lifecycle tokens: on Pi these are
+    # degraded to the forge-loop-supervisor extension's surface (#235/#236), so a
+    # literal one surviving means the Pi host-term pass regressed. (Still present
+    # in the OTHER non-Claude agents, which have no supervisor extension — hence
+    # Pi-only here, not in FORBIDDEN_TOKENS.)
+    "`PushNotification`",
+    "`TaskStop`",
+    "`persistent: true`",
 )
 
 
@@ -100,6 +108,62 @@ def test_scan_surface_discovered() -> None:
             f"{target}: expected the bundled reference closure in scope (#167); "
             f"found only {len(refs)} reference markdown files"
         )
+
+
+def test_pi_forge_5_loop_supervises_via_extension_not_foreground() -> None:
+    """Pi forge-5-loop drives the loop through the bundled forge-loop-supervisor
+    extension — no foreground, no background/foreground contradiction (#235/#236).
+
+    The generic contract is Claude-shaped (background the process, arm a Monitor,
+    PushNotification on exceptions). Pi has no such surface, so the generated
+    skill must (a) name the concrete registered tools, and (b) NOT carry the old
+    overlay's affirmative "run long-lived commands in the foreground" instruction,
+    which contradicted the body's own "background it" (the exact defect #235
+    reported). The prohibition "Never run the run command in the foreground" is
+    fine — that is the anti-pattern, not an instruction to foreground.
+    """
+    skill = ADAPTERS_ROOT / "pi" / "skills" / "forge-5-loop" / "SKILL.md"
+    text = skill.read_text(encoding="utf-8")
+
+    for tool in ("forge_loop_launch", "forge_loop_status", "forge_loop_stop"):
+        assert tool in text, f"Pi forge-5-loop must name the concrete supervision tool {tool!r}"
+    assert "forge-loop-supervisor" in text, "the overlay must name the supervision extension"
+
+    for banned in (
+        "run long-lived commands in the foreground",
+        "in the foreground and report progress",
+    ):
+        assert banned not in text, (
+            f"Pi forge-5-loop still carries the removed foreground instruction {banned!r} "
+            f"— it contradicts the body's background/supervise contract (#235). Fix "
+            f"`_HOST_NOTES_PI` in scripts/build-adapters.py and rebuild adapters."
+        )
+
+    # The redirect must PRECEDE the manual launch prose, not merely appear somewhere
+    # (the appended overlay alone left the operative Steps 3b-3f still describing the
+    # Claude-shaped manual path — the contradiction the self-review caught). Assert
+    # `forge_loop_launch` is introduced under the Step 3b header BEFORE the
+    # "Launch the loop backgrounded" manual instruction.
+    anchor = "### 3b. Launch Background Process"
+    assert anchor in text, "the Step 3b header anchor moved — update the Pi redirect injection"
+    after_3b = text.split(anchor, 1)[1]
+    launch_pos = after_3b.find("forge_loop_launch")
+    manual_pos = after_3b.find("Launch the loop **backgrounded**")
+    assert launch_pos != -1, "forge_loop_launch must be introduced at Step 3b"
+    assert manual_pos == -1 or launch_pos < manual_pos, (
+        "the forge_loop_launch redirect must come BEFORE the manual 'background it' "
+        "prose at Step 3b, so the model reads the authoritative tool instruction first "
+        "(#235). Fix inject_pi_supervise_redirect in scripts/build-adapters.py."
+    )
+
+    # The runner-contract reference must front-load the same redirect (the manual
+    # launch/monitor recipe lives here too), so forge_loop_launch appears near the top.
+    contract = ADAPTERS_ROOT / "pi" / "skills" / "forge-5-loop" / "references" / "runner-contract.md"
+    ctext = contract.read_text(encoding="utf-8")
+    assert "forge_loop_launch" in ctext[:800], (
+        "the Pi runner-contract must front-load the forge_loop_launch redirect, ahead "
+        "of the manual launch/monitor detail (#235/#236)."
+    )
 
 
 @pytest.mark.parametrize(

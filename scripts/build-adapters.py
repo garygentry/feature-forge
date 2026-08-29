@@ -856,8 +856,27 @@ _HOST_NOTES_PI = (
     "or fan several out concurrently with "
     "`{ tasks: [{ agent: \"forge-spec-writer\", task: \"...\" }, ...] }`. If no "
     "`subagent` tool is available, run that step inline yourself.\n"
-    "- **Background / monitoring:** run long-lived commands in the foreground and "
-    "report progress as it arrives.\n"
+    "- **Background / monitoring (forge-5-loop):** Pi has no built-in background "
+    "bash, persistent monitor, or push-notification, so do **not** run the loop "
+    "runner in the foreground and do **not** try to arm one. This bundle registers "
+    "a **forge-loop-supervisor** extension that IS the \"background-execution "
+    "mechanism\" and \"monitoring mechanism\" Steps 3b–3f refer to. Concretely:\n"
+    "  - **Launch (Step 3b):** call **`forge_loop_launch`** with the backlog dir "
+    "(and `review` / `agent` / `iterations` as resolved from config). It starts the "
+    "loop **detached** — it runs in rauf's server and outlives this session — and "
+    "returns immediately; you do not build or redirect a command yourself.\n"
+    "  - **Supervise (Steps 3d–3f):** the extension then watches the runner's "
+    "`events.ndjson` for you. It reports each completed item as one quiet line and "
+    "**wakes this session automatically** on needs-human, blocked, stuck, "
+    "review-failed, error, and completion — so do **not** arm a monitor, set a "
+    "continuous tail, send a notification, poll, or foreground-sleep, and do not "
+    "treat any manual stop as the terminal signal. When completion wakes you, go "
+    "straight to Step 4 and read the authoritative counts with the status/list "
+    "command. Use **`forge_loop_status`** to check progress on demand.\n"
+    "  - **Stop / session end:** **`forge_loop_stop`** deliberately stops the "
+    "runner; use it only when the user wants the loop to actually stop. Ending the "
+    "Pi session does **not** stop the loop (it is detached), and the next session "
+    "**reattaches automatically** without re-reporting what you already saw.\n"
 )
 _HOST_NOTES: dict[str, str] = {
     "codex": _HOST_NOTES_CODEX,
@@ -912,6 +931,17 @@ _PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = _PI_BASE_HOST_TERM_REP
     # `--host pi` wording (the `/new` next-steps block, /skill: commands) instead of the
     # host-neutral `--host generic` output.
     ("--host claude", "--host pi"),
+    # forge-5-loop's Claude-shaped supervision names three Claude-only lifecycle tokens the
+    # base table does not degrade (`run_in_background` and `Monitor` it already does). On Pi
+    # the forge-loop-supervisor extension provides the real mechanism (see _HOST_NOTES_PI),
+    # so degrade the leaked tokens to what that extension does instead of naming tools Pi
+    # lacks. These appear ONLY in forge-5-loop's SKILL + runner-contract.md, so the Pi-wide
+    # rewrite is safe. Keep the backtick in the LHS so surrounding bold/backticks survive.
+    # Article-aware first so "a `PushNotification`" does not become "a an …".
+    ("a `PushNotification`", "an automatic session wake"),
+    ("`PushNotification`", "an automatic session wake"),
+    ("`persistent: true`", "a continuous watch"),
+    ("`TaskStop`", "the supervisor's own teardown"),
 )
 
 
@@ -930,6 +960,55 @@ def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
     for old, new in replacements:
         text = text.replace(old, new)
     return text
+
+
+# Injected into the Pi forge-5-loop SKILL body and its runner-contract reference so
+# the loop is driven by the forge-loop-supervisor extension's tools, not the generic
+# "background it + arm a Monitor" prose. Without it the step-by-step body (Steps
+# 3b-3f) still describes the Claude-shaped MANUAL path — background `runCommand`,
+# arm a monitor/tail — and only the appended _HOST_NOTES_PI overlay countermands it:
+# a body-vs-appendix contradiction of exactly the shape #235 reported. The redirect
+# is placed BEFORE the manual prose so the authoritative tool-based instruction is
+# the first thing the model reads in the step. Pi-safe already (no Claude tokens),
+# so it passes through translate_host_terms unchanged.
+_PI_SUPERVISE_REDIRECT = (
+    "> **On Pi, do not perform Steps 3b–3f by hand.** Pi has no background or "
+    "monitor surface; this bundle's `forge-loop-supervisor` extension IS the "
+    "\"background-execution mechanism\" and \"monitoring mechanism\" these steps "
+    "name. Call **`forge_loop_launch`** with the backlog dir (plus `review` / "
+    "`agent` / `iterations` from config) — it launches the loop **detached** and "
+    "supervises `events.ndjson` for you, reporting each completed item and waking "
+    "this session on needs-human / blocked / stuck / review-failed / error / "
+    "completion. **Read the rest of Steps 3b–3f, and the launch/monitor detail in "
+    "`references/runner-contract.md`, as a description of what that tool does — not "
+    "as commands to run.** Use `forge_loop_status` to check progress and "
+    "`forge_loop_stop` only to deliberately stop the runner; full detail is in "
+    "\"Host execution notes (Pi)\" at the end of this skill.\n"
+)
+#: Header the redirect is inserted after in the forge-5-loop SKILL body.
+_PI_FORGE5_STEP3B_ANCHOR = "### 3b. Launch Background Process\n"
+
+
+def inject_pi_supervise_redirect(content: str, *, at_top: bool) -> str:
+    """Insert the Pi supervise redirect ahead of the manual launch/monitor prose.
+
+    For the SKILL body, anchor immediately after the Step 3b header so the FIRST
+    thing under that step is the authoritative tool-based instruction. For the
+    runner-contract reference (``at_top``), put it right after the H1 title. If the
+    expected anchor is absent the content is returned unchanged — the drift guard
+    (``build-adapters.py --check``) then surfaces the stale anchor loudly.
+    """
+    block = _PI_SUPERVISE_REDIRECT + "\n"
+    if at_top:
+        head, _, rest = content.partition("\n")
+        return f"{head}\n\n{block}{rest}" if rest else content
+    if _PI_FORGE5_STEP3B_ANCHOR in content:
+        return content.replace(
+            _PI_FORGE5_STEP3B_ANCHOR,
+            _PI_FORGE5_STEP3B_ANCHOR + "\n" + block,
+            1,
+        )
+    return content
 
 
 def skill_body_for(body: str, agent_id: str) -> str:
@@ -1309,6 +1388,12 @@ class PiEmitter:
         content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
             skill.body, "pi"
         )
+        # forge-5-loop's generic body describes the Claude-shaped manual background +
+        # monitor path; on Pi that work is done by the forge-loop-supervisor extension.
+        # Insert the tool redirect at Step 3b so the body routes through the tools
+        # instead of being contradicted only by the trailing overlay (#235/#236).
+        if skill.name == "forge-5-loop":
+            content = inject_pi_supervise_redirect(content, at_top=False)
         rel = f"skills/{skill.name}/SKILL.md"
         drops: tuple[DropRecord, ...] = ()
         if hint_value(skill) is not None:
@@ -1488,13 +1573,21 @@ def run_self_containment_pass(
 
 
 def _write_pi_package_assets(bundle_root: Path) -> None:
-    """Write Pi package manifest and the vendored AskUserQuestion extension tree.
+    """Write the Pi package manifest and the bundled extension tree.
 
-    The extension is a vendored snapshot of ``@juicesharp/rpiv-ask-user-question``
-    (see ``adapter-src/pi/UPSTREAM.md``) rather than feature-forge-authored code,
-    and ships inside the bundle rather than as a dependency so a Pi install needs
-    no second ``pi install`` — the pipeline's interview stages have no fallback
-    question mechanism on Pi, so a missing dependency would be a hard stall.
+    Two extensions ship inside the bundle (rather than as dependencies) so a Pi
+    install needs no second ``pi install``:
+
+    - ``ask-user-question`` — a vendored snapshot of
+      ``@juicesharp/rpiv-ask-user-question`` (see ``adapter-src/pi/UPSTREAM.md``);
+      the pipeline's interview stages have no fallback question mechanism on Pi,
+      so a missing dependency would be a hard stall.
+    - ``forge-loop-supervisor`` — feature-forge-authored; it launches the loop
+      runner detached and supervises rauf's ``events.ndjson`` so forge-5-loop
+      never blocks the Pi session (Pi has no built-in background/monitor surface).
+
+    ``adapter_tree`` copies the whole ``extensions/`` tree, so a new extension
+    dir is picked up automatically; only its entry point is listed below.
     """
     package = {
         "name": "feature-forge-pi-adapter",
@@ -1503,7 +1596,10 @@ def _write_pi_package_assets(bundle_root: Path) -> None:
         "keywords": ["pi-package"],
         "pi": {
             "skills": ["./skills"],
-            "extensions": ["./extensions/ask-user-question/index.ts"],
+            "extensions": [
+                "./extensions/ask-user-question/index.ts",
+                "./extensions/forge-loop-supervisor/index.ts",
+            ],
         },
         # Declares the emitted agents/ dir to a Pi subagent extension (the schema is
         # pi-subagents 0.35.1's; it also accepts the equivalent `pi.subagents.agents`).
@@ -1715,6 +1811,12 @@ def _translate_reference_host_terms(bundle_root: Path, agent_id: str) -> None:
             continue
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
         translated = translate_host_terms(text, agent_id=agent_id)
+        # On Pi, forge-5-loop's runner-contract details the Claude-shaped manual
+        # launch + monitor recipe; the supervisor extension does that work, so front
+        # the file with the same tool redirect the SKILL carries (#235/#236) rather
+        # than leaving a standalone manual recipe that contradicts it.
+        if agent_id == "pi" and rel.name == "runner-contract.md" and "forge-5-loop" in rel.parts:
+            translated = inject_pi_supervise_redirect(translated, at_top=True)
         if translated != text:
             path.write_text(translated, encoding="utf-8", errors="surrogateescape")
 

@@ -385,20 +385,36 @@ def test_reference_host_term_translation_per_agent(fixture_copy):
         )
 
 
-def test_pi_bundle_includes_ask_user_question_extension(fixture_copy):
-    """The Pi adapter is self-contained and ships the whole AskUserQuestion tree.
+def test_pi_bundle_includes_its_extensions(fixture_copy):
+    """The Pi adapter is self-contained and ships both bundled extensions whole.
 
-    The extension is a vendored third-party package (adapter-src/pi/UPSTREAM.md),
-    so this asserts the *bundle* contract — entry point, tool name, license,
-    header policy — and deliberately not the vendored implementation's internals,
-    which are upstream's to change and are covered behaviourally by
+    Two extensions ship in the bundle: the vendored ``ask-user-question`` tree
+    (adapter-src/pi/UPSTREAM.md) and the first-party ``forge-loop-supervisor``
+    that lets forge-5-loop run the loop without blocking the Pi session. This
+    asserts the *bundle* contract — the manifest entry points, and that each
+    extension's whole module graph ships (an entry point without its imports
+    typechecks in-tree and dies on first load). Behaviour is covered by
     ``adapter-src/pi``'s own ``npm run verify``.
     """
     root = fixture_copy("minimal-canon")
     assert run_build(root).returncode == 0
 
     package = json.loads((root / "adapters" / "pi" / "package.json").read_text())
-    assert package["pi"]["extensions"] == ["./extensions/ask-user-question/index.ts"]
+    assert package["pi"]["extensions"] == [
+        "./extensions/ask-user-question/index.ts",
+        "./extensions/forge-loop-supervisor/index.ts",
+    ]
+
+    # forge-loop-supervisor — first-party. Its whole graph must ship, and the
+    # generated entry carries the provenance header naming its adapter-src path.
+    sup_dir = root / "adapters" / "pi" / "extensions" / "forge-loop-supervisor"
+    sup_entry = sup_dir / "index.ts"
+    assert sup_entry.is_file(), "the supervisor manifest entry must exist in the bundle"
+    for module in ("wiring.ts", "supervisor.ts", "tailer.ts", "events.ts", "registry.ts", "types.ts"):
+        assert (sup_dir / module).is_file(), f"supervisor module {module} missing from the bundle"
+    assert sup_entry.read_text().startswith(
+        "// GENERATED — DO NOT EDIT. Source: adapter-src/pi/extensions/forge-loop-supervisor/index.ts"
+    )
 
     ext_dir = root / "adapters" / "pi" / "extensions" / "ask-user-question"
     entry = ext_dir / "index.ts"

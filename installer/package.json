@@ -50,7 +50,8 @@
       "./adapters/pi/skills"
     ],
     "extensions": [
-      "./adapters/pi/extensions/ask-user-question/index.ts"
+      "./adapters/pi/extensions/ask-user-question/index.ts",
+      "./adapters/pi/extensions/forge-loop-supervisor/index.ts"
     ]
   },
   "pi-subagents": {
