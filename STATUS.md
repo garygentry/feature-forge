@@ -4,28 +4,31 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-15 (0.18.0 release cut — rauf pin advance to 0.14.0 + #230 fix;
-hardening program COMPLETE, all 28 issues closed)._
+_Last updated: 2026-08-31 (0.19.0 release cut — Pi forge-loop-supervisor extension (#235/#236),
+loop-runner floor raise (#234), Pi post-fix verification termination fix (#237/#238), and rauf
+pin advance to 0.15.0)._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.18.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.5** | `installer/package.json` (independent version line) |
-| npm | publishing 0.3.5 | |
+| Plugin | **0.19.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.3.6** | `installer/package.json` (independent version line) |
+| npm | publishing 0.3.6 | |
 | Commit | this release commit | |
 
 CHANGELOG `[Unreleased]` is empty.
 
 ### rauf coupling
 
-`RAUF_PIN` is **`@garygentry/rauf@0.14.0`** (verified resolving on npm 2026-08-15).
-0.14.0 ships `backlog answer` — the operator recovery verb for the loop-recovery feature —
-and the Codex stdin prompt delivery fix. `RECOVERY_MIN_RUNNER_VERSION` matches at `"0.14.0"`.
-`minRunnerVersion` was raised to 0.14.0 to match the pin and the recovery floor (#234), so
-the launch gate no longer accepts a runner too old for the recovery contract the package
-ships; agents needing a *newer* rauf than the floor are still recorded as prose in
+`RAUF_PIN` is **`@garygentry/rauf@0.15.0`** (verified resolving on npm 2026-08-31).
+0.15.0 ships Codex provider sandbox/network/approval config plus a batch of loop-runner
+fixes (Pi/cursor `E2BIG` prompt delivery, review-pass retry parity, rollback-safety halt,
+stale-profile detection, `--retry-blocked` backlog resolution) — none of it a capability
+feature-forge's stages depend on, so `minRunnerVersion` **stays at 0.14.0** (the recovery
+floor from #234); the pin now sits ahead of the floor, which `COMPATIBILITY.md` documents
+as the expected shape (the floor only rises when rauf ships a surface a shipped stage
+actually requires). Agents needing a *newer* rauf than the floor are recorded as prose in
 `COMPATIBILITY.md`.
 
 Note for future releases: **feature-forge CI never checks that `RAUF_PIN` resolves** — every
@@ -36,6 +39,19 @@ before advancing it.
 
 ## Shipped recently
 
+- **0.19.0** / installer 0.3.6 (2026-08-31) — Pi `forge-loop-supervisor` extension (#235/#236:
+  a first-party Pi extension launches the loop detached and wakes the session only on
+  needs-human/blocked/stuck/error/completion, replacing the self-contradictory
+  background-and-monitor instructions the generic contract gave Pi); loop-runner launch floor
+  raised to rauf `0.14.0` (#234, matching the pin and the recovery-capability floor); Pi
+  post-fix verification no longer cycles after a clean round (#237/#238); rauf pin advanced
+  to `0.15.0`.
+- **0.18.0** / installer 0.3.5 (2026-08-15, PR #233) — rauf pin advance to `0.14.0` (ships
+  `backlog answer`) + #230 epic verify/fix branch-exit member-routing fix.
+- **0.17.0** / installer 0.3.4 (2026-08-12, PR #229) — fix-sweep script for semantic
+  verification fix completeness (#170); zero-prompt loop config (Track E, #153/#164); host-term
+  translation of the copied reference closure (#167); several stage-exit/epic-state/notes-baton
+  hardening items (Tracks C/D/G).
 - **0.16.0** / installer 0.3.3 (2026-08-08, PR #206 — merged, **unpublished**) — Track B
   close-out: **loop-recovery** pipeline feature (#204: autonomous-loop recovery — decision
   records, failure clustering, topology, `resolved` outcome; closed #189–#194 #196) +

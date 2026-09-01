@@ -42,7 +42,7 @@ Parse this rather than inferring commands. Version floors are literal — compar
     "installGlobal": "npm i -g @garygentry/rauf",
     "installOnDemand": "npx @garygentry/rauf",
     "minVersion": "0.14.0",
-    "installerPins": "0.14.0",
+    "installerPins": "0.15.0",
     "verifyVersion": "rauf version",
     "wireIntoProject": "rauf install .",
     "binaryFallback": "curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash"
@@ -92,8 +92,8 @@ CLI once, globally or on demand — this is a real decision (global writes to th
   - On-demand: no install now; every later `rauf …` becomes `npx @garygentry/rauf …`
 
 **Verify the version meets the floor.** Run `rauf version` (on-demand: `npx @garygentry/rauf
-version`). It must be **≥ 0.14.0** (the capability floor feature-forge requires, matching the pin
-`@garygentry/rauf@0.14.0`). If the command is not found after a global install, `rauf` is
+version`). It must be **≥ 0.14.0** (the capability floor feature-forge requires; a fresh install
+provisions the newer pinned `@garygentry/rauf@0.15.0`). If the command is not found after a global install, `rauf` is
 not on your PATH — add `~/.local/bin` to PATH, or use the binary fallback:
 `curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`.
 
