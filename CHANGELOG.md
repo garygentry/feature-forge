@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The reverse citation guard is derived instead of pinned, so a new shared reference can no longer silently lose its skill-local fan-out (#246).** `scripts/build-adapters.py` ships shared references twice: a whole-tree copy to each bundle root, and a **citation-driven** fan-out of each reference a skill *cites* into that skill's own `skills/<name>/references/`. The fan-out is what makes a bare `references/X` prose read resolve on the non-plugin npm-installer Claude layout (`~/.claude/skills/feature-forge/`, no `${CLAUDE_PLUGIN_ROOT}`), where the bundle-root tree is unreachable from a skill dir (#122/#132). The guard that was supposed to protect it — `tests/test_reference_citations.py`'s reverse direction — iterated a hardcoded 9-entry `NEW_FILES` tuple left over from one past feature, so a reference added today was invisible to it and `bash scripts/validate.sh` stayed green while the file sat at the bundle root unreachable by the path the skill body actually reads. The guard now **derives** its subject: every `references/**/*.md` plus every `skills/*/references/**/*.md` must be cited by some skill body, covered by the `stacks/` whole-tree fan-out rule the builder special-cases, or carried in a new `UNCITED_ALLOWLIST` with a one-line reason (six entries today — the two `templates/specs-hygiene/` files copied through an explicit `"$R/references/..."` path, the `vendor-construct-inventory.md` audit artifact, and the three `forge-bootstrap` hygiene templates read by `scripts/forge-bootstrap.py`). Supporting guards keep it honest: the enumeration is asserted non-vacuous, every allowlist entry must name a file that still exists and state a reason, and the coverage predicate is asserted to reject a never-cited path (the issue's `touch references/never-cited.md` repro, as a pure assertion).
+
 ## [0.19.0] — 2026-08-31
 
 ### Added

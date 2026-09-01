@@ -6,9 +6,16 @@ Two directions, both needed, neither sufficient alone:
    names a file that actually exists, skill-local or shared. A citation is not decoration:
    ``scripts/build-adapters.py`` fans shared references out **by citation**, so a dangling
    path ships a bundle whose instructions point at nothing on all six hosts.
-2. **Reverse** — every reference file this feature created or moved is still cited by at
-   least one skill body. Drop the citation and the file silently stops shipping while the
-   forward guard stays perfectly green.
+2. **Reverse** — every reference file in canon is cited by at least one skill body, is
+   covered by the ``stacks/`` whole-tree fan-out rule, or is on an explicitly justified
+   allowlist. Drop a shared reference's citation and it silently stops being fanned out
+   while the forward guard stays perfectly green: the file is still at the bundle ROOT,
+   but the bare ``references/X`` path the body actually reads no longer resolves from a
+   skill dir on the non-plugin npm-installer Claude layout (``~/.claude/skills/feature-forge/``,
+   no ``${CLAUDE_PLUGIN_ROOT}``) — the #122 degradation ``_fan_out_shared_references``
+   exists to prevent. This guard is **derived**, not a pinned file list (issue #246): a
+   tuple of names from one past feature cannot see the reference someone adds tomorrow,
+   which is the only case that ever bites.
 
 Regex provenance (finding V-030). The pattern below was validated against the
 **pre-feature baseline commit** ``9a29e846ed510c3b245876a9bf4cc73b8cb60951``, where it
@@ -38,20 +45,44 @@ from _forge_paths import REFERENCES, SKILLS, read
 # See the module docstring for the provenance of every character in this pattern.
 CITE_RE = re.compile(r"(?<![./\w-])references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*?\.md)\b")
 
-#: Every new/moved reference file this feature introduced. Each must be cited by at least
-#: one skill body or citation fan-out stops shipping it (spec 06 §5). Six mode files from
-#: R1's split, its orchestrator-only template, R6's gated extract, and R3's gated read.
-NEW_FILES: tuple[str, ...] = (
-    "verification-checklists/prd.md",
-    "verification-checklists/tech.md",
-    "verification-checklists/specs.md",
-    "verification-checklists/backlog.md",
-    "verification-checklists/impl.md",
-    "verification-checklists/epic.md",
-    "findings-template.md",
-    "agent-selection.md",
-    "process-overview.md",
-)
+#: Reference files that legitimately carry NO prose citation, each with the reason it is
+#: reachable anyway (issue #246). This is the deliberate-decision escape hatch for the
+#: derived reverse guard below — the same shape `validate-traceability.py` uses for its
+#: allowlisted foreign references. Adding a file here is a claim that must be true; an
+#: entry naming a file that no longer exists is caught by its own test.
+#:
+#: Keyed by the path a citation would use (`references/<key>`), which for a skill-own file
+#: is its path under that skill's own `references/`.
+UNCITED_ALLOWLIST: dict[str, str] = {
+    "templates/specs-hygiene/AGENTS.md": (
+        "copied through an explicit \"$R/references/...\" path in shared-conventions.md's "
+        "bash block, never a bare prose read, so it resolves from the bundle root on "
+        "every install layout"
+    ),
+    "templates/specs-hygiene/CLAUDE.md": (
+        "same explicit \"$R/references/...\" copy as its AGENTS.md sibling, gated on the "
+        "host being Claude"
+    ),
+    "vendor-construct-inventory.md": (
+        "a REQ-VND-03 audit artifact — a record of the spec-purity sweep, read by humans "
+        "reviewing that sweep and by no skill at runtime"
+    ),
+    "templates/hygiene/AGENTS.md": (
+        "read by scripts/forge-bootstrap.py from TEMPLATE_ROOT when it composes the "
+        "scaffolded repo's hygiene files, not by any skill body"
+    ),
+    "templates/hygiene/CLAUDE.md": (
+        "read by scripts/forge-bootstrap.py alongside its AGENTS.md sibling"
+    ),
+    "templates/hygiene/README.md": (
+        "read by scripts/forge-bootstrap.py when it composes the scaffolded repo's README"
+    ),
+}
+
+#: Non-vacuity floor for the reverse guard's enumeration, NOT a pinned total (15 shared +
+#: 21 skill-own markdown references when this was written). A glob that matched nothing
+#: would satisfy "every enumerated file is covered" trivially.
+MIN_EXPECTED_REFERENCE_FILES = 20
 
 #: Non-vacuity floor, NOT a pinned total. A regex that matched nothing would satisfy every
 #: "zero unresolved" assertion below trivially, so the forward guard needs a lower bound —
@@ -95,6 +126,60 @@ def _resolves(skill_dir_name: str, rel: str) -> bool:
     local = SKILLS / skill_dir_name / "references" / rel
     shared = REFERENCES / rel
     return local.is_file() or shared.is_file()
+
+
+def _reference_files() -> list[tuple[str | None, str]]:
+    """Every markdown reference file in canon, as `(owner, relpath)`, in a stable order.
+
+    `owner` is None for a SHARED reference (bundle-root `references/`) and the skill's
+    directory name for one of its OWN `references/`. The distinction is not cosmetic:
+    only a shared file depends on citation-driven fan-out to be reachable, so the two
+    carry different consequences in the failure message below.
+    """
+    files: list[tuple[str | None, str]] = [
+        (None, str(p.relative_to(REFERENCES).as_posix()))
+        for p in sorted(REFERENCES.rglob("*.md"))
+    ]
+    for own in sorted(SKILLS.glob("*/references")):
+        files.extend(
+            (own.parent.name, str(p.relative_to(own).as_posix()))
+            for p in sorted(own.rglob("*.md"))
+        )
+    return files
+
+
+def _all_cited() -> set[str]:
+    """Every `references/...md` path any skill body cites, templated forms included.
+
+    Templated forms (`stacks/{stack}.md`, `verification-checklists/{mode}.md`) are kept
+    because `_stacks_is_fanned` reads them; `_is_covered` never matches a concrete file
+    against one directly.
+    """
+    return {
+        m.group(1) for _, body in _skill_bodies() for m in CITE_RE.finditer(body)
+    }
+
+
+def _stacks_is_fanned(cited: set[str]) -> bool:
+    """Whether ANY citation triggers the whole-`stacks/`-tree fan-out.
+
+    `_fan_out_shared_references` (scripts/build-adapters.py) special-cases a citation whose
+    first path segment is `stacks`: the stack is unknown at build time, so ONE such
+    citation — literal, `{stack}`-templated, or globbed — copies the entire `stacks/` tree
+    into that skill's own `references/`. Every `stacks/*.md` file is therefore reachable
+    without a citation naming it, and this guard models that rule rather than allowlisting
+    the individual profiles, which would go stale the moment a stack is added.
+    """
+    return any(rel.split("/", 1)[0] == "stacks" for rel in cited)
+
+
+def _is_covered(rel: str, cited: set[str], stacks_fanned: bool) -> bool:
+    """Whether a reference file is reachable by the path a skill body would use."""
+    if rel in cited:
+        return True
+    if stacks_fanned and rel.split("/", 1)[0] == "stacks":
+        return True
+    return rel in UNCITED_ALLOWLIST
 
 
 # --------------------------------------------------------------------------------------
@@ -150,27 +235,73 @@ def test_a_sentence_final_period_is_not_swallowed_into_the_filename():
 # --------------------------------------------------------------------------------------
 
 
-def test_every_new_or_moved_reference_file_is_still_cited():
-    """Lose the citation and the file stops shipping, silently — the forward guard cannot see it."""
-    bodies = "\n".join(body for _, body in _skill_bodies())
-    uncited = [rel for rel in NEW_FILES if f"references/{rel}" not in bodies]
-    assert not uncited, (
-        "no skill body cites these reference files, so citation fan-out will not ship "
-        "them:\n  " + "\n  ".join(uncited)
+def test_every_reference_file_is_cited_or_deliberately_allowlisted():
+    """Every reference file in canon, derived — not a pinned list (issue #246).
+
+    A SHARED reference nobody cites still ships at the bundle root, but
+    `_fan_out_shared_references` copies only CITED shared refs into a skill's own
+    `references/`, so the bare `references/X` path the body reads stops resolving on the
+    non-plugin npm-installer Claude layout. A SKILL-OWN reference always ships (the
+    whole dir is copied), so an uncited one is dead prose rather than a broken read —
+    still worth a deliberate decision, never a silent one.
+
+    The fix is one of three things, in preference order: cite it from the skill that
+    reads it; delete it; or add it to `UNCITED_ALLOWLIST` with the reason it is reachable
+    without a citation.
+    """
+    cited = _all_cited()
+    stacks_fanned = _stacks_is_fanned(cited)
+    uncovered = [
+        f"references/{rel}"
+        + (" (shared — loses its skill-local fan-out)" if owner is None
+           else f" (own to {owner} — shipped but read by nothing)")
+        for owner, rel in _reference_files()
+        if not _is_covered(rel, cited, stacks_fanned)
+    ]
+    assert not uncovered, (
+        "these reference files are neither cited by any skill body nor allowlisted:\n  "
+        + "\n  ".join(uncovered)
     )
 
 
-def test_every_new_or_moved_reference_file_exists():
-    """The reverse guard asserts a citation; this asserts the citation has a target."""
-    missing = [
+def test_the_reverse_guard_enumerates_something():
+    """A glob that matched nothing would pass the guard above without asserting anything."""
+    total = len(_reference_files())
+    assert total >= MIN_EXPECTED_REFERENCE_FILES, (
+        f"only {total} markdown reference files enumerated (floor "
+        f"{MIN_EXPECTED_REFERENCE_FILES}) — the globs have almost certainly stopped "
+        "matching rather than canon having shrunk this far"
+    )
+
+
+def test_the_reverse_guard_would_catch_a_brand_new_uncited_reference():
+    """The issue #246 repro (`touch references/never-cited.md`), as a pure assertion.
+
+    Creating the file would be the literal reproduction; asserting on the predicate keeps
+    the guard honest without a canon write. If this ever passes, the coverage rule has
+    become vacuous and every assertion above it is decoration.
+    """
+    cited = _all_cited()
+    assert not _is_covered("never-cited.md", cited, _stacks_is_fanned(cited))
+
+
+def test_every_allowlist_entry_names_a_file_that_exists():
+    """A stale allowlist entry is a silent hole: it excuses a path nothing enumerates."""
+    stale = [
         rel
-        for rel in NEW_FILES
-        if not (
-            (SKILLS / "forge-verify" / "references" / rel).is_file()
-            or (SKILLS / "forge-5-loop" / "references" / rel).is_file()
-            or (REFERENCES / rel).is_file()
-        )
+        for rel in UNCITED_ALLOWLIST
+        if not any(rel == candidate for _, candidate in _reference_files())
     ]
-    assert not missing, "new/moved reference files missing from canon: " + ", ".join(
-        missing
+    assert not stale, (
+        "UNCITED_ALLOWLIST names reference files that no longer exist — delete the "
+        "entries:\n  " + "\n  ".join(stale)
+    )
+
+
+def test_every_allowlist_entry_states_a_reason():
+    """The allowlist is a record of decisions; an empty reason records nothing."""
+    unexplained = [rel for rel, why in UNCITED_ALLOWLIST.items() if len(why.strip()) < 20]
+    assert not unexplained, (
+        "UNCITED_ALLOWLIST entries must say WHY the file is reachable without a "
+        "citation:\n  " + "\n  ".join(unexplained)
     )
