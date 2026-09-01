@@ -84,15 +84,15 @@ Everything in this section was checked against the tree at `3357c49`.
 
 | # | Gap | Evidence |
 |---|---|---|
-| G1 | `doctor` is an **orphan** — no skill invokes it. | Only canon mention is a parenthetical at `skills/forge-5-loop/references/runner-contract.md:104`. |
+| G1 | `doctor` is an **orphan** — **no skill invokes it**. | The only canon references are descriptive, not invocations: a parenthetical at `skills/forge-5-loop/references/runner-contract.md:104` and a field note at `references/pipeline-state-schema.json:36`. |
 | G2 | `doctor` knows nothing about the **runner or toolchain**: no binary presence, no version-vs-`minRunnerVersion`, no `preconditionFile`, no null-command detection, no `gh`. | `doctor_report()` field list, `scripts/forge-session.py:1488`. |
 | G3 | Gates **prescribe a hint, never an action**. | `skills/forge-5-loop/SKILL.md:84-106` — 1c/1d print `installHint`/`setupHint` and STOP. |
 | G4 | The remedy can be **wrong when config is customized**. This repo sets `loopRunner.bin: "rauf-stable"`; if that binary vanishes, gate 1c fires and tells the operator to install `@garygentry/rauf` — the wrong fix. | `forge.config.json` + `effective-config` output. |
-| G5 | Two config surfaces **diverge silently**: `forge.config.json.testCommand` vs `.rauf.json.profile.commands.test` / `.verify`. The loop's iteration agent runs the runner's verify; forge-verify runs forge's. `.rauf.json` is checked for **existence only**. Also unchecked: `.rauf.json.installedBy` (here `rauf-manager@0.13.0`) vs the live runner. | `skills/forge-5-loop/SKILL.md:103`; grep shows no other `.rauf.json` reader in canon. |
+| G5 | Two config surfaces **diverge silently**: `forge.config.json.testCommand` vs `.rauf.json`'s `profile.commands.test` **and** `profile.verify` (note `verify` is a *sibling* of `commands`, not a member — `profile.commands` holds only test/typecheck/lint/build/format). The loop's iteration agent runs the runner's verify; forge-verify runs forge's. `.rauf.json` is checked for **existence only**. Also unchecked: `.rauf.json.installedBy` (here `rauf-manager@0.13.0`) vs the live runner. | `skills/forge-5-loop/SKILL.md:103`; grep shows no other `.rauf.json` reader in canon. |
 | G6 | **Class B has no detector at all.** No stage asserts which config keys it needs. | No `config-completeness` concept anywhere. |
 | G7 | **Host-capability divergence is undeclared for questions.** Only `forge-init` documents a degrade ladder; `shared-conventions.md` states an absolute mandate. | `skills/forge-init/SKILL.md:54-57` is the sole instance. |
 | G8 | **Plugin-root failure is a bare `exit 1`** with no remedy, repeated ~20× as the bootstrap prelude. No root-version-vs-loaded-skills skew check. | The prelude literal; `_resolve_plugin_root()` returns version+commit but nobody compares. |
-| G9 | **No feedback path from the skills.** Issue-filing guidance exists only in templates *written into target projects* — `skills/forge-bootstrap/references/templates/hygiene/{AGENTS,CLAUDE}.md` and `references/templates/specs-hygiene/{AGENTS,CLAUDE}.md`. A project set up via `forge-init` (the existing-repo path — the common one) **never receives it**. | grep for `issues` across canon. |
+| G9 | **The feedback path has a dangling pointer in every non-bootstrapped project.** `references/templates/specs-hygiene/{AGENTS,CLAUDE}.md` *do* carry a "Tooling feedback" section with both issue URLs and the loop-safe rule, and shared-conventions' **Specs Directory Hygiene** copies them into `{specsDir}/` from **any** stage that first creates the specs tree — so a `forge-init` project does receive guidance. But those templates say *"See the project-root `AGENTS.md` 'Tooling feedback' section for the full flow"*, and **only `forge-bootstrap` writes that root section**. In a `forge-init` project (the existing-repo path — the common one) the pointer resolves to nothing. Separately, no skill knows to offer filing an issue when it hits an internal inconsistency. | `references/templates/specs-hygiene/CLAUDE.md:24-29`; `references/shared-conventions.md` § Specs Directory Hygiene; `skills/forge-bootstrap/references/templates/hygiene/CLAUDE.md:27-36`. |
 | G10 | **No repair entry point.** `forge-guide` explains how the pipeline works, not how to fix it. | `skills/forge-guide/SKILL.md`. |
 
 ### 2.3 The binding constraint nobody can plan around
@@ -121,10 +121,19 @@ That is not an obstacle to route around — it is the constraint that *dictates 
 architecture*: logic goes in **scripts** (uncapped, portable to all 6 adapters, unit-testable),
 prose goes in **`references/`** (uncapped), and skill bodies get **pointers only**.
 
-Compounding it: `tests/test_reference_citations.py::test_every_new_or_moved_reference_file_is_still_cited`
-requires every new `references/` file to be cited from a skill body — so each new reference
-costs at least one body line, and on forge-verify / forge-5-loop that line must be **bought
-back** by condensing existing prose in the same PR.
+Compounding it: **a new `references/` file only ships if a skill body cites it.**
+`_fan_out_shared_references` in `scripts/build-adapters.py` copies a shared reference into each
+bundle *by scanning skill bodies for the citation* — an uncited reference is silently omitted
+from all six adapter bundles. So each new reference costs at least one body line, and on
+forge-verify / forge-5-loop that line must be **bought back** by condensing existing prose in
+the same PR.
+
+> **The build is the only enforcer, and it fails silently.**
+> `tests/test_reference_citations.py::test_every_new_or_moved_reference_file_is_still_cited`
+> looks like a guard for this but is **not** one: it iterates a hardcoded `NEW_FILES` tuple of
+> 9 files from a prior feature (`tests/test_reference_citations.py:43-56`). A newly added
+> reference is invisible to it. **Any PR adding a `references/` file must append it to
+> `NEW_FILES` by hand**, or CI stays green while the file ships nowhere.
 
 ### 2.4 The second binding constraint: the always-loaded frontmatter budget
 
@@ -426,9 +435,16 @@ net simplification of a currently-verbose section).
 **Tests:** `tests/test_preflight_self_heal.py` — clustering (runner-missing + not-wired → one
 prompt, not two); safety-ladder gating (a `global-install` remedy is never executed); the prove
 step (a remedy that does not flip the check to `ok` reports *failed repair*, never success);
-INV-2 (a healthy fixture produces no output and no prompt). Plus
-`tests/test_reference_citations.py` picks up the new reference automatically, and the §2.3
-line-count measurement is re-run and recorded in the PR body.
+INV-2 (a healthy fixture produces no output and no prompt). Also re-run the §2.3 line-count
+measurement and record it in the PR body.
+
+> **⚠ P1's most likely silent failure.** `references/preflight-and-self-heal.md` ships to the
+> six bundles **only if a skill body cites it** (§2.3). INV-7 budgets just 4 lines in
+> `forge-5-loop`, so dropping the citation line is the tempting shortcut — and nothing catches
+> it: `tests/test_reference_citations.py` only scans its hardcoded `NEW_FILES` tuple, so CI
+> goes green while `_fan_out_shared_references` silently ships the reference **nowhere**. The
+> PR must (a) cite the file from `forge-5-loop/SKILL.md` and (b) **append it to `NEW_FILES`**.
+> Verify by grepping the regenerated `adapters/*/` for the new filename before pushing.
 
 **Rollback:** revert; gates 1c/1d return to today's text.
 
@@ -480,8 +496,16 @@ pointer swap is the last commit in the PR — **sequence it that way**).
 
 ### P3 — Tooling Feedback Protocol  *(closes G9)*
 
+> **Scope note.** G9 is narrower than "no feedback path exists". The specs-hygiene templates
+> already carry the guidance and already reach a `forge-init` project (shared-conventions'
+> Specs Directory Hygiene fires from whichever stage first creates the specs tree, regardless
+> of init vs bootstrap). The actual defect is a **dangling pointer**: those templates defer to
+> a project-root "Tooling feedback" section that **only `forge-bootstrap` writes**. P3 closes
+> that, and adds the missing skill-side behavior — no skill currently knows to *offer* filing
+> an issue when it hits an internal inconsistency.
+
 **Files:** `references/shared-conventions.md` (the protocol, once); `skills/forge-init/SKILL.md`
-(emit the hygiene block idempotently — it has 244 lines of headroom, the most in the repo);
+(emit the root hygiene block idempotently — it has 244 lines of headroom, the most in the repo);
 pointer lines from the skills' failure paths.
 
 **Deliver:**
@@ -490,7 +514,7 @@ pointer lines from the skills' failure paths.
    (*what you ran / what you expected / what happened / a fix idea*), `gh issue create`, the
    **operator-approval-required** rule, and the **loop-safe rule** — *in an autonomous
    iteration, append to `progress.md`; never file mid-loop*. This text already exists and is
-   well-written in `skills/forge-bootstrap/references/templates/hygiene/CLAUDE.md:29-38`;
+   well-written in `skills/forge-bootstrap/references/templates/hygiene/CLAUDE.md:27-36`;
    **lift it, don't rewrite it**, so the three copies stay consistent.
 2. `forge-init` copies the hygiene block into the project's `AGENTS.md` / `CLAUDE.md`
    **idempotently, never overwriting** — the exact contract the specs-hygiene copy already uses
@@ -521,8 +545,9 @@ become a thing the operator can *invoke*.
   **4688 / 4688 with zero slack**. Its description must be paid for by shrinking `forge-guide`
   (528) / `forge-0-epic` (485), or by a reviewed `FRONTMATTER_CHAR_BUDGET` bump with a recorded
   re-measurement in the same PR.
-- **`--doctor` on the navigator** costs no new surface but spends the repo's scarcest word
-  headroom (**340 words**), and mixes repair into a status dashboard.
+- **`--doctor` on the navigator** costs no new surface but spends the scarcest word headroom
+  *among the P4 candidates* (**340 words**; repo-wide the scarcest is forge-5-loop at **10**),
+  and mixes repair into a status dashboard.
 - **`--doctor` on `forge-guide`** costs no new surface, has **124 lines / 3489 words free**,
   and is already the "ask instead of running a stage" advisory surface — repair fits its remit
   better than the navigator's.
@@ -553,7 +578,7 @@ This phase is deliberately unscheduled: it is gated on **field evidence**, not o
 | C1 | `SKILL.md` body ≤ 300 lines **and** ≤ 5000 words. forge-verify has **0** lines free; forge-5-loop **4**; forge-0-epic **3**. | `scripts/check-spec-purity.py` Rule 4 |
 | C2 | Canon (`skills/`, `agents/`, `references/`) is **spec-pure** — no vendor frontmatter, no un-routed `${CLAUDE_PLUGIN_ROOT}`. | `check-spec-purity.py` |
 | C3 | `adapters/` is **generated**. Regenerate with `python3 scripts/build-adapters.py`; the drift guard blocks an out-of-date tree. | `build-adapters.py --check` in `validate.sh` |
-| C4 | Every new `references/` file **must be cited** from a skill body — which costs a body line (see C1). | `tests/test_reference_citations.py` |
+| C4 | Every new `references/` file **must be cited** from a skill body — which costs a body line (see C1) — **and appended to `NEW_FILES` by hand**. An uncited reference is **silently omitted from all six bundles with CI green**: the real enforcer is the citation-driven copy, and the test only scans a hardcoded list. | `_fan_out_shared_references` in `scripts/build-adapters.py` (the actual enforcer); `tests/test_reference_citations.py` `NEW_FILES` (pinned list, **not** a general guard) |
 | C5 | Host-term translation rewrites `AskUserQuestion`, `Agent`/`Task`, `Monitor`, `run_in_background`, `/clear`, `--host claude`, `${CLAUDE_PLUGIN_ROOT}`. **New prose must read correctly after translation.** | `_HOST_TERM_REPLACEMENTS`; `tests/test_adapter_host_neutrality.py` |
 | C6 | The bootstrap prelude is **byte-pinned**. Do not reformat it; spec-purity strips the exact bytes before its residual-var scan. | `check-spec-purity.py` |
 | C7 | Pi's `adapter-src/pi/extensions/ask-user-question/` is a **vendored third-party snapshot** with a four-patch delta. Read `adapter-src/pi/UPSTREAM.md` before touching it. This plan should not need to. | `AGENTS.md` |
@@ -637,7 +662,7 @@ by making the contract concrete, and it is independently useful even if the plan
 | `runner-wired` | `loopRunner.preconditionFile` absent (`.rauf.json`). | `local-write` (`rauf install .`) | G2 |
 | `runner-legacy-layout` | `.ralph.json` / `.ralph/` present — un-migrated Ralph project. | `local-write` (`rauf migrate .`) | existing 1d case |
 | `runner-artifacts-stale` | `.rauf.json.installedBy` version < live runner version. | `local-write` | G5 |
-| `runner-profile-drift` | `forge.config.json.testCommand` ≠ `.rauf.json.profile.commands.test`/`.verify`. **Advisory forever.** | `null` | **G5** |
+| `runner-profile-drift` | `forge.config.json.testCommand` ≠ `.rauf.json` `profile.commands.test` / `profile.verify`. **`verify` is a sibling of `commands`, not a member** — reading `profile.commands.verify` yields `None` and mis-reports. **Advisory forever.** | `null` | **G5** |
 | `config-completeness` | Per-stage required keys null/absent (`stack`, `typeCheckCommand`, `testCommand`). **The Class-B detector.** | `local-write` after detect→confirm | **G6** |
 | `config-schema` | `forge.config.json` fails `references/forge-config-schema.json`; duplicate keys; invalid `autoVerifyStages` keys. *(Partly exists — fold in, don't duplicate.)* | `local-write` | — |
 | `backlog-present` | Composed backlog path missing for a feature past forge-4. *(Exists as `backlogExists` — promote to a check.)* | `null` | — |
