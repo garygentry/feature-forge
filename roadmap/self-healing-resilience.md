@@ -121,19 +121,23 @@ That is not an obstacle to route around — it is the constraint that *dictates 
 architecture*: logic goes in **scripts** (uncapped, portable to all 6 adapters, unit-testable),
 prose goes in **`references/`** (uncapped), and skill bodies get **pointers only**.
 
-Compounding it: **a new `references/` file only ships if a skill body cites it.**
-`_fan_out_shared_references` in `scripts/build-adapters.py` copies a shared reference into each
-bundle *by scanning skill bodies for the citation* — an uncited reference is silently omitted
-from all six adapter bundles. So each new reference costs at least one body line, and on
-forge-verify / forge-5-loop that line must be **bought back** by condensing existing prose in
-the same PR.
+Compounding it: **a new `references/` file must be cited by a skill body to be reachable by
+the bare path skill prose uses.** The build ships shared references twice — a whole-tree copy
+to each bundle root (`build-adapters.py:1509`), then a *citation-driven* fan-out of each
+**cited** reference into that skill's own `references/` (`_fan_out_shared_references`,
+`build-adapters.py:1869`). The fan-out is what makes a bare `references/X` read resolve on
+layouts with no resolvable bundle root — notably the non-plugin npm-installer Claude tree
+(#122/#132). So each new reference costs at least one body line, and on forge-verify /
+forge-5-loop that line must be **bought back** by condensing existing prose in the same PR.
 
-> **The build is the only enforcer, and it fails silently.**
+> **Nothing enforces this, and the failure is quiet.** An uncited reference still ships to
+> every bundle root — it is simply **not fanned out skill-local**, so the skill's bare path
+> fails to resolve on those layouts and the agent degrades to manual reconstruction.
 > `tests/test_reference_citations.py::test_every_new_or_moved_reference_file_is_still_cited`
-> looks like a guard for this but is **not** one: it iterates a hardcoded `NEW_FILES` tuple of
-> 9 files from a prior feature (`tests/test_reference_citations.py:43-56`). A newly added
-> reference is invisible to it. **Any PR adding a `references/` file must append it to
-> `NEW_FILES` by hand**, or CI stays green while the file ships nowhere.
+> looks like the guard for this but is **not** one: it iterates a hardcoded `NEW_FILES` tuple
+> of 9 files from a prior feature (`tests/test_reference_citations.py:43-56`), so a newly added
+> reference is invisible to it. Until **#246** is fixed, any PR adding a `references/` file
+> must cite it **and** append it to `NEW_FILES` by hand.
 
 ### 2.4 The second binding constraint: the always-loaded frontmatter budget
 
@@ -438,13 +442,14 @@ step (a remedy that does not flip the check to `ok` reports *failed repair*, nev
 INV-2 (a healthy fixture produces no output and no prompt). Also re-run the §2.3 line-count
 measurement and record it in the PR body.
 
-> **⚠ P1's most likely silent failure.** `references/preflight-and-self-heal.md` ships to the
-> six bundles **only if a skill body cites it** (§2.3). INV-7 budgets just 4 lines in
-> `forge-5-loop`, so dropping the citation line is the tempting shortcut — and nothing catches
-> it: `tests/test_reference_citations.py` only scans its hardcoded `NEW_FILES` tuple, so CI
-> goes green while `_fan_out_shared_references` silently ships the reference **nowhere**. The
-> PR must (a) cite the file from `forge-5-loop/SKILL.md` and (b) **append it to `NEW_FILES`**.
-> Verify by grepping the regenerated `adapters/*/` for the new filename before pushing.
+> **⚠ P1's most likely silent failure (#246).** `references/preflight-and-self-heal.md` is
+> fanned out skill-local **only if a skill body cites it** (§2.3). INV-7 budgets just 4 lines
+> in `forge-5-loop`, so dropping the citation line is the tempting shortcut — and nothing
+> catches it: `tests/test_reference_citations.py` only scans its hardcoded `NEW_FILES` tuple,
+> so CI goes green while the reference sits at the bundle root **unreachable by the bare path
+> the skill body reads**. The PR must (a) cite the file from `forge-5-loop/SKILL.md` and
+> (b) **append it to `NEW_FILES`**. Verify by checking the regenerated
+> `adapters/*/skills/forge-5-loop/references/` — not just the bundle root — before pushing.
 
 **Rollback:** revert; gates 1c/1d return to today's text.
 
@@ -578,7 +583,7 @@ This phase is deliberately unscheduled: it is gated on **field evidence**, not o
 | C1 | `SKILL.md` body ≤ 300 lines **and** ≤ 5000 words. forge-verify has **0** lines free; forge-5-loop **4**; forge-0-epic **3**. | `scripts/check-spec-purity.py` Rule 4 |
 | C2 | Canon (`skills/`, `agents/`, `references/`) is **spec-pure** — no vendor frontmatter, no un-routed `${CLAUDE_PLUGIN_ROOT}`. | `check-spec-purity.py` |
 | C3 | `adapters/` is **generated**. Regenerate with `python3 scripts/build-adapters.py`; the drift guard blocks an out-of-date tree. | `build-adapters.py --check` in `validate.sh` |
-| C4 | Every new `references/` file **must be cited** from a skill body — which costs a body line (see C1) — **and appended to `NEW_FILES` by hand**. An uncited reference is **silently omitted from all six bundles with CI green**: the real enforcer is the citation-driven copy, and the test only scans a hardcoded list. | `_fan_out_shared_references` in `scripts/build-adapters.py` (the actual enforcer); `tests/test_reference_citations.py` `NEW_FILES` (pinned list, **not** a general guard) |
+| C4 | Every new `references/` file **must be cited** from a skill body — which costs a body line (see C1) — **and appended to `NEW_FILES` by hand** until #246 lands. An uncited reference still reaches every bundle *root*, but is **not fanned out skill-local**, so the skill's bare `references/X` read fails to resolve on layouts with no resolvable bundle root (#122/#132) — with CI green. | `_fan_out_shared_references` in `scripts/build-adapters.py` (the actual mechanism); `tests/test_reference_citations.py` `NEW_FILES` (pinned list, **not** a general guard) — tracked by **#246** |
 | C5 | Host-term translation rewrites `AskUserQuestion`, `Agent`/`Task`, `Monitor`, `run_in_background`, `/clear`, `--host claude`, `${CLAUDE_PLUGIN_ROOT}`. **New prose must read correctly after translation.** | `_HOST_TERM_REPLACEMENTS`; `tests/test_adapter_host_neutrality.py` |
 | C6 | The bootstrap prelude is **byte-pinned**. Do not reformat it; spec-purity strips the exact bytes before its residual-var scan. | `check-spec-purity.py` |
 | C7 | Pi's `adapter-src/pi/extensions/ask-user-question/` is a **vendored third-party snapshot** with a four-patch delta. Read `adapter-src/pi/UPSTREAM.md` before touching it. This plan should not need to. | `AGENTS.md` |
