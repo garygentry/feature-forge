@@ -3575,6 +3575,7 @@ def _terminal_epic_project(
     manifest_status: str = "active",
     epic_state: dict | None = _FRESH_EPIC_VERIFY,
     epic_change_requests: list[dict] | None = None,
+    states: dict[str, dict] | None = None,
 ) -> Path:
     """A REAL epic whose members are really on disk, plus resolved epic verification.
 
@@ -3624,6 +3625,9 @@ def _terminal_epic_project(
         member_dir = epic_dir / name
         member_dir.mkdir()
         (member_dir / "PRD.md").write_text("# prd\n")
+        if states and name in states:
+            (member_dir / ".pipeline-state.json").write_text(json.dumps(states[name]))
+            continue
         if name not in complete:
             continue
         (member_dir / ".pipeline-state.json").write_text(json.dumps({
@@ -3639,6 +3643,27 @@ def _terminal_epic_project(
         }))
     subprocess.run(["git", "init", "-qb", "main"], cwd=root, check=True)
     return root
+
+
+def _owes_verification_state(verify_entry: dict) -> dict:
+    """A member with all six production stages done whose VERIFICATION is unsettled.
+
+    `is_complete_for_orchestration` is False (so `render-status` calls it actionable)
+    while `next_stage` returns None (there is no seventh stage). That combination is the
+    exit's `route_stage == "forge-0-epic"` branch (a) — the one the issue reported
+    alongside the complete-epic case.
+    """
+    return {
+        "pipelineStatus": "active",
+        "epic": TERMINAL_EPIC,
+        "stages": {
+            **{
+                stage: {"status": "complete", "version": 1}
+                for stage in PRODUCTION_STAGES[1:]
+            },
+            "forge-verify-impl": verify_entry,
+        },
+    }
 
 
 def _terminal_member(name: str, depends_on: tuple[str, ...] = ()) -> dict:
@@ -3850,3 +3875,82 @@ def test_the_terminal_exit_is_idempotent(tmp_path: Path) -> None:
     second = _terminal_exit(root)
     assert first["nextSteps"] == second["nextSteps"]
     assert second["directives"]["primaryCommand"] is None
+
+
+# ---- branch (a): an ACTIONABLE member with no next production stage -------- #
+#
+# The issue's other self-loop, on a not-quite-complete epic. A member that finished all
+# six production stages but owes verification is NOT complete for orchestration, so it
+# stays `actionable` while `next_stage` returns None. That combination used to hand back
+# the epic dashboard — the command that produced the exit — even though `render-status`
+# had already resolved the right answer for that exact member.
+
+
+@pytest.mark.parametrize(
+    "verify_entry,expected",
+    [
+        (
+            {"status": "auto-verify-pending", "scheduledStageVersion": 1},
+            "/feature-forge:forge-verify alpha",
+        ),
+        (
+            {"status": "findings-reported", "verifiedStageVersion": 1},
+            "/feature-forge:forge-fix alpha",
+        ),
+    ],
+    ids=["auto-verify-pending", "findings-reported"],
+)
+def test_an_actionable_member_owing_verification_routes_to_its_own_next_action(
+    tmp_path: Path, verify_entry: dict, expected: str
+) -> None:
+    """Not the dashboard, and not a guess: `render-status`'s own answer for that member.
+
+    The two entries take DIFFERENT commands — a reported findings document is fixed, and
+    unrun scheduled debt is verified — and that distinction belongs to `epic-manifest.py`
+    (REQ-DEBT-02/05), so this exit uses its `nextCommand` rather than re-deriving it.
+    """
+    root = _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha")],
+        states={"alpha": _owes_verification_state(verify_entry)},
+    )
+    payload = _terminal_exit(root)
+    d = payload["directives"]
+    assert d["primaryCommand"] == expected
+    assert d["nextCommand"] == expected
+    # Neither forge-verify nor forge-fix is a production stage.
+    assert d["nextStage"] is None
+    assert _fenced_commands(payload["nextSteps"]) == [expected]
+
+
+def test_an_actionable_member_owing_verification_is_not_the_dashboard(
+    tmp_path: Path,
+) -> None:
+    """The self-loop regression for branch (a), stated as what must not happen."""
+    root = _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha"), _terminal_member("beta", ("alpha",))],
+        complete=("beta",),
+        states={"alpha": _owes_verification_state(
+            {"status": "auto-verify-pending", "scheduledStageVersion": 1}
+        )},
+    )
+    payload = _terminal_exit(root)
+    assert payload["directives"]["primaryCommand"] != TERMINAL_DASHBOARD
+    assert TERMINAL_DASHBOARD not in _fenced_commands(payload["nextSteps"])
+
+
+def test_an_epic_owing_only_member_verification_is_not_terminal(
+    tmp_path: Path,
+) -> None:
+    """Over-reach guard the other way: owed verification is not completion."""
+    root = _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha")],
+        states={"alpha": _owes_verification_state(
+            {"status": "auto-verify-pending", "scheduledStageVersion": 1}
+        )},
+    )
+    payload = _terminal_exit(root)
+    assert payload["directives"]["primaryCommand"] is not None
+    assert "is complete" not in payload["nextSteps"]

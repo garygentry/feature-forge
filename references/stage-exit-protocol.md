@@ -440,7 +440,8 @@ sentinel `─ forge: end of stage ─`, as the **final line** of `nextSteps`. Pr
 **verbatim as your absolute last output**. Nothing follows the sentinel — no summary, no
 sign-off, no warning, no command result, no acceptance text, no caveat. The block already
 carries the fresh-session recommendation (host-aware wording via `--host`) and the exact
-next command, so trailing prose can only push the user's next action out of view.
+next command — or, at the one terminal state below, the statement that there is none — so
+trailing prose can only push the user's next action out of view.
 
 **A finished epic ends the pipeline, and its block fences nothing.** When
 `primaryCommand` is `null` (`nextCommand` and `nextStage` are `null` too), the epic is

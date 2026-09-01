@@ -3440,13 +3440,25 @@ def _epic_terminal_state(status: dict, epic: str) -> tuple[str, dict] | None:
     Two independent ways to be finished, deliberately kept distinct so the wording can
     stay honest about which one applies:
 
-    - the ROLLUP says every member is complete — the ordinary case; ``total > 0`` is
-      required so an epic with no members declared yet is never called complete;
+    - the ROLLUP says every member is complete — the ordinary case, and the one that
+      answers the reported defect; ``total > 0`` is required so an epic with no members
+      declared yet is never called complete;
     - the MANIFEST says ``status: "complete"`` — the operator's explicit
       ``set-status complete``, which previously had NO effect on this routing at all.
 
     Nothing actionable is required either way: an epic with startable work left is not
     finished no matter what its manifest says.
+
+    In practice ``"declared"`` is NARROW, and deliberately so. ``actionable`` is "not
+    complete and no unmet deps", so on a valid (acyclic) graph an incomplete member
+    always has an actionable ancestor: ``actionable == []`` with ``total > 0`` already
+    implies the rollup is full, and ``"complete"`` wins. What ``"declared"`` really
+    reaches today is the epic with NO members yet, where the rollup reads ``0/0`` and
+    only the operator can say it is finished. It is kept as a separate answer — rather
+    than folded into the rollup rule — because the manifest is an independent signal
+    that must not be silently ignored, and because a future derivation admitting an
+    unactionable incomplete member would need exactly this branch. The wording it
+    selects states the real counts for that reason.
 
     Args:
         status: A validated ``render-status`` payload.
@@ -4055,11 +4067,14 @@ def stage_exit(
       a fully complete member hands back to the epic dashboard, and a member
       whose state cannot be resolved falls back to ``forge-1-prd`` with
       ``warnings`` entry 1 naming it.
-    - ``forge-0-epic`` — a FINISHED epic exits terminally (#248). When live
-      ``render-status`` reports nothing actionable AND either every member is
-      complete or the manifest carries ``status: "complete"`` (so
-      ``epic-manifest.py set-status complete`` actually moves the exit, which it
-      never used to), ``primaryCommand``/``nextCommand``/``nextStage`` are all None
+    - ``forge-0-epic`` — no route hands back the command that produced the exit
+      (#248). An ACTIONABLE member with no next production stage owes verification,
+      so the exit routes to ``render-status``'s own answer for that member
+      (``forge-verify``/``forge-fix``) rather than to the dashboard. And a FINISHED
+      epic exits terminally: when live ``render-status`` reports nothing actionable
+      AND either every member is complete or the manifest carries
+      ``status: "complete"`` (see ``_epic_terminal_state`` for how narrow the second
+      is), ``primaryCommand``/``nextCommand``/``nextStage`` are all None
       and the block fences nothing. Previously this state handed back
       ``/feature-forge:forge-0-epic {epic}`` — the command that produced it — so the
       operator was prompted to re-run it indefinitely. The terminal answer applies
@@ -4372,8 +4387,22 @@ def stage_exit(
                 else:
                     member_next = next_stage(ms)
                     if member_next is None:
+                        # An ACTIONABLE member with no next production stage has
+                        # finished all six but is not complete for orchestration —
+                        # it owes verification (`auto-verify-pending`) or carries an
+                        # unapplied report (`findings-reported`). Handing back the
+                        # dashboard here was the #248 self-loop on a not-quite-complete
+                        # epic: the dashboard's own exit reproduces this state and
+                        # re-fences itself. `render-status` already resolved the right
+                        # answer for exactly this member — `forge-verify` or
+                        # `forge-fix`, per its own debt rules — so it is used rather
+                        # than re-derived here (derivation belongs to epic-manifest.py).
+                        # Neither is a production stage, so `nextStage` stays None.
                         next_stage_id = None
-                        next_command = f"/feature-forge:forge-0-epic {feature}"
+                        next_command = (
+                            status["nextCommand"]
+                            or f"/feature-forge:forge-0-epic {feature}"
+                        )
                     else:
                         next_stage_id = member_next
                         next_command = f"/feature-forge:{member_next} {resolved_member}"

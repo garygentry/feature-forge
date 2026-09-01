@@ -1504,6 +1504,13 @@ def _branch_ground_truth(expected_payload: dict) -> tuple[dict, str, str, str]:
         )
     next_steps = expected_payload["nextSteps"]
     sentinel = expected_payload["sentinel"]
+    # A non-string `primaryCommand` is rejected below. That is deliberate, not an
+    # oversight: `stage-exit` has one payload shape with `primaryCommand: null` — the
+    # terminal exit of a FINISHED EPIC (#248), which fences no command at all — and
+    # scoring a branch exit against "the model reproduced the fenced command" has
+    # nothing to compare there. No fixture uses that shape; a future one would need a
+    # scoring rule of its own first, so this fails loudly at fixture-load rather than
+    # scoring against `None`.
     primary = directives["primaryCommand"]
     named = (
         ("nextSteps", next_steps),
