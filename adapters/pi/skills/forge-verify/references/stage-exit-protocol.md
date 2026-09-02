@@ -440,7 +440,17 @@ sentinel `─ forge: end of stage ─`, as the **final line** of `nextSteps`. Pr
 **verbatim as your absolute last output**. Nothing follows the sentinel — no summary, no
 sign-off, no warning, no command result, no acceptance text, no caveat. The block already
 carries the fresh-session recommendation (host-aware wording via `--host`) and the exact
-next command, so trailing prose can only push the user's next action out of view.
+next command — or, at the one terminal state below, the statement that there is none — so
+trailing prose can only push the user's next action out of view.
+
+**A finished epic ends the pipeline, and its block fences nothing.** When
+`primaryCommand` is `null` (`nextCommand` and `nextStage` are `null` too), the epic is
+complete — every member done, or the manifest set to `status: "complete"` — and there is no
+next command at all. Print the block exactly as you would any other; do **not** substitute a
+command, promote `nextCommand`, or append your own "you could now run…" list. The block's own
+prose already names the optional follow-ons (start a new feature, re-open the dashboard to
+inspect state) as inline offers rather than instructions. Re-fencing the epic dashboard here
+is the specific defect this state exists to prevent: running it lands back on this same exit.
 
 **A nested payload** (`terminalOwnedBy: "outer"`) carries `nextSteps: null` and
 `sentinel: null`. It prints **no terminal block at all** — not even an empty one. Return

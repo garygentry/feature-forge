@@ -1963,18 +1963,28 @@ def test_branch_exit_serving_epic_routes_to_members_live_stage(
     assert d["nextCommand"] == f"/feature-forge:forge-3-specs alpha"
 
 
-def test_branch_exit_serving_epic_falls_back_to_dashboard_when_all_complete(
+def test_branch_exit_serving_epic_is_terminal_when_all_members_complete(
     tmp_path: Path,
 ) -> None:
-    """All members complete → no actionable member → dashboard."""
+    """INTENTIONAL CHANGE (#248): all members complete → TERMINAL, not the dashboard.
+
+    This replaces `…_falls_back_to_dashboard_when_all_complete`, whose assertion
+    (`nextCommand == _BRANCH_DASHBOARD`) WAS the self-loop: running that dashboard
+    command reproduces this exact state — nothing actionable on a finished epic — and
+    re-emits the same pointer, forever. #230's member resolution is untouched; only the
+    no-actionable-member terminus changed, and only when the epic is genuinely finished.
+    """
     root = _branch_epic_project(
         tmp_path,
         [_branch_member("alpha")],
         complete=("alpha",),
     )
-    d = _branch_epic_exit(root, "forge-fix", "reverified")["directives"]
+    payload = _branch_epic_exit(root, "forge-fix", "reverified")
+    d = payload["directives"]
     assert d["nextStage"] is None
-    assert d["nextCommand"] == _BRANCH_DASHBOARD
+    assert d["nextCommand"] is None
+    assert d["primaryCommand"] is None
+    assert _BRANCH_DASHBOARD not in _fenced_commands(payload["nextSteps"])
 
 
 def test_branch_exit_serving_epic_skipped_outcome_also_resolves_member(
@@ -2404,15 +2414,22 @@ def test_docs_malformed_json_is_a_routing_failure(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "omit", ["epic", "features", "actionable", "rollup", "nextCommand"]
+    "omit", ["epic", "status", "features", "actionable", "rollup", "nextCommand"]
 )
 def test_docs_a_missing_required_field_is_a_routing_failure(
     tmp_path: Path, omit: str
 ) -> None:
-    """`RenderStatus` is TOTAL, so an absent key is a broken contract, not 'none'."""
+    """`RenderStatus` is TOTAL, so an absent key is a broken contract, not 'none'.
+
+    `status` joined the required set with #248: it is the manifest's own lifecycle
+    field, which `_epic_terminal_state` reads so `set-status complete` reaches the
+    terminal exit. Both helpers ship together, so a payload without it is not the
+    contract this router was built against.
+    """
     body = (
         "import json\n"
-        "payload = {'epic': 'my-epic', 'features': [], 'actionable': ['beta'],\n"
+        "payload = {'epic': 'my-epic', 'status': 'active', 'features': [],\n"
+        "           'actionable': ['beta'],\n"
         "           'rollup': {'complete': 1, 'total': 2},\n"
         "           'nextCommand': '/feature-forge:forge-1-prd beta'}\n"
         f"payload.pop({omit!r})\n"
@@ -2427,10 +2444,21 @@ def test_docs_a_malformed_rollup_is_a_routing_failure(
     tmp_path: Path, bad_rollup: str
 ) -> None:
     body = (
-        "print('''{\"epic\": \"my-epic\", \"features\": [], \"actionable\": [],\n"
+        "print('''{\"epic\": \"my-epic\", \"status\": \"active\", \"features\": [],\n"
+        "  \"actionable\": [],\n"
         f"  \"rollup\": {bad_rollup}, \"nextCommand\": null}}''')\n"
     )
     assert "malformed rollup" in _stub_rejected(tmp_path, body)
+
+
+def test_docs_a_malformed_status_is_a_routing_failure(tmp_path: Path) -> None:
+    """#248: the manifest lifecycle field is read for routing, so its type is checked."""
+    body = (
+        "print('''{\"epic\": \"my-epic\", \"status\": 3, \"features\": [],\n"
+        "  \"actionable\": [], \"rollup\": {\"complete\": 0, \"total\": 0},\n"
+        "  \"nextCommand\": null}''')\n"
+    )
+    assert "malformed status" in _stub_rejected(tmp_path, body)
 
 
 def test_docs_a_non_object_payload_is_a_routing_failure(tmp_path: Path) -> None:
@@ -3524,3 +3552,474 @@ def test_docs_blocked_with_a_blocking_reconcile_claims_no_completion(
     assert payload["directives"]["epicReconcile"]["deferred"] is None
     assert _continuations(payload["nextSteps"]) == []
     assert f"neither this feature nor epic {DOCS_EPIC} is complete" in payload["nextSteps"]
+
+
+# --------------------------------------------------------------------------- #
+# Terminal epic exit — a finished epic fences nothing (issue #248)
+# --------------------------------------------------------------------------- #
+#
+# Before this, a complete epic had no terminus: with nothing actionable the exit set
+# `primaryCommand` to `/feature-forge:forge-0-epic {epic}` — the very command that
+# produced the exit — so re-running it reproduced the same block, forever. Observed
+# three times in a row on one real epic. These tests pin the terminal answer AND the
+# precedence rules that keep it from swallowing a real action.
+
+TERMINAL_EPIC = "done-epic"
+TERMINAL_DASHBOARD = f"/feature-forge:forge-0-epic {TERMINAL_EPIC}"
+
+
+def _terminal_epic_project(
+    tmp_path: Path,
+    members: list[dict],
+    complete: tuple[str, ...] = (),
+    manifest_status: str = "active",
+    epic_state: dict | None = _FRESH_EPIC_VERIFY,
+    epic_change_requests: list[dict] | None = None,
+    states: dict[str, dict] | None = None,
+) -> Path:
+    """A REAL epic whose members are really on disk, plus resolved epic verification.
+
+    Combines the two existing shapes: `_docs_epic_project`'s schema-valid manifest and
+    real member state (07 §3.6 forbids mocking `render-status` for routing cases) with
+    `_epic_project`'s `.epic-state.json` verify entry, so verify-first ordering does not
+    mask the routing these tests are about. `epic_state=None` leaves verification
+    unresolved on purpose; `epic_change_requests` seeds the epic's own state so the
+    backflow reconcile can be shown to outrank the terminal answer.
+    """
+    root = tmp_path / "proj"
+    epic_dir = root / "specs" / TERMINAL_EPIC
+    epic_dir.mkdir(parents=True)
+    (root / "forge.config.json").write_text("{}")
+    (epic_dir / "EPIC.md").write_text("# epic\n")
+    (epic_dir / "epic-manifest.json").write_text(json.dumps({
+        "schemaVersion": 1,
+        "revision": 1,
+        "epic": TERMINAL_EPIC,
+        "description": "A real epic used to exercise the terminal completion exit.",
+        "status": manifest_status,
+        "narrativeDoc": "EPIC.md",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "features": members,
+    }))
+    epic_own_state: dict = {"pipelineStatus": "active", "stages": {}}
+    if epic_change_requests is not None:
+        # The backflow block reads the requests from the EXITING feature's state and
+        # names the epic from `--epic` or that state's `epic` back-pointer. On a
+        # forge-0-epic exit the exiting feature IS the epic (`--epic X --feature X`
+        # resolves to `specs/X/X`, which does not exist), so the back-pointer is what
+        # makes `epic_name` resolve and the reconcile reachable at all.
+        epic_own_state["epic"] = TERMINAL_EPIC
+        epic_own_state["epicChangeRequests"] = epic_change_requests
+    (epic_dir / ".pipeline-state.json").write_text(json.dumps(epic_own_state))
+    if epic_state is not None:
+        seed = {
+            "epic": TERMINAL_EPIC,
+            "updatedAt": "2026-08-09T00:00:00Z",
+            "stages": {"forge-verify-epic": epic_state},
+        }
+        assert validate_epic_state(seed) == [], validate_epic_state(seed)
+        (epic_dir / ".epic-state.json").write_text(json.dumps(seed))
+    for entry in members:
+        name = entry["name"]
+        member_dir = epic_dir / name
+        member_dir.mkdir()
+        (member_dir / "PRD.md").write_text("# prd\n")
+        if states and name in states:
+            (member_dir / ".pipeline-state.json").write_text(json.dumps(states[name]))
+            continue
+        if name not in complete:
+            continue
+        (member_dir / ".pipeline-state.json").write_text(json.dumps({
+            "pipelineStatus": "active",
+            "epic": TERMINAL_EPIC,
+            "stages": {
+                **{
+                    stage: {"status": "complete", "version": 1}
+                    for stage in PRODUCTION_STAGES[1:]
+                },
+                "forge-verify-impl": {"status": "passed", "verifiedStageVersion": 1},
+            },
+        }))
+    subprocess.run(["git", "init", "-qb", "main"], cwd=root, check=True)
+    return root
+
+
+def _owes_verification_state(verify_entry: dict) -> dict:
+    """A member with all six production stages done whose VERIFICATION is unsettled.
+
+    `is_complete_for_orchestration` is False (so `render-status` calls it actionable)
+    while `next_stage` returns None (there is no seventh stage). That combination is the
+    exit's `route_stage == "forge-0-epic"` branch (a) — the one the issue reported
+    alongside the complete-epic case.
+    """
+    return {
+        "pipelineStatus": "active",
+        "epic": TERMINAL_EPIC,
+        "stages": {
+            **{
+                stage: {"status": "complete", "version": 1}
+                for stage in PRODUCTION_STAGES[1:]
+            },
+            "forge-verify-impl": verify_entry,
+        },
+    }
+
+
+def _terminal_member(name: str, depends_on: tuple[str, ...] = ()) -> dict:
+    return {
+        "name": name,
+        "charter": f"Charter for {name}, long enough to satisfy the manifest schema.",
+        "dependsOn": list(depends_on),
+        "exposes": [],
+        "consumes": [],
+    }
+
+
+def _terminal_exit(root: Path, *extra: str) -> dict:
+    return _exit(root, "--feature", TERMINAL_EPIC, "--stage", "forge-0-epic", *extra)
+
+
+def _finished_epic(tmp_path: Path, **kwargs) -> Path:
+    """The ordinary finished epic: two members, both complete."""
+    return _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha"), _terminal_member("beta", ("alpha",))],
+        complete=("alpha", "beta"),
+        **kwargs,
+    )
+
+
+def test_a_finished_epic_exits_with_no_fenced_command_at_all(tmp_path: Path) -> None:
+    """The #248 terminus: every downstream signal is null and nothing is fenced."""
+    payload = _terminal_exit(_finished_epic(tmp_path))
+    d = payload["directives"]
+    assert d["primaryCommand"] is None
+    assert d["nextCommand"] is None
+    assert d["nextStage"] is None
+    assert d["deferredCommand"] is None
+    assert _fenced_commands(payload["nextSteps"]) == []
+    assert _continuations(payload["nextSteps"]) == []
+    assert payload["nextSteps"].rstrip().splitlines()[-1] == SENTINEL
+
+
+def test_a_finished_epic_never_hands_back_the_command_that_produced_it(
+    tmp_path: Path,
+) -> None:
+    """The self-loop regression, stated as the thing that must not happen.
+
+    Re-running the fenced command is how the operator was looped: the dashboard's exit
+    reproduced this state and re-fenced the dashboard. The dashboard may still appear as
+    INLINE prose ("re-open it to inspect the epic") — that is an offer, not an
+    instruction to run it again — but it must never be the fenced primary action.
+    """
+    payload = _terminal_exit(_finished_epic(tmp_path))
+    assert TERMINAL_DASHBOARD not in _fenced_commands(payload["nextSteps"])
+    assert payload["directives"]["primaryCommand"] != TERMINAL_DASHBOARD
+    assert payload["directives"]["nextCommand"] != TERMINAL_DASHBOARD
+
+
+def test_a_finished_epic_states_its_real_member_counts(tmp_path: Path) -> None:
+    """The wording is derived from the live rollup, never asserted as a constant."""
+    text = _terminal_exit(_finished_epic(tmp_path))["nextSteps"]
+    assert f"Epic {TERMINAL_EPIC} is complete" in text
+    assert "(2/2)" in text
+
+
+def test_set_status_complete_reaches_the_terminal_exit(tmp_path: Path) -> None:
+    """#248's second complaint: the manifest `status` was never consulted at all.
+
+    An epic with no members declared yet reports `0/0`, which the rollup rule alone
+    (which requires `total > 0`) will not call finished. `set-status complete` is the
+    operator saying it is — and now it moves the exit, with wording that states the
+    real counts rather than claiming members are done.
+    """
+    root = _terminal_epic_project(tmp_path, [], manifest_status="complete")
+    payload = _terminal_exit(root)
+    assert payload["directives"]["primaryCommand"] is None
+    assert f"Epic {TERMINAL_EPIC} is marked complete in its manifest" in payload["nextSteps"]
+    assert "(0/0 members complete)" in payload["nextSteps"]
+
+
+def test_an_epic_with_no_members_and_no_declaration_is_not_terminal(
+    tmp_path: Path,
+) -> None:
+    """`total > 0` is load-bearing: 0/0 is "nothing decomposed yet", not "finished"."""
+    root = _terminal_epic_project(tmp_path, [])
+    d = _terminal_exit(root)["directives"]
+    assert d["primaryCommand"] == TERMINAL_DASHBOARD
+
+
+def test_an_epic_with_actionable_work_left_is_never_terminal(tmp_path: Path) -> None:
+    """Over-reach guard: member routing (#175/#230) is untouched by the terminal answer."""
+    root = _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha"), _terminal_member("beta", ("alpha",))],
+        complete=("alpha",),
+    )
+    d = _terminal_exit(root)["directives"]
+    assert d["primaryCommand"] == "/feature-forge:forge-1-prd beta"
+    assert d["nextStage"] == "forge-1-prd"
+
+
+def test_a_finished_epic_with_unresolved_verification_still_verifies_first(
+    tmp_path: Path,
+) -> None:
+    """REQ-EXIT-06 outranks the terminal answer: a finished epic still owes its verify."""
+    root = _finished_epic(tmp_path, epic_state=None)
+    d = _terminal_exit(root)["directives"]
+    assert d["verifyState"] == "never"
+    assert d["primaryCommand"] == f"/feature-forge:forge-verify {TERMINAL_EPIC}"
+
+
+def test_a_finished_epic_with_a_blocking_reconcile_reconciles_first(
+    tmp_path: Path,
+) -> None:
+    """The reconcile command IS the dashboard string, so this is the collision case.
+
+    Without the separate `epic_reconcile is None` guard the terminal answer would
+    silently swallow a blocking epic change request — the exact opposite of what
+    backflow routing exists to do.
+    """
+    root = _finished_epic(tmp_path, epic_change_requests=[
+        {"id": "ecr-1", "status": "open", "blocksCurrent": True,
+         "summary": "Split alpha in two."},
+    ])
+    payload = _terminal_exit(root)
+    d = payload["directives"]
+    assert d["epicReconcile"]["required"] is True
+    assert d["primaryCommand"] == TERMINAL_DASHBOARD
+    assert _fenced_commands(payload["nextSteps"]) == [TERMINAL_DASHBOARD]
+
+
+def test_a_finished_epic_with_a_non_blocking_reminder_is_still_terminal(
+    tmp_path: Path,
+) -> None:
+    """A non-blocking request is an offer, so it survives as prose beside a terminus.
+
+    Fencing the dashboard for it would reinstate the #248 loop — decline the optional
+    reconcile, re-run, get the identical block — AND promote a change the exit itself
+    calls non-blocking to the one required action.
+    """
+    root = _finished_epic(tmp_path, epic_change_requests=[
+        {"id": "ecr-2", "status": "open", "blocksCurrent": False,
+         "summary": "Rename beta when convenient."},
+    ])
+    payload = _terminal_exit(root)
+    d = payload["directives"]
+    assert d["epicReconcile"]["reminder"] is True
+    assert d["primaryCommand"] is None
+    assert _fenced_commands(payload["nextSteps"]) == []
+    # The recorded request is not dropped on the floor — it is offered inline.
+    assert "reconcile when convenient" in payload["nextSteps"]
+    assert payload["nextSteps"].rstrip().splitlines()[-1] == SENTINEL
+
+
+def test_edit_mode_on_a_finished_epic_is_terminal_for_a_complete_member(
+    tmp_path: Path,
+) -> None:
+    """The other route into the dashboard hand-back: `--next-feature <done member>`."""
+    d = _terminal_exit(_finished_epic(tmp_path), "--next-feature", "alpha")["directives"]
+    assert d["primaryCommand"] is None
+    assert d["nextCommand"] is None
+
+
+def test_edit_mode_on_an_unfinished_epic_still_hands_back_the_dashboard(
+    tmp_path: Path,
+) -> None:
+    """A complete MEMBER on an unfinished EPIC is not a finished epic (issue #175)."""
+    root = _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha"), _terminal_member("beta")],
+        complete=("alpha",),
+    )
+    d = _terminal_exit(root, "--next-feature", "alpha")["directives"]
+    assert d["primaryCommand"] == TERMINAL_DASHBOARD
+    assert d["nextCommand"] == TERMINAL_DASHBOARD
+
+
+def test_an_invalid_epic_graph_degrades_to_the_recoverable_dashboard(
+    tmp_path: Path,
+) -> None:
+    """A graph `render-status` refuses to render is never mistaken for completion.
+
+    The manifest stays parseable (so epic verification still classifies `fresh` and
+    verify-first does not take over) but names a dependency that does not exist, which
+    `render-status` rejects. The exit keeps the pre-existing dashboard fallback: a
+    broken epic must stay recoverable, and that is a different case from a finished one.
+    """
+    root = _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha", ("ghost",))],
+        complete=("alpha",),
+    )
+    payload = _terminal_exit(root)
+    assert payload["directives"]["primaryCommand"] == TERMINAL_DASHBOARD
+    assert "is complete" not in payload["nextSteps"]
+
+
+def test_an_unparseable_epic_manifest_never_claims_completion(tmp_path: Path) -> None:
+    """The harsher failure: nothing about it may read as "the epic finished"."""
+    root = _finished_epic(tmp_path)
+    (root / "specs" / TERMINAL_EPIC / "epic-manifest.json").write_text("{ not json")
+    payload = _terminal_exit(root)
+    assert payload["directives"]["primaryCommand"] is not None
+    assert _fenced_commands(payload["nextSteps"]) != []
+    assert "is complete" not in payload["nextSteps"]
+
+
+def test_the_terminal_block_is_host_translated_for_pi(tmp_path: Path) -> None:
+    """Pi's surface is `/skill:`; the inline offers are translated like every other."""
+    payload = _terminal_exit(_finished_epic(tmp_path), "--host", "pi")
+    assert payload["directives"]["primaryCommand"] is None
+    assert "/feature-forge:" not in payload["nextSteps"]
+    assert "/skill:forge-1-prd <new-feature>" in payload["nextSteps"]
+
+
+def test_the_terminal_exit_is_idempotent(tmp_path: Path) -> None:
+    """Running it twice is the operator's actual loop — the second run must not
+    re-offer a command the first said did not exist."""
+    root = _finished_epic(tmp_path)
+    first = _terminal_exit(root)
+    second = _terminal_exit(root)
+    assert first["nextSteps"] == second["nextSteps"]
+    assert second["directives"]["primaryCommand"] is None
+
+
+# ---- branch (a): an ACTIONABLE member with no next production stage -------- #
+#
+# The issue's other self-loop, on a not-quite-complete epic. A member that finished all
+# six production stages but owes verification is NOT complete for orchestration, so it
+# stays `actionable` while `next_stage` returns None. That combination used to hand back
+# the epic dashboard — the command that produced the exit — even though `render-status`
+# had already resolved the right answer for that exact member.
+
+
+@pytest.mark.parametrize(
+    "verify_entry,expected",
+    [
+        (
+            {"status": "auto-verify-pending", "scheduledStageVersion": 1},
+            "/feature-forge:forge-verify alpha",
+        ),
+        (
+            {"status": "findings-reported", "verifiedStageVersion": 1},
+            "/feature-forge:forge-fix alpha",
+        ),
+    ],
+    ids=["auto-verify-pending", "findings-reported"],
+)
+def test_an_actionable_member_owing_verification_routes_to_its_own_next_action(
+    tmp_path: Path, verify_entry: dict, expected: str
+) -> None:
+    """Not the dashboard, and not a guess: `render-status`'s own answer for that member.
+
+    The two entries take DIFFERENT commands — a reported findings document is fixed, and
+    unrun scheduled debt is verified — and that distinction belongs to `epic-manifest.py`
+    (REQ-DEBT-02/05), so this exit uses its `nextCommand` rather than re-deriving it.
+    """
+    root = _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha")],
+        states={"alpha": _owes_verification_state(verify_entry)},
+    )
+    payload = _terminal_exit(root)
+    d = payload["directives"]
+    assert d["primaryCommand"] == expected
+    assert d["nextCommand"] == expected
+    # Neither forge-verify nor forge-fix is a production stage.
+    assert d["nextStage"] is None
+    assert _fenced_commands(payload["nextSteps"]) == [expected]
+
+
+def test_an_actionable_member_owing_verification_is_not_the_dashboard(
+    tmp_path: Path,
+) -> None:
+    """The self-loop regression for branch (a), stated as what must not happen."""
+    root = _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha"), _terminal_member("beta", ("alpha",))],
+        complete=("beta",),
+        states={"alpha": _owes_verification_state(
+            {"status": "auto-verify-pending", "scheduledStageVersion": 1}
+        )},
+    )
+    payload = _terminal_exit(root)
+    assert payload["directives"]["primaryCommand"] != TERMINAL_DASHBOARD
+    assert TERMINAL_DASHBOARD not in _fenced_commands(payload["nextSteps"])
+
+
+def test_an_epic_owing_only_member_verification_is_not_terminal(
+    tmp_path: Path,
+) -> None:
+    """Over-reach guard the other way: owed verification is not completion."""
+    root = _terminal_epic_project(
+        tmp_path,
+        [_terminal_member("alpha")],
+        states={"alpha": _owes_verification_state(
+            {"status": "auto-verify-pending", "scheduledStageVersion": 1}
+        )},
+    )
+    payload = _terminal_exit(root)
+    assert payload["directives"]["primaryCommand"] is not None
+    assert "is complete" not in payload["nextSteps"]
+
+
+def test_an_abandoned_epic_is_terminal_but_never_announced_as_complete(
+    tmp_path: Path,
+) -> None:
+    """`abandoned` is checked ahead of the rollup for exactly this shape.
+
+    An epic the operator abandoned whose members happen to be complete would otherwise
+    satisfy the rollup rule and be announced as finished work. It still terminates —
+    nothing runs against an abandoned epic — but it says what actually happened.
+    """
+    root = _finished_epic(tmp_path, manifest_status="abandoned")
+    payload = _terminal_exit(root)
+    assert payload["directives"]["primaryCommand"] is None
+    assert "marked abandoned" in payload["nextSteps"]
+    assert "is complete —" not in payload["nextSteps"]
+    assert "this is NOT a completion" in payload["nextSteps"]
+
+
+def test_a_paused_epic_still_routes_to_the_dashboard(tmp_path: Path) -> None:
+    """A pause is an intent to resume, and the dashboard is where resuming starts."""
+    root = _terminal_epic_project(tmp_path, [], manifest_status="paused")
+    assert _terminal_exit(root)["directives"]["primaryCommand"] == TERMINAL_DASHBOARD
+
+
+def test_a_member_missing_its_prd_keeps_nextstage_and_nextcommand_agreeing(
+    tmp_path: Path,
+) -> None:
+    """Branch (a)'s answer is not always a branch command.
+
+    `epic-manifest.py`'s `_next_command` checks for `PRD.md` on disk BEFORE its
+    verify-debt fork, so a member with every stage recorded complete but no PRD file is
+    answered `forge-1-prd`. That IS a production stage, so `nextStage` must name it —
+    reporting a production command beside `nextStage: null` would contradict this
+    payload's own contract.
+    """
+    members = [_terminal_member("alpha")]
+    root = _terminal_epic_project(
+        tmp_path,
+        members,
+        states={"alpha": _owes_verification_state(
+            {"status": "auto-verify-pending", "scheduledStageVersion": 1}
+        )},
+    )
+    (root / "specs" / TERMINAL_EPIC / "alpha" / "PRD.md").unlink()
+    d = _terminal_exit(root)["directives"]
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd alpha"
+    assert d["nextStage"] == "forge-1-prd"
+
+
+def test_production_stage_of_reads_back_only_production_stages() -> None:
+    """The parse never invents a stage for a branch command or the navigator."""
+    production_stage_of = _load_session()._production_stage_of
+    assert production_stage_of("/feature-forge:forge-1-prd alpha") == "forge-1-prd"
+    assert production_stage_of("/feature-forge:forge-6-docs alpha") == "forge-6-docs"
+    assert production_stage_of("/feature-forge:forge-verify alpha") is None
+    assert production_stage_of("/feature-forge:forge-fix alpha --served-stage x") is None
+    assert production_stage_of("/feature-forge:forge alpha") is None
+    assert production_stage_of("/skill:forge-1-prd alpha") is None
+    assert production_stage_of("not a command") is None
