@@ -1818,7 +1818,11 @@ def _render_runner_command(template: str, loop_runner: dict, **tokens: object) -
         argv = shlex.split(rendered)
     except ValueError:
         return None
-    return argv or None
+    # argv[0] must be the configured runner binary *exactly*: ``{bin}5.34`` or
+    # ``{bin}/../x`` would otherwise swap in a different executable.
+    if not argv or argv[0] != str(values["bin"]):
+        return None
+    return argv
 
 
 _SEMVER_NUM: Final = r"(0|[1-9]\d*)"  # SemVer 2.0: no leading zeros
@@ -3101,9 +3105,11 @@ def _print_doctor(report: dict, *, verbose: bool = False) -> None:
     else:
         print(f"plugin root: UNRESOLVED — {root.get('error', 'unknown')}")
     print(f"current branch: {report['currentBranch'] or '(not a git repo)'}")
+    specs_error = report.get("specsDirError")
     print(
         f"specs dir: {report['specsDir']}"
         + ("" if report["specsDirExists"] else "  (MISSING)")
+        + (f"  (UNREADABLE — {specs_error}; features not scanned)" if specs_error else "")
     )
     print(
         f"config: {report['configPath']}"

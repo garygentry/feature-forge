@@ -346,6 +346,13 @@ def test_render_runner_command_quotes_tokens_and_rejects_unrendered(fs) -> None:
     # unrenderable, even a real program (Codex review, PR #255).
     assert fs._render_runner_command("/usr/bin/printf unexpected", lr) is None
     assert fs._render_runner_command("curl https://x {bin}", lr) is None
+    # argv[0] must be the configured bin exactly — no suffix, no path games.
+    assert fs._render_runner_command("{bin}5.34.0 -e 1", lr) is None
+    assert fs._render_runner_command("{bin}/../perl -e 1", lr) is None
+    assert fs._render_runner_command("{bin}{bin} x", lr) is None
+    assert fs._render_runner_command("{bin} version", {"bin": "/opt/dir with space/rauf"}) == [
+        "/opt/dir with space/rauf", "version",
+    ]
     assert fs._render_runner_command("  {bin} version --json", lr) == ["rauf-stable", "version", "--json"]
 
 
@@ -1270,7 +1277,11 @@ def test_layer_two_every_in_process_spawn_is_allowlisted_and_no_socket_opens(
     bin_names = {Path(argv[0]).name for argv in spawned}
     assert {"rauf", "gh", "git", "bash"} <= bin_names, bin_names
     allowed_leads = (
-        ("git",), ("bash",), ("rauf", "version", "--json"), ("rauf", "backlog", "validate"),
+        # legacy report: branch discovery + the resolved root's short commit
+        ("git", "branch", "--show-current"), ("git", "symbolic-ref"),
+        ("git", "rev-parse"), ("git", "-C"),
+        ("bash",),  # forge-root.sh only (asserted below)
+        ("rauf", "version", "--json"), ("rauf", "backlog", "validate"),
         ("gh", "--version"), ("gh", "auth", "token"),
     )
     for argv in spawned:
@@ -1473,6 +1484,17 @@ def test_unreadable_specs_dir_is_data_not_exit_two(tmp_path: Path) -> None:
         (project / "specs").chmod(0o755)
     assert "Permission denied" in report["specsDirError"]
     assert report["features"] == [] and report["counts"]["active"] == 0
+    # The human form surfaces it on the specs-dir line.
+    (project / "specs").chmod(0)
+    try:
+        human = subprocess.run(
+            [sys.executable, str(HELPER), "doctor"], capture_output=True, text=True,
+            cwd=str(project), env=env,
+        )
+    finally:
+        (project / "specs").chmod(0o755)
+    assert human.returncode == 0
+    assert "UNREADABLE" in human.stdout and "Permission denied" in human.stdout
     assert report["checksSummary"]["fail"] == 0
     assert list(report)[:3] == ["pluginRoot", "currentBranch", "specsDir"]
     assert list(report)[-3:] == ["checks", "checksSummary", "remedyClusters"]

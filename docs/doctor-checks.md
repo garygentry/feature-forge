@@ -17,8 +17,9 @@ applicable, and what it suggests. It is kept in lockstep with the registry by
 
 - **Exit 0 for everything it finds.** A crashing check becomes an `na` record
   (`check crashed: …`); a crashing driver degrades every check to `na`; unreadable, non-UTF-8
-  or wrongly-typed inputs are reported as data. The only non-zero exits are the command's own
-  usage errors — a `--check` typo, or a specs dir the process cannot list — never a finding.
+  or wrongly-typed inputs are reported as data (a specs dir the process cannot list becomes a
+  `specsDirError` field and an empty feature scan). The only non-zero exit is the command's own
+  argument error — a `--check` typo — never a finding.
 - **Warn-only in this release.** No check is promoted to `fail` yet
   (`FAIL_PROMOTED_CHECK_IDS` is empty); a check that reported `fail` is demoted to `warn` with
   `evidence.demotedFromFail: true`. Promotion is a later phase (#244 P5).
@@ -27,8 +28,11 @@ applicable, and what it suggests. It is kept in lockstep with the registry by
 - **No network.** The only subprocesses are `git` and `forge-root.sh` (legacy fields),
   `{bin} version --json` (once), `{bin} backlog validate …` (once per distinct backlog dir),
   `gh --version` and `gh auth token` (exit code only; stdout goes to `/dev/null`). The two
-  runner templates come from `loopRunner` config and must start with `{bin}` — doctor only ever
-  invokes the configured runner binary; any other first word is reported as unrenderable. Never
+  runner templates come from `loopRunner` config and are only run by doctor when they start with
+  `{bin}` — doctor only ever invokes the configured runner binary. The schema permits other
+  shapes (`env X=1 {bin} …`, `node ./runner.js …`) and forge-4/forge-5 still run them; doctor
+  simply reports such a template as unrenderable (`na` / a probe-error row) and cannot vouch for
+  it. Never
   `gh auth status`, never the runner's `agentsProbeCommand`, never `rauf update --check`, never
   a remedy command. `tests/test_doctor_checks.py` proves this three ways: an argv allowlist over
   what scrubbed-PATH fake binaries record; an in-process `subprocess.run` recorder asserting every
