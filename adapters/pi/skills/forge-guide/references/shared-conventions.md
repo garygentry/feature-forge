@@ -410,6 +410,23 @@ Invoke this block **at the head of any post-entry step that writes a stage artif
 
 When you cannot confirm you authored the current run, treat it as a replay and refuse: a false refuse costs one confirmation click; a false proceed overwrites a committed artifact and re-churns a stage version. `--force` follows Force Mode (skip the gate, treat as a deliberate re-author).
 
+## Remedy Safety Ladder
+
+The safety tier every `doctor` check remedy (`{description, command, safety}`,
+`roadmap/self-healing-resilience.md` §5.2) declares, referenced by `safety` value
+wherever a skill or reference applies one — never restated per-site.
+
+| `safety` | Meaning | Prompt? | Execute? |
+|---|---|---|---|
+| `read-only` | Diagnoses only; touches nothing. | Never. | Run freely. |
+| `local-write` | Writes inside the project, idempotent, git-visible (`rauf install .`, writing a detected `testCommand`, copying a hygiene template). | Once per distinct `remedy.command` string per session. | Run after that one consent — never re-prompt the identical command again this session. |
+| `global-install` | Touches the machine outside the project (`npm i -g`, PATH edits). | N/A. | **Never.** Advise-only — print the exact command, never run it. |
+| `network` | Fetches from a remote (registry queries, `curl \| bash`). | N/A. | **Never.** Advise-only — print the exact command, never run it. |
+
+**Degrade one tier stricter when the session cannot ask** (`references/preflight-and-self-heal.md` §4): a `local-write` remedy with no question mechanism runs at the `global-install`/`network` posture instead — advise-only, never unasked. `read-only` is unaffected (it was never gated on asking); `global-install`/`network` are already the floor.
+
+**A remedy that ran but did not prove is a failure, not a partial success.** Executing a `local-write` command is never itself the outcome — the consumer that applied it (`references/preflight-and-self-heal.md` §2 step 6) re-checks the condition the remedy claimed to fix and reports "healed" only when that re-check confirms it.
+
 ## Force Mode
 
 If the user passes `--force` as an argument, skip prerequisite validation with a warning:

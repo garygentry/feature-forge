@@ -81,29 +81,19 @@ This gate runs **before** the runner version/setup gates (1c/1d) so a blocked fe
 
 ### 1c. Runner Version Gate
 
-Enforce `loopRunner.minRunnerVersion` **before** doing anything else with the runner. This is what turns "the runner is missing or too old" into a clear, actionable stop instead of a cryptic mid-run failure.
-
-1. Run the **version command** (`loopRunner.versionCommand`, default `rauf version --json`) via Bash.
-2. Parse `{ "version": "<semver>" }` from stdout. Do NOT use plain `rauf version` (its human output is `rauf v0.14.0` with a `v` prefix) — always the `--json` form.
-3. **Semver-compare** (NOT string-compare) the reported version against `loopRunner.minRunnerVersion` (default `0.14.0`), numerically by major, then minor, then patch.
-
-**Any of the following is a HARD GATE FAILURE — do NOT proceed to run the loop.** STOP, show `loopRunner.installHint`, and include the raw command output for diagnosis:
-
-- The version command is not found or exits non-zero (the binary isn't installed).
-- Its stdout is not valid JSON, has no `version` field, or `version` is not a valid semver string.
-- The reported version is **< `minRunnerVersion`**.
-
-For the version-too-old case, phrase it concretely, e.g.: "Your rauf is {reported}, but feature-forge needs ≥ {minRunnerVersion} — 0.14.0 is the version the package pins and the floor for full needs-human recovery. {installHint}". When the gate fails because the output couldn't be parsed, say so and show what the command printed before the `installHint`.
-
-> `installHint` points at the runner **CLI** install/upgrade — distinct from
-> `setupHint` (1d), which installs the runner's per-project artifacts.
-
 ### 1d. Runner Setup Check (precondition file)
 
-Check that `loopRunner.preconditionFile` (default `.rauf.json`) exists in the project root. If not:
+Together these gate on the loop runner being installed, current, and wired into this project **before** touching it — enforced by `doctor`'s `runner-*` checks, never ad-hoc parsing. Run:
 
-- **If `loopRunner.name == "rauf"` and a legacy `.ralph.json` (or `.ralph/` directory) exists**, this is an un-migrated Ralph project. STOP: "This project is still on the legacy **Ralph** layout. Run `rauf migrate .` first (the loop runner only understands `.rauf/` and `RAUF_*` signals), then re-run `/feature-forge:forge-5-loop {feature}`."
-- **Otherwise**, STOP and show `loopRunner.setupHint` (default: "Run `rauf install .` …"), e.g. "The loop runner isn't set up in this project ({preconditionFile} is missing). {setupHint}"
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" doctor --json --specs-dir "{specsDir}" --check runner-binary --check runner-version --check runner-wired --check runner-legacy-layout
+```
+
+All four `ok`/`na` → proceed silently. Otherwise follow `references/preflight-and-self-heal.md`: `runner-binary`/`runner-version` not `ok` → **HARD GATE FAILURE**, STOP with the check's own `remedy.description` (never a hardcoded `installHint` — a customized `bin` gets its own config-fix remedy, G4). `runner-legacy-layout` warn → STOP: "This project is still on the legacy **Ralph** layout. Run {`remedy.command`, e.g. `{bin} migrate .`} first, then re-run `/feature-forge:forge-5-loop {feature}`." `runner-wired` warn → STOP with `loopRunner.setupHint`. A STOP lifts only once a permitted `local-write` remedy ran **and** the identical re-run shows `ok`.
+
+> `installHint` points at the runner **CLI**; `setupHint` (1d) installs the runner's per-project artifacts.
 
 ### 1e. Backlog File Check
 
