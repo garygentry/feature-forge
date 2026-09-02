@@ -16,6 +16,16 @@ import sys
 from pathlib import Path
 
 import pytest
+from _doctor_fixtures import (
+    check,
+    doctor_report,
+    make_project,
+    pipeline_state,
+    run_doctor,
+    scrubbed_env,
+    warn_ids,
+    write_feature,
+)
 from _state_schema import _check as reference_schema_check
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +38,10 @@ LEGACY_DOCTOR_KEYS = (
     "duplicateConfigKeys", "rootSandbox",
 )
 CHECK_KEYS = ("id", "status", "severity", "detail", "evidence", "remedy")
+PRODUCTION = [
+    "forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop",
+    "forge-6-docs",
+]
 
 
 def _load_helper_module():
@@ -354,3 +368,211 @@ def test_run_probe_never_raises_and_caps_nothing_on_its_own(fs, monkeypatch) -> 
     assert slow["timedOut"] is True and slow["ok"] is False
     assert fs._head("x" * 1000).endswith("…") and len(fs._head("x" * 1000)) == 401
     assert fs._head(None) == ""
+
+
+# --------------------------------------------------------------------------- #
+# Promoted legacy fields: plugin-root, config-schema, backlog-present,
+# branch-state, sandbox-root
+# --------------------------------------------------------------------------- #
+
+def test_plugin_root_ok_from_the_repo_checkout(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    report = doctor_report(project, scrubbed_env(tmp_path))
+    record = check(report, "plugin-root")
+    assert record["status"] == "ok"
+    assert record["severity"] == "blocking"
+    assert record["evidence"]["root"] == str(REPO_ROOT)
+    assert "version" in record["detail"]
+    assert record["remedy"] is None
+
+
+def test_plugin_root_warns_with_global_install_remedy_when_unresolvable(tmp_path: Path) -> None:
+    """A lone helper copy (no sentinel above it) cannot resolve — warn, never crash."""
+    lone = tmp_path / "lone" / "scripts"
+    lone.mkdir(parents=True)
+    for name in ("forge-session.py", "forge-root.sh"):
+        (lone / name).write_bytes((REPO_ROOT / "scripts" / name).read_bytes())
+    project = make_project(tmp_path)
+    result = run_doctor(project, scrubbed_env(tmp_path), helper=lone / "forge-session.py")
+    assert result.returncode == 0, result.stderr
+    record = check(json.loads(result.stdout), "plugin-root")
+    assert record["status"] == "warn"
+    assert record["evidence"]["resolved"] is False
+    assert record["remedy"]["safety"] == "global-install"
+    assert record["remedy"]["command"] is None
+
+
+def test_config_schema_na_without_config(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "na"
+
+
+def test_config_schema_ok_reports_unknown_keys_only_as_evidence(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={"stack": "python", "gateCommand": "x"})
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "ok"
+    assert record["evidence"]["unknownKeys"] == ["gateCommand"]
+    assert record["evidence"]["violations"] == []
+    assert "gateCommand" in record["detail"]
+
+
+def test_config_schema_warns_on_violations_duplicates_and_bad_auto_verify_keys(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path)
+    (project / "forge.config.json").write_text(
+        '{"stack": 3, "stack": "python", "docsStage": "nope", '
+        '"autoVerifyStages": {"forge-1-prod": true}}'
+    )
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "warn"
+    ev = record["evidence"]
+    assert ev["duplicateKeys"] == ["stack"]
+    assert ev["invalidAutoVerifyKeys"] == ["forge-1-prod"]
+    assert any("docsStage" in v for v in ev["violations"])
+    assert record["remedy"]["safety"] == "local-write"
+    assert record["remedy"]["command"] is None
+
+
+def test_config_schema_warns_on_unparseable_config(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    (project / "forge.config.json").write_text("{nope")
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "warn"
+    assert record["evidence"]["parseError"].startswith("JSONDecodeError")
+    (project / "forge.config.json").write_text("[1, 2]")
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "warn"
+    assert "expected object" in record["detail"]
+
+
+def test_config_schema_warns_when_the_bundled_schema_is_unreadable(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={"stack": "python"})
+    report = doctor_report(project, scrubbed_env(tmp_path), "--schema", str(tmp_path / "nope"))
+    record = check(report, "config-schema")
+    assert record["status"] == "warn"
+    assert record["evidence"]["schemaError"]
+    assert record["remedy"]["safety"] == "global-install"
+
+
+def test_backlog_present_na_before_forge_4_and_warns_on_missing(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    write_feature(project, "early", pipeline_state(["forge-1-prd", "forge-2-tech"]))
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "backlog-present")
+    assert record["status"] == "na"
+
+    write_feature(project, "has-it", pipeline_state(PRODUCTION[:4]), backlog=True)
+    write_feature(project, "lost-it", pipeline_state(PRODUCTION[:4]), epic="big")
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "backlog-present")
+    assert record["status"] == "warn"
+    assert record["severity"] == "blocking"
+    assert "lost-it [big]" in record["detail"]
+    assert "forge-4-backlog" in record["detail"]
+    rows = {row["name"]: row for row in record["evidence"]["features"]}
+    assert set(rows) == {"has-it", "lost-it"}  # 'early' is not eligible
+    assert rows["lost-it"]["exists"] is False and rows["has-it"]["exists"] is True
+    assert record["remedy"] is None  # the fix is a slash command, not a shell command
+    assert record["evidence"]["skipped"] == 1
+
+
+def test_backlog_present_ok_includes_complete_features(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    write_feature(project, "done", pipeline_state(PRODUCTION), backlog=True)
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "backlog-present")
+    assert record["status"] == "ok"
+    assert record["detail"] == "1 backlog(s) present"
+
+
+def test_branch_state_na_outside_git_or_without_pending_features(tmp_path: Path) -> None:
+    project = make_project(tmp_path, git_branch=None)
+    write_feature(project, "f", pipeline_state(["forge-1-prd"], branch="forge/f"))
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "branch-state")
+    assert record["status"] == "na" and "not a git repository" in record["detail"]
+
+    project = make_project(tmp_path)
+    write_feature(project, "f", pipeline_state(PRODUCTION, branch="forge/f"))
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "branch-state")
+    assert record["status"] == "na"
+    assert record["evidence"]["skippedComplete"] == 1
+
+
+def test_branch_state_warn_drift_on_default_branch_suggests_git_switch(tmp_path: Path) -> None:
+    project = make_project(tmp_path, git_branch="main")
+    write_feature(project, "pending", pipeline_state(["forge-1-prd"], branch="forge/pending"))
+    write_feature(project, "finished", pipeline_state(PRODUCTION, branch="forge/finished"))
+    write_feature(project, "matching", pipeline_state(["forge-1-prd"], branch="main"))
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "branch-state")
+    assert record["status"] == "warn"
+    assert record["severity"] == "advisory"
+    assert "pending (warn-drift" in record["detail"]
+    assert "finished" not in record["detail"]  # complete features are skipped
+    assert record["remedy"] == {
+        "description": (
+            "Switch to the feature's recorded branch before running forge-2-tech "
+            "(create it with `git switch -c` if it no longer exists)"
+        ),
+        "command": "git switch forge/pending",
+        "safety": "local-write",
+    }
+    rows = {row["name"]: row for row in record["evidence"]["features"]}
+    assert rows["matching"]["reconcile"] is None and rows["matching"]["remedy"] is None
+    assert record["evidence"]["skippedComplete"] == 1
+
+
+def test_branch_state_adopt_current_on_topic_branch_suggests_state_branch(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path, git_branch="feature/other")
+    write_feature(
+        project, "member", pipeline_state(["forge-1-prd"], branch="forge/member"), epic="ep",
+    )
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "branch-state")
+    assert record["status"] == "warn"
+    assert "member [ep] (adopt-current" in record["detail"]
+    cmd = record["remedy"]["command"]
+    assert cmd.startswith("python3 ")
+    assert cmd.endswith(
+        " state-branch --feature member --branch feature/other --specs-dir specs --epic ep"
+    )
+    assert record["remedy"]["safety"] == "local-write"
+
+
+def test_branch_state_two_drifts_yield_a_per_feature_remedy(tmp_path: Path) -> None:
+    project = make_project(tmp_path, git_branch="main")
+    write_feature(project, "one", pipeline_state(["forge-1-prd"], branch="forge/one"))
+    write_feature(project, "two", pipeline_state(["forge-1-prd"], branch="forge/two"))
+    report = doctor_report(project, scrubbed_env(tmp_path))
+    record = check(report, "branch-state")
+    assert record["status"] == "warn"
+    assert record["remedy"]["command"] is None
+    assert record["remedy"]["description"].startswith("per-feature")
+    assert record["remedy"]["safety"] == "local-write"
+    commands = sorted(row["remedy"]["command"] for row in record["evidence"]["features"])
+    assert commands == ["git switch forge/one", "git switch forge/two"]
+    # A command-less top-level remedy is report-only: no cluster is formed for it.
+    assert all("branch-state" not in c["checkIds"] for c in report["remedyClusters"])
+
+
+def test_sandbox_root_mirrors_the_legacy_root_sandbox_block(fs, monkeypatch) -> None:
+    monkeypatch.setattr(fs.os, "geteuid", lambda: 0)
+    monkeypatch.delenv("IS_SANDBOX", raising=False)
+    record = fs._check_sandbox_root(None)
+    assert record["status"] == "warn"
+    assert record["remedy"]["command"] == "export IS_SANDBOX=1"
+    assert record["remedy"]["safety"] == "read-only"
+    assert record["evidence"]["loopWillSetSandbox"] is True
+    monkeypatch.setenv("IS_SANDBOX", "1")
+    assert fs._check_sandbox_root(None)["status"] == "ok"
+    monkeypatch.setattr(fs.os, "geteuid", lambda: 1000)
+    assert fs._check_sandbox_root(None)["detail"] == "not running as root"
+    monkeypatch.delattr(fs.os, "geteuid")
+    assert fs._check_sandbox_root(None)["status"] == "na"
+
+
+def test_no_check_ever_emits_fail_and_warn_set_is_reported(tmp_path: Path) -> None:
+    project = make_project(tmp_path, git_branch="main")
+    write_feature(project, "drift", pipeline_state(PRODUCTION[:4], branch="forge/drift"))
+    report = doctor_report(project, scrubbed_env(tmp_path))
+    assert report["checksSummary"]["fail"] == 0
+    assert {"branch-state", "backlog-present"} <= warn_ids(report)

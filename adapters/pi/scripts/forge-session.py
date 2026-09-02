@@ -2096,8 +2096,255 @@ def _make_spec(check_id: str, severity: str, run: Callable[[_CheckContext], dict
     return _CheckSpec(check_id, severity, run)
 
 
-#: The check registry — registry order is output order. Populated below.
-DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = ()
+def _per_feature_remedy(rows: list[dict]) -> dict | None:
+    """Top-level remedy for a per-feature check from its ``features[]`` rows.
+
+    The rows' remedy when every affected row agrees (typically one affected
+    feature), else a "per-feature" pointer carrying the most conservative tier
+    so a consumer never runs one feature's command for another.
+    """
+    remedies = [row["remedy"] for row in rows if row.get("remedy")]
+    if not remedies:
+        return None
+    if len({json.dumps(r, sort_keys=True) for r in remedies}) == 1:
+        return dict(remedies[0])
+    tier = max(remedies, key=lambda r: REMEDY_SAFETY_TIERS.index(r["safety"]))["safety"]
+    return _remedy("per-feature — see evidence.features[].remedy", None, tier)
+
+
+def _feature_label(feat: dict) -> str:
+    """``name`` or ``name [epic]`` for detail strings."""
+    return feat["name"] + (f" [{feat['epic']}]" if feat.get("epic") else "")
+
+
+def _check_plugin_root(ctx: _CheckContext) -> dict:
+    """The sibling ``forge-root.sh`` resolves an install root (never ``na``)."""
+    root = ctx.plugin_root
+    evidence = dict(root)
+    if root.get("resolved"):
+        version = root.get("version")
+        suffix = f" (version {version})" if version else " (no version manifest)"
+        return _result("ok", f"resolved {root.get('root')}{suffix}", evidence)
+    return _result(
+        "warn",
+        f"plugin root unresolved: {root.get('error', 'unknown')}",
+        evidence,
+        _remedy(
+            "Reinstall feature-forge for this host (see AGENTS-SETUP.md) or set "
+            "FEATURE_FORGE_ROOT to the bundle directory",
+            None,
+            "global-install",
+        ),
+    )
+
+
+def _check_config_schema(ctx: _CheckContext) -> dict:
+    """``forge.config.json`` parses and conforms to the bundled schema."""
+    if not ctx.config_exists:
+        return _result(
+            "na", "forge.config.json absent — schema defaults apply",
+            {"configPath": str(ctx.config_path)},
+        )
+    evidence: dict = {
+        "configPath": str(ctx.config_path),
+        "schemaPath": str(ctx.schema_path),
+        "schemaError": ctx.schema_error,
+        "parseError": None,
+        "duplicateKeys": [],
+        "invalidAutoVerifyKeys": [],
+        "violations": [],
+        "unknownKeys": [],
+    }
+    fix = _remedy("Fix forge.config.json so it parses as a JSON object", None, "local-write")
+    try:
+        value, duplicates = load_json_with_duplicates(ctx.config_path)
+    except (OSError, json.JSONDecodeError) as exc:
+        evidence["parseError"] = _exc_text(exc)
+        return _result(
+            "warn", f"forge.config.json unreadable or invalid JSON: {evidence['parseError']}",
+            evidence, fix,
+        )
+    if not isinstance(value, dict):
+        evidence["parseError"] = f"top level is {type(value).__name__}, expected object"
+        return _result("warn", f"forge.config.json: {evidence['parseError']}", evidence, fix)
+    evidence["duplicateKeys"] = list(duplicates)
+    evidence["invalidAutoVerifyKeys"] = invalid_auto_verify_keys(value)
+    findings: list[str] = []
+    if duplicates:
+        findings.append("duplicate keys (last value wins): " + ", ".join(duplicates))
+    if evidence["invalidAutoVerifyKeys"]:
+        findings.append(
+            "invalid autoVerifyStages keys (ignored): "
+            + ", ".join(evidence["invalidAutoVerifyKeys"])
+        )
+    if ctx.schema is None:
+        return _result(
+            "warn",
+            f"config schema unreadable ({ctx.schema_error}); structural validation skipped",
+            evidence,
+            _remedy(
+                "Reinstall or update feature-forge — the bundled forge-config-schema.json "
+                "is missing or damaged",
+                None,
+                "global-install",
+            ),
+        )
+    evidence["violations"] = _schema_violations(value, ctx.schema, ctx.schema, "$")
+    props = ctx.schema.get("properties")
+    known = set(props) if isinstance(props, dict) else set()
+    evidence["unknownKeys"] = sorted(key for key in value if key not in known)
+    findings += evidence["violations"]
+    if findings:
+        return _result(
+            "warn",
+            f"forge.config.json has {len(findings)} finding(s): {findings[0]}",
+            evidence,
+            _remedy(f"Fix forge.config.json: {findings[0]}", None, "local-write"),
+        )
+    detail = "forge.config.json conforms to the schema"
+    if evidence["unknownKeys"]:
+        detail += "; unknown top-level key(s) ignored: " + ", ".join(evidence["unknownKeys"])
+    return _result("ok", detail, evidence)
+
+
+def _check_backlog_present(ctx: _CheckContext) -> dict:
+    """Every feature past forge-4-backlog has its composed ``backlog.json`` on disk."""
+    eligible = [f for f in ctx.features if _stage_at_or_after(f["nextStage"], "forge-5-loop")]
+    if not eligible:
+        return _result(
+            "na", "no active feature has completed forge-4-backlog",
+            {"features": [], "skipped": len(ctx.features)},
+        )
+    rows = [
+        {
+            "name": feat["name"],
+            "epic": feat["epic"],
+            "nextStage": feat["nextStage"],
+            "backlogPath": feat["backlogPath"],
+            "exists": feat["backlogExists"],
+            # The fix is a slash command, not a shell command: remedy stays null.
+            "remedy": None,
+        }
+        for feat in eligible
+    ]
+    missing = [row for row in rows if not row["exists"]]
+    evidence = {"features": rows, "skipped": len(ctx.features) - len(eligible)}
+    if not missing:
+        return _result("ok", f"{len(rows)} backlog(s) present", evidence)
+    names = ", ".join(_feature_label(row) for row in missing)
+    return _result(
+        "warn",
+        f"backlog missing for {len(missing)} feature(s): {names} — re-run "
+        "/skill:forge-4-backlog <feature> to regenerate it",
+        evidence,
+    )
+
+
+def _check_branch_state(ctx: _CheckContext) -> dict:
+    """The current branch matches each pending feature's recorded state branch.
+
+    Complete features are skipped: their branch is history, not a place the
+    next stage will run. Reuses the legacy ``branchReconcile`` classification
+    (``adopt-current`` on a topic branch, ``warn-drift`` on the default branch).
+    """
+    base = {"currentBranch": ctx.current_branch, "defaultBranch": ctx.default_branch}
+    if ctx.current_branch is None:
+        return _result("na", "not a git repository (no current branch)", base)
+    pending = [f for f in ctx.features if f["nextStage"] is not None]
+    skipped = len(ctx.features) - len(pending)
+    if not pending:
+        return _result(
+            "na", "no active feature has a pending stage",
+            {**base, "features": [], "skippedComplete": skipped},
+        )
+    script = str(Path(__file__).resolve())
+    rows = []
+    for feat in pending:
+        reconcile = feat.get("branchReconcile")
+        remedy = None
+        if reconcile == "adopt-current":
+            argv = [
+                "python3", script, "state-branch", "--feature", feat["name"],
+                "--branch", ctx.current_branch, "--specs-dir", str(ctx.specs_dir),
+            ]
+            if feat["epic"]:
+                argv += ["--epic", feat["epic"]]
+            remedy = _remedy(
+                f"Record the current branch '{ctx.current_branch}' in the feature's state "
+                f"(recorded: '{feat['stateBranch']}')",
+                shlex.join(argv),
+                "local-write",
+            )
+        elif reconcile == "warn-drift":
+            remedy = _remedy(
+                f"Switch to the feature's recorded branch before running {feat['nextStage']} "
+                "(create it with `git switch -c` if it no longer exists)",
+                shlex.join(["git", "switch", feat["stateBranch"]]),
+                "local-write",
+            )
+        rows.append({
+            "name": feat["name"],
+            "epic": feat["epic"],
+            "nextStage": feat["nextStage"],
+            "stateBranch": feat["stateBranch"],
+            "reconcile": reconcile,
+            "remedy": remedy,
+        })
+    evidence = {**base, "features": rows, "skippedComplete": skipped}
+    drifted = [row for row in rows if row["reconcile"]]
+    if not drifted:
+        return _result(
+            "ok", f"{len(rows)} pending feature(s) consistent with branch '{ctx.current_branch}'",
+            evidence,
+        )
+    parts = [
+        f"{_feature_label(row)} ({row['reconcile']}: on '{ctx.current_branch}', "
+        f"state records '{row['stateBranch']}')"
+        for row in drifted
+    ]
+    return _result(
+        "warn",
+        f"{len(drifted)} feature(s) with branch drift: " + "; ".join(parts),
+        evidence,
+        _per_feature_remedy(rows),
+    )
+
+
+def _check_sandbox_root(ctx: _CheckContext) -> dict:
+    """Root without ``IS_SANDBOX`` — the forge-5-loop launch condition (#99)."""
+    if getattr(os, "geteuid", None) is None:
+        return _result(
+            "na", "os.geteuid unavailable on this platform — root/sandbox gate not applicable",
+            {"platform": sys.platform},
+        )
+    status = _root_sandbox_status()
+    if status["loopWillSetSandbox"]:
+        return _result(
+            "warn",
+            "running as root without IS_SANDBOX — forge-5-loop will export IS_SANDBOX=1 at "
+            "launch so the runner's --dangerously-skip-permissions is not refused",
+            status,
+            _remedy(
+                "Export IS_SANDBOX=1 in the launching shell (forge-5-loop supplies it "
+                "automatically)",
+                "export IS_SANDBOX=1",
+                "read-only",
+            ),
+        )
+    detail = (
+        "running as root; IS_SANDBOX already set" if status["isRoot"] else "not running as root"
+    )
+    return _result("ok", detail, status)
+
+
+#: The check registry — registry order is output order (docs/doctor-checks.md).
+DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = (
+    _make_spec("plugin-root", "blocking", _check_plugin_root),
+    _make_spec("config-schema", "advisory", _check_config_schema),
+    _make_spec("backlog-present", "blocking", _check_backlog_present),
+    _make_spec("branch-state", "advisory", _check_branch_state),
+    _make_spec("sandbox-root", "advisory", _check_sandbox_root),
+)
 
 #: The ids, in registry order, for ``--check`` choices and the catalog parity test.
 DOCTOR_CHECK_IDS: Final[tuple[str, ...]] = tuple(spec.id for spec in DOCTOR_CHECKS)
