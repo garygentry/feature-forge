@@ -1,0 +1,1541 @@
+"""Tests for doctor's structured ``checks[]`` (issue #244, P0).
+
+The legacy doctor payload is pinned by ``tests/test_doctor.py``; this file covers
+the additive check layer: record shape and key order, the crash-isolating
+driver, warn-only demotion (INV-1), remedy clustering, the ``--schema`` flag,
+and the shared helpers (template rendering, semver parsing, the stdlib schema
+validator's parity with ``tests/_state_schema.py``).
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+from _doctor_fixtures import (
+    FAKE_TOKEN,
+    bin_dir,
+    check,
+    doctor_report,
+    fake_gh,
+    fake_runner,
+    make_project,
+    pipeline_state,
+    probe_log,
+    run_doctor,
+    scrubbed_env,
+    warn_ids,
+    write_feature,
+)
+from _state_schema import _check as reference_schema_check
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+HELPER = REPO_ROOT / "scripts" / "forge-session.py"
+CONFIG_SCHEMA = REPO_ROOT / "references" / "forge-config-schema.json"
+
+LEGACY_DOCTOR_KEYS = (
+    "pluginRoot", "currentBranch", "specsDir", "specsDirExists", "configPath",
+    "configExists", "counts", "features", "invalidAutoVerifyKeys",
+    "duplicateConfigKeys", "rootSandbox",
+)
+CHECK_KEYS = ("id", "status", "severity", "detail", "evidence", "remedy")
+PRODUCTION = [
+    "forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog", "forge-5-loop",
+    "forge-6-docs",
+]
+
+
+def _load_helper_module():
+    """Import forge-session.py as a module (hyphenated filename → importlib)."""
+    spec = importlib.util.spec_from_file_location("forge_session_checks", HELPER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def fs():
+    return _load_helper_module()
+
+
+def _doctor(cwd: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(HELPER), "doctor", "--json", *extra],
+        capture_output=True, text=True, cwd=str(cwd),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Payload shape
+# --------------------------------------------------------------------------- #
+
+
+def test_report_keeps_legacy_keys_first_then_appends_checks(tmp_path: Path) -> None:
+    """The eleven legacy keys are untouched and ordered first; new keys follow."""
+    result = _doctor(tmp_path)
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    keys = tuple(report)
+    assert keys[: len(LEGACY_DOCTOR_KEYS)] == LEGACY_DOCTOR_KEYS
+    assert keys[len(LEGACY_DOCTOR_KEYS):] == ("checks", "checksSummary", "remedyClusters")
+    assert tuple(report["checksSummary"]) == ("ok", "warn", "fail", "na")
+    assert report["checksSummary"]["fail"] == 0
+    for record in report["checks"]:
+        assert tuple(record) == CHECK_KEYS
+
+
+def test_registry_ids_are_unique_kebab_case_with_enumerated_severity(fs) -> None:
+    ids = [spec.id for spec in fs.DOCTOR_CHECKS]
+    assert len(ids) == len(set(ids))
+    assert fs.DOCTOR_CHECK_IDS == tuple(ids)
+    for spec in fs.DOCTOR_CHECKS:
+        assert fs._CHECK_ID_RE.match(spec.id), spec.id
+        assert spec.severity in fs.CHECK_SEVERITIES
+    with pytest.raises(ValueError):
+        fs._make_spec("Not_Kebab", "advisory", lambda ctx: fs._result("ok", ""))
+    with pytest.raises(ValueError):
+        fs._make_spec("fine-id", "critical", lambda ctx: fs._result("ok", ""))
+
+
+def test_check_record_validates_enums_and_remedy_shape(fs) -> None:
+    record = fs._check_record(
+        "x-y", "warn", "advisory", "d", {"k": 1}, fs._remedy("do it", "cmd", "local-write"),
+    )
+    assert tuple(record) == CHECK_KEYS
+    assert tuple(record["remedy"]) == ("description", "command", "safety")
+    with pytest.raises(ValueError):
+        fs._check_record("x", "meh", "advisory", "d")
+    with pytest.raises(ValueError):
+        fs._check_record("x", "ok", "severe", "d")
+    with pytest.raises(ValueError):
+        fs._check_record("x", "warn", "advisory", "d", None, {"description": "no tier"})
+    with pytest.raises(ValueError):
+        fs._remedy("d", None, "sudo")
+    with pytest.raises(ValueError):
+        fs._check_record("x", "ok", "advisory", "d", ["not", "a", "dict"])
+
+
+# --------------------------------------------------------------------------- #
+# Driver: crash isolation, warn-only demotion, whole-driver fallback
+# --------------------------------------------------------------------------- #
+
+
+def _ctx(fs, tmp_path: Path):
+    return fs._build_check_context(
+        tmp_path / "specs", tmp_path / "forge.config.json", CONFIG_SCHEMA,
+        config={}, current_branch=None, default_branch=None, rows=[], features=[],
+        plugin_root={"resolved": False, "error": "n/a"},
+    )
+
+
+def test_driver_isolates_a_crashing_check(fs, tmp_path: Path) -> None:
+    """One raising check becomes ``na`` naming the exception; its neighbours run."""
+    def boom(ctx):
+        raise RuntimeError("boom")
+
+    specs = [
+        fs._make_spec("good-one", "advisory", lambda ctx: fs._result("ok", "fine")),
+        fs._make_spec("bad-one", "blocking", boom),
+        fs._make_spec("good-two", "advisory", lambda ctx: fs._result("warn", "hmm")),
+    ]
+    records = fs._run_checks(_ctx(fs, tmp_path), specs)
+    assert [r["status"] for r in records] == ["ok", "na", "warn"]
+    assert records[1]["id"] == "bad-one"
+    assert records[1]["severity"] == "blocking"
+    assert records[1]["detail"] == "check crashed: RuntimeError: boom"
+    assert records[1]["remedy"] is None
+
+
+def test_driver_turns_malformed_results_into_na(fs, tmp_path: Path) -> None:
+    """A non-dict result, a bad status, an unserialisable evidence → ``na``."""
+    specs = [
+        fs._make_spec("returns-list", "advisory", lambda ctx: ["nope"]),
+        fs._make_spec("bad-status", "advisory", lambda ctx: fs._result("meh", "x")),
+        fs._make_spec(
+            "bad-evidence", "advisory", lambda ctx: fs._result("ok", "x", {"p": Path("/")}),
+        ),
+        fs._make_spec(
+            "bad-remedy", "advisory",
+            lambda ctx: fs._result("warn", "x", None, {"description": "d", "command": None}),
+        ),
+    ]
+    records = fs._run_checks(_ctx(fs, tmp_path), specs)
+    assert [r["status"] for r in records] == ["na"] * 4
+    assert all(r["detail"].startswith("check crashed: ") for r in records)
+    json.dumps(records)
+
+
+def test_driver_demotes_fail_to_warn_until_promoted(fs, tmp_path: Path) -> None:
+    """INV-1 structurally: no un-promoted check can emit ``fail``."""
+    assert fs.FAIL_PROMOTED_CHECK_IDS == frozenset()
+    specs = [fs._make_spec("wants-to-fail", "blocking", lambda ctx: fs._result("fail", "x"))]
+    (record,) = fs._run_checks(_ctx(fs, tmp_path), specs)
+    assert record["status"] == "warn"
+    assert record["evidence"] == {"demotedFromFail": True}
+
+
+def test_driver_crash_degrades_every_check_to_na(fs, monkeypatch, tmp_path: Path) -> None:
+    """If the context itself cannot be built, every requested check is ``na``."""
+    def explode(*args, **kwargs):
+        raise OSError("disk on fire")
+
+    monkeypatch.setattr(fs, "_build_check_context", explode)
+    report = fs.doctor_report(tmp_path / "specs", tmp_path / "forge.config.json")
+    assert tuple(report)[-3:] == ("checks", "checksSummary", "remedyClusters")
+    assert len(report["checks"]) == len(fs.DOCTOR_CHECKS)
+    for record in report["checks"]:
+        assert record["status"] == "na"
+        assert record["detail"] == "check driver crashed: OSError: disk on fire"
+    assert report["checksSummary"]["na"] == len(fs.DOCTOR_CHECKS)
+    assert report["remedyClusters"] == []
+
+
+def test_only_filters_the_registry_in_registry_order(fs, monkeypatch, tmp_path: Path) -> None:
+    specs = (
+        fs._make_spec("a-one", "advisory", lambda ctx: fs._result("ok", "")),
+        fs._make_spec("b-two", "advisory", lambda ctx: fs._result("ok", "")),
+        fs._make_spec("c-three", "advisory", lambda ctx: fs._result("ok", "")),
+    )
+    monkeypatch.setattr(fs, "DOCTOR_CHECKS", specs)
+    report = fs.doctor_report(
+        tmp_path / "specs", tmp_path / "forge.config.json", only=frozenset({"c-three", "a-one"}),
+    )
+    assert [r["id"] for r in report["checks"]] == ["a-one", "c-three"]
+
+
+def test_checks_summary_counts_every_status(fs) -> None:
+    records = [
+        fs._check_record("a", "ok", "advisory", ""),
+        fs._check_record("b", "warn", "advisory", ""),
+        fs._check_record("c", "na", "advisory", ""),
+        fs._check_record("d", "warn", "advisory", ""),
+    ]
+    assert fs._checks_summary(records) == {"ok": 1, "warn": 2, "fail": 0, "na": 1}
+    assert fs._checks_summary([]) == {"ok": 0, "warn": 0, "fail": 0, "na": 0}
+
+
+# --------------------------------------------------------------------------- #
+# Remedy clustering
+# --------------------------------------------------------------------------- #
+
+
+def test_cluster_checks_merges_identical_commands_and_skips_report_only(fs) -> None:
+    records = [
+        fs._check_record("a", "warn", "advisory", "", None, fs._remedy("A", "rauf update .", "local-write")),
+        fs._check_record("b", "ok", "advisory", ""),
+        fs._check_record("c", "warn", "advisory", "", None, fs._remedy("C", None, "local-write")),
+        fs._check_record("d", "warn", "blocking", "", None, fs._remedy("D", "gh auth login", "network")),
+        fs._check_record("e", "warn", "advisory", "", None, fs._remedy("E", "rauf update .", "global-install")),
+    ]
+    clusters = fs.cluster_checks(records)
+    assert [tuple(c) for c in clusters] == [("command", "safety", "checkIds", "description")] * 2
+    assert clusters[0] == {
+        "command": "rauf update .",
+        "safety": "global-install",  # the most conservative member tier wins
+        "checkIds": ["a", "e"],
+        "description": "A",
+    }
+    assert clusters[1]["checkIds"] == ["d"]
+    assert fs.cluster_checks([]) == []
+    # Deterministic: the same input twice yields byte-identical clusters.
+    assert json.dumps(fs.cluster_checks(records)) == json.dumps(clusters)
+
+
+# --------------------------------------------------------------------------- #
+# --schema and the schema validator
+# --------------------------------------------------------------------------- #
+
+
+def test_schema_flag_with_unreadable_schema_still_exits_zero(tmp_path: Path) -> None:
+    """``_loop_runner_defaults`` raises UsageError (exit 2) elsewhere; doctor absorbs it."""
+    result = _doctor(tmp_path, "--schema", str(tmp_path / "missing-schema.json"))
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["checksSummary"]["fail"] == 0
+    assert "Traceback" not in result.stderr
+
+
+def test_schema_flag_with_corrupt_schema_still_exits_zero(tmp_path: Path) -> None:
+    bad = tmp_path / "schema.json"
+    bad.write_text("{not json")
+    result = _doctor(tmp_path, "--schema", str(bad))
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["checksSummary"]["fail"] == 0
+
+
+@pytest.mark.parametrize("config", [
+    {},
+    {"stack": "python", "autoVerify": True},
+    {"stack": 3, "autoVerifyStages": {"forge-1-prd": True}},
+    {"docsStage": "bogus", "loopIterationMultiplier": "2"},
+    {"loopRunner": {"bin": 7, "unknown": True}},
+    {"loopRunner": "rauf"},
+    {"contextWindowTokens": True},
+])
+def test_schema_violations_match_the_test_suite_validator(fs, config: dict) -> None:
+    """The in-script validator is a port of ``tests/_state_schema.py::_check``.
+
+    The port is a strict superset (it also validates ``additionalProperties``
+    given as a schema, and ``minimum``/``maximum``); on the subset both engines
+    support, their findings are identical.
+    """
+    schema = json.loads(CONFIG_SCHEMA.read_text(encoding="utf-8"))
+    assert fs._schema_violations(config, schema, schema, "$") == reference_schema_check(
+        config, schema, schema, "$",
+    )
+
+
+def test_schema_violations_is_a_superset_of_the_reference(fs) -> None:
+    schema = json.loads(CONFIG_SCHEMA.read_text(encoding="utf-8"))
+    config = {"autoVerifyStages": {"forge-1-prd": "yes"}, "loopIterationMultiplier": 0}
+    ours = fs._schema_violations(config, schema, schema, "$")
+    theirs = reference_schema_check(config, schema, schema, "$")
+    assert set(theirs) <= set(ours)
+    assert "$.autoVerifyStages.forge-1-prd: expected boolean, got str" in ours
+
+
+def test_schema_violations_handles_ref_numbers_and_additional_properties(fs) -> None:
+    schema = {
+        "definitions": {"n": {"type": "integer", "minimum": 1, "maximum": 3}},
+        "type": "object",
+        "properties": {"a": {"$ref": "#/definitions/n"}, "b": {"$ref": "#/definitions/zz"}},
+        "additionalProperties": {"type": "string"},
+    }
+    assert fs._schema_violations({"a": 2, "x": "s"}, schema, schema, "$") == []
+    out = fs._schema_violations({"a": 0, "b": 1, "x": 5}, schema, schema, "$")
+    assert out == [
+        "$.a: 0 below minimum 1",
+        "$.b: unresolvable $ref '#/definitions/zz'",
+        "$.x: expected string, got int",
+    ]
+    assert fs._schema_violations({"a": 9}, schema, schema, "$") == ["$.a: 9 above maximum 3"]
+    assert fs._schema_violations({"a": True}, schema, schema, "$") == [
+        "$.a: expected integer, got bool",
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# Helpers: template rendering and version parsing
+# --------------------------------------------------------------------------- #
+
+
+def test_render_runner_command_quotes_tokens_and_rejects_unrendered(fs) -> None:
+    lr = {"bin": "rauf-stable"}
+    assert fs._render_runner_command("{bin} version --json", lr) == ["rauf-stable", "version", "--json"]
+    argv = fs._render_runner_command(
+        "{bin} backlog validate . --backlog {backlogDir} --specs-dir {specsDir} --json",
+        lr, backlogDir="specs/my feature", specsDir="./specs",
+    )
+    assert argv == [
+        "rauf-stable", "backlog", "validate", ".", "--backlog", "specs/my feature",
+        "--specs-dir", "./specs", "--json",
+    ]
+    # An injection attempt in a token stays a single argv element.
+    argv = fs._render_runner_command("{bin} x {dir}", lr, dir="a; rm -rf /")
+    assert argv == ["rauf-stable", "x", "a; rm -rf /"]
+    assert fs._render_runner_command("{bin} run {missing}", lr) is None
+    assert fs._render_runner_command("", lr) is None
+    assert fs._render_runner_command("{bin} 'unterminated", lr) is None
+    # Only the configured runner binary is ever invoked: any other first word is
+    # unrenderable, even a real program (Codex review, PR #255).
+    assert fs._render_runner_command("/usr/bin/printf unexpected", lr) is None
+    assert fs._render_runner_command("curl https://x {bin}", lr) is None
+    # argv[0] must be the configured bin exactly — no suffix, no path games.
+    assert fs._render_runner_command("{bin}5.34.0 -e 1", lr) is None
+    assert fs._render_runner_command("{bin}/../perl -e 1", lr) is None
+    assert fs._render_runner_command("{bin}{bin} x", lr) is None
+    assert fs._render_runner_command("{bin} version", {"bin": "/opt/dir with space/rauf"}) == [
+        "/opt/dir with space/rauf", "version",
+    ]
+    assert fs._render_runner_command("  {bin} version --json", lr) == ["rauf-stable", "version", "--json"]
+
+
+def test_semver_and_installed_by_parsers(fs) -> None:
+    assert fs._parse_semver("0.14.0") == (0, 14, 0)
+    assert fs._parse_semver("v1.2.3 ") == (1, 2, 3)
+    assert fs._parse_semver("1.2.3-beta.1") is None
+    assert fs._parse_semver("1.2") is None
+    assert fs._parse_semver("00.14.0") is None  # leading zeros are not SemVer
+    assert fs._parse_semver("0.014.0") is None
+    assert fs._parse_installed_by("rauf-manager@01.0.0") is None
+    assert fs._parse_semver(None) is None
+    assert fs._parse_semver(14) is None
+    assert fs._fmt_semver((0, 14, 0)) == "0.14.0"
+    assert fs._parse_installed_by("rauf-manager@0.13.0") == ("rauf-manager", (0, 13, 0))
+    assert fs._parse_installed_by("rauf-manager@v0.13.0") == ("rauf-manager", (0, 13, 0))
+    assert fs._parse_installed_by("rauf-manager") is None
+    assert fs._parse_installed_by("rauf-manager@0.13.0-rc.1") is None
+    assert fs._parse_installed_by(None) is None
+    assert fs._first_backticked("Run `rauf install .` then `x`") == "rauf install ."
+    assert fs._first_backticked("no command here") is None
+    assert fs._first_backticked(None) is None
+
+
+def test_run_probe_never_raises_and_caps_nothing_on_its_own(fs, monkeypatch) -> None:
+    missing = fs._run_probe(["/nonexistent/binary-for-doctor-test"])
+    assert missing["ok"] is False and missing["returncode"] is None
+    assert missing["error"] and missing["timedOut"] is False
+    ok = fs._run_probe([sys.executable, "-c", "print('hi')"])
+    assert ok["ok"] is True and ok["stdout"] == "hi\n"
+    secret = fs._run_probe([sys.executable, "-c", "print('token')"], discard_stdout=True)
+    assert secret["ok"] is True and secret["stdout"] == ""
+    monkeypatch.setattr(fs, "_PROBE_TIMEOUT_S", 1)
+    slow = fs._run_probe([sys.executable, "-c", "import time; time.sleep(5)"])
+    assert slow["timedOut"] is True and slow["ok"] is False
+    assert fs._head("x" * 1000).endswith("…") and len(fs._head("x" * 1000)) == 401
+    assert fs._head(None) == ""
+
+
+# --------------------------------------------------------------------------- #
+# Promoted legacy fields: plugin-root, config-schema, backlog-present,
+# branch-state, sandbox-root
+# --------------------------------------------------------------------------- #
+
+def test_plugin_root_ok_from_the_repo_checkout(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    report = doctor_report(project, scrubbed_env(tmp_path))
+    record = check(report, "plugin-root")
+    assert record["status"] == "ok"
+    assert record["severity"] == "blocking"
+    assert record["evidence"]["root"] == str(REPO_ROOT)
+    assert "version" in record["detail"]
+    assert record["remedy"] is None
+
+
+def test_plugin_root_warns_with_global_install_remedy_when_unresolvable(tmp_path: Path) -> None:
+    """A lone helper copy (no sentinel above it) cannot resolve — warn, never crash."""
+    lone = tmp_path / "lone" / "scripts"
+    lone.mkdir(parents=True)
+    for name in ("forge-session.py", "forge-root.sh"):
+        (lone / name).write_bytes((REPO_ROOT / "scripts" / name).read_bytes())
+    project = make_project(tmp_path)
+    result = run_doctor(project, scrubbed_env(tmp_path), helper=lone / "forge-session.py")
+    assert result.returncode == 0, result.stderr
+    record = check(json.loads(result.stdout), "plugin-root")
+    assert record["status"] == "warn"
+    assert record["evidence"]["resolved"] is False
+    assert record["remedy"]["safety"] == "global-install"
+    assert record["remedy"]["command"] is None
+
+
+def test_config_schema_na_without_config(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "na"
+
+
+def test_config_schema_ok_reports_unknown_keys_only_as_evidence(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={"stack": "python", "gateCommand": "x"})
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "ok"
+    assert record["evidence"]["unknownKeys"] == ["gateCommand"]
+    assert record["evidence"]["violations"] == []
+    assert "gateCommand" in record["detail"]
+
+
+def test_config_schema_warns_on_violations_duplicates_and_bad_auto_verify_keys(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path)
+    (project / "forge.config.json").write_text(
+        '{"stack": 3, "stack": "python", "docsStage": "nope", '
+        '"autoVerifyStages": {"forge-1-prod": true}}'
+    )
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "warn"
+    ev = record["evidence"]
+    assert ev["duplicateKeys"] == ["stack"]
+    assert ev["invalidAutoVerifyKeys"] == ["forge-1-prod"]
+    assert any("docsStage" in v for v in ev["violations"])
+    assert record["remedy"]["safety"] == "local-write"
+    assert record["remedy"]["command"] is None
+
+
+def test_config_schema_warns_on_unparseable_config(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    (project / "forge.config.json").write_text("{nope")
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "warn"
+    assert record["evidence"]["parseError"].startswith("JSONDecodeError")
+    (project / "forge.config.json").write_text("[1, 2]")
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "warn"
+    assert "expected object" in record["detail"]
+
+
+def test_config_schema_warns_when_the_bundled_schema_is_unreadable(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={"stack": "python"})
+    report = doctor_report(project, scrubbed_env(tmp_path), "--schema", str(tmp_path / "nope"))
+    record = check(report, "config-schema")
+    assert record["status"] == "warn"
+    assert record["evidence"]["schemaError"]
+    assert record["remedy"]["safety"] == "global-install"
+
+
+def test_backlog_present_na_before_forge_4_and_warns_on_missing(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    write_feature(project, "early", pipeline_state(["forge-1-prd", "forge-2-tech"]))
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "backlog-present")
+    assert record["status"] == "na"
+
+    write_feature(project, "has-it", pipeline_state(PRODUCTION[:4]), backlog=True)
+    write_feature(project, "lost-it", pipeline_state(PRODUCTION[:4]), epic="big")
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "backlog-present")
+    assert record["status"] == "warn"
+    assert record["severity"] == "blocking"
+    assert "lost-it [big]" in record["detail"]
+    assert "forge-4-backlog" in record["detail"]
+    rows = {row["name"]: row for row in record["evidence"]["features"]}
+    assert set(rows) == {"has-it", "lost-it"}  # 'early' is not eligible
+    assert rows["lost-it"]["exists"] is False and rows["has-it"]["exists"] is True
+    assert record["remedy"] is None  # the fix is a slash command, not a shell command
+    assert record["evidence"]["skipped"] == 1
+
+
+def test_backlog_present_ok_includes_complete_features(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    write_feature(project, "done", pipeline_state(PRODUCTION), backlog=True)
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "backlog-present")
+    assert record["status"] == "ok"
+    assert record["detail"] == "1 backlog(s) present"
+
+
+def test_branch_state_na_outside_git_or_without_pending_features(tmp_path: Path) -> None:
+    project = make_project(tmp_path, git_branch=None)
+    write_feature(project, "f", pipeline_state(["forge-1-prd"], branch="forge/f"))
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "branch-state")
+    assert record["status"] == "na" and "not a git repository" in record["detail"]
+
+    project = make_project(tmp_path)
+    write_feature(project, "f", pipeline_state(PRODUCTION, branch="forge/f"))
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "branch-state")
+    assert record["status"] == "na"
+    assert record["evidence"]["skippedComplete"] == 1
+
+
+def test_branch_state_warn_drift_on_default_branch_suggests_git_switch(tmp_path: Path) -> None:
+    project = make_project(tmp_path, git_branch="main")
+    write_feature(project, "pending", pipeline_state(["forge-1-prd"], branch="forge/pending"))
+    write_feature(project, "finished", pipeline_state(PRODUCTION, branch="forge/finished"))
+    write_feature(project, "matching", pipeline_state(["forge-1-prd"], branch="main"))
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "branch-state")
+    assert record["status"] == "warn"
+    assert record["severity"] == "advisory"
+    assert "pending (warn-drift" in record["detail"]
+    assert "finished" not in record["detail"]  # complete features are skipped
+    assert record["remedy"] == {
+        "description": (
+            "Switch to the feature's recorded branch before running forge-2-tech "
+            "(create it with `git switch -c` if it no longer exists)"
+        ),
+        "command": "git switch forge/pending",
+        "safety": "local-write",
+    }
+    rows = {row["name"]: row for row in record["evidence"]["features"]}
+    assert rows["matching"]["reconcile"] is None and rows["matching"]["remedy"] is None
+    assert record["evidence"]["skippedComplete"] == 1
+
+
+def test_branch_state_adopt_current_on_topic_branch_suggests_state_branch(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path, git_branch="feature/other")
+    write_feature(
+        project, "member", pipeline_state(["forge-1-prd"], branch="forge/member"), epic="ep",
+    )
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "branch-state")
+    assert record["status"] == "warn"
+    assert "member [ep] (adopt-current" in record["detail"]
+    cmd = record["remedy"]["command"]
+    assert cmd.startswith("python3 ")
+    assert cmd.endswith(
+        " state-branch --feature member --branch feature/other --specs-dir specs --epic ep"
+    )
+    assert record["remedy"]["safety"] == "local-write"
+
+
+def test_branch_state_two_drifts_yield_a_per_feature_remedy(tmp_path: Path) -> None:
+    project = make_project(tmp_path, git_branch="main")
+    write_feature(project, "one", pipeline_state(["forge-1-prd"], branch="forge/one"))
+    write_feature(project, "two", pipeline_state(["forge-1-prd"], branch="forge/two"))
+    report = doctor_report(project, scrubbed_env(tmp_path))
+    record = check(report, "branch-state")
+    assert record["status"] == "warn"
+    assert record["remedy"]["command"] is None
+    assert record["remedy"]["description"].startswith("per-feature")
+    assert record["remedy"]["safety"] == "local-write"
+    commands = sorted(row["remedy"]["command"] for row in record["evidence"]["features"])
+    assert commands == ["git switch forge/one", "git switch forge/two"]
+    # A command-less top-level remedy is report-only: no cluster is formed for it.
+    assert all("branch-state" not in c["checkIds"] for c in report["remedyClusters"])
+
+
+def test_sandbox_root_mirrors_the_legacy_root_sandbox_block(fs, monkeypatch) -> None:
+    monkeypatch.setattr(fs.os, "geteuid", lambda: 0)
+    monkeypatch.delenv("IS_SANDBOX", raising=False)
+    record = fs._check_sandbox_root(None)
+    assert record["status"] == "warn"
+    assert record["remedy"]["command"] == "export IS_SANDBOX=1"
+    assert record["remedy"]["safety"] == "read-only"
+    assert record["evidence"]["loopWillSetSandbox"] is True
+    monkeypatch.setenv("IS_SANDBOX", "1")
+    assert fs._check_sandbox_root(None)["status"] == "ok"
+    monkeypatch.setattr(fs.os, "geteuid", lambda: 1000)
+    assert fs._check_sandbox_root(None)["detail"] == "not running as root"
+    monkeypatch.delattr(fs.os, "geteuid")
+    assert fs._check_sandbox_root(None)["status"] == "na"
+
+
+def test_no_check_ever_emits_fail_and_warn_set_is_reported(tmp_path: Path) -> None:
+    project = make_project(tmp_path, git_branch="main")
+    write_feature(project, "drift", pipeline_state(PRODUCTION[:4], branch="forge/drift"))
+    report = doctor_report(project, scrubbed_env(tmp_path))
+    assert report["checksSummary"]["fail"] == 0
+    assert {"branch-state", "backlog-present"} <= warn_ids(report)
+
+
+# --------------------------------------------------------------------------- #
+# runner-* checks (fake runner on a scrubbed PATH)
+# --------------------------------------------------------------------------- #
+
+RUNNER_CHECKS = (
+    "runner-binary", "runner-version", "runner-wired", "runner-legacy-layout",
+    "runner-artifacts-stale", "runner-profile-drift",
+)
+RAUF_JSON = {
+    "installedBy": "rauf-manager@0.14.0",
+    "profile": {"commands": {"test": "pytest -q"}, "verify": "pytest -q && ruff check ."},
+}
+CONFIG = {"stack": "python", "typeCheckCommand": "ruff check .", "testCommand": "pytest -q"}
+
+
+def _loop_project(tmp_path: Path, **kwargs) -> Path:
+    """A project with one feature about to run forge-5-loop (runner relevant)."""
+    project = make_project(tmp_path, **kwargs)
+    write_feature(
+        project, "looper", pipeline_state(PRODUCTION[:4], branch="main"), backlog=True,
+    )
+    return project
+
+
+def test_runner_checks_all_ok_with_a_healthy_fake_runner(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    for check_id in RUNNER_CHECKS:
+        assert check(report, check_id)["status"] == "ok", check(report, check_id)
+    assert check(report, "runner-binary")["evidence"]["customized"] is False
+    assert check(report, "runner-version")["evidence"]["reported"] == "0.14.0"
+    assert check(report, "runner-profile-drift")["evidence"]["matches"] == ["commands.test"]
+    # The version probe runs exactly once per doctor run; the only other spawn
+    # is backlog-valid's one validate per backlog dir (the feature is loop-ready).
+    assert probe_log(env) == [
+        f"{bin_dir(env)}/rauf version --json",
+        f"{bin_dir(env)}/rauf backlog validate . --backlog specs/looper --specs-dir specs --json",
+    ]
+
+
+def test_runner_checks_na_when_loop_runner_config_is_unavailable(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env, "--schema", str(tmp_path / "missing.json"))
+    for check_id in RUNNER_CHECKS:
+        record = check(report, check_id)
+        assert record["status"] == "na", record
+        assert "loopRunner config unavailable" in record["detail"]
+    assert probe_log(env) == []
+
+
+def test_runner_binary_default_missing_uses_install_hint(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)  # no fake runner at all
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    record = check(report, "runner-binary")
+    assert record["status"] == "warn" and record["severity"] == "blocking"
+    assert record["evidence"]["path"] is None
+    assert record["remedy"]["safety"] == "network"  # the default hint fetches via npx
+    assert record["remedy"]["command"] == "npx @garygentry/feature-forge install"
+    assert "feature-forge" in record["remedy"]["description"]
+    # Downstream runner checks degrade to na, never crash, never spawn.
+    assert check(report, "runner-version")["status"] == "na"
+    assert check(report, "runner-artifacts-stale")["status"] == "na"
+    assert check(report, "runner-wired")["status"] == "ok"  # .rauf.json is still present
+    assert probe_log(env) == []
+
+
+def test_runner_binary_custom_missing_but_default_present_is_a_config_fix(
+    tmp_path: Path,
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)  # the default 'rauf'
+    config = {**CONFIG, "loopRunner": {"bin": "rauf-nightly"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-binary")
+    assert record["status"] == "warn"
+    assert record["evidence"]["customized"] is True
+    assert record["evidence"]["defaultOnPath"] == f"{bin_dir(env)}/rauf"
+    assert record["remedy"]["safety"] == "local-write"
+    assert record["remedy"]["command"] is None
+    assert "loopRunner.bin" in record["remedy"]["description"]
+
+
+def test_runner_binary_custom_missing_and_default_missing(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    config = {**CONFIG, "loopRunner": {"bin": "rauf-nightly"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-binary")
+    assert record["status"] == "warn"
+    assert record["remedy"]["safety"] == "global-install"
+    assert record["remedy"]["command"] is None
+    assert "rauf-nightly" in record["remedy"]["description"]
+
+
+def test_runner_binary_custom_present_is_ok(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, name="rauf-stable")
+    config = {**CONFIG, "loopRunner": {"bin": "rauf-stable"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    assert check(report, "runner-binary")["status"] == "ok"
+    assert check(report, "runner-version")["status"] == "ok"
+    assert probe_log(env)[0] == f"{bin_dir(env)}/rauf-stable version --json"
+    assert all(line.startswith(f"{bin_dir(env)}/rauf-stable ") for line in probe_log(env))
+
+
+@pytest.mark.parametrize("version, expect", [
+    ("0.13.9", "below minRunnerVersion"),
+    ("0.15.0-beta.1", "could not parse a semver"),
+    (14, "could not parse a semver"),
+])
+def test_runner_version_warns_with_install_remedy(tmp_path: Path, version, expect) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version=version)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == "warn", record
+    assert expect in record["detail"]
+    assert record["evidence"]["required"] == "0.14.0"
+    assert record["remedy"]["safety"] == "network"  # installHint fetches via npx
+
+
+def test_runner_version_probe_failure_is_a_warn_with_evidence(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version_exit=3)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    record = check(report, "runner-version")
+    assert record["status"] == "warn"
+    assert record["evidence"]["exitCode"] == 3
+    assert "exit 3" in record["detail"]
+    assert record["evidence"]["command"] == "rauf version --json"
+    # With no live version, staleness cannot be judged.
+    assert check(report, "runner-artifacts-stale")["status"] == "na"
+
+
+def test_runner_version_honours_a_custom_min_and_command(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.14.0")
+    config = {**CONFIG, "loopRunner": {"minRunnerVersion": "0.15.0"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == "warn" and "0.15.0" in record["detail"]
+    config = {**CONFIG, "loopRunner": {"minRunnerVersion": "latest"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == "warn" and "not a plain semver" in record["detail"]
+    assert record["remedy"]["safety"] == "local-write"
+    config = {**CONFIG, "loopRunner": {"versionCommand": "{bin} {unknownToken}"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == "na" and "cannot be rendered" in record["detail"]
+
+
+def test_runner_version_timeout_degrades_to_warn(fs, monkeypatch, tmp_path: Path) -> None:
+    """A hung runner is cut off at the probe timeout — a warn, never a hang (INV-3)."""
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, hang_seconds=5)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    monkeypatch.setenv("PATH", env["PATH"])
+    monkeypatch.setenv("HOME", env["HOME"])
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(fs, "_PROBE_TIMEOUT_S", 1)
+    report = fs.doctor_report(
+        Path("specs"), Path("forge.config.json"), only=frozenset({"runner-version"}),
+    )
+    (record,) = report["checks"]
+    assert record["status"] == "warn"
+    assert record["evidence"]["timedOut"] is True
+    assert "timed out after 1s" in record["detail"]
+
+
+def test_runner_wired_na_before_forge_4_then_warns(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = make_project(tmp_path, config=CONFIG)  # no .rauf.json
+    write_feature(project, "early", pipeline_state(["forge-1-prd", "forge-2-tech"]))
+    record = check(doctor_report(project, env), "runner-wired")
+    assert record["status"] == "na"
+    assert record["evidence"]["runnerRelevant"] is False
+
+    write_feature(project, "ready", pipeline_state(PRODUCTION[:3]))  # next: forge-4-backlog
+    report = doctor_report(project, env)
+    record = check(report, "runner-wired")
+    assert record["status"] == "warn" and record["severity"] == "blocking"
+    assert record["remedy"] == {
+        "description": record["remedy"]["description"],
+        "command": "rauf install .",
+        "safety": "local-write",
+    }
+    assert "rauf install ." in record["remedy"]["description"]
+    assert check(report, "runner-artifacts-stale")["status"] == "na"
+    assert check(report, "runner-profile-drift")["status"] == "na"
+    # doctor advises `rauf install .`; it never runs it (one version probe per run).
+    assert probe_log(env) == [f"{bin_dir(env)}/rauf version --json"] * 2
+
+
+def test_runner_legacy_layout_warns_on_ralph_artifacts_and_na_for_other_runners(
+    tmp_path: Path,
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    (project / ".ralph.json").write_text("{}")
+    (project / ".ralph").mkdir()
+    record = check(doctor_report(project, env), "runner-legacy-layout")
+    assert record["status"] == "warn"
+    assert record["evidence"] == {
+        "runnerName": "rauf", "ralphJson": True, "ralphDir": True,
+        "runnerOnPath": f"{bin_dir(env)}/rauf",
+    }
+    assert record["remedy"]["command"] == "rauf migrate ."
+    assert record["remedy"]["safety"] == "local-write"
+    config = {**CONFIG, "loopRunner": {"name": "other"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-legacy-layout")
+    assert record["status"] == "na"
+    assert "migrate" not in " ".join(probe_log(env))
+
+
+@pytest.mark.parametrize("installed_by, status, command, safety", [
+    ("rauf-manager@0.14.0", "ok", None, None),
+    ("rauf-manager@0.13.0", "warn", "rauf update .", "local-write"),
+    ("rauf-manager@0.15.0", "warn", "npx @garygentry/feature-forge install", "network"),
+    ("rauf-manager", "warn", "rauf update .", "local-write"),
+    (None, "warn", "rauf update .", "local-write"),
+])
+def test_runner_artifacts_stale_compares_installed_by_with_live(
+    tmp_path: Path, installed_by, status, command, safety,
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.14.0")
+    rauf_json = {**RAUF_JSON, "installedBy": installed_by}
+    if installed_by is None:
+        del rauf_json["installedBy"]
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=rauf_json)
+    record = check(doctor_report(project, env), "runner-artifacts-stale")
+    assert record["status"] == status, record
+    assert record["severity"] == "advisory"
+    assert record["evidence"]["liveVersion"] == "0.14.0"
+    if status == "ok":
+        assert record["remedy"] is None
+    else:
+        assert record["remedy"]["command"] == command
+        assert record["remedy"]["safety"] == safety
+    assert "update" not in " ".join(probe_log(env))
+
+
+def test_runner_artifacts_stale_na_when_precondition_unreadable_is_a_warn(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG)
+    (project / ".rauf.json").write_text("{corrupt")
+    report = doctor_report(project, env)
+    record = check(report, "runner-artifacts-stale")
+    assert record["status"] == "warn" and "no parseable installedBy" in record["detail"]
+    assert check(report, "runner-profile-drift")["status"] == "na"
+
+
+def test_runner_profile_drift_states(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    # Matches verify only (whitespace-normalised).
+    rauf_json = {"installedBy": "rauf-manager@0.14.0",
+                 "profile": {"commands": {"test": "pnpm test"}, "verify": "pytest   -q"}}
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=rauf_json)
+    record = check(doctor_report(project, env), "runner-profile-drift")
+    assert record["status"] == "ok" and record["evidence"]["matches"] == ["verify"]
+    # Matches neither → warn, advisory, no remedy.
+    rauf_json["profile"]["verify"] = "pnpm gate"
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=rauf_json)
+    record = check(doctor_report(project, env), "runner-profile-drift")
+    assert record["status"] == "warn" and record["remedy"] is None
+    assert "divergence may be deliberate" in record["detail"]
+    # No testCommand → na; no profile → na; profile without commands → na.
+    project = _loop_project(tmp_path, config={"stack": "python"}, rauf_json=rauf_json)
+    assert check(doctor_report(project, env), "runner-profile-drift")["status"] == "na"
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json={"installedBy": "x@0.14.0"})
+    assert check(doctor_report(project, env), "runner-profile-drift")["status"] == "na"
+    project = _loop_project(tmp_path, config=CONFIG,
+                            rauf_json={"installedBy": "x@0.14.0", "profile": {}})
+    record = check(doctor_report(project, env), "runner-profile-drift")
+    assert record["status"] == "na" and "no test or verify" in record["detail"]
+
+
+# --------------------------------------------------------------------------- #
+# config-completeness
+# --------------------------------------------------------------------------- #
+
+
+def test_config_completeness_na_before_forge_3_specs(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={})
+    write_feature(project, "early", pipeline_state(["forge-1-prd"]))  # next: forge-2-tech
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-completeness")
+    assert record["status"] == "na" and record["evidence"]["features"] == []
+
+
+def test_config_completeness_requirements_grow_with_the_next_stage(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={"stack": "python"})
+    write_feature(project, "specs-next", pipeline_state(PRODUCTION[:2]))  # next: forge-3-specs
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-completeness")
+    assert record["status"] == "ok"
+    (row,) = record["evidence"]["features"]
+    assert row["required"] == ["stack"] and row["missing"] == [] and row["remedy"] is None
+    assert record["evidence"]["optionalMissing"] == ["smokeCommand"]
+    assert "optional smokeCommand unset" in record["detail"]
+
+    write_feature(project, "done", pipeline_state(PRODUCTION))  # complete: still counted
+    report = doctor_report(project, scrubbed_env(tmp_path))
+    record = check(report, "config-completeness")
+    assert record["status"] == "warn" and record["severity"] == "advisory"
+    assert record["evidence"]["missing"] == ["typeCheckCommand", "testCommand"]
+    by_name = {row["name"]: row for row in record["evidence"]["features"]}
+    assert by_name["specs-next"]["missing"] == []
+    assert by_name["done"]["required"] == ["stack", "typeCheckCommand", "testCommand"]
+    assert by_name["done"]["missing"] == ["typeCheckCommand", "testCommand"]
+    # One affected feature → its remedy is the top-level remedy: a config edit
+    # forge-2-tech performs, so local-write with no command to run.
+    assert record["remedy"] == by_name["done"]["remedy"]
+    assert record["remedy"]["safety"] == "local-write" and record["remedy"]["command"] is None
+    assert "typeCheckCommand, testCommand" in record["remedy"]["description"]
+
+
+def test_config_completeness_blank_values_count_as_missing(tmp_path: Path) -> None:
+    config = {"stack": "  ", "typeCheckCommand": "", "testCommand": "pytest", "smokeCommand": "x"}
+    project = make_project(tmp_path, config=config)
+    write_feature(project, "ready", pipeline_state(PRODUCTION[:4]), backlog=True)
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-completeness")
+    assert record["status"] == "warn"
+    assert record["evidence"]["missing"] == ["stack", "typeCheckCommand"]
+    assert record["evidence"]["optionalMissing"] == []
+
+
+# --------------------------------------------------------------------------- #
+# backlog-valid (fake `rauf backlog validate` on the scrubbed PATH)
+# --------------------------------------------------------------------------- #
+
+FINDINGS = [
+    {"severity": "error", "code": "SCHEMA", "message": f"finding {i}", "path": f"items.{i}"}
+    for i in range(7)
+]
+
+
+def _validate_line(env: dict[str, str], backlog_dir: str, name: str = "rauf") -> str:
+    return (
+        f"{bin_dir(env)}/{name} backlog validate . --backlog {backlog_dir} "
+        "--specs-dir specs --json"
+    )
+
+
+def test_backlog_valid_na_unless_a_feature_is_about_to_loop(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, validate_exit=1)  # would warn if it ever ran
+    project = make_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    write_feature(project, "backlog-next", pipeline_state(PRODUCTION[:3]), backlog=True)
+    write_feature(project, "docs-next", pipeline_state(PRODUCTION[:5]), backlog=True)
+    write_feature(project, "done", pipeline_state(PRODUCTION), backlog=True)
+    # Loop-next but the backlog is missing: backlog-present owns that finding.
+    write_feature(project, "no-backlog", pipeline_state(PRODUCTION[:4]))
+    report = doctor_report(project, env)
+    record = check(report, "backlog-valid")
+    assert record["status"] == "na" and "no active feature" in record["detail"]
+    assert check(report, "backlog-present")["status"] == "warn"
+    assert not any("backlog validate" in line for line in probe_log(env))
+
+
+def test_backlog_valid_na_when_the_runner_is_missing_or_command_unset(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)  # no runner on PATH
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "backlog-valid")
+    assert record["status"] == "na" and "runner-binary" in record["detail"]
+
+    fake_runner(env)
+    config = {**CONFIG, "loopRunner": {"validateCommand": ""}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "backlog-valid")
+    assert record["status"] == "na" and "validateCommand unset" in record["detail"]
+    assert not any("backlog validate" in line for line in probe_log(env))
+
+
+def test_backlog_valid_ok_runs_one_validate_per_backlog_dir(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, validate_stdout='{"findings": []}')
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    write_feature(project, "second", pipeline_state(PRODUCTION[:4]), epic="ep", backlog=True)
+    report = doctor_report(project, env)
+    record = check(report, "backlog-valid")
+    assert record["status"] == "ok" and record["severity"] == "blocking"
+    assert record["detail"] == "2 backlog(s) validate"
+    rows = record["evidence"]["features"]
+    assert sorted((r["name"], r["backlogDir"], r["valid"]) for r in rows) == [
+        ("looper", "specs/looper", True), ("second", "specs/ep/second", True),
+    ]
+    validates = [line for line in probe_log(env) if "backlog validate" in line]
+    assert sorted(validates) == sorted([
+        _validate_line(env, "specs/looper"), _validate_line(env, "specs/ep/second"),
+    ])
+
+
+def test_backlog_valid_warns_with_capped_findings_and_no_remedy(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, validate_exit=1, validate_stdout=json.dumps({"findings": FINDINGS}))
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "backlog-valid")
+    assert record["status"] == "warn" and record["severity"] == "blocking"
+    assert "looper (7 finding(s))" in record["detail"]
+    assert "forge-4-backlog" in record["detail"]
+    assert record["remedy"] is None  # the fix is a slash command / backlog edit
+    (row,) = record["evidence"]["features"]
+    assert row["exitCode"] == 1 and row["valid"] is False
+    assert row["findingsCount"] == 7 and len(row["findings"]) == 5
+    assert "finding 0" in row["findings"][0]
+
+
+def test_backlog_valid_warns_when_the_validator_itself_breaks(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, validate_exit=2, validate_stdout="not json")
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "backlog-valid")
+    assert record["status"] == "warn"
+    assert "looper (validator exit 2)" in record["detail"]
+    (row,) = record["evidence"]["features"]
+    assert row["findingsCount"] == 0 and row["findings"] == []
+
+    # An unrenderable template is a per-row failure, not a crash.
+    config = {**CONFIG, "loopRunner": {"validateCommand": "{bin} backlog validate {nope}"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "backlog-valid")
+    assert record["status"] == "warn"
+    assert "cannot be rendered" in record["detail"]
+
+
+def test_backlog_valid_timeout_degrades_to_warn(fs, monkeypatch, tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, hang_seconds=5)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    monkeypatch.setenv("PATH", env["PATH"])
+    monkeypatch.setenv("HOME", env["HOME"])
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(fs, "_PROBE_TIMEOUT_S", 1)
+    report = fs.doctor_report(
+        Path("specs"), Path("forge.config.json"), only=frozenset({"backlog-valid"}),
+    )
+    (record,) = report["checks"]
+    assert record["status"] == "warn"
+    (row,) = record["evidence"]["features"]
+    assert row["timedOut"] is True and "timed out after 1s" in record["detail"]
+
+
+# --------------------------------------------------------------------------- #
+# gh-available (fake gh on the scrubbed PATH; never `gh auth status`)
+# --------------------------------------------------------------------------- #
+
+
+def test_gh_available_warns_with_install_remedy_when_absent(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "gh-available")
+    assert record["status"] == "warn" and record["severity"] == "advisory"
+    assert record["evidence"]["path"] is None
+    assert record["remedy"]["safety"] == "global-install" and record["remedy"]["command"] is None
+    assert "degrades to manual" in record["remedy"]["description"]
+
+
+def test_gh_available_ok_never_leaks_the_token_or_runs_auth_status(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_gh(env)
+    project = make_project(tmp_path)
+    result = run_doctor(project, env)
+    assert result.returncode == 0
+    assert FAKE_TOKEN not in result.stdout and FAKE_TOKEN not in result.stderr
+    record = check(json.loads(result.stdout), "gh-available")
+    assert record["status"] == "ok" and record["remedy"] is None
+    assert record["evidence"] == {
+        "path": f"{bin_dir(env)}/gh",
+        "version": "gh version 2.93.0 (fake)",
+        "authenticated": True,
+        "tokenFromEnv": False,
+    }
+    assert probe_log(env) == [f"{bin_dir(env)}/gh --version", f"{bin_dir(env)}/gh auth token"]
+
+
+def test_gh_available_warns_without_credentials_and_reports_env_tokens(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_gh(env, token_exit=1)
+    project = make_project(tmp_path)
+    record = check(doctor_report(project, env), "gh-available")
+    assert record["status"] == "warn"
+    assert record["evidence"]["authenticated"] is False
+    assert record["remedy"] == {
+        "description": "Authenticate the GitHub CLI", "command": "gh auth login",
+        "safety": "network",
+    }
+    # doctor advises `gh auth login`; it never runs it.
+    assert probe_log(env) == [f"{bin_dir(env)}/gh --version", f"{bin_dir(env)}/gh auth token"]
+
+    env["GITHUB_TOKEN"] = FAKE_TOKEN
+    result = run_doctor(project, env)
+    assert FAKE_TOKEN not in result.stdout and FAKE_TOKEN not in result.stderr
+    record = check(json.loads(result.stdout), "gh-available")
+    assert record["evidence"]["tokenFromEnv"] is True
+
+
+def test_gh_available_warns_when_the_binary_is_broken(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_gh(env, version_exit=3)
+    project = make_project(tmp_path)
+    record = check(doctor_report(project, env), "gh-available")
+    assert record["status"] == "warn" and "`gh --version` failed" in record["detail"]
+    assert record["remedy"]["safety"] == "global-install"
+    assert record["evidence"]["version"] is None and record["evidence"]["authenticated"] is False
+    # No point asking a broken gh for a token.
+    assert probe_log(env) == [f"{bin_dir(env)}/gh --version"]
+
+
+# --------------------------------------------------------------------------- #
+# root-version-skew
+# --------------------------------------------------------------------------- #
+
+
+def _bundle(path: Path, version: str | None) -> Path:
+    """A minimal feature-forge bundle (neutral manifest) at ``path``."""
+    path.mkdir(parents=True, exist_ok=True)
+    if version is not None:
+        (path / ".feature-forge-bundle.json").write_text(json.dumps({"version": version}))
+    return path
+
+
+def test_root_version_skew_ok_from_the_repo_checkout(tmp_path: Path) -> None:
+    record = check(doctor_report(make_project(tmp_path), scrubbed_env(tmp_path)),
+                   "root-version-skew")
+    assert record["status"] == "ok" and record["evidence"]["agree"] is True
+    assert record["evidence"]["ownRoot"] == record["evidence"]["resolvedRoot"] == str(REPO_ROOT)
+    assert record["evidence"]["envVar"] is None
+
+
+def test_root_version_skew_na_when_root_is_unresolved(tmp_path: Path) -> None:
+    lone = tmp_path / "lone"
+    lone.mkdir()
+    (lone / "forge-session.py").write_bytes(HELPER.read_bytes())  # no forge-root.sh beside it
+    env = scrubbed_env(tmp_path)
+    project = make_project(tmp_path)
+    result = subprocess.run(
+        [sys.executable, str(lone / "forge-session.py"), "doctor", "--json"],
+        capture_output=True, text=True, cwd=str(project), env=env,
+    )
+    assert result.returncode == 0
+    report = json.loads(result.stdout)
+    assert check(report, "plugin-root")["status"] == "warn"
+    assert check(report, "root-version-skew")["status"] == "na"
+
+
+def test_root_version_skew_compares_the_env_override_with_the_resolved_root(
+    tmp_path: Path,
+) -> None:
+    project = make_project(tmp_path)
+    env = scrubbed_env(tmp_path)
+    # A different install at a different version → skew (forge-root.sh self-locates,
+    # so the resolved root stays this checkout while the env points elsewhere).
+    env["FEATURE_FORGE_ROOT"] = str(_bundle(tmp_path / "other", "0.0.1"))
+    record = check(doctor_report(project, env), "root-version-skew")
+    assert record["status"] == "warn" and record["severity"] == "advisory"
+    assert record["evidence"]["envVar"] == "FEATURE_FORGE_ROOT"
+    assert record["evidence"]["envVersion"] == "0.0.1"
+    assert "env (0.0.1" in record["detail"] and "resolved (" in record["detail"]
+    assert record["remedy"]["safety"] == "global-install" and record["remedy"]["command"] is None
+    # No manifest at all cannot be proven equal → still skew.
+    env["FEATURE_FORGE_ROOT"] = str(_bundle(tmp_path / "bare", None))
+    record = check(doctor_report(project, env), "root-version-skew")
+    assert record["status"] == "warn" and "no version" in record["detail"]
+    # Same version elsewhere, or a symlink to this checkout → agree.
+    own_version = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
+    env["FEATURE_FORGE_ROOT"] = str(_bundle(tmp_path / "twin", own_version))
+    assert check(doctor_report(project, env), "root-version-skew")["status"] == "ok"
+    (tmp_path / "link").symlink_to(REPO_ROOT)
+    env["CLAUDE_PLUGIN_ROOT"] = str(tmp_path / "link")
+    env["FEATURE_FORGE_ROOT"] = ""
+    record = check(doctor_report(project, env), "root-version-skew")
+    assert record["status"] == "ok" and record["evidence"]["envVar"] == "CLAUDE_PLUGIN_ROOT"
+
+
+# --------------------------------------------------------------------------- #
+# The no-network / no-remedy proof, three layers deep
+# --------------------------------------------------------------------------- #
+
+#: Every argv doctor may spawn through the fakes, as (binary, leading args).
+ALLOWED_PROBES = (
+    ("rauf", ("version", "--json")),
+    ("rauf", ("backlog", "validate")),
+    ("gh", ("--version",)),
+    ("gh", ("auth", "token")),
+)
+FORBIDDEN_WORDS = ("auth status", "agents", "update", "install", "migrate", "login", "switch")
+
+
+def _full_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    """A project that exercises every probe: loop-ready feature, runner, gh, drift."""
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, validate_exit=1, validate_stdout='{"findings": [{"path": "items.0"}]}')
+    fake_gh(env, token_exit=1)  # so a `gh auth login` remedy is emitted, never run
+    rauf_json = {"installedBy": "rauf-manager@0.13.0", "profile": {"commands": {"test": "x"}}}
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=rauf_json, git_branch="topic")
+    write_feature(project, "drift", pipeline_state(PRODUCTION[:4], branch="main"), backlog=True)
+    return project, env
+
+
+def test_layer_one_every_spawn_is_on_the_allowlist_and_remedies_are_data(
+    tmp_path: Path,
+) -> None:
+    project, env = _full_project(tmp_path)
+    result = run_doctor(project, env)
+    assert result.returncode == 0, result.stderr
+    assert FAKE_TOKEN not in result.stdout and FAKE_TOKEN not in result.stderr
+    report = json.loads(result.stdout)
+    assert report["checksSummary"]["fail"] == 0
+    # Every remedy is data with a shell command doctor did NOT run.
+    commands = [r["remedy"]["command"] for r in report["checks"] if r["remedy"]]
+    assert {"rauf update .", "gh auth login"} <= set(c for c in commands if c)
+    assert {"runner-artifacts-stale", "gh-available", "backlog-valid", "branch-state"} <= warn_ids(
+        report,
+    )
+    lines = probe_log(env)
+    assert lines, "the fakes recorded nothing — the allowlist test is vacuous"
+    for line in lines:
+        binary, *args = line.split()
+        assert any(
+            Path(binary).name == name and tuple(args[:len(lead)]) == lead
+            for name, lead in ALLOWED_PROBES
+        ), f"unexpected spawn: {line}"
+        assert not any(word in line for word in FORBIDDEN_WORDS), line
+    # Each probe at most once per run (validate: once per backlog dir).
+    assert len(lines) == len(set(lines))
+    for check_id in ("plugin-root", "gh-available"):
+        assert check(report, check_id)["status"] != "na"
+
+
+def test_layer_two_every_in_process_spawn_is_allowlisted_and_no_socket_opens(
+    fs, monkeypatch, tmp_path: Path,
+) -> None:
+    """In-process: record every ``subprocess.run`` doctor makes (fakes and real
+    git alike), assert each is on the allowlist and equals no remedy command it
+    emitted; and patch ``socket`` so any direct socket use by doctor raises."""
+    import socket as socket_module
+    import subprocess as subprocess_module
+
+    project, env = _full_project(tmp_path)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.chdir(project)
+
+    spawned: list[list[str]] = []
+    real_run = subprocess_module.run
+
+    def recording_run(argv, *args, **kwargs):
+        spawned.append([str(a) for a in argv])
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess_module, "run", recording_run)
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("doctor opened a socket")
+
+    for attr in ("socket", "create_connection", "getaddrinfo", "gethostbyname"):
+        monkeypatch.setattr(socket_module, attr, boom)
+
+    report = fs.doctor_report(Path("specs"), Path("forge.config.json"))
+    assert report["checksSummary"]["fail"] == 0
+    assert len(report["checks"]) == len(fs.DOCTOR_CHECK_IDS)
+    assert not any("opened a socket" in r["detail"] for r in report["checks"])
+
+    assert spawned, "nothing was spawned — the recorder is vacuous"
+    bin_names = {Path(argv[0]).name for argv in spawned}
+    assert {"rauf", "gh", "git", "bash"} <= bin_names, bin_names
+    allowed_leads = (
+        # legacy report: branch discovery + the resolved root's short commit
+        ("git", "branch", "--show-current"), ("git", "symbolic-ref"),
+        ("git", "rev-parse"), ("git", "-C"),
+        ("bash",),  # forge-root.sh only (asserted below)
+        ("rauf", "version", "--json"), ("rauf", "backlog", "validate"),
+        ("gh", "--version"), ("gh", "auth", "token"),
+    )
+    for argv in spawned:
+        head = (Path(argv[0]).name, *argv[1:])
+        assert any(head[:len(lead)] == lead for lead in allowed_leads), argv
+        assert not any(word in " ".join(argv) for word in FORBIDDEN_WORDS), argv
+        if head[0] == "bash":
+            assert Path(argv[1]).name == "forge-root.sh", argv
+    # Remedies are advice: no spawn equals any emitted remedy command.
+    remedies = [r["remedy"]["command"] for r in report["checks"]
+                if r["remedy"] and r["remedy"]["command"]]
+    assert remedies, "no remedy command emitted — the inequality is vacuous"
+    spawned_joined = {" ".join(argv) for argv in spawned}
+    spawned_basenames = {" ".join([Path(argv[0]).name, *argv[1:]]) for argv in spawned}
+    for command in remedies:
+        assert command not in spawned_joined and command not in spawned_basenames, command
+
+
+def test_layer_three_doctor_behaves_identically_without_a_network(tmp_path: Path) -> None:
+    """Subprocess: the whole doctor tree runs in a namespace with no network."""
+    unshare = shutil.which("unshare")
+    probe = subprocess.run([unshare, "-rn", "true"], capture_output=True) if unshare else None
+    if probe is None or probe.returncode != 0:
+        pytest.skip("unshare -rn unavailable (no unprivileged user namespaces)")
+    project, env = _full_project(tmp_path)
+    baseline = doctor_report(project, env)
+    Path(env["DOCTOR_PROBE_LOG"]).unlink()
+    result = subprocess.run(
+        [unshare, "-rn", sys.executable, str(HELPER), "doctor", "--json"],
+        capture_output=True, text=True, cwd=str(project), env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    offline = json.loads(result.stdout)
+
+    def verdicts(report: dict) -> list[dict]:
+        # `unshare -r` maps the caller to uid 0, so sandbox-root legitimately
+        # differs inside the namespace; every other verdict must be identical.
+        return [
+            {k: v for k, v in r.items() if k != "evidence"}
+            for r in report["checks"] if r["id"] != "sandbox-root"
+        ]
+
+    assert verdicts(offline) == verdicts(baseline)
+    assert check(offline, "sandbox-root")["evidence"]["isRoot"] is True
+    assert not any(r["evidence"].get("timedOut") for r in offline["checks"])
+
+
+# --------------------------------------------------------------------------- #
+# docs/doctor-checks.md parity
+# --------------------------------------------------------------------------- #
+
+
+def test_docs_catalog_lists_every_check_with_its_severity_in_registry_order(fs) -> None:
+    """The catalog's id + severity columns equal DOCTOR_CHECKS, in order."""
+    doc = (REPO_ROOT / "docs" / "doctor-checks.md").read_text(encoding="utf-8")
+    rows = []
+    for line in doc.splitlines():
+        if not line.startswith("| `"):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        rows.append((cells[0].strip("`"), cells[1]))
+    assert rows, "no registry rows found in docs/doctor-checks.md"
+    assert rows == [(spec.id, spec.severity) for spec in fs.DOCTOR_CHECKS]
+    for check_id in fs.NO_NA_CHECKS:
+        row = next(line for line in doc.splitlines() if line.startswith(f"| `{check_id}`"))
+        assert "| never |" in row, f"{check_id} is in NO_NA_CHECKS but the catalog lists an na case"
+
+
+# --------------------------------------------------------------------------- #
+# Review-round regressions (PR #255 adversarial review)
+# --------------------------------------------------------------------------- #
+
+
+def test_render_runner_command_substitutes_in_one_pass(fs) -> None:
+    """A substituted value is opaque: a later token name inside it is never re-rendered."""
+    argv = fs._render_runner_command(
+        "{bin} backlog validate --dir {backlogDir}", {"bin": "run-{backlogDir}"},
+        backlogDir="/tmp/x",
+    )
+    assert argv == ["run-{backlogDir}", "backlog", "validate", "--dir", "/tmp/x"]
+    # A value containing braces of an unknown token is still opaque, not "unrendered".
+    argv = fs._render_runner_command("{bin} go", {"bin": "r-{nope}"})
+    assert argv == ["r-{nope}", "go"]
+    assert fs._render_runner_command("{bin} {nope}", {"bin": "rauf"}) is None
+
+
+def test_backlog_valid_exit_one_without_findings_json_is_not_zero_findings(
+    tmp_path: Path,
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, validate_exit=1, validate_stdout="boom, not json")
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "backlog-valid")
+    assert record["status"] == "warn"
+    assert "0 finding(s)" not in record["detail"]
+    assert "not findings JSON" in record["detail"]
+    (row,) = record["evidence"]["features"]
+    assert row["findingsParsed"] is False and row["findingsCount"] == 0
+
+
+def test_non_utf8_inputs_are_data_not_tracebacks(tmp_path: Path) -> None:
+    """Binary garbage in config, state and .rauf.json: exit 0, no crash, checks degrade."""
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    (project / ".rauf.json").write_bytes(b"\x83\xff\x00garbage")
+    report = doctor_report(project, env)
+    stale = check(report, "runner-artifacts-stale")
+    assert stale["status"] == "warn" and "check crashed" not in stale["detail"]
+    assert "no parseable installedBy" in stale["detail"]
+    assert "check crashed" not in check(report, "runner-profile-drift")["detail"]
+
+    (project / "forge.config.json").write_bytes(b"\x83\xff")
+    report = doctor_report(project, env)
+    schema = check(report, "config-schema")
+    assert schema["status"] == "warn" and "check crashed" not in schema["detail"]
+    assert report["configExists"] is True
+
+    write_feature(project, "listy", {"pipelineStatus": [], "stages": {}})
+    (project / "specs" / "binary" ).mkdir()
+    (project / "specs" / "binary" / ".pipeline-state.json").write_bytes(b"\xff\xfe\x00")
+    report = doctor_report(project, env)  # asserts exit 0 + no Traceback
+    assert report["checksSummary"]["fail"] == 0
+
+
+def test_config_schema_survives_a_malformed_schema_node(tmp_path: Path) -> None:
+    schema = tmp_path / "bad-schema.json"
+    schema.write_text(json.dumps({
+        "type": "object",
+        "properties": {"stack": {"type": 5}, "loopRunner": {"type": "object", "properties": {}}},
+    }))
+    project = make_project(tmp_path, config={"stack": "python"})
+    record = check(doctor_report(project, scrubbed_env(tmp_path), "--schema", str(schema)),
+                   "config-schema")
+    assert record["status"] == "warn" and "check crashed" not in record["detail"]
+    assert "schema malformed" in record["detail"]
+    assert record["remedy"]["safety"] == "global-install"
+
+
+def test_gh_auth_token_stdout_is_sent_to_devnull(fs, monkeypatch, tmp_path: Path) -> None:
+    """The DEVNULL guard itself: the token probe never captures stdout."""
+    import subprocess as subprocess_module
+
+    env = scrubbed_env(tmp_path)
+    fake_gh(env)
+    project = make_project(tmp_path)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.chdir(project)
+    calls: list[tuple[list[str], dict]] = []
+    real_run = subprocess_module.run
+
+    def recording_run(argv, *args, **kwargs):
+        calls.append(([str(a) for a in argv], kwargs))
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess_module, "run", recording_run)
+    report = fs.doctor_report(Path("specs"), Path("forge.config.json"),
+                              only=frozenset({"gh-available"}))
+    (record,) = report["checks"]
+    assert record["status"] == "ok"
+    token_calls = [kw for argv, kw in calls if argv[1:] == ["auth", "token"]]
+    assert len(token_calls) == 1
+    assert token_calls[0]["stdout"] is subprocess_module.DEVNULL
+    assert "capture_output" not in token_calls[0]
+    assert FAKE_TOKEN not in json.dumps(report)
+
+
+def test_version_command_that_does_not_start_with_bin_is_never_run(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    marker = tmp_path / "ran-marker"
+    rogue = bin_dir(env) / "rogue"
+    rogue.write_text(f"#!/usr/bin/env bash\ntouch '{marker}'\necho '{{\"version\": \"0.14.0\"}}'\n")
+    rogue.chmod(0o755)
+    config = {**CONFIG, "loopRunner": {
+        "versionCommand": "rogue version --json",
+        "validateCommand": "rogue backlog validate {backlogDir} {specsDir}",
+    }}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    assert not marker.exists(), "a non-{bin} template was executed"
+    version = check(report, "runner-version")
+    assert version["status"] == "na" and "cannot be rendered" in version["detail"]
+    valid = check(report, "backlog-valid")
+    assert valid["status"] == "warn" and "cannot be rendered" in valid["detail"]
+    assert probe_log(env) == []
+
+
+def test_unreadable_specs_dir_is_data_not_exit_two(tmp_path: Path) -> None:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root can read anything")
+    env = scrubbed_env(tmp_path)
+    project = make_project(tmp_path, config=CONFIG)
+    write_feature(project, "hidden", pipeline_state(PRODUCTION[:4]))
+    (project / "specs").chmod(0)
+    try:
+        report = doctor_report(project, env)  # exit 0, no traceback
+    finally:
+        (project / "specs").chmod(0o755)
+    assert "Permission denied" in report["specsDirError"]
+    assert report["features"] == [] and report["counts"]["active"] == 0
+    # The human form surfaces it on the specs-dir line.
+    (project / "specs").chmod(0)
+    try:
+        human = subprocess.run(
+            [sys.executable, str(HELPER), "doctor"], capture_output=True, text=True,
+            cwd=str(project), env=env,
+        )
+    finally:
+        (project / "specs").chmod(0o755)
+    assert human.returncode == 0
+    assert "UNREADABLE" in human.stdout and "Permission denied" in human.stdout
+    assert report["checksSummary"]["fail"] == 0
+    assert list(report)[:3] == ["pluginRoot", "currentBranch", "specsDir"]
+    assert list(report)[-3:] == ["checks", "checksSummary", "remedyClusters"]
+
+
+def test_git_output_tolerates_undecodable_output(fs) -> None:
+    out = fs._git_output(["-c", "alias.bad=!printf '\\377'", "bad"])
+    assert out is None
+
+
+def test_doctor_survives_an_ascii_only_stdout(tmp_path: Path) -> None:
+    """Check details carry non-ASCII; an ASCII terminal must not traceback (INV-3)."""
+    env = scrubbed_env(tmp_path)
+    env["PYTHONIOENCODING"] = "ascii"
+    project = make_project(tmp_path, config=CONFIG)
+    write_feature(project, "ready", pipeline_state(PRODUCTION[:3]))  # runner-wired warns (em dash)
+    for extra in ((), ("--verbose",)):
+        result = subprocess.run(
+            [sys.executable, str(HELPER), "doctor", *extra], capture_output=True, text=True,
+            cwd=str(project), env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Traceback" not in result.stderr
+    report = doctor_report(project, env)
+    assert check(report, "runner-wired")["status"] == "warn"
+
+
+def test_absurdly_nested_json_inputs_are_data_not_recursion_errors(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    deep = "[" * 100_000 + "]" * 100_000
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    (project / "forge.config.json").write_text(deep)
+    (project / ".rauf.json").write_text(deep)
+    write_feature(project, "deep", {})
+    (project / "specs" / "deep" / ".pipeline-state.json").write_text(deep)
+    report = doctor_report(project, env)  # exit 0, no Traceback
+    assert not any("check crashed" in r["detail"] for r in report["checks"]), [
+        r["detail"] for r in report["checks"] if "check crashed" in r["detail"]
+    ]
+    schema = tmp_path / "deep-schema.json"
+    schema.write_text(deep)
+    report = doctor_report(project, env, "--schema", str(schema))
+    assert not any("driver crashed" in r["detail"] for r in report["checks"])
