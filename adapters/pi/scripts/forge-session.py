@@ -2983,13 +2983,15 @@ def _next_steps_block(
     terminal = primary_command is None
     fenced_command = "" if terminal else _host_command(primary_command, host)
     if terminal:
-        # Every other caller-supplied extra presupposes a next action, so a terminal
-        # block cannot carry one. `stage_exit` already clears them; asserting it here
-        # keeps a future caller from rendering a block that says "nothing further" and
-        # then names something further.
-        assert deferred_command is None and reconcile is None, (
-            "a terminal NEXT-STEPS block carries no deferred or reconcile follow-up"
-        )
+        # A deferred successor and a BLOCKING reconcile both presuppose a required next
+        # action, so neither can coexist with "nothing further is required".
+        # `stage_exit` already clears them; asserting it here keeps a future caller from
+        # rendering a block that says nothing further and then names something further.
+        # A non-blocking REMINDER is explicitly allowed — its inline line is an offer,
+        # not an action, and suppressing it would drop a recorded request on the floor.
+        assert deferred_command is None and not (
+            reconcile and reconcile.get("required")
+        ), "a terminal NEXT-STEPS block carries no deferred or blocking follow-up"
     if verify_first:
         # REQ-EXIT-06: the fresh-session guidance follows the PRIMARY action, and
         # must never tell the user to clear and run the production successor first.
@@ -3324,9 +3326,9 @@ def _render_status(specs_dir: Path, epic: str) -> dict:
     if status["nextCommand"] is not None and not isinstance(status["nextCommand"], str):
         fail("render-status emitted a malformed nextCommand")
     if not isinstance(status["status"], str):
-        # The manifest's own lifecycle status, which `_epic_terminal_kind` reads to let
-        # `set-status complete` reach the terminal exit. A non-string is a torn or
-        # hand-edited manifest, not a routing answer.
+        # The manifest's own lifecycle status, which `_epic_terminal_state` reads so
+        # `set-status complete` / `abandoned` reach the terminal exit. A non-string is a
+        # torn or hand-edited manifest, not a routing answer.
         fail("render-status emitted a malformed status")
     return status
 
@@ -3402,15 +3404,18 @@ _DOCS_OUTCOME_TEXT: Final[dict[str, str]] = {
     ),
 }
 
-#: The deterministic sentence a TERMINAL epic exit renders (issue #248). Both routes
-#: fence NOTHING — a finished epic has no next pipeline command, and re-fencing the
+#: The deterministic sentence a TERMINAL epic exit renders (issue #248). Every route
+#: fences NOTHING — a closed epic has no next pipeline command, and re-fencing the
 #: dashboard is exactly the self-loop this text replaces — so the start-new-work
 #: pointers are host-translated INLINE mentions, never the primary action.
 #:
-#:   ``complete``  every member is genuinely done (the rollup says so)
-#:   ``declared``  the operator set the manifest `status` to `complete`; the counts are
-#:                 stated as they really are, so the wording never claims members are
-#:                 finished when they are not
+#:   ``complete``   every member is genuinely done (the rollup says so)
+#:   ``declared``   the operator set the manifest `status` to `complete`; the counts are
+#:                  stated as they really are, so the wording never claims members are
+#:                  finished when they are not
+#:   ``abandoned``  the operator set the manifest `status` to `abandoned`. Checked
+#:                  FIRST, ahead of the rollup: an abandoned epic whose members happen
+#:                  to be complete must not be announced as completed work.
 _EPIC_TERMINAL_TEXT: Final[dict[str, str]] = {
     "complete": (
         "Epic {epic} is complete — every member is done ({complete}/{total}) and "
@@ -3426,7 +3431,31 @@ _EPIC_TERMINAL_TEXT: Final[dict[str, str]] = {
         "inspect the epic; otherwise you can start a new feature with "
         "`{new_feature}` or a new epic with `{new_epic}`."
     ),
+    "abandoned": (
+        "Epic {epic} is marked abandoned in its manifest, so the pipeline stops here "
+        "and nothing further runs against it — this is NOT a completion "
+        "({complete}/{total} members had been completed before it was abandoned). "
+        "Re-open `{dashboard}` to inspect or revive it, or start a new feature with "
+        "`{new_feature}`."
+    ),
 }
+
+
+def _production_stage_of(command: str) -> str | None:
+    """The PRODUCTION stage a canonical `/skill:<stage> <name>` command runs.
+
+    Reads the stage back out of a command another component already chose, so
+    ``nextStage`` and ``nextCommand`` cannot disagree. None for a branch command
+    (``forge-verify``/``forge-fix``), the navigator, or anything unrecognised — those
+    are real answers with no production stage, not failures.
+
+    This is a PARSE of a decision, never a re-derivation of one: nothing here decides
+    where the pipeline goes (REQ-PROD-05 keeps that in `next_stage`/`epic-manifest.py`).
+    """
+    if not command.startswith("/skill:"):
+        return None
+    stage = command[len("/skill:"):].split(" ", 1)[0]
+    return stage if stage in PRODUCTION_STAGES else None
 
 
 def _epic_terminal_state(status: dict, epic: str) -> tuple[str, dict] | None:
@@ -3437,17 +3466,22 @@ def _epic_terminal_state(status: dict, epic: str) -> tuple[str, dict] | None:
     that command reproduced the same exit — the operator was prompted to run the same
     command indefinitely. This is the predicate that ends it.
 
-    Two independent ways to be finished, deliberately kept distinct so the wording can
+    Three independent ways to be closed, deliberately kept distinct so the wording can
     stay honest about which one applies:
 
+    - the MANIFEST says ``status: "abandoned"`` — checked FIRST, ahead of the rollup,
+      because an abandoned epic whose members happen to be complete must not be
+      announced as completed work;
     - the ROLLUP says every member is complete — the ordinary case, and the one that
       answers the reported defect; ``total > 0`` is required so an epic with no members
       declared yet is never called complete;
     - the MANIFEST says ``status: "complete"`` — the operator's explicit
       ``set-status complete``, which previously had NO effect on this routing at all.
 
-    Nothing actionable is required either way: an epic with startable work left is not
-    finished no matter what its manifest says.
+    Nothing actionable is required by any of them: an epic with startable work left is
+    not closed no matter what its manifest says. The fourth manifest status, ``paused``,
+    is deliberately absent: a pause is an intent to resume, and the dashboard it keeps
+    routing to is where resuming starts.
 
     In practice ``"declared"`` is NARROW, and deliberately so. ``actionable`` is "not
     complete and no unmet deps", so on a valid (acyclic) graph an incomplete member
@@ -3466,12 +3500,14 @@ def _epic_terminal_state(status: dict, epic: str) -> tuple[str, dict] | None:
 
     Returns:
         ``(kind, fields)`` where kind keys ``_EPIC_TERMINAL_TEXT`` and fields carry the
-        REAL member counts, or None when the epic is not finished.
+        REAL member counts, or None when the epic is not closed.
     """
     if status["actionable"]:
         return None
     rollup = status["rollup"]
-    if rollup["total"] > 0 and rollup["complete"] >= rollup["total"]:
+    if status["status"] == "abandoned":
+        kind = "abandoned"
+    elif rollup["total"] > 0 and rollup["complete"] >= rollup["total"]:
         kind = "complete"
     elif status["status"] == "complete":
         kind = "declared"
@@ -4067,15 +4103,18 @@ def stage_exit(
       a fully complete member hands back to the epic dashboard, and a member
       whose state cannot be resolved falls back to ``forge-1-prd`` with
       ``warnings`` entry 1 naming it.
-    - ``forge-0-epic`` — no route hands back the command that produced the exit
-      (#248). An ACTIONABLE member with no next production stage owes verification,
-      so the exit routes to ``render-status``'s own answer for that member
-      (``forge-verify``/``forge-fix``) rather than to the dashboard. And a FINISHED
-      epic exits terminally: when live ``render-status`` reports nothing actionable
-      AND either every member is complete or the manifest carries
-      ``status: "complete"`` (see ``_epic_terminal_state`` for how narrow the second
-      is), ``primaryCommand``/``nextCommand``/``nextStage`` are all None
-      and the block fences nothing. Previously this state handed back
+    - ``forge-0-epic`` — no route hands back the dashboard as the SOLE remaining
+      action (#248). An ACTIONABLE member with no next production stage owes
+      verification, so the exit routes to ``render-status``'s own answer for that
+      member (``forge-verify``/``forge-fix``, or ``forge-1-prd`` when its PRD is
+      missing) rather than to the dashboard. And a CLOSED epic exits terminally:
+      when live ``render-status`` reports nothing actionable AND the epic is
+      complete, declared complete, or abandoned (see ``_epic_terminal_state``),
+      ``primaryCommand``/``nextCommand``/``nextStage`` are all None
+      and the block fences nothing. The dashboard is still the answer where it is a
+      real action rather than a re-run: a ``UsageError`` recovery, a blocking
+      reconcile, and an active epic with no members decomposed yet.
+      Previously this state handed back
       ``/skill:forge-0-epic {epic}`` — the command that produced it — so the
       operator was prompted to re-run it indefinitely. The terminal answer applies
       only where the routing already landed on that dashboard, so verify-first
@@ -4397,12 +4436,18 @@ def stage_exit(
                         # answer for exactly this member — `forge-verify` or
                         # `forge-fix`, per its own debt rules — so it is used rather
                         # than re-derived here (derivation belongs to epic-manifest.py).
-                        # Neither is a production stage, so `nextStage` stays None.
-                        next_stage_id = None
+                        #
+                        # It is USUALLY a branch command, but not always: the helper
+                        # answers `forge-1-prd` for a member whose `PRD.md` is missing
+                        # from disk, ahead of its debt fork. So `nextStage` is read back
+                        # OUT of the command it chose rather than assumed None —
+                        # reporting a production command with `nextStage: null` would
+                        # break this payload's own contract (see `nextCommand` above).
                         next_command = (
                             status["nextCommand"]
                             or f"/skill:forge-0-epic {feature}"
                         )
+                        next_stage_id = _production_stage_of(next_command)
                     else:
                         next_stage_id = member_next
                         next_command = f"/skill:{member_next} {resolved_member}"
@@ -4617,15 +4662,21 @@ def stage_exit(
     # fires ONLY where the routing above already landed on the epic dashboard, so
     # verify-first ordering (primary is the verify command), a live findings report
     # (primary is the fix), and a `blocked` docs recovery all keep their precedence
-    # untouched. `epic_reconcile is None` is a SEPARATE, load-bearing guard rather
-    # than a restatement of `blocking_reconcile`: the reconcile command is the same
-    # string as the dashboard when the exiting feature IS the epic, so without it a
-    # blocking reconcile would be silently swallowed, and a non-blocking reminder
-    # would contradict "nothing further is required".
+    # untouched. `not blocking_reconcile` is a SEPARATE, load-bearing guard rather than
+    # a restatement of anything above: the reconcile command is the same STRING as the
+    # dashboard when the exiting feature IS the epic, so without it a blocking reconcile
+    # would be silently swallowed by the equality test.
+    #
+    # A NON-blocking reminder does not block the terminal answer, and must not: fencing
+    # the dashboard for an optional reconcile reinstates the #248 loop (decline it,
+    # re-run, get the same block) while promoting a change the exit itself calls
+    # non-blocking to the one required action. The reminder survives as the inline line
+    # `_next_steps_block` already renders for it — an offer beside "nothing is
+    # required", which is exactly what a non-blocking request is.
     epic_dashboard = f"/skill:forge-0-epic {feature}"
     if (
         epic_terminal is not None
-        and epic_reconcile is None
+        and not blocking_reconcile
         and primary_canonical == epic_dashboard
     ):
         terminal_kind, terminal_fields = epic_terminal

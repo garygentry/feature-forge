@@ -15,7 +15,17 @@ Two directions, both needed, neither sufficient alone:
    no ``${CLAUDE_PLUGIN_ROOT}``) — the #122 degradation ``_fan_out_shared_references``
    exists to prevent. This guard is **derived**, not a pinned file list (issue #246): a
    tuple of names from one past feature cannot see the reference someone adds tomorrow,
-   which is the only case that ever bites.
+   which is the only case that ever bites. This supersedes the ``NEW_FILES`` guard
+   specified in ``specs/context-efficiency/06-testing-strategy.md §5``: the protection
+   that spec describes is preserved and strengthened — a brace-list citation of the six
+   ``verification-checklists/`` paths passed the old substring match and now leaves all
+   six uncovered — but the pinned tuple itself is gone.
+
+Where the reverse guard's ``CITE_RE`` differs from the builder's own
+``_REFERENCE_CITATION_RE``, it differs in the SAFE direction: the lookbehind makes it
+strictly narrower, so it can demand a citation the builder would have honoured (a
+false alarm, recoverable through ``UNCITED_ALLOWLIST`` — which is what the two
+``templates/specs-hygiene`` entries are) but never excuse one the builder would not.
 
 Regex provenance (finding V-030). The pattern below was validated against the
 **pre-feature baseline commit** ``9a29e846ed510c3b245876a9bf4cc73b8cb60951``, where it
@@ -51,30 +61,32 @@ CITE_RE = re.compile(r"(?<![./\w-])references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*?\
 #: allowlisted foreign references. Adding a file here is a claim that must be true; an
 #: entry naming a file that no longer exists is caught by its own test.
 #:
-#: Keyed by the path a citation would use (`references/<key>`), which for a skill-own file
-#: is its path under that skill's own `references/`.
-UNCITED_ALLOWLIST: dict[str, str] = {
-    "templates/specs-hygiene/AGENTS.md": (
+#: Keyed by `(owner, relpath)` — owner None for a SHARED reference, else the skill that
+#: owns it. The owner is part of the key on purpose: a shared file and a skill-own file
+#: can carry the same relpath, and an entry that excused both would silently cover a
+#: future shared file it was never written about.
+UNCITED_ALLOWLIST: dict[tuple[str | None, str], str] = {
+    (None, "templates/specs-hygiene/AGENTS.md"): (
         "copied through an explicit \"$R/references/...\" path in shared-conventions.md's "
         "bash block, never a bare prose read, so it resolves from the bundle root on "
         "every install layout"
     ),
-    "templates/specs-hygiene/CLAUDE.md": (
+    (None, "templates/specs-hygiene/CLAUDE.md"): (
         "same explicit \"$R/references/...\" copy as its AGENTS.md sibling, gated on the "
         "host being Claude"
     ),
-    "vendor-construct-inventory.md": (
+    (None, "vendor-construct-inventory.md"): (
         "a REQ-VND-03 audit artifact — a record of the spec-purity sweep, read by humans "
         "reviewing that sweep and by no skill at runtime"
     ),
-    "templates/hygiene/AGENTS.md": (
+    ("forge-bootstrap", "templates/hygiene/AGENTS.md"): (
         "read by scripts/forge-bootstrap.py from TEMPLATE_ROOT when it composes the "
         "scaffolded repo's hygiene files, not by any skill body"
     ),
-    "templates/hygiene/CLAUDE.md": (
+    ("forge-bootstrap", "templates/hygiene/CLAUDE.md"): (
         "read by scripts/forge-bootstrap.py alongside its AGENTS.md sibling"
     ),
-    "templates/hygiene/README.md": (
+    ("forge-bootstrap", "templates/hygiene/README.md"): (
         "read by scripts/forge-bootstrap.py when it composes the scaffolded repo's README"
     ),
 }
@@ -114,9 +126,27 @@ SENTENCE_FINAL_FIXTURE = (
 )
 
 
+def _strip_frontmatter(text: str) -> str:
+    """The skill BODY — what `build-adapters.py` scans — with YAML frontmatter removed.
+
+    The builder fans out by scanning `skill.body`, which its `split_frontmatter` has
+    already stripped. Scanning the whole file here instead would count a citation in a
+    `description:` as coverage for a shared reference the builder then fans to nobody:
+    green guard, unreachable file. Same parse rule as the builder — a leading `---`
+    line, up to the next `---` line.
+    """
+    if not text.startswith("---\n"):
+        return text
+    end = text.find("\n---", 3)
+    return text[end + 4:] if end != -1 else text
+
+
 def _skill_bodies() -> list[tuple[str, str]]:
     """(skill name, body text) for all 13 skills, in a stable order."""
-    return [(p.parent.name, read(p)) for p in sorted(SKILLS.glob("*/SKILL.md"))]
+    return [
+        (p.parent.name, _strip_frontmatter(read(p)))
+        for p in sorted(SKILLS.glob("*/SKILL.md"))
+    ]
 
 
 def _citations(body: str) -> list[str]:
@@ -207,7 +237,7 @@ def _is_covered(
     """
     if stacks_fanned and rel.split("/", 1)[0] == "stacks":
         return True
-    if rel in UNCITED_ALLOWLIST:
+    if (owner, rel) in UNCITED_ALLOWLIST:
         return True
     if owner is not None:
         # A skill's own references/ is copied wholesale, so any citation resolves it.
@@ -352,22 +382,49 @@ def test_a_shared_reference_is_not_vouched_for_by_a_skills_own_same_named_file()
     assert _is_covered("forge-1-prd", "prd-template.md", by_skill, stacks_fanned=False)
 
 
+def _describe(key: tuple[str | None, str]) -> str:
+    owner, rel = key
+    return f"references/{rel}" + ("" if owner is None else f" (own to {owner})")
+
+
 def test_every_allowlist_entry_names_a_file_that_exists():
     """A stale allowlist entry is a silent hole: it excuses a path nothing enumerates."""
-    stale = [
-        rel
-        for rel in UNCITED_ALLOWLIST
-        if not any(rel == candidate for _, candidate in _reference_files())
-    ]
+    enumerated = set(_reference_files())
+    stale = [_describe(key) for key in UNCITED_ALLOWLIST if key not in enumerated]
     assert not stale, (
-        "UNCITED_ALLOWLIST names reference files that no longer exist — delete the "
-        "entries:\n  " + "\n  ".join(stale)
+        "UNCITED_ALLOWLIST names reference files that no longer exist at that owner — "
+        "delete the entries:\n  " + "\n  ".join(stale)
+    )
+
+
+def test_no_allowlist_entry_excuses_a_file_that_is_now_cited():
+    """An entry that stopped being needed is an excuse left lying around.
+
+    Existence alone does not keep the allowlist honest: once a file gains a real
+    citation, its entry silently becomes a standing exemption for a future
+    de-citation of the same path — the exact hole this guard closes.
+    """
+    by_skill = _citations_by_skill()
+    stacks_fanned = _stacks_is_fanned(_all_cited())
+    unnecessary = [
+        _describe((owner, rel))
+        for owner, rel in UNCITED_ALLOWLIST
+        # Re-ask coverage with the allowlist itself taken out of the answer.
+        if rel in _all_cited() or (stacks_fanned and rel.split("/", 1)[0] == "stacks")
+        if _is_covered(owner, rel, by_skill, stacks_fanned)
+    ]
+    assert not unnecessary, (
+        "these UNCITED_ALLOWLIST entries are no longer needed — the files are cited "
+        "or covered by the stacks/ rule; delete the entries:\n  "
+        + "\n  ".join(unnecessary)
     )
 
 
 def test_every_allowlist_entry_states_a_reason():
     """The allowlist is a record of decisions; an empty reason records nothing."""
-    unexplained = [rel for rel, why in UNCITED_ALLOWLIST.items() if len(why.strip()) < 20]
+    unexplained = [
+        _describe(key) for key, why in UNCITED_ALLOWLIST.items() if len(why.strip()) < 20
+    ]
     assert not unexplained, (
         "UNCITED_ALLOWLIST entries must say WHY the file is reachable without a "
         "citation:\n  " + "\n  ".join(unexplained)

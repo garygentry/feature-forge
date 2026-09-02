@@ -3792,18 +3792,27 @@ def test_a_finished_epic_with_a_blocking_reconcile_reconciles_first(
     assert _fenced_commands(payload["nextSteps"]) == [TERMINAL_DASHBOARD]
 
 
-def test_a_finished_epic_with_a_non_blocking_reminder_is_not_terminal(
+def test_a_finished_epic_with_a_non_blocking_reminder_is_still_terminal(
     tmp_path: Path,
 ) -> None:
-    """"Nothing further is required" and "you still have changes to reconcile" cannot
-    both be true, so any open request keeps the dashboard fenced."""
+    """A non-blocking request is an offer, so it survives as prose beside a terminus.
+
+    Fencing the dashboard for it would reinstate the #248 loop — decline the optional
+    reconcile, re-run, get the identical block — AND promote a change the exit itself
+    calls non-blocking to the one required action.
+    """
     root = _finished_epic(tmp_path, epic_change_requests=[
         {"id": "ecr-2", "status": "open", "blocksCurrent": False,
          "summary": "Rename beta when convenient."},
     ])
-    d = _terminal_exit(root)["directives"]
+    payload = _terminal_exit(root)
+    d = payload["directives"]
     assert d["epicReconcile"]["reminder"] is True
-    assert d["primaryCommand"] == TERMINAL_DASHBOARD
+    assert d["primaryCommand"] is None
+    assert _fenced_commands(payload["nextSteps"]) == []
+    # The recorded request is not dropped on the floor — it is offered inline.
+    assert "reconcile when convenient" in payload["nextSteps"]
+    assert payload["nextSteps"].rstrip().splitlines()[-1] == SENTINEL
 
 
 def test_edit_mode_on_a_finished_epic_is_terminal_for_a_complete_member(
@@ -3954,3 +3963,63 @@ def test_an_epic_owing_only_member_verification_is_not_terminal(
     payload = _terminal_exit(root)
     assert payload["directives"]["primaryCommand"] is not None
     assert "is complete" not in payload["nextSteps"]
+
+
+def test_an_abandoned_epic_is_terminal_but_never_announced_as_complete(
+    tmp_path: Path,
+) -> None:
+    """`abandoned` is checked ahead of the rollup for exactly this shape.
+
+    An epic the operator abandoned whose members happen to be complete would otherwise
+    satisfy the rollup rule and be announced as finished work. It still terminates —
+    nothing runs against an abandoned epic — but it says what actually happened.
+    """
+    root = _finished_epic(tmp_path, manifest_status="abandoned")
+    payload = _terminal_exit(root)
+    assert payload["directives"]["primaryCommand"] is None
+    assert "marked abandoned" in payload["nextSteps"]
+    assert "is complete —" not in payload["nextSteps"]
+    assert "this is NOT a completion" in payload["nextSteps"]
+
+
+def test_a_paused_epic_still_routes_to_the_dashboard(tmp_path: Path) -> None:
+    """A pause is an intent to resume, and the dashboard is where resuming starts."""
+    root = _terminal_epic_project(tmp_path, [], manifest_status="paused")
+    assert _terminal_exit(root)["directives"]["primaryCommand"] == TERMINAL_DASHBOARD
+
+
+def test_a_member_missing_its_prd_keeps_nextstage_and_nextcommand_agreeing(
+    tmp_path: Path,
+) -> None:
+    """Branch (a)'s answer is not always a branch command.
+
+    `epic-manifest.py`'s `_next_command` checks for `PRD.md` on disk BEFORE its
+    verify-debt fork, so a member with every stage recorded complete but no PRD file is
+    answered `forge-1-prd`. That IS a production stage, so `nextStage` must name it —
+    reporting a production command beside `nextStage: null` would contradict this
+    payload's own contract.
+    """
+    members = [_terminal_member("alpha")]
+    root = _terminal_epic_project(
+        tmp_path,
+        members,
+        states={"alpha": _owes_verification_state(
+            {"status": "auto-verify-pending", "scheduledStageVersion": 1}
+        )},
+    )
+    (root / "specs" / TERMINAL_EPIC / "alpha" / "PRD.md").unlink()
+    d = _terminal_exit(root)["directives"]
+    assert d["nextCommand"] == "/feature-forge:forge-1-prd alpha"
+    assert d["nextStage"] == "forge-1-prd"
+
+
+def test_production_stage_of_reads_back_only_production_stages() -> None:
+    """The parse never invents a stage for a branch command or the navigator."""
+    production_stage_of = _load_session()._production_stage_of
+    assert production_stage_of("/feature-forge:forge-1-prd alpha") == "forge-1-prd"
+    assert production_stage_of("/feature-forge:forge-6-docs alpha") == "forge-6-docs"
+    assert production_stage_of("/feature-forge:forge-verify alpha") is None
+    assert production_stage_of("/feature-forge:forge-fix alpha --served-stage x") is None
+    assert production_stage_of("/feature-forge:forge alpha") is None
+    assert production_stage_of("/skill:forge-1-prd alpha") is None
+    assert production_stage_of("not a command") is None
