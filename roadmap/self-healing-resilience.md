@@ -660,6 +660,11 @@ by making the contract concrete, and it is independently useful even if the plan
 
 `warn`-only on landing (INV-1). Ids are stable and append-only (§5.2).
 
+> **Landed (P0, #250):** the shipped registry, per-check `na` conditions, evidence keys and
+> remedy tiers are documented in [`docs/doctor-checks.md`](../docs/doctor-checks.md), kept in
+> lockstep with `DOCTOR_CHECKS` by `tests/test_doctor_checks.py`. The table below is the
+> original proposal.
+
 | id | Detects | Remedy `safety` | Gap |
 |---|---|---|---|
 | `plugin-root` | Root unresolvable, or resolver missing. | `null` (no scripted fix) | G8 |

@@ -1270,3 +1270,24 @@ def test_layer_three_doctor_behaves_identically_without_a_network(tmp_path: Path
     assert verdicts(offline) == verdicts(baseline)
     assert check(offline, "sandbox-root")["evidence"]["isRoot"] is True
     assert not any(r["evidence"].get("timedOut") for r in offline["checks"])
+
+
+# --------------------------------------------------------------------------- #
+# docs/doctor-checks.md parity
+# --------------------------------------------------------------------------- #
+
+
+def test_docs_catalog_lists_every_check_with_its_severity_in_registry_order(fs) -> None:
+    """The catalog's id + severity columns equal DOCTOR_CHECKS, in order."""
+    doc = (REPO_ROOT / "docs" / "doctor-checks.md").read_text(encoding="utf-8")
+    rows = []
+    for line in doc.splitlines():
+        if not line.startswith("| `"):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        rows.append((cells[0].strip("`"), cells[1]))
+    assert rows, "no registry rows found in docs/doctor-checks.md"
+    assert rows == [(spec.id, spec.severity) for spec in fs.DOCTOR_CHECKS]
+    for check_id in fs.NO_NA_CHECKS:
+        row = next(line for line in doc.splitlines() if line.startswith(f"| `{check_id}`"))
+        assert "| never |" in row, f"{check_id} is in NO_NA_CHECKS but the catalog lists an na case"
