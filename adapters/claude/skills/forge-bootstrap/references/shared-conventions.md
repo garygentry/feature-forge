@@ -207,9 +207,21 @@ Stage any file this writes (`{specsDir}/AGENTS.md`, and `{specsDir}/CLAUDE.md` w
 
 The **Tooling Feedback Protocol** — how an agent working in a forge-driven project reports friction with feature-forge or rauf — is stated once, here, and shipped as project content in `references/templates/root-hygiene/{AGENTS,CLAUDE}.md`. The protocol: route by tool (feature-forge → <https://github.com/garygentry/feature-forge/issues>, rauf → <https://github.com/garygentry/rauf/issues>); capture it while fresh as *what you ran / what you expected / what actually happened / a fix idea*; file it with `gh issue create` **only on the human's explicit go-ahead, never silently**; and **never file mid-loop** — in an autonomous rauf iteration, append the friction to `progress.md` for later triage. `forge-bootstrap` writes this section into the repos it scaffolds; **`forge-init` writes it for every other project**, which is what makes the `specs/` hygiene files' "see the project-root `AGENTS.md`" pointer resolve.
 
-`forge-init` runs this step after `forge.config.json` exists. It is **idempotent: never overwrite an existing root file** — a project's own `AGENTS.md`/`CLAUDE.md` is its own, and the `[ -f … ] ||` guard is the whole mechanism (`forge-bootstrap`'s writer carries the same never-overwrite rule, so the two never duplicate each other's block).
+`forge-init` runs this step after `forge.config.json` exists. **Look before you ask**: work out which variants are missing *first*, and prompt only for the ones you would actually write. A question about a file that already exists spends the operator's attention on a write that cannot happen, and a second `forge-init` run must be silent, not repetitive.
 
-Writing a file at the project root is a **`local-write`** action (§ Remedy Safety Ladder): ask **once**, as a single consolidated question covering both variants — *"Write the feature-forge tooling-feedback section to `AGENTS.md`{ and `CLAUDE.md`}?"* — then run the copy. Which variants are offered follows the build-substituted `--host` (§ Interaction Capability Ladder), **never** question-tool availability (INV-5): `AGENTS.md` is always offered; `CLAUDE.md` only when the host is Claude.
+**Which variants apply.** `AGENTS.md` always; `CLAUDE.md` only when the host is Claude — the build-substituted `--host` value (§ Interaction Capability Ladder), exactly as the Specs Directory Hygiene block above resolves the same question, and **never** inferred from which tools this session happens to have (INV-5).
+
+**Then, for each applicable variant, exactly one of three cases:**
+
+1. **The file does not exist.** The only case with anything to write. It is a **`local-write`** (§ Remedy Safety Ladder): ask **once**, as a single consolidated question covering every missing variant — *"Write the feature-forge tooling-feedback section to `AGENTS.md`{ and `CLAUDE.md`}?"* — then run the guarded copy below.
+2. **The file exists and already contains a `## Tooling feedback` heading** (`grep -q '^## Tooling feedback' AGENTS.md`). Nothing to do, by anyone: `forge-bootstrap` wrote it, an earlier `forge-init` wrote it, or the project wrote its own. **Say nothing and do not prompt** — this is the idempotent case, and printing the block again for the operator to paste is how the section ends up in the file twice.
+3. **The file exists and does not contain that heading.** The project owns that file: never append to it, never overwrite it, and do not prompt — there is no write to consent to. Print the template's "Tooling feedback" section once for the operator to paste, and say that is what you are doing.
+
+**Anchor the write at the project root first.** Unlike the Specs sibling, whose target is the config-derived `<specsDir>` path, these targets are bare and `$PWD`-relative — and a shell's cwd persists between calls. `AGENTS.md` written into the wrong directory is not a stray file: it is an agent-instruction file every coding agent in that directory will read as instructions, and `$HOME` is the realistic wrong directory. The `[ -f … ] ||` guard prevents a clobber but not a *creation*, so assert the root before either copy:
+
+```bash
+[ -f forge.config.json ] || { echo "root hygiene: not at the project root ($PWD) — skipping" >&2; exit 1; }
+```
 
 ```bash
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -225,9 +237,11 @@ R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-
 [ -f CLAUDE.md ] || cp "$R/references/templates/root-hygiene/CLAUDE.md" CLAUDE.md
 ```
 
-**When a root file already exists**, the copy is a no-op by design and nothing is silently merged: print the template's "Tooling feedback" section for the user to paste into their file, and say that is what you are doing.
+The `[ -f … ] ||` guard is the mechanism, not the case analysis above: even if the cases were misread, the copy cannot overwrite. Case 2 is what keeps a *second* run quiet; the guard is what keeps it safe.
 
-**Rung-3 default** (§ Interaction Capability Ladder, "anything not listed above" → skip and state which): a `local-write` with no way to ask degrades to advise-only — write nothing, and state that the tooling-feedback section was skipped and how to get it (`/feature-forge:forge-init` from an interactive session, or paste the template).
+**Staging.** `forge-init` has no git commit step of its own, so a file written here would otherwise sit untracked and be swept into whatever commits next (a stage commit, or a loop iteration's first commit). Name each file written and `git add` it, leaving it staged for the operator rather than loose.
+
+**Rung-3 default** (§ Interaction Capability Ladder). This is not a *preflight remedy* — `doctor` emitted no remedy here — so it takes the table's catch-all row, "skip, and state which": write nothing, and state that the tooling-feedback section was skipped and how to get it (re-run `forge-init` from an interactive session, or paste the template). That is the same posture the safety ladder's "degrade one tier stricter" rule produces for an unaskable `local-write`, reached by the ladder rather than by borrowing a row this site does not sit in.
 
 ## Epic Context Injection
 

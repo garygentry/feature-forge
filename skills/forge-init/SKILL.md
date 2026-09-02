@@ -51,12 +51,16 @@ Options: **Enable (recommended)** / **Leave off**.
   `forge.config.json` in place, preserving formatting and every other key.
 - On **Leave off**: leave the config as written (`autoVerify: false`).
 
-Follow the Interaction Capability Ladder (`references/shared-conventions.md`) for rung 2/3: at
-rung 2 (no structured tool, host can still prompt and wait — e.g. Codex), ask the same question
-in plain prose and wait for the reply; same choice, different rendering. At rung 3 (genuinely
-non-interactive), this question's declared default is the no-write / no-proceed option — skip
+Follow the Interaction Capability Ladder (`references/shared-conventions.md`), and **assess the
+rung before you ask anything** — the rung-2 test is whether *this invocation* can put a question
+to a human and get an answer back, **not** whether a structured tool is present. A headless run
+(`-p`, `--mode json`, `codex exec`, any CI/JSON invocation with no reply channel) is **rung 3**
+even though it, too, has no structured tool. At rung 2 (an interactive session that merely lacks
+the tool), ask the same question in plain prose and wait for the reply; same choice, different
+rendering. At rung 3 this question's declared default is the no-write / no-proceed option — skip
 the prompt, leave `autoVerify: false`, state the rung-3 default taken, and print the one-line
-note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.`
+note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.` The
+same rung governs every remaining step below: never emit a question a rung-3 run cannot answer.
 
 ## Preflight the install
 
@@ -66,23 +70,34 @@ Once the config exists, check the tooling this project's pipeline will lean on:
 R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" doctor --json \
-  --check plugin-root --check root-version-skew --check gh-available
+  --check root-version-skew --check gh-available
 ```
 
 Follow `references/preflight-and-self-heal.md` with that result: all `ok`/`na` → say nothing and
-move on. Otherwise cluster and report. `gh-available` matters here because the tooling-feedback
-step below tells agents to file issues with `gh issue create`; when `gh` is missing or
-unauthenticated, say so once — its remedies are `global-install`/`network`, so they are
-**advise-only** and nothing is executed. `plugin-root` and `root-version-skew` are reported the
-same way; a stale or unresolvable install is worth knowing about before the first stage runs.
+move on. Otherwise cluster and report. **Neither check is a stop for `forge-init`** — report and
+continue; a `warn` here never aborts initialization (the procedure returns statuses; the caller
+owns its own gate). `gh-available` matters because the tooling-feedback step below tells agents
+to file issues with `gh issue create`; when `gh` is missing or unauthenticated, say so once — its
+remedies are `global-install`/`network`, so they are **advise-only** and nothing is executed. It
+is **one informational line, never a prompt**: `gh` is optional (every stage degrades to manual
+steps without it), and this check cannot return `na`, so a machine without `gh` must not be
+interrogated about it on every init.
+`root-version-skew` is reported the same way: a second install shadowing this one is worth
+knowing about before the first stage runs.
+
+(`plugin-root` is deliberately **not** in that list. The prelude above already exits 1 when the
+resolver fails, so by the time `doctor` runs the check can only be `ok` — narrowing to checks
+that cannot fire would be theatre.)
 
 ## Root hygiene — tooling feedback
 
 Offer the project-root **Tooling feedback** section, per `references/shared-conventions.md`
-§ Root Hygiene (Tooling Feedback) — that block owns the protocol text, the copy commands, and the
-never-overwrite rule; do not restate them here. It is a `local-write`: one consolidated question
-covering the variants the host is offered (`AGENTS.md` always; `CLAUDE.md` only on Claude, from the
-build-substituted `--host` — never from tool availability), then run the copy. This is what makes
-the `specs/` hygiene files' "see the project-root `AGENTS.md`" pointer resolve.
+§ Root Hygiene (Tooling Feedback) — that block owns the protocol text, the copy commands, the
+three-case analysis, and the never-overwrite rule; do not restate them here. In short: decide
+which variants are **missing** first, ask once as a `local-write` only for those, and stay silent
+about a file that already carries the section. `AGENTS.md` always; `CLAUDE.md` only on Claude,
+read from the bundle's own `agent` field — never from tool availability. **At rung 3 this step
+writes nothing and says so** (that block's declared default). This is what makes the `specs/`
+hygiene files' "see the project-root `AGENTS.md`" pointer resolve.
 
 After initialization, start the pipeline with `/feature-forge:forge-1-prd <feature-name>`.
