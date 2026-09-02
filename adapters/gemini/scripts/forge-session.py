@@ -188,7 +188,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Callable, Final, Literal, NamedTuple, NoReturn, TypedDict, get_args
 
 
@@ -1681,6 +1681,53 @@ _PROBE_TIMEOUT_S: Final[int] = 10
 #: Evidence carries at most this many characters of any probe stream.
 _PROBE_OUTPUT_CAP: Final[int] = 400
 
+#: The launcher-stamped interaction contract (#244 P3.5, roadmap D2a). A launcher
+#: that KNOWS the session it is spawning has no reply channel states it here;
+#: feature-forge only ever READS this variable, never sets or exports it. Values
+#: are ``INTERACTION_MODES``; anything else is reported as ``unknown`` with the
+#: raw value as evidence. Named without ``KEY``/``SECRET``/``TOKEN`` so no host's
+#: environment policy strips it before the session sees it (verified on Codex).
+INTERACTION_ENV_VAR: Final[str] = "FORGE_INTERACTION"
+#: Every adapter id ``scripts/build-adapters.py`` emits; the bundle sentinel's
+#: ``agent`` must be one of these to be trusted. Mirrored (not imported — this
+#: file is copied verbatim into each bundle) and pinned by a parity test.
+_ADAPTER_AGENT_IDS: Final[frozenset[str]] = frozenset(
+    {"claude", "codex", "copilot", "cursor", "gemini", "pi"}
+)
+INTERACTION_MODES: Final[tuple[str, ...]] = ("interactive", "non-interactive")
+#: Harness binaries whose argv in process ancestry is a VERIFIED mode signal.
+#: Deliberately excludes Codex: its shell tool executes under a long-lived,
+#: init-parented ``app-server`` daemon that predates the session, so the nearest
+#: ``codex`` ancestor describes the DAEMON's launch mode, not this session's
+#: (#261 spike). Inferring from it would confidently report the wrong mode — the
+#: one failure the ``unknown``-never-``non-interactive`` rule exists to prevent.
+_ANCESTRY_MODE_HARNESSES: Final[frozenset[str]] = frozenset({"claude", "pi"})
+#: Harness binaries recognised in ancestry for the HOST axis only. A ``codex``
+#: ancestor does identify the host (the daemon is Codex's); only its mode is
+#: unreadable. ``cursor-agent`` is the binary; ``cursor`` is the adapter id.
+_ANCESTRY_HOSTS: Final[tuple[tuple[str, str], ...]] = (
+    ("claude", "claude"), ("pi", "pi"), ("codex", "codex"),
+    ("cursor-agent", "cursor"), ("copilot", "copilot"), ("gemini", "gemini"),
+)
+#: argv flags that put a recognised harness into print/headless mode.
+_HEADLESS_FLAGS: Final[frozenset[str]] = frozenset({"-p", "--print"})
+#: argv flags that RESTORE a reply channel to an otherwise-headless invocation.
+#: Claude's SDK streaming mode (``--print --input-format stream-json``) is
+#: bidirectional and its host CAN answer, so ``--print`` alone does not prove
+#: "nobody is there". Presence of any of these withdraws the headless claim.
+_REPLY_CHANNEL_FLAGS: Final[frozenset[str]] = frozenset(
+    {"--input-format", "--permission-prompt-tool"}
+)
+#: Depth cap on the ancestry walk — a guard, not a tuning knob.
+_ANCESTRY_MAX_DEPTH: Final[int] = 16
+#: A plausible executable basename. Anything else is redacted to ``?`` before it
+#: reaches evidence: a process whose ``argv[0]`` is descriptive text rather than
+#: a path (``sshd: gary@pts/6``, kernel threads) can carry a username, and every
+#: evidence field lands in ``doctor --json`` output that gets pasted into issues.
+_EXEC_NAME_RE: Final = re.compile(r"^[A-Za-z0-9._+-]{1,64}$")
+#: Adapter ids that keep their own ``--host`` value; every other id is generic.
+_NAMED_HOST_ARGS: Final[frozenset[str]] = frozenset({"claude", "pi"})
+
 
 def _remedy(description: str, command: str | None, safety: str) -> dict:
     """Build a remedy record — advice as data, in the fixed key order.
@@ -2975,6 +3022,227 @@ def _check_sandbox_root(ctx: _CheckContext) -> dict:
     return _result("ok", detail, status)
 
 
+def _process_ancestry(
+    start_pid: int, *, proc_root: Path = Path("/proc"), max_depth: int = _ANCESTRY_MAX_DEPTH,
+) -> list[dict]:
+    """Walk ``/proc`` from ``start_pid`` upward; never raises, never blocks.
+
+    Returns one entry per readable ancestor, nearest first:
+    ``{"pid", "name", "flags"}`` where ``name`` is the basename of ``argv[0]``
+    and ``flags`` are the ``_HEADLESS_FLAGS`` present in that argv.
+
+    **Only** those two fields are extracted, and ``name`` is redacted to ``?``
+    unless it looks like an executable basename (``_EXEC_NAME_RE``). Raw argv is
+    never returned: a parent's command line can carry credentials or a username,
+    and every field here reaches ``doctor --json`` output that gets pasted into
+    issues and PRs.
+    """
+    chain: list[dict] = []
+    pid = start_pid
+    seen: set[int] = set()
+    for _ in range(max_depth):
+        if pid <= 0 or pid in seen:
+            break
+        seen.add(pid)
+        try:
+            # `stat` first: it carries the ppid, so a frame whose `cmdline` is
+            # unreadable (hidepid, a uid boundary, a pid that just exited) costs
+            # us its NAME but not the rest of the walk.
+            stat = (proc_root / str(pid) / "stat").read_text(encoding="utf-8", errors="replace")
+            ppid = int(stat.rsplit(") ", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+        try:
+            raw = (proc_root / str(pid) / "cmdline").read_bytes()
+            argv = [part for part in raw.decode("utf-8", "replace").split("\0") if part]
+        except OSError:
+            argv = []
+        if argv:
+            # Basename only a real path: `sshd: gary@pts/6` would otherwise
+            # basename to `6`, which is both meaningless and a hint at a real user.
+            argv0 = argv[0]
+            name = (
+                PurePosixPath(argv0).name.lstrip("-")
+                if not (set(argv0) & {" ", ":", "\t"}) else "?"
+            )
+            chain.append({
+                "pid": pid,
+                "name": name if _EXEC_NAME_RE.match(name) else "?",
+                "flags": sorted(set(argv[1:]) & _HEADLESS_FLAGS),
+                "replyFlags": sorted(set(argv[1:]) & _REPLY_CHANNEL_FLAGS),
+                # False when the process exposes no arguments at all — either it
+                # genuinely had none, or it overwrote its argv (see _classify_ancestry).
+                "hasArgs": len(argv) > 1,
+            })
+        if pid == 1:
+            break
+        pid = ppid
+    return chain
+
+
+def _classify_ancestry(chain: list[dict]) -> dict:
+    """Derive ``{mode, host, harness}`` from an ancestry chain. Pure.
+
+    The **nearest** recognised harness ancestor decides both axes, so a nested
+    session is read as itself rather than as whatever launched its launcher.
+
+    Asymmetric by design. Claiming ``non-interactive`` makes a skill take silent
+    defaults, so it is claimed only from a verified harness carrying an explicit
+    headless flag. Claiming ``interactive`` only risks a question nobody answers
+    — today's behavior — so it is claimed from a verified harness that exposes
+    arguments and carries no headless flag. Everything else is ``None``
+    (reported as ``unknown``), never a guess either way.
+
+    A harness exposing **no arguments at all** yields no mode. Measured: Pi
+    overwrites its own argv with its process title, so ``/proc/<pid>/cmdline``
+    for a ``pi -p --mode json`` session reads exactly ``pi`` with the flags
+    erased. Without this rule that session is read as *interactive* — a
+    confidently wrong claim in the dangerous direction. The rule is written
+    against the argv, not against Pi, so it covers any harness that sets a
+    process title, and Pi starts detecting again for free if it ever stops.
+    """
+    for entry in chain:
+        host = next((hid for name, hid in _ANCESTRY_HOSTS if entry["name"] == name), None)
+        if host is None:
+            continue
+        if entry["name"] not in _ANCESTRY_MODE_HARNESSES or not entry["hasArgs"]:
+            return {"mode": None, "host": host, "harness": entry["name"]}
+        if entry["flags"] and entry["replyFlags"]:
+            # Headless-looking but a reply channel is wired back in — refuse both
+            # claims rather than pick the wrong one.
+            return {"mode": None, "host": host, "harness": entry["name"]}
+        mode = "non-interactive" if entry["flags"] else "interactive"
+        return {"mode": mode, "host": host, "harness": entry["name"]}
+    return {"mode": None, "host": None, "harness": None}
+
+
+def _bundle_agent(root: Path) -> str | None:
+    """The adapter id this script was installed as, from its bundle sentinel.
+
+    ``scripts/forge-session.py`` is copied byte-identically into every
+    ``adapters/<agent>/scripts/``, so the sentinel beside it names the host
+    exactly — the one host fact that is neither guessed nor inferred. Absent at
+    the mainline repo root (a dogfood checkout is not a bundle), which is why
+    ``_check_interaction_mode`` falls back to ancestry rather than failing.
+    """
+    try:
+        manifest = root / ".feature-forge-bundle.json"
+        if not manifest.is_file():
+            return None
+        agent = _load_config(manifest).get("agent")
+    except (OSError, ValueError, RecursionError):
+        return None
+    return agent if isinstance(agent, str) and agent in _ADAPTER_AGENT_IDS else None
+
+
+def _check_interaction_mode(ctx: _CheckContext) -> dict:
+    """Report the session's interaction mode and host as DATA a skill reads.
+
+    Closes the gap #261 measured: a model has no observable signal for "this
+    invocation has no reply channel", so off-Claude headless runs self-assess
+    rung 2, emit a prose question and stall — including every rauf loop
+    iteration, which runs non-interactively by construction.
+
+    The split this check is built on: a model CAN observe rung 1 vs rung 2 (does
+    it have a structured question tool) and CANNOT observe rung 2 vs rung 3 (is
+    there a reply channel). This supplies exactly the half the model cannot see,
+    and never the half it can — so it informs the ladder without becoming the
+    host-implies-capability proxy INV-5 forbids.
+
+    Precedence: the launcher's explicit stamp, then verified process ancestry,
+    then ``unknown``. ``unknown`` means "self-assess as today" and is reported
+    as ``na``; it is NEVER reported as non-interactive, because guessing
+    headless would make an interactive session silently skip its questions and
+    take no-write defaults — a silent behavior change traded for a visible
+    stall, which is worse than the bug.
+
+    Spawns nothing: the whole check is one env read plus ``/proc`` reads.
+    """
+    raw = os.environ.get(INTERACTION_ENV_VAR)
+    stamp = raw.strip().lower() if isinstance(raw, str) else ""
+    chain = _process_ancestry(os.getppid())
+    inferred = _classify_ancestry(chain)
+    bundle_agent = _bundle_agent(Path(__file__).resolve().parent.parent)
+
+    mode, source = (stamp, "env-stamp") if stamp in INTERACTION_MODES else (None, None)
+    # A POSITIVE contradiction between the two signals resolves to neither. The
+    # stamp normally wins (it is stated, not inferred), but when ancestry has a
+    # confident opposite reading the honest answer is that we do not know — and
+    # `unknown` (self-assess, ask) is the only resolution that cannot silently
+    # skip a question in a session someone is actually watching. Ancestry that
+    # merely fails to read a mode is not a contradiction and does not trigger this.
+    conflict = (
+        source == "env-stamp"
+        and inferred["mode"] is not None
+        and inferred["mode"] != mode
+    )
+    if conflict:
+        mode, source = None, None
+    if mode is None and not conflict and inferred["mode"] is not None:
+        mode, source = inferred["mode"], "ancestry"
+    host = bundle_agent or inferred["host"]
+    host_arg = None if host is None else (host if host in _NAMED_HOST_ARGS else "generic")
+
+    evidence: dict = {
+        "mode": mode or "unknown",
+        "modeSource": source,
+        "rung": 3 if mode == "non-interactive" else None,
+        "host": host,
+        "hostArg": host_arg,
+        "hostSource": "bundle" if bundle_agent else ("ancestry" if host else None),
+        "envVar": INTERACTION_ENV_VAR,
+        "envStamp": _head(raw) if raw else None,
+        "harness": inferred["harness"],
+        # Basenames and headless flags only — never a parent's raw argv (§ _process_ancestry).
+        "ancestry": chain,
+    }
+    if raw and stamp not in INTERACTION_MODES:
+        evidence["envStampError"] = (
+            f"{INTERACTION_ENV_VAR} is not one of {', '.join(INTERACTION_MODES)}"
+        )
+    if conflict:
+        evidence["conflict"] = (
+            f"{INTERACTION_ENV_VAR}={stamp} but {inferred['harness']} ancestry "
+            f"looks {inferred['mode']} — neither is trusted"
+        )
+
+    where = f"host {host or 'unknown'}"
+    if conflict:
+        return _result(
+            "warn",
+            f"interaction signals contradict ({where}): {evidence['conflict']}; "
+            "treating the mode as unknown — skills self-assess the rung",
+            evidence,
+            _remedy(
+                f"Unset {INTERACTION_ENV_VAR} in this shell if it was exported by hand, or "
+                f"correct the launcher that sets it — a stale stamp claiming 'non-interactive' "
+                f"in an attended session would make skills skip their questions silently",
+                None,
+                "read-only",
+            ),
+        )
+    if mode is None:
+        return _result(
+            "na",
+            f"interaction mode undetermined ({where}) — skills self-assess the rung as before",
+            evidence,
+            _remedy(
+                f"Have the launcher state the mode: set {INTERACTION_ENV_VAR} to "
+                f"'non-interactive' when spawning a session with no reply channel, or "
+                f"'interactive' otherwise. Never guessed from the host (INV-5)",
+                None,
+                "read-only",
+            ),
+        )
+    if mode == "non-interactive":
+        return _result(
+            "ok",
+            f"non-interactive session ({where}, via {source}) — rung 3: declared defaults apply",
+            evidence,
+        )
+    return _result("ok", f"interactive session ({where}, via {source})", evidence)
+
+
 #: The check registry — registry order is output order (docs/doctor-checks.md).
 DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = (
     _make_spec("plugin-root", "blocking", _check_plugin_root),
@@ -2992,6 +3260,7 @@ DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = (
     _make_spec("branch-state", "advisory", _check_branch_state),
     _make_spec("gh-available", "advisory", _check_gh_available),
     _make_spec("sandbox-root", "advisory", _check_sandbox_root),
+    _make_spec("interaction-mode", "advisory", _check_interaction_mode),
 )
 
 #: The ids, in registry order, for ``--check`` choices and the catalog parity test.

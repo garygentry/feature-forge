@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import json
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -295,3 +296,98 @@ def test_root_hygiene_template_ships_untranslated(target: str, filename: str) ->
         f"{shipped.relative_to(REPO_ROOT)} diverges from canon — project-content "
         "templates must ship verbatim (build-adapters.py `_reference_translation_exempt`)"
     )
+
+
+# --------------------------------------------------------------------------- #
+# #244 P3.5 (#261): the rung is DATA a skill reads, on every first-class host
+# --------------------------------------------------------------------------- #
+
+#: The check id and launcher contract the ladder tells every host to read.
+_INTERACTION_CHECK_ID = "interaction-mode"
+_INTERACTION_ENV_VAR = "FORGE_INTERACTION"
+
+
+@pytest.mark.parametrize("target", ("claude", "pi") + NON_CLAUDE_TARGETS)
+def test_ladder_points_every_bundle_at_the_interaction_record(target: str) -> None:
+    """Every bundle's ladder names the check that supplies the rung.
+
+    Without this the ladder is back to asking for a self-assessment no model can
+    make (#261): five headless runs across two hosts each guessed "interactive"
+    and stalled. The pointer, not the prose, is what made rung 3 reachable.
+    """
+    text = (ADAPTERS_ROOT / target / "references" / "shared-conventions.md").read_text(
+        encoding="utf-8",
+    )
+    assert _INTERACTION_CHECK_ID in text, (
+        f"{target}'s bundled ladder no longer names the `{_INTERACTION_CHECK_ID}` check "
+        "— the rung would fall back to a self-assessment that is measurably wrong"
+    )
+    assert _INTERACTION_ENV_VAR in text, (
+        f"{target}'s bundled ladder lost the `{_INTERACTION_ENV_VAR}` launcher contract "
+        "— the only signal that reaches a host with no observable one"
+    )
+    assert "`unknown` is never" in text, (
+        f"{target}'s bundled ladder lost the rule that undetermined is NEVER read as "
+        "headless — guessing headless makes an interactive run skip its questions"
+    )
+
+
+@pytest.mark.parametrize("target", ("pi",) + NON_CLAUDE_TARGETS)
+def test_host_overlay_defers_the_rung_to_the_record_not_to_self_judgement(
+    target: str,
+) -> None:
+    """The overlays' own rung instruction points at the record.
+
+    Codex is the pointed case: its overlay used to say "under `codex exec` … take
+    the conservative default", which is unreachable — run 5 of #261 had Codex
+    report `rung 2 (interactive Codex)` *while running under `codex exec`*. An
+    overlay that asks a Codex agent to judge its own mode is inert by construction.
+    """
+    skill_dir = ADAPTERS_ROOT / target / "skills" / "forge-init"
+    # Bundles differ in the emitted filename (SKILL.md vs <name>.md) — take whichever
+    # this target emits rather than hardcoding one layout.
+    candidates = sorted(p for p in skill_dir.iterdir() if p.suffix in (".md", ".mdc"))
+    assert candidates, f"{target} bundle has no forge-init skill file"
+    overlay = candidates[0].read_text(encoding="utf-8")
+    assert "Host execution notes" in overlay, f"{target}/forge-init lost its host overlay"
+    assert _INTERACTION_CHECK_ID in overlay, (
+        f"{target}'s host overlay no longer defers the rung to the "
+        f"`{_INTERACTION_CHECK_ID}` record"
+    )
+
+
+def test_codex_overlay_states_the_rung_is_not_self_observable() -> None:
+    """Codex's overlay says *why* it must read the record, not just that it should.
+
+    The failure mode is a confident wrong answer, not a missing one, so the overlay
+    has to contradict the agent's intuition explicitly.
+    """
+    overlay = next(
+        (ADAPTERS_ROOT / "codex" / "skills" / "forge-init").glob("*.md")
+    ).read_text(encoding="utf-8")
+    assert "not** observable from inside the session" in overlay, (
+        "the Codex overlay no longer states that the rung is unobservable from inside "
+        "the session — a Codex agent that trusts its own read reports rung 2 under "
+        "`codex exec` (measured, #261 run 5)"
+    )
+
+
+def test_the_interaction_record_is_reachable_from_every_bundle() -> None:
+    """Each bundle ships the script whose check the ladder tells it to run.
+
+    The ladder's pointer is only as good as the copy of `forge-session.py` beside
+    it; a bundle missing the check would send its agent to a command that exits 2.
+    """
+    for target in ("claude", "pi") + NON_CLAUDE_TARGETS:
+        script = ADAPTERS_ROOT / target / "scripts" / "forge-session.py"
+        assert script.is_file(), f"{target} bundle is missing scripts/forge-session.py"
+        source = script.read_text(encoding="utf-8")
+        assert f'_make_spec("{_INTERACTION_CHECK_ID}"' in source, (
+            f"{target}'s bundled forge-session.py has no `{_INTERACTION_CHECK_ID}` check, "
+            "so its ladder points at a command that cannot answer"
+        )
+        sentinel = ADAPTERS_ROOT / target / ".feature-forge-bundle.json"
+        assert json.loads(sentinel.read_text(encoding="utf-8"))["agent"] == target, (
+            f"{target}'s bundle sentinel does not name itself — the check reads this "
+            "field for the host axis, so a wrong value misreports the host"
+        )

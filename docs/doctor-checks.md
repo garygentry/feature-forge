@@ -69,6 +69,7 @@ guard the loop launch; `advisory` checks are worth knowing but never gate anythi
 | `branch-state` | advisory | A pending (non-complete) feature's recorded state branch differs from the current branch: `adopt-current` on a topic branch, `warn-drift` on the default branch. | not a git repo · no feature has a pending stage | `state-branch --feature … --branch <current>` · `git switch <recorded>` (both `local-write`) |
 | `gh-available` | advisory | GitHub CLI absent, `gh --version` failing, or `gh auth token` exiting non-zero (no credentials). `evidence.tokenFromEnv` notes `GH_TOKEN`/`GITHUB_TOKEN`. | never | install gh (`global-install`, no command) · `gh auth login` (`network`) |
 | `sandbox-root` | advisory | Running as root without `IS_SANDBOX` — the condition forge-5-loop patches at launch. | `os.geteuid` unavailable (Windows) | `export IS_SANDBOX=1` (`read-only`) |
+| `interaction-mode` | advisory | Reports the session's interaction mode and host as **data** rather than a fault: `evidence.mode` is `interactive`/`non-interactive` (`rung: 3` for the latter) and `evidence.host` is the adapter id. Precedence: the `FORGE_INTERACTION` launcher stamp, then verified process ancestry, then `unknown`. Always `ok` when determined. | no signal is readable — reported as `unknown`, **never** as non-interactive | state it explicitly via `FORGE_INTERACTION` (`read-only`, no command) |
 
 Per-feature checks (`config-completeness`, `backlog-present`, `backlog-valid`, `branch-state`)
 carry one row per feature in `evidence.features[]`, each with its own `remedy`. The record's
@@ -76,10 +77,83 @@ top-level `remedy` is that row's remedy when every affected feature agrees (typi
 a `per-feature — see evidence.features[].remedy` pointer at the most conservative tier among
 them, so a consumer never runs one feature's command for another.
 
+## `interaction-mode`: the rung a skill reads instead of guessing
+
+`references/shared-conventions.md` § Interaction Capability Ladder tells a skill to determine its
+interaction rung. A model can observe **rung 1 vs rung 2** — whether it has a structured question
+tool. It cannot observe **rung 2 vs rung 3** — whether anyone is there to answer. Left to guess it
+guesses "interactive", emits a question into a headless run and stalls (#261). This check supplies
+exactly the half the model cannot see, and deliberately not the half it can, so it informs the
+ladder without becoming the host-implies-capability proxy INV-5 forbids.
+
+**`unknown` is never `non-interactive`.** Guessing headless would make an interactive session
+silently skip its questions and take no-write defaults — a silent behavior change traded for a
+visible stall, which is worse than the bug. `unknown` means "self-assess the rung as before".
+
+### `FORGE_INTERACTION` — the launcher contract
+
+A launcher that *knows* the session it spawns has no reply channel states so:
+
+```
+FORGE_INTERACTION=non-interactive   # no reply channel: rung 3, declared defaults apply
+FORGE_INTERACTION=interactive       # a human can answer
+```
+
+feature-forge only ever **reads** this variable — it never sets or exports it. Any other value is
+`unknown` plus an `envStampError`. The name carries no `KEY`/`SECRET`/`TOKEN` substring, so no
+host's environment policy strips it before the session sees it (verified through `codex exec`).
+
+This is the only signal that reaches Codex. Every subprocess-observable alternative is disproven:
+`isatty()` is false even in a fully interactive session; `CODEX_CI` and `TERM=dumb` are injected
+into *every* Codex tool call in both modes; and Codex's shell tool executes under a long-lived,
+init-parented `app-server` daemon that predates the session, so process ancestry there describes
+the daemon's launch mode rather than this session's. `codex` is therefore excluded from the
+ancestry mode detector by design — it still identifies the *host*, never the mode.
+
+### Ancestry fallback
+
+For direct headless runs outside a launcher, the nearest recognised harness ancestor decides:
+carrying `-p`/`--print` is `non-interactive`, exposing arguments without one is `interactive`.
+The asymmetry is deliberate — claiming non-interactive makes a skill take silent defaults, so it
+is claimed only from a verified harness with an explicit headless flag, while claiming
+interactive merely risks a question nobody answers, which is today's behavior.
+
+**A harness that exposes no arguments at all yields no mode.** Measured: Pi overwrites its own
+argv with its process title, so `/proc/<pid>/cmdline` for a `pi -p --mode json --no-session
+--approve` session reads back as exactly `pi` with the flags erased. Without this rule that
+session looks like "a verified harness with no headless flag" and is claimed as *interactive* —
+a confident wrong answer in the dangerous direction, and the first P3.5 smoke run stalled at
+rung 2 for exactly that reason. Note this also means a wrapper's argv is never borrowed: `timeout
+600 pi -p …` puts `-p` in `timeout`'s command line, not Pi's, and under the loop the parent is
+the runner's `node` process, which carries no such flag at all. The rule is written against the
+argv rather than against Pi, so it covers any harness that sets a process title, and Pi begins
+detecting for free if it ever stops.
+
+So in practice ancestry answers for **Claude** (verified live: `claude -p` → `non-interactive`,
+`rung 3`, via ancestry) and identifies the host — but not the mode — for Pi and Codex. Those two
+get their mode from the launcher stamp, which is how every loop iteration is covered.
+
+`evidence.ancestry` carries **only** each ancestor's pid, executable basename and any headless
+flags. Raw argv never appears, and a basename that does not look like an executable (`sshd: gary
+@pts/6`, kernel threads) is redacted to `?` — a parent's command line can carry credentials or a
+username, and evidence lands in output that gets pasted into issues.
+
+When the stamp and ancestry **positively contradict** each other, the check trusts neither: it
+reports `warn` with `evidence.conflict` and a mode of `unknown`, so skills self-assess (i.e. ask)
+rather than skip a question. That is the safe resolution in both directions, and `warn` is what
+gets the record printed on the human path — an `ok` record is suppressed, so the operator whose
+stray `export FORGE_INTERACTION=non-interactive` caused it would otherwise see nothing at all.
+
+Ancestry that merely *cannot read* a mode is not a contradiction — that is the normal loop shape
+for Pi and Codex, where the stamp rightly decides. The residual gap is a stamp leaked into a shell
+whose harness ancestry also yields no mode (a bare `claude` with no arguments): nothing contradicts
+it, so it is honoured. Accepted — it requires a deliberate manual `export`, and honouring an
+explicit statement is the contract.
+
 ## Reading a report
 
 ```
-checks: 12 ok, 2 warn, 0 fail, 1 na
+checks: 13 ok, 2 warn, 0 fail, 1 na
    ! runner-artifacts-stale: .rauf.json was written by rauf-manager@0.13.0; the live runner is 0.14.0
       remedy [local-write]: rauf update .
    ! branch-state: 1 feature(s) with branch drift: widget (warn-drift: on 'main', state records 'forge/widget')

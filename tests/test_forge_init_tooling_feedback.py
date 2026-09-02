@@ -351,44 +351,46 @@ def test_forge_init_points_at_root_hygiene_by_title() -> None:
     )
 
 
-def test_forge_init_rung_2_test_is_not_tool_presence() -> None:
-    """forge-init's rung-2 test matches the ladder's: "can be answered", not "no tool".
+def test_forge_init_reads_the_rung_instead_of_assessing_it() -> None:
+    """forge-init's first question determines the rung from data, not self-judgement.
 
-    This guards WORDING, and only wording. Its history matters, so it is recorded here
-    rather than in a commit message nobody will read at the failure site:
+    Supersedes ``test_forge_init_rung_2_test_is_not_tool_presence`` (#244 P3).
+    That test pinned a *reworded self-assessment*, and its own docstring recorded
+    why the rewording changed nothing: across four headless runs plus a ``main``
+    baseline, every one self-assessed rung 2, emitted a prose question at this
+    exact site and stopped — Codex reporting "rung 2 (interactive Codex)" while
+    running under ``codex exec``. Prose could not reach it, because a model has
+    no model-visible signal for "this invocation has no reply channel". That
+    test named the fix it was waiting for — "a `doctor`-reported interaction mode
+    the skill can READ rather than guess" — and #244 P3.5 (#261) built it, so the
+    property worth pinning changed: not *how well the rung is described*, but
+    *that the skill reads it*.
 
-    forge-init used to condense the ladder as "rung 2 (no structured tool, host can
-    still prompt and wait)". That inverts which half is the test — the ladder says "no
-    structured tool, BUT the host can still prompt and be answered" — and it directly
-    contradicts the ladder's own per-host detection table, which calls `codex exec` and
-    Pi's `-p`/`--mode json` rung 3. The sentence is now aligned with canon.
-
-    What this did NOT do is change behavior. Measured on this branch, four headless
-    runs (`pi -p --mode json` and `codex exec`, before and after the rewording, plus a
-    `main` baseline): every one self-assessed **rung 2**, emitted a prose question at
-    the auto-verify site, and stopped — after the fix Codex still reported "rung 2
-    (interactive Codex)" while running under `codex exec`. The mis-read sentence was a
-    contributing inaccuracy, not the cause. The cause is that a model has no
-    model-visible signal for "this invocation has no reply channel", which is roadmap
-    §6.2 D2's accepted limitation ("self-assessed, adds no new mechanism") meeting its
-    first hard evidence. Fixing it needs a mechanism — a `doctor`-reported interaction
-    mode the skill can READ rather than guess — which is a new mechanism and therefore
-    an operator decision, tracked separately.
-
-    So: if this test fails, the wording drifted back. It never asserted the stall was
-    fixed, and a future reader should not infer that it was.
+    This site is the one that matters: it is the first question a forge-init run
+    reaches, and it fires BEFORE the install preflight, so the record is not
+    already in hand from another gate. A run that defers the determination to the
+    question has already decided to ask.
     """
     body = _body(read(FORGE_INIT))
-    assert "not** whether a structured tool is present" in body, (
-        "forge-init no longer disambiguates the rung-2 test from tool presence, and is "
-        "back to contradicting the ladder's own per-host detection table"
+    assert "--check interaction-mode" in body, (
+        "forge-init's first question no longer reads the rung from doctor's "
+        "interaction-mode record — it is back to a self-assessment that five "
+        "measured headless runs got wrong every time (#261)"
     )
-    for headless in ("-p", "--mode json", "codex exec"):
-        assert headless in body, (
-            f"forge-init no longer names {headless!r} as a rung-3 invocation"
-        )
+    assert "first question" in body, (
+        "forge-init no longer says this is the run's first question, which is why "
+        "the rung must be determined here rather than at the preflight below"
+    )
+    assert "never judge it from your own tool" in body, (
+        "forge-init dropped the INV-5 warning that the tool surface is not the "
+        "signal — the conflation that makes Pi report itself as Claude"
+    )
+    assert "continue with the steps below" in body, (
+        "forge-init's rung-3 branch no longer says the run continues — #263: "
+        "\"no-proceed\" scopes to the decision, never to the skill"
+    )
     assert "never emit a question a rung-3 run cannot answer" in body, (
-        "the rung assessment is scoped to one question again, not to the whole skill"
+        "the rung is scoped to one question again, not to the whole skill"
     )
 
 

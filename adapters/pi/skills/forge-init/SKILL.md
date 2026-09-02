@@ -52,16 +52,23 @@ Options: **Enable (recommended)** / **Leave off**.
   `forge.config.json` in place, preserving formatting and every other key.
 - On **Leave off**: leave the config as written (`autoVerify: false`).
 
-Follow the Interaction Capability Ladder (`references/shared-conventions.md`), and **assess the
-rung before you ask anything** — the rung-2 test is whether *this invocation* can put a question
-to a human and get an answer back, **not** whether a structured tool is present. A headless run
-(`-p`, `--mode json`, `codex exec`, any CI/JSON invocation with no reply channel) is **rung 3**
-even though it, too, has no structured tool. At rung 2 (an interactive session that merely lacks
-the tool), ask the same question in plain prose and wait for the reply; same choice, different
-rendering. At rung 3 this question's declared default is the no-write / no-proceed option — skip
-the prompt, leave `autoVerify: false`, state the rung-3 default taken, and print the one-line
-note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.` The
-same rung governs every remaining step below: never emit a question a rung-3 run cannot answer.
+This is the run's **first question**, so determine your rung before asking it, per the
+Interaction Capability Ladder (`references/shared-conventions.md`) — **read** the rung from
+`doctor`'s `interaction-mode` record as that section directs; never judge it from your own tool
+surface, which cannot see whether anyone is there to answer:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" doctor --json --check interaction-mode
+```
+
+At rung 1 or 2, ask (structured tool, or the same choice in plain prose — then wait for the
+reply). At rung 3 this question's declared default is the no-write / no-proceed option — skip the
+prompt, leave `autoVerify: false`, state the rung-3 default taken, and print the one-line note
+`Set "autoVerify": true in forge.config.json to verify automatically after each stage.` — then
+**continue with the steps below**; declining this edit never ends the skill. The same rung governs
+every remaining step: never emit a question a rung-3 run cannot answer.
 
 ## Preflight the install
 
@@ -110,7 +117,7 @@ After initialization, start the pipeline with `/skill:forge-1-prd <feature-name>
 This Pi bundle preserves Claude's `AskUserQuestion` references because it ships a Pi compatibility extension registering an `AskUserQuestion` tool. On Pi:
 
 - **User input:** use `AskUserQuestion` for genuine user decisions. It supports multiple questions, option descriptions, recommended ordering, multi-select, previews, and free-form Other/custom answers.
-- **Non-interactive (`-p`/`--mode json`):** `AskUserQuestion` is stripped from the tool list; a call attempted anyway fails with `Error: UI not available (running in non-interactive mode)` — never read that as a decline. Take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
+- **Non-interactive (`-p`/`--mode json`):** `AskUserQuestion` is stripped from the tool list, so its absence alone cannot tell you the rung — read that from the Interaction Capability Ladder's `interaction-mode` record. A call attempted anyway fails with `Error: UI not available (running in non-interactive mode)` — never read that as a decline. Take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
 - **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a skill directly, print the exact `/skill:<name> ...` command for the user to run.
 - **Subagents:** this bundle declares its custom agents (`forge-researcher`, `forge-spec-writer`, `forge-verifier`) as package agents. If a `subagent` tool is registered, dispatch one with `{ agent: "forge-verifier", task: "..." }`, or fan several out concurrently with `{ tasks: [{ agent: "forge-spec-writer", task: "..." }, ...] }`. If no `subagent` tool is available, run that step inline yourself.
 - **Background / monitoring (forge-5-loop):** Pi has no built-in background bash, persistent monitor, or push-notification, so do **not** run the loop runner in the foreground and do **not** try to arm one. This bundle registers a **forge-loop-supervisor** extension that IS the "background-execution mechanism" and "monitoring mechanism" Steps 3b–3f refer to. Concretely:
