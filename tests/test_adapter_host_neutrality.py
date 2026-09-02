@@ -181,3 +181,60 @@ def test_no_leaked_host_token(path: Path, forbidden: tuple[str, ...]) -> None:
         f"`_translate_reference_host_terms` and rebuild adapters — do not "
         f"hand-edit adapters/."
     )
+
+
+#: #244 P2 (#252): the Interaction Capability Ladder's canonical title, checked against
+#: the bundled shared-conventions.md of every target.
+_LADDER_TITLE = "Interaction Capability Ladder"
+
+#: The Pi rung-3 backstop error, verbatim — must survive translation unmangled since it
+#: is a literal string a Pi agent matches against, not prose paraphrased per host.
+_PI_RUNG3_ERROR_LITERAL = "Error: UI not available (running in non-interactive mode)"
+
+
+@pytest.mark.parametrize("target", NON_CLAUDE_TARGETS)
+def test_ladder_title_present_in_neutral_bundle(target: str) -> None:
+    """Every non-Claude, non-Pi bundle's shared-conventions.md names the ladder by title.
+
+    The ladder generalizes across hosts precisely because every prompting surface points
+    at one canonical section instead of restating rung-3 behavior locally — a bundle that
+    lost the section itself (a fan-out regression, not a token leak) would defeat that
+    without tripping `test_no_leaked_host_token` at all.
+    """
+    path = ADAPTERS_ROOT / target / "references" / "shared-conventions.md"
+    assert path.is_file(), f"{target} bundle is missing references/shared-conventions.md"
+    text = path.read_text(encoding="utf-8")
+    assert _LADDER_TITLE in text, (
+        f"{path.relative_to(REPO_ROOT)} no longer carries '{_LADDER_TITLE}' — the "
+        f"{target} bundle would have no canonical rung-3 doctrine to point at"
+    )
+    assert "AskUserQuestion" not in text, (
+        f"{path.relative_to(REPO_ROOT)} leaks the literal AskUserQuestion token in its "
+        "ladder section — already covered by test_no_leaked_host_token, restated here "
+        "so a ladder-specific regression reads as a ladder failure, not a generic one"
+    )
+
+
+def test_ladder_title_and_pi_literals_present_in_pi_bundle() -> None:
+    """The Pi bundle keeps both the ladder title AND the literal rung-3 vocabulary.
+
+    Pi is the one target that must NOT degrade `AskUserQuestion` (it ships a real
+    compatibility tool by that name) — this is the positive-presence counterpart to
+    `PI_FORBIDDEN_TOKENS`, which only checks what must be ABSENT.
+    """
+    path = ADAPTERS_ROOT / "pi" / "references" / "shared-conventions.md"
+    assert path.is_file(), "pi bundle is missing references/shared-conventions.md"
+    text = path.read_text(encoding="utf-8")
+    assert _LADDER_TITLE in text, (
+        f"{path.relative_to(REPO_ROOT)} no longer carries '{_LADDER_TITLE}'"
+    )
+    assert "AskUserQuestion" in text, (
+        f"{path.relative_to(REPO_ROOT)} lost the literal AskUserQuestion token in its "
+        "ladder section — Pi's compatibility extension registers a real tool by this "
+        "name, so degrading it here would misdescribe Pi's actual rung-1 mechanism"
+    )
+    assert _PI_RUNG3_ERROR_LITERAL in text, (
+        f"{path.relative_to(REPO_ROOT)} lost the Pi rung-3 backstop error literal "
+        f"{_PI_RUNG3_ERROR_LITERAL!r} — a Pi agent matches this string to distinguish "
+        "a non-interactive stripped-tool failure from a genuine user decline"
+    )
