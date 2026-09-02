@@ -56,5 +56,7 @@ plain text), use that — ask the one question directly and wait for the reply; 
 choice, just rendered differently. Only when the host has **no** way to ask at all (a fully
 non-interactive / headless run) do you skip the prompt: leave `autoVerify: false` and print the
 one-line note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.`
+See the Interaction Capability Ladder (`references/shared-conventions.md`) for the general rung
+rule this local description follows.
 
 After initialization, start the pipeline with `/feature-forge:forge-1-prd <feature-name>`.

@@ -197,6 +197,25 @@ def test_ladder_section_has_four_tiers_and_required_tokens() -> None:
     )
 
 
+def test_rung3_section_points_at_canonical_ladder() -> None:
+    """§4's rung-3 default cites the now-canonical ladder instead of restating it.
+
+    P1 shipped §4 as an interim rule ahead of #252 landing the Interaction Capability
+    Ladder. Once the ladder is canon, §4 must name it by title rather than keep its own
+    "(interim)" caveat — a stale caveat here would leave two homes for the same rule.
+    """
+    text = read(PREFLIGHT)
+    assert "Interaction Capability Ladder" in text, (
+        f"{PREFLIGHT.name} § 4 no longer cites the canonical 'Interaction Capability "
+        "Ladder' title (references/shared-conventions.md) — #252 landed this as the "
+        "one canonical home for the rung rule, and this reference must point at it"
+    )
+    assert "(interim)" not in text, (
+        f"{PREFLIGHT.name} still carries the pre-#252 '(interim)' caveat on its rung-3 "
+        "section — the Interaction Capability Ladder is canon now, so the caveat is stale"
+    )
+
+
 def test_cluster_checks_semantics_match_reference_description(fs) -> None:
     """The reference's Step 2 description of `cluster_checks` must hold in code.
 

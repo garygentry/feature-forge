@@ -79,7 +79,7 @@ A technology constraint is valid when it stems from organizational mandate, exis
 
 ### Interview Approach
 
-**Turn structure:** Output your analysis or context as regular text, then use `AskUserQuestion` for the actual questions. NEVER put questions in your text output — they MUST go through `AskUserQuestion`.
+**Turn structure:** Output your analysis or context as regular text, then use `AskUserQuestion` for the actual questions. NEVER put questions in your text output — they MUST go through `AskUserQuestion`. At rung 2/3, follow the Interaction Capability Ladder.
 
 **Pacing:** Cover one topic area at a time, asking 2-3 related questions per `AskUserQuestion` call. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch.
 

@@ -29,7 +29,7 @@ marked — then **stop and wait for a single text reply**. Parse the reply posit
 (answer N → question N); re-prompt only the unparseable items. The question content (text,
 options, defaults) and the conditional gating (Q4 skipped for go/rust/generic; Q6a only for
 monorepo; Q8 only after a verified-green baseline) are **identical** across both paths — only
-the rendering changes. Never assume answers; always wait for the reply.
+the rendering changes. Never assume answers; always wait for the reply. Non-interactive: follow the Interaction Capability Ladder (`references/shared-conventions.md`).
 
 Emit any context as plain text, then route **all** questions through `AskUserQuestion` (or the
 fallback) — never as inline prose questions, which stall the session.

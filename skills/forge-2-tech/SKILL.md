@@ -81,7 +81,7 @@ Interview the user about technology decisions. Unlike the PRD interview, here yo
 
 ### Interview Approach
 
-**Turn structure:** Output your research findings, analysis, or technical proposals as regular text. Then use `AskUserQuestion` for the actual questions. NEVER put questions in your text output — they MUST go through `AskUserQuestion`.
+**Turn structure:** Output your research findings, analysis, or technical proposals as regular text. Then use `AskUserQuestion` for the actual questions. NEVER put questions in your text output — they MUST go through `AskUserQuestion`. At rung 2/3, follow the Interaction Capability Ladder.
 
 **Pacing:** Present 1-2 decision areas per `AskUserQuestion` call and STOP to wait for the user's response before continuing. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch. Do NOT dump all decision areas in a single message — the interview is a conversation, not a document.
 
