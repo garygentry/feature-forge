@@ -53,3 +53,4 @@ Every document opens with a status line so a reader knows what they are looking 
 | Document | Status | Tracking |
 |---|---|---|
 | [`self-healing-resilience.md`](self-healing-resilience.md) — pipeline self-healing for environment/config faults across Claude, Codex, and Pi | proposal | [#244](https://github.com/garygentry/feature-forge/issues/244) |
+| [`unattended-decision-authority.md`](unattended-decision-authority.md) — unattended pipeline runs: a config-declared decision-authority axis, front-loaded operator brief, and an adversary agent that keeps the driver honest | proposal | none yet |
