@@ -13,7 +13,7 @@ Generate developer-focused architecture documentation for a feature, suitable fo
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall.
+**Turn structure reminder:** Text first, then `AskUserQuestion` for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Read Context
 

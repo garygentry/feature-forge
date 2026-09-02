@@ -33,7 +33,11 @@ with review as the recommended default** — a review pass is cheap relative to 
 loop it audits, and catches gaps before the pipeline moves on to docs. So Step 2d
 adds a **"Run mode"** question, via the host's question mechanism, to the confirmation surface with a
 **fixed, non-improvised option order** (determinism is the point — the option set
-must not vary run-to-run):
+must not vary run-to-run). **Rung-3 default**
+(`references/shared-conventions.md` § Interaction Capability Ladder, "launch / run-mode"
+class): no question mechanism → **STOP** — print the fully rendered command (option 1's
+`--review` included) and do not launch; the `[DEFAULT]` marker below selects the
+option's place in a live prompt, never an unattended launch:
 
 ```
 Run mode:

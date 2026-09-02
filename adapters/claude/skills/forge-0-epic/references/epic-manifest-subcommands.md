@@ -78,3 +78,8 @@ helper exit `≥ 1`. All findings are surfaced **verbatim**.
 | Edit affects in-flight/completed feature | `render-status` derived status (`in-progress`/`complete`) | Warn naming the affected feature(s); require confirmation before applying (E4) |
 | `render-status` over an invalid graph | `render-status` exit ≥ 1 | Surface findings; STOP (do not mutate over an invalid graph) |
 | Git commit fails | — | Report; leave state `in-progress`; never bypass hooks (`--no-verify`/`--force`) |
+
+**Rung-3 default** (`references/shared-conventions.md` § Interaction Capability Ladder,
+"dependency / epic gates" class): no question mechanism → **STOP** on every row above that
+names `AskUserQuestion` — never invent a name or a `--status` value to keep the mutator
+moving unattended.

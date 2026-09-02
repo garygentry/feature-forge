@@ -111,7 +111,7 @@ Resolve the feature directory via the **Feature Directory Resolution** block in 
 
 Determine branch ownership **at entry**, from the literal `owner: nested` / `owner: direct` token in the dispatching prompt (absent the token you are `direct`), and preserve that value unchanged through any re-verify — see Step 7, which passes it through as `--owner`.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall.
+**Turn structure reminder:** Text first, then the host's question mechanism for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Read Configuration and Determine Mode
 
@@ -310,6 +310,6 @@ python3 "$R/scripts/validate-traceability.py" {resolvedFeatureDir}/PRD.md {resol
 
 This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". On Codex:
 
-- **User input:** Codex has no structured question tool — ask the question directly and wait for the user's reply before proceeding. Never skip a required question or assume an answer.
+- **User input:** Codex has no structured question tool. Interactive session — ask the question directly and wait for the reply; never assume an answer. Under `codex exec` (non-interactive) — don't wait: take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
 - **Subagents:** spawn a Codex subagent using the named custom agent under `.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly asked; if the custom agent is unavailable, run that step inline yourself.
 - **Background / monitoring:** run long-lived runner commands in your shell session and report progress as it arrives — there is no Claude-style background or monitoring tool to arm.

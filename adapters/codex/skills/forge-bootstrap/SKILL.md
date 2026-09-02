@@ -28,7 +28,10 @@ marked — then **stop and wait for a single text reply**. Parse the reply posit
 (answer N → question N); re-prompt only the unparseable items. The question content (text,
 options, defaults) and the conditional gating (Q4 skipped for go/rust/generic; Q6a only for
 monorepo; Q8 only after a verified-green baseline) are **identical** across both paths — only
-the rendering changes. Never assume answers; always wait for the reply.
+the rendering changes. Never assume answers; always wait for the reply. At rung 3
+(genuinely non-interactive — Interaction Capability Ladder, `references/shared-conventions.md`),
+this interview has no sane unattended default: `no-default: abort — the bootstrap interview
+requires a human answer`.
 
 Emit any context as plain text, then route **all** questions through the host's question mechanism (or the
 fallback) — never as inline prose questions, which stall the session.
@@ -129,10 +132,15 @@ it null.
 `layout`, `license`, `members[]`, `modeB`, `modeBTarget`, `ci`, `commitStyle`, `author`,
 `host` — and pass it verbatim to `scaffold --answers '<json>'`. Invent no fields beyond that
 schema. Two fields come from your runtime, not the interview: `author` from `git config
-user.name` (else the project name; it is the LICENSE copyright holder), and `host` — `"claude"`
-when running under a Claude host (e.g. the host's question mechanism is available), else `"codex"`/`"other"`.
-`host` drives the host-conditional agent file: the helper always emits `AGENTS.md` and adds
-`CLAUDE.md` only when `host == "claude"`.
+user.name` (else the project name; it is the LICENSE copyright holder), and `host` —
+`"claude"` when you are running as Claude, else `"codex"`/`"other"`. Use your own runtime
+identity, never a capability proxy: **do not** infer `"claude"` from the host's question mechanism
+availability alone — Pi's compatibility extension registers it too, so an available
+question tool does not prove you are Claude specifically (host never implies, and is
+never implied by, a capability; Interaction Capability Ladder,
+`references/shared-conventions.md`). `host` drives the
+host-conditional agent file: the helper always emits `AGENTS.md` and adds `CLAUDE.md` only
+when `host == "claude"`.
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -244,6 +252,6 @@ no run ends silently:
 
 This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". On Codex:
 
-- **User input:** Codex has no structured question tool — ask the question directly and wait for the user's reply before proceeding. Never skip a required question or assume an answer.
+- **User input:** Codex has no structured question tool. Interactive session — ask the question directly and wait for the reply; never assume an answer. Under `codex exec` (non-interactive) — don't wait: take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
 - **Subagents:** spawn a Codex subagent using the named custom agent under `.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly asked; if the custom agent is unavailable, run that step inline yourself.
 - **Background / monitoring:** run long-lived runner commands in your shell session and report progress as it arrives — there is no Claude-style background or monitoring tool to arm.

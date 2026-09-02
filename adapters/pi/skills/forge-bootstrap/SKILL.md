@@ -28,7 +28,10 @@ marked — then **stop and wait for a single text reply**. Parse the reply posit
 (answer N → question N); re-prompt only the unparseable items. The question content (text,
 options, defaults) and the conditional gating (Q4 skipped for go/rust/generic; Q6a only for
 monorepo; Q8 only after a verified-green baseline) are **identical** across both paths — only
-the rendering changes. Never assume answers; always wait for the reply.
+the rendering changes. Never assume answers; always wait for the reply. At rung 3
+(genuinely non-interactive — Interaction Capability Ladder, `references/shared-conventions.md`),
+this interview has no sane unattended default: `no-default: abort — the bootstrap interview
+requires a human answer`.
 
 Emit any context as plain text, then route **all** questions through `AskUserQuestion` (or the
 fallback) — never as inline prose questions, which stall the session.
@@ -129,10 +132,15 @@ it null.
 `layout`, `license`, `members[]`, `modeB`, `modeBTarget`, `ci`, `commitStyle`, `author`,
 `host` — and pass it verbatim to `scaffold --answers '<json>'`. Invent no fields beyond that
 schema. Two fields come from your runtime, not the interview: `author` from `git config
-user.name` (else the project name; it is the LICENSE copyright holder), and `host` — `"claude"`
-when running under a Claude host (e.g. `AskUserQuestion` is available), else `"codex"`/`"other"`.
-`host` drives the host-conditional agent file: the helper always emits `AGENTS.md` and adds
-`CLAUDE.md` only when `host == "claude"`.
+user.name` (else the project name; it is the LICENSE copyright holder), and `host` —
+`"claude"` when you are running as Claude, else `"codex"`/`"other"`. Use your own runtime
+identity, never a capability proxy: **do not** infer `"claude"` from `AskUserQuestion`
+availability alone — Pi's compatibility extension registers it too, so an available
+question tool does not prove you are Claude specifically (host never implies, and is
+never implied by, a capability; Interaction Capability Ladder,
+`references/shared-conventions.md`). `host` drives the
+host-conditional agent file: the helper always emits `AGENTS.md` and adds `CLAUDE.md` only
+when `host == "claude"`.
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -245,6 +253,7 @@ no run ends silently:
 This Pi bundle preserves Claude's `AskUserQuestion` references because it ships a Pi compatibility extension registering an `AskUserQuestion` tool. On Pi:
 
 - **User input:** use `AskUserQuestion` for genuine user decisions. It supports multiple questions, option descriptions, recommended ordering, multi-select, previews, and free-form Other/custom answers.
+- **Non-interactive (`-p`/`--mode json`):** `AskUserQuestion` is stripped from the tool list; a call attempted anyway fails with `Error: UI not available (running in non-interactive mode)` — never read that as a decline. Take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
 - **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a skill directly, print the exact `/skill:<name> ...` command for the user to run.
 - **Subagents:** this bundle declares its custom agents (`forge-researcher`, `forge-spec-writer`, `forge-verifier`) as package agents. If a `subagent` tool is registered, dispatch one with `{ agent: "forge-verifier", task: "..." }`, or fan several out concurrently with `{ tasks: [{ agent: "forge-spec-writer", task: "..." }, ...] }`. If no `subagent` tool is available, run that step inline yourself.
 - **Background / monitoring (forge-5-loop):** Pi has no built-in background bash, persistent monitor, or push-notification, so do **not** run the loop runner in the foreground and do **not** try to arm one. This bundle registers a **forge-loop-supervisor** extension that IS the "background-execution mechanism" and "monitoring mechanism" Steps 3b–3f refer to. Concretely:

@@ -52,10 +52,11 @@ Options: **Enable (recommended)** / **Leave off**.
   `forge.config.json` in place, preserving formatting and every other key.
 - On **Leave off**: leave the config as written (`autoVerify: false`).
 
-If the host lacks a structured question tool but can still prompt the user (e.g. Codex asks in
-plain text), use that — ask the one question directly and wait for the reply; it is the same
-choice, just rendered differently. Only when the host has **no** way to ask at all (a fully
-non-interactive / headless run) do you skip the prompt: leave `autoVerify: false` and print the
-one-line note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.`
+Follow the Interaction Capability Ladder (`references/shared-conventions.md`) for rung 2/3: at
+rung 2 (no structured tool, host can still prompt and wait — e.g. Codex), ask the same question
+in plain prose and wait for the reply; same choice, different rendering. At rung 3 (genuinely
+non-interactive), this question's declared default is the no-write / no-proceed option — skip
+the prompt, leave `autoVerify: false`, state the rung-3 default taken, and print the one-line
+note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.`
 
 After initialization, start the pipeline with `/feature-forge:forge-1-prd <feature-name>`.

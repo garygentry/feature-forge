@@ -16,7 +16,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 **Ownership.** Determine branch ownership **at entry**, from the literal `owner: nested` / `owner: direct` token in the prompt that dispatched you. **Absent the token you are `direct`** — a user-typed `/feature-forge:forge-fix` is the only path that carries no dispatcher. Judge the token, never the phrasing of the invocation. Preserve that value unchanged through any re-verify and pass it straight through as `--owner` in Step 7. A **direct** fix stays the terminal owner through its optional re-verify; a **nested** fix invokes nested verify and returns its structured result to the outer stage, printing no terminal block at all. `references/stage-exit-protocol.md` § "Branch ownership: the `owner:` token" owns this rule.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall.
+**Turn structure reminder:** Text first, then the host's question mechanism for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Locate Findings and Establish the Served Stage
 
@@ -178,6 +178,6 @@ Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: sur
 
 This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
 
-- **User input:** ask the question directly and wait for the answer before proceeding. Do not skip a required question or assume an answer.
+- **User input:** ask the question directly and wait for the answer when your runtime can prompt and wait; never assume one. When your runtime is genuinely non-interactive, take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
 - **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
 - **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.

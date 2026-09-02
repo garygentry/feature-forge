@@ -17,7 +17,7 @@ If no feature name is provided:
 
 ### CRITICAL GUARDRAIL: Use the host's question mechanism for All Questions
 
-You MUST use the host's question mechanism whenever you need the user's input before proceeding. This includes yes/no confirmations, choices between options, interview questions, and feedback on artifacts. NEVER output questions as inline prose text — the user may not be prompted and the session will stall.
+You MUST use the host's question mechanism for every question whenever it is present in your tool surface. This includes yes/no confirmations, choices between options, interview questions, and feedback on artifacts. NEVER output questions as inline prose text — the user may not be prompted and the session will stall. When the tool is absent, or you are running non-interactively, follow the **Interaction Capability Ladder** below instead of assuming an answer.
 
 **Required turn structure:** Output your analysis, findings, or context as regular text. Then call the host's question mechanism with your questions. Do NOT mix questions into your text output.
 
@@ -52,6 +52,54 @@ Two modes, and make clear which one you're in:
 For genuinely comparable artifacts (competing module structures, two code snippets, layout variants), use the host's question mechanism `preview` field to show them side-by-side.
 
 The **Branch Setup** block below is the reference pattern: a strong recommendation as the first option, rationale inline, the alternative still available, never a hard-stop.
+
+## Interaction Capability Ladder
+
+This is the **one canonical statement** of interaction capability (`roadmap/self-healing-resilience.md` §5.4) — every prompting surface in canon points here **by title** rather than restating it. Written to read correctly **independent of the host name**, including after the build's host-term translation degrades the Claude-native tool name to host-neutral phrasing on non-Claude, non-Pi targets.
+
+```text
+  Rung 1  Structured question tool present   →  use it (the concrete tool name is
+                                                 your host's own — see its overlay
+                                                 notes, e.g. Pi's below).
+  Rung 2  No structured tool, but the host    →  ask in plain prose and wait for the
+          can still prompt and be answered       reply. This IS the sanctioned rung-2
+          (Codex interactive)                    mechanism, not the "never embed a
+                                                 question in text output" violation
+                                                 that guardrail names for rung 1.
+  Rung 3  Genuinely non-interactive           →  take the DECLARED default, STATE that
+          (print/JSON mode, headless CI)          you took it and why, and record it.
+                                                 Never stall.
+```
+
+**Two independent axes.** `--host` is **static** per adapter bundle — the build-substituted `--host` value — and never implies a rung either direction (INV-5): a Claude session can still run non-interactively (`claude -p`), and an interactive Codex session is not rung 3 just because Codex lacks a structured tool. **Rung is dynamic**, self-assessed once per turn exactly as `--verify-capability` is self-assessed (`references/stage-exit-protocol.md` § Host and capability determination), and — whenever it is not rung 1 — **stated once** in output: `interaction: rung 3 (non-interactive) — declared defaults apply`.
+
+**Detection, per host:**
+- **Claude:** the question tool is absent from the tool surface, or no TTY is attached — rung 3.
+- **Codex:** `codex exec` (the non-interactive invocation) — rung 3; an interactive `codex` session is rung 2.
+- **Pi:** the host's question mechanism is **stripped from the tool list** in `-p`/`--mode json`; a call attempted anyway fails clearly — `Error: UI not available (running in non-interactive mode)` — the rung-3 backstop, **never** read as a user decline.
+
+**Rung-3 rule (conservative-only, INV-6).** At a rung-3 site, either:
+- take the declared default — always the **no-write / no-proceed** option: it **never advances a pipeline stage**, launches a loop, applies a remedy, creates a branch, commits, or records a decision — and state that default and why; or
+- when no conservative default exists (an interview question with no sane unattended answer), emit `no-default: abort — <question> requires a human answer` and stop.
+
+Either outcome **must be stated in the output** — a rung-3 site that silently proceeds or silently stalls is a defect, not a degraded pass.
+
+**Site classes.** Rather than a per-site declaration (107 sites and rising), every question surface that uses the host's question mechanism inherits its rung-3 default from its class — a surface cites this table by title, never restating its own row:
+
+| Class | Rung-3 default |
+|---|---|
+| Verification warnings | STOP; print the verify command |
+| Dependency / epic gates | STOP |
+| Launch / run-mode | STOP; print the rendered command |
+| Preflight remedies | `local-write` degrades to advise-only (§ Remedy Safety Ladder below) |
+| Branch setup / reconcile | never create, switch, or record |
+| Interviews / pickers / blocking gates | `no-default: abort` with a stated reason |
+| Entry / completion guards | STOP |
+| Destructive confirmations | never mutate |
+| Verify-capability determination (stage-exit) | fall back to `--verify-capability manual` |
+| Verify run/skip offers (e.g. forge-5-loop Step 5b/6.1) | STOP; run nothing, persist no skip — the decision stays unrecorded for a human, never guessed as "skip" |
+| Recovery interview | fall through to `needs-human` |
+| Anything not listed above | STOP or skip, and state which |
 
 ## Stage Review Gate
 
@@ -115,6 +163,10 @@ python3 "$R/scripts/forge-session.py" discover-feature "<feature>" --specs-dir "
 - **Candidates found** (`candidates` and/or `remoteCandidates` non-empty): summarize them as text (branch, recorded stage, whether the state's own `branch` field matches), then use the host's question mechanism: **Switch to `{branch}` (recommended)** — run the candidate's `switchCommand` · **Fetch + switch** — for a `needsFetch` remote candidate, run its `fetchCommand` then `switchCommand` (note its contents were matched by name only, not inspected) · **Treat `{feature}` as new on this branch** · **Stop**. A checkout is a mutation inside an otherwise read-only flow: perform it ONLY on the user's explicit accept AND with a clean working tree (`git status --porcelain` prints nothing) — never auto-switch, never with uncommitted changes. After a successful switch, re-run this Feature Directory Resolution block from the top.
 - **Nothing found** (both lists empty): the pipeline genuinely does not exist anywhere discoverable — STOP and surface the original `not-found` stderr line verbatim (or, where the caller offers to start a new pipeline, offer that).
 
+**Rung-3 default** (Interaction Capability Ladder above, "branch setup / reconcile"
+class): no question mechanism → never switch or fetch; report the candidates found
+and stop, exactly as the "nothing found" branch already does.
+
 **Anti-fabrication guard.** Never describe pipeline state that resolution or discovery did not return: if both come back empty, the pipeline does not exist — say exactly that, and never reconstruct stages, backlogs, or history from conversational memory.
 
 **Resolution algorithm (summary; full spec in `02-manifest-helper-cli.md §4`):**
@@ -141,7 +193,7 @@ mkdir -p "<specsDir>"
 [ -f "<specsDir>/AGENTS.md" ] || cp "$R/references/templates/specs-hygiene/AGENTS.md" "<specsDir>/AGENTS.md"
 ```
 
-If the host is Claude (the Claude-native question tool is available), also ensure the Claude-framed variant:
+If the host is Claude — the build-substituted `--host` value (§ Interaction Capability Ladder), never inferred from tool availability — also ensure the Claude-framed variant:
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -192,7 +244,7 @@ Act on the emitted `action`:
 
   With `--force`, log a one-line warning ("Authoring `{feature}` against a detached epic base — manifest not on this branch") and proceed, consistent with the other guards.
 
-If the helper is unavailable (a non-Claude host without the resolver), skip this block — it is best-effort defense in depth, not a hard prerequisite.
+If `$R` cannot be resolved or `check-epic-base` is unavailable, skip this block — it is best-effort defense in depth, not a hard prerequisite.
 
 ## Pipeline State Protocol
 
@@ -294,6 +346,10 @@ Invoke this block at the **very start** of a pipeline entry point — `forge-1-p
    - **Create** → `git switch -c {branchPrefix}{label}` (or `git checkout -b` if `switch` is unavailable). If the branch already exists, `git switch {branchPrefix}{label}`.
    - **Stay** → proceed on the default branch; note that subsequent commits (and any `forge-5-loop` run) will land directly on `{defaultBranch}`.
 
+   **Rung-3 default** (Interaction Capability Ladder above, "branch setup / reconcile"
+   class): no question mechanism → **Stay** — never create or switch a branch
+   unattended; proceed on the default branch and state that this default was taken.
+
 **Record the branch.** After this block resolves, record the resulting branch name in the feature's top-level `branch` field by running `state-branch` (create/update it when the state file is first written for this stage). Emit the call **once the feature directory exists** — i.e. after Feature Directory Resolution and the Entry Stamp, **not** at this block: Branch Setup runs at the very start of the entry point, before any directory resolution, and a brand-new standalone feature may have no directory yet. Add `--epic "{epic}"` to the call when this feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
@@ -320,6 +376,10 @@ Act on the emitted `action` (source of truth is where the state actually resolve
 - **`warn-drift`** — you are on the **default** branch and the state records a topic branch. Via the host's question mechanism, strongly recommend creating/switching to `{branchPrefix}{feature}` (then record it), still allowing **proceed on the default branch**. Never hard-stop.
 - **`none`** / **`not-resolved`** — nothing to do; proceed.
 
+**Rung-3 default** (Interaction Capability Ladder above, "branch setup / reconcile"
+class): no question mechanism on `warn-drift` → proceed on the default branch, exactly
+as the allowed no-prompt option already does; never create or switch unattended.
+
 The `adopt-current` write, with the portable plugin-root prelude. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol:
 
 ```bash
@@ -329,7 +389,7 @@ python3 "$R/scripts/forge-session.py" state-branch \
   --feature "{feature}" --branch "{newBranch}" --specs-dir "{specsDir}"
 ```
 
-If the helper is unavailable (non-Claude host without the resolver), fall back to the manual check: current branch differs from recorded → adopt the current branch unless it is the default, in which case recommend creating `{branchPrefix}{feature}`.
+If `$R` cannot be resolved or `reconcile-branch` is unavailable, fall back to the manual check: current branch differs from recorded → adopt the current branch unless it is the default, in which case recommend creating `{branchPrefix}{feature}`.
 
 ## Git Commit Protocol
 
@@ -375,6 +435,11 @@ Invoke this block at the **start of an authoring stage** (`forge-1-prd`..`forge-
    - Skip artifact regeneration for files that already exist and are complete (non-empty, properly structured); continue from the next unwritten artifact.
 
 3. **Re-authoring** (`status: "complete"` or `"stale"`) — a finished draft exists. Warn via the host's question mechanism before overwriting: "A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?" On confirm, proceed to the Entry Stamp and author a new version (the version increments at exit, per that stage's Update-Pipeline-State step).
+
+**Rung-3 default** (Interaction Capability Ladder above, "entry / completion guards"
+class): no question mechanism at cases 2 or 3 → **STOP** — resume the in-progress draft
+(case 2's non-destructive default) or refuse to overwrite a completed artifact (case 3);
+never start a fresh version or bump it unattended.
 
 **Entry Stamp** (fresh, restart, and re-author paths — NOT the resume path). Before authoring, record the entry stamp by running `state-enter` — one atomic write that sets `stages.{stage}.status` → `"in-progress"`, `stages.{stage}.startedAt` → current ISO-8601 UTC timestamp, top-level `currentStage` → `"{stage}"` (where the pipeline IS, per O1), and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol:
 

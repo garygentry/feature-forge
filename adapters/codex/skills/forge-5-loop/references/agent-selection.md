@@ -98,6 +98,10 @@ launch, **warns** and offers (via the host's question mechanism) to **strip `mod
 (remove the key from each affected item so each spawn uses the agent's own default) or
 **proceed as-is**. forge only ever touches the `model` field — never `provider`. The
 default / `claude-cli` path skips this guard (the aliases are valid there).
+**Rung-3 default** (`references/shared-conventions.md` § Interaction Capability Ladder,
+"launch / run-mode" class): no question mechanism → **STOP** and print the warning plus
+the rendered launch command; never take "proceed as-is" unasked — the whole point of the
+guard is that proceeding unstripped is a guaranteed circuit-breaker halt.
 
 > **Follow-up (out of scope here — rauf repo).** The durable fix would be for the
 > rauf `author-backlog` skill to keep `model` **provider-neutral** by default (or to
