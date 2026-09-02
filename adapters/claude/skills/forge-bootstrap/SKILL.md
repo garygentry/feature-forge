@@ -135,10 +135,11 @@ it null.
 schema. Two fields come from your runtime, not the interview: `author` from `git config
 user.name` (else the project name; it is the LICENSE copyright holder), and `host` —
 `"claude"` when you are running as Claude, else `"codex"`/`"other"`. Use your own runtime
-identity, never a proxy: **do not** infer `"claude"` from `AskUserQuestion` being present —
-Pi's compatibility extension registers a same-named tool, so tool presence alone would
-misidentify a Pi run as Claude (host never implies, and is never implied by, a capability;
-Interaction Capability Ladder, `references/shared-conventions.md`). `host` drives the
+identity, never a capability proxy: **do not** infer `"claude"` from `AskUserQuestion`
+availability alone — Pi's compatibility extension registers it too, so an available
+question tool does not prove you are Claude specifically (host never implies, and is
+never implied by, a capability; Interaction Capability Ladder,
+`references/shared-conventions.md`). `host` drives the
 host-conditional agent file: the helper always emits `AGENTS.md` and adds `CLAUDE.md` only
 when `host == "claude"`.
 

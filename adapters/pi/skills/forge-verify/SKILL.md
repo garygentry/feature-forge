@@ -111,7 +111,7 @@ Resolve the feature directory via the **Feature Directory Resolution** block in 
 
 Determine branch ownership **at entry**, from the literal `owner: nested` / `owner: direct` token in the dispatching prompt (absent the token you are `direct`), and preserve that value unchanged through any re-verify — see Step 7, which passes it through as `--owner`.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall. At rung 2/3, follow the Interaction Capability Ladder.
+**Turn structure reminder:** Text first, then `AskUserQuestion` for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Read Configuration and Determine Mode
 

@@ -12,7 +12,7 @@ Generate a comprehensive suite of numbered implementation specification document
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall. At rung 2/3, follow the Interaction Capability Ladder.
+**Turn structure reminder:** Text first, then the host's question mechanism for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Validate Prerequisites
 

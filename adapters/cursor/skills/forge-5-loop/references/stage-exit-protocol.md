@@ -122,7 +122,8 @@ prose). Nothing else.
 If either is absent, or capability cannot be established, pass `manual`. **(a) is rung 1 or
 rung 2** of the Interaction Capability Ladder (`references/shared-conventions.md`); at
 rung 3, (a) is false by definition, so `--verify-capability manual` follows without
-further deliberation — the ladder's "verify offers" class states this rung-3 default once
+further deliberation — the ladder's "verify-capability determination" class states this
+rung-3 default once
 so it is never re-derived per stage.
 
 **(b) tests PERMISSION, not tool presence.** The question is not "is a subagent-dispatch

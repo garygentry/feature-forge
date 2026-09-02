@@ -300,4 +300,4 @@ section).
 - A charter is one paragraph, not a PRD. Redirect requirement-level detail to `forge-1-prd`.
 - Contracts have no mutator: edit `exposes`/`consumes` in the composed manifest entry, then
   re-run `validate`.
-- All questions go through `AskUserQuestion`. Never put a question in your text output. At rung 2/3, follow the Interaction Capability Ladder.
+- All questions go through `AskUserQuestion`, never text. Rung 2/3: Interaction Capability Ladder.

@@ -17,7 +17,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 **Ownership.** Determine branch ownership **at entry**, from the literal `owner: nested` / `owner: direct` token in the prompt that dispatched you. **Absent the token you are `direct`** — a user-typed `/feature-forge:forge-fix` is the only path that carries no dispatcher. Judge the token, never the phrasing of the invocation. Preserve that value unchanged through any re-verify and pass it straight through as `--owner` in Step 7. A **direct** fix stays the terminal owner through its optional re-verify; a **nested** fix invokes nested verify and returns its structured result to the outer stage, printing no terminal block at all. `references/stage-exit-protocol.md` § "Branch ownership: the `owner:` token" owns this rule.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall. At rung 2/3, follow the Interaction Capability Ladder.
+**Turn structure reminder:** Text first, then `AskUserQuestion` for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Locate Findings and Establish the Served Stage
 
