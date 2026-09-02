@@ -1737,8 +1737,9 @@ def _run_probe(
     """Run one allowlisted read-only probe with a timeout; never raises.
 
     Returns a dict ``{ok, returncode, stdout, stderr, error, timedOut}``.
-    ``discard_stdout`` blanks the captured stdout before it can reach any
-    evidence — used for ``gh auth token``, whose output is a credential.
+    ``discard_stdout`` sends the child's stdout to ``/dev/null`` so it never
+    enters this process — used for ``gh auth token``, whose output is a
+    credential.
     """
     result: dict = {
         "ok": False, "returncode": None, "stdout": "", "stderr": "",
@@ -1747,7 +1748,8 @@ def _run_probe(
     try:
         proc = subprocess.run(
             argv,
-            capture_output=True,
+            stdout=subprocess.DEVNULL if discard_stdout else subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             timeout=_PROBE_TIMEOUT_S,
             cwd=str(cwd) if cwd is not None else None,
@@ -1761,7 +1763,7 @@ def _run_probe(
         return result
     result["ok"] = proc.returncode == 0
     result["returncode"] = proc.returncode
-    result["stdout"] = "" if discard_stdout else proc.stdout
+    result["stdout"] = proc.stdout or ""
     result["stderr"] = proc.stderr
     return result
 
@@ -2509,6 +2511,258 @@ def _check_config_schema(ctx: _CheckContext) -> dict:
     return _result("ok", detail, evidence)
 
 
+def _check_root_version_skew(ctx: _CheckContext) -> dict:
+    """The resolved root, this script's own bundle and any env override agree.
+
+    Two roots agree when they are the same real path, or both declare a
+    version and the versions match. A root without a version manifest at a
+    different path cannot be proven equal and counts as skew.
+    """
+    if not ctx.plugin_root.get("resolved"):
+        return _result("na", "plugin root unresolved (see plugin-root)", {"resolved": False})
+    own_root = Path(__file__).resolve().parent.parent
+    resolved_root = Path(str(ctx.plugin_root.get("root")))
+    env_var = next(
+        (name for name in ("FEATURE_FORGE_ROOT", "CLAUDE_PLUGIN_ROOT") if os.environ.get(name)),
+        None,
+    )
+    roots = {
+        "own": (own_root, _bundle_version(own_root)["version"]),
+        "resolved": (resolved_root, ctx.plugin_root.get("version")),
+    }
+    if env_var:
+        env_root = Path(os.environ[env_var])
+        roots["env"] = (env_root, _bundle_version(env_root)["version"])
+
+    def real(path: Path) -> str:
+        try:
+            return str(path.resolve())
+        except OSError:
+            return str(path)
+
+    def agree(a: tuple[Path, str | None], b: tuple[Path, str | None]) -> bool:
+        if real(a[0]) == real(b[0]):
+            return True
+        return a[1] is not None and b[1] is not None and a[1] == b[1]
+
+    labels = list(roots)
+    disagreements = [
+        f"{x} ({roots[x][1] or 'no version'} at {roots[x][0]}) vs "
+        f"{y} ({roots[y][1] or 'no version'} at {roots[y][0]})"
+        for i, x in enumerate(labels) for y in labels[i + 1:]
+        if not agree(roots[x], roots[y])
+    ]
+    evidence = {
+        "ownRoot": str(own_root),
+        "ownVersion": roots["own"][1],
+        "resolvedRoot": str(resolved_root),
+        "resolvedVersion": roots["resolved"][1],
+        "envVar": env_var,
+        "envRoot": str(roots["env"][0]) if "env" in roots else None,
+        "envVersion": roots["env"][1] if "env" in roots else None,
+        "agree": not disagreements,
+    }
+    if not disagreements:
+        return _result(
+            "ok",
+            f"one install in play ({roots['resolved'][1] or 'unversioned'} at {resolved_root})",
+            evidence,
+        )
+    return _result(
+        "warn", "install roots disagree: " + "; ".join(disagreements), evidence,
+        _remedy(
+            "Reinstall or update feature-forge so a single bundle is loaded (see "
+            "AGENTS-SETUP.md for your host), or unset the stale root override",
+            None,
+            "global-install",
+        ),
+    )
+
+
+#: Config keys forge-2-tech records, in the order forge-2-tech writes them;
+#: ``smokeCommand`` is optional everywhere (evidence-only when absent).
+_CONFIG_KEYS_BY_STAGE: Final[tuple[tuple[str, str], ...]] = (
+    ("stack", "forge-3-specs"),
+    ("typeCheckCommand", "forge-4-backlog"),
+    ("testCommand", "forge-4-backlog"),
+)
+
+
+def _check_config_completeness(ctx: _CheckContext) -> dict:
+    """The keys forge-2-tech records exist once a feature is far enough along.
+
+    A feature whose next stage is forge-3-specs needs ``stack``; from
+    forge-4-backlog on (or complete) it also needs ``typeCheckCommand`` and
+    ``testCommand``. Features that have not reached forge-3-specs are skipped.
+    """
+    def present(key: str) -> bool:
+        value = ctx.config.get(key)
+        return isinstance(value, str) and bool(value.strip())
+
+    rows = []
+    for feat in ctx.features:
+        required = [
+            key for key, floor in _CONFIG_KEYS_BY_STAGE
+            if _stage_at_or_after(feat["nextStage"], floor)
+        ]
+        if not required:
+            continue
+        missing = [key for key in required if not present(key)]
+        rows.append({
+            "name": feat["name"],
+            "epic": feat["epic"],
+            "nextStage": feat["nextStage"],
+            "required": list(required),
+            "missing": missing,
+            "remedy": _remedy(
+                "Record the missing keys in forge.config.json (forge-2-tech Step 3 writes "
+                "stack/typeCheckCommand/testCommand): " + ", ".join(missing),
+                None,
+                "local-write",
+            ) if missing else None,
+        })
+    optional_missing = [key for key in ("smokeCommand",) if not present(key)]
+    evidence = {
+        "configExists": ctx.config_exists,
+        "features": rows,
+        "missing": [
+            key for key, _floor in _CONFIG_KEYS_BY_STAGE
+            if any(key in row["missing"] for row in rows)
+        ],
+        "optionalMissing": optional_missing,
+    }
+    if not rows:
+        return _result("na", "no active feature has reached forge-3-specs", evidence)
+    affected = [row for row in rows if row["missing"]]
+    if not affected:
+        detail = f"required config present for {len(rows)} feature(s)"
+        if optional_missing:
+            detail += "; optional " + ", ".join(optional_missing) + " unset"
+        return _result("ok", detail, evidence)
+    return _result(
+        "warn",
+        f"{len(affected)} feature(s) missing required config: "
+        + ", ".join(evidence["missing"]),
+        evidence,
+        _per_feature_remedy(rows),
+    )
+
+
+def _check_backlog_valid(ctx: _CheckContext) -> dict:
+    """Each backlog the loop is about to consume passes ``{bin} backlog validate``.
+
+    Scoped to features whose next stage is forge-5-loop (a validated-and-done
+    loop's backlog is history), at most one probe per distinct backlog dir.
+    """
+    if (na := _runner_unavailable(ctx)) is not None:
+        return na
+    if not ctx.runner_bin_path():
+        return _result("na", "runner binary not on PATH (see runner-binary)",
+                       {"bin": ctx.runner_bin()})
+    template = ctx.loop_runner.get("validateCommand")
+    if not isinstance(template, str) or not template.strip():
+        return _result("na", "loopRunner.validateCommand unset", {"command": template})
+    eligible = [
+        feat for feat in ctx.features
+        if feat["nextStage"] == "forge-5-loop" and feat["backlogExists"]
+    ]
+    evidence: dict = {"command": template, "features": []}
+    if not eligible:
+        return _result(
+            "na", "no active feature is about to run forge-5-loop with a backlog on disk",
+            evidence,
+        )
+    probes: dict[str, dict] = {}
+    rows = []
+    for feat in eligible:
+        backlog_dir = str(Path(feat["backlogPath"]).parent)
+        if backlog_dir not in probes:
+            argv = _render_runner_command(
+                template, ctx.loop_runner, backlogDir=backlog_dir, specsDir=str(ctx.specs_dir),
+            )
+            probes[backlog_dir] = (
+                _run_probe(argv, cwd=ctx.cwd) if argv
+                else {"ok": False, "returncode": None, "stdout": "", "stderr": "",
+                      "error": "validateCommand cannot be rendered", "timedOut": False}
+            )
+        probe = probes[backlog_dir]
+        findings: list = []
+        if probe["returncode"] == 1:
+            try:
+                payload = json.loads(probe["stdout"])
+            except ValueError:
+                payload = None
+            raw = payload.get("findings") if isinstance(payload, dict) else payload
+            if isinstance(raw, list):
+                findings = raw
+        rows.append({
+            "name": feat["name"],
+            "epic": feat["epic"],
+            "backlogDir": backlog_dir,
+            "exitCode": probe["returncode"],
+            "valid": probe["ok"],
+            "timedOut": probe["timedOut"],
+            "error": probe["error"],
+            "findingsCount": len(findings),
+            "findings": [_head(json.dumps(f, ensure_ascii=False)) for f in findings[:5]],
+            "stderrHead": _head(probe["stderr"]),
+            "remedy": None,
+        })
+    evidence["features"] = rows
+    bad = [row for row in rows if not row["valid"]]
+    if not bad:
+        return _result("ok", f"{len(rows)} backlog(s) validate", evidence)
+    parts = []
+    for row in bad:
+        if row["exitCode"] == 1:
+            parts.append(f"{_feature_label(row)} ({row['findingsCount']} finding(s))")
+        else:
+            why = row["error"] or f"exit {row['exitCode']}"
+            parts.append(f"{_feature_label(row)} (validator {why})")
+    return _result(
+        "warn",
+        f"{len(bad)} backlog(s) fail validation: " + "; ".join(parts)
+        + " — fix the findings or re-run /skill:forge-4-backlog <feature>",
+        evidence,
+    )
+
+
+def _check_gh_available(ctx: _CheckContext) -> dict:
+    """GitHub CLI on PATH with credentials (``gh auth token``; never ``auth status``)."""
+    path = shutil.which("gh")
+    evidence: dict = {
+        "path": path,
+        "version": None,
+        "authenticated": False,
+        "tokenFromEnv": any(os.environ.get(name) for name in ("GH_TOKEN", "GITHUB_TOKEN")),
+    }
+    install = _remedy(
+        "Install the GitHub CLI (https://cli.github.com) — needed only for PR/issue "
+        "automation; every stage degrades to manual steps without it",
+        None,
+        "global-install",
+    )
+    if path is None:
+        return _result("warn", "GitHub CLI (gh) not on PATH", evidence, install)
+    version = _run_probe([path, "--version"])
+    if not version["ok"]:
+        evidence["versionError"] = version["error"] or _head(version["stderr"])
+        return _result(
+            "warn", f"gh present at {path} but `gh --version` failed", evidence,
+            _remedy("Reinstall the GitHub CLI", None, "global-install"),
+        )
+    evidence["version"] = _head(version["stdout"].splitlines()[0] if version["stdout"] else "")
+    # stdout is a credential: discarded before it can reach evidence.
+    token = _run_probe([path, "auth", "token"], discard_stdout=True)
+    if not token["ok"]:
+        return _result(
+            "warn", f"gh present ({evidence['version']}) but has no credentials", evidence,
+            _remedy("Authenticate the GitHub CLI", "gh auth login", "network"),
+        )
+    evidence["authenticated"] = True
+    return _result("ok", f"gh present and authenticated ({evidence['version']})", evidence)
+
+
 def _check_backlog_present(ctx: _CheckContext) -> dict:
     """Every feature past forge-4-backlog has its composed ``backlog.json`` on disk."""
     eligible = [f for f in ctx.features if _stage_at_or_after(f["nextStage"], "forge-5-loop")]
@@ -2642,15 +2896,19 @@ def _check_sandbox_root(ctx: _CheckContext) -> dict:
 #: The check registry — registry order is output order (docs/doctor-checks.md).
 DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = (
     _make_spec("plugin-root", "blocking", _check_plugin_root),
+    _make_spec("root-version-skew", "advisory", _check_root_version_skew),
     _make_spec("runner-binary", "blocking", _check_runner_binary),
     _make_spec("runner-version", "blocking", _check_runner_version),
     _make_spec("runner-wired", "blocking", _check_runner_wired),
     _make_spec("runner-legacy-layout", "blocking", _check_runner_legacy_layout),
     _make_spec("runner-artifacts-stale", "advisory", _check_runner_artifacts_stale),
     _make_spec("runner-profile-drift", "advisory", _check_runner_profile_drift),
+    _make_spec("config-completeness", "advisory", _check_config_completeness),
     _make_spec("config-schema", "advisory", _check_config_schema),
     _make_spec("backlog-present", "blocking", _check_backlog_present),
+    _make_spec("backlog-valid", "blocking", _check_backlog_valid),
     _make_spec("branch-state", "advisory", _check_branch_state),
+    _make_spec("gh-available", "advisory", _check_gh_available),
     _make_spec("sandbox-root", "advisory", _check_sandbox_root),
 )
 
