@@ -170,13 +170,15 @@ import json
 import math
 import os
 import re
+import shlex
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Final, Literal, NoReturn, TypedDict, get_args
+from typing import Callable, Final, Literal, NamedTuple, NoReturn, TypedDict, get_args
 
 
 # --------------------------------------------------------------------------- #
@@ -1461,18 +1463,34 @@ def _resolve_plugin_root() -> dict:
         }
     root = proc.stdout.strip()
     info: dict = {"resolved": True, "root": root}
-    for rel in (".claude-plugin/plugin.json", ".feature-forge-bundle.json"):
-        manifest = Path(root) / rel
-        if manifest.is_file():
-            version = _load_config(manifest).get("version")
-            if isinstance(version, str):
-                info["version"] = version
-            info["manifest"] = rel
-            break
+    bundle = _bundle_version(Path(root))
+    if bundle["version"] is not None:
+        info["version"] = bundle["version"]
+    if bundle["manifest"] is not None:
+        info["manifest"] = bundle["manifest"]
     commit = _git_output(["-C", root, "rev-parse", "--short", "HEAD"])
     if commit:
         info["commit"] = commit
     return info
+
+
+def _bundle_version(root: Path) -> dict:
+    """Read a candidate root's bundle manifest for its declared version.
+
+    Probes ``.claude-plugin/plugin.json`` then the neutral
+    ``.feature-forge-bundle.json`` (the same two sentinels ``forge-root.sh``
+    accepts) and returns ``{"version", "manifest"}`` — either may be ``None``
+    when no manifest exists or it declares no string version.
+    """
+    for rel in (".claude-plugin/plugin.json", ".feature-forge-bundle.json"):
+        manifest = root / rel
+        if manifest.is_file():
+            version = _load_config(manifest).get("version")
+            return {
+                "version": version if isinstance(version, str) else None,
+                "manifest": rel,
+            }
+    return {"version": None, "manifest": None}
 
 
 def _backlog_path(config: dict, name: str, epic: str | None, specs_dir: Path) -> Path:
@@ -1488,13 +1506,32 @@ def _backlog_path(config: dict, name: str, epic: str | None, specs_dir: Path) ->
     return feature_dir / "backlog.json"
 
 
-def doctor_report(specs_dir: Path, config_path: Path) -> dict:
+def doctor_report(
+    specs_dir: Path,
+    config_path: Path,
+    *,
+    schema_path: Path | None = None,
+    only: frozenset[str] | None = None,
+) -> dict:
     """Assemble the ground-truth diagnostic payload (always succeeds).
 
     One snapshot of everything a confused session needs checked: resolved
     plugin root + version/commit, current git branch vs. each feature's
     recorded state branch, the recency-ranked feature summary, and whether
     each feature's composed backlog path exists on disk.
+
+    The eleven legacy keys come first and are unchanged; after them the
+    structured ``checks[]`` (one record per ``DOCTOR_CHECKS`` entry, or the
+    ``only`` subset), their ``checksSummary`` counts, and the ``remedyClusters``
+    grouped by remedy command. A crash anywhere in the check driver degrades
+    every requested check to ``na`` — the legacy payload is never lost.
+
+    Args:
+        specs_dir: The specs directory to scan.
+        config_path: Path to ``forge.config.json``.
+        schema_path: Override for the bundled ``forge-config-schema.json``
+            (defaults to the sibling ``references/`` copy).
+        only: When given, run just these check ids (others are omitted).
     """
     config = _load_config(config_path)
     # --show-current (not rev-parse HEAD) so an unborn branch (fresh repo,
@@ -1528,8 +1565,9 @@ def doctor_report(specs_dir: Path, config_path: Path) -> dict:
             "backlogPath": str(backlog),
             "backlogExists": backlog.is_file(),
         })
-    return {
-        "pluginRoot": _resolve_plugin_root(),
+    plugin_root = _resolve_plugin_root()
+    report = {
+        "pluginRoot": plugin_root,
         "currentBranch": current_branch,
         "specsDir": str(specs_dir),
         "specsDirExists": specs_dir.is_dir(),
@@ -1541,6 +1579,31 @@ def doctor_report(specs_dir: Path, config_path: Path) -> dict:
         "duplicateConfigKeys": _config_duplicate_keys(config_path),
         "rootSandbox": _root_sandbox_status(),
     }
+    specs = [spec for spec in DOCTOR_CHECKS if only is None or spec.id in only]
+    try:
+        ctx = _build_check_context(
+            specs_dir,
+            config_path,
+            schema_path or _default_schema_path(),
+            config=config,
+            current_branch=current_branch,
+            default_branch=default_branch,
+            rows=rows,
+            features=features,
+            plugin_root=plugin_root,
+        )
+        checks = _run_checks(ctx, specs)
+    except Exception as exc:  # INV-3: doctor never crashes
+        checks = [
+            _check_record(
+                spec.id, "na", spec.severity, f"check driver crashed: {_exc_text(exc)}",
+            )
+            for spec in specs
+        ]
+    report["checks"] = checks
+    report["checksSummary"] = _checks_summary(checks)
+    report["remedyClusters"] = cluster_checks(checks)
+    return report
 
 
 def _root_sandbox_status() -> dict:
@@ -1561,6 +1624,553 @@ def _root_sandbox_status() -> dict:
         # True only when the loop would need to supply the default at launch.
         "loopWillSetSandbox": is_root and not is_sandbox_set,
     }
+
+
+# --------------------------------------------------------------------------- #
+# Doctor checks (roadmap/self-healing-resilience.md §5; catalog: docs/doctor-checks.md)
+# --------------------------------------------------------------------------- #
+#
+# Each check is a pure function ``(ctx) -> dict`` registered in ``DOCTOR_CHECKS``.
+# The driver stamps ``id``/``severity``, isolates crashes (a raising check becomes
+# ``na`` with the exception in ``detail`` — it never takes doctor down), demotes any
+# ``fail`` from a check outside ``FAIL_PROMOTED_CHECK_IDS`` to ``warn`` (INV-1:
+# warn-only until the promotion pass) and clusters remedies by command. Doctor
+# still always exits 0 (INV-3); remedies are DATA (INV-4) — doctor never runs one.
+#
+# Subprocess allowlist — the only commands a check may spawn, all read-only:
+#   * ``git`` queries and ``bash forge-root.sh`` (already part of the legacy report),
+#   * ``{bin} version --json`` (once, memoised on the context),
+#   * ``{bin} backlog validate …`` (at most once per distinct backlog dir),
+#   * ``gh --version`` and ``gh auth token`` (stdout discarded, never logged).
+# Never ``agentsProbeCommand``, ``gh auth status``, ``rauf update --check``, nor any
+# ``remedy.command``.
+
+CHECK_STATUSES: Final[tuple[str, ...]] = ("ok", "warn", "fail", "na")
+CHECK_SEVERITIES: Final[tuple[str, ...]] = ("blocking", "advisory")
+#: Ordered least → most consequential; a merged remedy carries the highest tier.
+REMEDY_SAFETY_TIERS: Final[tuple[str, ...]] = (
+    "read-only", "local-write", "global-install", "network",
+)
+#: Check ids allowed to emit ``fail``. Empty until the promotion pass; the driver
+#: demotes every other ``fail`` to ``warn`` so no check can block by accident.
+FAIL_PROMOTED_CHECK_IDS: Final[frozenset[str]] = frozenset()
+#: Check ids whose result is never ``na`` — they hold in every environment.
+NO_NA_CHECKS: Final[frozenset[str]] = frozenset({"plugin-root", "gh-available"})
+_CHECK_ID_RE: Final = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+#: Wall-clock cap per probe; a stuck runner degrades to ``warn``, never a hang.
+_PROBE_TIMEOUT_S: Final[int] = 10
+#: Evidence carries at most this many characters of any probe stream.
+_PROBE_OUTPUT_CAP: Final[int] = 400
+
+
+def _remedy(description: str, command: str | None, safety: str) -> dict:
+    """Build a remedy record — advice as data, in the fixed key order.
+
+    Raises:
+        ValueError: ``safety`` is not one of ``REMEDY_SAFETY_TIERS`` (the driver
+            turns that into an ``na`` record for the offending check).
+    """
+    if safety not in REMEDY_SAFETY_TIERS:
+        raise ValueError(f"unknown remedy safety tier: {safety!r}")
+    return {"description": description, "command": command, "safety": safety}
+
+
+def _result(
+    status: str, detail: str, evidence: dict | None = None, remedy: dict | None = None,
+) -> dict:
+    """The id-less payload a check returns; the driver stamps id and severity."""
+    return {"status": status, "detail": detail, "evidence": evidence, "remedy": remedy}
+
+
+def _check_record(
+    check_id: str,
+    status: str,
+    severity: str,
+    detail: str,
+    evidence: dict | None = None,
+    remedy: dict | None = None,
+) -> dict:
+    """Build one validated ``checks[]`` record in the fixed key order.
+
+    Raises:
+        ValueError: A field is outside its enum or a remedy is malformed.
+    """
+    if status not in CHECK_STATUSES:
+        raise ValueError(f"unknown check status: {status!r}")
+    if severity not in CHECK_SEVERITIES:
+        raise ValueError(f"unknown check severity: {severity!r}")
+    if remedy is not None:
+        if (
+            not isinstance(remedy, dict)
+            or set(remedy) != {"description", "command", "safety"}
+            or not isinstance(remedy["description"], str)
+            or not (remedy["command"] is None or isinstance(remedy["command"], str))
+        ):
+            raise ValueError(f"malformed remedy: {remedy!r}")
+        remedy = _remedy(remedy["description"], remedy["command"], remedy["safety"])
+    if evidence is not None and not isinstance(evidence, dict):
+        raise ValueError("evidence must be an object or null")
+    return {
+        "id": check_id,
+        "status": status,
+        "severity": severity,
+        "detail": str(detail),
+        "evidence": evidence,
+        "remedy": remedy,
+    }
+
+
+def _exc_text(exc: BaseException) -> str:
+    """One capped line naming an exception, for a ``detail`` field."""
+    return _head(f"{type(exc).__name__}: {exc}")
+
+
+def _head(text: object) -> str:
+    """The first ``_PROBE_OUTPUT_CAP`` characters of a probe stream, whitespace-trimmed."""
+    text = str(text or "").strip()
+    return text if len(text) <= _PROBE_OUTPUT_CAP else text[:_PROBE_OUTPUT_CAP] + "…"
+
+
+def _run_probe(
+    argv: list[str], *, cwd: Path | None = None, discard_stdout: bool = False,
+) -> dict:
+    """Run one allowlisted read-only probe with a timeout; never raises.
+
+    Returns a dict ``{ok, returncode, stdout, stderr, error, timedOut}``.
+    ``discard_stdout`` blanks the captured stdout before it can reach any
+    evidence — used for ``gh auth token``, whose output is a credential.
+    """
+    result: dict = {
+        "ok": False, "returncode": None, "stdout": "", "stderr": "",
+        "error": None, "timedOut": False,
+    }
+    try:
+        proc = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=_PROBE_TIMEOUT_S,
+            cwd=str(cwd) if cwd is not None else None,
+        )
+    except subprocess.TimeoutExpired:
+        result["timedOut"] = True
+        result["error"] = f"timed out after {_PROBE_TIMEOUT_S}s"
+        return result
+    except (OSError, ValueError) as exc:
+        result["error"] = str(exc)
+        return result
+    result["ok"] = proc.returncode == 0
+    result["returncode"] = proc.returncode
+    result["stdout"] = "" if discard_stdout else proc.stdout
+    result["stderr"] = proc.stderr
+    return result
+
+
+def _render_runner_command(template: str, loop_runner: dict, **tokens: object) -> list[str] | None:
+    """Render a ``loopRunner`` command template into argv (``{bin}`` + ``tokens``).
+
+    Every substituted value is ``shlex.quote``d so a path with spaces survives
+    the split. Returns ``None`` when a ``{token}`` remains unrendered or the
+    result does not split — the caller reports that as data, never runs it.
+    """
+    values: dict[str, object] = {"bin": loop_runner.get("bin") or "", **tokens}
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace("{" + key + "}", shlex.quote(str(value)))
+    if re.search(r"\{[A-Za-z][A-Za-z0-9_]*\}", rendered):
+        return None
+    try:
+        argv = shlex.split(rendered)
+    except ValueError:
+        return None
+    return argv or None
+
+
+_SEMVER_RE: Final = re.compile(r"^\s*v?(\d+)\.(\d+)\.(\d+)\s*$")
+_INSTALLED_BY_RE: Final = re.compile(r"^\s*([A-Za-z0-9._-]+)@v?(\d+\.\d+\.\d+)\s*$")
+
+
+def _parse_semver(text: object) -> tuple[int, int, int] | None:
+    """``"1.2.3"`` (optional ``v``) → ``(1, 2, 3)``; anything else → ``None``.
+
+    A pre-release/build suffix is deliberately ``None``: the check reports it as
+    unparseable rather than guessing an ordering.
+    """
+    if not isinstance(text, str):
+        return None
+    match = _SEMVER_RE.match(text)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def _fmt_semver(version: tuple[int, int, int]) -> str:
+    """``(1, 2, 3)`` → ``"1.2.3"``."""
+    return ".".join(str(part) for part in version)
+
+
+def _parse_installed_by(text: object) -> tuple[str, tuple[int, int, int]] | None:
+    """``"rauf-manager@0.13.0"`` → ``("rauf-manager", (0, 13, 0))``; else ``None``."""
+    if not isinstance(text, str):
+        return None
+    match = _INSTALLED_BY_RE.match(text)
+    if not match:
+        return None
+    version = _parse_semver(match.group(2))
+    return (match.group(1), version) if version else None
+
+
+def _first_backticked(text: object) -> str | None:
+    """The first `` `span` `` in a hint string, or ``None`` — the hint's command."""
+    if not isinstance(text, str):
+        return None
+    match = re.search(r"`([^`]+)`", text)
+    return match.group(1).strip() if match else None
+
+
+_JSON_SCHEMA_TYPES: Final[dict[str, type | tuple[type, ...]]] = {
+    "object": dict,
+    "array": list,
+    "string": str,
+    "integer": int,
+    "number": (int, float),
+    "boolean": bool,
+    "null": type(None),
+}
+
+
+def _schema_violations(node: object, schema: dict, schema_root: dict, path: str) -> list[str]:
+    """Structural JSON-Schema check (the draft-07 subset forge's schemas use).
+
+    A port of ``tests/_state_schema.py::_check`` — ``type``, ``required``,
+    ``properties``, ``enum``, ``items``, ``additionalProperties``, ``minimum``/
+    ``maximum`` and same-file ``$ref`` — so doctor can validate a config with
+    the stdlib only. Returns human-readable violations; empty means valid.
+    """
+    out: list[str] = []
+    if "$ref" in schema:
+        ref = str(schema["$ref"]).split("/")[-1]
+        target = schema_root.get("definitions", {}).get(ref)
+        if not isinstance(target, dict):
+            return [f"{path}: unresolvable $ref {schema['$ref']!r}"]
+        schema = target
+
+    declared = schema.get("type")
+    if declared:
+        names = [declared] if isinstance(declared, str) else list(declared)
+        allowed = tuple(_JSON_SCHEMA_TYPES[n] for n in names if n in _JSON_SCHEMA_TYPES)
+        flat: tuple[type, ...] = tuple(
+            t for entry in allowed for t in (entry if isinstance(entry, tuple) else (entry,))
+        )
+        # `bool` is a subclass of `int` in Python; a boolean is not an integer here.
+        if flat and (
+            not isinstance(node, flat) or (isinstance(node, bool) and bool not in flat)
+        ):
+            return [f"{path}: expected {declared}, got {type(node).__name__}"]
+
+    if schema.get("enum") is not None and node not in schema["enum"]:
+        out.append(f"{path}: {node!r} not in enum {schema['enum']}")
+
+    if isinstance(node, (int, float)) and not isinstance(node, bool):
+        if "minimum" in schema and node < schema["minimum"]:
+            out.append(f"{path}: {node!r} below minimum {schema['minimum']}")
+        if "maximum" in schema and node > schema["maximum"]:
+            out.append(f"{path}: {node!r} above maximum {schema['maximum']}")
+
+    if isinstance(node, dict):
+        for req in schema.get("required", []):
+            if req not in node:
+                out.append(f"{path}: missing required '{req}'")
+        props = schema.get("properties", {})
+        extra = schema.get("additionalProperties")
+        for key, value in node.items():
+            if key in props:
+                out += _schema_violations(value, props[key], schema_root, f"{path}.{key}")
+            elif extra is False:
+                out.append(f"{path}: unexpected key '{key}'")
+            elif isinstance(extra, dict):
+                out += _schema_violations(value, extra, schema_root, f"{path}.{key}")
+
+    if isinstance(node, list) and isinstance(schema.get("items"), dict):
+        for index, item in enumerate(node):
+            out += _schema_violations(item, schema["items"], schema_root, f"{path}[{index}]")
+
+    return out
+
+
+def _stage_at_or_after(stage: str | None, floor: str) -> bool:
+    """True when ``stage`` (a ``nextStage``; ``None`` = complete) is at/after ``floor``."""
+    if stage is None:
+        return True
+    if stage not in PRODUCTION_STAGES:
+        return False
+    return PRODUCTION_STAGES.index(stage) >= PRODUCTION_STAGES.index(floor)
+
+
+class _CheckContext:
+    """Everything a check may read. Probes are memoised so each runs at most once.
+
+    A plain class (not a dataclass): the test suite imports this file through
+    ``importlib`` without registering it in ``sys.modules``, which breaks
+    dataclass annotation resolution under ``from __future__ import annotations``.
+    """
+
+    def __init__(
+        self,
+        *,
+        cwd: Path,
+        specs_dir: Path,
+        config_path: Path,
+        config_exists: bool,
+        config: dict,
+        schema_path: Path,
+        schema: dict | None,
+        schema_error: str | None,
+        loop_runner: dict | None,
+        loop_runner_defaults: dict | None,
+        loop_runner_error: str | None,
+        plugin_root: dict,
+        current_branch: str | None,
+        default_branch: str | None,
+        rows: list,
+        features: list,
+    ) -> None:
+        self.cwd = cwd
+        self.specs_dir = specs_dir
+        self.config_path = config_path
+        self.config_exists = config_exists
+        self.config = config
+        self.schema_path = schema_path
+        self.schema = schema
+        self.schema_error = schema_error
+        self.loop_runner = loop_runner
+        self.loop_runner_defaults = loop_runner_defaults
+        self.loop_runner_error = loop_runner_error
+        self.plugin_root = plugin_root
+        self.current_branch = current_branch
+        self.default_branch = default_branch
+        self.rows = rows
+        self.features = features
+        self._memo: dict = {}
+
+    def runner_bin(self) -> str:
+        """The configured ``loopRunner.bin`` (``""`` when unavailable)."""
+        value = (self.loop_runner or {}).get("bin")
+        return value if isinstance(value, str) else ""
+
+    def runner_bin_path(self) -> str | None:
+        """``shutil.which`` of the runner binary, memoised."""
+        if "bin_path" not in self._memo:
+            name = self.runner_bin()
+            self._memo["bin_path"] = shutil.which(name) if name else None
+        return self._memo["bin_path"]
+
+    def runner_version_probe(self) -> dict | None:
+        """Run ``versionCommand`` once; ``None`` when it cannot be rendered/run."""
+        if "version_probe" not in self._memo:
+            probe = None
+            if self.loop_runner and self.runner_bin_path():
+                template = self.loop_runner.get("versionCommand")
+                argv = (
+                    _render_runner_command(template, self.loop_runner)
+                    if isinstance(template, str) else None
+                )
+                if argv:
+                    probe = _run_probe(argv, cwd=self.cwd)
+            self._memo["version_probe"] = probe
+        return self._memo["version_probe"]
+
+    def runner_version(self) -> tuple[int, int, int] | None:
+        """The live runner's parsed semver from the version probe, or ``None``."""
+        probe = self.runner_version_probe()
+        if not probe or not probe["ok"]:
+            return None
+        try:
+            payload = json.loads(probe["stdout"])
+        except ValueError:
+            return None
+        return _parse_semver(payload.get("version")) if isinstance(payload, dict) else None
+
+    def precondition_path(self) -> Path | None:
+        """``cwd / loopRunner.preconditionFile`` (e.g. ``.rauf.json``), or ``None``."""
+        name = (self.loop_runner or {}).get("preconditionFile")
+        return self.cwd / name if isinstance(name, str) and name else None
+
+    def precondition(self) -> dict | None:
+        """The parsed precondition file: ``None`` when absent, ``{}`` when unreadable."""
+        if "precondition" not in self._memo:
+            path = self.precondition_path()
+            parsed: dict | None = None
+            if path is not None and path.is_file():
+                try:
+                    value, _dupes = load_json_with_duplicates(path)
+                except (OSError, json.JSONDecodeError):
+                    value = {}
+                parsed = value if isinstance(value, dict) else {}
+            self._memo["precondition"] = parsed
+        return self._memo["precondition"]
+
+    def runner_relevant(self) -> bool:
+        """True once any active feature's next stage is forge-4-backlog or later."""
+        return any(_stage_at_or_after(row["nextStage"], "forge-4-backlog") for row in self.rows)
+
+
+def _build_check_context(
+    specs_dir: Path,
+    config_path: Path,
+    schema_path: Path,
+    *,
+    config: dict,
+    current_branch: str | None,
+    default_branch: str | None,
+    rows: list,
+    features: list,
+    plugin_root: dict,
+) -> _CheckContext:
+    """Assemble the shared check context from values the legacy report computed.
+
+    The config schema and the resolved ``loopRunner`` block are loaded here
+    with every failure captured as data (``schema_error`` /
+    ``loop_runner_error``) — ``_loop_runner_defaults`` raises ``UsageError``
+    on a damaged schema, which would otherwise map to exit 2.
+    """
+    schema: dict | None = None
+    schema_error: str | None = None
+    try:
+        loaded = json.loads(schema_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        schema_error = _exc_text(exc)
+    else:
+        if isinstance(loaded, dict):
+            schema = loaded
+        else:
+            schema_error = "schema top level is not an object"
+    defaults: dict | None = None
+    loop_runner: dict | None = None
+    loop_runner_error: str | None = None
+    try:
+        defaults = dict(_loop_runner_defaults(schema_path))
+    except Exception as exc:  # captured as data (INV-3)
+        loop_runner_error = _exc_text(exc)
+    else:
+        # The same flat override resolve_loop_runner applies, without re-reading
+        # (and re-warning about) the config the legacy report already loaded.
+        loop_runner = dict(defaults)
+        user_block = config.get("loopRunner")
+        if isinstance(user_block, dict):
+            loop_runner.update(user_block)
+    return _CheckContext(
+        cwd=Path.cwd(),
+        specs_dir=specs_dir,
+        config_path=config_path,
+        config_exists=config_path.is_file(),
+        config=config,
+        schema_path=schema_path,
+        schema=schema,
+        schema_error=schema_error,
+        loop_runner=loop_runner,
+        loop_runner_defaults=defaults,
+        loop_runner_error=loop_runner_error,
+        plugin_root=plugin_root,
+        current_branch=current_branch,
+        default_branch=default_branch,
+        rows=rows,
+        features=features,
+    )
+
+
+class _CheckSpec(NamedTuple):
+    """One registry entry: a stable id, its severity, and the check function."""
+
+    id: str
+    severity: str
+    run: Callable[[_CheckContext], dict]
+
+
+def _make_spec(check_id: str, severity: str, run: Callable[[_CheckContext], dict]) -> _CheckSpec:
+    """Validate and build a ``_CheckSpec`` (ids are kebab-case; severity enumerated)."""
+    if not _CHECK_ID_RE.match(check_id):
+        raise ValueError(f"invalid check id: {check_id!r}")
+    if severity not in CHECK_SEVERITIES:
+        raise ValueError(f"invalid severity for {check_id}: {severity!r}")
+    return _CheckSpec(check_id, severity, run)
+
+
+#: The check registry — registry order is output order. Populated below.
+DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = ()
+
+#: The ids, in registry order, for ``--check`` choices and the catalog parity test.
+DOCTOR_CHECK_IDS: Final[tuple[str, ...]] = tuple(spec.id for spec in DOCTOR_CHECKS)
+
+
+def _run_checks(ctx: _CheckContext, specs: list[_CheckSpec] | tuple[_CheckSpec, ...]) -> list[dict]:
+    """Run each spec with crash isolation and return the validated records.
+
+    A check that raises — or returns something ``_check_record`` rejects, or
+    something ``json.dumps`` cannot serialise — becomes an ``na`` record whose
+    ``detail`` names the exception. A ``fail`` from a check outside
+    ``FAIL_PROMOTED_CHECK_IDS`` is demoted to ``warn`` with
+    ``evidence.demotedFromFail`` set, so INV-1 holds structurally.
+    """
+    records: list[dict] = []
+    for spec in specs:
+        try:
+            raw = spec.run(ctx)
+            if not isinstance(raw, dict):
+                raise TypeError(f"check returned {type(raw).__name__}, expected dict")
+            status = raw.get("status")
+            evidence = raw.get("evidence")
+            if status == "fail" and spec.id not in FAIL_PROMOTED_CHECK_IDS:
+                status = "warn"
+                evidence = {**(evidence or {}), "demotedFromFail": True}
+            record = _check_record(
+                spec.id, status, spec.severity, raw.get("detail", ""), evidence, raw.get("remedy"),
+            )
+            json.dumps(record)
+        except Exception as exc:  # crash isolation (INV-3)
+            record = _check_record(
+                spec.id, "na", spec.severity, f"check crashed: {_exc_text(exc)}",
+            )
+        records.append(record)
+    return records
+
+
+def _checks_summary(checks: list[dict]) -> dict:
+    """Count ``checks[]`` by status, always emitting every status key."""
+    summary = {status: 0 for status in CHECK_STATUSES}
+    for record in checks:
+        summary[record["status"]] += 1
+    return summary
+
+
+def cluster_checks(checks: list[dict]) -> list[dict]:
+    """Group ``checks[]`` with a runnable remedy by identical ``remedy.command``.
+
+    Returns ``[{command, safety, checkIds[], description}, …]`` in first-seen
+    order. Records whose remedy is null, or whose remedy has no command
+    (description-only advice), are not clustered — they are report-only.
+    Identical commands merge; the cluster's ``safety`` is the most conservative
+    tier among its members and its ``description`` the first member's.
+    """
+    clusters: dict[str, dict] = {}
+    for record in checks:
+        remedy = record.get("remedy")
+        if not isinstance(remedy, dict) or not remedy.get("command"):
+            continue
+        command = remedy["command"]
+        entry = clusters.get(command)
+        if entry is None:
+            clusters[command] = {
+                "command": command,
+                "safety": remedy["safety"],
+                "checkIds": [record["id"]],
+                "description": remedy["description"],
+            }
+            continue
+        entry["checkIds"].append(record["id"])
+        if REMEDY_SAFETY_TIERS.index(remedy["safety"]) > REMEDY_SAFETY_TIERS.index(entry["safety"]):
+            entry["safety"] = remedy["safety"]
+    return list(clusters.values())
 
 
 def _print_doctor(report: dict) -> None:
@@ -6841,6 +7451,10 @@ def main() -> int:
     p_doc = sub.add_parser("doctor", help="Capture pipeline ground truth for debugging")
     p_doc.add_argument("--specs-dir", default="./specs", help="Specs directory")
     p_doc.add_argument("--config", default="./forge.config.json", help="forge.config.json path")
+    p_doc.add_argument(
+        "--schema", default=None,
+        help="Override the bundled forge-config-schema.json (chiefly for tests)",
+    )
     p_doc.add_argument("--json", action="store_true", dest="json_output")
 
     p_disc = sub.add_parser(
@@ -7168,7 +7782,11 @@ def main() -> int:
             return 0
 
         if args.cmd == "doctor":
-            report = doctor_report(Path(args.specs_dir), Path(args.config))
+            report = doctor_report(
+                Path(args.specs_dir),
+                Path(args.config),
+                schema_path=Path(args.schema) if args.schema else None,
+            )
             if args.json_output:
                 print(json.dumps(report, indent=2, ensure_ascii=False))
             else:
