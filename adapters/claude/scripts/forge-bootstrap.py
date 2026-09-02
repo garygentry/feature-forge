@@ -642,7 +642,28 @@ def _compose_agent_file(answers: Answers, filename: str) -> str:
 
 
 def write_hygiene(answers: Answers, target: Path, sentinel: Sentinel) -> None:
-    """Emit README, LICENSE, and the host agent-instruction file(s) (02 §4.5)."""
+    """Emit README, LICENSE, and the host agent-instruction file(s) (02 §4.5).
+
+    Interop with ``forge-init``'s root hygiene step
+    (``references/shared-conventions.md`` § "Root Hygiene (Tooling Feedback)"), which
+    writes the same "Tooling feedback" section into a root ``AGENTS.md``/``CLAUDE.md``.
+    The two writers cannot duplicate each other, but NOT because of the guard below:
+    a target that ``forge-init`` has touched holds ``forge.config.json`` (and possibly
+    ``AGENTS.md``), neither of which ``ALLOWED_META_FILE_RE`` permits, so ``check()``
+    reports ``eligible: false`` and the greenfield gate refuses the whole bootstrap run
+    before ``scaffold()`` is reached. In the other direction it is ``forge-init``'s own
+    shell ``[ -f … ] ||`` guard that protects this file. ``_write_artifact``'s
+    never-overwrite guard is load-bearing here only for an interrupted-bootstrap resume
+    (REQ-LIFE-02) — worth knowing, since the obvious reading of "never overwrites" is
+    that it is what makes the two writers safe together, and it is not.
+
+    On that one resume path the skip has a cost worth stating: forge-init's template is
+    a stub carrying only the "Tooling feedback" section, so keeping it means the project
+    never receives the rest of THIS template — Project Purpose, Getting Started,
+    Conventions, and "Specs are pre-implementation". Keeping the user's file is still
+    the right call (it is not ours to overwrite), but the two files are not equivalent
+    and the block is a subset, not a superset.
+    """
     _write_artifact(target, "README.md", _compose_readme(answers), sentinel)
     if answers["license"] != "none":
         _write_artifact(target, "LICENSE", _compose_license(answers), sentinel)

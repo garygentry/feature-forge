@@ -238,3 +238,60 @@ def test_ladder_title_and_pi_literals_present_in_pi_bundle() -> None:
         f"{_PI_RUNG3_ERROR_LITERAL!r} — a Pi agent matches this string to distinguish "
         "a non-interactive stripped-tool failure from a genuine user decline"
     )
+
+
+#: The `## Root Hygiene` section title (#244 P3). Like the ladder, it is a title every
+#: pointer cites, so a bundle that lost the section leaves those pointers dangling.
+_ROOT_HYGIENE_TITLE = "## Root Hygiene (Tooling Feedback)"
+
+#: The two project-root templates forge-init copies. They are `templates/` scaffolding —
+#: `_reference_translation_exempt` deliberately skips the host-term pass over them, since
+#: they are project content a user reads, not agent-facing guidance.
+_ROOT_HYGIENE_TEMPLATES = ("AGENTS.md", "CLAUDE.md")
+
+_ALL_TARGETS = ("claude", "pi") + NON_CLAUDE_TARGETS
+
+
+@pytest.mark.parametrize("target", _ALL_TARGETS)
+def test_root_hygiene_section_present_in_every_bundle(target: str) -> None:
+    """Every bundle's shared-conventions.md keeps the Root Hygiene section.
+
+    forge-init points at it by title on every host; a bundle that lost the section
+    (a fan-out or translation regression, not a token leak) would leave forge-init
+    citing a contract its own bundle cannot show — invisible to the token scan.
+    """
+    path = ADAPTERS_ROOT / target / "references" / "shared-conventions.md"
+    assert path.is_file(), f"{target} bundle is missing references/shared-conventions.md"
+    assert _ROOT_HYGIENE_TITLE in path.read_text(encoding="utf-8"), (
+        f"{path.relative_to(REPO_ROOT)} no longer carries '{_ROOT_HYGIENE_TITLE}' — "
+        f"forge-init's tooling-feedback step would point at nothing on {target}"
+    )
+
+
+@pytest.mark.parametrize("target", _ALL_TARGETS)
+@pytest.mark.parametrize("filename", _ROOT_HYGIENE_TEMPLATES)
+def test_root_hygiene_template_ships_untranslated(target: str, filename: str) -> None:
+    """The copied root-hygiene template carries no host-term degradation.
+
+    It is `cp`-ed verbatim into a user's repo, so a host-term substitution would ship
+    degraded prose into project content. `templates/` is exempt from
+    `_translate_reference_host_terms` for exactly this reason, and this asserts the
+    exemption still holds for the new subtree: byte-identical to canon everywhere.
+
+    Pi is the one sanctioned exception, and it is a *correct* one — the Pi pass rewrites
+    `/feature-forge:` to `/skill:` bundle-wide, and a template landing in a Pi-driven
+    project should name the command that project actually has. The assertion is
+    therefore "identical once that one substitution is undone", which is strictly
+    stronger than skipping Pi: any OTHER divergence still fails.
+    """
+    rel = Path("references") / "templates" / "root-hygiene" / filename
+    shipped = ADAPTERS_ROOT / target / rel
+    canon = REPO_ROOT / rel
+    assert shipped.is_file(), f"{target} bundle is missing {rel.as_posix()}"
+    text = shipped.read_text(encoding="utf-8")
+    if target == "pi":
+        text = text.replace("/skill:", "/feature-forge:")
+    assert text == canon.read_text(encoding="utf-8"), (
+        f"{shipped.relative_to(REPO_ROOT)} diverges from canon — project-content "
+        "templates must ship verbatim (build-adapters.py `_reference_translation_exempt`)"
+    )

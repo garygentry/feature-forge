@@ -75,6 +75,15 @@ UNCITED_ALLOWLIST: dict[tuple[str | None, str], str] = {
         "same explicit \"$R/references/...\" copy as its AGENTS.md sibling, gated on the "
         "host being Claude"
     ),
+    (None, "templates/root-hygiene/AGENTS.md"): (
+        "copied through an explicit \"$R/references/...\" path in shared-conventions.md's "
+        "Root Hygiene bash block (forge-init's tooling-feedback step), never a bare prose "
+        "read, so it resolves from the bundle root on every install layout"
+    ),
+    (None, "templates/root-hygiene/CLAUDE.md"): (
+        "same explicit \"$R/references/...\" copy as its AGENTS.md sibling, gated on the "
+        "host being Claude"
+    ),
     (None, "vendor-construct-inventory.md"): (
         "a REQ-VND-03 audit artifact — a record of the spec-purity sweep, read by humans "
         "reviewing that sweep and by no skill at runtime"
