@@ -15,8 +15,10 @@ applicable, and what it suggests. It is kept in lockstep with the registry by
 
 ## Contract
 
-- **Exit 0, always.** A crashing check becomes an `na` record (`check crashed: …`); a
-  crashing driver degrades every check to `na`. Nothing doctor finds changes its exit code.
+- **Exit 0 for everything it finds.** A crashing check becomes an `na` record
+  (`check crashed: …`); a crashing driver degrades every check to `na`; unreadable, non-UTF-8
+  or wrongly-typed inputs are reported as data. The only non-zero exits are the command's own
+  usage errors — a `--check` typo, or a specs dir the process cannot list — never a finding.
 - **Warn-only in this release.** No check is promoted to `fail` yet
   (`FAIL_PROMOTED_CHECK_IDS` is empty); a check that reported `fail` is demoted to `warn` with
   `evidence.demotedFromFail: true`. Promotion is a later phase (#244 P5).
@@ -27,7 +29,9 @@ applicable, and what it suggests. It is kept in lockstep with the registry by
   `gh --version` and `gh auth token` (exit code only; stdout goes to `/dev/null`). Never
   `gh auth status`, never the runner's `agentsProbeCommand`, never `rauf update --check`, never
   a remedy command. `tests/test_doctor_checks.py` proves this three ways: an argv allowlist over
-  fake binaries, an in-process socket monkeypatch, and a run under `unshare -rn`.
+  what scrubbed-PATH fake binaries record; an in-process `subprocess.run` recorder asserting every
+  spawn is on the allowlist and equals no emitted remedy command (with `socket` patched to raise);
+  and a run under `unshare -rn` giving identical verdicts.
 - **Record shape.** `{id, status, severity, detail, evidence, remedy}` in that key order;
   `status ∈ ok|warn|fail|na`, `severity ∈ blocking|advisory`. Ids are stable and append-only.
 - **Legacy output is untouched.** The eleven pre-existing keys keep their order and content, so

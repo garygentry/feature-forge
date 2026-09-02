@@ -766,7 +766,7 @@ def _read_state(state_path: Path) -> dict:
     """
     try:
         parsed = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):  # ValueError covers JSON *and* UTF-8 decode errors
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
@@ -1159,7 +1159,7 @@ def _counts(specs_dir: Path) -> dict[str, int]:
     tally = {"active": 0, "paused": 0, "abandoned": 0}
     for _name, _epic, state in _scan_features(specs_dir):
         status = state.get("pipelineStatus", "active")
-        if status in tally:
+        if isinstance(status, str) and status in tally:
             tally[status] += 1
     return tally
 
@@ -1293,7 +1293,7 @@ def _load_config(config_path: Path) -> dict:
     """Read config into a dict, warning on duplicates and tolerating bad input."""
     try:
         value, duplicate_keys = load_json_with_duplicates(config_path)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):  # ValueError covers JSON *and* UTF-8 decode errors
         return {}
     try:
         warn_duplicate_keys(config_path, duplicate_keys)
@@ -1315,7 +1315,7 @@ def _config_duplicate_keys(config_path: Path) -> list[str]:
     """
     try:
         return load_json_with_duplicates(config_path)[1]
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):  # ValueError covers JSON *and* UTF-8 decode errors
         return []
 
 
@@ -1787,10 +1787,20 @@ def _render_runner_command(template: str, loop_runner: dict, **tokens: object) -
     result does not split — the caller reports that as data, never runs it.
     """
     values: dict[str, object] = {"bin": loop_runner.get("bin") or "", **tokens}
-    rendered = template
-    for key, value in values.items():
-        rendered = rendered.replace("{" + key + "}", shlex.quote(str(value)))
-    if re.search(r"\{[A-Za-z][A-Za-z0-9_]*\}", rendered):
+    unrendered = False
+
+    def substitute(match: re.Match) -> str:
+        nonlocal unrendered
+        key = match.group(1)
+        if key not in values:
+            unrendered = True
+            return match.group(0)
+        return shlex.quote(str(values[key]))
+
+    # One pass over the template: a substituted value is opaque and is never
+    # re-scanned for a later token (``bin = "run-{backlogDir}"`` stays literal).
+    rendered = re.sub(r"\{([A-Za-z][A-Za-z0-9_]*)\}", substitute, template)
+    if unrendered:
         return None
     try:
         argv = shlex.split(rendered)
@@ -2017,7 +2027,7 @@ class _CheckContext:
             if path is not None and path.is_file():
                 try:
                     value, _dupes = load_json_with_duplicates(path)
-                except (OSError, json.JSONDecodeError):
+                except (OSError, ValueError):  # JSON *and* UTF-8 decode errors
                     value = {}
                 parsed = value if isinstance(value, dict) else {}
             self._memo["precondition"] = parsed
@@ -2143,8 +2153,9 @@ def _check_plugin_root(ctx: _CheckContext) -> dict:
         f"plugin root unresolved: {root.get('error', 'unknown')}",
         evidence,
         _remedy(
-            "Reinstall feature-forge for this host (see AGENTS-SETUP.md) or set "
-            "FEATURE_FORGE_ROOT to the bundle directory",
+            "Reinstall feature-forge for this host (setup guide: "
+            "https://raw.githubusercontent.com/garygentry/feature-forge/main/AGENTS-SETUP.md) "
+            "or set FEATURE_FORGE_ROOT to the bundle directory",
             None,
             "global-install",
         ),
@@ -2321,7 +2332,7 @@ def _check_runner_wired(ctx: _CheckContext) -> dict:
         "warn", f"{path.name} absent — the runner is not wired into this project", evidence,
         _remedy(
             hint if isinstance(hint, str) and hint else "Wire the loop runner into the project",
-            f"{ctx.runner_bin()} install .",
+            shlex.join([ctx.runner_bin(), "install", "."]),
             "local-write",
         ),
     )
@@ -2351,7 +2362,7 @@ def _check_runner_legacy_layout(ctx: _CheckContext) -> dict:
         "warn", "legacy Ralph layout present: " + ", ".join(found), evidence,
         _remedy(
             "Migrate the legacy Ralph layout to rauf's per-project artifacts",
-            f"{ctx.runner_bin()} migrate .",
+            shlex.join([ctx.runner_bin(), "migrate", "."]),
             "local-write",
         ),
     )
@@ -2380,8 +2391,11 @@ def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
     if parsed is None:
         return _result(
             "warn", f"{path.name} has no parseable installedBy ({installed_by!r})", evidence,
-            _remedy("Refresh the runner's per-project artifacts", f"{ctx.runner_bin()} update .",
-                    "local-write"),
+            _remedy(
+                "Refresh the runner's per-project artifacts",
+                shlex.join([ctx.runner_bin(), "update", "."]),
+                "local-write",
+            ),
         )
     if parsed[1] < live:
         return _result(
@@ -2389,8 +2403,11 @@ def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
             f"{path.name} was written by {installed_by}; the live runner is "
             f"{_fmt_semver(live)}",
             evidence,
-            _remedy("Refresh the runner's per-project artifacts", f"{ctx.runner_bin()} update .",
-                    "local-write"),
+            _remedy(
+                "Refresh the runner's per-project artifacts",
+                shlex.join([ctx.runner_bin(), "update", "."]),
+                "local-write",
+            ),
         )
     if parsed[1] > live:
         return _result(
@@ -2473,7 +2490,7 @@ def _check_config_schema(ctx: _CheckContext) -> dict:
     fix = _remedy("Fix forge.config.json so it parses as a JSON object", None, "local-write")
     try:
         value, duplicates = load_json_with_duplicates(ctx.config_path)
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:  # JSON *and* UTF-8 decode errors
         evidence["parseError"] = _exc_text(exc)
         return _result(
             "warn", f"forge.config.json unreadable or invalid JSON: {evidence['parseError']}",
@@ -2504,7 +2521,21 @@ def _check_config_schema(ctx: _CheckContext) -> dict:
                 "global-install",
             ),
         )
-    evidence["violations"] = _schema_violations(value, ctx.schema, ctx.schema, "$")
+    try:
+        evidence["violations"] = _schema_violations(value, ctx.schema, ctx.schema, "$")
+    except Exception as exc:  # a malformed schema node (e.g. ``"type": 5``)
+        evidence["schemaError"] = f"schema malformed: {_exc_text(exc)}"
+        return _result(
+            "warn",
+            f"config schema malformed ({_exc_text(exc)}); structural validation skipped",
+            evidence,
+            _remedy(
+                "Reinstall or update feature-forge — the bundled forge-config-schema.json "
+                "is damaged",
+                None,
+                "global-install",
+            ),
+        )
     props = ctx.schema.get("properties")
     known = set(props) if isinstance(props, dict) else set()
     evidence["unknownKeys"] = sorted(key for key in value if key not in known)
@@ -2582,8 +2613,9 @@ def _check_root_version_skew(ctx: _CheckContext) -> dict:
     return _result(
         "warn", "install roots disagree: " + "; ".join(disagreements), evidence,
         _remedy(
-            "Reinstall or update feature-forge so a single bundle is loaded (see "
-            "AGENTS-SETUP.md for your host), or unset the stale root override",
+            "Reinstall or update feature-forge so a single bundle is loaded (setup guide: "
+            "https://raw.githubusercontent.com/garygentry/feature-forge/main/AGENTS-SETUP.md), "
+            "or unset the stale root override",
             None,
             "global-install",
         ),
@@ -2698,6 +2730,7 @@ def _check_backlog_valid(ctx: _CheckContext) -> dict:
             )
         probe = probes[backlog_dir]
         findings: list = []
+        findings_parsed = False
         if probe["returncode"] == 1:
             try:
                 payload = json.loads(probe["stdout"])
@@ -2706,6 +2739,7 @@ def _check_backlog_valid(ctx: _CheckContext) -> dict:
             raw = payload.get("findings") if isinstance(payload, dict) else payload
             if isinstance(raw, list):
                 findings = raw
+                findings_parsed = True
         rows.append({
             "name": feat["name"],
             "epic": feat["epic"],
@@ -2715,6 +2749,7 @@ def _check_backlog_valid(ctx: _CheckContext) -> dict:
             "timedOut": probe["timedOut"],
             "error": probe["error"],
             "findingsCount": len(findings),
+            "findingsParsed": findings_parsed,
             "findings": [_head(json.dumps(f, ensure_ascii=False)) for f in findings[:5]],
             "stderrHead": _head(probe["stderr"]),
             "remedy": None,
@@ -2725,8 +2760,14 @@ def _check_backlog_valid(ctx: _CheckContext) -> dict:
         return _result("ok", f"{len(rows)} backlog(s) validate", evidence)
     parts = []
     for row in bad:
-        if row["exitCode"] == 1:
+        if row["exitCode"] == 1 and row["findingsParsed"]:
             parts.append(f"{_feature_label(row)} ({row['findingsCount']} finding(s))")
+        elif row["exitCode"] == 1:
+            parts.append(
+                f"{_feature_label(row)} (exit 1 but the validator output is not findings JSON"
+                + (f": {row['stderrHead']}" if row["stderrHead"] else "")
+                + ")"
+            )
         else:
             why = row["error"] or f"exit {row['exitCode']}"
             parts.append(f"{_feature_label(row)} (validator {why})")

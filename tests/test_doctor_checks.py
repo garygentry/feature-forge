@@ -1223,24 +1223,61 @@ def test_layer_one_every_spawn_is_on_the_allowlist_and_remedies_are_data(
         assert check(report, check_id)["status"] != "na"
 
 
-def test_layer_two_the_doctor_process_opens_no_socket(fs, monkeypatch, tmp_path: Path) -> None:
-    """In-process: any socket use by doctor itself raises — and nothing raises."""
+def test_layer_two_every_in_process_spawn_is_allowlisted_and_no_socket_opens(
+    fs, monkeypatch, tmp_path: Path,
+) -> None:
+    """In-process: record every ``subprocess.run`` doctor makes (fakes and real
+    git alike), assert each is on the allowlist and equals no remedy command it
+    emitted; and patch ``socket`` so any direct socket use by doctor raises."""
     import socket as socket_module
+    import subprocess as subprocess_module
 
     project, env = _full_project(tmp_path)
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     monkeypatch.chdir(project)
 
+    spawned: list[list[str]] = []
+    real_run = subprocess_module.run
+
+    def recording_run(argv, *args, **kwargs):
+        spawned.append([str(a) for a in argv])
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess_module, "run", recording_run)
+
     def boom(*_args, **_kwargs):
         raise AssertionError("doctor opened a socket")
 
     for attr in ("socket", "create_connection", "getaddrinfo", "gethostbyname"):
         monkeypatch.setattr(socket_module, attr, boom)
+
     report = fs.doctor_report(Path("specs"), Path("forge.config.json"))
     assert report["checksSummary"]["fail"] == 0
     assert len(report["checks"]) == len(fs.DOCTOR_CHECK_IDS)
     assert not any("opened a socket" in r["detail"] for r in report["checks"])
+
+    assert spawned, "nothing was spawned — the recorder is vacuous"
+    bin_names = {Path(argv[0]).name for argv in spawned}
+    assert {"rauf", "gh", "git", "bash"} <= bin_names, bin_names
+    allowed_leads = (
+        ("git",), ("bash",), ("rauf", "version", "--json"), ("rauf", "backlog", "validate"),
+        ("gh", "--version"), ("gh", "auth", "token"),
+    )
+    for argv in spawned:
+        head = (Path(argv[0]).name, *argv[1:])
+        assert any(head[:len(lead)] == lead for lead in allowed_leads), argv
+        assert not any(word in " ".join(argv) for word in FORBIDDEN_WORDS), argv
+        if head[0] == "bash":
+            assert Path(argv[1]).name == "forge-root.sh", argv
+    # Remedies are advice: no spawn equals any emitted remedy command.
+    remedies = [r["remedy"]["command"] for r in report["checks"]
+                if r["remedy"] and r["remedy"]["command"]]
+    assert remedies, "no remedy command emitted — the inequality is vacuous"
+    spawned_joined = {" ".join(argv) for argv in spawned}
+    spawned_basenames = {" ".join([Path(argv[0]).name, *argv[1:]]) for argv in spawned}
+    for command in remedies:
+        assert command not in spawned_joined and command not in spawned_basenames, command
 
 
 def test_layer_three_doctor_behaves_identically_without_a_network(tmp_path: Path) -> None:
@@ -1291,3 +1328,74 @@ def test_docs_catalog_lists_every_check_with_its_severity_in_registry_order(fs) 
     for check_id in fs.NO_NA_CHECKS:
         row = next(line for line in doc.splitlines() if line.startswith(f"| `{check_id}`"))
         assert "| never |" in row, f"{check_id} is in NO_NA_CHECKS but the catalog lists an na case"
+
+
+# --------------------------------------------------------------------------- #
+# Review-round regressions (PR #255 adversarial review)
+# --------------------------------------------------------------------------- #
+
+
+def test_render_runner_command_substitutes_in_one_pass(fs) -> None:
+    """A substituted value is opaque: a later token name inside it is never re-rendered."""
+    argv = fs._render_runner_command(
+        "{bin} backlog validate --dir {backlogDir}", {"bin": "run-{backlogDir}"},
+        backlogDir="/tmp/x",
+    )
+    assert argv == ["run-{backlogDir}", "backlog", "validate", "--dir", "/tmp/x"]
+    # A value containing braces of an unknown token is still opaque, not "unrendered".
+    argv = fs._render_runner_command("{bin} go", {"bin": "r-{nope}"})
+    assert argv == ["r-{nope}", "go"]
+    assert fs._render_runner_command("{bin} {nope}", {"bin": "rauf"}) is None
+
+
+def test_backlog_valid_exit_one_without_findings_json_is_not_zero_findings(
+    tmp_path: Path,
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, validate_exit=1, validate_stdout="boom, not json")
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "backlog-valid")
+    assert record["status"] == "warn"
+    assert "0 finding(s)" not in record["detail"]
+    assert "not findings JSON" in record["detail"]
+    (row,) = record["evidence"]["features"]
+    assert row["findingsParsed"] is False and row["findingsCount"] == 0
+
+
+def test_non_utf8_inputs_are_data_not_tracebacks(tmp_path: Path) -> None:
+    """Binary garbage in config, state and .rauf.json: exit 0, no crash, checks degrade."""
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    (project / ".rauf.json").write_bytes(b"\x83\xff\x00garbage")
+    report = doctor_report(project, env)
+    stale = check(report, "runner-artifacts-stale")
+    assert stale["status"] == "warn" and "check crashed" not in stale["detail"]
+    assert "no parseable installedBy" in stale["detail"]
+    assert "check crashed" not in check(report, "runner-profile-drift")["detail"]
+
+    (project / "forge.config.json").write_bytes(b"\x83\xff")
+    report = doctor_report(project, env)
+    schema = check(report, "config-schema")
+    assert schema["status"] == "warn" and "check crashed" not in schema["detail"]
+    assert report["configExists"] is True
+
+    write_feature(project, "listy", {"pipelineStatus": [], "stages": {}})
+    (project / "specs" / "binary" ).mkdir()
+    (project / "specs" / "binary" / ".pipeline-state.json").write_bytes(b"\xff\xfe\x00")
+    report = doctor_report(project, env)  # asserts exit 0 + no Traceback
+    assert report["checksSummary"]["fail"] == 0
+
+
+def test_config_schema_survives_a_malformed_schema_node(tmp_path: Path) -> None:
+    schema = tmp_path / "bad-schema.json"
+    schema.write_text(json.dumps({
+        "type": "object",
+        "properties": {"stack": {"type": 5}, "loopRunner": {"type": "object", "properties": {}}},
+    }))
+    project = make_project(tmp_path, config={"stack": "python"})
+    record = check(doctor_report(project, scrubbed_env(tmp_path), "--schema", str(schema)),
+                   "config-schema")
+    assert record["status"] == "warn" and "check crashed" not in record["detail"]
+    assert "schema malformed" in record["detail"]
+    assert record["remedy"]["safety"] == "global-install"
