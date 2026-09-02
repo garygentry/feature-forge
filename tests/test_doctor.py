@@ -318,3 +318,70 @@ def test_root_sandbox_status_non_root_never_sets(monkeypatch) -> None:
 
     assert status["isRoot"] is False
     assert status["loopWillSetSandbox"] is False
+
+
+def test_doctor_human_output_prints_the_checks_block(tmp_path: Path) -> None:
+    """Human output ends with the checks summary, warn lines + remedies; ok lines need --verbose."""
+    specs = tmp_path / "specs"
+    _write_state(specs, "widget", {
+        "pipelineStatus": "active",
+        "branch": "forge/widget",
+        "updatedAt": "2026-07-01T00:00:00Z",
+        "stages": {
+            stage: {"status": "complete", "version": 1}
+            for stage in ("forge-1-prd", "forge-2-tech", "forge-3-specs", "forge-4-backlog")
+        },
+    })
+    (tmp_path / "forge.config.json").write_text("{}")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q",
+         "--allow-empty", "-m", "init"],
+        cwd=tmp_path, capture_output=True,
+    )
+
+    def run(*extra: str) -> str:
+        result = subprocess.run(
+            [sys.executable, str(HELPER), "doctor", *extra],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout
+
+    out = run()
+    assert "checks: " in out and " 0 fail, " in out
+    # Warns print with their remedy beneath; the fix for drift on main is `git switch`.
+    assert "   ! branch-state:" in out
+    assert "      remedy [local-write]: git switch forge/widget" in out
+    assert "   ! backlog-present:" in out
+    # ok/na lines are hidden by default and shown with --verbose (or --check).
+    assert "  ok plugin-root:" not in out and "  na " not in out
+    verbose = run("--verbose")
+    assert "  ok plugin-root:" in verbose
+    assert "  na backlog-valid:" in verbose
+    # The checks block comes after every legacy line (INV-2: legacy lines unchanged).
+    assert out.index("checks: ") > out.index("features: 1 active")
+    assert out.split("checks: ")[0] == verbose.split("checks: ")[0]
+
+
+def test_doctor_check_flag_filters_the_registry_and_rejects_typos(tmp_path: Path) -> None:
+    """--check ID (repeatable) narrows checks[]; an unknown id is an argparse error (exit 2)."""
+    (tmp_path / "forge.config.json").write_text("{}")
+    result = _doctor(tmp_path, HELPER, "--check", "plugin-root", "--check", "sandbox-root")
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert [c["id"] for c in report["checks"]] == ["plugin-root", "sandbox-root"]
+    assert sum(report["checksSummary"].values()) == 2
+    # Legacy fields are still reported in full, first.
+    assert list(report)[:3] == ["pluginRoot", "currentBranch", "specsDir"]
+
+    human = subprocess.run(
+        [sys.executable, str(HELPER), "doctor", "--check", "plugin-root"],
+        capture_output=True, text=True, cwd=str(tmp_path),
+    )
+    assert human.returncode == 0
+    assert "  ok plugin-root:" in human.stdout  # --check shows the selected records
+
+    typo = _doctor(tmp_path, HELPER, "--check", "plugin-rooot")
+    assert typo.returncode == 2
+    assert "invalid choice: 'plugin-rooot'" in typo.stderr

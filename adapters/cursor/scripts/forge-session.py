@@ -8,6 +8,7 @@ root navigator:
     python3 forge-session.py context-usage [--config FILE] [--window N] \
         [--threshold F] [--json]
     python3 forge-session.py doctor [--specs-dir DIR] [--config FILE] [--json]
+                                    [--check ID ...] [--verbose] [--schema FILE]
     python3 forge-session.py discover-feature [NAME | --all] [--specs-dir DIR] [--json]
     python3 forge-session.py reconcile-branch --feature F [--specs-dir DIR] \
         [--config FILE] [--epic E] [--json]
@@ -71,9 +72,19 @@ caller simply omits the context advice.
 session or a broken install: the plugin root the sibling `forge-root.sh`
 actually resolves (plus its version and commit), the current git branch vs.
 each feature's recorded state branch, the recency-ranked feature summary, and
-whether each feature's composed backlog path exists on disk. Every probe is
+whether each feature's composed backlog path exists on disk. On top of those
+legacy fields it runs a registry of structured checks (``checks[]``, each
+``{id, status, severity, detail, evidence, remedy}`` with status ``ok`` /
+``warn`` / ``fail`` / ``na``) covering the install root, the loop runner and
+its precondition file, config completeness and schema, backlog presence and
+validity, branch drift, the GitHub CLI and the root/sandbox gate — see
+``docs/doctor-checks.md``. Checks are warn-only in this release (no check is
+promoted to ``fail``), every remedy is data the operator runs (doctor never
+executes one), and doctor never touches the network. Every probe is
 best-effort — a failure is reported as data, never as a crash — and the
 command always exits 0 so it can run in any half-broken environment.
+``--check ID`` narrows the registry, ``--verbose`` prints the ``ok``/``na``
+lines too, and ``--schema`` overrides the bundled config schema (tests).
 
 `discover-feature` looks for a feature's `.pipeline-state.json` across ALL
 git branches (local heads and remote-tracking refs), so a session on the
@@ -2986,8 +2997,34 @@ def cluster_checks(checks: list[dict]) -> list[dict]:
     return list(clusters.values())
 
 
-def _print_doctor(report: dict) -> None:
-    """Print the human-readable doctor report."""
+_CHECK_MARKERS: Final[dict[str, str]] = {"ok": "ok", "warn": "!", "fail": "X", "na": "na"}
+
+
+def _print_checks(report: dict, *, verbose: bool = False) -> None:
+    """Print the ``checks[]`` block: a one-line summary, then one line per finding.
+
+    ``warn``/``fail`` records always print (with their remedy on the next
+    line); ``ok``/``na`` records only with ``verbose``.
+    """
+    summary = report.get("checksSummary") or {}
+    print(
+        "checks: " + ", ".join(f"{summary.get(s, 0)} {s}" for s in CHECK_STATUSES)
+    )
+    for record in report.get("checks") or []:
+        if record["status"] in ("ok", "na") and not verbose:
+            continue
+        marker = _CHECK_MARKERS.get(record["status"], "?")
+        print(f"  {marker:>2} {record['id']}: {record['detail']}")
+        remedy = record.get("remedy")
+        if remedy:
+            print(
+                f"      remedy [{remedy['safety']}]: "
+                + (remedy["command"] or remedy["description"])
+            )
+
+
+def _print_doctor(report: dict, *, verbose: bool = False) -> None:
+    """Print the human-readable doctor report (legacy lines, then the checks block)."""
     root = report["pluginRoot"]
     if root.get("resolved"):
         detail = " ".join(
@@ -3044,6 +3081,8 @@ def _print_doctor(report: dict) -> None:
                 "export IS_SANDBOX=1 at launch so rauf's "
                 "--dangerously-skip-permissions is not refused"
             )
+    if "checks" in report:
+        _print_checks(report, verbose=verbose)
 
 
 # --------------------------------------------------------------------------- #
@@ -8268,6 +8307,14 @@ def main() -> int:
         "--schema", default=None,
         help="Override the bundled forge-config-schema.json (chiefly for tests)",
     )
+    p_doc.add_argument(
+        "--check", action="append", dest="checks", metavar="ID", choices=DOCTOR_CHECK_IDS,
+        help="Run only this check (repeatable); legacy fields are always reported",
+    )
+    p_doc.add_argument(
+        "--verbose", action="store_true",
+        help="Also print the ok/na check lines in the human report",
+    )
     p_doc.add_argument("--json", action="store_true", dest="json_output")
 
     p_disc = sub.add_parser(
@@ -8599,11 +8646,12 @@ def main() -> int:
                 Path(args.specs_dir),
                 Path(args.config),
                 schema_path=Path(args.schema) if args.schema else None,
+                only=frozenset(args.checks) if args.checks else None,
             )
             if args.json_output:
                 print(json.dumps(report, indent=2, ensure_ascii=False))
             else:
-                _print_doctor(report)
+                _print_doctor(report, verbose=args.verbose or bool(args.checks))
             return 0
 
         if args.cmd == "discover-feature":
