@@ -766,7 +766,7 @@ def _read_state(state_path: Path) -> dict:
     """
     try:
         parsed = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):  # ValueError covers JSON *and* UTF-8 decode errors
+    except (OSError, ValueError, RecursionError):  # bad JSON, bad UTF-8, absurd nesting
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
@@ -1293,7 +1293,7 @@ def _load_config(config_path: Path) -> dict:
     """Read config into a dict, warning on duplicates and tolerating bad input."""
     try:
         value, duplicate_keys = load_json_with_duplicates(config_path)
-    except (OSError, ValueError):  # ValueError covers JSON *and* UTF-8 decode errors
+    except (OSError, ValueError, RecursionError):  # bad JSON, bad UTF-8, absurd nesting
         return {}
     try:
         warn_duplicate_keys(config_path, duplicate_keys)
@@ -1315,7 +1315,7 @@ def _config_duplicate_keys(config_path: Path) -> list[str]:
     """
     try:
         return load_json_with_duplicates(config_path)[1]
-    except (OSError, ValueError):  # ValueError covers JSON *and* UTF-8 decode errors
+    except (OSError, ValueError, RecursionError):  # bad JSON, bad UTF-8, absurd nesting
         return []
 
 
@@ -1553,7 +1553,7 @@ def doctor_report(
     try:
         rows = build_rows(specs_dir, config)
         counts = _counts(specs_dir)
-    except (OSError, ValueError) as exc:  # e.g. a specs dir the process cannot list
+    except (OSError, ValueError, RecursionError) as exc:  # unlistable dir, absurd nesting
         rows, counts = [], {"active": 0, "paused": 0, "abandoned": 0}
         specs_error = _exc_text(exc)
     features = []
@@ -2046,7 +2046,7 @@ class _CheckContext:
             if path is not None and path.is_file():
                 try:
                     value, _dupes = load_json_with_duplicates(path)
-                except (OSError, ValueError):  # JSON *and* UTF-8 decode errors
+                except (OSError, ValueError, RecursionError):  # JSON *and* UTF-8 decode errors
                     value = {}
                 parsed = value if isinstance(value, dict) else {}
             self._memo["precondition"] = parsed
@@ -2080,7 +2080,7 @@ def _build_check_context(
     schema_error: str | None = None
     try:
         loaded = json.loads(schema_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:
         schema_error = _exc_text(exc)
     else:
         if isinstance(loaded, dict):
@@ -2520,7 +2520,7 @@ def _check_config_schema(ctx: _CheckContext) -> dict:
     fix = _remedy("Fix forge.config.json so it parses as a JSON object", None, "local-write")
     try:
         value, duplicates = load_json_with_duplicates(ctx.config_path)
-    except (OSError, ValueError) as exc:  # JSON *and* UTF-8 decode errors
+    except (OSError, ValueError, RecursionError) as exc:  # JSON *and* UTF-8 decode errors
         evidence["parseError"] = _exc_text(exc)
         return _result(
             "warn", f"forge.config.json unreadable or invalid JSON: {evidence['parseError']}",
@@ -8715,6 +8715,15 @@ def main() -> int:
             return 0
 
         if args.cmd == "doctor":
+            # Check details carry non-ASCII (em dash, ellipsis); a terminal whose
+            # encoding cannot represent them must not turn the diagnostic into a
+            # traceback (INV-3). Only the doctor path reconfigures.
+            reconfigure = getattr(sys.stdout, "reconfigure", None)
+            if reconfigure is not None:
+                try:
+                    reconfigure(errors="backslashreplace")
+                except (ValueError, OSError):
+                    pass
             report = doctor_report(
                 Path(args.specs_dir),
                 Path(args.config),

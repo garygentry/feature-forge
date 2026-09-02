@@ -1503,3 +1503,39 @@ def test_unreadable_specs_dir_is_data_not_exit_two(tmp_path: Path) -> None:
 def test_git_output_tolerates_undecodable_output(fs) -> None:
     out = fs._git_output(["-c", "alias.bad=!printf '\\377'", "bad"])
     assert out is None
+
+
+def test_doctor_survives_an_ascii_only_stdout(tmp_path: Path) -> None:
+    """Check details carry non-ASCII; an ASCII terminal must not traceback (INV-3)."""
+    env = scrubbed_env(tmp_path)
+    env["PYTHONIOENCODING"] = "ascii"
+    project = make_project(tmp_path, config=CONFIG)
+    write_feature(project, "ready", pipeline_state(PRODUCTION[:3]))  # runner-wired warns (em dash)
+    for extra in ((), ("--verbose",)):
+        result = subprocess.run(
+            [sys.executable, str(HELPER), "doctor", *extra], capture_output=True, text=True,
+            cwd=str(project), env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Traceback" not in result.stderr
+    report = doctor_report(project, env)
+    assert check(report, "runner-wired")["status"] == "warn"
+
+
+def test_absurdly_nested_json_inputs_are_data_not_recursion_errors(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    deep = "[" * 100_000 + "]" * 100_000
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    (project / "forge.config.json").write_text(deep)
+    (project / ".rauf.json").write_text(deep)
+    write_feature(project, "deep", {})
+    (project / "specs" / "deep" / ".pipeline-state.json").write_text(deep)
+    report = doctor_report(project, env)  # exit 0, no Traceback
+    assert not any("check crashed" in r["detail"] for r in report["checks"]), [
+        r["detail"] for r in report["checks"] if "check crashed" in r["detail"]
+    ]
+    schema = tmp_path / "deep-schema.json"
+    schema.write_text(deep)
+    report = doctor_report(project, env, "--schema", str(schema))
+    assert not any("driver crashed" in r["detail"] for r in report["checks"])
