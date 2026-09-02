@@ -71,16 +71,35 @@ This is the **one canonical statement** of interaction capability (`roadmap/self
                                                  Never stall.
 ```
 
-**Two independent axes.** `--host` is **static** per adapter bundle — the build-substituted `--host` value — and never implies a rung either direction (INV-5): a Claude session can still run non-interactively (`claude -p`), and an interactive Codex session is not rung 3 just because Codex lacks a structured tool. **Rung is dynamic**, self-assessed once per turn exactly as `--verify-capability` is self-assessed (`references/stage-exit-protocol.md` § Host and capability determination), and — whenever it is not rung 1 — **stated once** in output: `interaction: rung 3 (non-interactive) — declared defaults apply`.
+**Two independent axes.** `--host` is **static** per adapter bundle — the build-substituted `--host` value — and never implies a rung either direction (INV-5): a Claude session can still run non-interactively (`claude -p`), and an interactive Codex session is not rung 3 just because Codex lacks a structured tool. **Rung is dynamic** — determined once per session from the record below, not guessed — and, whenever it is not rung 1, **stated once** in output: `interaction: rung 3 (non-interactive) — declared defaults apply`.
 
-**Detection, per host:**
-- **Claude:** the question tool is absent from the tool surface, or no TTY is attached — rung 3.
-- **Codex:** `codex exec` (the non-interactive invocation) — rung 3; an interactive `codex` session is rung 2.
-- **Pi:** `AskUserQuestion` is **stripped from the tool list** in `-p`/`--mode json`; a call attempted anyway fails clearly — `Error: UI not available (running in non-interactive mode)` — the rung-3 backstop, **never** read as a user decline.
+**Determination — read it, never guess it.** The two halves of the ladder are not equally observable. *Rung 1 vs rung 2* is a fact about **you**: whether a structured question tool sits in your surface, which you can see. *Rung 2 vs rung 3* is a fact about the **invocation** — whether anyone is on the other end — and you have no signal for it at all. Measured, not assumed: five headless runs across two hosts every time self-assessed rung 2, emitted a prose question and stalled with the run's remaining steps unreachable. A `codex exec` run, for instance, is rung 3 and looks from the inside exactly like an interactive `codex` session, which is rung 2 — the difference is real but not visible to you. So take that half from `doctor`, which can observe what you cannot:
+
+```
+python3 "$R/scripts/forge-session.py" doctor --json --check interaction-mode
+```
+
+Read the record's `evidence`:
+
+| `evidence.mode` | Rung |
+|---|---|
+| `non-interactive` (carries `rung: 3`) | **rung 3**, whatever your tool surface suggests |
+| `interactive` | rung 1 with a structured question tool, else rung 2 |
+| `unknown`, or no such check (an older install) | self-assess as before, and prefer rung 2's prose question over assuming an answer |
+
+`unknown` is never "headless": guessing that would make an interactive session silently skip its questions and take no-write defaults, trading a visible stall for a silent behavior change.
+
+`evidence.hostArg` carries the `--host` value and `evidence.host` the adapter id — the concrete value every "gate on the build-substituted `--host`" instruction in canon asks you to read. Never substitute tool availability for either axis (INV-5): on Pi a compatibility extension registers a structured question tool, so that signal reports "Claude".
+
+**Secondary signal, never a substitute.** A structured question tool that is *present but errors* is itself proof of rung 3 — on Pi under `-p`/`--mode json` a call fails with `Error: UI not available (running in non-interactive mode)`, which is the rung-3 backstop and **never** a user decline. Its *absence* proves nothing about the rung, though: Pi has that tool **stripped from the tool list** in those same modes, so absence is the rung-1-vs-rung-2 question, not the rung-2-vs-rung-3 one, and reading it as rung 2 is exactly the stall this block exists to prevent.
+
+**Determine it before your first question, not at the question.** If you have not already run `doctor` this session, run the command above **now** — it is read-only, spawns no subprocess, and costs one call. Determining it lazily at the question site is how a run stalls: by then you have already decided to ask. A skill that ran `doctor --json` earlier for another gate (`forge-5-loop`'s 1c/1d, `forge-init`'s install preflight) reads the same record out of that report instead of re-running it; a skill whose first question comes *before* any such gate runs the narrow command above first. A launcher that knows the session has no reply channel states so with `FORGE_INTERACTION=non-interactive`, which is how the record answers on hosts where nothing else is observable.
 
 **Rung-3 rule (conservative-only, INV-6).** At a rung-3 site, either:
 - take the declared default — always the **no-write / no-proceed** option: it **never advances a pipeline stage**, launches a loop, applies a remedy, creates a branch, commits, or records a decision — and state that default and why; or
 - when no conservative default exists (an interview question with no sane unattended answer), emit `no-default: abort — <question> requires a human answer` and stop.
+
+"No-proceed" scopes to **the decision in front of you, never to the skill**. It declines *this* action; it does not end the run. Take the default, state it, and carry on with the remaining steps — the only exception is the `no-default: abort` case above, which stops by construction. A rung-3 site that quietly ends the skill early is indistinguishable from one that finished.
 
 Either outcome **must be stated in the output** — a rung-3 site that silently proceeds or silently stalls is a defect, not a degraded pass.
 

@@ -52,16 +52,21 @@ Options: **Enable (recommended)** / **Leave off**.
   `forge.config.json` in place, preserving formatting and every other key.
 - On **Leave off**: leave the config as written (`autoVerify: false`).
 
-Follow the Interaction Capability Ladder (`references/shared-conventions.md`), and **assess the
-rung before you ask anything** — the rung-2 test is whether *this invocation* can put a question
-to a human and get an answer back, **not** whether a structured tool is present. A headless run
-(`-p`, `--mode json`, `codex exec`, any CI/JSON invocation with no reply channel) is **rung 3**
-even though it, too, has no structured tool. At rung 2 (an interactive session that merely lacks
-the tool), ask the same question in plain prose and wait for the reply; same choice, different
-rendering. At rung 3 this question's declared default is the no-write / no-proceed option — skip
-the prompt, leave `autoVerify: false`, state the rung-3 default taken, and print the one-line
-note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.` The
-same rung governs every remaining step below: never emit a question a rung-3 run cannot answer.
+This is the run's **first question**, so determine your rung before asking it, per the
+Interaction Capability Ladder (`references/shared-conventions.md`) — **read** the rung from
+`doctor`'s `interaction-mode` record as that section directs; never judge it from your own tool
+surface, which cannot see whether anyone is there to answer:
+
+```
+python3 "$R/scripts/forge-session.py" doctor --json --check interaction-mode
+```
+
+At rung 1 or 2, ask (structured tool, or the same choice in plain prose — then wait for the
+reply). At rung 3 this question's declared default is the no-write / no-proceed option — skip the
+prompt, leave `autoVerify: false`, state the rung-3 default taken, and print the one-line note
+`Set "autoVerify": true in forge.config.json to verify automatically after each stage.` — then
+**continue with the steps below**; declining this edit never ends the skill. The same rung governs
+every remaining step: never emit a question a rung-3 run cannot answer.
 
 ## Preflight the install
 
@@ -109,6 +114,6 @@ After initialization, start the pipeline with `/feature-forge:forge-1-prd <featu
 
 This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". On Codex:
 
-- **User input:** Codex has no structured question tool. Interactive session — ask the question directly and wait for the reply; never assume an answer. Under `codex exec` (non-interactive) — don't wait: take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
+- **User input:** Codex has no structured question tool. Which rung you are on is **not** observable from inside the session — a `codex exec` run looks exactly like an interactive one — so read it from the Interaction Capability Ladder's `interaction-mode` record instead of judging it. Interactive session — ask the question directly and wait for the reply; never assume an answer. Non-interactive — don't wait: take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
 - **Subagents:** spawn a Codex subagent using the named custom agent under `.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly asked; if the custom agent is unavailable, run that step inline yourself.
 - **Background / monitoring:** run long-lived runner commands in your shell session and report progress as it arrives — there is no Claude-style background or monitoring tool to arm.
