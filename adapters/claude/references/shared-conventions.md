@@ -75,7 +75,9 @@ This is the **one canonical statement** of interaction capability (`roadmap/self
 
 **Determination — read it, never guess it.** The two halves of the ladder are not equally observable. *Rung 1 vs rung 2* is a fact about **you**: whether a structured question tool sits in your surface, which you can see. *Rung 2 vs rung 3* is a fact about the **invocation** — whether anyone is on the other end — and you have no signal for it at all. Measured, not assumed: five headless runs across two hosts every time self-assessed rung 2, emitted a prose question and stalled with the run's remaining steps unreachable. A `codex exec` run, for instance, is rung 3 and looks from the inside exactly like an interactive `codex` session, which is rung 2 — the difference is real but not visible to you. So take that half from `doctor`, which can observe what you cannot:
 
-```
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" doctor --json --check interaction-mode
 ```
 
@@ -89,17 +91,23 @@ Read the record's `evidence`:
 
 `unknown` is never "headless": guessing that would make an interactive session silently skip its questions and take no-write defaults, trading a visible stall for a silent behavior change.
 
+The check itself is read-only and spawns nothing — it reads one environment variable and `/proc`. (The surrounding `doctor` run still makes its usual read-only `git` queries to build the report.)
+
 `evidence.hostArg` carries the `--host` value and `evidence.host` the adapter id — the concrete value every "gate on the build-substituted `--host`" instruction in canon asks you to read. Never substitute tool availability for either axis (INV-5): on Pi a compatibility extension registers a structured question tool, so that signal reports "Claude".
 
-**Secondary signal, never a substitute.** A structured question tool that is *present but errors* is itself proof of rung 3 — on Pi under `-p`/`--mode json` a call fails with `Error: UI not available (running in non-interactive mode)`, which is the rung-3 backstop and **never** a user decline. Its *absence* proves nothing about the rung, though: Pi has that tool **stripped from the tool list** in those same modes, so absence is the rung-1-vs-rung-2 question, not the rung-2-vs-rung-3 one, and reading it as rung 2 is exactly the stall this block exists to prevent.
+**Secondary signal, never a substitute.** A structured question tool that is *registered but fails when called* is itself proof of rung 3: the call returns `Error: UI not available (running in non-interactive mode)`, which is the rung-3 backstop and **never** a user decline. Treat that error as rung 3 wherever you meet it.
 
-**Determine it before your first question, not at the question.** If you have not already run `doctor` this session, run the command above **now** — it is read-only, spawns no subprocess, and costs one call. Determining it lazily at the question site is how a run stalls: by then you have already decided to ask. A skill that ran `doctor --json` earlier for another gate (`forge-5-loop`'s 1c/1d, `forge-init`'s install preflight) reads the same record out of that report instead of re-running it; a skill whose first question comes *before* any such gate runs the narrow command above first. A launcher that knows the session has no reply channel states so with `FORGE_INTERACTION=non-interactive`, which is how the record answers on hosts where nothing else is observable.
+Its *absence* proves nothing either way. Pi has that tool **stripped from the tool list** outright in `-p`/`--mode json`, so there is no call to attempt and no error to read — and an absent tool is the rung-1-vs-rung-2 question, not the rung-2-vs-rung-3 one. Reading absence as rung 2 is exactly the stall this block exists to prevent.
+
+**Determine it before your first question, not at the question.** Determining it lazily at the question site is how a run stalls: by then you have already decided to ask. So run the command above **now** unless you already hold a `doctor` report that contains an `interaction-mode` record — a *narrowed* `doctor --json --check …` run (which is what `forge-5-loop`'s gates 1c/1d and `forge-init`'s install preflight both use) does **not** contain one unless it named this check, so it is not a substitute. Reuse the record only if you can see it; otherwise run the command. A launcher that knows the session has no reply channel states so with `FORGE_INTERACTION=non-interactive`, which is how the record answers on hosts where nothing else is observable.
 
 **Rung-3 rule (conservative-only, INV-6).** At a rung-3 site, either:
 - take the declared default — always the **no-write / no-proceed** option: it **never advances a pipeline stage**, launches a loop, applies a remedy, creates a branch, commits, or records a decision — and state that default and why; or
 - when no conservative default exists (an interview question with no sane unattended answer), emit `no-default: abort — <question> requires a human answer` and stop.
 
-"No-proceed" scopes to **the decision in front of you, never to the skill**. It declines *this* action; it does not end the run. Take the default, state it, and carry on with the remaining steps — the only exception is the `no-default: abort` case above, which stops by construction. A rung-3 site that quietly ends the skill early is indistinguishable from one that finished.
+"No-proceed" scopes to **the decision in front of you, never to the skill**: it declines *this* action, it does not by itself end the run. So after taking a no-write default, carry on with the remaining steps. A rung-3 site that quietly ends the skill early is indistinguishable from one that finished.
+
+What *does* end the run is a default that says so. `no-default: abort` stops, and so does any site whose class below declares **STOP** — those stop deliberately, and stopping is then the stated outcome, not a silent exit. The rule is: **stop only when your site's declared default is a stop; never as a side effect of the words "no-proceed".**
 
 Either outcome **must be stated in the output** — a rung-3 site that silently proceeds or silently stalls is a defect, not a degraded pass.
 

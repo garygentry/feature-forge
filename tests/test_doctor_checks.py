@@ -1616,7 +1616,7 @@ def test_a_harness_that_overwrote_its_argv_yields_no_mode(fs, tmp_path: Path) ->
         (1, 0, ["/lib/systemd/systemd"]),
     ])
     chain = fs._process_ancestry(10, proc_root=proc)
-    assert chain[1] == {"pid": 5, "name": "pi", "flags": [], "hasArgs": False}
+    assert chain[1] == {"pid": 5, "name": "pi", "flags": [], "replyFlags": [], "hasArgs": False}
     verdict = fs._classify_ancestry(chain)
     assert verdict["host"] == "pi", "the host survives an overwritten argv"
     assert verdict["mode"] is None, (
@@ -1673,14 +1673,17 @@ def test_ancestry_evidence_carries_no_raw_argv_and_redacts_a_username(
     proc = _proc_tree(tmp_path / "proc", [
         (10, 5, ["/usr/bin/python3", "forge-session.py"]),
         (5, 4, ["sshd: gary@pts/6"]),
-        (4, 1, ["/usr/bin/some-tool", "--password", "hunter2"]),
+        # No space/colon/tab, so only _EXEC_NAME_RE can redact this one.
+        (4, 3, ["/tmp/gary@corp.com"]),
+        (3, 1, ["/usr/bin/some-tool", "--password", "hunter2"]),
         (1, 0, ["/lib/systemd/systemd"]),
     ])
     chain = fs._process_ancestry(10, proc_root=proc)
-    assert [entry["name"] for entry in chain] == ["python3", "?", "some-tool", "systemd"]
+    assert [entry["name"] for entry in chain] == ["python3", "?", "?", "some-tool", "systemd"]
     blob = json.dumps(chain)
     assert "gary" not in blob and "hunter2" not in blob and "--password" not in blob
-    assert all(set(entry) == {"pid", "name", "flags", "hasArgs"} for entry in chain)
+    assert "corp.com" not in blob, "_EXEC_NAME_RE must redact an email-shaped basename"
+    assert all(set(entry) == {"pid", "name", "flags", "hasArgs", "replyFlags"} for entry in chain)
 
 
 def test_ancestry_walk_survives_a_missing_or_cyclic_proc(fs, tmp_path: Path) -> None:
@@ -1693,19 +1696,53 @@ def test_ancestry_walk_survives_a_missing_or_cyclic_proc(fs, tmp_path: Path) -> 
     assert len(fs._process_ancestry(10, proc_root=cyclic)) == 2
 
 
-def test_env_stamp_outranks_ancestry_and_reports_the_conflict(tmp_path: Path) -> None:
-    """The launcher's stated mode wins; the disagreement is surfaced, not swallowed."""
-    env = scrubbed_env(tmp_path)
-    project = make_project(tmp_path)
-    env["FORGE_INTERACTION"] = "non-interactive"
-    record = check(doctor_report(project, env), "interaction-mode")
-    assert record["status"] == "ok"
-    assert record["evidence"]["mode"] == "non-interactive"
-    assert record["evidence"]["modeSource"] == "env-stamp"
-    assert record["evidence"]["rung"] == 3
-    # pytest itself runs under an interactive harness here, so the two disagree.
-    if record["evidence"].get("conflict"):
-        assert "FORGE_INTERACTION=non-interactive" in record["evidence"]["conflict"]
+def test_env_stamp_outranks_ancestry_when_ancestry_has_no_opinion(
+    fs, monkeypatch,
+) -> None:
+    """The launcher's stated mode wins over ancestry that cannot read one.
+
+    This is the loop's own shape: under rauf, a Pi or Codex child has an
+    ancestry that identifies the host but yields no mode, and the stamp decides.
+    """
+    monkeypatch.setattr(fs, "_process_ancestry", lambda *a, **k: [
+        {"pid": 5, "name": "pi", "flags": [], "replyFlags": [], "hasArgs": False},
+    ])
+    monkeypatch.setenv("FORGE_INTERACTION", "non-interactive")
+    result = fs._check_interaction_mode(object())
+    assert result["status"] == "ok"
+    assert result["evidence"]["mode"] == "non-interactive"
+    assert result["evidence"]["modeSource"] == "env-stamp"
+    assert result["evidence"]["rung"] == 3
+    assert "conflict" not in result["evidence"], (
+        "ancestry that merely cannot read a mode is not a contradiction"
+    )
+
+
+def test_a_contradicted_stamp_resolves_to_unknown_and_warns(fs, monkeypatch) -> None:
+    """A leaked `export FORGE_INTERACTION=non-interactive` must not silence questions.
+
+    The dangerous case: an operator exports the stamp in a profile, then works
+    interactively. Before this rule the stamp won outright and the record read
+    `ok / non-interactive / rung 3` for a fully attended session — and because
+    `ok` records are suppressed on the human path, the operator saw NOTHING.
+    A skill would then take no-write defaults silently, which the ladder calls
+    worse than the stall it replaces.
+
+    So a POSITIVE contradiction resolves to neither signal: `unknown` (which
+    means "self-assess", i.e. ask) and `warn` (which the human path prints).
+    """
+    monkeypatch.setattr(fs, "_process_ancestry", lambda *a, **k: [
+        {"pid": 5, "name": "claude", "flags": [], "replyFlags": [], "hasArgs": True},
+    ])
+    monkeypatch.setenv("FORGE_INTERACTION", "non-interactive")
+    result = fs._check_interaction_mode(object())
+    assert result["status"] == "warn", "a contradiction must be visible on the human path"
+    assert result["evidence"]["mode"] == "unknown"
+    assert result["evidence"]["rung"] is None, "never rung 3 on contradicted signals"
+    assert result["evidence"]["modeSource"] is None
+    assert "FORGE_INTERACTION=non-interactive" in result["evidence"]["conflict"]
+    assert result["remedy"]["safety"] == "read-only"
+    assert result["remedy"]["command"] is None
 
 
 def test_env_stamp_interactive_never_carries_a_rung(tmp_path: Path) -> None:
@@ -1717,14 +1754,24 @@ def test_env_stamp_interactive_never_carries_a_rung(tmp_path: Path) -> None:
     assert record["evidence"]["rung"] is None
 
 
-def test_an_unrecognised_stamp_is_unknown_with_evidence_not_a_guess(tmp_path: Path) -> None:
-    """A typo'd stamp falls through to the next signal and says why."""
-    env = scrubbed_env(tmp_path)
-    env["FORGE_INTERACTION"] = "headless"
-    record = check(doctor_report(make_project(tmp_path), env), "interaction-mode")
-    assert record["evidence"]["modeSource"] != "env-stamp"
-    assert "interactive, non-interactive" in record["evidence"]["envStampError"]
-    assert record["evidence"]["mode"] != "non-interactive", "a typo must never mean headless"
+def test_an_unrecognised_stamp_is_unknown_with_evidence_not_a_guess(
+    fs, monkeypatch,
+) -> None:
+    """A typo'd stamp falls through to the next signal and says why.
+
+    Driven in-process with ancestry stubbed out. `scrubbed_env` can scrub the
+    environment but NOT the process tree, and a subprocess variant of this test
+    inherits pytest's ancestors — so under `claude -p` (which is how this repo's
+    own `validate.sh` runs inside a rauf loop) ancestry would report
+    `non-interactive` and the last assertion would fail. A test whose verdict
+    depends on how the reviewer installed their harness is not a test.
+    """
+    monkeypatch.setattr(fs, "_process_ancestry", lambda *a, **k: [])
+    monkeypatch.setenv("FORGE_INTERACTION", "headless")
+    result = fs._check_interaction_mode(object())
+    assert result["evidence"]["modeSource"] != "env-stamp"
+    assert "interactive, non-interactive" in result["evidence"]["envStampError"]
+    assert result["evidence"]["mode"] != "non-interactive", "a typo must never mean headless"
 
 
 def test_undetermined_mode_is_na_and_advises_the_stamp_without_a_command(
@@ -1778,12 +1825,84 @@ def test_adapter_agent_ids_match_the_build(fs) -> None:
     assert targets == set(fs._ADAPTER_AGENT_IDS)
 
 
-def test_host_arg_is_named_for_claude_and_pi_and_generic_for_the_rest(fs) -> None:
-    """The `--host` vocabulary doctor reports matches what the build substitutes."""
-    assert set(fs._NAMED_HOST_ARGS) == {"claude", "pi"}
-    for agent in fs._ADAPTER_AGENT_IDS:
-        expected = agent if agent in {"claude", "pi"} else "generic"
-        assert (agent if agent in fs._NAMED_HOST_ARGS else "generic") == expected
+def test_reported_host_arg_is_a_value_stage_exit_actually_accepts(fs) -> None:
+    """Every `hostArg` doctor can emit is in the `--host` vocabulary.
+
+    The ladder tells every skill on every host to read `evidence.hostArg` as its
+    `--host` value, so a value `stage-exit` rejects would send an agent to a
+    command that exits 2. Pinned against `EXIT_HOSTS`, the real enum, rather
+    than against the same constant the code derives it from — the previous
+    version of this test compared `_NAMED_HOST_ARGS` with itself and asserted
+    nothing, leaving `host_arg` fully uncovered.
+    """
+    emitted = {
+        agent if agent in fs._NAMED_HOST_ARGS else "generic"
+        for agent in fs._ADAPTER_AGENT_IDS
+    }
+    assert emitted <= set(fs.EXIT_HOSTS), (
+        f"doctor would report a --host value stage-exit rejects: {emitted - set(fs.EXIT_HOSTS)}"
+    )
+    assert emitted == {"claude", "pi", "generic"}
+
+
+def test_the_host_axis_is_reported_end_to_end_from_the_bundle_sentinel(
+    fs, monkeypatch, tmp_path: Path,
+) -> None:
+    """`host`/`hostArg`/`hostSource` reach the record, not just the classifier.
+
+    Previously nothing asserted these three fields end to end, so replacing the
+    `host_arg` derivation with `host_arg = host` — handing every codex/copilot/
+    cursor/gemini skill an unknown `--host` — left the whole suite green.
+    """
+    monkeypatch.setattr(fs, "_process_ancestry", lambda *a, **k: [])
+    monkeypatch.delenv("FORGE_INTERACTION", raising=False)
+    for agent, expected_arg in (("codex", "generic"), ("pi", "pi"), ("claude", "claude")):
+        monkeypatch.setattr(fs, "_bundle_agent", lambda _root, a=agent: a)
+        evidence = fs._check_interaction_mode(object())["evidence"]
+        assert (evidence["host"], evidence["hostArg"]) == (agent, expected_arg)
+        assert evidence["hostSource"] == "bundle"
+
+
+def test_a_bidirectional_print_session_is_not_claimed_headless(fs, tmp_path: Path) -> None:
+    """`claude --print --input-format stream-json` CAN answer — do not claim rung 3.
+
+    The Agent SDK drives Claude with `--print` plus a streaming input channel and
+    `--permission-prompt-tool`, which routes prompts back to the SDK host. Reading
+    `--print` alone as "nobody is there" would make a skill silently take no-write
+    defaults in a session that was ready to answer — the dangerous direction.
+    """
+    proc = _proc_tree(tmp_path / "proc", [
+        (10, 5, ["/usr/bin/python3", "forge-session.py"]),
+        (5, 1, ["/usr/bin/claude", "--print", "--input-format", "stream-json"]),
+        (1, 0, ["/lib/systemd/systemd"]),
+    ])
+    verdict = fs._classify_ancestry(fs._process_ancestry(10, proc_root=proc))
+    assert verdict["host"] == "claude"
+    assert verdict["mode"] is None, "a wired-back reply channel withdraws the headless claim"
+
+
+def test_an_unreadable_frame_does_not_truncate_the_rest_of_the_walk(
+    fs, tmp_path: Path,
+) -> None:
+    """A frame we cannot NAME still yields its ppid, so the harness above is found.
+
+    Under `hidepid=2`, across a uid boundary, or for a pid that exits mid-walk,
+    `cmdline` can be unreadable while `stat` is fine. Aborting there would drop
+    every ancestor above it and degrade a readable session to `unknown`.
+    """
+    proc = _proc_tree(tmp_path / "proc", [
+        (10, 5, ["/usr/bin/python3", "forge-session.py"]),
+        (5, 4, ["/usr/bin/opaque"]),
+        (4, 1, ["/usr/bin/claude", "-p"]),
+        (1, 0, ["/lib/systemd/systemd"]),
+    ])
+    (proc / "5" / "cmdline").unlink()  # readable stat, unreadable cmdline
+    chain = fs._process_ancestry(10, proc_root=proc)
+    # pid 5 is omitted (nothing to name it with) but the walk went THROUGH it.
+    assert [entry["pid"] for entry in chain] == [10, 4, 1], "the walk continued past it"
+    assert fs._classify_ancestry(chain)["mode"] == "non-interactive", (
+        "the harness above the unreadable frame must still decide the mode"
+    )
 
 
 def test_every_ancestry_host_id_is_a_real_adapter_id(fs) -> None:

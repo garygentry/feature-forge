@@ -440,3 +440,67 @@ def test_forge_root_complete_root_wins_over_partial(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == str(complete)
+
+
+# --------------------------------------------------------------------------- #
+# Every `$R` fence resolves R itself (#244 P3.5 review finding)
+# --------------------------------------------------------------------------- #
+
+#: The substring that proves a fenced block resolves the root before using it.
+_RESOLVER_MARKER: Final = 'exec "$d/scripts/forge-root.sh"'
+
+
+def _fenced_blocks(text: str):
+    """Yield ``(start_line, body)`` for every fenced code block in a markdown file."""
+    lines = text.splitlines()
+    inside = False
+    start = 0
+    body: list[str] = []
+    for number, line in enumerate(lines, 1):
+        if line.startswith("```"):
+            if inside:
+                yield start, "\n".join(body)
+                body = []
+            else:
+                start = number
+            inside = not inside
+        elif inside:
+            body.append(line)
+
+
+def test_every_fenced_block_using_R_resolves_it_in_the_same_block() -> None:
+    """A `$R` fence must derive `R`; each fence is its own shell.
+
+    An agent runs one fenced block as one shell invocation, so an `R` assigned in
+    an earlier block is simply unset by the time a later one runs — the command
+    expands to `python3 "/scripts/forge-session.py"` and exits 2.
+
+    This guard exists because #244 P3.5 shipped exactly that defect with CI fully
+    green: two new fences invoked `$R` without the resolver, and because
+    `references/shared-conventions.md` is fanned into every skill's local
+    `references/`, the broken command reached **90 files across all six bundles**.
+    Two independent reviewers found it; no test did. The fence was the phase's
+    load-bearing instruction, so an agent's first action was a crash.
+
+    The rule is mechanical, so it is worth a mechanical guard.
+    """
+    offenders = []
+    for path in sorted(
+        [*(REPO_ROOT / "references").rglob("*.md"), *(REPO_ROOT / "skills").rglob("*.md")]
+    ):
+        for start, body in _fenced_blocks(path.read_text(encoding="utf-8")):
+            if '"$R/' in body and _RESOLVER_MARKER not in body:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{start}")
+    assert not offenders, (
+        'these fenced blocks use "$R/" without resolving R in the same block, so the '
+        "command expands to an absolute path with an empty root and exits 2:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+def test_the_R_fence_guard_would_catch_a_bare_usage() -> None:
+    """Non-vacuity: the predicate above rejects a fence that omits the resolver."""
+    bare = '```bash\npython3 "$R/scripts/forge-session.py" doctor --json\n```\n'
+    blocks = list(_fenced_blocks(bare))
+    assert len(blocks) == 1
+    assert '"$R/' in blocks[0][1] and _RESOLVER_MARKER not in blocks[0][1]

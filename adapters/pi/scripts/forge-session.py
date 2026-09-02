@@ -1711,6 +1711,13 @@ _ANCESTRY_HOSTS: Final[tuple[tuple[str, str], ...]] = (
 )
 #: argv flags that put a recognised harness into print/headless mode.
 _HEADLESS_FLAGS: Final[frozenset[str]] = frozenset({"-p", "--print"})
+#: argv flags that RESTORE a reply channel to an otherwise-headless invocation.
+#: Claude's SDK streaming mode (``--print --input-format stream-json``) is
+#: bidirectional and its host CAN answer, so ``--print`` alone does not prove
+#: "nobody is there". Presence of any of these withdraws the headless claim.
+_REPLY_CHANNEL_FLAGS: Final[frozenset[str]] = frozenset(
+    {"--input-format", "--permission-prompt-tool"}
+)
 #: Depth cap on the ancestry walk — a guard, not a tuning knob.
 _ANCESTRY_MAX_DEPTH: Final[int] = 16
 #: A plausible executable basename. Anything else is redacted to ``?`` before it
@@ -3038,12 +3045,18 @@ def _process_ancestry(
             break
         seen.add(pid)
         try:
-            raw = (proc_root / str(pid) / "cmdline").read_bytes()
-            argv = [part for part in raw.decode("utf-8", "replace").split("\0") if part]
+            # `stat` first: it carries the ppid, so a frame whose `cmdline` is
+            # unreadable (hidepid, a uid boundary, a pid that just exited) costs
+            # us its NAME but not the rest of the walk.
             stat = (proc_root / str(pid) / "stat").read_text(encoding="utf-8", errors="replace")
             ppid = int(stat.rsplit(") ", 1)[1].split()[1])
         except (OSError, ValueError, IndexError):
             break
+        try:
+            raw = (proc_root / str(pid) / "cmdline").read_bytes()
+            argv = [part for part in raw.decode("utf-8", "replace").split("\0") if part]
+        except OSError:
+            argv = []
         if argv:
             # Basename only a real path: `sshd: gary@pts/6` would otherwise
             # basename to `6`, which is both meaningless and a hint at a real user.
@@ -3056,6 +3069,7 @@ def _process_ancestry(
                 "pid": pid,
                 "name": name if _EXEC_NAME_RE.match(name) else "?",
                 "flags": sorted(set(argv[1:]) & _HEADLESS_FLAGS),
+                "replyFlags": sorted(set(argv[1:]) & _REPLY_CHANNEL_FLAGS),
                 # False when the process exposes no arguments at all — either it
                 # genuinely had none, or it overwrote its argv (see _classify_ancestry).
                 "hasArgs": len(argv) > 1,
@@ -3092,6 +3106,10 @@ def _classify_ancestry(chain: list[dict]) -> dict:
         if host is None:
             continue
         if entry["name"] not in _ANCESTRY_MODE_HARNESSES or not entry["hasArgs"]:
+            return {"mode": None, "host": host, "harness": entry["name"]}
+        if entry["flags"] and entry["replyFlags"]:
+            # Headless-looking but a reply channel is wired back in — refuse both
+            # claims rather than pick the wrong one.
             return {"mode": None, "host": host, "harness": entry["name"]}
         mode = "non-interactive" if entry["flags"] else "interactive"
         return {"mode": mode, "host": host, "harness": entry["name"]}
@@ -3147,7 +3165,20 @@ def _check_interaction_mode(ctx: _CheckContext) -> dict:
     bundle_agent = _bundle_agent(Path(__file__).resolve().parent.parent)
 
     mode, source = (stamp, "env-stamp") if stamp in INTERACTION_MODES else (None, None)
-    if mode is None and inferred["mode"] is not None:
+    # A POSITIVE contradiction between the two signals resolves to neither. The
+    # stamp normally wins (it is stated, not inferred), but when ancestry has a
+    # confident opposite reading the honest answer is that we do not know — and
+    # `unknown` (self-assess, ask) is the only resolution that cannot silently
+    # skip a question in a session someone is actually watching. Ancestry that
+    # merely fails to read a mode is not a contradiction and does not trigger this.
+    conflict = (
+        source == "env-stamp"
+        and inferred["mode"] is not None
+        and inferred["mode"] != mode
+    )
+    if conflict:
+        mode, source = None, None
+    if mode is None and not conflict and inferred["mode"] is not None:
         mode, source = inferred["mode"], "ancestry"
     host = bundle_agent or inferred["host"]
     host_arg = None if host is None else (host if host in _NAMED_HOST_ARGS else "generic")
@@ -3169,16 +3200,27 @@ def _check_interaction_mode(ctx: _CheckContext) -> dict:
         evidence["envStampError"] = (
             f"{INTERACTION_ENV_VAR} is not one of {', '.join(INTERACTION_MODES)}"
         )
-    if source == "env-stamp" and inferred["mode"] is not None and inferred["mode"] != mode:
-        # Reported, never silently resolved: the stamp still wins (it is stated,
-        # not inferred), but a disagreement is exactly what a leaked export looks
-        # like and the operator needs to see it.
+    if conflict:
         evidence["conflict"] = (
-            f"{INTERACTION_ENV_VAR}={mode} but {inferred['harness']} ancestry "
-            f"looks {inferred['mode']}"
+            f"{INTERACTION_ENV_VAR}={stamp} but {inferred['harness']} ancestry "
+            f"looks {inferred['mode']} — neither is trusted"
         )
 
     where = f"host {host or 'unknown'}"
+    if conflict:
+        return _result(
+            "warn",
+            f"interaction signals contradict ({where}): {evidence['conflict']}; "
+            "treating the mode as unknown — skills self-assess the rung",
+            evidence,
+            _remedy(
+                f"Unset {INTERACTION_ENV_VAR} in this shell if it was exported by hand, or "
+                f"correct the launcher that sets it — a stale stamp claiming 'non-interactive' "
+                f"in an attended session would make skills skip their questions silently",
+                None,
+                "read-only",
+            ),
+        )
     if mode is None:
         return _result(
             "na",

@@ -332,7 +332,7 @@ def test_ladder_points_every_bundle_at_the_interaction_record(target: str) -> No
     )
 
 
-@pytest.mark.parametrize("target", ("codex",) + NON_CLAUDE_TARGETS)
+@pytest.mark.parametrize("target", ("pi",) + NON_CLAUDE_TARGETS)
 def test_host_overlay_defers_the_rung_to_the_record_not_to_self_judgement(
     target: str,
 ) -> None:

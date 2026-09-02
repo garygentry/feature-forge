@@ -138,14 +138,22 @@ flags. Raw argv never appears, and a basename that does not look like an executa
 @pts/6`, kernel threads) is redacted to `?` — a parent's command line can carry credentials or a
 username, and evidence lands in output that gets pasted into issues.
 
-A stamp that disagrees with ancestry is reported in `evidence.conflict` and the stamp still wins
-(it is stated, not inferred) — a disagreement is what a leaked `export` looks like, so it is
-surfaced rather than silently resolved.
+When the stamp and ancestry **positively contradict** each other, the check trusts neither: it
+reports `warn` with `evidence.conflict` and a mode of `unknown`, so skills self-assess (i.e. ask)
+rather than skip a question. That is the safe resolution in both directions, and `warn` is what
+gets the record printed on the human path — an `ok` record is suppressed, so the operator whose
+stray `export FORGE_INTERACTION=non-interactive` caused it would otherwise see nothing at all.
+
+Ancestry that merely *cannot read* a mode is not a contradiction — that is the normal loop shape
+for Pi and Codex, where the stamp rightly decides. The residual gap is a stamp leaked into a shell
+whose harness ancestry also yields no mode (a bare `claude` with no arguments): nothing contradicts
+it, so it is honoured. Accepted — it requires a deliberate manual `export`, and honouring an
+explicit statement is the contract.
 
 ## Reading a report
 
 ```
-checks: 12 ok, 2 warn, 0 fail, 1 na
+checks: 13 ok, 2 warn, 0 fail, 1 na
    ! runner-artifacts-stale: .rauf.json was written by rauf-manager@0.13.0; the live runner is 0.14.0
       remedy [local-write]: rauf update .
    ! branch-state: 1 feature(s) with branch drift: widget (warn-drift: on 'main', state records 'forge/widget')

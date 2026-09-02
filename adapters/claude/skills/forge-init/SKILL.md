@@ -57,7 +57,9 @@ Interaction Capability Ladder (`references/shared-conventions.md`) — **read** 
 `doctor`'s `interaction-mode` record as that section directs; never judge it from your own tool
 surface, which cannot see whether anyone is there to answer:
 
-```
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" doctor --json --check interaction-mode
 ```
 
