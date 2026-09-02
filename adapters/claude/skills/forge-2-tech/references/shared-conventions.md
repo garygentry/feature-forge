@@ -203,6 +203,32 @@ R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-
 
 Stage any file this writes (`{specsDir}/AGENTS.md`, and `{specsDir}/CLAUDE.md` when written) as part of the stage's existing git commit.
 
+## Root Hygiene (Tooling Feedback)
+
+The **Tooling Feedback Protocol** — how an agent working in a forge-driven project reports friction with feature-forge or rauf — is stated once, here, and shipped as project content in `references/templates/root-hygiene/{AGENTS,CLAUDE}.md`. The protocol: route by tool (feature-forge → <https://github.com/garygentry/feature-forge/issues>, rauf → <https://github.com/garygentry/rauf/issues>); capture it while fresh as *what you ran / what you expected / what actually happened / a fix idea*; file it with `gh issue create` **only on the human's explicit go-ahead, never silently**; and **never file mid-loop** — in an autonomous rauf iteration, append the friction to `progress.md` for later triage. `forge-bootstrap` writes this section into the repos it scaffolds; **`forge-init` writes it for every other project**, which is what makes the `specs/` hygiene files' "see the project-root `AGENTS.md`" pointer resolve.
+
+`forge-init` runs this step after `forge.config.json` exists. It is **idempotent: never overwrite an existing root file** — a project's own `AGENTS.md`/`CLAUDE.md` is its own, and the `[ -f … ] ||` guard is the whole mechanism (`forge-bootstrap`'s writer carries the same never-overwrite rule, so the two never duplicate each other's block).
+
+Writing a file at the project root is a **`local-write`** action (§ Remedy Safety Ladder): ask **once**, as a single consolidated question covering both variants — *"Write the feature-forge tooling-feedback section to `AGENTS.md`{ and `CLAUDE.md`}?"* — then run the copy. Which variants are offered follows the build-substituted `--host` (§ Interaction Capability Ladder), **never** question-tool availability (INV-5): `AGENTS.md` is always offered; `CLAUDE.md` only when the host is Claude.
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+[ -f AGENTS.md ] || cp "$R/references/templates/root-hygiene/AGENTS.md" AGENTS.md
+```
+
+If the host is Claude, also:
+
+```bash
+R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+[ -f CLAUDE.md ] || cp "$R/references/templates/root-hygiene/CLAUDE.md" CLAUDE.md
+```
+
+**When a root file already exists**, the copy is a no-op by design and nothing is silently merged: print the template's "Tooling feedback" section for the user to paste into their file, and say that is what you are doing.
+
+**Rung-3 default** (§ Interaction Capability Ladder, "anything not listed above" → skip and state which): a `local-write` with no way to ask degrades to advise-only — write nothing, and state that the tooling-feedback section was skipped and how to get it (`/feature-forge:forge-init` from an interactive session, or paste the template).
+
 ## Epic Context Injection
 
 After resolving the feature directory, check the feature's `.pipeline-state.json` for an `epic` back-pointer. **If absent, skip this block entirely** (standalone feature — REQ-COMPAT-01; standalone-feature behavior is unchanged). **If present**, load exactly the following context, and nothing transitive (REQ-CTX-01):

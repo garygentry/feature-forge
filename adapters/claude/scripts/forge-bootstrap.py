@@ -642,7 +642,14 @@ def _compose_agent_file(answers: Answers, filename: str) -> str:
 
 
 def write_hygiene(answers: Answers, target: Path, sentinel: Sentinel) -> None:
-    """Emit README, LICENSE, and the host agent-instruction file(s) (02 §4.5)."""
+    """Emit README, LICENSE, and the host agent-instruction file(s) (02 §4.5).
+
+    A root ``AGENTS.md``/``CLAUDE.md`` already written by ``forge-init``'s root
+    hygiene step (``references/shared-conventions.md`` § Root Hygiene) carries the
+    same "Tooling feedback" section, so it is KEPT verbatim and never duplicated —
+    ``_write_artifact``'s never-overwrite guard is the whole mechanism, shared by
+    both writers.
+    """
     _write_artifact(target, "README.md", _compose_readme(answers), sentinel)
     if answers["license"] != "none":
         _write_artifact(target, "LICENSE", _compose_license(answers), sentinel)

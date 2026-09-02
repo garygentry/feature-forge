@@ -59,6 +59,33 @@ non-interactive), this question's declared default is the no-write / no-proceed 
 the prompt, leave `autoVerify: false`, state the rung-3 default taken, and print the one-line
 note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.`
 
+## Preflight the install
+
+Once the config exists, check the tooling this project's pipeline will lean on:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" doctor --json \
+  --check plugin-root --check root-version-skew --check gh-available
+```
+
+Follow `references/preflight-and-self-heal.md` with that result: all `ok`/`na` → say nothing and
+move on. Otherwise cluster and report. `gh-available` matters here because the tooling-feedback
+step below tells agents to file issues with `gh issue create`; when `gh` is missing or
+unauthenticated, say so once — its remedies are `global-install`/`network`, so they are
+**advise-only** and nothing is executed. `plugin-root` and `root-version-skew` are reported the
+same way; a stale or unresolvable install is worth knowing about before the first stage runs.
+
+## Root hygiene — tooling feedback
+
+Offer the project-root **Tooling feedback** section, per `references/shared-conventions.md`
+§ Root Hygiene (Tooling Feedback) — that block owns the protocol text, the copy commands, and the
+never-overwrite rule; do not restate them here. It is a `local-write`: one consolidated question
+covering the variants the host is offered (`AGENTS.md` always; `CLAUDE.md` only on Claude, from the
+build-substituted `--host` — never from tool availability), then run the copy. This is what makes
+the `specs/` hygiene files' "see the project-root `AGENTS.md`" pointer resolve.
+
 After initialization, start the pipeline with `/skill:forge-1-prd <feature-name>`.
 
 ---
