@@ -2138,6 +2138,308 @@ def _check_plugin_root(ctx: _CheckContext) -> dict:
     )
 
 
+def _runner_unavailable(ctx: _CheckContext) -> dict | None:
+    """The shared ``na`` result when the resolved ``loopRunner`` block is missing."""
+    if ctx.loop_runner is None:
+        return _result(
+            "na", f"loopRunner config unavailable: {ctx.loop_runner_error}",
+            {"schemaPath": str(ctx.schema_path), "error": ctx.loop_runner_error},
+        )
+    return None
+
+
+def _install_remedy(ctx: _CheckContext) -> dict:
+    """The schema's ``installHint`` as a global-install remedy (first backticked span)."""
+    hint = (ctx.loop_runner or {}).get("installHint")
+    description = hint if isinstance(hint, str) and hint else "Install the loop runner"
+    return _remedy(description, _first_backticked(hint), "global-install")
+
+
+def _check_runner_binary(ctx: _CheckContext) -> dict:
+    """``loopRunner.bin`` resolves on PATH.
+
+    A customised ``bin`` that is missing while the schema default *is* on PATH
+    points at the config, not the install: that remedy is a config edit
+    (``local-write``), never the install hint (G4).
+    """
+    if (na := _runner_unavailable(ctx)) is not None:
+        return na
+    name = ctx.runner_bin()
+    default_bin = (ctx.loop_runner_defaults or {}).get("bin")
+    customized = name != default_bin
+    path = ctx.runner_bin_path()
+    default_path = (
+        shutil.which(default_bin) if customized and isinstance(default_bin, str) else None
+    )
+    evidence = {
+        "bin": name,
+        "path": path,
+        "defaultBin": default_bin,
+        "customized": customized,
+        "defaultOnPath": default_path,
+        "pathEntries": len([p for p in os.environ.get("PATH", "").split(os.pathsep) if p]),
+    }
+    if path:
+        return _result("ok", f"'{name}' found at {path}", evidence)
+    if not name:
+        return _result(
+            "warn", "loopRunner.bin is empty — no runner binary to look for", evidence,
+            _remedy("Set loopRunner.bin in forge.config.json to the runner binary", None,
+                    "local-write"),
+        )
+    if customized and default_path:
+        return _result(
+            "warn",
+            f"configured runner '{name}' is not on PATH, but the default '{default_bin}' is "
+            f"({default_path})",
+            evidence,
+            _remedy(
+                f"Set loopRunner.bin back to '{default_bin}' in forge.config.json, or install "
+                f"'{name}' on PATH",
+                None,
+                "local-write",
+            ),
+        )
+    if customized:
+        return _result(
+            "warn", f"configured runner '{name}' is not on PATH", evidence,
+            _remedy(
+                f"Install '{name}' on PATH, or point loopRunner.bin at a binary that is",
+                None, "global-install",
+            ),
+        )
+    return _result("warn", f"runner '{name}' is not installed (not on PATH)", evidence,
+                   _install_remedy(ctx))
+
+
+def _check_runner_version(ctx: _CheckContext) -> dict:
+    """The live runner's ``version --json`` meets ``minRunnerVersion``."""
+    if (na := _runner_unavailable(ctx)) is not None:
+        return na
+    if not ctx.runner_bin_path():
+        return _result("na", "runner binary not on PATH (see runner-binary)",
+                       {"bin": ctx.runner_bin()})
+    required_text = ctx.loop_runner.get("minRunnerVersion")
+    template = ctx.loop_runner.get("versionCommand")
+    argv = _render_runner_command(template, ctx.loop_runner) if isinstance(template, str) else None
+    evidence: dict = {
+        "bin": ctx.runner_bin(),
+        "command": shlex.join(argv) if argv else template,
+        "required": required_text,
+        "reported": None,
+        "exitCode": None,
+        "timedOut": False,
+        "stdoutHead": "",
+        "stderrHead": "",
+        "recoveryApplySurface": RECOVERY_MIN_RUNNER_VERSION,
+    }
+    if argv is None:
+        return _result("na", f"versionCommand cannot be rendered: {template!r}", evidence)
+    probe = ctx.runner_version_probe()
+    if probe is None:
+        return _result("na", "version probe did not run", evidence)
+    evidence.update(
+        exitCode=probe["returncode"], timedOut=probe["timedOut"],
+        stdoutHead=_head(probe["stdout"]), stderrHead=_head(probe["stderr"] or probe["error"]),
+    )
+    if not probe["ok"]:
+        why = probe["error"] or f"exit {probe['returncode']}"
+        return _result(
+            "warn", f"'{evidence['command']}' failed ({why})", evidence,
+            _remedy("Reinstall the loop runner so its version command runs", None,
+                    "global-install"),
+        )
+    try:
+        payload = json.loads(probe["stdout"])
+    except ValueError:
+        payload = None
+    reported_text = payload.get("version") if isinstance(payload, dict) else None
+    evidence["reported"] = reported_text
+    reported = _parse_semver(reported_text)
+    if reported is None:
+        return _result(
+            "warn",
+            f"could not parse a semver from '{evidence['command']}' output "
+            f"(version={reported_text!r})",
+            evidence,
+            _install_remedy(ctx),
+        )
+    required = _parse_semver(required_text)
+    if required is None:
+        return _result(
+            "warn", f"minRunnerVersion {required_text!r} is not a plain semver", evidence,
+            _remedy("Fix loopRunner.minRunnerVersion in forge.config.json (X.Y.Z)", None,
+                    "local-write"),
+        )
+    if reported < required:
+        return _result(
+            "warn",
+            f"runner {_fmt_semver(reported)} is below minRunnerVersion {_fmt_semver(required)}",
+            evidence,
+            _install_remedy(ctx),
+        )
+    return _result(
+        "ok", f"runner {_fmt_semver(reported)} >= minRunnerVersion {_fmt_semver(required)}",
+        evidence,
+    )
+
+
+def _check_runner_wired(ctx: _CheckContext) -> dict:
+    """``loopRunner.preconditionFile`` exists once a feature needs the runner."""
+    if (na := _runner_unavailable(ctx)) is not None:
+        return na
+    path = ctx.precondition_path()
+    relevant = ctx.runner_relevant()
+    evidence = {
+        "preconditionFile": str(path) if path else None,
+        "exists": bool(path and path.is_file()),
+        "runnerRelevant": relevant,
+    }
+    if path is None:
+        return _result("na", "loopRunner.preconditionFile unset", evidence)
+    if path.is_file():
+        return _result("ok", f"{path.name} present", evidence)
+    if not relevant:
+        return _result(
+            "na", f"{path.name} absent, but no feature has reached forge-4-backlog yet", evidence,
+        )
+    hint = ctx.loop_runner.get("setupHint")
+    return _result(
+        "warn", f"{path.name} absent — the runner is not wired into this project", evidence,
+        _remedy(
+            hint if isinstance(hint, str) and hint else "Wire the loop runner into the project",
+            f"{ctx.runner_bin()} install .",
+            "local-write",
+        ),
+    )
+
+
+def _check_runner_legacy_layout(ctx: _CheckContext) -> dict:
+    """No legacy Ralph artefacts (``.ralph.json`` / ``.ralph/``) beside a rauf project."""
+    if (na := _runner_unavailable(ctx)) is not None:
+        return na
+    runner_name = ctx.loop_runner.get("name")
+    if runner_name != "rauf":
+        return _result("na", f"runner is {runner_name!r}, not rauf — no legacy layout to detect",
+                       {"runnerName": runner_name})
+    ralph_json = ctx.cwd / ".ralph.json"
+    ralph_dir = ctx.cwd / ".ralph"
+    evidence = {
+        "runnerName": runner_name,
+        "ralphJson": ralph_json.is_file(),
+        "ralphDir": ralph_dir.is_dir(),
+        "runnerOnPath": ctx.runner_bin_path(),
+    }
+    found = [name for name, present in (("`.ralph.json`", evidence["ralphJson"]),
+                                        ("`.ralph/`", evidence["ralphDir"])) if present]
+    if not found:
+        return _result("ok", "no legacy Ralph layout", evidence)
+    return _result(
+        "warn", "legacy Ralph layout present: " + ", ".join(found), evidence,
+        _remedy(
+            "Migrate the legacy Ralph layout to rauf's per-project artifacts",
+            f"{ctx.runner_bin()} migrate .",
+            "local-write",
+        ),
+    )
+
+
+def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
+    """The precondition file's ``installedBy`` version matches the live runner."""
+    if (na := _runner_unavailable(ctx)) is not None:
+        return na
+    precondition = ctx.precondition()
+    path = ctx.precondition_path()
+    if precondition is None:
+        return _result("na", "precondition file absent (see runner-wired)",
+                       {"preconditionFile": str(path) if path else None})
+    live = ctx.runner_version()
+    installed_by = precondition.get("installedBy")
+    parsed = _parse_installed_by(installed_by)
+    evidence = {
+        "preconditionFile": str(path),
+        "installedBy": installed_by if isinstance(installed_by, str) else None,
+        "installedVersion": _fmt_semver(parsed[1]) if parsed else None,
+        "liveVersion": _fmt_semver(live) if live else None,
+    }
+    if live is None:
+        return _result("na", "live runner version unknown (see runner-version)", evidence)
+    if parsed is None:
+        return _result(
+            "warn", f"{path.name} has no parseable installedBy ({installed_by!r})", evidence,
+            _remedy("Refresh the runner's per-project artifacts", f"{ctx.runner_bin()} update .",
+                    "local-write"),
+        )
+    if parsed[1] < live:
+        return _result(
+            "warn",
+            f"{path.name} was written by {installed_by}; the live runner is "
+            f"{_fmt_semver(live)}",
+            evidence,
+            _remedy("Refresh the runner's per-project artifacts", f"{ctx.runner_bin()} update .",
+                    "local-write"),
+        )
+    if parsed[1] > live:
+        return _result(
+            "warn",
+            f"{path.name} was written by {installed_by}, newer than the live runner "
+            f"{_fmt_semver(live)}",
+            evidence,
+            _install_remedy(ctx),
+        )
+    return _result("ok", f"{path.name} matches the live runner ({_fmt_semver(live)})", evidence)
+
+
+def _check_runner_profile_drift(ctx: _CheckContext) -> dict:
+    """``testCommand`` agrees with the runner profile's test/verify command.
+
+    Divergence may be deliberate (the profile can run a broader gate), so this
+    is advisory with no remedy — evidence shows both sides.
+    """
+    if (na := _runner_unavailable(ctx)) is not None:
+        return na
+    test_command = ctx.config.get("testCommand")
+    if not isinstance(test_command, str) or not test_command.strip():
+        return _result("na", "testCommand unset (see config-completeness)",
+                       {"testCommand": None})
+    precondition = ctx.precondition()
+    path = ctx.precondition_path()
+    if precondition is None:
+        return _result("na", "precondition file absent (see runner-wired)",
+                       {"testCommand": test_command})
+    profile = precondition.get("profile")
+    if not isinstance(profile, dict):
+        return _result("na", f"{path.name} declares no profile", {"testCommand": test_command})
+    commands = profile.get("commands")
+    profile_test = commands.get("test") if isinstance(commands, dict) else None
+    profile_verify = profile.get("verify")
+    if not isinstance(profile_test, str):
+        profile_test = None
+    if not isinstance(profile_verify, str):
+        profile_verify = None
+    norm = " ".join(test_command.split())
+    matches = [
+        label for label, value in (("commands.test", profile_test), ("verify", profile_verify))
+        if value is not None and " ".join(value.split()) == norm
+    ]
+    evidence = {
+        "testCommand": test_command,
+        "profileTest": profile_test,
+        "profileVerify": profile_verify,
+        "matches": matches,
+    }
+    if profile_test is None and profile_verify is None:
+        return _result("na", f"{path.name} profile declares no test or verify command", evidence)
+    if matches:
+        return _result("ok", f"testCommand matches profile {' and '.join(matches)}", evidence)
+    return _result(
+        "warn",
+        f"testCommand {test_command!r} matches neither profile.commands.test "
+        f"{profile_test!r} nor profile.verify {profile_verify!r} — divergence may be deliberate",
+        evidence,
+    )
+
+
 def _check_config_schema(ctx: _CheckContext) -> dict:
     """``forge.config.json`` parses and conforms to the bundled schema."""
     if not ctx.config_exists:
@@ -2340,6 +2642,12 @@ def _check_sandbox_root(ctx: _CheckContext) -> dict:
 #: The check registry — registry order is output order (docs/doctor-checks.md).
 DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = (
     _make_spec("plugin-root", "blocking", _check_plugin_root),
+    _make_spec("runner-binary", "blocking", _check_runner_binary),
+    _make_spec("runner-version", "blocking", _check_runner_version),
+    _make_spec("runner-wired", "blocking", _check_runner_wired),
+    _make_spec("runner-legacy-layout", "blocking", _check_runner_legacy_layout),
+    _make_spec("runner-artifacts-stale", "advisory", _check_runner_artifacts_stale),
+    _make_spec("runner-profile-drift", "advisory", _check_runner_profile_drift),
     _make_spec("config-schema", "advisory", _check_config_schema),
     _make_spec("backlog-present", "blocking", _check_backlog_present),
     _make_spec("branch-state", "advisory", _check_branch_state),

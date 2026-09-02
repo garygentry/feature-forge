@@ -95,7 +95,8 @@ def fake_runner(
         "#!/usr/bin/env bash\n"
         'if [ -n "${DOCTOR_PROBE_LOG:-}" ]; then printf \'%s\\n\' "$0 $*" '
         '>> "$DOCTOR_PROBE_LOG"; fi\n'
-        f"if [ {hang_seconds} -gt 0 ]; then sleep {hang_seconds}; fi\n"
+        # A pure-bash sleep (``sleep`` is not on the scrubbed PATH).
+        f"if [ {hang_seconds} -gt 0 ]; then read -rt {hang_seconds} <> <(:) || :; fi\n"
         'case "$1 $2" in\n'
         f"  \"version --json\") printf '%s\\n' '{payload}'; exit {version_exit};;\n"
         f"  \"backlog validate\") printf '%s' '{validate_stdout}'; exit {validate_exit};;\n"

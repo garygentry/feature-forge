@@ -17,10 +17,13 @@ from pathlib import Path
 
 import pytest
 from _doctor_fixtures import (
+    bin_dir,
     check,
     doctor_report,
+    fake_runner,
     make_project,
     pipeline_state,
+    probe_log,
     run_doctor,
     scrubbed_env,
     warn_ids,
@@ -576,3 +579,287 @@ def test_no_check_ever_emits_fail_and_warn_set_is_reported(tmp_path: Path) -> No
     report = doctor_report(project, scrubbed_env(tmp_path))
     assert report["checksSummary"]["fail"] == 0
     assert {"branch-state", "backlog-present"} <= warn_ids(report)
+
+
+# --------------------------------------------------------------------------- #
+# runner-* checks (fake runner on a scrubbed PATH)
+# --------------------------------------------------------------------------- #
+
+RUNNER_CHECKS = (
+    "runner-binary", "runner-version", "runner-wired", "runner-legacy-layout",
+    "runner-artifacts-stale", "runner-profile-drift",
+)
+RAUF_JSON = {
+    "installedBy": "rauf-manager@0.14.0",
+    "profile": {"commands": {"test": "pytest -q"}, "verify": "pytest -q && ruff check ."},
+}
+CONFIG = {"stack": "python", "typeCheckCommand": "ruff check .", "testCommand": "pytest -q"}
+
+
+def _loop_project(tmp_path: Path, **kwargs) -> Path:
+    """A project with one feature about to run forge-5-loop (runner relevant)."""
+    project = make_project(tmp_path, **kwargs)
+    write_feature(
+        project, "looper", pipeline_state(PRODUCTION[:4], branch="main"), backlog=True,
+    )
+    return project
+
+
+def test_runner_checks_all_ok_with_a_healthy_fake_runner(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    for check_id in RUNNER_CHECKS:
+        assert check(report, check_id)["status"] == "ok", check(report, check_id)
+    assert check(report, "runner-binary")["evidence"]["customized"] is False
+    assert check(report, "runner-version")["evidence"]["reported"] == "0.14.0"
+    assert check(report, "runner-profile-drift")["evidence"]["matches"] == ["commands.test"]
+    # The version probe runs exactly once per doctor run, and nothing else ran.
+    assert probe_log(env) == [f"{bin_dir(env)}/rauf version --json"]
+
+
+def test_runner_checks_na_when_loop_runner_config_is_unavailable(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env, "--schema", str(tmp_path / "missing.json"))
+    for check_id in RUNNER_CHECKS:
+        record = check(report, check_id)
+        assert record["status"] == "na", record
+        assert "loopRunner config unavailable" in record["detail"]
+    assert probe_log(env) == []
+
+
+def test_runner_binary_default_missing_uses_install_hint(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)  # no fake runner at all
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    record = check(report, "runner-binary")
+    assert record["status"] == "warn" and record["severity"] == "blocking"
+    assert record["evidence"]["path"] is None
+    assert record["remedy"]["safety"] == "global-install"
+    assert record["remedy"]["command"] == "npx @garygentry/feature-forge install"
+    assert "feature-forge" in record["remedy"]["description"]
+    # Downstream runner checks degrade to na, never crash, never spawn.
+    assert check(report, "runner-version")["status"] == "na"
+    assert check(report, "runner-artifacts-stale")["status"] == "na"
+    assert check(report, "runner-wired")["status"] == "ok"  # .rauf.json is still present
+    assert probe_log(env) == []
+
+
+def test_runner_binary_custom_missing_but_default_present_is_a_config_fix(
+    tmp_path: Path,
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)  # the default 'rauf'
+    config = {**CONFIG, "loopRunner": {"bin": "rauf-nightly"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-binary")
+    assert record["status"] == "warn"
+    assert record["evidence"]["customized"] is True
+    assert record["evidence"]["defaultOnPath"] == f"{bin_dir(env)}/rauf"
+    assert record["remedy"]["safety"] == "local-write"
+    assert record["remedy"]["command"] is None
+    assert "loopRunner.bin" in record["remedy"]["description"]
+
+
+def test_runner_binary_custom_missing_and_default_missing(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    config = {**CONFIG, "loopRunner": {"bin": "rauf-nightly"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-binary")
+    assert record["status"] == "warn"
+    assert record["remedy"]["safety"] == "global-install"
+    assert record["remedy"]["command"] is None
+    assert "rauf-nightly" in record["remedy"]["description"]
+
+
+def test_runner_binary_custom_present_is_ok(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, name="rauf-stable")
+    config = {**CONFIG, "loopRunner": {"bin": "rauf-stable"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    assert check(report, "runner-binary")["status"] == "ok"
+    assert check(report, "runner-version")["status"] == "ok"
+    assert probe_log(env) == [f"{bin_dir(env)}/rauf-stable version --json"]
+
+
+@pytest.mark.parametrize("version, expect", [
+    ("0.13.9", "below minRunnerVersion"),
+    ("0.15.0-beta.1", "could not parse a semver"),
+    (14, "could not parse a semver"),
+])
+def test_runner_version_warns_with_install_remedy(tmp_path: Path, version, expect) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version=version)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == "warn", record
+    assert expect in record["detail"]
+    assert record["evidence"]["required"] == "0.14.0"
+    assert record["remedy"]["safety"] == "global-install"
+
+
+def test_runner_version_probe_failure_is_a_warn_with_evidence(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version_exit=3)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    record = check(report, "runner-version")
+    assert record["status"] == "warn"
+    assert record["evidence"]["exitCode"] == 3
+    assert "exit 3" in record["detail"]
+    assert record["evidence"]["command"] == "rauf version --json"
+    # With no live version, staleness cannot be judged.
+    assert check(report, "runner-artifacts-stale")["status"] == "na"
+
+
+def test_runner_version_honours_a_custom_min_and_command(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.14.0")
+    config = {**CONFIG, "loopRunner": {"minRunnerVersion": "0.15.0"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == "warn" and "0.15.0" in record["detail"]
+    config = {**CONFIG, "loopRunner": {"minRunnerVersion": "latest"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == "warn" and "not a plain semver" in record["detail"]
+    assert record["remedy"]["safety"] == "local-write"
+    config = {**CONFIG, "loopRunner": {"versionCommand": "{bin} {unknownToken}"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == "na" and "cannot be rendered" in record["detail"]
+
+
+def test_runner_version_timeout_degrades_to_warn(fs, monkeypatch, tmp_path: Path) -> None:
+    """A hung runner is cut off at the probe timeout — a warn, never a hang (INV-3)."""
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, hang_seconds=5)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    monkeypatch.setenv("PATH", env["PATH"])
+    monkeypatch.setenv("HOME", env["HOME"])
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(fs, "_PROBE_TIMEOUT_S", 1)
+    report = fs.doctor_report(
+        Path("specs"), Path("forge.config.json"), only=frozenset({"runner-version"}),
+    )
+    (record,) = report["checks"]
+    assert record["status"] == "warn"
+    assert record["evidence"]["timedOut"] is True
+    assert "timed out after 1s" in record["detail"]
+
+
+def test_runner_wired_na_before_forge_4_then_warns(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = make_project(tmp_path, config=CONFIG)  # no .rauf.json
+    write_feature(project, "early", pipeline_state(["forge-1-prd", "forge-2-tech"]))
+    record = check(doctor_report(project, env), "runner-wired")
+    assert record["status"] == "na"
+    assert record["evidence"]["runnerRelevant"] is False
+
+    write_feature(project, "ready", pipeline_state(PRODUCTION[:3]))  # next: forge-4-backlog
+    report = doctor_report(project, env)
+    record = check(report, "runner-wired")
+    assert record["status"] == "warn" and record["severity"] == "blocking"
+    assert record["remedy"] == {
+        "description": record["remedy"]["description"],
+        "command": "rauf install .",
+        "safety": "local-write",
+    }
+    assert "rauf install ." in record["remedy"]["description"]
+    assert check(report, "runner-artifacts-stale")["status"] == "na"
+    assert check(report, "runner-profile-drift")["status"] == "na"
+    # doctor advises `rauf install .`; it never runs it (one version probe per run).
+    assert probe_log(env) == [f"{bin_dir(env)}/rauf version --json"] * 2
+
+
+def test_runner_legacy_layout_warns_on_ralph_artifacts_and_na_for_other_runners(
+    tmp_path: Path,
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    (project / ".ralph.json").write_text("{}")
+    (project / ".ralph").mkdir()
+    record = check(doctor_report(project, env), "runner-legacy-layout")
+    assert record["status"] == "warn"
+    assert record["evidence"] == {
+        "runnerName": "rauf", "ralphJson": True, "ralphDir": True,
+        "runnerOnPath": f"{bin_dir(env)}/rauf",
+    }
+    assert record["remedy"]["command"] == "rauf migrate ."
+    assert record["remedy"]["safety"] == "local-write"
+    config = {**CONFIG, "loopRunner": {"name": "other"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-legacy-layout")
+    assert record["status"] == "na"
+    assert "migrate" not in " ".join(probe_log(env))
+
+
+@pytest.mark.parametrize("installed_by, status, command, safety", [
+    ("rauf-manager@0.14.0", "ok", None, None),
+    ("rauf-manager@0.13.0", "warn", "rauf update .", "local-write"),
+    ("rauf-manager@0.15.0", "warn", "npx @garygentry/feature-forge install", "global-install"),
+    ("rauf-manager", "warn", "rauf update .", "local-write"),
+    (None, "warn", "rauf update .", "local-write"),
+])
+def test_runner_artifacts_stale_compares_installed_by_with_live(
+    tmp_path: Path, installed_by, status, command, safety,
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.14.0")
+    rauf_json = {**RAUF_JSON, "installedBy": installed_by}
+    if installed_by is None:
+        del rauf_json["installedBy"]
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=rauf_json)
+    record = check(doctor_report(project, env), "runner-artifacts-stale")
+    assert record["status"] == status, record
+    assert record["severity"] == "advisory"
+    assert record["evidence"]["liveVersion"] == "0.14.0"
+    if status == "ok":
+        assert record["remedy"] is None
+    else:
+        assert record["remedy"]["command"] == command
+        assert record["remedy"]["safety"] == safety
+    assert "update" not in " ".join(probe_log(env))
+
+
+def test_runner_artifacts_stale_na_when_precondition_unreadable_is_a_warn(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    project = _loop_project(tmp_path, config=CONFIG)
+    (project / ".rauf.json").write_text("{corrupt")
+    report = doctor_report(project, env)
+    record = check(report, "runner-artifacts-stale")
+    assert record["status"] == "warn" and "no parseable installedBy" in record["detail"]
+    assert check(report, "runner-profile-drift")["status"] == "na"
+
+
+def test_runner_profile_drift_states(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    # Matches verify only (whitespace-normalised).
+    rauf_json = {"installedBy": "rauf-manager@0.14.0",
+                 "profile": {"commands": {"test": "pnpm test"}, "verify": "pytest   -q"}}
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=rauf_json)
+    record = check(doctor_report(project, env), "runner-profile-drift")
+    assert record["status"] == "ok" and record["evidence"]["matches"] == ["verify"]
+    # Matches neither → warn, advisory, no remedy.
+    rauf_json["profile"]["verify"] = "pnpm gate"
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=rauf_json)
+    record = check(doctor_report(project, env), "runner-profile-drift")
+    assert record["status"] == "warn" and record["remedy"] is None
+    assert "divergence may be deliberate" in record["detail"]
+    # No testCommand → na; no profile → na; profile without commands → na.
+    project = _loop_project(tmp_path, config={"stack": "python"}, rauf_json=rauf_json)
+    assert check(doctor_report(project, env), "runner-profile-drift")["status"] == "na"
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json={"installedBy": "x@0.14.0"})
+    assert check(doctor_report(project, env), "runner-profile-drift")["status"] == "na"
+    project = _loop_project(tmp_path, config=CONFIG,
+                            rauf_json={"installedBy": "x@0.14.0", "profile": {}})
+    record = check(doctor_report(project, env), "runner-profile-drift")
+    assert record["status"] == "na" and "no test or verify" in record["detail"]
