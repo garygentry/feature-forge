@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -341,6 +342,11 @@ def test_render_runner_command_quotes_tokens_and_rejects_unrendered(fs) -> None:
     assert fs._render_runner_command("{bin} run {missing}", lr) is None
     assert fs._render_runner_command("", lr) is None
     assert fs._render_runner_command("{bin} 'unterminated", lr) is None
+    # Only the configured runner binary is ever invoked: any other first word is
+    # unrenderable, even a real program (Codex review, PR #255).
+    assert fs._render_runner_command("/usr/bin/printf unexpected", lr) is None
+    assert fs._render_runner_command("curl https://x {bin}", lr) is None
+    assert fs._render_runner_command("  {bin} version --json", lr) == ["rauf-stable", "version", "--json"]
 
 
 def test_semver_and_installed_by_parsers(fs) -> None:
@@ -348,6 +354,9 @@ def test_semver_and_installed_by_parsers(fs) -> None:
     assert fs._parse_semver("v1.2.3 ") == (1, 2, 3)
     assert fs._parse_semver("1.2.3-beta.1") is None
     assert fs._parse_semver("1.2") is None
+    assert fs._parse_semver("00.14.0") is None  # leading zeros are not SemVer
+    assert fs._parse_semver("0.014.0") is None
+    assert fs._parse_installed_by("rauf-manager@01.0.0") is None
     assert fs._parse_semver(None) is None
     assert fs._parse_semver(14) is None
     assert fs._fmt_semver((0, 14, 0)) == "0.14.0"
@@ -645,7 +654,7 @@ def test_runner_binary_default_missing_uses_install_hint(tmp_path: Path) -> None
     record = check(report, "runner-binary")
     assert record["status"] == "warn" and record["severity"] == "blocking"
     assert record["evidence"]["path"] is None
-    assert record["remedy"]["safety"] == "global-install"
+    assert record["remedy"]["safety"] == "network"  # the default hint fetches via npx
     assert record["remedy"]["command"] == "npx @garygentry/feature-forge install"
     assert "feature-forge" in record["remedy"]["description"]
     # Downstream runner checks degrade to na, never crash, never spawn.
@@ -707,7 +716,7 @@ def test_runner_version_warns_with_install_remedy(tmp_path: Path, version, expec
     assert record["status"] == "warn", record
     assert expect in record["detail"]
     assert record["evidence"]["required"] == "0.14.0"
-    assert record["remedy"]["safety"] == "global-install"
+    assert record["remedy"]["safety"] == "network"  # installHint fetches via npx
 
 
 def test_runner_version_probe_failure_is_a_warn_with_evidence(tmp_path: Path) -> None:
@@ -811,7 +820,7 @@ def test_runner_legacy_layout_warns_on_ralph_artifacts_and_na_for_other_runners(
 @pytest.mark.parametrize("installed_by, status, command, safety", [
     ("rauf-manager@0.14.0", "ok", None, None),
     ("rauf-manager@0.13.0", "warn", "rauf update .", "local-write"),
-    ("rauf-manager@0.15.0", "warn", "npx @garygentry/feature-forge install", "global-install"),
+    ("rauf-manager@0.15.0", "warn", "npx @garygentry/feature-forge install", "network"),
     ("rauf-manager", "warn", "rauf update .", "local-write"),
     (None, "warn", "rauf update .", "local-write"),
 ])
@@ -1085,7 +1094,7 @@ def test_gh_available_warns_without_credentials_and_reports_env_tokens(tmp_path:
 
     env["GITHUB_TOKEN"] = FAKE_TOKEN
     result = run_doctor(project, env)
-    assert FAKE_TOKEN not in result.stdout
+    assert FAKE_TOKEN not in result.stdout and FAKE_TOKEN not in result.stderr
     record = check(json.loads(result.stdout), "gh-available")
     assert record["evidence"]["tokenFromEnv"] is True
 
@@ -1399,3 +1408,76 @@ def test_config_schema_survives_a_malformed_schema_node(tmp_path: Path) -> None:
     assert record["status"] == "warn" and "check crashed" not in record["detail"]
     assert "schema malformed" in record["detail"]
     assert record["remedy"]["safety"] == "global-install"
+
+
+def test_gh_auth_token_stdout_is_sent_to_devnull(fs, monkeypatch, tmp_path: Path) -> None:
+    """The DEVNULL guard itself: the token probe never captures stdout."""
+    import subprocess as subprocess_module
+
+    env = scrubbed_env(tmp_path)
+    fake_gh(env)
+    project = make_project(tmp_path)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.chdir(project)
+    calls: list[tuple[list[str], dict]] = []
+    real_run = subprocess_module.run
+
+    def recording_run(argv, *args, **kwargs):
+        calls.append(([str(a) for a in argv], kwargs))
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess_module, "run", recording_run)
+    report = fs.doctor_report(Path("specs"), Path("forge.config.json"),
+                              only=frozenset({"gh-available"}))
+    (record,) = report["checks"]
+    assert record["status"] == "ok"
+    token_calls = [kw for argv, kw in calls if argv[1:] == ["auth", "token"]]
+    assert len(token_calls) == 1
+    assert token_calls[0]["stdout"] is subprocess_module.DEVNULL
+    assert "capture_output" not in token_calls[0]
+    assert FAKE_TOKEN not in json.dumps(report)
+
+
+def test_version_command_that_does_not_start_with_bin_is_never_run(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)
+    marker = tmp_path / "ran-marker"
+    rogue = bin_dir(env) / "rogue"
+    rogue.write_text(f"#!/usr/bin/env bash\ntouch '{marker}'\necho '{{\"version\": \"0.14.0\"}}'\n")
+    rogue.chmod(0o755)
+    config = {**CONFIG, "loopRunner": {
+        "versionCommand": "rogue version --json",
+        "validateCommand": "rogue backlog validate {backlogDir} {specsDir}",
+    }}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    assert not marker.exists(), "a non-{bin} template was executed"
+    version = check(report, "runner-version")
+    assert version["status"] == "na" and "cannot be rendered" in version["detail"]
+    valid = check(report, "backlog-valid")
+    assert valid["status"] == "warn" and "cannot be rendered" in valid["detail"]
+    assert probe_log(env) == []
+
+
+def test_unreadable_specs_dir_is_data_not_exit_two(tmp_path: Path) -> None:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root can read anything")
+    env = scrubbed_env(tmp_path)
+    project = make_project(tmp_path, config=CONFIG)
+    write_feature(project, "hidden", pipeline_state(PRODUCTION[:4]))
+    (project / "specs").chmod(0)
+    try:
+        report = doctor_report(project, env)  # exit 0, no traceback
+    finally:
+        (project / "specs").chmod(0o755)
+    assert "Permission denied" in report["specsDirError"]
+    assert report["features"] == [] and report["counts"]["active"] == 0
+    assert report["checksSummary"]["fail"] == 0
+    assert list(report)[:3] == ["pluginRoot", "currentBranch", "specsDir"]
+    assert list(report)[-3:] == ["checks", "checksSummary", "remedyClusters"]
+
+
+def test_git_output_tolerates_undecodable_output(fs) -> None:
+    out = fs._git_output(["-c", "alias.bad=!printf '\\377'", "bad"])
+    assert out is None

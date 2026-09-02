@@ -26,7 +26,9 @@ applicable, and what it suggests. It is kept in lockstep with the registry by
   executes one. `safety` is one of `read-only` < `local-write` < `global-install` < `network`.
 - **No network.** The only subprocesses are `git` and `forge-root.sh` (legacy fields),
   `{bin} version --json` (once), `{bin} backlog validate …` (once per distinct backlog dir),
-  `gh --version` and `gh auth token` (exit code only; stdout goes to `/dev/null`). Never
+  `gh --version` and `gh auth token` (exit code only; stdout goes to `/dev/null`). The two
+  runner templates come from `loopRunner` config and must start with `{bin}` — doctor only ever
+  invokes the configured runner binary; any other first word is reported as unrenderable. Never
   `gh auth status`, never the runner's `agentsProbeCommand`, never `rauf update --check`, never
   a remedy command. `tests/test_doctor_checks.py` proves this three ways: an argv allowlist over
   what scrubbed-PATH fake binaries record; an in-process `subprocess.run` recorder asserting every
@@ -46,11 +48,11 @@ guard the loop launch; `advisory` checks are worth knowing but never gate anythi
 |---|---|---|---|---|
 | `plugin-root` | blocking | The sibling `forge-root.sh` fails to resolve an install root. | never | reinstall / set `FEATURE_FORGE_ROOT` (`global-install`, no command) |
 | `root-version-skew` | advisory | This script's own bundle, the resolved root, and any `FEATURE_FORGE_ROOT`/`CLAUDE_PLUGIN_ROOT` override are different installs (different real path *and* not the same declared version). | `plugin-root` unresolved | reinstall so one bundle loads, or unset the override (`global-install`, no command) |
-| `runner-binary` | blocking | `loopRunner.bin` is not on PATH. A customised `bin` missing while the default is present is a config fix, never the install hint. | `loopRunner` config unavailable (schema unreadable) | `installHint` (`global-install`) · config edit (`local-write`) |
-| `runner-version` | blocking | `versionCommand` fails, prints no plain semver (pre-releases count as unparseable), or reports below `minRunnerVersion`. | runner not on PATH · `versionCommand` unrenderable | `installHint` (`global-install`) · fix `minRunnerVersion` (`local-write`) |
+| `runner-binary` | blocking | `loopRunner.bin` is not on PATH. A customised `bin` missing while the default is present is a config fix, never the install hint. | `loopRunner` config unavailable (schema unreadable) | `installHint` (`network` when it fetches from a registry, else `global-install`) · config edit (`local-write`) |
+| `runner-version` | blocking | `versionCommand` fails, prints no plain semver (pre-releases count as unparseable), or reports below `minRunnerVersion`. | runner not on PATH · `versionCommand` unrenderable | `installHint` (`network`/`global-install`) · reinstall (`global-install`) · fix `minRunnerVersion` (`local-write`) |
 | `runner-wired` | blocking | `loopRunner.preconditionFile` (`.rauf.json`) is absent although a feature has reached forge-4-backlog. | file unset · absent before any feature reaches forge-4-backlog | `{bin} install .` (`local-write`) |
 | `runner-legacy-layout` | blocking | `.ralph.json` or `.ralph/` beside a rauf project (un-migrated Ralph layout). | runner is not rauf | `{bin} migrate .` (`local-write`) |
-| `runner-artifacts-stale` | advisory | `.rauf.json.installedBy` version differs from the live runner (older → refresh; newer → install the newer runner). | precondition file absent · live version unknown | `{bin} update .` (`local-write`) · `installHint` (`global-install`) |
+| `runner-artifacts-stale` | advisory | `.rauf.json.installedBy` version differs from the live runner (older → refresh; newer → install the newer runner). | precondition file absent · live version unknown | `{bin} update .` (`local-write`) · `installHint` (`network`/`global-install`) |
 | `runner-profile-drift` | advisory | `testCommand` matches neither `.rauf.json` `profile.commands.test` nor its sibling `profile.verify` (whitespace-normalised). Divergence may be deliberate. | `testCommand` unset · no precondition file · profile declares neither command | none |
 | `config-completeness` | advisory | Keys forge-2-tech records are missing or blank for a feature far enough along: `stack` from forge-3-specs; `stack`, `typeCheckCommand`, `testCommand` from forge-4-backlog on (and for complete features). `smokeCommand` is optional — `evidence.optionalMissing` only. | no active feature has reached forge-3-specs | record the keys in `forge.config.json` (`local-write`, no command) |
 | `config-schema` | advisory | `forge.config.json` is unreadable, not an object, has duplicate keys, invalid `autoVerifyStages` keys, or violates the bundled schema. Unknown top-level keys are `evidence.unknownKeys` only. | `forge.config.json` absent | fix the first finding (`local-write`) · reinstall when the bundled schema itself is unreadable (`global-install`) |

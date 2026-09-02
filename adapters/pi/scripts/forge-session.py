@@ -1439,7 +1439,7 @@ def _git_output(args: list[str]) -> str | None:
         proc = subprocess.run(
             ["git", *args], capture_output=True, text=True, timeout=10,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, subprocess.TimeoutExpired):  # ValueError: undecodable output
         return None
     if proc.returncode != 0:
         return None
@@ -1549,7 +1549,13 @@ def doctor_report(
     # no commits yet) still reports its name instead of failing.
     current_branch = _git_output(["branch", "--show-current"])
     default_branch = _default_branch()
-    rows = build_rows(specs_dir, config)
+    specs_error: str | None = None
+    try:
+        rows = build_rows(specs_dir, config)
+        counts = _counts(specs_dir)
+    except (OSError, ValueError) as exc:  # e.g. a specs dir the process cannot list
+        rows, counts = [], {"active": 0, "paused": 0, "abandoned": 0}
+        specs_error = _exc_text(exc)
     features = []
     for row in rows:
         backlog = _backlog_path(config, row["name"], row["epic"], specs_dir)
@@ -1584,7 +1590,7 @@ def doctor_report(
         "specsDirExists": specs_dir.is_dir(),
         "configPath": str(config_path),
         "configExists": config_path.is_file(),
-        "counts": _counts(specs_dir),
+        "counts": counts,
         "features": features,
         "invalidAutoVerifyKeys": invalid_auto_verify_keys(config),
         "duplicateConfigKeys": _config_duplicate_keys(config_path),
@@ -1611,6 +1617,8 @@ def doctor_report(
             )
             for spec in specs
         ]
+    if specs_error is not None:  # only on the failure path: happy-path keys unchanged
+        report["specsDirError"] = specs_error
     report["checks"] = checks
     report["checksSummary"] = _checks_summary(checks)
     report["remedyClusters"] = cluster_checks(checks)
@@ -1783,9 +1791,13 @@ def _render_runner_command(template: str, loop_runner: dict, **tokens: object) -
     """Render a ``loopRunner`` command template into argv (``{bin}`` + ``tokens``).
 
     Every substituted value is ``shlex.quote``d so a path with spaces survives
-    the split. Returns ``None`` when a ``{token}`` remains unrendered or the
-    result does not split — the caller reports that as data, never runs it.
+    the split. Returns ``None`` when the template does not start with ``{bin}``
+    (doctor only ever invokes the configured runner binary — a template whose
+    first word is anything else is reported as data, never run), when a
+    ``{token}`` remains unrendered, or when the result does not split.
     """
+    if not template.lstrip().startswith("{bin}"):
+        return None
     values: dict[str, object] = {"bin": loop_runner.get("bin") or "", **tokens}
     unrendered = False
 
@@ -1809,8 +1821,11 @@ def _render_runner_command(template: str, loop_runner: dict, **tokens: object) -
     return argv or None
 
 
-_SEMVER_RE: Final = re.compile(r"^\s*v?(\d+)\.(\d+)\.(\d+)\s*$")
-_INSTALLED_BY_RE: Final = re.compile(r"^\s*([A-Za-z0-9._-]+)@v?(\d+\.\d+\.\d+)\s*$")
+_SEMVER_NUM: Final = r"(0|[1-9]\d*)"  # SemVer 2.0: no leading zeros
+_SEMVER_RE: Final = re.compile(rf"^\s*v?{_SEMVER_NUM}\.{_SEMVER_NUM}\.{_SEMVER_NUM}\s*$")
+_INSTALLED_BY_RE: Final = re.compile(
+    rf"^\s*([A-Za-z0-9._-]+)@v?({_SEMVER_NUM}\.{_SEMVER_NUM}\.{_SEMVER_NUM})\s*$"
+)
 
 
 def _parse_semver(text: object) -> tuple[int, int, int] | None:
@@ -2172,11 +2187,22 @@ def _runner_unavailable(ctx: _CheckContext) -> dict | None:
     return None
 
 
+_NETWORK_FETCH_RE: Final = re.compile(
+    r"\b(npx|npm|pnpm|yarn|pip|pipx|cargo|brew|apt(-get)?|curl|wget)\b|https?://"
+)
+
+
 def _install_remedy(ctx: _CheckContext) -> dict:
-    """The schema's ``installHint`` as a global-install remedy (first backticked span)."""
+    """The schema's ``installHint`` as a remedy (command = its first backticked span).
+
+    Tier is the most conservative that applies: ``network`` when the hint
+    fetches from a registry or URL (the default ``npx …`` hint does), else
+    ``global-install``.
+    """
     hint = (ctx.loop_runner or {}).get("installHint")
     description = hint if isinstance(hint, str) and hint else "Install the loop runner"
-    return _remedy(description, _first_backticked(hint), "global-install")
+    tier = "network" if _NETWORK_FETCH_RE.search(description) else "global-install"
+    return _remedy(description, _first_backticked(hint), tier)
 
 
 def _check_runner_binary(ctx: _CheckContext) -> dict:
