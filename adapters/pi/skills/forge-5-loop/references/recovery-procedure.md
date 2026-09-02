@@ -77,6 +77,10 @@ ran-but-nothing-moved *proof* failure (step 6) because the former never reaches 
 ### Step 3 — Consolidated prompts
 
 - **Input:** the final cluster set from step 2.
+- **Rung-3 default** (`references/shared-conventions.md` § Interaction Capability Ladder,
+  "recovery interview" class): no question mechanism → fall through to **needs-human** —
+  every cluster in the set is recorded as a deferral (never answered, never cancelled) and
+  step 4 states the rung-3 statement once for the whole batch.
 - **Mechanism:** `AskUserQuestion` (never inline prose).
   - For any cluster of **two or more** items: emit **exactly one** consolidated question
     that **names every affected item id** and states the **full gated subtree** the
@@ -277,6 +281,10 @@ runner-native evidence — reliable per-item provenance is **not** a prerequisit
 
 ### 4.3 Decide
 
+- **Rung-3 default** (`references/shared-conventions.md` § Interaction Capability Ladder,
+  "destructive confirmations" class): no question mechanism → **never mutate** — every
+  item-group and the unattributable set default to **stash**, discard is never taken
+  unasked, and the rung-3 statement is recorded once for the whole reconciliation.
 - **Mechanism:** `AskUserQuestion` (never inline prose).
   - **One question per attributed item-group:** for each candidate item-group from 4.2,
     offer **commit-for-that-item** / **stash** / **discard**.

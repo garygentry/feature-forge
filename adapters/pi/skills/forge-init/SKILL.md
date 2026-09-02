@@ -52,11 +52,12 @@ Options: **Enable (recommended)** / **Leave off**.
   `forge.config.json` in place, preserving formatting and every other key.
 - On **Leave off**: leave the config as written (`autoVerify: false`).
 
-If the host lacks a structured question tool but can still prompt the user (e.g. Codex asks in
-plain text), use that — ask the one question directly and wait for the reply; it is the same
-choice, just rendered differently. Only when the host has **no** way to ask at all (a fully
-non-interactive / headless run) do you skip the prompt: leave `autoVerify: false` and print the
-one-line note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.`
+Follow the Interaction Capability Ladder (`references/shared-conventions.md`) for rung 2/3: at
+rung 2 (no structured tool, host can still prompt and wait — e.g. Codex), ask the same question
+in plain prose and wait for the reply; same choice, different rendering. At rung 3 (genuinely
+non-interactive), this question's declared default is the no-write / no-proceed option — skip
+the prompt, leave `autoVerify: false`, state the rung-3 default taken, and print the one-line
+note `Set "autoVerify": true in forge.config.json to verify automatically after each stage.`
 
 After initialization, start the pipeline with `/skill:forge-1-prd <feature-name>`.
 
@@ -67,6 +68,7 @@ After initialization, start the pipeline with `/skill:forge-1-prd <feature-name>
 This Pi bundle preserves Claude's `AskUserQuestion` references because it ships a Pi compatibility extension registering an `AskUserQuestion` tool. On Pi:
 
 - **User input:** use `AskUserQuestion` for genuine user decisions. It supports multiple questions, option descriptions, recommended ordering, multi-select, previews, and free-form Other/custom answers.
+- **Non-interactive (`-p`/`--mode json`):** `AskUserQuestion` is stripped from the tool list; a call attempted anyway fails with `Error: UI not available (running in non-interactive mode)` — never read that as a decline. Take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
 - **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a skill directly, print the exact `/skill:<name> ...` command for the user to run.
 - **Subagents:** this bundle declares its custom agents (`forge-researcher`, `forge-spec-writer`, `forge-verifier`) as package agents. If a `subagent` tool is registered, dispatch one with `{ agent: "forge-verifier", task: "..." }`, or fan several out concurrently with `{ tasks: [{ agent: "forge-spec-writer", task: "..." }, ...] }`. If no `subagent` tool is available, run that step inline yourself.
 - **Background / monitoring (forge-5-loop):** Pi has no built-in background bash, persistent monitor, or push-notification, so do **not** run the loop runner in the foreground and do **not** try to arm one. This bundle registers a **forge-loop-supervisor** extension that IS the "background-execution mechanism" and "monitoring mechanism" Steps 3b–3f refer to. Concretely:

@@ -9,7 +9,11 @@ Entered from Step 0 when `{specsDir}/{epic}/epic-manifest.json` already exists (
 branch). The edit branch mutates the manifest **only** through helper mutators — the skill never
 hand-rolls an in-place write. Every mutator is atomic (temp file + `os.replace`) and re-validates
 the edited graph internally, so a refused write leaves the manifest **byte-identical**. Every
-question goes through the host's question mechanism.
+question goes through the host's question mechanism. **Rung-3 default**
+(`references/shared-conventions.md` § Interaction Capability Ladder, "dependency / epic
+gates" and "interviews / pickers / blocking gates" classes): no question mechanism →
+STOP or `no-default: abort` per the site — never guess an edit operation or a conflict
+resolution unattended.
 
 ## Step E1 — Load + Validate, Refuse if Invalid
 

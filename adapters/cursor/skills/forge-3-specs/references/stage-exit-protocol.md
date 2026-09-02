@@ -119,7 +119,11 @@ prose). Nothing else.
 - **(a)** a question mechanism equivalent to the host's question mechanism is available, **and**
 - **(b)** a clean-room `forge-verifier` subagent can be dispatched.
 
-If either is absent, or capability cannot be established, pass `manual`.
+If either is absent, or capability cannot be established, pass `manual`. **(a) is rung 1 or
+rung 2** of the Interaction Capability Ladder (`references/shared-conventions.md`); at
+rung 3, (a) is false by definition, so `--verify-capability manual` follows without
+further deliberation — the ladder's "verify offers" class states this rung-3 default once
+so it is never re-derived per stage.
 
 **(b) tests PERMISSION, not tool presence.** The question is not "is a subagent-dispatch
 tool listed in my tool surface" but "**may I dispatch `forge-verifier` right now**". A

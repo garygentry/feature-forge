@@ -16,7 +16,7 @@ Read and follow `references/shared-conventions.md` for feature name validation, 
 
 **Ownership.** Determine branch ownership **at entry**, from the literal `owner: nested` / `owner: direct` token in the prompt that dispatched you. **Absent the token you are `direct`** — a user-typed `/feature-forge:forge-fix` is the only path that carries no dispatcher. Judge the token, never the phrasing of the invocation. Preserve that value unchanged through any re-verify and pass it straight through as `--owner` in Step 7. A **direct** fix stays the terminal owner through its optional re-verify; a **nested** fix invokes nested verify and returns its structured result to the outer stage, printing no terminal block at all. `references/stage-exit-protocol.md` § "Branch ownership: the `owner:` token" owns this rule.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall.
+**Turn structure reminder:** Output analysis/context as text, then route ALL questions through the host's question mechanism. Never embed questions in text output — the user will not be prompted and the session will stall. At rung 2/3, follow the Interaction Capability Ladder.
 
 ## Step 1: Locate Findings and Establish the Served Stage
 
@@ -178,6 +178,6 @@ Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: sur
 
 This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". On Codex:
 
-- **User input:** Codex has no structured question tool — ask the question directly and wait for the user's reply before proceeding. Never skip a required question or assume an answer.
+- **User input:** Codex has no structured question tool. Interactive session — ask the question directly and wait for the reply; never assume an answer. Under `codex exec` (non-interactive) — don't wait: take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
 - **Subagents:** spawn a Codex subagent using the named custom agent under `.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly asked; if the custom agent is unavailable, run that step inline yourself.
 - **Background / monitoring:** run long-lived runner commands in your shell session and report progress as it arrives — there is no Claude-style background or monitoring tool to arm.

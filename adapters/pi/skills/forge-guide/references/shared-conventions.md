@@ -17,7 +17,7 @@ If no feature name is provided:
 
 ### CRITICAL GUARDRAIL: Use AskUserQuestion for All Questions
 
-You MUST use the `AskUserQuestion` tool whenever you need the user's input before proceeding. This includes yes/no confirmations, choices between options, interview questions, and feedback on artifacts. NEVER output questions as inline prose text — the user may not be prompted and the session will stall.
+You MUST use the `AskUserQuestion` tool for every question whenever it is present in your tool surface. This includes yes/no confirmations, choices between options, interview questions, and feedback on artifacts. NEVER output questions as inline prose text — the user may not be prompted and the session will stall. When the tool is absent, or you are running non-interactively, follow the **Interaction Capability Ladder** below instead of assuming an answer.
 
 **Required turn structure:** Output your analysis, findings, or context as regular text. Then call `AskUserQuestion` with your questions. Do NOT mix questions into your text output.
 
@@ -52,6 +52,51 @@ Two modes, and make clear which one you're in:
 For genuinely comparable artifacts (competing module structures, two code snippets, layout variants), use the `AskUserQuestion` `preview` field to show them side-by-side.
 
 The **Branch Setup** block below is the reference pattern: a strong recommendation as the first option, rationale inline, the alternative still available, never a hard-stop.
+
+## Interaction Capability Ladder
+
+This is the **one canonical statement** of interaction capability (`roadmap/self-healing-resilience.md` §5.4) — every prompting surface in canon points here **by title** rather than restating it. Written to read correctly **independent of the host name**, including after the build's host-term translation degrades the Claude-native tool name to host-neutral phrasing on non-Claude, non-Pi targets.
+
+```text
+  Rung 1  Structured question tool present   →  use it — Claude: `AskUserQuestion`;
+                                                 Pi: the bundled ask-user-question
+                                                 extension.
+  Rung 2  No structured tool, but the host    →  ask in plain prose and wait for the
+          can still prompt and be answered       reply. Same choice, different rendering.
+          (Codex interactive)
+  Rung 3  Genuinely non-interactive           →  take the DECLARED default, STATE that
+          (print/JSON mode, headless CI)          you took it and why, and record it.
+                                                 Never stall.
+```
+
+**Two independent axes.** `--host` is **static** per adapter bundle — the build-substituted `--host` value — and never implies a rung either direction (INV-5): a Claude session can still run non-interactively (`claude -p`), and an interactive Codex session is not rung 3 just because Codex lacks a structured tool. **Rung is dynamic**, self-assessed once per turn exactly as `--verify-capability` is self-assessed (`references/stage-exit-protocol.md` § Host and capability determination), and — whenever it is not rung 1 — **stated once** in output: `interaction: rung 3 (non-interactive) — declared defaults apply`.
+
+**Detection, per host:**
+- **Claude:** the question tool is absent from the tool surface, or no TTY is attached — rung 3.
+- **Codex:** `codex exec` (the non-interactive invocation) — rung 3; an interactive `codex` session is rung 2.
+- **Pi:** `AskUserQuestion` is **stripped from the tool list** in `-p`/`--mode json`; a call attempted anyway fails clearly — `Error: UI not available (running in non-interactive mode)` — the rung-3 backstop, **never** read as a user decline.
+
+**Rung-3 rule (conservative-only, INV-6).** At a rung-3 site, either:
+- take the declared default — always the **no-write / no-proceed** option: it **never advances a pipeline stage**, launches a loop, applies a remedy, creates a branch, commits, or records a decision — and state that default and why; or
+- when no conservative default exists (an interview question with no sane unattended answer), emit `no-default: abort — <question> requires a human answer` and stop.
+
+Either outcome **must be stated in the output** — a rung-3 site that silently proceeds or silently stalls is a defect, not a degraded pass.
+
+**Site classes.** Rather than a per-site declaration (107 sites and rising), every question surface that uses `AskUserQuestion` inherits its rung-3 default from its class — a surface cites this table by title, never restating its own row:
+
+| Class | Rung-3 default |
+|---|---|
+| Verification warnings | STOP; print the verify command |
+| Dependency / epic gates | STOP |
+| Launch / run-mode | STOP; print the rendered command |
+| Preflight remedies | `local-write` degrades to advise-only (§ Remedy Safety Ladder below) |
+| Branch setup / reconcile | never create, switch, or record |
+| Interviews / pickers / blocking gates | `no-default: abort` with a stated reason |
+| Entry / completion guards | STOP |
+| Destructive confirmations | never mutate |
+| Verify offers | fall back to `--verify-capability manual` |
+| Recovery interview | fall through to `needs-human` |
+| Anything not listed above | STOP or skip, and state which |
 
 ## Stage Review Gate
 
@@ -141,7 +186,7 @@ mkdir -p "<specsDir>"
 [ -f "<specsDir>/AGENTS.md" ] || cp "$R/references/templates/specs-hygiene/AGENTS.md" "<specsDir>/AGENTS.md"
 ```
 
-If the host is Claude (the Claude-native question tool is available), also ensure the Claude-framed variant:
+If the host is Claude — the build-substituted `--host` value (§ Interaction Capability Ladder), never inferred from tool availability — also ensure the Claude-framed variant:
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -192,7 +237,7 @@ Act on the emitted `action`:
 
   With `--force`, log a one-line warning ("Authoring `{feature}` against a detached epic base — manifest not on this branch") and proceed, consistent with the other guards.
 
-If the helper is unavailable (a non-Claude host without the resolver), skip this block — it is best-effort defense in depth, not a hard prerequisite.
+If `$R` cannot be resolved or `check-epic-base` is unavailable, skip this block — it is best-effort defense in depth, not a hard prerequisite.
 
 ## Pipeline State Protocol
 

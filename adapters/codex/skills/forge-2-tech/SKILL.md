@@ -80,7 +80,7 @@ Interview the user about technology decisions. Unlike the PRD interview, here yo
 
 ### Interview Approach
 
-**Turn structure:** Output your research findings, analysis, or technical proposals as regular text. Then use the host's question mechanism for the actual questions. NEVER put questions in your text output — they MUST go through the host's question mechanism.
+**Turn structure:** Output your research findings, analysis, or technical proposals as regular text. Then use the host's question mechanism for the actual questions. NEVER put questions in your text output — they MUST go through the host's question mechanism. At rung 2/3, follow the Interaction Capability Ladder.
 
 **Pacing:** Present 1-2 decision areas per the host's question mechanism call and STOP to wait for the user's response before continuing. After receiving answers, probe deeper on anything incomplete before moving to the next topic. Signal progress in your text before the next question batch. Do NOT dump all decision areas in a single message — the interview is a conversation, not a document.
 
@@ -251,6 +251,6 @@ Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: sur
 
 This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". On Codex:
 
-- **User input:** Codex has no structured question tool — ask the question directly and wait for the user's reply before proceeding. Never skip a required question or assume an answer.
+- **User input:** Codex has no structured question tool. Interactive session — ask the question directly and wait for the reply; never assume an answer. Under `codex exec` (non-interactive) — don't wait: take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
 - **Subagents:** spawn a Codex subagent using the named custom agent under `.codex/agents/<name>.toml`. Codex spawns a subagent only when explicitly asked; if the custom agent is unavailable, run that step inline yourself.
 - **Background / monitoring:** run long-lived runner commands in your shell session and report progress as it arrives — there is no Claude-style background or monitoring tool to arm.

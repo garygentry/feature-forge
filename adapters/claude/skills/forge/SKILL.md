@@ -13,7 +13,7 @@ You are the navigator for the feature-forge development pipeline. Your job is to
 
 ### 1. Read Configuration
 
-Read and follow `references/shared-conventions.md` for configuration reading (feature name validation, config defaults, force mode).
+Read and follow `references/shared-conventions.md` for configuration reading (feature name validation, config defaults, force mode) and, for any `AskUserQuestion` at rung 2/3, the Interaction Capability Ladder.
 
 ### 2. Determine Context
 

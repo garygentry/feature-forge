@@ -124,20 +124,21 @@ Every apply/prompt decision above is gated by the four-tier ladder declared once
 `global-install` / `network`. This reference never restates the tiers; it only names
 which step consults them (§2 steps 3 and 5).
 
-## 4. Rung-3 default (interim)
+## 4. Rung-3 default
 
-Until the Interaction Capability Ladder is canon (`roadmap/self-healing-resilience.md`
-§5.4, forge#252), "cannot be asked" (§2 step 3) means genuinely **no way to ask and wait
-for a reply at all** — neither a structured question tool NOR plain prose with a wait for
-the answer. It is **not** the same as "no structured tool": a host that lacks a
-structured tool but can still prompt in prose and wait (an interactive Codex session,
-per its own turn-taking rules) is askable, and Step 3 asks it that way — this interim
-rule never fires there. It fires only for a genuinely non-interactive invocation (a
-headless `-p`/`exec`/JSON-mode run with no reply channel). Such a session follows the
-conservative rule the safety ladder already implies: **degrade one tier stricter** — a
-`local-write` cluster that cannot be asked is treated as `advise-only` (print the
-command, never run it), and the outcome is recorded as `unaskable→advise-only` (§2 step
-4). Never silently skip the report, and never take an unasked write as implied consent.
+This is the **preflight remedies** class of the canonical Interaction Capability Ladder
+(`references/shared-conventions.md` § Interaction Capability Ladder) — "cannot be asked"
+(§2 step 3) means rung 3: genuinely **no way to ask and wait for a reply at all**, neither
+a structured question tool NOR plain prose with a wait for the answer. It is **not** the
+same as "no structured tool": a host that lacks a structured tool but can still prompt in
+prose and wait (an interactive Codex session, per its own turn-taking rules) is rung 2,
+not rung 3, and Step 3 asks it that way. Rung 3 fires only for a genuinely non-interactive
+invocation (a headless `-p`/`exec`/JSON-mode run with no reply channel). Such a session
+follows the ladder's declared default via the safety ladder's own rule: **degrade one
+tier stricter** — a `local-write` cluster that cannot be asked is treated as
+`advise-only` (print the command, never run it), and the outcome is recorded as
+`unaskable→advise-only` (§2 step 4). Never silently skip the report, and never take an
+unasked write as implied consent.
 
 ## 5. Message shapes
 
