@@ -30,7 +30,7 @@ Token substitution applies to every `*Command` string. Substitute:
 
 Whenever this skill says "run the **run command**" / "**status command**" / etc., it means the corresponding substituted `loopRunner.*Command`.
 
-**Turn structure reminder:** Output analysis/context as text, then route ALL questions through `AskUserQuestion`. Never embed questions in text output — the user will not be prompted and the session will stall. At rung 2/3, follow the Interaction Capability Ladder.
+**Turn structure reminder:** Text first, then `AskUserQuestion` for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Validate Prerequisites
 
