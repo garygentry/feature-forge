@@ -54,28 +54,31 @@ runner-answer/unblock apply mechanism of its own).
 - **Mechanism:** one question per cluster (never one per check) via `AskUserQuestion`
   (rung 1/2) or the ladder's rung-3 default (§4). Name the **exact remedy command**, its
   **safety tier**, and **every member check id** the cluster covers — e.g. *"`runner-wired`
-  and `runner-legacy-layout` both resolve by running `rauf migrate .` (local-write).
+  and `runner-legacy-layout` both resolve by running `{bin} migrate .` (local-write).
   Run it?"*
 - **Per the safety ladder** (`references/shared-conventions.md` § Remedy Safety Ladder):
   a `read-only` cluster is never prompted (run it and move to step 5); `local-write` asks
-  **once per remedy class per session** — re-affirming the same `remedy.command` a second
-  time in the same session skips straight to apply; `global-install`/`network` are
+  **once per remedy class per session** — re-affirming the same `remedy.command` string a
+  second time in the same session skips straight to apply; `global-install`/`network` are
   **never** prompted for execution — surface them as report-only advice (§5's
   advise-only path) even though `doctor` clustered them.
-- **Report-only set:** checks with no `remedy` (a corrupt manifest, an unresolvable
-  config) or a `global-install`/`network` remedy are **never** prompted for execution —
-  print them once, plainly, with no question.
+- **Report-only set — three shapes, all print once, plainly, with no question:** checks
+  with no `remedy` at all (a corrupt manifest, an unresolvable config); a `remedy` whose
+  `command` is `null` (reinstall-only or config-edit advice with nothing to run — never
+  clustered, since `cluster_checks` skips these); and a `global-install`/`network`
+  remedy (clustered by `doctor`, but never prompted for execution here).
 - **Output:** per cluster, one of {approved, declined, advise-only (tier forbids
-  execution), unaskable→advise-only (no question mechanism, §4)}.
+  execution), unaskable→advise-only (genuinely no way to ask and wait, §4)}.
 
 ### Step 4 — Record
 
 - **Input:** every outcome from step 3.
 - **Mechanism:** **output only** — a `preflight:` line per cluster, e.g.
-  `preflight: runner-wired,runner-legacy-layout → rauf migrate . [local-write] — approved+run`.
+  `preflight: runner-wired,runner-legacy-layout → {bin} migrate . [local-write] — approved+run`.
   The five outcome tokens are `run` (read-only, no prompt needed), `approved+run`,
-  `declined`, `advise-only` (tier forbids execution), `unaskable→advise-only` (rung 3, no
-  default permits the write). **The backlog's item-keyed decision record** (the durable
+  `declined`, `advise-only` (tier forbids execution — includes the report-only,
+  null-command shape from §2 step 3), `unaskable→advise-only` (rung 3, no default
+  permits the write). **The backlog's item-keyed decision record** (the durable
   store post-run recovery uses to survive a session boundary) **is NOT used here** — a
   preflight remedy is environment repair, not a backlog decision, and writing one there
   would durably attribute an environment fix to a backlog item that never asked for it.
@@ -124,23 +127,35 @@ which step consults them (§2 steps 3 and 5).
 ## 4. Rung-3 default (interim)
 
 Until the Interaction Capability Ladder is canon (`roadmap/self-healing-resilience.md`
-§5.4, forge#252), a session with no question mechanism follows the conservative rule the
-safety ladder already implies: **degrade one tier stricter** — a `local-write` cluster
-that cannot be asked is treated as `advise-only` (print the command, never run it), and
-the outcome is recorded as `unaskable→advise-only` (§2 step 4). Never silently skip the
-report, and never take an unasked write as implied consent.
+§5.4, forge#252), "cannot be asked" (§2 step 3) means genuinely **no way to ask and wait
+for a reply at all** — neither a structured question tool NOR plain prose with a wait for
+the answer. It is **not** the same as "no structured tool": a host that lacks a
+structured tool but can still prompt in prose and wait (an interactive Codex session,
+per its own turn-taking rules) is askable, and Step 3 asks it that way — this interim
+rule never fires there. It fires only for a genuinely non-interactive invocation (a
+headless `-p`/`exec`/JSON-mode run with no reply channel). Such a session follows the
+conservative rule the safety ladder already implies: **degrade one tier stricter** — a
+`local-write` cluster that cannot be asked is treated as `advise-only` (print the
+command, never run it), and the outcome is recorded as `unaskable→advise-only` (§2 step
+4). Never silently skip the report, and never take an unasked write as implied consent.
 
 ## 5. Message shapes
 
 - **`runner-binary` / `runner-version` not `ok`** (blocking, no remedy proven) — **HARD
-  GATE FAILURE**: STOP, do not proceed to run the loop, show `loopRunner.installHint` and
-  the check's raw `detail`/`evidence` for diagnosis. For a too-old version, phrase it
-  concretely: *"Your rauf is {reported}, but feature-forge needs ≥ {minRunnerVersion}.
-  {installHint}"*. For an unparseable version command, say so and show what the command
-  printed before the hint — never a bare "failed."
+  GATE FAILURE**: STOP, do not proceed to run the loop, show the failing check's own
+  `remedy.description` (and `remedy.command` when set) plus its raw `detail`/`evidence`
+  for diagnosis. **Never substitute `loopRunner.installHint` for this** — three of
+  `runner-binary`'s four warn shapes and one of `runner-version`'s are a **config fix**
+  (a customized `bin` missing while the default is on PATH points at the config, not the
+  install — G4), and `installHint` only ever describes installing the default package.
+  When the remedy's `command` is `null` (a reinstall-only or config-edit instruction),
+  there is nothing to cluster or apply — print the `remedy.description` as report-only
+  advice (§2 step 3's report-only set) and STOP regardless.
 - **`runner-legacy-layout` warn** — STOP: *"This project is still on the legacy **Ralph**
-  layout. Run `rauf migrate .` first (the loop runner only understands `.rauf/` and
-  `RAUF_*` signals), then re-run `/skill:forge-5-loop {feature}`."*
+  layout. Run {check's `remedy.command`, e.g. `{bin} migrate .`} first (the loop runner
+  only understands `.rauf/` and `RAUF_*` signals), then re-run
+  `/skill:forge-5-loop {feature}`."* Use the check's own `remedy.command` — never
+  a hardcoded `rauf migrate .` — a customized `loopRunner.bin` changes the binary name.
 - **`runner-wired` warn** — STOP and show `loopRunner.setupHint`, e.g. *"The loop runner
   isn't set up in this project ({preconditionFile} is missing). {setupHint}"*.
 - A STOP lifts **only** after a permitted `local-write` remedy ran (§2 step 5) **and**
@@ -153,7 +168,7 @@ report, and never take an unasked write as implied consent.
 |---|---|---|---|
 | **Failed apply** | A `run`/`approved+run` remedy exits non-zero, times out, or cannot start | No — stops before the test | Verbatim command output + which cluster; **failed preflight**; procedure stops |
 | **Ran-but-not-healed** | The remedy exited 0, but the re-run still shows `warn`/`fail` for a member check | Yes — is the test failing | Healed/still-failing check ids named from the re-read; **failed preflight** |
-| **Declined / advise-only / unaskable** | The operator declined, the tier forbids execution, or no question mechanism permitted asking | N/A — no apply attempted | Reported per §2 step 4; **not** a failure — the original `doctor` statuses stand, and the caller's gate (§2 step 7) still applies to them |
+| **Declined / advise-only / unaskable** | The operator declined, the tier forbids execution, or the session genuinely had no way to ask and wait (§4) | N/A — no apply attempted | Reported per §2 step 4; **not** a failure — the original `doctor` statuses stand, and the caller's gate (§2 step 7) still applies to them |
 
 Rules: never report healed/succeeded past a failed step; a failed apply stops before the
 per-check test, so a remedy that errored is never conflated with one that ran cleanly but

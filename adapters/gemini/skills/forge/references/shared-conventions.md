@@ -419,7 +419,7 @@ wherever a skill or reference applies one — never restated per-site.
 | `safety` | Meaning | Prompt? | Execute? |
 |---|---|---|---|
 | `read-only` | Diagnoses only; touches nothing. | Never. | Run freely. |
-| `local-write` | Writes inside the project, idempotent, git-visible (`rauf install .`, writing a detected `testCommand`, copying a hygiene template). | Once per remedy class per session. | Run after that one consent — never re-prompt the same class again this session. |
+| `local-write` | Writes inside the project, idempotent, git-visible (`rauf install .`, writing a detected `testCommand`, copying a hygiene template). | Once per distinct `remedy.command` string per session. | Run after that one consent — never re-prompt the identical command again this session. |
 | `global-install` | Touches the machine outside the project (`npm i -g`, PATH edits). | N/A. | **Never.** Advise-only — print the exact command, never run it. |
 | `network` | Fetches from a remote (registry queries, `curl \| bash`). | N/A. | **Never.** Advise-only — print the exact command, never run it. |
 

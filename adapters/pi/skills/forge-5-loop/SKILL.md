@@ -90,7 +90,7 @@ R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-
 python3 "$R/scripts/forge-session.py" doctor --json --specs-dir "{specsDir}" --check runner-binary --check runner-version --check runner-wired --check runner-legacy-layout
 ```
 
-All four `ok`/`na` → proceed silently. Otherwise follow `references/preflight-and-self-heal.md`: `runner-binary`/`runner-version` not `ok` → **HARD GATE FAILURE**, STOP with `loopRunner.installHint` — do NOT proceed. `runner-legacy-layout` warn → STOP: "This project is still on the legacy **Ralph** layout. Run `rauf migrate .` first, then re-run `/skill:forge-5-loop {feature}`." `runner-wired` warn → STOP with `loopRunner.setupHint`. A STOP lifts only once a permitted `local-write` remedy ran **and** the identical re-run shows `ok`.
+All four `ok`/`na` → proceed silently. Otherwise follow `references/preflight-and-self-heal.md`: `runner-binary`/`runner-version` not `ok` → **HARD GATE FAILURE**, STOP with the check's own `remedy.description` (never a hardcoded `installHint` — a customized `bin` gets its own config-fix remedy, G4). `runner-legacy-layout` warn → STOP: "This project is still on the legacy **Ralph** layout. Run {`remedy.command`, e.g. `{bin} migrate .`} first, then re-run `/skill:forge-5-loop {feature}`." `runner-wired` warn → STOP with `loopRunner.setupHint`. A STOP lifts only once a permitted `local-write` remedy ran **and** the identical re-run shows `ok`.
 
 > `installHint` points at the runner **CLI**; `setupHint` (1d) installs the runner's per-project artifacts.
 
