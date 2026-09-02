@@ -8,7 +8,9 @@ so this document and the suite cannot drift apart.
 
 Run `python3 scripts/forge-session.py doctor --json` in any suspect environment first — it
 captures the ground truth both repros are about (resolved plugin root + version/commit, current
-vs. recorded branch, backlog-path existence) in one shot.
+vs. recorded branch, backlog-path existence) in one shot, via its eleven legacy fields plus the
+structured `checks[]` registry (catalog: `docs/doctor-checks.md`) layered on top — `plugin-root`
+and `root-version-skew` for root cause A, `branch-state` for root cause B.
 
 ## Symptom → root cause
 
@@ -19,7 +21,7 @@ vs. recorded branch, backlog-path existence) in one shot.
 | Stage skill re-prompts a completed stage; forge-2-tech behaves like PRD mode | A (helpers dead → agent improvises state) or B (state on another branch) |
 | Agent asserts pipeline state that never existed, or denies state that does | A/B — resolution returned nothing, so the agent narrated from conversational momentum |
 | Navigator offers "start with forge-1-prd" for a feature that has specs | B — state lives only on the topic branch |
-| "Backlog never existed" during forge-5-loop despite a verified backlog | Path mismatch hypothesis — check `doctor`'s `backlogPath`/`backlogExists` per feature |
+| "Backlog never existed" during forge-5-loop despite a verified backlog | Path mismatch hypothesis — check `doctor`'s `backlogPath`/`backlogExists` per feature (legacy) or the `backlog-present`/`backlog-valid` checks (`checks[]`) |
 
 ## Root cause A: plugin-root discovery misses real marketplace installs
 
@@ -106,9 +108,14 @@ In the suspect environment (e.g. a fresh remote session after the marketplace se
    `~/.claude/plugins/cache/*/feature-forge/*/scripts/`.
 2. Check `pluginRoot.resolved`, and that `pluginRoot.root` is the versioned cache install (not
    `~/.claude/plugins/marketplaces/...`); compare `pluginRoot.version`/`commit` with the skill
-   text the session loaded if version skew is suspected.
-3. Check `currentBranch` vs. each feature's `stateBranch` (root cause B when they diverge).
-4. Check `backlogPath`/`backlogExists` per feature before trusting any claim about the backlog.
+   text the session loaded if version skew is suspected. `checks[]` mirrors this as the
+   `plugin-root` and `root-version-skew` records — the latter is `na` until skew is possible.
+3. Check `currentBranch` vs. each feature's `stateBranch` (root cause B when they diverge); the
+   equivalent `checks[]` record is `branch-state`, `na` outside a git repo or with no pending
+   feature.
+4. Check `backlogPath`/`backlogExists` per feature before trusting any claim about the backlog;
+   `checks[]` adds `backlog-present` (the file exists) and `backlog-valid` (it passes
+   `{bin} backlog validate`) for a loop-ready feature.
 5. If the loop stage misbehaves rather than failing outright — wrong binary, wrong run command,
    a flag the project never set — resolve the loop-runner config deterministically instead of
    reading it off `forge.config.json` and mentally merging the schema defaults:

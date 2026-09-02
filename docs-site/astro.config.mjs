@@ -79,6 +79,7 @@ export default defineConfig({
           label: "Reference / Architecture",
           items: [
             { label: "Troubleshooting & FAQ", slug: "reference/troubleshooting" },
+            { label: "Doctor Checks", slug: "reference/doctor-checks" },
             { label: "Bootstrap · Overview", slug: "forge-bootstrap/overview" },
             { label: "Bootstrap · Architecture", slug: "forge-bootstrap/architecture" },
             { label: "Bootstrap · CLI Reference", slug: "forge-bootstrap/cli-reference" },

@@ -33,6 +33,7 @@
     { "slug": "advanced/cross-agent", "source": "native" },
 
     { "slug": "reference/troubleshooting", "source": "native" },
+    { "slug": "reference/doctor-checks", "source": "symlink", "from": "docs/doctor-checks.md" },
     { "slug": "forge-bootstrap/overview", "source": "symlink", "from": "docs/architecture/forge-bootstrap/README.md" },
     { "slug": "forge-bootstrap/architecture", "source": "symlink", "from": "docs/architecture/forge-bootstrap/architecture.md" },
     { "slug": "forge-bootstrap/cli-reference", "source": "symlink", "from": "docs/architecture/forge-bootstrap/cli-reference.md" },

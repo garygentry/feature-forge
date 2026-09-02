@@ -78,6 +78,19 @@ npx @garygentry/feature-forge list        # per-agent installed / up-to-date sta
 
 In Claude Code, type `/feature-forge:forge-init` and confirm the skill resolves.
 
+For a deeper check, run the bundled health diagnostic:
+
+```bash
+python3 <plugin-root>/scripts/forge-session.py doctor
+```
+
+Its `checks:` line covers exactly this install: `plugin-root` (the script resolves a root
+at all), `root-version-skew` (only one install is in play — no stale bundle shadowing the
+one you just installed), and the `runner-*` checks (rauf is on `PATH`, meets
+`minRunnerVersion`, and `rauf install .` has wired `.rauf.json` once you reach a project).
+See the [doctor checks catalog](/reference/doctor-checks/) for the full registry, and
+[Troubleshooting](/reference/troubleshooting/#run-doctor-first) for how to read a report.
+
 ## Next
 
 Head to the [Quick Start](/start-here/quick-start/) to ship your first feature, or skim

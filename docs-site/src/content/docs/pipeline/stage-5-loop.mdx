@@ -93,9 +93,12 @@ the loop's pre-flight reconciles against where your pipeline state actually reso
   proceed on the default branch.
 - **Nothing to do** — the record already matches; the loop proceeds.
 
-The current classification is also captured (as `branchReconcile`) by the `doctor`
-diagnostic — `python3 <plugin-root>/scripts/forge-session.py doctor --json` — if you want
-to inspect it outside a run.
+The current classification is also captured by the `doctor` diagnostic's
+[`branch-state` check](/reference/doctor-checks/) —
+`python3 <plugin-root>/scripts/forge-session.py doctor --json` — if you want to inspect it
+outside a run, with a suggested `state-branch` (adopt the current branch) or `git switch`
+(go to the recorded branch) remedy attached. The legacy per-feature `branchReconcile` field
+this classification always came from is unchanged and still emitted alongside it.
 
 ## Watching and controlling the loop (rauf)
 
