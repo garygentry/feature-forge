@@ -106,6 +106,7 @@ link_dir() {
 
 # >>> manifest-managed symlinks (generated from docs.manifest.json at emit time)
 # One link_file call per `source: "symlink"` page; native/unmanaged pages omitted.
+link_file "docs/doctor-checks.md" "reference/doctor-checks"
 link_file "docs/architecture/forge-bootstrap/README.md" "forge-bootstrap/overview"
 link_file "docs/architecture/forge-bootstrap/architecture.md" "forge-bootstrap/architecture"
 link_file "docs/architecture/forge-bootstrap/cli-reference.md" "forge-bootstrap/cli-reference"

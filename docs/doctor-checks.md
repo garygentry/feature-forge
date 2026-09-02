@@ -1,3 +1,7 @@
+---
+title: "Doctor Checks"
+---
+
 # `doctor` checks catalog
 
 `python3 scripts/forge-session.py doctor --json` reports, after its eleven legacy

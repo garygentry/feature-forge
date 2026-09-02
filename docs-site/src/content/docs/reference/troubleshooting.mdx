@@ -5,6 +5,40 @@ description: "Common problems running the forge pipeline and how to resolve them
 
 Quick answers to the issues you're most likely to hit while running the pipeline.
 
+## Run doctor first
+
+Before chasing a symptom below, run the health check — it usually names the problem directly:
+
+```bash
+python3 <plugin-root>/scripts/forge-session.py doctor --json
+```
+
+(`<plugin-root>` is wherever your install resolves — set `FEATURE_FORGE_ROOT` to override
+resolution in an unusual environment.) The human report is shorter and reads fine on its own:
+
+```bash
+python3 <plugin-root>/scripts/forge-session.py doctor
+```
+
+After the familiar plugin-root/branch/features summary, it ends with a `checks:` block — a
+registry of structured findings, one line per problem:
+
+```
+checks: 12 ok, 2 warn, 0 fail, 1 na
+   ! runner-artifacts-stale: .rauf.json was written by rauf-manager@0.13.0; the live runner is 0.14.0
+      remedy [local-write]: rauf update .
+```
+
+A few things worth knowing before you read one:
+
+- **`warn` on a `blocking` check is the thing to fix before launching [Stage 5](/pipeline/stage-5-loop/)** — checks like `runner-binary`, `runner-wired`, or `backlog-valid` guard the loop launch. A `warn` on an `advisory` check (`gh-available`, `branch-state`, `runner-profile-drift`, …) is context, not a blocker.
+- **A remedy is advice, never an action.** The `remedy [tier]: …` line under a finding is a command *you* run — doctor never executes it, and it never touches the network on its own behalf. The tier (`read-only` < `local-write` < `global-install` < `network`) tells you how disruptive that command is before you run it.
+- **`doctor` always exits `0` for anything it finds** — a warning, even several, is not a failure exit. The only non-zero exit is a genuine usage error, like a typo'd `--check` id.
+- **`--check ID` narrows the run** to one or more specific checks (repeatable) when you already know what you're diagnosing; **`--verbose`** additionally prints the `ok`/`na` lines the default report omits, useful for confirming a check ran and passed rather than being skipped.
+
+The full id-by-id registry — what each check detects, when it reports `na`, and its exact
+remedy — lives in the [doctor checks catalog](/reference/doctor-checks/).
+
 ## forge-bootstrap refuses: repo not empty
 
 `forge-bootstrap` has a greenfield gate: it only runs against an empty repository and will not overwrite existing files. If you already have a project, don't use bootstrap — run [`forge-init`](/pipeline/init/) on the existing repo instead. See [bootstrapping](/advanced/bootstrapping/) for the full distinction.
