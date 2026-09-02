@@ -72,6 +72,11 @@ def _section(text: str, heading: str) -> str:
     return (after[: stop.start()] if stop else after).strip()
 
 
+def _bash_blocks(text: str) -> list[str]:
+    """Every ```bash fenced block in `text`, as raw source."""
+    return re.findall(r"```bash\n(.*?)```", text, flags=re.S)
+
+
 def _root_hygiene_block() -> str:
     """The `## Root Hygiene (Tooling Feedback)` section of shared-conventions.md."""
     return _section(read(SHARED_CONVENTIONS), ROOT_HYGIENE_TITLE)
@@ -114,8 +119,8 @@ def test_root_hygiene_copy_is_guarded_and_targets_the_project_root(filename: str
     """
     block = _root_hygiene_block()
     expected = (
-        f'[ -f {filename} ] || cp '
-        f'"$R/references/templates/root-hygiene/{filename}" {filename}'
+        f'[ -f "$ROOT/{filename}" ] || cp '
+        f'"$R/references/templates/root-hygiene/{filename}" "$ROOT/{filename}"'
     )
     assert expected in block, f"Root Hygiene lost the guarded copy for {filename}"
 
@@ -152,7 +157,7 @@ def test_root_hygiene_separates_the_three_pre_existing_cases() -> None:
     only this case split delivers "not duplicate".
     """
     block = _root_hygiene_block()
-    assert "grep -q '^## Tooling feedback'" in block, (
+    assert "grep -qiE" in block, (
         "no test for whether the existing file already carries the section — the "
         "already-there case cannot be distinguished from the project-owns-it case"
     )
@@ -210,10 +215,18 @@ def test_root_hygiene_anchors_the_write_at_the_project_root() -> None:
     needs the assertion the sibling gets for free.
     """
     block = _root_hygiene_block()
-    assert "[ -f forge.config.json ]" in block, (
+    assert 'is not the initialized project root' in block, (
         "nothing asserts the cwd is the project root before a root-scope write"
     )
-    assert "not at the project root" in block
+    # The assertion must live in the SAME fenced block as each copy. A standalone
+    # assertion block's `exit 1` ends only its own shell, leaving a later copy block
+    # unguarded — which is how a guarded write still creates ~/AGENTS.md.
+    for fenced in _bash_blocks(block):
+        if "cp \"$R/references/templates/root-hygiene/" in fenced:
+            assert '[ -f "$ROOT/forge.config.json" ]' in fenced, (
+                "a copy block carries no root assertion of its own:\n" + fenced
+            )
+    assert "one command block, not two" in block
 
 
 def test_root_hygiene_stages_what_it_writes() -> None:
@@ -474,4 +487,39 @@ def test_specs_hygiene_agents_variant_names_no_claude_only_command() -> None:
     )
     assert "/feature-forge:" in read(SPECS_HYGIENE_DIR / "CLAUDE.md"), (
         "the Claude variant lost the command it is entitled to name"
+    )
+
+
+def test_root_hygiene_heading_test_is_as_broad_as_its_sentence() -> None:
+    """The grep must match every heading the prose calls "a Tooling feedback heading".
+
+    A narrow `^## Tooling feedback` test is not the conservative choice it looks
+    like: a file whose heading reads `## Tooling Feedback (feature-forge / rauf)`
+    — different capitalization — fails it, falls through to the project-owns-it
+    case, and is handed a paste block for a section it already has. The narrow
+    test produces the duplicate that case 2 exists to prevent.
+    """
+    block = _root_hygiene_block()
+    assert "grep -qiE" in block, "the heading test is case-sensitive"
+    assert "#{1,6}" in block, "the heading test is pinned to one heading level"
+    assert "any capitalization" in block, (
+        "the prose does not tell the reader how broad the predicate is meant to be"
+    )
+
+
+def test_rung_3_default_is_scoped_to_the_write_case() -> None:
+    """Cases 2 and 3 write nothing at any rung, so rung 3 must not restate them.
+
+    A blanket "at rung 3 this step writes nothing and says so" reads as overriding
+    the whole case analysis: a headless init would then announce "tooling-feedback
+    skipped" for a file that already carries the section (case 2, which should be
+    silent) and would replace case 3's required paste block with a skip notice.
+    That makes a headless run noisier than an interactive one.
+    """
+    block = _root_hygiene_block()
+    assert "for case 1 only" in block, (
+        "the rung-3 default is not scoped to the consent-dependent write"
+    )
+    assert "at *any* rung" in block, (
+        "nothing states that the no-write cases are rung-independent"
     )

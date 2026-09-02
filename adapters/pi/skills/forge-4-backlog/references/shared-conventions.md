@@ -214,34 +214,36 @@ The **Tooling Feedback Protocol** — how an agent working in a forge-driven pro
 **Then, for each applicable variant, exactly one of three cases:**
 
 1. **The file does not exist.** The only case with anything to write. It is a **`local-write`** (§ Remedy Safety Ladder): ask **once**, as a single consolidated question covering every missing variant — *"Write the feature-forge tooling-feedback section to `AGENTS.md`{ and `CLAUDE.md`}?"* — then run the guarded copy below.
-2. **The file exists and already contains a `## Tooling feedback` heading** (`grep -q '^## Tooling feedback' AGENTS.md`). Nothing to do, by anyone: `forge-bootstrap` wrote it, an earlier `forge-init` wrote it, or the project wrote its own. **Say nothing and do not prompt** — this is the idempotent case, and printing the block again for the operator to paste is how the section ends up in the file twice.
+2. **The file exists and already carries a "Tooling feedback" heading** — any heading level, any capitalization, leading whitespace allowed. Test it that broadly (`grep -qiE '^[[:space:]]*#{1,6}[[:space:]]*Tooling feedback' AGENTS.md`), because a narrower test is not conservative: a file whose heading reads `## Tooling Feedback (feature-forge / rauf)` would fall through to case 3 and be handed the very duplicate this case exists to prevent. Nothing to do, by anyone: `forge-bootstrap` wrote it, an earlier `forge-init` wrote it, or the project wrote its own. **Say nothing and do not prompt** — this is the idempotent case, and printing the block again for the operator to paste is how the section ends up in the file twice.
 3. **The file exists and does not contain that heading.** The project owns that file: never append to it, never overwrite it, and do not prompt — there is no write to consent to. Print the template's "Tooling feedback" section once for the operator to paste, and say that is what you are doing.
 
-**Anchor the write at the project root first.** Unlike the Specs sibling, whose target is the config-derived `<specsDir>` path, these targets are bare and `$PWD`-relative — and a shell's cwd persists between calls. `AGENTS.md` written into the wrong directory is not a stray file: it is an agent-instruction file every coding agent in that directory will read as instructions, and `$HOME` is the realistic wrong directory. The `[ -f … ] ||` guard prevents a clobber but not a *creation*, so assert the root before either copy:
+**Anchor the write, in the same shell as the copy.** Unlike the Specs sibling, whose target is the config-derived `<specsDir>` path, these targets are bare and `$PWD`-relative — and a shell's cwd persists between calls. `AGENTS.md` written into the wrong directory is not a stray file: it is an agent-instruction file every coding agent in that directory will read as instructions, and `$HOME` is the realistic wrong directory. The `[ -f … ] ||` guard prevents a clobber but not a *creation*.
 
-```bash
-[ -f forge.config.json ] || { echo "root hygiene: not at the project root ($PWD) — skipping" >&2; exit 1; }
-```
-
-```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
-[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-[ -f AGENTS.md ] || cp "$R/references/templates/root-hygiene/AGENTS.md" AGENTS.md
-```
-
-If the host is Claude, also:
+So the assertion and the copy are **one command block, not two** — a separate assertion block's `exit 1` ends only its own shell and leaves the next block unguarded. Run this in the directory `forge.config.json` was just written to; if the cwd has moved to a nested project with its own config, `cd` back first, because the assertion can only tell you *a* forge project is here, not that it is the one you initialized.
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-[ -f CLAUDE.md ] || cp "$R/references/templates/root-hygiene/CLAUDE.md" CLAUDE.md
+ROOT="$PWD"
+[ -f "$ROOT/forge.config.json" ] || { echo "root hygiene: $ROOT is not the initialized project root — skipping" >&2; exit 1; }
+[ -f "$ROOT/AGENTS.md" ] || cp "$R/references/templates/root-hygiene/AGENTS.md" "$ROOT/AGENTS.md"
 ```
 
-The `[ -f … ] ||` guard is the mechanism, not the case analysis above: even if the cases were misread, the copy cannot overwrite. Case 2 is what keeps a *second* run quiet; the guard is what keeps it safe.
+If the host is Claude, also — again as one block:
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+ROOT="$PWD"
+[ -f "$ROOT/forge.config.json" ] || { echo "root hygiene: $ROOT is not the initialized project root — skipping" >&2; exit 1; }
+[ -f "$ROOT/CLAUDE.md" ] || cp "$R/references/templates/root-hygiene/CLAUDE.md" "$ROOT/CLAUDE.md"
+```
+
+The `[ -f … ] ||` guard is the last line of defence, not the case analysis above: even if the cases were misread, the copy cannot overwrite. Case 2 is what keeps a *second* run quiet; the guard is what keeps it safe.
 
 **Staging.** `forge-init` has no git commit step of its own, so a file written here would otherwise sit untracked and be swept into whatever commits next (a stage commit, or a loop iteration's first commit). Name each file written and `git add` it, leaving it staged for the operator rather than loose.
 
-**Rung-3 default** (§ Interaction Capability Ladder). This is not a *preflight remedy* — `doctor` emitted no remedy here — so it takes the table's catch-all row, "skip, and state which": write nothing, and state that the tooling-feedback section was skipped and how to get it (re-run `forge-init` from an interactive session, or paste the template). That is the same posture the safety ladder's "degrade one tier stricter" rule produces for an unaskable `local-write`, reached by the ladder rather than by borrowing a row this site does not sit in.
+**Rung-3 default — for case 1 only** (§ Interaction Capability Ladder). Cases 2 and 3 write nothing and ask nothing at *any* rung, so the rung never changes them: a rung-3 run still stays silent in case 2 and still prints the paste block in case 3. Reporting "tooling-feedback skipped" for a file that already carries the section would make every headless init noisier than an interactive one, which is backwards. Only case 1's consent-dependent write degrades. This is not a *preflight remedy* — `doctor` emitted no remedy here — so it takes the table's catch-all row, "skip, and state which": write nothing, and state that the tooling-feedback section was skipped and how to get it (re-run `forge-init` from an interactive session, or paste the template). That is the same posture the safety ladder's "degrade one tier stricter" rule produces for an unaskable `local-write`, reached by the ladder rather than by borrowing a row this site does not sit in.
 
 ## Epic Context Injection
 
