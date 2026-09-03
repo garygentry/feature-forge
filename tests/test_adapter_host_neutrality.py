@@ -33,6 +33,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import json
+import re
+
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -181,6 +183,109 @@ def test_no_leaked_host_token(path: Path, forbidden: tuple[str, ...]) -> None:
         f"{leaked!r}. Fix scripts/build-adapters.py `_HOST_TERM_REPLACEMENTS` / "
         f"`_translate_reference_host_terms` and rebuild adapters — do not "
         f"hand-edit adapters/."
+    )
+
+
+# --------------------------------------------------------------------------------------
+# Known debt, asserted as xfail(strict) — #265 P0.1 (#266)
+#
+# These are the two host-neutrality defects #265 F1/F2 name. Both are red today, so they
+# are marked xfail(strict=True): the suite stays green, the debt is executable rather than
+# prose, and the fix PR MUST remove the marker or fail with XPASS.
+#
+# They are deliberately NOT added to `FORBIDDEN_TOKENS`. That tuple is parametrized
+# per-file across ~1,600 cases, and only a handful carry either defect — so an xfail there
+# would XPASS on nearly every case and, under strict, fail the suite immediately. A
+# whole-surface count is the shape that can actually carry the marker.
+# --------------------------------------------------------------------------------------
+
+#: `\b(a|an|same) the host's` — the grammar the article-aware pairs are meant to kill.
+_GRAMMAR_ARTIFACT_RE = re.compile(r"\b(a|an|same) the host's")
+
+
+def _surface_text(target: str) -> list[tuple[Path, str]]:
+    return [(p, p.read_text(encoding="utf-8")) for p in _scan_paths(target)]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "#270 (P1.1): the codex/copilot/cursor/gemini bundles carry canon's "
+        "`/feature-forge:` prefix, which names nothing on those hosts. Only Pi is "
+        "rewritten. Removing this marker is part of #270 — see also "
+        "tests/test_forge_guide_doctor.py::test_non_pi_bundles_keep_the_command_prefix, "
+        "which pins the CURRENT behavior and must be re-pointed, not deleted."
+    ),
+)
+@pytest.mark.parametrize("target", NON_CLAUDE_TARGETS)
+def test_no_claude_slash_command_prefix_in_non_claude_bundles(target: str) -> None:
+    """#265 F1. Measured, never taken from the issue body — the count tracks canon.
+
+    F1 recorded 234 per bundle at `fedd219`; it is 236 on the scanned surface today and
+    will keep moving with every prose phase that lands before #270.
+    """
+    hits = [
+        (path, text.count("/feature-forge:"))
+        for path, text in _surface_text(target)
+        if "/feature-forge:" in text
+    ]
+    total = sum(n for _, n in hits)
+    assert total == 0, (
+        f"{target}: {total} literal `/feature-forge:` occurrence(s) across "
+        f"{len(hits)} file(s) — a slash-command prefix that does not exist on this host."
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "#271 (P1.2): literal term substitution corrupts grammar — `the same "
+        "AskUserQuestion surface` degrades to `the same the host's question mechanism "
+        "surface`. Placeholder-based binding is the fix; removing this marker is part "
+        "of #271."
+    ),
+)
+@pytest.mark.parametrize("target", NON_CLAUDE_TARGETS)
+def test_no_host_term_grammar_artifacts(target: str) -> None:
+    """#265 F2 — and the count in that finding does NOT reproduce.
+
+    F2 records 96 artifacts per non-Claude bundle and 24 in Pi. Measured with F2's own
+    regex, at F2's own commit (`fedd219`) and on `main`: **1** per non-Claude bundle and
+    **0** in Pi — a single site, `the same the host's question mechanism surface` in
+    forge-5-loop. The tree has not drifted; the finding's number is wrong.
+
+    Recorded here rather than quietly implemented, because #271 is scoped and titled off
+    that number ("96 grammar artifacts/bundle") and a 1-site fix is a different piece of
+    work from a 96-site one. The guard is still correct and still red — the defect is
+    real, just far smaller than filed.
+    """
+    hits = [
+        (path.relative_to(ADAPTERS_ROOT), len(_GRAMMAR_ARTIFACT_RE.findall(text)))
+        for path, text in _surface_text(target)
+        if _GRAMMAR_ARTIFACT_RE.search(text)
+    ]
+    total = sum(n for _, n in hits)
+    assert total == 0, (
+        f"{target}: {total} host-term grammar artifact(s) in {[str(p) for p, _ in hits]}"
+    )
+
+
+def test_pi_has_no_host_term_grammar_artifacts() -> None:
+    """Pi is CLEAN, and that is pinned rather than xfailed — #265 F2 says otherwise.
+
+    F2 records "24 in Pi". Measured with F2's own regex, both at `fedd219` and on `main`:
+    zero. Marking Pi xfail(strict) alongside the others therefore fails the suite by
+    XPASS — which is how the discrepancy surfaced, and is worth stating as an executable
+    assertion rather than a note: Pi's overrides produce clean prose today and a
+    regression there should go red immediately, not be excused by a marker inherited
+    from a miscount.
+    """
+    total = sum(
+        len(_GRAMMAR_ARTIFACT_RE.findall(text)) for _, text in _surface_text("pi")
+    )
+    assert total == 0, (
+        f"pi: {total} host-term grammar artifact(s) — Pi's overrides regressed; this "
+        "target has been clean since the assertion was written"
     )
 
 
