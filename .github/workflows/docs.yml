@@ -15,6 +15,18 @@ on:
       - "skills/**"
       - "references/**"
       - ".github/workflows/docs.yml"
+  # #265 P0.2 (#267): a PR touching the docs surface builds and drift-checks the
+  # site, so breakage is a red PR rather than a red `main` after merge. Same
+  # paths as `push` so a canon edit that would rebuild the site on merge also
+  # builds it on the PR. `deploy` is gated below so PRs never publish Pages —
+  # only the `main` `push` path deploys.
+  pull_request:
+    paths:
+      - "docs-site/**"
+      - "docs/**"
+      - "skills/**"
+      - "references/**"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
@@ -67,6 +79,9 @@ jobs:
 
   deploy:
     needs: build
+    # Only the `main` `push` (or a manual dispatch) publishes Pages; a PR run
+    # exercises `build` for the drift check and stops there.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # Safety net: the deploy is a single API round-trip; if it wedges, fail fast
     # rather than burn the 6h default and hold the `pages` concurrency group.
