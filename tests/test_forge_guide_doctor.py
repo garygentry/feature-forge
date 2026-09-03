@@ -404,9 +404,30 @@ BUNDLE_TARGETS: Final[tuple[str, ...]] = (
 
 @pytest.mark.parametrize("target", ("claude", "codex", "copilot", "cursor", "gemini"))
 def test_non_pi_bundles_keep_the_command_prefix(target: str) -> None:
+    """Pins CURRENT behavior, which #270 is expected to change. Read this before "fixing" it.
+
+    Today the host-term pass rewrites the slash-command prefix for Pi only
+    (`_PI_HOST_TERM_REPLACEMENTS`), so every other bundle ships canon's
+    `/feature-forge:` spelling. This guard asserts that, and for `claude` it is simply
+    correct.
+
+    For codex/copilot/cursor/gemini it is **not** an endorsement. #265 F1 counts those
+    literal slash commands as a defect — a command named on a host that has no such
+    prefix — and #270 (P1.1, "per-host invocation prefix") is the phase that removes them.
+    When that lands, this test fails by design.
+
+    **The fix then is to re-point it at whatever dialect #270 gives each host, not to
+    delete it.** What matters is that forge-guide's repair surface is reachable by SOME
+    name on every bundle; the prefix is #270's business, and the assertion below is only
+    the shape that question takes before #270.
+    """
     assert COMMAND in _bundle_guide(target).read_text(encoding="utf-8"), (
-        f"the {target} forge-guide bundle lost `{COMMAND}` — the host-term pass rewrites "
-        "only Pi's slash-command prefix, so every other target keeps canon's spelling"
+        f"the {target} forge-guide bundle no longer carries `{COMMAND}`.\n"
+        "If you are working on #270 (per-host invocation prefix) this failure is EXPECTED: "
+        "re-point this guard at that host's new dialect rather than deleting it — the "
+        "invariant is that the repair surface is reachable by some name on every bundle.\n"
+        "Otherwise the host-term pass has regressed: it should rewrite the prefix for Pi "
+        "only, leaving canon's spelling everywhere else."
     )
 
 
