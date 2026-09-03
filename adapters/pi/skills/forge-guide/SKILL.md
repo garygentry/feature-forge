@@ -176,15 +176,17 @@ into a readable report and, only on an explicit yes, a scripted repair. Enter th
 when the argument is `--doctor`; every other invocation of this skill stays purely advisory.
 
 **The carve-out, stated precisely.** Here — and nowhere else in this skill — you may run
-`doctor` (read-only) and apply a **`local-write`** remedy after an explicit yes.
-`global-install` and `network` remedies stay **advise-only**: print the command, never run it.
-This skill still **never invokes stage skills**, never edits `.pipeline-state.json` or a
-backlog, and writes no artifact of its own. Repair here means the environment, not the pipeline.
+`doctor` (read-only), run a **`read-only`** remedy unprompted, and apply a **`local-write`**
+remedy after an explicit yes. `global-install` and `network` remedies stay **advise-only**:
+print the command, never run it. This skill still **never invokes stage skills**, never edits
+`.pipeline-state.json` or a backlog, and writes no artifact of its own — step 4's exclusion is
+what keeps the second of those true. Repair here means the environment, not the pipeline.
 
 **1. Read the whole catalog.** Not a narrowed gate: this surface is *about* the environment,
 so the breadth `references/preflight-and-self-heal.md` §1 forbids inside a hard gate (where an
-unrelated advisory must never block a launch) is exactly what belongs here. Add `--verbose`
-when the user wants the `ok`/`na` rows listed too.
+unrelated advisory must never block a launch) is exactly what belongs here. The `--json`
+payload already carries every record, `ok` and `na` included; `--verbose` changes only the
+human printer, so it is a no-op on this call.
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -192,32 +194,58 @@ R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-
 python3 "$R/scripts/forge-session.py" doctor --json
 ```
 
-**2. Render the summary.** Lead with `checksSummary`, then one row per non-`ok` check —
-**id · status · severity · remedy tier** (`remedy.safety`, or `—` when `remedy` is `null`) —
-blocking rows first, each with the check's own `detail`. Quote every remedy exactly as the
-JSON gives it, and never invent one `doctor` did not emit.
+**2. Render the summary.** Lead with `checksSummary`, then one row per **`warn` or `fail`**
+check — that is the affected set §2 step 1 defines, and `na` is not a finding (its `detail`
+names the prerequisite that would make it applicable). Blocking rows first. Each row carries
+the check's own `detail`, its `remedy.safety` as the tier, and `remedy.description` **and**
+`remedy.command` verbatim, so the operator sees the exact string before being asked about it;
+render `—` for a null `remedy`. Never invent a remedy `doctor` did not emit.
 
-**3. Take your rung from that same report.** A full-catalog run carries the `interaction-mode`
-record, so `evidence.mode` answers the Interaction Capability Ladder's *"determine it before
-your first question"* (`references/shared-conventions.md` § Interaction Capability Ladder)
-without a second call — you already hold the record it tells you to go read.
+**3. Take your rung from that same report.** A full-catalog run carries the
+`interaction-mode` record, so read its `evidence.mode` rather than calling again — three
+values, three answers. `non-interactive` (it carries `rung: 3`) → step 5. `interactive` →
+classify yourself against `references/shared-conventions.md` § Interaction Capability Ladder
+as usual. **`unknown`, an `na` record, a `warn` carrying `evidence.conflict`, or no such check
+at all → the report did NOT answer it**: self-assess against that same ladder and prefer its
+prose-question rung over assuming an answer. `unknown` is never rung 3 — reading it that way
+is the silent behavior change the ladder forbids. (An unstamped `codex exec` reports exactly
+this, so the branch is the common case, not the corner.)
 
-**4. Repair.** Follow `references/preflight-and-self-heal.md` in full over the non-`ok` set:
-cluster from `remedyClusters[]`, ask **one consolidated question per cluster** (never one per
-check), print the `preflight:` outcome line before acting, run the command verbatim, then
-**prove** by re-running the identical `doctor` invocation. A remedy that exited 0 but left a
-member check not `ok` is a failed preflight, not a partial success.
+**4. Repair,** following `references/preflight-and-self-heal.md` over the `warn`/`fail` set:
+cluster from `remedyClusters[]`, then **partition by tier before asking anything** —
+`read-only` runs unprompted; `local-write` gets **one consolidated question per cluster**
+(never one per check); `global-install`, `network`, and any null-command remedy are
+**advise-only** and are never offered for execution. Print the `preflight:` outcome line before
+acting, run an approved command verbatim, then **prove** by re-running the identical `doctor`
+invocation. A remedy that exited 0 but left a member check not `ok` is a failed preflight, not
+a partial success, and it **stops the repair** — report every remaining cluster as unattempted
+rather than continuing past it.
+
+**Excluded from apply, at every rung:** a remedy that changes which commit is checked out or
+rewrites a feature's `.pipeline-state.json` — today `branch-state`'s `git switch …` and
+`state-branch …`. Print them as advice and let the operator run them. They are pipeline
+bookkeeping rather than environment repair, they are not idempotent the way the `local-write`
+tier assumes, and applying one mid-run would move the tree the prove step re-measures.
+**Consent does not persist across invocations:** the ladder's "ask once per remedy class per
+session" memo covers one run of this mode; a second `--doctor` asks afresh, because its
+advertised output is a report and an operator asking to *look* must never trigger a write.
 
 **5. Rung 3 → report-only.** State `interaction: rung 3 (non-interactive) — declared defaults
-apply`, record every `local-write` cluster as `unaskable→advise-only`, and change nothing: the
-report is the entire deliverable. Never read an unasked write as implied consent.
+apply`, then take this site's declared default: the ladder's **preflight-remedies** class,
+under which a `local-write` cluster degrades to advise-only and is recorded
+`unaskable→advise-only`. Nothing that needs a yes is applied; a `read-only` cluster still runs,
+as at any rung. The report is the entire deliverable.
 
-**6. Close** with what is still not `ok`, and the one command that would clear it.
+**6. Close** with every check still `warn`/`fail`, each next to its own `remedy.command` — or
+the words *no scripted command* where the remedy is null or absent. Do not reduce them to one
+command: several unresolved checks usually need several, and inventing a combined one is
+exactly the fabrication step 2 forbids.
 
 ## Troubleshooting starters
 
-- **Anything environmental:** run `/skill:forge-guide --doctor` — it reports every
-  `doctor` check and walks the consented repair for the ones carrying a remedy.
+- **Anything environmental:** point the user at `/skill:forge-guide --doctor` — it
+  reports every `doctor` check and walks the consented repair. Name it; do not enter that
+  mode from an answer that was not invoked with `--doctor`.
 - **Stage 5 won't start:** backlog exists and is verified? runner installed and ≥ min version?
   working tree clean? See `references/ralph-loop-contract.md` for the runner contract and version gate.
 - **Loop stopped mid-run:** check the signal — `BLOCKED`/`NEEDS_HUMAN` items are set aside, not

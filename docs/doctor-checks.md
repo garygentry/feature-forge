@@ -167,10 +167,12 @@ prerequisite (often another check id) that would make it applicable.
 ## Repairing what it finds
 
 `/feature-forge:forge-guide --doctor` is the operator-facing repair surface for this
-catalog. It runs the full catalog, renders the id/status/severity/remedy-tier summary, and
-then follows the **Preflight & Self-Heal** procedure (`references/preflight-and-self-heal.md`)
-over the non-`ok` set — clustering findings that share a remedy, asking once per cluster,
-running only `local-write` remedies and only on an explicit yes, and proving the repair by
-re-running the identical `doctor` call. `global-install` and `network` remedies stay
-advise-only there, exactly as they are here, and a non-interactive session (rung 3) gets the
-report with nothing applied.
+catalog (`/skill:forge-guide --doctor` on Pi). It runs the full catalog, renders the
+id/status/severity/remedy-tier summary, and then follows the **Preflight & Self-Heal**
+procedure (`references/preflight-and-self-heal.md`) over the `warn`/`fail` set — clustering
+findings that share a remedy, asking once per cluster, running `local-write` remedies only on
+an explicit yes, and proving the repair by re-running the identical `doctor` call.
+`global-install` and `network` remedies stay advise-only there, exactly as they are here, and
+so do the two remedies that change your checkout or rewrite pipeline state (`branch-state`'s
+`git switch …` and `state-branch …`) — that surface repairs the environment, not the pipeline.
+A non-interactive session (rung 3) gets the report with nothing that needed a yes applied.

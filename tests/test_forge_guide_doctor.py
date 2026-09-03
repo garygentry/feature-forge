@@ -75,12 +75,23 @@ def _frontmatter(text: str) -> str:
 
 
 def _doctor_section(text: str) -> str:
-    """The `## --doctor mode` section alone, so a clause elsewhere cannot vouch for it."""
+    """The `## --doctor mode` section alone, so a clause elsewhere cannot vouch for it.
+
+    Fence-aware on purpose: the section carries a ```bash block, and a naive
+    `find("\\n## ")` would end the section early at any `## ` line that landed inside a
+    fence — silently shrinking what every guard below inspects, which is a false pass
+    rather than a failure.
+    """
     body = _body(text)
-    start = body.index("## `--doctor` mode")
-    rest = body[start + 1 :]
-    end = rest.find("\n## ")
-    return rest if end == -1 else rest[:end]
+    lines = body[body.index("## `--doctor` mode") :].split("\n")
+    out, in_fence = [lines[0]], False
+    for line in lines[1:]:
+        if line.startswith("```"):
+            in_fence = not in_fence
+        elif not in_fence and line.startswith("## "):
+            break
+        out.append(line)
+    return "\n".join(out)
 
 
 # --------------------------------------------------------------------------------------
@@ -154,11 +165,111 @@ def test_the_advisory_only_rule_still_stands_outside_doctor_mode() -> None:
 
 
 def test_doctor_mode_is_entered_only_on_the_explicit_argument() -> None:
+    """Pin the gating sentence, not two words that appear all over the section.
+
+    `"only" in section and "--doctor" in section` was the first draft and it was
+    tautological: the heading alone satisfies the second clause and "only" occurs in the
+    carve-out, so deleting the gate entirely left the test green.
+    """
+    normalized = " ".join(_doctor_section(read(FORGE_GUIDE)).split())
+    assert "Enter this mode **only** when the argument is `--doctor`" in normalized, (
+        "the `--doctor` section lost its entry gate. Without it an ordinary advisory "
+        "invocation (`forge-guide troubleshoot`) can read on into a mode that is "
+        "permitted to write"
+    )
+
+
+def test_the_entry_gate_guard_is_not_satisfied_by_stray_words() -> None:
+    """Non-vacuity for the guard above: the loose form it replaced passes on junk."""
+    junk = "## `--doctor` mode\nrun it only when you like, --doctor is a flag.\n"
+    assert "only" in junk and "--doctor" in junk  # the old assertion — passes
+    assert "Enter this mode **only** when the argument is `--doctor`" not in junk
+
+
+def test_read_only_remedies_are_named_as_the_unprompted_tier() -> None:
+    """All four tiers must be partitioned where the agent acts, not 30 lines above it.
+
+    `read-only` clusters are never prompted and simply run (preflight §2 step 3); a step
+    that says "ask one question per cluster" without that partition tells the agent to
+    prompt for a tier that must not be prompted — and, worse, to prompt for
+    `global-install`/`network`, which a yes could then be read as authorizing.
+    """
     section = _doctor_section(read(FORGE_GUIDE))
-    assert "only" in section and "--doctor" in section, (
-        "the `--doctor` section must say it is entered only when the argument is "
-        "`--doctor`; an unguarded section lets an ordinary advisory question inherit "
-        "the write carve-out"
+    for token in ("`read-only` runs unprompted", "global-install", "network", "advise-only"):
+        assert token in section, (
+            f"step 4's tier partition dropped {token!r} — the safety ladder's four tiers "
+            "must be resolved in the sentence that acts on them"
+        )
+
+
+def test_checkout_and_pipeline_state_remedies_are_excluded_from_apply() -> None:
+    """The carve-out promises this skill never edits `.pipeline-state.json`.
+
+    `branch-state` emits two `local-write` remedies that break that promise if applied:
+    `git switch <branch>` rewrites the working tree (and is not idempotent, which the
+    tier assumes), and `state-branch --feature … --branch …` writes the feature's
+    `.pipeline-state.json`. Both are reachable only here, because this is the only caller
+    that runs the full catalog.
+    """
+    section = _doctor_section(read(FORGE_GUIDE))
+    normalized = " ".join(section.split())
+    assert "Excluded from apply" in section, (
+        "the `--doctor` section dropped its exclusion rule — with the full catalog in "
+        "scope, an approved `branch-state` remedy would switch the operator's branch or "
+        "rewrite a feature's recorded branch, contradicting the carve-out two paragraphs up"
+    )
+    for command in ("git switch", "state-branch"):
+        assert command in normalized, (
+            f"the exclusion no longer names {command!r} — naming today's instances is what "
+            "makes the rule checkable against the registry"
+        )
+
+
+def test_consent_does_not_persist_across_doctor_invocations() -> None:
+    """The ladder's once-per-session memo would otherwise apply on a second look.
+
+    `local-write` asks "once per distinct `remedy.command` per session", written for a
+    gate that runs once per launch. `--doctor` is operator-typed and its advertised
+    output is a report, so a second invocation must not silently re-apply a remedy the
+    first one was told to run.
+    """
+    section = _doctor_section(read(FORGE_GUIDE))
+    assert "Consent does not persist across invocations" in section, (
+        "the `--doctor` section no longer overrides the once-per-session consent memo: "
+        "an operator running `--doctor` twice to *look* at the report would have the "
+        "remedy re-applied with no question asked"
+    )
+
+
+def test_unknown_mode_is_not_treated_as_rung_3() -> None:
+    """`unknown` is the common Codex answer, not a corner case.
+
+    P3.5 excludes Codex from ancestry detection, so an unstamped `codex exec` always
+    reports `mode: unknown`. Reading that as rung 3 is the silent behavior change the
+    ladder forbids; leaving it unhandled is the stall P4 exists to prevent.
+    """
+    section = _doctor_section(read(FORGE_GUIDE))
+    normalized = " ".join(section.split())
+    assert "`unknown` is never rung 3" in normalized, (
+        "step 3 no longer says what `unknown` means. The ladder's table says self-assess "
+        "and prefer rung 2's prose question; a section that names only the rung-3 branch "
+        "leaves the most common Codex answer with no instruction at all"
+    )
+    assert "evidence.conflict" in normalized, (
+        "step 3 dropped the conflict case — P3.5 resolves two contradicting signals to "
+        "`warn` + `unknown` precisely so a leaked env stamp cannot silence questions"
+    )
+
+
+def test_the_affected_set_is_warn_or_fail_never_na() -> None:
+    """`na` is not a finding; rendering it as one breaks INV-2 on a healthy project."""
+    section = _doctor_section(read(FORGE_GUIDE))
+    normalized = " ".join(section.split())
+    assert "`na` is not a finding" in normalized, (
+        "the `--doctor` section must exclude `na` from the affected set (preflight §2 "
+        "step 1 defines it as `warn` or `fail`). This repo reports `backlog-valid` as "
+        "`na` while healthy — rendering it as a finding and closing with 'the command "
+        "that would clear it' names a command that does not exist"
     )
 
 
@@ -284,31 +395,65 @@ def _bundle_guide(target: str) -> Path:
     )
 
 
-@pytest.mark.parametrize("target", ("codex", "copilot", "cursor", "gemini"))
-def test_generic_bundles_keep_the_command_prefix(target: str) -> None:
-    path = _bundle_guide(target)
-    assert COMMAND in path.read_text(encoding="utf-8"), (
+#: Every built bundle. `claude` belongs here too — leaving it out asserted the command
+#: literal on five of six hosts and let the drift guard vouch for the sixth by implication.
+BUNDLE_TARGETS: Final[tuple[str, ...]] = (
+    "claude", "codex", "copilot", "cursor", "gemini", "pi",
+)
+
+
+@pytest.mark.parametrize("target", ("claude", "codex", "copilot", "cursor", "gemini"))
+def test_non_pi_bundles_keep_the_command_prefix(target: str) -> None:
+    assert COMMAND in _bundle_guide(target).read_text(encoding="utf-8"), (
         f"the {target} forge-guide bundle lost `{COMMAND}` — the host-term pass rewrites "
         "only Pi's slash-command prefix, so every other target keeps canon's spelling"
     )
 
 
-@pytest.mark.parametrize("target", ("claude", "codex", "copilot", "cursor", "gemini", "pi"))
+@pytest.mark.parametrize("target", BUNDLE_TARGETS)
+def test_every_bundle_carries_the_doctor_section_itself(target: str) -> None:
+    """The command string alone is not proof the mode shipped.
+
+    `/feature-forge:forge-guide --doctor` also appears in the Troubleshooting starter, so
+    a bundle that lost the whole `## --doctor mode` section would still satisfy the
+    command-prefix guards above.
+    """
+    text = _bundle_guide(target).read_text(encoding="utf-8")
+    assert "## `--doctor` mode" in text, (
+        f"the {target} bundle carries the command but not the section that defines it — "
+        "an agent would be pointed at a mode with no instructions behind it"
+    )
+
+
+@pytest.mark.parametrize("target", BUNDLE_TARGETS)
 def test_every_bundle_fans_the_preflight_reference_beside_forge_guide(target: str) -> None:
     """The citation must actually deliver the file, not just name it.
 
     forge-guide reads `references/preflight-and-self-heal.md` as a bare relative path, so
     on the npm-installer Claude layout (no `${CLAUDE_PLUGIN_ROOT}`) only the skill-local
     copy resolves — the #122 degradation the by-citation fan-out exists to prevent.
+    `adapters/` is committed, so a missing bundle is a failure, not a skip.
     """
-    bundle = ADAPTERS_ROOT / target
-    if not bundle.is_dir():
-        pytest.skip(f"{target} is not a built adapter target in this tree")
     fanned = _bundle_guide(target).parent / "references" / "preflight-and-self-heal.md"
     assert fanned.is_file(), (
         f"{target}: preflight-and-self-heal.md was not fanned into forge-guide's own "
         "references/ — the bare `references/…` path the body reads will not resolve "
         "from the skill dir on the non-plugin Claude layout"
+    )
+
+
+@pytest.mark.parametrize("target", BUNDLE_TARGETS)
+def test_the_ladder_title_pointer_resolves_in_every_bundle(target: str) -> None:
+    """Step 3 points at the ladder BY TITLE, so the title must survive translation.
+
+    A title-pointer into a fanned file whose heading the host-term pass renamed is a dead
+    instruction: the agent is told to go read a section that is not there.
+    """
+    fanned = _bundle_guide(target).parent / "references" / "shared-conventions.md"
+    assert fanned.is_file(), f"{target}: shared-conventions.md is not beside forge-guide"
+    assert "## Interaction Capability Ladder" in fanned.read_text(encoding="utf-8"), (
+        f"{target}: the fanned shared-conventions.md no longer carries the ladder under "
+        "the exact title the `--doctor` section points at"
     )
 
 
