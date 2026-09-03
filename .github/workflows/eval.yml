@@ -1,8 +1,35 @@
 name: trigger-accuracy-eval
 
 # Advisory ONLY (REQ-EVAL-02 / OQ-03): on demand + weekly. NEVER on pull_request.
+# The weekly cron only runs trigger accuracy; the compliance eval sits behind an
+# explicit workflow_dispatch input (#265 P0.3, #268) so an operator has to ask for
+# it — every run is a real Anthropic session and costs real credits, and no cron
+# advances that number without a human choosing to.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: "compliance eval probe (or `none` to skip and run trigger accuracy only)"
+        required: true
+        default: "none"
+        type: choice
+        options:
+          - none
+          - stage-exit
+          - r2-prelude
+          - branch-path
+          - loop-outcome
+          - all
+      n:
+        description: "runs per model per cell"
+        required: true
+        default: "5"
+        type: string
+      models:
+        description: "comma-separated model ids (empty = harness defaults)"
+        required: false
+        default: ""
+        type: string
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC — weekly cadence bounds API cost (OQ-D)
 
@@ -31,3 +58,46 @@ jobs:
           # (REQ-SEC-02). The harness skips + exits 0 when this is empty (e.g. on forks).
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python3 eval/run-eval.py
+
+  compliance:
+    # #265 P0.3 (#268): the compliance eval is the regression oracle for prose
+    # changes. It runs ONLY on workflow_dispatch, and only when `probe != none` —
+    # never on the weekly cron, never on push, never on PR. Advisory, non-blocking.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.probe != 'none'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Claude Code CLI (the harness driver)
+        # `run-compliance-eval.py` drives real headless sessions via `claude -p`;
+        # the CLI carries the same defaults and tool loop the user's local runs use,
+        # which is why a raw Messages API call would reproduce neither the failure
+        # this eval measures nor its baseline.
+        run: npm install --global @anthropic-ai/claude-code
+
+      - name: Run compliance eval (advisory, non-blocking)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          ARGS=(--probe "${{ inputs.probe }}" --n "${{ inputs.n }}" --json --out "eval-result.json")
+          if [ -n "${{ inputs.models }}" ]; then
+            ARGS+=(--models "${{ inputs.models }}")
+          fi
+          python3 eval/run-compliance-eval.py "${ARGS[@]}"
+
+      - name: Upload compliance-eval JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-eval-${{ inputs.probe }}-${{ github.run_id }}
+          path: eval-result.json
+          if-no-files-found: warn

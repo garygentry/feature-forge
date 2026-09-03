@@ -55,6 +55,35 @@ but the smoke is retained because keeping it means "clean" also proves the CLI *
 decision 2026-07-29, finding V-013 of the `context-efficiency` impl verify; reinstated by
 finding V-001 of the `loop-recovery` impl verify.) Never fabricate a command.
 
+## Prose-change gate (compliance eval)
+
+`eval/run-compliance-eval.py` is the **regression oracle for prose changes** — the only
+instrument that measures what a model does with the canon it actually reads, once a skill
+is driving. It is not a correctness gate: it reports a *rate over N runs*, never
+pass/fail, and CI never runs it on the merge path (costs money, needs the Claude CLI,
+weekly cron is trigger-accuracy only).
+
+A PR whose diff touches `skills/*/SKILL.md` body text, `references/stage-exit-protocol.md`,
+or `references/shared-conventions.md` **records a compliance-eval result in its description**
+before merge — the narrowest probe that covers the change (`--probe stage-exit`,
+`branch-path`, `r2-prelude`, or `loop-outcome`) with `--n 5` per model. Two ways to run it:
+
+- Locally: `python3 eval/run-compliance-eval.py --probe <p> --n 5 --json --out eval/last.json`
+  (documented in `eval/README.md` § Quick invocations; ~$14–20 per probe).
+- From Actions on demand: **Actions → trigger-accuracy-eval → Run workflow**, set `probe`
+  to the desired value (`none` keeps the trigger-accuracy behaviour). Uploads
+  `compliance-eval-<probe>-<run>.json` as an artifact.
+
+Compare against the recorded baseline at
+[`docs/claude-5/phase-0-compliance-baseline.md`](docs/claude-5/phase-0-compliance-baseline.md).
+A *rate drop* on the touched probe is the finding to explain in the PR — a maintained rate
+is what the gate is looking for. A single run says nothing (the failure mode this eval
+measures is intermittent), which is why the runbook always sets `--n`.
+
+Pipeline-mechanical changes (scripts, adapters, tests, docs, workflows) are outside the
+gate: they cannot move the numbers this eval measures. Frontmatter-only edits are outside
+too — trigger accuracy is the `run-eval.py` weekly cron, not this one.
+
 ## Repository Conventions
 
 ### Spec-pure canon

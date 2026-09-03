@@ -1,0 +1,489 @@
+{
+  "driver": "/home/gary/.local/bin/claude",
+  "n": 5,
+  "models": [
+    "claude-opus-5",
+    "claude-opus-4-8"
+  ],
+  "probes": [
+    {
+      "probe": "stage-exit",
+      "model": "claude-opus-5",
+      "variant": "cold",
+      "runs": 5,
+      "scored": 5,
+      "compliant": 5,
+      "rate": 1.0,
+      "criteria_rates": {
+        "block_verbatim": 1.0,
+        "next_command_fenced": 1.0,
+        "nothing_after_sentinel": 1.0,
+        "ran_stage_exit": 1.0,
+        "sentinel_present": 1.0
+      },
+      "cost_usd": 3.9141,
+      "results": [
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "cold",
+          "index": 0,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.88018,
+          "turns": 13,
+          "duration_ms": 48062,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "cold",
+          "index": 1,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.7842415,
+          "turns": 11,
+          "duration_ms": 48518,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "cold",
+          "index": 2,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.7625724999999999,
+          "turns": 11,
+          "duration_ms": 42311,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "cold",
+          "index": 3,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.6765650000000001,
+          "turns": 10,
+          "duration_ms": 35906,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "cold",
+          "index": 4,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.8105325,
+          "turns": 12,
+          "duration_ms": 48842,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        }
+      ]
+    },
+    {
+      "probe": "stage-exit",
+      "model": "claude-opus-4-8",
+      "variant": "cold",
+      "runs": 5,
+      "scored": 5,
+      "compliant": 5,
+      "rate": 1.0,
+      "criteria_rates": {
+        "block_verbatim": 1.0,
+        "next_command_fenced": 1.0,
+        "nothing_after_sentinel": 1.0,
+        "ran_stage_exit": 1.0,
+        "sentinel_present": 1.0
+      },
+      "cost_usd": 3.0012,
+      "results": [
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "cold",
+          "index": 0,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.5927910000000001,
+          "turns": 6,
+          "duration_ms": 32216,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "cold",
+          "index": 1,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.5872514999999999,
+          "turns": 6,
+          "duration_ms": 30109,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "cold",
+          "index": 2,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.6115174999999999,
+          "turns": 5,
+          "duration_ms": 56117,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "cold",
+          "index": 3,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.6095225,
+          "turns": 5,
+          "duration_ms": 40071,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "cold",
+          "index": 4,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 0.6001565,
+          "turns": 6,
+          "duration_ms": 33349,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        }
+      ]
+    },
+    {
+      "probe": "stage-exit",
+      "model": "claude-opus-5",
+      "variant": "warm",
+      "runs": 5,
+      "scored": 5,
+      "compliant": 5,
+      "rate": 1.0,
+      "criteria_rates": {
+        "block_verbatim": 1.0,
+        "next_command_fenced": 1.0,
+        "nothing_after_sentinel": 1.0,
+        "ran_stage_exit": 1.0,
+        "sentinel_present": 1.0
+      },
+      "cost_usd": 6.2869,
+      "results": [
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "warm",
+          "index": 0,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.2746164999999998,
+          "turns": 17,
+          "duration_ms": 117843,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "warm",
+          "index": 1,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.2116470000000001,
+          "turns": 19,
+          "duration_ms": 111337,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "warm",
+          "index": 2,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.1890580000000002,
+          "turns": 18,
+          "duration_ms": 110619,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "warm",
+          "index": 3,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.2485484999999998,
+          "turns": 20,
+          "duration_ms": 106212,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-5",
+          "variant": "warm",
+          "index": 4,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.3630745,
+          "turns": 20,
+          "duration_ms": 115657,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        }
+      ]
+    },
+    {
+      "probe": "stage-exit",
+      "model": "claude-opus-4-8",
+      "variant": "warm",
+      "runs": 5,
+      "scored": 5,
+      "compliant": 5,
+      "rate": 1.0,
+      "criteria_rates": {
+        "block_verbatim": 1.0,
+        "next_command_fenced": 1.0,
+        "nothing_after_sentinel": 1.0,
+        "ran_stage_exit": 1.0,
+        "sentinel_present": 1.0
+      },
+      "cost_usd": 6.208,
+      "results": [
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "warm",
+          "index": 0,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.0206655000000002,
+          "turns": 11,
+          "duration_ms": 102644,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "warm",
+          "index": 1,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.336636,
+          "turns": 11,
+          "duration_ms": 147078,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "warm",
+          "index": 2,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.2225914999999998,
+          "turns": 11,
+          "duration_ms": 120443,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "warm",
+          "index": 3,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.2349199999999998,
+          "turns": 10,
+          "duration_ms": 137888,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "stage-exit",
+          "model": "claude-opus-4-8",
+          "variant": "warm",
+          "index": 4,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "sentinel_present": true,
+            "nothing_after_sentinel": true,
+            "next_command_fenced": true,
+            "block_verbatim": true,
+            "ran_stage_exit": true
+          },
+          "cost_usd": 1.3932240000000002,
+          "turns": 14,
+          "duration_ms": 121081,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-2-tech widget-search\n```\n\u2500 forge: end of stage \u2500"
+        }
+      ]
+    }
+  ],
+  "total_cost_usd": 19.4102,
+  "skipped": false,
+  "skip_reason": null
+}
