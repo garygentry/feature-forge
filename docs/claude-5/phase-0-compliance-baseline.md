@@ -4,6 +4,7 @@
 **Scope:** Phase 0 of the Claude 5 adaptation program — a per-model baseline for stage-exit
 compliance, plus the R2 re-expansion gate. Subject: Opus 5. Reference: Opus 4.8.
 **Baselines:** `stage-exit` from sweep 3, `r2-prelude` from sweep 2 (harness unchanged for that path between them)
+**Later refresh:** [`baseline-2026-09.md`](baseline-2026-09.md) refreshes the `stage-exit` probe at `main` @ `2734d54` (post-#244 P0–P4, still 20/20). The `r2-prelude`, `branch-path` and `loop-outcome` numbers here stand — nothing has re-baselined them.
 
 > **Why this sits next to `skill-tuning-guide.md` and `skill-review-playbook.md`.** It
 > partially overturns them. Those two documents predict a set of Opus 5 failure modes at

@@ -8,6 +8,38 @@ only non-zero exit is a harness bug. Neither is a correctness gate.
 | `run-eval.py` | **Trigger accuracy** — does a model pick the right skill from the `skills/*/SKILL.md` descriptions? | `ANTHROPIC_API_KEY` | yes (`.github/workflows/eval.yml`) |
 | `run-compliance-eval.py` | **Stage-drive compliance** — once a skill *is* driving, does the model honor the contract? | the `claude` CLI on `PATH` | no — local only, by design. Its fixture, transcript parser, and scorers are covered by `tests/test_compliance_eval.py`, which *does* run in CI (offline, no model, no key). |
 
+## Quick invocations
+
+The compliance eval is the **regression oracle for prose changes** (#268 / #265 P0.3).
+Every PR that touches `skills/*/SKILL.md` body text or the two shared references
+(`references/stage-exit-protocol.md`, `references/shared-conventions.md`) records a
+result from one of these before merge (see `AGENTS.md` § Prose-change gate).
+
+```bash
+# Fixed-budget probe of one contract, one model, N=5 — ~$14–20, ~10 min.
+python3 eval/run-compliance-eval.py --probe stage-exit --n 5 --models claude-opus-5 \
+  --json --out eval/last-stage-exit.json
+
+# All four probes, both default models, N=5 — the shape of the recorded baseline.
+python3 eval/run-compliance-eval.py --probe all --n 5 --json \
+  --out eval/last-all.json
+
+# The narrowest useful probe for a diversion-routing change (verify → fix → re-verify).
+python3 eval/run-compliance-eval.py --probe branch-path --n 5 --models claude-opus-5 \
+  --json --out eval/last-branch-path.json
+```
+
+Absent the `claude` CLI on `PATH`, the harness prints `stage-drive compliance eval: skipped (no driver)`
+and exits 0 — the only non-zero exit is a harness bug. The full-cell cost table is at
+[§ Why it is not in CI](#why-it-is-not-in-ci); the recorded numbers to compare against are
+in [`docs/claude-5/phase-0-compliance-baseline.md`](../docs/claude-5/phase-0-compliance-baseline.md)
+(measurements after that landing are appended there per PR).
+
+Also runnable from Actions on demand — `Actions → stage-drive compliance eval (on-demand)
+→ Run workflow`, choose branch and probe. Advisory only; the workflow never blocks a PR.
+
+---
+
 ## `run-eval.py` — trigger accuracy
 
 ```bash
