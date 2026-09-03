@@ -36,3 +36,11 @@ __pycache__/
 
 # pi subagent run artifacts (transcripts/meta from forge-verifier fan-outs)
 .pi-subagents/
+# Rauf runtime — transient files that must never be tracked
+**/.rauf/.loop.lock
+**/.rauf/state.json
+**/.rauf/DONE
+**/.rauf/CANCEL
+**/.rauf/iteration-status.json
+**/.rauf/rauf.log
+**/.rauf/events.ndjson
