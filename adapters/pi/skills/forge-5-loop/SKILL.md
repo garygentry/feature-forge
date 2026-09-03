@@ -82,7 +82,7 @@ This gate runs **before** the runner version/setup gates (1c/1d) so a blocked fe
 
 ### 1d. Runner Setup Check (precondition file)
 
-Together these gate on the loop runner being installed, current, and wired into this project **before** touching it — enforced by `doctor`'s `runner-*` checks, never ad-hoc parsing. Run:
+These gate on the loop runner being installed, current, and wired **before** touching it — enforced by `doctor`'s `runner-*` checks, never ad-hoc parsing. Run:
 
 ```bash
 R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -90,9 +90,9 @@ R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-
 python3 "$R/scripts/forge-session.py" doctor --json --specs-dir "{specsDir}" --check runner-binary --check runner-version --check runner-wired --check runner-legacy-layout
 ```
 
-All four `ok`/`na` → proceed silently. Otherwise follow `references/preflight-and-self-heal.md`: `runner-binary`/`runner-version` not `ok` → **HARD GATE FAILURE**, STOP with the check's own `remedy.description` (never a hardcoded `installHint` — a customized `bin` gets its own config-fix remedy, G4). `runner-legacy-layout` warn → STOP: "This project is still on the legacy **Ralph** layout. Run {`remedy.command`, e.g. `{bin} migrate .`} first, then re-run `/skill:forge-5-loop {feature}`." `runner-wired` warn → STOP with `loopRunner.setupHint`. A STOP lifts only once a permitted `local-write` remedy ran **and** the identical re-run shows `ok`.
+All four `ok`/`na` → proceed silently. Otherwise follow `references/preflight-and-self-heal.md`: `runner-binary`/`runner-version` not `ok` → **HARD GATE FAILURE**, STOP with the check's own `remedy.description` (never a hardcoded `installHint` — a customized `bin` gets its own config-fix remedy, G4). `runner-legacy-layout` warn → STOP: "This project is still on the legacy **Ralph** layout. Run {`remedy.command`, e.g. `{bin} migrate .`} first, then re-run `/skill:forge-5-loop {feature}`." `runner-wired` warn → STOP with `loopRunner.setupHint`. A STOP lifts only once a permitted `local-write` remedy ran **and** the identical re-run shows `ok`; `/skill:forge-guide --doctor` walks it.
 
-> `installHint` points at the runner **CLI**; `setupHint` (1d) installs the runner's per-project artifacts.
+> `installHint` points at the runner **CLI**; `setupHint` (1d) installs its per-project artifacts.
 
 ### 1e. Backlog File Check
 

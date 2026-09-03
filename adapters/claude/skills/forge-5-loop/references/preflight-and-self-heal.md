@@ -5,10 +5,12 @@ clear stop or a scripted, consented repair — instead of a cryptic mid-run fail
 silent unasked mutation. It runs whenever a skill gates on `doctor`'s structured
 `checks[]` (`roadmap/self-healing-resilience.md` §5.2); today that is `forge-5-loop`'s
 gates 1c/1d (`skills/forge-5-loop/SKILL.md`), which resolve the loop runner **before**
-touching it, and `forge-init`'s install preflight (`skills/forge-init/SKILL.md`), where
-neither check is a stop. Both are callers, not the procedure's scope: any skill that
-gates on `checks[]` follows it in full. Its seven ordered steps: **enumerate → cluster → consolidated prompts →
-record → apply → prove → return**.
+touching it, `forge-init`'s install preflight (`skills/forge-init/SKILL.md`), where
+neither check is a stop, and `forge-guide --doctor` (`skills/forge-guide/SKILL.md`), the
+operator-facing repair surface, which gates nothing at all. All three are callers, not
+the procedure's scope: any skill that gates on `checks[]` follows it in full. Its seven
+ordered steps: **enumerate → cluster → consolidated prompts → record → apply → prove →
+return**.
 
 ## 1. Scope and the failure rule
 
