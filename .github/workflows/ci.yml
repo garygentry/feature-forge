@@ -23,3 +23,43 @@ jobs:
       # composite so a green local run (`bash scripts/validate.sh` + lint +
       # version-sync) reproduces CI and the two can never drift (tech-spec §3.1).
       - uses: ./.github/actions/quality-gate
+
+  rauf-pin-resolves:
+    # #265 P0.2 (#267): STATUS.md notes that every `os-matrix.yml` leg is
+    # `--skip-rauf`, so an advanced `RAUF_PIN` "merges green and only breaks real
+    # users at install time". This job is the missing network probe: it reads the
+    # pin the exact way installer/src/cli.ts imports it (never a re-parse) and
+    # asks the registry whether that coordinate resolves. One `npm view` call,
+    # no rauf execution, no rauf install — the same read-only shape
+    # installer/src/rauf.ts documents.
+    name: RAUF_PIN resolves on the registry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Resolve the pin
+        # Import RAUF_PIN through the same public entry point installer/src/cli.ts
+        # uses, so a rename or a private-only move goes red here rather than at
+        # a user's install. Then run `npm view` — the very query rauf's own
+        # default `RegistryQuery` shells (installer/src/rauf.ts:38) — and fail
+        # loudly if it does not resolve to a version.
+        working-directory: installer
+        run: |
+          set -euo pipefail
+          npm ci --silent
+          npm run build --silent
+          PIN="$(node -e 'console.log(require("./dist/index.js").RAUF_PIN)')"
+          echo "RAUF_PIN=$PIN"
+          RESOLVED="$(npm view "$PIN" version 2>&1)" || {
+            echo "::error::RAUF_PIN ($PIN) does not resolve on the npm registry"
+            echo "$RESOLVED"
+            exit 1
+          }
+          echo "resolved to: $RESOLVED"
