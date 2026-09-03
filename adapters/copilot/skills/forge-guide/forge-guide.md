@@ -28,6 +28,7 @@ run pipeline stages; when the user is ready to act, point them at the right skil
 | Stack detection / language profiles | `references/stack-resolution.md`, `references/stacks/*.md` |
 | Loop runner interface, signals & version gate | `references/ralph-loop-contract.md` |
 | Deep dives, glossary, troubleshooting | `references/process-overview.md`, `references/shared-conventions.md` |
+| Environment health / repair (`--doctor`) | `references/preflight-and-self-heal.md` |
 
 Those `references/` files are the guaranteed grounding path — they ship in every install.
 The project's `README.md`, `COMPATIBILITY.md`, and the hosted docs site are richer but are
@@ -36,6 +37,7 @@ URL to a human) and never block an answer on opening them — fall back to the `
 files and your own knowledge.
 
 Do NOT actually invoke stage skills or write files — this skill only explains and directs.
+The single carve-out is `--doctor` mode below, and it narrows rather than lifts the rule.
 
 ## What feature-forge is
 
@@ -167,8 +169,55 @@ a minimum runner version (the version gate is described in `references/ralph-loo
 - Specs are pre-implementation artifacts, not living docs — don't cite them from generated code.
 - Use the navigator (`/feature-forge:forge <feature>`) to orient; use `forge-verify` to inspect.
 
+## `--doctor` mode
+
+`/feature-forge:forge-guide --doctor` is the **repair surface**: it turns `doctor`'s `checks[]`
+into a readable report and, only on an explicit yes, a scripted repair. Enter this mode **only**
+when the argument is `--doctor`; every other invocation of this skill stays purely advisory.
+
+**The carve-out, stated precisely.** Here — and nowhere else in this skill — you may run
+`doctor` (read-only) and apply a **`local-write`** remedy after an explicit yes.
+`global-install` and `network` remedies stay **advise-only**: print the command, never run it.
+This skill still **never invokes stage skills**, never edits `.pipeline-state.json` or a
+backlog, and writes no artifact of its own. Repair here means the environment, not the pipeline.
+
+**1. Read the whole catalog.** Not a narrowed gate: this surface is *about* the environment,
+so the breadth `references/preflight-and-self-heal.md` §1 forbids inside a hard gate (where an
+unrelated advisory must never block a launch) is exactly what belongs here. Add `--verbose`
+when the user wants the `ok`/`na` rows listed too.
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" doctor --json
+```
+
+**2. Render the summary.** Lead with `checksSummary`, then one row per non-`ok` check —
+**id · status · severity · remedy tier** (`remedy.safety`, or `—` when `remedy` is `null`) —
+blocking rows first, each with the check's own `detail`. Quote every remedy exactly as the
+JSON gives it, and never invent one `doctor` did not emit.
+
+**3. Take your rung from that same report.** A full-catalog run carries the `interaction-mode`
+record, so `evidence.mode` answers the Interaction Capability Ladder's *"determine it before
+your first question"* (`references/shared-conventions.md` § Interaction Capability Ladder)
+without a second call — you already hold the record it tells you to go read.
+
+**4. Repair.** Follow `references/preflight-and-self-heal.md` in full over the non-`ok` set:
+cluster from `remedyClusters[]`, ask **one consolidated question per cluster** (never one per
+check), print the `preflight:` outcome line before acting, run the command verbatim, then
+**prove** by re-running the identical `doctor` invocation. A remedy that exited 0 but left a
+member check not `ok` is a failed preflight, not a partial success.
+
+**5. Rung 3 → report-only.** State `interaction: rung 3 (non-interactive) — declared defaults
+apply`, record every `local-write` cluster as `unaskable→advise-only`, and change nothing: the
+report is the entire deliverable. Never read an unasked write as implied consent.
+
+**6. Close** with what is still not `ok`, and the one command that would clear it.
+
 ## Troubleshooting starters
 
+- **Anything environmental:** run `/feature-forge:forge-guide --doctor` — it reports every
+  `doctor` check and walks the consented repair for the ones carrying a remedy.
 - **Stage 5 won't start:** backlog exists and is verified? runner installed and ≥ min version?
   working tree clean? See `references/ralph-loop-contract.md` for the runner contract and version gate.
 - **Loop stopped mid-run:** check the signal — `BLOCKED`/`NEEDS_HUMAN` items are set aside, not

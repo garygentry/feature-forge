@@ -163,3 +163,14 @@ checks: 13 ok, 2 warn, 0 fail, 1 na
 A `warn` on a `blocking` check is the thing to fix before launching forge-5-loop; an
 `advisory` warn is context. `na` is never a problem by itself — its `detail` names the
 prerequisite (often another check id) that would make it applicable.
+
+## Repairing what it finds
+
+`/feature-forge:forge-guide --doctor` is the operator-facing repair surface for this
+catalog. It runs the full catalog, renders the id/status/severity/remedy-tier summary, and
+then follows the **Preflight & Self-Heal** procedure (`references/preflight-and-self-heal.md`)
+over the non-`ok` set — clustering findings that share a remedy, asking once per cluster,
+running only `local-write` remedies and only on an explicit yes, and proving the repair by
+re-running the identical `doctor` call. `global-install` and `network` remedies stay
+advise-only there, exactly as they are here, and a non-interactive session (rung 3) gets the
+report with nothing applied.
