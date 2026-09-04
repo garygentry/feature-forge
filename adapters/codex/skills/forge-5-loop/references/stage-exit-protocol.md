@@ -197,7 +197,7 @@ The dispatching caller states ownership in its invocation prompt using a literal
   terminal block.
 
 **Absent the token, the skill treats itself as `direct`.** A user-typed
-`/feature-forge:forge-verify` or `/feature-forge:forge-fix` is the only path that carries
+`forge-verify` or `forge-fix` is the only path that carries
 no dispatcher, so "no token" and "no dispatcher" are the same condition. The skill passes
 the resolved value straight through as `--owner direct|nested`.
 
@@ -396,7 +396,7 @@ features. The script has already folded the routing into the NEXT-STEPS block, s
 directive is informational — you do **not** re-derive the wording:
 
 - `required: true` (at least one `blocksCurrent: true` request) — the reconcile command
-  (`/feature-forge:forge-0-epic {epic}`) is promoted ahead of the ordinary production
+  (`forge-0-epic {epic}`) is promoted ahead of the ordinary production
   successor, and that successor is demoted to a follow-up line ("After reconciling,
   continue the pipeline with …"). This is *reconcile-before-specs*: proceeding would author
   artifacts against a decomposition that is about to change. It is strongest when exiting

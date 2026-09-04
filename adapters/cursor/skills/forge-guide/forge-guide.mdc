@@ -18,7 +18,7 @@ run pipeline stages; when the user is ready to act, point them at the right skil
 2. **Ground yourself in the canonical source before answering** — read the mapped
    reference file(s) below rather than answering from memory. These are the source
    of truth and stay current as the pipeline evolves.
-3. Answer concisely, then end with the concrete next command (`/feature-forge:forge-*`)
+3. Answer concisely, then end with the concrete next command (`forge-*`)
    or doc pointer the user should go to.
 
 | Topic | Read first |
@@ -88,13 +88,13 @@ carry context across stages instead of reading upstream artifacts.
 | any | `forge-verify` → `forge-fix` | findings report → applied fixes |
 | any | `forge` | status dashboard / navigator |
 
-Drive the whole thing with the **navigator**: `/feature-forge:forge <feature>` shows the
+Drive the whole thing with the **navigator**: `forge <feature>` shows the
 current stage and offers the next; with `autoInvokeNextStage` it launches it directly.
 
 ## Setup & configuration
 
-**First-time setup:** `/feature-forge:forge-init` (existing repo) creates `forge.config.json`
-with defaults. `/feature-forge:forge-bootstrap` scaffolds a *greenfield* (empty) repo to a
+**First-time setup:** `forge-init` (existing repo) creates `forge.config.json`
+with defaults. `forge-bootstrap` scaffolds a *greenfield* (empty) repo to a
 green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge install`.
 
 **Key `forge.config.json` knobs** (authoritative list: `references/forge-config-schema.json`):
@@ -168,11 +168,11 @@ a minimum runner version (the version gate is described in `references/ralph-loo
 - Re-running an upstream stage marks downstream stages **stale** — re-run them rather than
   reaching for `--force`, which skips prerequisite checks and should be rare.
 - Specs are pre-implementation artifacts, not living docs — don't cite them from generated code.
-- Use the navigator (`/feature-forge:forge <feature>`) to orient; use `forge-verify` to inspect.
+- Use the navigator (`forge <feature>`) to orient; use `forge-verify` to inspect.
 
 ## `--doctor` mode
 
-`/feature-forge:forge-guide --doctor` is the **repair surface**: it turns `doctor`'s `checks[]`
+`forge-guide --doctor` is the **repair surface**: it turns `doctor`'s `checks[]`
 into a readable report and, only on an explicit yes, a scripted repair. Enter this mode **only**
 when the argument is `--doctor`; every other invocation of this skill stays purely advisory.
 
@@ -244,7 +244,7 @@ exactly the fabrication step 2 forbids.
 
 ## Troubleshooting starters
 
-- **Anything environmental:** point the user at `/feature-forge:forge-guide --doctor` — it
+- **Anything environmental:** point the user at `forge-guide --doctor` — it
   reports every `doctor` check and walks the consented repair. Name it; do not enter that
   mode from an answer that was not invoked with `--doctor`.
 - **Stage 5 won't start:** backlog exists and is verified? runner installed and ≥ min version?
@@ -252,7 +252,7 @@ exactly the fabrication step 2 forbids.
 - **Loop stopped mid-run:** check the signal — `BLOCKED`/`NEEDS_HUMAN` items are set aside, not
   failures; the loop keeps going.
 - **Downstream flagged stale:** an upstream stage was revised; re-run the downstream stage.
-- **Where am I?** `/feature-forge:forge <feature>` renders the full pipeline status.
+- **Where am I?** `forge <feature>` renders the full pipeline status.
 
 For anything deeper, ground yourself in `references/process-overview.md` and
 `references/shared-conventions.md`, and point the *user* at the hosted docs site —

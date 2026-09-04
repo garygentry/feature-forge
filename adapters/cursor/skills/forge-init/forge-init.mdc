@@ -1,6 +1,6 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-init/SKILL.md. Regenerate: python3 scripts/build-adapters.py
-description: Initialize feature-forge configuration in the current project. Use when user runs /feature-forge:forge-init or asks to set up forge for the first time. Creates forge.config.json with defaults. Do NOT trigger for general project initialization or setup tasks outside the forge pipeline.
+description: Initialize feature-forge configuration in the current project. Use when user runs forge-init or asks to set up forge for the first time. Creates forge.config.json with defaults. Do NOT trigger for general project initialization or setup tasks outside the forge pipeline.
 globs: []
 alwaysApply: false
 ---
@@ -21,9 +21,9 @@ After initialization, the config file will contain defaults for:
 - `backlogDir`: `null` (backlog lives alongside specs)
 - `gitCommitAfterStage`: `true`
 - `commitPrefix`: `forge`
-- `stack`: `null` (detected during `/feature-forge:forge-2-tech`)
-- `typeCheckCommand`: `null` (set during `/feature-forge:forge-2-tech`)
-- `testCommand`: `null` (set during `/feature-forge:forge-2-tech`)
+- `stack`: `null` (detected during `forge-2-tech`)
+- `typeCheckCommand`: `null` (set during `forge-2-tech`)
+- `testCommand`: `null` (set during `forge-2-tech`)
 - `smokeCommand`: `null` (optional end-to-end smoke that boots the wired app and drives one request; set it to enable impl-verify's runnability check `CHECK-I21` — distinct from `testCommand`)
 - `autoInvokeNextStage`: `true` (the navigator auto-starts the next stage after you confirm; set `false` to only print the command)
 - `contextWindowTokens`: `null` (the navigator infers the context window; set to your model's window, e.g. `1000000` for a 1M-context model, for accurate context-usage advice)
@@ -109,7 +109,7 @@ read from the bundle's own `agent` field — never from tool availability. **At 
 writes nothing and says so** (that block's declared default). This is what makes the `specs/`
 hygiene files' "see the project-root `AGENTS.md`" pointer resolve.
 
-After initialization, start the pipeline with `/feature-forge:forge-1-prd <feature-name>`.
+After initialization, start the pipeline with `forge-1-prd <feature-name>`.
 
 ---
 

@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-verify/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-verify
-description: Verify forge pipeline artifacts for completeness, consistency, and quality. Use when user runs /feature-forge:forge-verify or asks to check forge specs, backlog, or implementation for gaps. Do NOT trigger for general code review, quality checks, or verification tasks outside the forge pipeline.
+description: Verify forge pipeline artifacts for completeness, consistency, and quality. Use when user runs forge-verify or asks to check forge specs, backlog, or implementation for gaps. Do NOT trigger for general code review, quality checks, or verification tasks outside the forge pipeline.
 ---
 
 # forge-verify — Verification Gate
@@ -13,7 +13,7 @@ Analyze feature artifacts for completeness, consistency, and quality. Produce st
 This skill is loaded in two different roles. Determine yours before proceeding:
 
 - **You ARE the `forge-verifier` subagent** — you were dispatched via the host's subagent mechanism, you have read-only tools (Read, Glob, Grep, Bash) and **no** Agent/host's subagent mechanism, and this skill is pre-loaded in your context. **SKIP "Subagent Delegation (parent orchestrator only)" and "Synthesize" below — those describe how a *parent* dispatches *you*, not work for you to do.** Do **not** dispatch anything, do **not** try to spawn a verifier. Go straight to **Prerequisites → Steps 1–6**, execute the checks yourself, and **return your findings as your response** (the parent writes the document to disk). Dispatching a subagent from here is the classic self-referential loop — never do it.
-- **You are the parent orchestrator** — a navigator (`/feature-forge:forge`), a stage skill's in-stage auto-verify, or a direct `/feature-forge:forge-verify` invocation, and you have the host's subagent mechanism. Use "Subagent Delegation" to dispatch the `forge-verifier` subagent, then "Synthesize" to assemble and write the document.
+- **You are the parent orchestrator** — a navigator (`forge`), a stage skill's in-stage auto-verify, or a direct `forge-verify` invocation, and you have the host's subagent mechanism. Use "Subagent Delegation" to dispatch the `forge-verifier` subagent, then "Synthesize" to assemble and write the document.
 
 ## Subagent Delegation (parent orchestrator only)
 
@@ -100,7 +100,7 @@ any work:
 Do not analyze artifacts, do not write a findings document, and do not touch pipeline
 state. This is an **operational failure, not a user skip** — close through Step 7 with `--outcome failed`; as a nested owner that call writes no state and prints no terminal block, so the sentinel is your structured result. The navigator detects this sentinel and degrades to its manual verify gate (Tier
 2/3), so verify state stays outstanding and the stage is never marked verified on false
-assurance. **Manual / interactive invocation** (the normal `/feature-forge:forge-verify`
+assurance. **Manual / interactive invocation** (the normal `forge-verify`
 path, no require-clean signal) keeps the inline fallback above unchanged.
 
 ## Prerequisites
@@ -119,11 +119,11 @@ Read `{resolvedFeatureDir}/.pipeline-state.json` to understand current pipeline 
 
 ### Mode Selection
 
-An explicit `--served-stage <production-stage>` argument on this invocation is authoritative — it is what the scripted exit and forge-fix pass when they route back here (the fix rejoin fences `/feature-forge:forge-verify {feature} --served-stage {stage}`). Map it to the mode directly (`forge-0-epic`→epic, `forge-1-prd`→prd, `forge-2-tech`→tech, `forge-3-specs`→specs, `forge-4-backlog`→backlog, `forge-5-loop`→impl) and skip auto-detection.
+An explicit `--served-stage <production-stage>` argument on this invocation is authoritative — it is what the scripted exit and forge-fix pass when they route back here (the fix rejoin fences `forge-verify {feature} --served-stage {stage}`). Map it to the mode directly (`forge-0-epic`→epic, `forge-1-prd`→prd, `forge-2-tech`→tech, `forge-3-specs`→specs, `forge-4-backlog`→backlog, `forge-5-loop`→impl) and skip auto-detection.
 
-Otherwise, if a stage is specified as a second argument (e.g., `/feature-forge:forge-verify auth specs`), use that mode. Otherwise, auto-detect based on pipeline state:
+Otherwise, if a stage is specified as a second argument (e.g., `forge-verify auth specs`), use that mode. Otherwise, auto-detect based on pipeline state:
 
-- **epic mode**: Explicit via `/feature-forge:forge-verify {epic} epic`, or auto-detected when the named argument resolves to an **epic directory** — i.e. `{specsDir}/{name}/epic-manifest.json` exists (an epic root holds `epic-manifest.json` but no `.pipeline-state.json` of its own). When the argument is an epic, prefer epic mode over feature-mode resolution.
+- **epic mode**: Explicit via `forge-verify {epic} epic`, or auto-detected when the named argument resolves to an **epic directory** — i.e. `{specsDir}/{name}/epic-manifest.json` exists (an epic root holds `epic-manifest.json` but no `.pipeline-state.json` of its own). When the argument is an epic, prefer epic mode over feature-mode resolution.
 - **prd mode**: If `forge-1-prd` is complete but `forge-verify-prd` is not `passed` or `findings-applied`
 - **tech mode**: If `forge-2-tech` is complete but `forge-verify-tech` is not `passed` or `findings-applied`
 - **specs mode**: If `forge-3-specs` is complete but `forge-verify-specs` is not `passed` or `findings-applied`
@@ -220,8 +220,8 @@ When building the Fix Execution Plan:
 
 **Advisory-only reports skip the question.** When the report contains no blocking finding (`error`/`gap`), there is nothing to route to forge-fix: do not present the fix options below — state that the report is advisory-only, record `passed` with the report attached (Step 6), and continue; the advisories stay discoverable in the findings document for whoever next touches the artifact. Otherwise (at least one blocking finding), use the host's question mechanism to ask how to proceed — **unless this report closes the SECOND consecutive `reverify-findings` for this served stage** (count the round-discriminated reports in `.verification/`), in which case follow "Escalation (the round ledger)" in `references/stage-exit-protocol.md` instead: present the digest and recommend explicit acceptance of the residual findings, never another fix pass. Otherwise follow the **Decision Support** protocol in `references/shared-conventions.md`: recommend a path based on the findings and give each option a one-line trade-off. Let the severity and volume of findings drive the recommendation — e.g. recommend (b) **Apply fixes now** when findings are clear-cut and mechanical; recommend (a) **Review first** when findings involve design judgment or you flagged low-confidence items; recommend (c) **plan-mode workflow** when the fixes are large or interdependent enough to warrant a reviewed plan. Present:
 - **(a) Review the findings first** — read `{findings-file}` and decide per-finding; safest, but you act on nothing until you return.
-- **(b) Run `/feature-forge:forge-fix {feature} --served-stage {servedStage}` now** — applies the fix plan immediately; fastest, best when findings are unambiguous.
-- **(c) Enter plan mode and re-run `/feature-forge:forge-verify {feature}`** — produces a reviewable plan before any edits; best for large or risky fix sets.
+- **(b) Run `forge-fix {feature} --served-stage {servedStage}` now** — applies the fix plan immediately; fastest, best when findings are unambiguous.
+- **(c) Enter plan mode and re-run `forge-verify {feature}`** — produces a reviewable plan before any edits; best for large or risky fix sets.
 
 Do NOT embed this question in your text output.
 
@@ -258,7 +258,7 @@ Epic mode is **epic-scoped**, not per-feature: `--stage forge-0-epic` writes `{s
 
 ## Step 7: Close the Stage
 
-**Ownership.** Read branch ownership from the literal `owner: nested` / `owner: direct` token in the prompt that dispatched you. **Absent the token you are `direct`** — a user-typed `/feature-forge:forge-verify` is the only path that carries no dispatcher. Never infer ownership from how the invocation happened to be phrased; judge the token, not the wording. Pass the resolved value straight through as `--owner`, and preserve it through any re-verify. As a **nested** owner you return your structured result (mode, served stage, outcome, findings file, findings count) to the caller and print **no terminal block at all** — the outer authoring stage is the sole terminal owner. As a **direct** owner you print the script's NEXT-STEPS block verbatim as your absolute final output, with nothing after its sentinel line. `references/stage-exit-protocol.md` § "Branch ownership: the `owner:` token" owns this rule.
+**Ownership.** Read branch ownership from the literal `owner: nested` / `owner: direct` token in the prompt that dispatched you. **Absent the token you are `direct`** — a user-typed `forge-verify` is the only path that carries no dispatcher. Never infer ownership from how the invocation happened to be phrased; judge the token, not the wording. Pass the resolved value straight through as `--owner`, and preserve it through any re-verify. As a **nested** owner you return your structured result (mode, served stage, outcome, findings file, findings count) to the caller and print **no terminal block at all** — the outer authoring stage is the sole terminal owner. As a **direct** owner you print the script's NEXT-STEPS block verbatim as your absolute final output, with nothing after its sentinel line. `references/stage-exit-protocol.md` § "Branch ownership: the `owner:` token" owns this rule.
 
 **Served stage.** Pass `--verify-mode` carrying Step 1's explicit or auto-detected mode (`epic`, `prd`, `tech`, `specs`, `backlog`, `impl`); the script maps it to the served production stage. When the caller already owns a stage and states it, additionally pass that value as `--served-stage` — if the two disagree the script fails closed rather than guessing. Derive the served stage **only** from that mode argument or from authoritative pipeline state: conversational context and `currentStage` are never valid inference sources.
 

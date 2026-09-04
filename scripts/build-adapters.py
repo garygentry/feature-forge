@@ -798,6 +798,16 @@ _HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     # keeps its own sanctioned `${CLAUDE_PLUGIN_ROOT}` fallback (it is not body-translated).
     ("${CLAUDE_PLUGIN_ROOT:-}", "${FEATURE_FORGE_ROOT:-}"),
     ("${CLAUDE_PLUGIN_ROOT}", "${FEATURE_FORGE_ROOT}"),
+    # Claude slash-command dispatch prefix → bare skill name. Codex/Copilot/Cursor/
+    # Gemini have no `/feature-forge:` prefix — the literal names nothing on those
+    # hosts (#265 F1, #270 P1.1). The backticked wildcard `` `/feature-forge:*` `` is
+    # matched FIRST (longest-match, #167) because the general prefix pair below would
+    # collapse it to a lone `` `*` `` — meaningless prose in the root-hygiene template
+    # that ships into user projects. Pi overrides BOTH via _PI_OVERRIDDEN_HOST_TERMS
+    # so its own appended `("/feature-forge:", "/skill:")` runs on the raw text (Pi
+    # keeps `` `/skill:*` `` and prefixed commands both).
+    ("`/feature-forge:*`", "`forge-*` skills"),
+    ("/feature-forge:", ""),
 )
 
 # subagent_type="forge-verifier" → "the forge-verifier custom agent"
@@ -921,6 +931,16 @@ _PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({
     "`/clear`",
     "/clear",
     "--host claude",
+    # #270 (P1.1): base table degrades `/feature-forge:` to empty for hosts with no
+    # slash-command surface, plus a longest-match wildcard pair for the bare
+    # `` `/feature-forge:*` `` in the root-hygiene template. Pi has a real prefix
+    # (`/skill:`), so BOTH LHSs are excluded here and Pi's appended
+    # `("/feature-forge:", "/skill:")` rule wins on the raw text instead — matching
+    # both `/feature-forge:x` and the wildcard form. A missed exclusion would strip
+    # Pi's prefix to bare skill names before Pi's own rule could fire (appended pairs
+    # come last), naming skills without the dispatch surface Pi actually uses.
+    "/feature-forge:",
+    "`/feature-forge:*`",
 })
 
 _PI_BASE_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
@@ -928,19 +948,21 @@ _PI_BASE_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
     if "AskUserQuestion" not in pair[0] and pair[0] not in _PI_OVERRIDDEN_HOST_TERMS
 )
 
-# Import-time guard for the "every /clear-bearing LHS must be Pi-overridden" rule above:
-# a base pair that slips past the override set would run before Pi's own `/clear` → `/new`
-# rule (appended pairs come last) and degrade a real Pi command to generic prose.
+# Import-time guard for the "every LHS Pi rewrites to a real command must be Pi-overridden"
+# rule above: a base pair that slips past the override set would run before Pi's own
+# `/clear` → `/new`, `/feature-forge:` → `/skill:`, or `--host claude` → `--host pi` rule
+# (appended pairs come last) and degrade a real Pi command to generic prose or bare-name.
 assert not [
-    old for old, _ in _PI_BASE_HOST_TERM_REPLACEMENTS if "/clear" in old or old == "--host claude"
-], "a /clear-bearing base pair leaked past _PI_OVERRIDDEN_HOST_TERMS into the Pi table"
+    old for old, _ in _PI_BASE_HOST_TERM_REPLACEMENTS
+    if "/clear" in old or old == "--host claude" or old == "/feature-forge:"
+], "a Pi-overridden base pair leaked past _PI_OVERRIDDEN_HOST_TERMS into the Pi table"
 
 _PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = _PI_BASE_HOST_TERM_REPLACEMENTS + (
     # ONLY the slash-command prefix is rewritten. An unanchored `feature-forge:` rule would
     # also mangle diagnostic prose that is not a command — e.g. the install-root failure
     # `echo "feature-forge: cannot locate plugin root"` would become `skill: cannot locate
     # plugin root`, naming a tool that does not exist. Keep this in step with
-    # _translate_pi_support_command_strings(), which applies the same single substitution to
+    # _translate_support_command_strings(), which applies the same single substitution to
     # copied support files.
     ("/feature-forge:", "/skill:"),
     # Pi's fresh-session command is `/new`, not Claude's `/clear`. A bare-token replace
@@ -1104,7 +1126,7 @@ class CursorEmitter:
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
         """Emit ``skills/<name>/<name>.mdc`` with description/globs/alwaysApply only."""
         native = order_fields({
-            "description": skill.description,  # verbatim, REQ-FMT-04
+            "description": translate_host_terms(skill.description, agent_id="cursor"),
             "globs": [],                       # deterministic default (REQ-DET-01)
             "alwaysApply": False,
         })
@@ -1120,8 +1142,11 @@ class CursorEmitter:
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
         """Emit a body-only ``agents/<name>.mdc`` and drop-record every claude_keys."""
-        native = order_fields({"description": agent.description, "globs": [],
-                               "alwaysApply": False})
+        native = order_fields({
+            "description": translate_host_terms(agent.description, agent_id="cursor"),
+            "globs": [],
+            "alwaysApply": False,
+        })
         rel = f"agents/{agent.name}.mdc"
         content = render_frontmatter_block(native, agent.source_path) + agent_body_for(
             agent.body, "cursor"
@@ -1187,7 +1212,10 @@ class CodexEmitter:
 
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
         """Emit ``skills/<name>/SKILL.md`` with {name, description} + body."""
-        native = order_fields({"name": skill.name, "description": skill.description})
+        native = order_fields({
+            "name": skill.name,
+            "description": translate_host_terms(skill.description, agent_id="codex"),
+        })
         content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
             skill.body, "codex"
         )
@@ -1211,10 +1239,11 @@ class CodexEmitter:
         )
         header = PROVENANCE_FM_COMMENT.format(source=agent.source_path)
         instructions = _toml_multiline_string(agent_body_for(agent.body, "codex"))
+        description = translate_host_terms(agent.description, agent_id="codex")
         toml = (
             f"{header}\n"
             f"name = {_toml_basic_string(agent.name)}\n"
-            f"description = {_toml_basic_string(agent.description)}\n"
+            f"description = {_toml_basic_string(description)}\n"
             f"developer_instructions = {instructions}\n"
         )
         rel = f"agents/{agent.name}.toml"
@@ -1242,7 +1271,10 @@ class CopilotEmitter:
 
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
         """Emit ``skills/<name>/<name>.md`` with {name, description} + body."""
-        native = order_fields({"name": skill.name, "description": skill.description})
+        native = order_fields({
+            "name": skill.name,
+            "description": translate_host_terms(skill.description, agent_id="copilot"),
+        })
         content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
             skill.body, "copilot"
         )
@@ -1257,7 +1289,10 @@ class CopilotEmitter:
         """Emit a body-only ``agents/<name>.md`` and drop-record every claude_keys."""
         rel = f"agents/{agent.name}.md"
         content = render_frontmatter_block(
-            order_fields({"name": agent.name, "description": agent.description}),
+            order_fields({
+                "name": agent.name,
+                "description": translate_host_terms(agent.description, agent_id="copilot"),
+            }),
             agent.source_path,
         ) + agent_body_for(agent.body, "copilot")
         drops = drop_all_claude_keys(agent, "copilot", "no Copilot sub-agent construct (TQ-1)")
@@ -1467,15 +1502,16 @@ class GeminiEmitter:
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
         """Emit ``skills/<name>/<name>.md`` body + one ManifestEntry per skill."""
         rel = f"skills/{skill.name}/{skill.name}.md"
+        description = translate_host_terms(skill.description, agent_id="gemini")
         content = render_frontmatter_block(
-            order_fields({"name": skill.name, "description": skill.description}),
+            order_fields({"name": skill.name, "description": description}),
             skill.source_path,
         ) + skill_body_for(skill.body, "gemini")
         drops: tuple[DropRecord, ...] = ()
         if hint_value(skill) is not None:
             drops = (DropRecord("gemini", skill.source_path, "argument-hint",
                                 "Gemini manifest hint field unconfirmed (TQ-1)"),)
-        entry = ManifestEntry(name=skill.name, description=skill.description)
+        entry = ManifestEntry(name=skill.name, description=description)
         return EmitResult(
             files=(EmittedFile(rel, content),),
             drops=drops,
@@ -1486,7 +1522,10 @@ class GeminiEmitter:
         """Emit a body-only ``agents/<name>.md`` and drop-record every claude_keys."""
         rel = f"agents/{agent.name}.md"
         content = render_frontmatter_block(
-            order_fields({"name": agent.name, "description": agent.description}),
+            order_fields({
+                "name": agent.name,
+                "description": translate_host_terms(agent.description, agent_id="gemini"),
+            }),
             agent.source_path,
         ) + agent_body_for(agent.body, "gemini")
         drops = drop_all_claude_keys(agent, "gemini", "no Gemini sub-agent construct (TQ-1)")
@@ -1569,8 +1608,8 @@ def run_self_containment_pass(
         # below then re-verifies that its ONLY divergence is the expected substitution.
         _assert_byte_identical(src_helper, dst_helper)  # REQ-GEN-05 hard assertion
 
-    if bundle_root.name == "pi":
-        _translate_pi_support_command_strings(bundle_root, repo_root)
+    if bundle_root.name != "claude":
+        _translate_support_command_strings(bundle_root, repo_root, bundle_root.name)
 
     # (4) Neutral bundle sentinel `.feature-forge-bundle.json` (REQ-GEN-04): the cross-agent root
     #     marker forge-root.sh keys on, making every bundle self-locatable WITHOUT a Claude
@@ -1841,41 +1880,112 @@ def _translate_reference_host_terms(bundle_root: Path, agent_id: str) -> None:
             path.write_text(translated, encoding="utf-8", errors="surrogateescape")
 
 
-def _translate_pi_support_command_strings(bundle_root: Path, repo_root: Path) -> None:
-    """Rewrite Claude slash-command strings in Pi support files.
+#: Per-host substitute for canon's ``/feature-forge:`` slash-command dispatch prefix
+#: applied to non-Claude support files (#270 P1.1). Pi has a real prefix (``/skill:``);
+#: other non-Claude hosts have no slash-command surface, so the prefix degrades to the
+#: bare skill name. Claude keeps canon verbatim (not in this table). Kept in step with
+#: the emitter-body pair ``("/feature-forge:", "")`` in ``_HOST_TERM_REPLACEMENTS`` and
+#: with Pi's appended ``("/feature-forge:", "/skill:")`` in
+#: ``_PI_HOST_TERM_REPLACEMENTS`` — a divergence would let bodies say one thing and
+#: reference/template/schema files say another.
+_HOST_COMMAND_PREFIX: dict[str, str] = {
+    "pi": "/skill:",
+    "codex": "",
+    "copilot": "",
+    "cursor": "",
+    "gemini": "",
+}
+
+
+def _apply_command_prefix(text: str, substitute: str) -> str:
+    """Apply the per-host slash-command substitution to a support-file body.
+
+    Handles the wildcard `` `/feature-forge:*` `` form before the general prefix so
+    the empty-substitute hosts (codex/copilot/cursor/gemini) don't collapse it to a
+    lone `` `*` `` — the root-hygiene template says "pipeline stages,
+    `` `/feature-forge:*` ``, forge skills/agents" and a lone `` `*` `` is meaningless
+    prose in scaffolding that ships into user projects. Non-empty substitutes (Pi)
+    fold the wildcard naturally through the general prefix pair (`` `/skill:*` ``);
+    the wildcard-specific branch runs only when the substitute is empty.
+
+    Kept in step with the emitter-body pairs
+    ``("`/feature-forge:*`", "`forge-*` skills")`` and ``("/feature-forge:", "")``
+    in ``_HOST_TERM_REPLACEMENTS`` — bodies and support files must degrade the same
+    prose to the same phrase.
+    """
+    if not substitute:
+        text = text.replace("`/feature-forge:*`", "`forge-*` skills")
+    return text.replace("/feature-forge:", substitute)
+
+
+def _translate_support_command_strings(
+    bundle_root: Path, repo_root: Path, agent_id: str
+) -> None:
+    """Rewrite ``/feature-forge:`` in copied support files for one non-Claude bundle.
 
     Skill bodies/frontmatter are translated at emit time, but support files copied for
-    self-containment (reference markdown and helper scripts such as forge-session.py)
-    can also surface next-step commands to the user. Keep helper logic intact and only
-    rewrite the concrete slash-command prefix, leaving diagnostic strings like
-    ``feature-forge: cannot locate install root`` unchanged.
+    self-containment (reference markdown, JSON schemas, and helper scripts such as
+    ``forge-session.py``) can also surface next-step commands to the reader. Applies the
+    per-host substitute (``/skill:`` on Pi, bare skill name on codex/copilot/cursor/
+    gemini) to concrete slash-command occurrences, leaving diagnostic strings like
+    ``feature-forge: cannot locate install root`` (no leading slash) unchanged.
 
-    Runtime helpers are re-verified against canon afterwards (REQ-GEN-05): a translated
-    helper must differ from its source by EXACTLY this substitution and nothing else, so
-    silent corruption of a helper is still caught on pi.
+    Suffixes covered depend on whether the substitute is empty. ``.md`` and ``.json``
+    are always safe — prose replacement never breaks structure. ``.py`` / ``.sh`` are
+    substituted ONLY when the substitute is non-empty (Pi's case): an empty replacement
+    on those suffixes would corrupt ``str.replace("/feature-forge:", …)``,
+    ``str.startswith("/feature-forge:")``, and slice-length code in the helpers into
+    always-true / whole-string forms. Non-Pi non-Claude scripts therefore keep
+    ``/feature-forge:`` string literals as the canonical internal form; the reading
+    surface (skills/refs/templates/schemas) is fully translated.
+
+    Runtime helpers on Pi are re-verified against canon afterwards (REQ-GEN-05): a
+    translated helper must differ from its source by EXACTLY this substitution and
+    nothing else, so silent corruption of a helper is still caught. The non-Pi
+    non-Claude helpers are already byte-identical to canon (asserted at copy time in
+    the RUNTIME_HELPERS loop above), so no per-agent re-verification is needed here.
     """
+    if agent_id == "claude":
+        return
+    substitute = _HOST_COMMAND_PREFIX[agent_id]
+    if substitute:
+        suffixes = {".json", ".md", ".py", ".sh"}
+    else:
+        suffixes = {".json", ".md"}
     for path in sorted(bundle_root.rglob("*")):
         if not path.is_file():
             continue
-        if path.suffix not in {".json", ".md", ".py", ".sh"}:
+        if path.suffix not in suffixes:
+            continue
+        rel = path.relative_to(bundle_root)
+        # Narrower exemption than `_reference_translation_exempt`: templates get the
+        # per-host prefix substitution (a CLAUDE.md scaffold that names a slash-command
+        # non-existent on the host is broken there regardless of scaffolding intent),
+        # but the audit and self-referential docs stay verbatim — translating either
+        # would falsify a REQ-VND-03 record or produce a self-contradictory prose
+        # (see the block comment above `_reference_translation_exempt`).
+        if rel.name in {"vendor-construct-inventory.md", "portable-root.md"}:
             continue
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
-        translated = text.replace("/feature-forge:", "/skill:")
+        translated = _apply_command_prefix(text, substitute)
         if translated != text:
             path.write_text(translated, encoding="utf-8", errors="surrogateescape")
 
-    for helper in RUNTIME_HELPERS:
-        src_helper = repo_root / "scripts" / helper
-        dst_helper = bundle_root / "scripts" / helper
-        expected = src_helper.read_text(
-            encoding="utf-8", errors="surrogateescape"
-        ).replace("/feature-forge:", "/skill:")
-        actual = dst_helper.read_text(encoding="utf-8", errors="surrogateescape")
-        if actual != expected:
-            raise SystemExit(
-                f"REQ-GEN-05 violation: pi helper {dst_helper} diverges from canon "
-                f"{src_helper} by more than the '/feature-forge:' → '/skill:' substitution"
+    if agent_id == "pi":
+        for helper in RUNTIME_HELPERS:
+            src_helper = repo_root / "scripts" / helper
+            dst_helper = bundle_root / "scripts" / helper
+            expected = _apply_command_prefix(
+                src_helper.read_text(encoding="utf-8", errors="surrogateescape"),
+                substitute,
             )
+            actual = dst_helper.read_text(encoding="utf-8", errors="surrogateescape")
+            if actual != expected:
+                raise SystemExit(
+                    f"REQ-GEN-05 violation: pi helper {dst_helper} diverges from canon "
+                    f"{src_helper} by more than the '/feature-forge:' → "
+                    f"'{substitute}' substitution"
+                )
 
 
 # A prose citation of a bundle reference: `references/<subpath>`. The subpath char

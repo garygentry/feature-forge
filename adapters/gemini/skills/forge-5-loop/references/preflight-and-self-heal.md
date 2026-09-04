@@ -159,7 +159,7 @@ unasked write as implied consent.
 - **`runner-legacy-layout` warn** — STOP: *"This project is still on the legacy **Ralph**
   layout. Run {check's `remedy.command`, e.g. `{bin} migrate .`} first (the loop runner
   only understands `.rauf/` and `RAUF_*` signals), then re-run
-  `/feature-forge:forge-5-loop {feature}`."* Use the check's own `remedy.command` — never
+  `forge-5-loop {feature}`."* Use the check's own `remedy.command` — never
   a hardcoded `rauf migrate .` — a customized `loopRunner.bin` changes the binary name.
 - **`runner-wired` warn** — STOP and show `loopRunner.setupHint`, e.g. *"The loop runner
   isn't set up in this project ({preconditionFile} is missing). {setupHint}"*.

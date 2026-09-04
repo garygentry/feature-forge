@@ -202,7 +202,7 @@ ran-but-nothing-moved *proof* failure (step 6) because the former never reaches 
   branch its own recovery just cleared. **Any one gate failing falls the ladder
   through** to `needs-human` / `blocked` / `deferred` / `partial` / `complete` exactly
   as today. `resolved` routes **resume** — its NEXT-STEPS block fences
-  `/feature-forge:forge-5-loop {feature}`, never the navigator.
+  `forge-5-loop {feature}`, never the navigator.
 - **CLI:** the close runs through the Scripted Stage Exit (SKILL Step 7):
   `stage-exit … --outcome resolved …`. `stage-exit` does **not** re-verify the gate
   server-side (it has no runner access) — enforcement is procedural: this step.

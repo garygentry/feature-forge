@@ -1138,10 +1138,13 @@ def test_the_only_permitted_whole_file_divergence_is_the_pi_substitution(agent):
     """forge-bootstrap.py is byte-equal everywhere; forge-session.py everywhere but Pi.
 
     The Pi copy differs only by the generator's `/feature-forge:` -> `/skill:`
-    substitution — the ONE divergence `_translate_pi_support_command_strings` permits a
-    runtime helper — so re-applying it to canon reproduces the emitted file exactly. A
-    naive "byte-equal including Pi" assertion would fail against the real tree, and
-    dropping Pi from the check would leave its copy unguarded.
+    substitution — the ONE divergence `_translate_support_command_strings` permits a
+    runtime helper on Pi (non-Pi non-Claude hosts get an empty substitute, which the
+    helper suffix-set skips because it would corrupt `str.replace`/`.startswith`
+    calls in the helper). Re-applying the Pi substitution to canon reproduces the
+    emitted file exactly. A naive "byte-equal including Pi" assertion would fail
+    against the real tree, and dropping Pi from the check would leave its copy
+    unguarded.
     """
     bootstrap_canon = (REPO_ROOT / "scripts" / "forge-bootstrap.py").read_bytes()
     session_canon = (REPO_ROOT / "scripts" / "forge-session.py").read_text("utf-8")
