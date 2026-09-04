@@ -15,9 +15,9 @@ If no feature name is provided:
 
 ## User Input Protocol
 
-### CRITICAL GUARDRAIL: Use AskUserQuestion for All Questions
+### CRITICAL GUARDRAIL: Use `AskUserQuestion` for All Questions
 
-You MUST use the `AskUserQuestion` tool for every question whenever it is present in your tool surface. This includes yes/no confirmations, choices between options, interview questions, and feedback on artifacts. NEVER output questions as inline prose text — the user may not be prompted and the session will stall. When the tool is absent, or you are running non-interactively, follow the **Interaction Capability Ladder** below instead of assuming an answer.
+You MUST use the `AskUserQuestion` for every question whenever it is present in your tool surface. This includes yes/no confirmations, choices between options, interview questions, and feedback on artifacts. NEVER output questions as inline prose text — the user may not be prompted and the session will stall. When the tool is absent, or you are running non-interactively, follow the **Interaction Capability Ladder** below instead of assuming an answer.
 
 **Required turn structure:** Output your analysis, findings, or context as regular text. Then call `AskUserQuestion` with your questions. Do NOT mix questions into your text output.
 
@@ -31,7 +31,7 @@ I found that the codebase uses React and TanStack Router. Here are my questions:
 **RIGHT — context as text, questions via tool:**
 ```
 I found that the codebase uses React and TanStack Router.
-[then call AskUserQuestion with: "1. Where should this component live? 2. Should we use server-side rendering?"]
+[then call `AskUserQuestion` with: "1. Where should this component live? 2. Should we use server-side rendering?"]
 ```
 
 ### Decision Support: Help the User Choose

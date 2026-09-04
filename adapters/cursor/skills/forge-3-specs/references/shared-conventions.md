@@ -15,11 +15,11 @@ If no feature name is provided:
 
 ## User Input Protocol
 
-### CRITICAL GUARDRAIL: Use the host's question mechanism for All Questions
+### CRITICAL GUARDRAIL: Use host's question mechanism for All Questions
 
 You MUST use the host's question mechanism for every question whenever it is present in your tool surface. This includes yes/no confirmations, choices between options, interview questions, and feedback on artifacts. NEVER output questions as inline prose text — the user may not be prompted and the session will stall. When the tool is absent, or you are running non-interactively, follow the **Interaction Capability Ladder** below instead of assuming an answer.
 
-**Required turn structure:** Output your analysis, findings, or context as regular text. Then call the host's question mechanism with your questions. Do NOT mix questions into your text output.
+**Required turn structure:** Output your analysis, findings, or context as regular text. Then call host's question mechanism with your questions. Do NOT mix questions into your text output.
 
 **WRONG — questions as inline prose (causes stalling):**
 ```
@@ -31,12 +31,12 @@ I found that the codebase uses React and TanStack Router. Here are my questions:
 **RIGHT — context as text, questions via tool:**
 ```
 I found that the codebase uses React and TanStack Router.
-[then call the host's question mechanism with: "1. Where should this component live? 2. Should we use server-side rendering?"]
+[then call host's question mechanism with: "1. Where should this component live? 2. Should we use server-side rendering?"]
 ```
 
 ### Decision Support: Help the User Choose
 
-When a question posed through the host's question mechanism carries substantive options (a real choice — not a trivial yes/no confirmation), do not just list them. The interview stages have already done codebase research and integration analysis; surfacing that synthesis at the decision moment is the whole point. For every such question:
+When a question posed through host's question mechanism carries substantive options (a real choice — not a trivial yes/no confirmation), do not just list them. The interview stages have already done codebase research and integration analysis; surfacing that synthesis at the decision moment is the whole point. For every such question:
 
 - **Lead with a recommended option.** Place it first and label it `(recommended)` (matching the host's question mechanism "(Recommended)" convention).
 - **Put the trade-off in each option's `description`.** Say why you'd pick it and what you give up versus the alternatives — the cost, not just the benefit.
@@ -111,7 +111,7 @@ What *does* end the run is a default that says so. `no-default: abort` stops, an
 
 Either outcome **must be stated in the output** — a rung-3 site that silently proceeds or silently stalls is a defect, not a degraded pass.
 
-**Site classes.** Rather than a per-site declaration (107 sites and rising), every question surface that uses the host's question mechanism inherits its rung-3 default from its class — a surface cites this table by title, never restating its own row:
+**Site classes.** Rather than a per-site declaration (107 sites and rising), every question surface that uses host's question mechanism inherits its rung-3 default from its class — a surface cites this table by title, never restating its own row:
 
 | Class | Rung-3 default |
 |---|---|
@@ -132,7 +132,7 @@ Either outcome **must be stated in the output** — a rung-3 site that silently 
 
 Every authoring stage ends its "Review with User" step in exactly one of two shapes. Which shape a stage uses is declared **here, once** — each stage's review step points at this block by title, and the shape is never re-derived from the surrounding prose or inferred from how sibling stages behave (three stages block and one does not; majority-shape inference is precisely the failure this block exists to prevent):
 
-- **Blocking review (gate).** The stage presents the artifact and collects feedback through the host's question mechanism; it does **not** proceed until the user answers, iterating until they confirm. Stages: **forge-1-prd** (Step 5), **forge-2-tech** (Step 6), **forge-3-specs** (Step 6).
+- **Blocking review (gate).** The stage presents the artifact and collects feedback through host's question mechanism; it does **not** proceed until the user answers, iterating until they confirm. Stages: **forge-1-prd** (Step 5), **forge-2-tech** (Step 6), **forge-3-specs** (Step 6).
 - **Non-blocking review (invitation).** The stage states the artifact is ready and invites adjustments **as a statement, not a question** — and then **proceeds to the next step in the same turn unless the user asks for changes**. The invitation obliges the agent to *continue*: emitting the invitation sentence and stopping treats the non-gate as a gate and strands the stage `in-progress` with its completion step unrun — a defect, not caution. Stage: **forge-4-backlog** (Step 6).
 
 **Why the shapes differ.** A blocking review guards an artifact whose content was just authored from open-ended interview or synthesis — the user is the only authority on "complete", so the stage must wait. forge-4's backlog is *derived* from specs the user already approved, was planned interactively in its Step 3, and is machine-validated in its Step 5; a second hard gate would re-ask a settled question, and the loop never launches without forge-5-loop's own Step 2d confirmation anyway. The invitation is a courtesy checkpoint, not an approval gate (removed deliberately in #78's consistency sweep).
@@ -187,7 +187,7 @@ R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-
 python3 "$R/scripts/forge-session.py" discover-feature "<feature>" --specs-dir "<specsDir>" --json
 ```
 
-- **Candidates found** (`candidates` and/or `remoteCandidates` non-empty): summarize them as text (branch, recorded stage, whether the state's own `branch` field matches), then use the host's question mechanism: **Switch to `{branch}` (recommended)** — run the candidate's `switchCommand` · **Fetch + switch** — for a `needsFetch` remote candidate, run its `fetchCommand` then `switchCommand` (note its contents were matched by name only, not inspected) · **Treat `{feature}` as new on this branch** · **Stop**. A checkout is a mutation inside an otherwise read-only flow: perform it ONLY on the user's explicit accept AND with a clean working tree (`git status --porcelain` prints nothing) — never auto-switch, never with uncommitted changes. After a successful switch, re-run this Feature Directory Resolution block from the top.
+- **Candidates found** (`candidates` and/or `remoteCandidates` non-empty): summarize them as text (branch, recorded stage, whether the state's own `branch` field matches), then use host's question mechanism: **Switch to `{branch}` (recommended)** — run the candidate's `switchCommand` · **Fetch + switch** — for a `needsFetch` remote candidate, run its `fetchCommand` then `switchCommand` (note its contents were matched by name only, not inspected) · **Treat `{feature}` as new on this branch** · **Stop**. A checkout is a mutation inside an otherwise read-only flow: perform it ONLY on the user's explicit accept AND with a clean working tree (`git status --porcelain` prints nothing) — never auto-switch, never with uncommitted changes. After a successful switch, re-run this Feature Directory Resolution block from the top.
 - **Nothing found** (both lists empty): the pipeline genuinely does not exist anywhere discoverable — STOP and surface the original `not-found` stderr line verbatim (or, where the caller offers to start a new pipeline, offer that).
 
 **Rung-3 default** (Interaction Capability Ladder above, "branch setup / reconcile"
@@ -407,7 +407,7 @@ Invoke this block at the **very start** of a pipeline entry point — `forge-1-p
 1. Read the current branch: `git rev-parse --abbrev-ref HEAD`.
 2. Determine the default branch: `git symbolic-ref --quiet refs/remotes/origin/HEAD` (strip to the last path segment); if that fails, fall back to `main`, else `master` — whichever the repo has.
 3. **If the current branch is NOT the default branch** (the user is already on a topic/`{branchPrefix}*` branch) → record it (see below) and proceed silently. Do not prompt.
-4. **If the current branch IS the default branch** → use the host's question mechanism with a **strong recommendation** (still optional):
+4. **If the current branch IS the default branch** → use host's question mechanism with a **strong recommendation** (still optional):
 
    > "You're on `{defaultBranch}`. Strongly recommended: create `{branchPrefix}{label}` so this {scope}'s work stays isolated and reviewable as one branch. Create it?"
    > Options: **Create `{branchPrefix}{label}` (recommended)** · **Stay on `{defaultBranch}`**
@@ -442,7 +442,7 @@ python3 "$R/scripts/forge-session.py" reconcile-branch --feature "{feature}" --s
 
 Act on the emitted `action` (source of truth is where the state actually resolves, not the recorded field):
 - **`adopt-current`** — you are on a non-default topic branch where the state resolves, and the recorded `branch` differs (a stale/imposed value). Run `state-branch` (below) to write `newBranch` into the state `branch` field, with a **visible one-line note** ("recorded branch was `{stateBranch}`; work is on `{currentBranch}` — updating to match") — never silently, and **never push the user back** to the recorded branch (offer that only as a plain alternative).
-- **`warn-drift`** — you are on the **default** branch and the state records a topic branch. Via the host's question mechanism, strongly recommend creating/switching to `{branchPrefix}{feature}` (then record it), still allowing **proceed on the default branch**. Never hard-stop.
+- **`warn-drift`** — you are on the **default** branch and the state records a topic branch. Via host's question mechanism, strongly recommend creating/switching to `{branchPrefix}{feature}` (then record it), still allowing **proceed on the default branch**. Never hard-stop.
 - **`none`** / **`not-resolved`** — nothing to do; proceed.
 
 **Rung-3 default** (Interaction Capability Ladder above, "branch setup / reconcile"
@@ -500,10 +500,10 @@ Invoke this block at the **start of an authoring stage** (`forge-1-prd`..`forge-
 
 2. **Interrupted** (`status: "in-progress"`) — a previous run of THIS stage was interrupted before it committed (the exit commit is what flips it to `complete`, so `in-progress` on entry always means a crash/abandon). Do **not** silently re-author. Instead:
    - **Inventory on-disk artifacts:** list the files this stage produces that already exist in `{resolvedFeatureDir}/` (e.g. `PRD.md`; `tech-spec.md`; the `##-*.md` suite + `TRACEABILITY.md`; `backlog.json`), and cross-check against the `stages.{stage}.artifacts` array (written incrementally during the previous run).
-   - **Gate via the host's question mechanism** (Decision Support protocol): present the inventory as text, then ask "This {stage} run was interrupted — {N} artifact(s) from the previous run are on disk: {list}. Resume the in-progress draft, or start a new version from scratch?" Options: **Resume (recommended)** — continue from the first artifact not yet written/complete, reusing the existing files; do **not** re-stamp or bump the version. · **Start a new version** — treat it as a fresh authoring pass (proceed to the Entry Stamp; the version increments at exit).
+   - **Gate via host's question mechanism** (Decision Support protocol): present the inventory as text, then ask "This {stage} run was interrupted — {N} artifact(s) from the previous run are on disk: {list}. Resume the in-progress draft, or start a new version from scratch?" Options: **Resume (recommended)** — continue from the first artifact not yet written/complete, reusing the existing files; do **not** re-stamp or bump the version. · **Start a new version** — treat it as a fresh authoring pass (proceed to the Entry Stamp; the version increments at exit).
    - Skip artifact regeneration for files that already exist and are complete (non-empty, properly structured); continue from the next unwritten artifact.
 
-3. **Re-authoring** (`status: "complete"` or `"stale"`) — a finished draft exists. Warn via the host's question mechanism before overwriting: "A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?" On confirm, proceed to the Entry Stamp and author a new version (the version increments at exit, per that stage's Update-Pipeline-State step).
+3. **Re-authoring** (`status: "complete"` or `"stale"`) — a finished draft exists. Warn via host's question mechanism before overwriting: "A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?" On confirm, proceed to the Entry Stamp and author a new version (the version increments at exit, per that stage's Update-Pipeline-State step).
 
 **Rung-3 default** (Interaction Capability Ladder above, "entry / completion guards"
 class): no question mechanism at cases 2 or 3 → **STOP** — resume the in-progress draft
@@ -540,7 +540,7 @@ Invoke this block **at the head of any post-entry step that writes a stage artif
 
 1. **Proceed** when `stages.{stage}.status` is `"in-progress"` (this session's Entry Stamp — you are finishing the run you started) or absent/`pending`. Run the write / exit normally.
 
-2. **Detect-and-refuse** when ALL of these hold: `stages.{stage}.status ∈ {"complete", "stale"}` **AND** the stage's artifacts (incl. `TRACEABILITY.md` for forge-3-specs) exist on disk **AND** a `commitHash` is recorded for the stage **AND** you did **not** author this stage earlier in the current session. This is a stale/replayed continuation of an already-finished, committed stage. Do **not** overwrite the artifact or re-run the exit. Route instead to the **Stage-Entry Guard**'s *Re-authoring* path: surface the same warning via the host's question mechanism ("A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?"). Only on explicit confirmation re-enter from the Entry Stamp (the version bumps at exit); otherwise **stop** and report that the stage is already complete — cite the recorded `commitHash` and offer `forge {feature}` to see true state.
+2. **Detect-and-refuse** when ALL of these hold: `stages.{stage}.status ∈ {"complete", "stale"}` **AND** the stage's artifacts (incl. `TRACEABILITY.md` for forge-3-specs) exist on disk **AND** a `commitHash` is recorded for the stage **AND** you did **not** author this stage earlier in the current session. This is a stale/replayed continuation of an already-finished, committed stage. Do **not** overwrite the artifact or re-run the exit. Route instead to the **Stage-Entry Guard**'s *Re-authoring* path: surface the same warning via host's question mechanism ("A completed {stage} artifact already exists for '{feature}' (v{n}{, marked stale}). Continuing will create a new version. Proceed?"). Only on explicit confirmation re-enter from the Entry Stamp (the version bumps at exit); otherwise **stop** and report that the stage is already complete — cite the recorded `commitHash` and offer `forge {feature}` to see true state.
 
 When you cannot confirm you authored the current run, treat it as a replay and refuse: a false refuse costs one confirmation click; a false proceed overwrites a committed artifact and re-churns a stage version. `--force` follows Force Mode (skip the gate, treat as a deliberate re-author).
 

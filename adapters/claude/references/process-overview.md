@@ -118,7 +118,7 @@ they track the current model tier automatically.
 
 ### forge-verifier
 - **Purpose:** Read-only verification of pipeline artifacts
-- **Used by:** `forge-verify` skill (delegation via Agent tool)
+- **Used by:** `forge-verify` skill (delegation via `Agent` tool)
 - **Tools:** Read, Glob, Grep, Bash (read-only operations only)
 - **Model:** Opus (judgement-heavy gap/inconsistency analysis)
 - **Memory:** Project-scoped persistent memory — accumulates knowledge about recurring issues and project-specific patterns across sessions

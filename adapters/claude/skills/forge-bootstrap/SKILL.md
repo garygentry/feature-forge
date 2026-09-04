@@ -22,7 +22,7 @@ toolchain-missing.
 
 ## Host adaptation (conversational fallback)
 
-If the `AskUserQuestion` tool is available, ask the interview questions through it. If it is
+If the `AskUserQuestion` is available, ask the interview questions through it. If it is
 **not** available (a non-Claude host such as Codex), emit the same questions as a single
 **numbered text list** — each line one question with its options in brackets and the default
 marked — then **stop and wait for a single text reply**. Parse the reply positionally

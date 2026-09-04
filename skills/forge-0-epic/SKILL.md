@@ -14,13 +14,13 @@ is delegated to `scripts/epic-manifest.py`.
 
 This skill **composes** JSON and **issues** helper commands. It NEVER eyeballs a dependency
 graph for cycles, NEVER hand-rolls a manifest write where a mutator exists, and NEVER asks a
-question in inline prose — every question goes through `AskUserQuestion`.
+question in inline prose — every question goes through {{ASK_TOOL}}.
 
 ## Prerequisites
 
 Read and follow `references/shared-conventions.md` for:
 - the **Feature Name Requirement** (applied here to the *epic* name — see below),
-- the **User Input Protocol** (the AskUserQuestion guardrail — all questions go through the tool),
+- the **User Input Protocol** (the {{ASK_TOOL}} guardrail — all questions go through the tool),
 - **Configuration Reading**, and
 - the **Git Commit Protocol**.
 
@@ -100,7 +100,7 @@ than prompting again.
 ### Step C1 — Epic Framing Interview
 
 Output context as text (what an epic is, that a decomposition interview will follow). Then
-call `AskUserQuestion` to elicit:
+call {{ASK_TOOL}} to elicit:
 
 1. **Epic goal / problem** — the overarching change being decomposed. Becomes the EPIC.md
    "Overall Goal" narrative and seeds the manifest `description`.
@@ -113,7 +113,7 @@ The epic `name` is the validated CLI argument from Step 0 — do NOT prompt for 
 Drive a decomposition dialogue. Output your analysis as text first (how the goal might split,
 right-sizing guidance: each feature should be a single pipeline-sized unit — a unit forge-1-prd
 through forge-5-loop would carry end-to-end — not item-level interleaving). Then use
-`AskUserQuestion` to elicit the candidate feature list. Per the **Decision Support** protocol in `references/shared-conventions.md`, lead with a **recommended decomposition** and a one-line rationale rather than asking the user to invent it unaided, then probe its seams ("Is any of these two really one? Is any one really two?"), naming the trade-off (more features = more parallelism but more edges). Iterate until the user confirms.
+{{ASK_TOOL}} to elicit the candidate feature list. Per the **Decision Support** protocol in `references/shared-conventions.md`, lead with a **recommended decomposition** and a one-line rationale rather than asking the user to invent it unaided, then probe its seams ("Is any of these two really one? Is any one really two?"), naming the trade-off (more features = more parallelism but more edges). Iterate until the user confirms.
 
 For **each** proposed feature name, before accepting it into the set, enforce global uniqueness
 and name safety via the helper:
@@ -133,7 +133,7 @@ Never accept a feature name that has not passed `check-name` exit 0.
 
 ### Step C3 — Per-Feature Charter + Structured Contracts
 
-For each confirmed feature, run a focused `AskUserQuestion` batch (one feature at a time,
+For each confirmed feature, run a focused {{ASK_TOOL}} batch (one feature at a time,
 2–3 questions per call) eliciting:
 
 - **Charter** — a single paragraph: scope statement + contract obligations. This is a
@@ -152,7 +152,7 @@ the structured arrays are the source of truth; EPIC.md renders them as prose lat
 
 ### Step C4 — Dependency-Edge Interview
 
-For each feature, use `AskUserQuestion`: "Which sibling features must be complete before this
+For each feature, use {{ASK_TOOL}}: "Which sibling features must be complete before this
 one can build?" → populates `dependsOn: [names]`.
 
 **Seed the suggestion from `consumes`:** a `consumes.from` X strongly implies `dependsOn` X. Per the **Decision Support** protocol, offer the union of each feature's `consumes.from` set as the **recommended default**, evidence-backed — but flag the cost (each edge serializes the loop and blocks dependents, so add only what contracts require). User confirms/overrides; `dependsOn` is authoritative.
@@ -240,7 +240,7 @@ now self-contained: manifest + EPIC.md + one subdirectory per member.
 
 ### Step C8 — Review, Pipeline State & Commit
 
-1. **Review.** Present a summary (epic name, N features, dependency edges, contracts) as text, then use `AskUserQuestion`: "Does this epic decomposition look right? Any feature, dependency, or contract to change before I commit?" If the user wants changes, loop back to the relevant creation step, re-compose, and re-validate.
+1. **Review.** Present a summary (epic name, N features, dependency edges, contracts) as text, then use {{ASK_TOOL}}: "Does this epic decomposition look right? Any feature, dependency, or contract to change before I commit?" If the user wants changes, loop back to the relevant creation step, re-compose, and re-validate.
 
 2. **Commit (Git Commit Protocol).** If `gitCommitAfterStage` is true, follow the Git Commit Protocol in shared-conventions:
    - Stage the whole epic subtree only: `git add {specsDir}/{epic}/` — never `git add -A`. This captures `epic-manifest.json`, `EPIC.md`, and all member `.pipeline-state.json` files atomically.
@@ -269,7 +269,7 @@ Entered from Step 0 when `{specsDir}/{epic}/epic-manifest.json` already exists (
 branch). The edit branch mutates the manifest **only** through helper mutators — atomic
 (temp file + `os.replace`) and internally re-validated, so a refused write leaves the manifest
 **byte-identical**; the skill never hand-rolls an in-place write. Every question goes through
-`AskUserQuestion`, and **every mutation is committed individually** so git history is the audit trail.
+{{ASK_TOOL}}, and **every mutation is committed individually** so git history is the audit trail.
 
 For the full E1–E6 mechanics — the E1 refuse-if-invalid protocol, E2 operation→mutator table, E3
 contracts/remove-feature caveats (incl. the verbatim WARN block), E4 impact-warning rules, E5
@@ -300,4 +300,4 @@ section).
 - A charter is one paragraph, not a PRD. Redirect requirement-level detail to `forge-1-prd`.
 - Contracts have no mutator: edit `exposes`/`consumes` in the composed manifest entry, then
   re-run `validate`.
-- All questions go through `AskUserQuestion`, never text. Rung 2/3: Interaction Capability Ladder.
+- All questions go through {{ASK_TOOL}}, never text. Rung 2/3: Interaction Capability Ladder.

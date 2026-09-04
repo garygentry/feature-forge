@@ -94,7 +94,7 @@ supported when using Codex with a ChatGPT account."* — so **every** spawn exit
 rauf reports *"Circuit breaker: 3 consecutive infra failures — halting"* with no hint
 of the real cause. forge-5-loop therefore detects Claude-specific `model` aliases in
 the backlog (tier aliases `opus`/`sonnet`/`haiku` or `claude-*` ids) and, before
-launch, **warns** and offers (via `AskUserQuestion`) to **strip `model` for this run**
+launch, **warns** and offers (via {{ASK_TOOL}}) to **strip `model` for this run**
 (remove the key from each affected item so each spawn uses the agent's own default) or
 **proceed as-is**. forge only ever touches the `model` field — never `provider`. The
 default / `claude-cli` path skips this guard (the aliases are valid there).

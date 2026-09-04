@@ -81,7 +81,7 @@ ran-but-nothing-moved *proof* failure (step 6) because the former never reaches 
   "recovery interview" class): no question mechanism → fall through to **needs-human** —
   every cluster in the set is recorded as a deferral (never answered, never cancelled) and
   step 4 states the rung-3 statement once for the whole batch.
-- **Mechanism:** `AskUserQuestion` (never inline prose).
+- **Mechanism:** {{ASK_TOOL}} (never inline prose).
   - For any cluster of **two or more** items: emit **exactly one** consolidated question
     that **names every affected item id** and states the **full gated subtree** the
     cluster gates. Frame it by **blast radius** — e.g. *"This one decision gates 13 of
@@ -287,13 +287,13 @@ runner-native evidence — reliable per-item provenance is **not** a prerequisit
   item-group and the unattributable set exactly as found, state the rung-3 default
   once for the whole reconciliation, and rely on §4.4's Launch Blocker to stop the
   next launch on the still-dirty tree until a human resolves it.
-- **Mechanism:** `AskUserQuestion` (never inline prose).
+- **Mechanism:** {{ASK_TOOL}} (never inline prose).
   - **One question per attributed item-group:** for each candidate item-group from 4.2,
     offer **commit-for-that-item** / **stash** / **discard**.
   - **Unattributable changes → ONE consolidated decision:** everything that could not
     be attributed is presented as a single grouped question, not dropped.
 - **Discard guard:** **discard is NEVER the default** and requires its **own explicit
-  confirmation** — a second, dedicated question via `AskUserQuestion` confirming the specific paths
+  confirmation** — a second, dedicated question via {{ASK_TOOL}} confirming the specific paths
   to be discarded before any `git checkout`/`git restore`/`git clean` runs. No path is
   discarded on a single click.
 - **Output:** per group, an executed reconciliation (commit / stash / confirmed

@@ -33,7 +33,7 @@ the rendering changes. Never assume answers; always wait for the reply. At rung 
 this interview has no sane unattended default: `no-default: abort — the bootstrap interview
 requires a human answer`.
 
-Emit any context as plain text, then route **all** questions through the host's question mechanism (or the
+Emit any context as plain text, then route **all** questions through host's question mechanism (or the
 fallback) — never as inline prose questions, which stall the session.
 
 ## Flow (Mode A — default)
@@ -134,7 +134,7 @@ it null.
 schema. Two fields come from your runtime, not the interview: `author` from `git config
 user.name` (else the project name; it is the LICENSE copyright holder), and `host` —
 `"claude"` when you are running as Claude, else `"codex"`/`"other"`. Use your own runtime
-identity, never a capability proxy: **do not** infer `"claude"` from the host's question mechanism
+identity, never a capability proxy: **do not** infer `"claude"` from host's question mechanism
 availability alone — Pi's compatibility extension registers it too, so an available
 question tool does not prove you are Claude specifically (host never implies, and is
 never implied by, a capability; Interaction Capability Ladder,

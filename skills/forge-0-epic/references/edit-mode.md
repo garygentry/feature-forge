@@ -9,7 +9,7 @@ Entered from Step 0 when `{specsDir}/{epic}/epic-manifest.json` already exists (
 branch). The edit branch mutates the manifest **only** through helper mutators — the skill never
 hand-rolls an in-place write. Every mutator is atomic (temp file + `os.replace`) and re-validates
 the edited graph internally, so a refused write leaves the manifest **byte-identical**. Every
-question goes through `AskUserQuestion`. **Rung-3 default**
+question goes through {{ASK_TOOL}}. **Rung-3 default**
 (`references/shared-conventions.md` § Interaction Capability Ladder, "dependency / epic
 gates" and "interviews / pickers / blocking gates" classes): no question mechanism →
 STOP or `no-default: abort` per the site — never guess an edit operation or a conflict
@@ -44,7 +44,7 @@ report it and continue with the rest — do **not** abort edit mode over one bad
 E1's "report, never silently repair" posture).
 
 If any open requests exist, present them grouped (show `kind`, `target`, `rationale`,
-`blocksCurrent`, `raisedBy`), then for **each** request use `AskUserQuestion` to offer **Apply**,
+`blocksCurrent`, `raisedBy`), then for **each** request use {{ASK_TOOL}} to offer **Apply**,
 **Dismiss**, or **Skip for now**:
 
 - **Apply — simple kinds (`add-feature`, `redep`):** pre-fill the matching E2 operation and flow
@@ -56,7 +56,7 @@ If any open requests exist, present them grouped (show `kind`, `target`, `ration
   user through a **guided-manual** sequence — the relevant `set-dep` and/or direct `exposes`/
   `consumes` edits on the composed manifest entries (per E3's "Contracts have no mutator" rule),
   across **both** affected features — re-validating after each step. Confirm each mutation via
-  `AskUserQuestion`; never batch-apply.
+  {{ASK_TOOL}}; never batch-apply.
 - **Dismiss:** the user decides the epic is fine after all — flip the source request's `status` to
   `"dismissed"` (no manifest mutation). Explicit only; there is **no auto-expiry**.
 - **Skip for now:** leave the request `open`; it resurfaces on the next edit-mode entry and stays
@@ -76,7 +76,7 @@ requests exist, say nothing and proceed straight to E2.
 
 ## Step E2 — Choose Operation
 
-Use `AskUserQuestion` to offer the edit operations, each mapping to one helper mutator:
+Use {{ASK_TOOL}} to offer the edit operations, each mapping to one helper mutator:
 
 | Operation | Helper subcommand |
 |-----------|-------------------|
@@ -133,7 +133,7 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
 ```
 
 If the operation removes, reorders-around, or re-deps a feature whose derived status is
-`in-progress` or `complete`, use `AskUserQuestion` with an explicit warning naming the affected
+`in-progress` or `complete`, use {{ASK_TOOL}} with an explicit warning naming the affected
 in-flight/completed feature(s) and **require confirmation** before applying. Example: "`token-service`
 is already in-progress (forge-3-specs). Removing `config-store`, which it consumes `JWT_SECRET`
 from, may invalidate its in-flight specs. Proceed?" If `render-status` exits `≥ 1`, surface the
@@ -144,7 +144,7 @@ findings and STOP (do not mutate over an invalid graph).
 Patch **only** the affected feature/Contracts section(s) — the section(s) for the added, removed,
 or changed feature and any feature whose `dependsOn`/`consumes` changed — applying the §C6 mirror
 rule (one bullet per `exposes`/`consumes` entry). **Full regeneration happens only on explicit
-user request**: offer it via `AskUserQuestion` but default to the targeted patch. The skill keeps
+user request**: offer it via {{ASK_TOOL}} but default to the targeted patch. The skill keeps
 EPIC.md in sync but does not itself diff it against the manifest — drift detection is `forge-verify`
 epic mode CHECK-E06.
 
