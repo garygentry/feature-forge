@@ -800,11 +800,13 @@ _HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("${CLAUDE_PLUGIN_ROOT}", "${FEATURE_FORGE_ROOT}"),
     # Claude slash-command dispatch prefix → bare skill name. Codex/Copilot/Cursor/
     # Gemini have no `/feature-forge:` prefix — the literal names nothing on those
-    # hosts (#265 F1, #270 P1.1). Degrade to the bare skill name in backticks so
-    # `` run `/feature-forge:forge-verify` `` becomes `` run `forge-verify` ``, which
-    # reads as a name the reader can recognize and act on without inventing a fake
-    # slash syntax. Pi overrides this with its real `/skill:` prefix (see
-    # _PI_OVERRIDDEN_HOST_TERMS + the appended `("/feature-forge:", "/skill:")` pair).
+    # hosts (#265 F1, #270 P1.1). The backticked wildcard `` `/feature-forge:*` `` is
+    # matched FIRST (longest-match, #167) because the general prefix pair below would
+    # collapse it to a lone `` `*` `` — meaningless prose in the root-hygiene template
+    # that ships into user projects. Pi overrides BOTH via _PI_OVERRIDDEN_HOST_TERMS
+    # so its own appended `("/feature-forge:", "/skill:")` runs on the raw text (Pi
+    # keeps `` `/skill:*` `` and prefixed commands both).
+    ("`/feature-forge:*`", "`forge-*` skills"),
     ("/feature-forge:", ""),
 )
 
@@ -930,12 +932,15 @@ _PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({
     "/clear",
     "--host claude",
     # #270 (P1.1): base table degrades `/feature-forge:` to empty for hosts with no
-    # slash-command surface. Pi has a real prefix (`/skill:`), so the base pair is
-    # excluded here and Pi's appended `("/feature-forge:", "/skill:")` rule wins
-    # instead. A missed exclusion would strip Pi's prefix to bare skill names before
-    # Pi's own rule could fire (appended pairs come last), naming skills without the
-    # dispatch surface Pi actually uses.
+    # slash-command surface, plus a longest-match wildcard pair for the bare
+    # `` `/feature-forge:*` `` in the root-hygiene template. Pi has a real prefix
+    # (`/skill:`), so BOTH LHSs are excluded here and Pi's appended
+    # `("/feature-forge:", "/skill:")` rule wins on the raw text instead — matching
+    # both `/feature-forge:x` and the wildcard form. A missed exclusion would strip
+    # Pi's prefix to bare skill names before Pi's own rule could fire (appended pairs
+    # come last), naming skills without the dispatch surface Pi actually uses.
     "/feature-forge:",
+    "`/feature-forge:*`",
 })
 
 _PI_BASE_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
@@ -957,7 +962,7 @@ _PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = _PI_BASE_HOST_TERM_REP
     # also mangle diagnostic prose that is not a command — e.g. the install-root failure
     # `echo "feature-forge: cannot locate plugin root"` would become `skill: cannot locate
     # plugin root`, naming a tool that does not exist. Keep this in step with
-    # _translate_pi_support_command_strings(), which applies the same single substitution to
+    # _translate_support_command_strings(), which applies the same single substitution to
     # copied support files.
     ("/feature-forge:", "/skill:"),
     # Pi's fresh-session command is `/new`, not Claude's `/clear`. A bare-token replace
@@ -1892,6 +1897,27 @@ _HOST_COMMAND_PREFIX: dict[str, str] = {
 }
 
 
+def _apply_command_prefix(text: str, substitute: str) -> str:
+    """Apply the per-host slash-command substitution to a support-file body.
+
+    Handles the wildcard `` `/feature-forge:*` `` form before the general prefix so
+    the empty-substitute hosts (codex/copilot/cursor/gemini) don't collapse it to a
+    lone `` `*` `` — the root-hygiene template says "pipeline stages,
+    `` `/feature-forge:*` ``, forge skills/agents" and a lone `` `*` `` is meaningless
+    prose in scaffolding that ships into user projects. Non-empty substitutes (Pi)
+    fold the wildcard naturally through the general prefix pair (`` `/skill:*` ``);
+    the wildcard-specific branch runs only when the substitute is empty.
+
+    Kept in step with the emitter-body pairs
+    ``("`/feature-forge:*`", "`forge-*` skills")`` and ``("/feature-forge:", "")``
+    in ``_HOST_TERM_REPLACEMENTS`` — bodies and support files must degrade the same
+    prose to the same phrase.
+    """
+    if not substitute:
+        text = text.replace("`/feature-forge:*`", "`forge-*` skills")
+    return text.replace("/feature-forge:", substitute)
+
+
 def _translate_support_command_strings(
     bundle_root: Path, repo_root: Path, agent_id: str
 ) -> None:
@@ -1931,8 +1957,17 @@ def _translate_support_command_strings(
             continue
         if path.suffix not in suffixes:
             continue
+        rel = path.relative_to(bundle_root)
+        # Narrower exemption than `_reference_translation_exempt`: templates get the
+        # per-host prefix substitution (a CLAUDE.md scaffold that names a slash-command
+        # non-existent on the host is broken there regardless of scaffolding intent),
+        # but the audit and self-referential docs stay verbatim — translating either
+        # would falsify a REQ-VND-03 record or produce a self-contradictory prose
+        # (see the block comment above `_reference_translation_exempt`).
+        if rel.name in {"vendor-construct-inventory.md", "portable-root.md"}:
+            continue
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
-        translated = text.replace("/feature-forge:", substitute)
+        translated = _apply_command_prefix(text, substitute)
         if translated != text:
             path.write_text(translated, encoding="utf-8", errors="surrogateescape")
 
@@ -1940,9 +1975,10 @@ def _translate_support_command_strings(
         for helper in RUNTIME_HELPERS:
             src_helper = repo_root / "scripts" / helper
             dst_helper = bundle_root / "scripts" / helper
-            expected = src_helper.read_text(
-                encoding="utf-8", errors="surrogateescape"
-            ).replace("/feature-forge:", substitute)
+            expected = _apply_command_prefix(
+                src_helper.read_text(encoding="utf-8", errors="surrogateescape"),
+                substitute,
+            )
             actual = dst_helper.read_text(encoding="utf-8", errors="surrogateescape")
             if actual != expected:
                 raise SystemExit(

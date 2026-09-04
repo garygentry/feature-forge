@@ -402,24 +402,25 @@ def test_root_hygiene_template_ships_untranslated(target: str, filename: str) ->
     canon = REPO_ROOT / rel
     assert shipped.is_file(), f"{target} bundle is missing {rel.as_posix()}"
     text = shipped.read_text(encoding="utf-8")
-    # Mirrors build-adapters.py::_HOST_COMMAND_PREFIX. Un-substitute the per-host
-    # form to recover canon; any OTHER divergence still fails.
+    canon_text = canon.read_text(encoding="utf-8")
+    # Mirrors build-adapters.py::_apply_command_prefix. Translate canon FORWARD and
+    # compare — an un-substitute round-trip is not injective on the empty-substitute
+    # hosts (`/feature-forge:` → "" then "" → `/feature-forge:` would inject the
+    # prefix between every char). Any OTHER divergence still fails.
     if target == "pi":
-        text = text.replace("/skill:", "/feature-forge:")
-    elif target in NON_CLAUDE_TARGETS:
-        # empty-string substitution: un-substitute would re-insert everywhere. Instead
-        # translate canon FORWARD and compare, mirroring the build-adapters pass.
-        assert text == canon.read_text(encoding="utf-8").replace("/feature-forge:", ""), (
-            f"{shipped.relative_to(REPO_ROOT)} diverges from canon by more than the "
-            "expected `/feature-forge:` → bare-name substitution (#270 P1.1) — "
-            "project-content templates must ship verbatim otherwise "
-            "(build-adapters.py `_reference_translation_exempt`)"
-        )
-        return
-    assert text == canon.read_text(encoding="utf-8"), (
+        expected = canon_text.replace("/feature-forge:", "/skill:")
+    elif target in NON_CLAUDE_TARGETS:  # empty per-host substitute
+        expected = canon_text.replace(
+            "`/feature-forge:*`", "`forge-*` skills"
+        ).replace("/feature-forge:", "")
+    else:  # claude
+        expected = canon_text
+    assert text == expected, (
         f"{shipped.relative_to(REPO_ROOT)} diverges from canon by more than the "
-        "expected `/feature-forge:` → per-host substitution — project-content templates "
-        "must ship verbatim otherwise (build-adapters.py `_reference_translation_exempt`)"
+        "expected `/feature-forge:` → per-host substitution (#270 P1.1) — "
+        "project-content templates must ship verbatim otherwise "
+        "(build-adapters.py `_reference_translation_exempt` / "
+        "`_apply_command_prefix`)"
     )
 
 
