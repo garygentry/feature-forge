@@ -50,7 +50,7 @@ python3 "$R/scripts/epic-manifest.py" validate "{epic}" --specs-dir "{specsDir}"
   exits interpose reconcile-first on it, and specs written now would build on a soon-invalid
   premise), a **non-blocking** request → `improvement` (a peer/downstream change to reconcile
   when convenient). Name the request's `kind`, `target`,
-  and `rationale`, and point at `/feature-forge:forge-0-epic {epic}` to reconcile. **Report, do
+  and `rationale`, and point at `forge-0-epic {epic}` to reconcile. **Report, do
   not repair** (same posture as CHECK-E07). Which members have open requests comes from the
   same `render-status --json` counts the navigator uses (`features[].openEpicChangeRequests` /
   `.blockingEpicChangeRequests`); the per-request `kind`/`target`/`rationale` detail is read

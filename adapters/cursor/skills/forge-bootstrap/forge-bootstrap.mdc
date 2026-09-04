@@ -1,6 +1,6 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-bootstrap/SKILL.md. Regenerate: python3 scripts/build-adapters.py
-description: Scaffold a brand-new empty repository to a pipeline-ready, green baseline (structure, toolchain, passing lint+test, forge.config.json), then optionally chain into the pipeline. Use when the user runs /feature-forge:forge-bootstrap or asks to bootstrap/scaffold a new empty project for forge. Do NOT trigger on a non-empty repo (that is forge-init), or for general project setup outside the forge pipeline.
+description: Scaffold a brand-new empty repository to a pipeline-ready, green baseline (structure, toolchain, passing lint+test, forge.config.json), then optionally chain into the pipeline. Use when the user runs forge-bootstrap or asks to bootstrap/scaffold a new empty project for forge. Do NOT trigger on a non-empty repo (that is forge-init), or for general project setup outside the forge pipeline.
 globs: []
 alwaysApply: false
 ---
@@ -82,8 +82,8 @@ Read `CheckResult{eligible, disqualifying[], resumeMarker}`.
   Disqualifying files found:
     - package.json
     - src/index.ts
-  To set forge up on an existing project, run:  /feature-forge:forge-init
-  Then start the pipeline with:                 /feature-forge:forge-1-prd <feature>
+  To set forge up on an existing project, run:  forge-init
+  Then start the pipeline with:                 forge-1-prd <feature>
   ```
 
 - **`resumeMarker != null` → Partial-state detected.** A `.forge-bootstrap.json` sentinel
@@ -200,7 +200,7 @@ Bootstrap complete — pipeline-ready baseline.
   Kept:         (none — README/LICENSE generated fresh)
   Verification: green  (mypy ✓   pytest ✓)
   Commit:       baseline committed (a1b2c3d)
-  Next step:    /feature-forge:forge-1-prd <feature>
+  Next step:    forge-1-prd <feature>
 ```
 
 Unverified variant:

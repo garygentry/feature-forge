@@ -11,27 +11,27 @@ The pipeline compiles a fuzzy feature idea into a machine-executable `backlog.js
    (optional)
 ```
 
-### Stage 0: Epic (`/feature-forge:forge-0-epic <epic>`), optional
+### Stage 0: Epic (`forge-0-epic <epic>`), optional
 **Input:** A change too large for one feature
 **Output:** `{specsDir}/{epic}/epic-manifest.json` + `EPIC.md` + one member-feature dir per feature
 **Method:** Decomposition interview splitting the change into member features with declared dependencies and `exposes`/`consumes` contracts. Purely additive: single-feature flows are unchanged. See [docs/architecture/epic-orchestration/README.md](../docs/architecture/epic-orchestration/README.md).
 
-### Stage 1: PRD (`/feature-forge:forge-1-prd <feature>`)
+### Stage 1: PRD (`forge-1-prd <feature>`)
 **Input:** User's feature idea and domain knowledge
 **Output:** `{specsDir}/{feature}/PRD.md`
 **Method:** Structured interview focused exclusively on requirements. No technology decisions.
 
-### Stage 2: Tech Spec (`/feature-forge:forge-2-tech <feature>`)
+### Stage 2: Tech Spec (`forge-2-tech <feature>`)
 **Input:** PRD.md
 **Output:** `{specsDir}/{feature}/tech-spec.md`
 **Method:** Structured interview for technology decisions, grounded in PRD requirements.
 
-### Stage 3: Implementation Specs (`/feature-forge:forge-3-specs <feature>`)
+### Stage 3: Implementation Specs (`forge-3-specs <feature>`)
 **Input:** PRD.md + tech-spec.md
 **Output:** `{specsDir}/{feature}/##-<name>.md` (suite of numbered documents)
 **Method:** Generate detailed implementation documents from spec archetypes.
 
-### Verification Gate (`/feature-forge:forge-verify <feature>`)
+### Verification Gate (`forge-verify <feature>`)
 **Input:** All artifacts from current and prior stages
 **Output:** `{specsDir}/{feature}/.verification/VERIFY-<stage>-<timestamp>.md` (includes both findings and a Fix Execution Plan)
 **Method:** Clean-context analysis producing actionable findings with an ordered fix plan.
@@ -47,28 +47,28 @@ also set, which chains `forge-fix` only when preconditions hold (zero unresolved
 tree, passing re-verify). See `references/shared-conventions.md` for the config keys.
 
 After verification, fixes can be applied via:
-- `/feature-forge:forge-fix <feature>` — reads the Fix Execution Plan from the findings document and applies changes (works in any session)
+- `forge-fix <feature>` — reads the Fix Execution Plan from the findings document and applies changes (works in any session)
 - Plan mode workflow — enter plan mode, run verify, review plan, exit and execute
 - Manual — read findings and apply fixes by hand
 
-### Stage 4: Backlog (`/feature-forge:forge-4-backlog <feature>`)
+### Stage 4: Backlog (`forge-4-backlog <feature>`)
 **Input:** Full spec suite
 **Output:** `{specsDir}/{feature}/backlog.json` (or `{backlogDir}/{feature}/backlog.json` if backlogDir is configured)
 **Method:** Generate structured backlog items with spec references, acceptance criteria, and dependencies. Backlog is collocated with feature specs by default.
 
-### Stage 5: Rauf Loop (`/feature-forge:forge-5-loop <feature>`)
+### Stage 5: Rauf Loop (`forge-5-loop <feature>`)
 **Input:** `backlog.json` from Stage 4
 **Output:** Implemented source code (committed per-item by rauf)
 **Method:** Execute the autonomous coding loop against the feature's backlog. Spawns a fresh session per backlog item with full spec context. rauf is the default runner but is swappable via the `loopRunner` block in `forge.config.json`; see [`references/ralph-loop-contract.md`](./ralph-loop-contract.md).
 
-### Stage 6: Documentation (`/feature-forge:forge-6-docs <feature>`)
+### Stage 6: Documentation (`forge-6-docs <feature>`)
 **Input:** Specs + implementation
 **Output:** `{docsDir}/{feature}/` documentation suite
 **Method:** Generate developer-focused architecture documentation.
 
 ## Pipeline State
 
-State is tracked in `{specsDir}/{feature}/.pipeline-state.json` and persists across session clears. The `/feature-forge:forge <feature>` navigator reads this file to show current progress.
+State is tracked in `{specsDir}/{feature}/.pipeline-state.json` and persists across session clears. The `forge <feature>` navigator reads this file to show current progress.
 
 ## Git Discipline
 

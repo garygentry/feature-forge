@@ -65,7 +65,7 @@
     "autoInvokeNextStage": {
       "type": "boolean",
       "default": true,
-      "description": "When true (default), the /feature-forge:forge navigator auto-invokes the next pipeline stage via the Skill tool after the user confirms it, instead of only printing the command to copy. Set false to keep the old copy-paste behavior (the navigator suggests the command but never launches it). Ignored on non-Claude hosts, which always fall back to printing the command."
+      "description": "When true (default), the forge navigator auto-invokes the next pipeline stage via the Skill tool after the user confirms it, instead of only printing the command to copy. Set false to keep the old copy-paste behavior (the navigator suggests the command but never launches it). Ignored on non-Claude hosts, which always fall back to printing the command."
     },
     "docsStage": {
       "type": "string",
@@ -76,7 +76,7 @@
     "autoVerify": {
       "type": "boolean",
       "default": false,
-      "description": "When true, the /feature-forge:forge navigator automatically runs forge-verify after a stage completes, with no prompt. forge-verify runs in a fresh forge-verifier subagent (clean-room), so it never needs a context clear and costs the current session only a compact findings digest. Default false preserves today's manual-gate behavior. Ignored on non-Claude hosts, which always fall back to printing the verify command. Per-stage overrides in autoVerifyStages take precedence."
+      "description": "When true, the forge navigator automatically runs forge-verify after a stage completes, with no prompt. forge-verify runs in a fresh forge-verifier subagent (clean-room), so it never needs a context clear and costs the current session only a compact findings digest. Default false preserves today's manual-gate behavior. Ignored on non-Claude hosts, which always fall back to printing the verify command. Per-stage overrides in autoVerifyStages take precedence."
     },
     "autoVerifyStages": {
       "type": "object",

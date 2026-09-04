@@ -207,22 +207,24 @@ def _surface_text(target: str) -> list[tuple[Path, str]]:
     return [(p, p.read_text(encoding="utf-8")) for p in _scan_paths(target)]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#270 (P1.1): the codex/copilot/cursor/gemini bundles carry canon's "
-        "`/feature-forge:` prefix, which names nothing on those hosts. Only Pi is "
-        "rewritten. Removing this marker is part of #270 — see also "
-        "tests/test_forge_guide_doctor.py::test_non_pi_bundles_keep_the_command_prefix, "
-        "which pins the CURRENT behavior and must be re-pointed, not deleted."
-    ),
-)
 @pytest.mark.parametrize("target", NON_CLAUDE_TARGETS)
 def test_no_claude_slash_command_prefix_in_non_claude_bundles(target: str) -> None:
-    """#265 F1. Measured, never taken from the issue body — the count tracks canon.
+    """#265 F1 / #270 P1.1 — no `/feature-forge:` on the reading surface of non-Claude bundles.
 
-    F1 recorded 234 per bundle at `fedd219`; it is 236 on the scanned surface today and
-    will keep moving with every prose phase that lands before #270.
+    Closed by #270: `_HOST_TERM_REPLACEMENTS` now includes
+    `("/feature-forge:", "")` and `_translate_support_command_strings` runs on every
+    non-Claude bundle for `.md`/`.json`, so skill bodies, frontmatter descriptions, and
+    every reference/template/schema render the bare skill name instead of a Claude
+    slash-command prefix that names nothing on these hosts. Pi is asserted separately
+    (it degrades to its real `/skill:` prefix, checked by
+    `test_pi_bundle_translates_the_command_to_its_own_prefix`).
+
+    Reading-surface only, matching `_scan_paths` — bundled `.py` helpers
+    (`forge-session.py`, `epic-manifest.py`) still carry `/feature-forge:` string
+    literals as the canonical internal form the runtime routes through `--host`, and
+    substituting them with the empty string would corrupt `str.replace(...)` /
+    `.startswith(...)` / slice-length code in those helpers. Runtime output on
+    `--host generic` for those helpers is tracked separately.
     """
     hits = [
         (path, text.count("/feature-forge:"))
@@ -377,29 +379,47 @@ def test_root_hygiene_section_present_in_every_bundle(target: str) -> None:
 @pytest.mark.parametrize("target", _ALL_TARGETS)
 @pytest.mark.parametrize("filename", _ROOT_HYGIENE_TEMPLATES)
 def test_root_hygiene_template_ships_untranslated(target: str, filename: str) -> None:
-    """The copied root-hygiene template carries no host-term degradation.
+    """The copied root-hygiene template carries no host-term degradation OTHER than
+    the per-host slash-command dispatch prefix.
 
     It is `cp`-ed verbatim into a user's repo, so a host-term substitution would ship
     degraded prose into project content. `templates/` is exempt from
     `_translate_reference_host_terms` for exactly this reason, and this asserts the
-    exemption still holds for the new subtree: byte-identical to canon everywhere.
+    exemption still holds: byte-identical to canon after the one substitution the
+    bundle-wide `_translate_support_command_strings` pass makes for each host.
 
-    Pi is the one sanctioned exception, and it is a *correct* one — the Pi pass rewrites
-    `/feature-forge:` to `/skill:` bundle-wide, and a template landing in a Pi-driven
-    project should name the command that project actually has. The assertion is
-    therefore "identical once that one substitution is undone", which is strictly
-    stronger than skipping Pi: any OTHER divergence still fails.
+    Per-host substitutes (must match `_HOST_COMMAND_PREFIX` in build-adapters.py):
+      - Pi: `/feature-forge:` → `/skill:` (Pi's real slash-command surface).
+      - codex/copilot/cursor/gemini (#270 P1.1): `/feature-forge:` → bare skill name;
+        a template landing on those hosts should not name a Claude slash-command that
+        does not exist there.
+      - Claude: verbatim.
+
+    Un-substituting the per-host form recovers canon; any OTHER divergence still fails.
     """
     rel = Path("references") / "templates" / "root-hygiene" / filename
     shipped = ADAPTERS_ROOT / target / rel
     canon = REPO_ROOT / rel
     assert shipped.is_file(), f"{target} bundle is missing {rel.as_posix()}"
     text = shipped.read_text(encoding="utf-8")
+    # Mirrors build-adapters.py::_HOST_COMMAND_PREFIX. Un-substitute the per-host
+    # form to recover canon; any OTHER divergence still fails.
     if target == "pi":
         text = text.replace("/skill:", "/feature-forge:")
+    elif target in NON_CLAUDE_TARGETS:
+        # empty-string substitution: un-substitute would re-insert everywhere. Instead
+        # translate canon FORWARD and compare, mirroring the build-adapters pass.
+        assert text == canon.read_text(encoding="utf-8").replace("/feature-forge:", ""), (
+            f"{shipped.relative_to(REPO_ROOT)} diverges from canon by more than the "
+            "expected `/feature-forge:` → bare-name substitution (#270 P1.1) — "
+            "project-content templates must ship verbatim otherwise "
+            "(build-adapters.py `_reference_translation_exempt`)"
+        )
+        return
     assert text == canon.read_text(encoding="utf-8"), (
-        f"{shipped.relative_to(REPO_ROOT)} diverges from canon — project-content "
-        "templates must ship verbatim (build-adapters.py `_reference_translation_exempt`)"
+        f"{shipped.relative_to(REPO_ROOT)} diverges from canon by more than the "
+        "expected `/feature-forge:` → per-host substitution — project-content templates "
+        "must ship verbatim otherwise (build-adapters.py `_reference_translation_exempt`)"
     )
 
 

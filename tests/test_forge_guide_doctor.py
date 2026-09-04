@@ -17,7 +17,9 @@ PROTECTS:
      1c/1d STOP text both name the command, and forge-5-loop stays inside the caps P1
      measured it against.
   6. Every generated bundle renders the command in its own host's dialect
-     (`/skill:forge-guide --doctor` on Pi, `/feature-forge:…` elsewhere).
+     (`/skill:forge-guide --doctor` on Pi, `/feature-forge:forge-guide --doctor` on
+     Claude, and the bare `forge-guide --doctor` on codex/copilot/cursor/gemini after
+     #270 dropped the Claude-only slash-command prefix).
 
 NON-GOALS:
   - Runtime behavior of the mode. Nothing here executes a skill; that is the live
@@ -402,32 +404,44 @@ BUNDLE_TARGETS: Final[tuple[str, ...]] = (
 )
 
 
+#: Per-host rendering of the repair-surface command. Claude keeps canon's
+#: `/feature-forge:` prefix; codex/copilot/cursor/gemini have no slash-command surface,
+#: so #270 (P1.1) degrades the prefix to the bare skill name (matches the emitter-body
+#: pair `("/feature-forge:", "")` in `build-adapters.py::_HOST_TERM_REPLACEMENTS`). Pi
+#: gets its own dialect and is asserted separately below
+#: (`test_pi_bundle_translates_the_command_to_its_own_prefix`).
+_BUNDLE_COMMAND: Final[dict[str, str]] = {
+    "claude": "/feature-forge:forge-guide --doctor",
+    "codex": "forge-guide --doctor",
+    "copilot": "forge-guide --doctor",
+    "cursor": "forge-guide --doctor",
+    "gemini": "forge-guide --doctor",
+}
+
+
 @pytest.mark.parametrize("target", ("claude", "codex", "copilot", "cursor", "gemini"))
 def test_non_pi_bundles_keep_the_command_prefix(target: str) -> None:
-    """Pins CURRENT behavior, which #270 is expected to change. Read this before "fixing" it.
+    """Each non-Pi bundle carries forge-guide's repair-surface command in its own dialect.
 
-    Today the host-term pass rewrites the slash-command prefix for Pi only
-    (`_PI_HOST_TERM_REPLACEMENTS`), so every other bundle ships canon's
-    `/feature-forge:` spelling. This guard asserts that, and for `claude` it is simply
-    correct.
+    #270 (P1.1) split the assertion by host: Claude keeps canon's `/feature-forge:`
+    prefix; codex/copilot/cursor/gemini degrade to the bare skill name because those
+    hosts have no slash-command surface (a `/feature-forge:` literal there names
+    nothing). What the test protects is the invariant `#270`'s comment left behind — the
+    repair surface must be reachable by SOME name on every bundle — now expressed in
+    each host's post-#270 dialect. Pi is asserted separately below.
 
-    For codex/copilot/cursor/gemini it is **not** an endorsement. #265 F1 counts those
-    literal slash commands as a defect — a command named on a host that has no such
-    prefix — and #270 (P1.1, "per-host invocation prefix") is the phase that removes them.
-    When that lands, this test fails by design.
-
-    **The fix then is to re-point it at whatever dialect #270 gives each host, not to
-    delete it.** What matters is that forge-guide's repair surface is reachable by SOME
-    name on every bundle; the prefix is #270's business, and the assertion below is only
-    the shape that question takes before #270.
+    A regression here (a bundle that reverts to canon's prefix, or drops the command
+    altogether) means either the emitter-body substitution broke or someone deleted the
+    Troubleshooting starter that names the command.
     """
-    assert COMMAND in _bundle_guide(target).read_text(encoding="utf-8"), (
-        f"the {target} forge-guide bundle no longer carries `{COMMAND}`.\n"
-        "If you are working on #270 (per-host invocation prefix) this failure is EXPECTED: "
-        "re-point this guard at that host's new dialect rather than deleting it — the "
-        "invariant is that the repair surface is reachable by some name on every bundle.\n"
-        "Otherwise the host-term pass has regressed: it should rewrite the prefix for Pi "
-        "only, leaving canon's spelling everywhere else."
+    expected = _BUNDLE_COMMAND[target]
+    text = _bundle_guide(target).read_text(encoding="utf-8")
+    assert expected in text, (
+        f"the {target} forge-guide bundle no longer carries `{expected}`.\n"
+        "Post-#270 the host-term pass renders the repair command per host — Claude keeps "
+        "the `/feature-forge:` prefix, other non-Pi hosts degrade to the bare skill name. "
+        "If you are changing that dialect, update `_BUNDLE_COMMAND` here too; the "
+        "invariant is that the repair surface is reachable by some name on every bundle."
     )
 
 

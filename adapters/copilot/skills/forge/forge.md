@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge
-description: Feature-forge pipeline navigator and status dashboard. Use when the user references the forge pipeline, asks about forge status or progress, types /feature-forge:forge, or wants to check what stage a feature is at in the forge pipeline. Do NOT use for general feature requests, project status, or tasks unrelated to the forge development pipeline.
+description: Feature-forge pipeline navigator and status dashboard. Use when the user references the forge pipeline, asks about forge status or progress, types forge, or wants to check what stage a feature is at in the forge pipeline. Do NOT use for general feature requests, project status, or tasks unrelated to the forge development pipeline.
 ---
 
 # Feature Forge — Pipeline Navigator
@@ -18,10 +18,10 @@ Read and follow `references/shared-conventions.md` for configuration reading (fe
 
 **Only if the user is asking how the pipeline works** — architecture, stage ordering, what a stage does, or "explain forge" — read `references/process-overview.md` for the details before answering. For routine status/dashboard rendering, do **not** read it.
 
-**If a feature name is provided** (e.g., `/feature-forge:forge auth`):
+**If a feature name is provided** (e.g., `forge auth`):
 - **First test whether the name is an epic:** if `{specsDir}/{name}/epic-manifest.json` exists, render the **Epic Dashboard** (see format below) and stop — do not treat it as a feature.
 - Otherwise, resolve the name via the **Feature Directory Resolution** block in `references/shared-conventions.md` (so a nested epic-member name finds its dashboard too). On a resolution failure (`not-found` / `ambiguous` at exit 1; `unsafe-name` or a path-containment escape at exit 2), surface it verbatim.
-  - On `not-found`, first run the cross-branch discovery step from that same Feature Directory Resolution block (`forge-session.py discover-feature` — the state may live on a topic branch or an unfetched remote branch). Candidates → offer switch / fetch+switch per that block (explicit accept + clean tree only), then re-resolve and render the dashboard. Only when discovery also returns nothing, ask: "No pipeline exists for '{feature}' on any branch. Want to start one? Run `/feature-forge:forge-1-prd {feature}` to begin." Never render a dashboard from memory of earlier sessions (anti-fabrication guard).
+  - On `not-found`, first run the cross-branch discovery step from that same Feature Directory Resolution block (`forge-session.py discover-feature` — the state may live on a topic branch or an unfetched remote branch). Candidates → offer switch / fetch+switch per that block (explicit accept + clean tree only), then re-resolve and render the dashboard. Only when discovery also returns nothing, ask: "No pipeline exists for '{feature}' on any branch. Want to start one? Run `forge-1-prd {feature}` to begin." Never render a dashboard from memory of earlier sessions (anti-fabrication guard).
 - If resolution succeeds, display the per-feature pipeline status dashboard (see format below) from `{resolvedFeatureDir}/`.
 
 **If no feature name is provided:** list in two tiers.
@@ -43,7 +43,7 @@ python3 "$R/scripts/forge-session.py" rank-features --specs-dir "{specsDir}" --j
      This returns `{active: [...], counts: {...}}` with active features sorted by `updatedAt` **descending** (row 0 is the most recent). Each row carries `currentStage`, `nextStage`, `nextCommand`, `verifyPending`, `verifyCommand`, `verifyStage`, `verifyState` (`fresh`/`stale`/`failing`/`never`/`auto-pending`/`none` — `auto-pending` means automatic verification was **scheduled and recorded on disk but has not run yet**: verification is *owed*, never "never verified", and never resolved), `autoVerify` (the effective per-stage setting), `autoFix` (the single source of stage order), and `verifyGate` (`none`/`auto`/`standard` — the single resolved verify-gate, computed once by the ranker; read it rather than re-deriving from `verifyPending`+`autoVerify`). A top-level `invalidAutoVerifyKeys` array appears when `forge.config.json` has `autoVerifyStages` keys outside the five verify-capable stages — surface it as a one-line warning. The `active` list excludes nested epic members surfaced in Tier 1 — but the ranker scans them too, so ignore rows whose `epic` is non-null here (they belong to the epic rollup).
    - **Pick the feature:** if exactly one active standalone pipeline exists, show its dashboard. If multiple exist, use the host's question mechanism — **list the most-recently-updated first, labeled `(recommended)`**, each option's description showing its `currentStage` and a relative age ("updated 2h ago"). Always include a free-form escape ("A different feature / something else") so the user is never boxed in. Then render the chosen feature's dashboard.
 
-If no epics and no standalone features exist **on the current branch**, do not conclude the pipeline is empty yet — the state may live on topic branches (a fresh clone / default-branch session sees nothing on disk). Run `discover-feature --all` (via the standard prelude: `python3 "$R/scripts/forge-session.py" discover-feature --all --specs-dir "{specsDir}" --json`). If it surfaces features, list them with their branches and offer to switch (explicit accept + clean tree only, per the Feature Directory Resolution block), then render that feature's dashboard. Only when `--all` also returns nothing, say: "No active feature pipelines found. Start one with `/feature-forge:forge-1-prd <feature-name>` or group several with `/feature-forge:forge-0-epic <epic-name>`." Never fabricate a dashboard from memory of earlier sessions.
+If no epics and no standalone features exist **on the current branch**, do not conclude the pipeline is empty yet — the state may live on topic branches (a fresh clone / default-branch session sees nothing on disk). Run `discover-feature --all` (via the standard prelude: `python3 "$R/scripts/forge-session.py" discover-feature --all --specs-dir "{specsDir}" --json`). If it surfaces features, list them with their branches and offer to switch (explicit accept + clean tree only, per the Feature Directory Resolution block), then render that feature's dashboard. Only when `--all` also returns nothing, say: "No active feature pipelines found. Start one with `forge-1-prd <feature-name>` or group several with `forge-0-epic <epic-name>`." Never fabricate a dashboard from memory of earlier sessions.
 
 The feature name must be a single kebab-case token. If the user provides multiple words (e.g., "user auth flow"), convert to kebab-case: `user-auth-flow`.
 
@@ -66,8 +66,8 @@ Stage: {currentStage} ({status}, started {relative time})
 ⬜ forge-5-loop
 ⬜ forge-6-docs
 
-Next: Continue with /feature-forge:forge-3-specs {feature}
-      Or verify tech-spec with /feature-forge:forge-verify {feature}
+Next: Continue with forge-3-specs {feature}
+      Or verify tech-spec with forge-verify {feature}
 
 Notes: "{any persisted notes}"
 ```
@@ -96,8 +96,8 @@ After rendering a **per-feature** dashboard for an **active** pipeline (skip thi
 - **Epic member** (this feature's `rank-features` row has a non-null `epic`, i.e. its `.pipeline-state.json` carries an `epic` back-pointer): run `epic-manifest.py render-status "{epic}" --specs-dir "{specsDir}" --json` (standard prelude; you likely already have this from the Tier-1 epic rollup — reuse it rather than re-running). Then:
   - If `actionable` is non-empty, offer the next member via the host's question mechanism: *"Epic '{epic}' has {total−complete} feature(s) left — next up: **{actionable[0].name}** (`{actionable[0].nextCommand}`). Start it now?"* On accept, drive it exactly like a normal next stage (honor `autoInvokeNextStage` + `Skill`-tool availability per step 3's Continue-in-this-session rule; else print `{nextCommand}`). List any remaining `actionable` members as also-available.
   - If `actionable` is empty but the epic is **not** fully complete (members blocked on unmet `dependsOn`), say so and point at the blockers rather than offering a start.
-  - If the epic is **fully complete** (`rollup.complete == rollup.total`, `total > 0`), congratulate on the whole epic. Offer the epic-level architecture doc **only when every member row's `docsStatus` is `complete` or `skipped`** (#173 — the orchestration rollup counts loop-completeness, so it reads full before any docs exist; a `skipped` docs stage satisfies by decision, #197). When some members' docs are still unwritten, point at the next docs run (`/feature-forge:forge-6-docs {member}`) instead of the epic doc. Either way, mention the epic can be marked complete (`/feature-forge:forge {epic}` renders the finished dashboard).
-- **Standalone** (row's `epic` is null): offer to start a fresh feature — *"Start a new feature: `/feature-forge:forge-1-prd <feature-name>` (or group several with `/feature-forge:forge-0-epic <epic-name>`)."* Then, from the `rank-features` `active` list, surface any **other** active pipelines (exclude this just-completed one) as a one-line list with their `nextCommand`s so the user can jump straight back into in-flight work. If the **detached-epic hint above fired** for this feature, lead with that recovery path (`docs/recovery-detached-epic-member.md`) — the split-brain reconcile is the more likely next action than starting something new.
+  - If the epic is **fully complete** (`rollup.complete == rollup.total`, `total > 0`), congratulate on the whole epic. Offer the epic-level architecture doc **only when every member row's `docsStatus` is `complete` or `skipped`** (#173 — the orchestration rollup counts loop-completeness, so it reads full before any docs exist; a `skipped` docs stage satisfies by decision, #197). When some members' docs are still unwritten, point at the next docs run (`forge-6-docs {member}`) instead of the epic doc. Either way, mention the epic can be marked complete (`forge {epic}` renders the finished dashboard).
+- **Standalone** (row's `epic` is null): offer to start a fresh feature — *"Start a new feature: `forge-1-prd <feature-name>` (or group several with `forge-0-epic <epic-name>`)."* Then, from the `rank-features` `active` list, surface any **other** active pipelines (exclude this just-completed one) as a one-line list with their `nextCommand`s so the user can jump straight back into in-flight work. If the **detached-epic hint above fired** for this feature, lead with that recovery path (`docs/recovery-detached-epic-member.md`) — the split-brain reconcile is the more likely next action than starting something new.
 
 **2. Check the context window.** Run the context-usage helper so you can advise whether to continue here or start the next stage in a fresh session:
 ```bash
@@ -119,7 +119,7 @@ python3 "$R/scripts/forge-session.py" context-usage --json
 - **`autoVerify` is false/unconfigured** → do not auto-run; use the advance gate in step 3, which gains the folded opt-in verify options ("Verify `{stage}` now" and "Verify `{stage}` now + enable auto-verify going forward").
 
 **3. Offer the next step via the host's question mechanism.** (Reached when auto-verify did not fully resolve the step, or `verifyPending` is false.) Output the dashboard + a one-line context note as text, then ask (per the Decision Support protocol in `references/shared-conventions.md`). **Present this gate exactly once and act only on the option the user chooses — never also narrate the not-taken branch.** Concretely: do not print the "start in a clean session" recommendation as prose and *then* auto-invoke the next stage in the same session (or the reverse) — the host's question mechanism answer is the single decision, and only the chosen path's action follows. This is the same **Stage Exit Protocol** the stage skills stamp (`references/stage-exit-protocol.md`) — a clean session at the boundary is recommended on its own merits, and `overThreshold` only modulates *how emphatically*, never *whether*. Options, in this order:
-- **Start `{nextStage}` in a clean session** — **recommended, unconditionally**, at every boundary. A clean session is the right default for the next stage on its own merits, independent of window size. The work survives a clear because all state is on disk: instruct the user to clear your session / start a fresh session, then re-run `/feature-forge:forge {feature}` (or run `{nextCommand}` directly) in the fresh session. Note plainly that you cannot clear your session / start a fresh session for them. **When `overThreshold` is true**, strengthen this wording (the window is also genuinely full) and add mid-stage compaction advice; **when the window is healthy**, still recommend the clean session — `overThreshold` is a *secondary, additive* modifier here, not the clear on/off switch.
+- **Start `{nextStage}` in a clean session** — **recommended, unconditionally**, at every boundary. A clean session is the right default for the next stage on its own merits, independent of window size. The work survives a clear because all state is on disk: instruct the user to clear your session / start a fresh session, then re-run `forge {feature}` (or run `{nextCommand}` directly) in the fresh session. Note plainly that you cannot clear your session / start a fresh session for them. **When `overThreshold` is true**, strengthen this wording (the window is also genuinely full) and add mid-stage compaction advice; **when the window is healthy**, still recommend the clean session — `overThreshold` is a *secondary, additive* modifier here, not the clear on/off switch.
 - **Continue in this session** — the always-available alternative, reasonable when the window is nearly empty and the user would rather not clear. Not the default.
 - **Verify `{stage}` now** — include **only when `verifyPending` is true and `autoVerify` is false**, and the clean-room path is available. **Recommended**, since verify is clean-room and rarely worth skipping. Runs verify now (require-clean mode); **does not** change config.
 - **Verify `{stage}` now + enable auto-verify going forward** — same trigger as the option above; runs verify now **and** patches `autoVerify: true` into `forge.config.json` in place (preserve formatting and other keys) so every future stage verifies automatically without prompting. This is the **folded** config-enable — it replaces the old post-hoc "make auto-verify the default?" follow-up. No silent config writes: the config changes **only** when the user picks this option.
@@ -134,7 +134,7 @@ python3 "$R/scripts/forge-session.py" context-usage --json
 
 **Host fallback.** On a non-Claude host or when the host's skill-invocation and subagent mechanisms are unavailable, auto-verify never runs unattended — fall back to printing `{verifyCommand}` exactly as today, mirroring `autoInvokeNextStage`.
 
-This applies whether the feature was named explicitly (`/feature-forge:forge {feature}`) or resolved from the recency default.
+This applies whether the feature was named explicitly (`forge {feature}`) or resolved from the recency default.
 
 ### Epic Dashboard
 
@@ -151,7 +151,7 @@ and render from its output:
 - **Epic header:** name + `status` (active | paused | abandoned | complete).
 - **Dependency graph:** each feature with its `dependsOn`, as an arrow list or indented tree (the helper guarantees the graph is acyclic).
 - **Per-feature rows:** reuse the **existing status indicators** below (✅/✅⚠️/🔄/⬜/❌/✅🔍/⏭️/⚠️/⏳), driven by each feature's derived `stage`/`status`. Mark `blocked` features and list their `unmetDeps`. `render-status --json` also emits an owed-automatic-verification obligation in its `warnings` array for any member carrying that debt — surface those lines verbatim rather than restating them, and mark those members ⏳, never ⬜.
-- **Pending epic changes:** for any feature with `openEpicChangeRequests > 0`, append a ⚠️ marker and a hint: *"N pending epic change(s) — run `/feature-forge:forge-0-epic {epic}` to reconcile."* If `blockingEpicChangeRequests > 0`, use a stronger marker (⚠️ **blocking**) and word it *"reconcile the epic **before** writing specs"* — this mirrors the pause-now vs finish-then split that stage-exit already routes on. Take these counts **only** from `render-status --json` (`features[].openEpicChangeRequests` / `.blockingEpicChangeRequests`); do not read member `.pipeline-state.json` directly for them.
+- **Pending epic changes:** for any feature with `openEpicChangeRequests > 0`, append a ⚠️ marker and a hint: *"N pending epic change(s) — run `forge-0-epic {epic}` to reconcile."* If `blockingEpicChangeRequests > 0`, use a stronger marker (⚠️ **blocking**) and word it *"reconcile the epic **before** writing specs"* — this mirrors the pause-now vs finish-then split that stage-exit already routes on. Take these counts **only** from `render-status --json` (`features[].openEpicChangeRequests` / `.blockingEpicChangeRequests`); do not read member `.pipeline-state.json` directly for them.
 - **Actionable vs blocked:** list the `actionable` set and the recommended `nextCommand`.
 - **Rollup:** `{complete}/{total} features complete`.
 
@@ -172,8 +172,8 @@ Dependency graph:
 ✅ audit-log        complete
 
 Actionable now: token-service
-Next: /feature-forge:forge-3-specs token-service
-⚠️ Pending epic changes: token-service (1). Run /feature-forge:forge-0-epic auth-overhaul to reconcile.
+Next: forge-3-specs token-service
+⚠️ Pending epic changes: token-service (1). Run forge-0-epic auth-overhaul to reconcile.
 ```
 
 All of this is reconstructed **purely from disk** — the manifest plus each member's `.pipeline-state.json`, with no in-memory state — so a fresh session renders the same dashboard. If `render-status` fails, do not render a partial dashboard; surface per the exit-1/exit-2 split in the **Feature Directory Resolution** block of `references/shared-conventions.md` (exit 1 → parse `{findings[]}` from stdout; exit 2 → surface the plain `Error:` stderr line verbatim).
@@ -194,13 +194,13 @@ When showing the dashboard, include a compact reference:
 
 ```
 Commands:
-  /feature-forge:forge-1-prd <feature>      Create requirements document
-  /feature-forge:forge-2-tech <feature>     Create technical spec
-  /feature-forge:forge-3-specs <feature>    Create implementation specs
-  /feature-forge:forge-4-backlog <feature>  Generate rauf backlog
-  /feature-forge:forge-5-loop <feature>  Run rauf autonomous loop
-  /feature-forge:forge-6-docs <feature>     Generate architecture docs
-  /feature-forge:forge-verify <feature>     Run verification on current stage
+  forge-1-prd <feature>      Create requirements document
+  forge-2-tech <feature>     Create technical spec
+  forge-3-specs <feature>    Create implementation specs
+  forge-4-backlog <feature>  Generate rauf backlog
+  forge-5-loop <feature>  Run rauf autonomous loop
+  forge-6-docs <feature>     Generate architecture docs
+  forge-verify <feature>     Run verification on current stage
 ```
 
 ### 6. Pipeline Lifecycle Commands
@@ -208,10 +208,10 @@ Commands:
 > **Deliberate R4 exclusion.** The `pipelineStatus` writes below (`pause` / `resume` / `abandon`, and the member-pause under **Epic lifecycle**) stay hand-authored on purpose: the `state-*` verbs cover the seven stage and array touch points, and none of them writes `pipelineStatus`. These are the sanctioned exception to the Pipeline State Protocol in `references/shared-conventions.md` — everywhere else, state is written by a verb, never by hand. When authoring one of these `pipelineStatus` writes, conform to `references/pipeline-state-schema.json` — this is the one navigator path that still reads it.
 
 Support these sub-commands for pipeline lifecycle management:
-- `/feature-forge:forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
-- `/feature-forge:forge resume {feature}` — Set `pipelineStatus` back to `"active"`. Calculate how long the feature was paused (from `updatedAt` to now). If paused for more than 24 hours, show a hint: "This feature was paused for {duration}. Session context may have been lost — consider re-running `/feature-forge:forge-{currentStage} {feature}` to rebuild context."
-- `/feature-forge:forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Use the host's question mechanism to confirm first, and state what's reversible: abandoning does not delete artifacts and can be undone with `/feature-forge:forge resume {feature}`, so the cost is low — but if the user really means "stop and discard," point out that `pause` is the better choice when they're only setting it aside. Offer **Abandon** · **Pause instead** · **Cancel**.
-- `/feature-forge:forge run [{feature}]` — **Opt-in auto-advance.** Drive the feature through consecutive stages in one session instead of confirming each boundary. This is a convenience wrapper over **3b. Drive to the Next Stage** — same stage order, same context gate — just looped:
+- `forge pause {feature}` — Set `pipelineStatus` to `"paused"`. Do NOT modify `currentStage` or any stage statuses. The pipeline freezes exactly as-is. Show a confirmation.
+- `forge resume {feature}` — Set `pipelineStatus` back to `"active"`. Calculate how long the feature was paused (from `updatedAt` to now). If paused for more than 24 hours, show a hint: "This feature was paused for {duration}. Session context may have been lost — consider re-running `forge-{currentStage} {feature}` to rebuild context."
+- `forge abandon {feature}` — Set `pipelineStatus` to `"abandoned"`. Use the host's question mechanism to confirm first, and state what's reversible: abandoning does not delete artifacts and can be undone with `forge resume {feature}`, so the cost is low — but if the user really means "stop and discard," point out that `pause` is the better choice when they're only setting it aside. Offer **Abandon** · **Pause instead** · **Cancel**.
+- `forge run [{feature}]` — **Opt-in auto-advance.** Drive the feature through consecutive stages in one session instead of confirming each boundary. This is a convenience wrapper over **3b. Drive to the Next Stage** — same stage order, same context gate — just looped:
   1. Resolve the feature (if omitted, use the recency default from `rank-features`; if multiple are equally plausible, ask once via the host's question mechanism).
   2. **Before each stage,** run `forge-session.py context-usage`. If `overThreshold` is true, **stop** and recommend a clean session (give the exact `{nextCommand}` and the session clear-then-re-run instruction) — never auto-clear your session / start a fresh session.
   3. Otherwise invoke the next stage's skill via the host's skill-invocation mechanism as a **delegate-and-resume** invocation, declaring the resume point at the invocation (see "Caller-side resumption: the declared resume point" in `references/stage-exit-protocol.md`): when the stage skill returns, control returns to **this loop, at step 2**, in the same turn — re-read state and continue. The invoked stage's own closing posture never ends the `run` loop.
@@ -230,7 +230,7 @@ python3 "$R/scripts/epic-manifest.py" set-status "{epic}" --status paused --spec
 - **Member feature states are NOT silently mutated.** Pausing/abandoning the epic changes only the manifest `status`. Before doing so, use the host's question mechanism to make the relationship explicit and frame the trade-off: "Pausing the epic does not pause its in-flight member features. {N} members are active. Pause the epic only, or also pause each member?" Recommend **epic only** when members are mid-stage and the user just wants to stop *new* orchestration; recommend **also pause members** when the intent is a hard freeze of all in-flight work. If the user opts to pause members too, update each member's own `pipelineStatus` **individually and visibly** (one explicit action per member), never as a hidden side-effect.
 - Commit the change via the Git Commit Protocol, staging `{specsDir}/{epic}/`.
 
-When listing features, show active pipelines by default. Include a count of paused/abandoned: "3 active pipelines (1 paused, 1 abandoned — use `/feature-forge:forge list all` to see them)."
+When listing features, show active pipelines by default. Include a count of paused/abandoned: "3 active pipelines (1 paused, 1 abandoned — use `forge list all` to see them)."
 
 ## Gotchas
 

@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-3-specs/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-3-specs
-description: Generate numbered implementation spec documents from PRD and tech spec in the forge pipeline. Use when user runs /feature-forge:forge-3-specs or asks to create detailed implementation specs for a forge feature after tech spec completion. Do NOT trigger for general specification writing, design docs, or implementation planning outside the forge pipeline.
+description: Generate numbered implementation spec documents from PRD and tech spec in the forge pipeline. Use when user runs forge-3-specs or asks to create detailed implementation specs for a forge feature after tech spec completion. Do NOT trigger for general specification writing, design docs, or implementation planning outside the forge pipeline.
 ---
 
 # forge-3-specs — Implementation Spec Suite Generator
