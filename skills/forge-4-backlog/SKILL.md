@@ -37,7 +37,7 @@ R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-
 python3 "$R/scripts/forge-session.py" effective-config --config ./forge.config.json --json
 ```
 
-**Turn structure reminder:** Text first, then `AskUserQuestion` for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
+**Turn structure reminder:** Text first, then {{ASK_TOOL}} for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Validate Prerequisites
 
@@ -51,7 +51,7 @@ After the prerequisite check, invoke the **Stage-Entry Guard** block in `referen
 
 Then invoke the **Epic-Member Base Guard** block in `references/shared-conventions.md` (this stage does not run Epic Context Injection, so invoke it explicitly here). It self-gates to a no-op for standalone features; for a nested epic member on a branch that lacks the epic manifest it stops with a home-branch pointer (Issue #125).
 
-**Verification check.** Check whether the specs have been verified. If not, use `AskUserQuestion` to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
+**Verification check.** Check whether the specs have been verified. If not, use {{ASK_TOOL}} to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `/feature-forge:forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
 
 ## Step 2: Load All Specs
 
@@ -80,7 +80,7 @@ Proposed backlog for {feature} ({N} items):
   ...
 ```
 
-After presenting the plan as text, use `AskUserQuestion` following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this breakdown as the default (it's your evidence-backed read of the specs and dependency order) and name the trade-off that governs item granularity — finer items are each easier to verify in one loop iteration but multiply coordination and dependency edges; coarser items mean fewer handoffs but risk an item too big to complete or verify in a single iteration. Lead with: "I recommend this breakdown. Any items to split, merge, or reorder?" Do NOT include this question in your text output. Wait for the user's response before generating the JSON.
+After presenting the plan as text, use {{ASK_TOOL}} following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this breakdown as the default (it's your evidence-backed read of the specs and dependency order) and name the trade-off that governs item granularity — finer items are each easier to verify in one loop iteration but multiply coordination and dependency edges; coarser items mean fewer handoffs but risk an item too big to complete or verify in a single iteration. Lead with: "I recommend this breakdown. Any items to split, merge, or reorder?" Do NOT include this question in your text output. Wait for the user's response before generating the JSON.
 
 ## Step 4: Author backlog.json — delegate to `author-backlog`
 
@@ -213,7 +213,7 @@ python3 "$R/scripts/forge-session.py" state-verify \
 
 If that verb exits 2, surface its plain `Error:` line verbatim and stop — the skip is not persisted, so the exit below would route on state that does not exist on disk.
 
-**Determine `--verify-capability` before running the exit** (full rule: `references/stage-exit-protocol.md`; summary: **Verify Capability** in `references/shared-conventions.md`). Pass `interactive` only when a question mechanism equivalent to `AskUserQuestion` is available **and** a clean-room `forge-verifier` may be dispatched; otherwise pass `manual`. Dispatch capability means **permitted** dispatch, not a listed tool — the test is "may I dispatch `forge-verifier` right now", not "is a dispatch tool in my tool surface". A session that bars *unsolicited* dispatch while offering a question mechanism is therefore **`interactive`, not `manual`**: the gate's affirmative choice is the user request that authorizes the dispatch. Such a bar is never grounds to skip verification, and never grounds to fence the production successor while verification is unresolved — on the `runInStageVerify: true` path the emitted `verifyGate` stays `none`, so reuse the Standard Verify Gate block for consent with **choice 2 omitted**, leaving exactly two choices: *Verify now* (recommended) and *Skip for now*. The clean-room `forge-verifier` is **dispatched on the affirmative choice**, never merely printed for the user to run later; *Skip for now* is persisted as an explicit `skipped` before any advancing block. Add `--epic "{epic}"` to the call below when this feature is an epic member.
+**Determine `--verify-capability` before running the exit** (full rule: `references/stage-exit-protocol.md`; summary: **Verify Capability** in `references/shared-conventions.md`). Pass `interactive` only when a question mechanism equivalent to {{ASK_TOOL}} is available **and** a clean-room `forge-verifier` may be dispatched; otherwise pass `manual`. Dispatch capability means **permitted** dispatch, not a listed tool — the test is "may I dispatch `forge-verifier` right now", not "is a dispatch tool in my tool surface". A session that bars *unsolicited* dispatch while offering a question mechanism is therefore **`interactive`, not `manual`**: the gate's affirmative choice is the user request that authorizes the dispatch. Such a bar is never grounds to skip verification, and never grounds to fence the production successor while verification is unresolved — on the `runInStageVerify: true` path the emitted `verifyGate` stays `none`, so reuse the Standard Verify Gate block for consent with **choice 2 omitted**, leaving exactly two choices: *Verify now* (recommended) and *Skip for now*. The clean-room `forge-verifier` is **dispatched on the affirmative choice**, never merely printed for the user to run later; *Skip for now* is persisted as an explicit `skipped` before any advancing block. Add `--epic "{epic}"` to the call below when this feature is an epic member.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 

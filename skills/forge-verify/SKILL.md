@@ -13,12 +13,12 @@ Analyze feature artifacts for completeness, consistency, and quality. Produce st
 
 This skill is loaded in two different roles. Determine yours before proceeding:
 
-- **You ARE the `forge-verifier` subagent** — you were dispatched via the Agent tool, you have read-only tools (Read, Glob, Grep, Bash) and **no** Agent/Task tool, and this skill is pre-loaded in your context. **SKIP "Subagent Delegation (parent orchestrator only)" and "Synthesize" below — those describe how a *parent* dispatches *you*, not work for you to do.** Do **not** dispatch anything, do **not** try to spawn a verifier. Go straight to **Prerequisites → Steps 1–6**, execute the checks yourself, and **return your findings as your response** (the parent writes the document to disk). Dispatching a subagent from here is the classic self-referential loop — never do it.
-- **You are the parent orchestrator** — a navigator (`/feature-forge:forge`), a stage skill's in-stage auto-verify, or a direct `/feature-forge:forge-verify` invocation, and you have the Agent tool. Use "Subagent Delegation" to dispatch the `forge-verifier` subagent, then "Synthesize" to assemble and write the document.
+- **You ARE the `forge-verifier` subagent** — you were dispatched via the {{AGENT_TOOL}}, you have read-only tools (Read, Glob, Grep, Bash) and **no** Agent/{{AGENT_TOOL}}, and this skill is pre-loaded in your context. **SKIP "Subagent Delegation (parent orchestrator only)" and "Synthesize" below — those describe how a *parent* dispatches *you*, not work for you to do.** Do **not** dispatch anything, do **not** try to spawn a verifier. Go straight to **Prerequisites → Steps 1–6**, execute the checks yourself, and **return your findings as your response** (the parent writes the document to disk). Dispatching a subagent from here is the classic self-referential loop — never do it.
+- **You are the parent orchestrator** — a navigator (`/feature-forge:forge`), a stage skill's in-stage auto-verify, or a direct `/feature-forge:forge-verify` invocation, and you have the {{AGENT_TOOL}}. Use "Subagent Delegation" to dispatch the `forge-verifier` subagent, then "Synthesize" to assemble and write the document.
 
 ## Subagent Delegation (parent orchestrator only)
 
-This skill is delegated to the `forge-verifier` subagent via the Agent tool. The verifier subagent has:
+This skill is delegated to the `forge-verifier` subagent via the {{AGENT_TOOL}}. The verifier subagent has:
 - **Read-only tools** (Read, Glob, Grep, Bash) — it cannot accidentally modify specs
 - **Persistent memory** — it accumulates knowledge about this project's recurring issues and patterns across sessions
 - **The forge-verify skill pre-loaded** — so it has all verification checklists and guidance at startup
@@ -27,7 +27,7 @@ This skill is delegated to the `forge-verifier` subagent via the Agent tool. The
 
 Pick based on how many checks the mode carries (see the per-mode totals in Step 3):
 
-- **Small modes (prd 15, tech 17): single verifier.** Use the Agent tool once with
+- **Small modes (prd 15, tech 17): single verifier.** Use the {{AGENT_TOOL}} once with
   `subagent_type="forge-verifier"`, passing the feature name and mode. It runs all
   checks and returns findings.
 - **Large modes (specs 39, backlog 29, impl 25): parallel dimensioned fan-out.**
@@ -92,7 +92,7 @@ subagent inherits none of the dispatching session's context. Running inline woul
 that — it would consume the dispatching session's context and invalidate the no-clear
 justification.
 
-So in require-clean mode, **do NOT fall back to inline execution**. If the `Agent` tool
+So in require-clean mode, **do NOT fall back to inline execution**. If the {{AGENT_TOOL}}
 or `forge-verifier` subagent is not dispatchable, return a **sentinel** instead of doing
 any work:
 
@@ -112,7 +112,7 @@ Resolve the feature directory via the **Feature Directory Resolution** block in 
 
 Determine branch ownership **at entry**, from the literal `owner: nested` / `owner: direct` token in the dispatching prompt (absent the token you are `direct`), and preserve that value unchanged through any re-verify — see Step 7, which passes it through as `--owner`.
 
-**Turn structure reminder:** Text first, then `AskUserQuestion` for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
+**Turn structure reminder:** Text first, then {{ASK_TOOL}} for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Read Configuration and Determine Mode
 
@@ -131,7 +131,7 @@ Otherwise, if a stage is specified as a second argument (e.g., `/feature-forge:f
 - **backlog mode**: If `forge-4-backlog` is complete but `forge-verify-backlog` is not `passed` or `findings-applied`
 - **impl mode**: If user explicitly requests or if implementation code exists for this feature
 
-If ambiguous, use `AskUserQuestion` to ask which stage to verify — **before any write**. Serialize the resolved mode as `--verify-mode` at Step 7: that mode, never conversational context and never `currentStage`, determines the served production stage.
+If ambiguous, use {{ASK_TOOL}} to ask which stage to verify — **before any write**. Serialize the resolved mode as `--verify-mode` at Step 7: that mode, never conversational context and never `currentStage`, determines the served production stage.
 
 ## Step 2: Load All Relevant Artifacts
 
@@ -170,7 +170,7 @@ Read `references/verification-checklists/{mode}.md` for the detailed checklist f
 
 Each check in that mode checklist has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: 15 checks, tech: 17 checks, specs: 39 checks, backlog: 29 checks, impl: 25 checks, epic: 10 checks), you likely skipped checks — go back and complete them.
 
-**Epic mode dispatch.** Epic mode is a small (10-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the Agent tool, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E10 from the `## Epic Mode Checklist` in `references/verification-checklists/epic.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07, E09, and E10 are verifier judgment) and returns its findings.
+**Epic mode dispatch.** Epic mode is a small (10-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the {{AGENT_TOOL}}, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E10 from the `## Epic Mode Checklist` in `references/verification-checklists/epic.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07, E09, and E10 are verifier judgment) and returns its findings.
 
 ### Important: Be Specific, Not General
 
@@ -219,7 +219,7 @@ When building the Fix Execution Plan:
 **If not in plan mode:** Output the following as text:
 "Findings and fix plan written to `{findings-file}`."
 
-**Advisory-only reports skip the question.** When the report contains no blocking finding (`error`/`gap`), there is nothing to route to forge-fix: do not present the fix options below — state that the report is advisory-only, record `passed` with the report attached (Step 6), and continue; the advisories stay discoverable in the findings document for whoever next touches the artifact. Otherwise (at least one blocking finding), use `AskUserQuestion` to ask how to proceed — **unless this report closes the SECOND consecutive `reverify-findings` for this served stage** (count the round-discriminated reports in `.verification/`), in which case follow "Escalation (the round ledger)" in `references/stage-exit-protocol.md` instead: present the digest and recommend explicit acceptance of the residual findings, never another fix pass. Otherwise follow the **Decision Support** protocol in `references/shared-conventions.md`: recommend a path based on the findings and give each option a one-line trade-off. Let the severity and volume of findings drive the recommendation — e.g. recommend (b) **Apply fixes now** when findings are clear-cut and mechanical; recommend (a) **Review first** when findings involve design judgment or you flagged low-confidence items; recommend (c) **plan-mode workflow** when the fixes are large or interdependent enough to warrant a reviewed plan. Present:
+**Advisory-only reports skip the question.** When the report contains no blocking finding (`error`/`gap`), there is nothing to route to forge-fix: do not present the fix options below — state that the report is advisory-only, record `passed` with the report attached (Step 6), and continue; the advisories stay discoverable in the findings document for whoever next touches the artifact. Otherwise (at least one blocking finding), use {{ASK_TOOL}} to ask how to proceed — **unless this report closes the SECOND consecutive `reverify-findings` for this served stage** (count the round-discriminated reports in `.verification/`), in which case follow "Escalation (the round ledger)" in `references/stage-exit-protocol.md` instead: present the digest and recommend explicit acceptance of the residual findings, never another fix pass. Otherwise follow the **Decision Support** protocol in `references/shared-conventions.md`: recommend a path based on the findings and give each option a one-line trade-off. Let the severity and volume of findings drive the recommendation — e.g. recommend (b) **Apply fixes now** when findings are clear-cut and mechanical; recommend (a) **Review first** when findings involve design judgment or you flagged low-confidence items; recommend (c) **plan-mode workflow** when the fixes are large or interdependent enough to warrant a reviewed plan. Present:
 - **(a) Review the findings first** — read `{findings-file}` and decide per-finding; safest, but you act on nothing until you return.
 - **(b) Run `/feature-forge:forge-fix {feature} --served-stage {servedStage}` now** — applies the fix plan immediately; fastest, best when findings are unambiguous.
 - **(c) Enter plan mode and re-run `/feature-forge:forge-verify {feature}`** — produces a reviewable plan before any edits; best for large or risky fix sets.
@@ -263,7 +263,7 @@ Epic mode is **epic-scoped**, not per-feature: `--stage forge-0-epic` writes `{s
 
 **Served stage.** Pass `--verify-mode` carrying Step 1's explicit or auto-detected mode (`epic`, `prd`, `tech`, `specs`, `backlog`, `impl`); the script maps it to the served production stage. When the caller already owns a stage and states it, additionally pass that value as `--served-stage` — if the two disagree the script fails closed rather than guessing. Derive the served stage **only** from that mode argument or from authoritative pipeline state: conversational context and `currentStage` are never valid inference sources.
 
-**Capability.** Pass `--verify-capability interactive` only when **both** a question mechanism equivalent to `AskUserQuestion` is available **and** a clean-room `forge-verifier` may actually be dispatched right now. Clause (b) tests **permitted dispatch, not a listed tool**: a session that may dispatch only when the user asked, but does have a question mechanism, is `interactive` — the gate's affirmative choice supplies the request. Reserve `manual` for **no** question mechanism **and** **no** permitted dispatch. An auto-verify directive under a no-unsolicited-dispatch bar is presented through the gate and dispatched on the affirmative choice — never skipped, and never resolved by advancing to the production successor.
+**Capability.** Pass `--verify-capability interactive` only when **both** a question mechanism equivalent to {{ASK_TOOL}} is available **and** a clean-room `forge-verifier` may actually be dispatched right now. Clause (b) tests **permitted dispatch, not a listed tool**: a session that may dispatch only when the user asked, but does have a question mechanism, is `interactive` — the gate's affirmative choice supplies the request. Reserve `manual` for **no** question mechanism **and** **no** permitted dispatch. An auto-verify directive under a no-unsolicited-dispatch bar is presented through the gate and dispatched on the affirmative choice — never skipped, and never resolved by advancing to the production successor.
 
 **Outcome.** Invoke the exit **exactly once**, with the `--outcome` this run's result maps to:
 

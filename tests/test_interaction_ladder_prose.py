@@ -142,11 +142,16 @@ def _computed_roster() -> list[Path]:
     Computed, not hardcoded (unlike `test_capability_determination_prose.py`'s imported
     `CANONICAL_EXIT_SITES`) — a new prompting site is caught by construction rather than
     requiring a roster edit to be remembered alongside it.
+
+    A prompting site is a mention of either the placeholder ``{{ASK_TOOL}}`` (canon's
+    normalized form since #271 P1.2) OR the literal ``AskUserQuestion`` (for any legacy
+    canon that has not yet migrated). The placeholder resolves per host at build time.
     """
     found: list[Path] = []
     for root in _ROSTER_ROOTS:
         for path in sorted(root.rglob("*.md")):
-            if "AskUserQuestion" not in read(path):
+            text = read(path)
+            if "{{ASK_TOOL}}" not in text and "AskUserQuestion" not in text:
                 continue
             rel = path.relative_to(REPO_ROOT).as_posix()
             if rel in META_EXEMPT:
@@ -211,7 +216,10 @@ def test_user_input_protocol_keeps_rung1_must() -> None:
     """
     section = _markdown_section(read(PROTOCOL), "User Input Protocol")
     assert section, f"{PROTOCOL.name} has no '## User Input Protocol' section"
-    assert "MUST use the `AskUserQuestion` tool" in section, (
+    # Canon uses the ``{{ASK_TOOL}}`` placeholder since #271 P1.2; Claude binds it to
+    # ``\`AskUserQuestion\``` so the effective Claude prose still reads "MUST use the
+    # `AskUserQuestion`" — the pin here is on the canon MUST, not on the bound form.
+    assert "MUST use the {{ASK_TOOL}}" in section, (
         f"{PROTOCOL.name} § User Input Protocol dropped the rung-1 MUST — a host that "
         "HAS the structured tool must still be told to use it unconditionally"
     )

@@ -13,12 +13,12 @@ Analyze feature artifacts for completeness, consistency, and quality. Produce st
 
 This skill is loaded in two different roles. Determine yours before proceeding:
 
-- **You ARE the `forge-verifier` subagent** — you were dispatched via the Agent tool, you have read-only tools (Read, Glob, Grep, Bash) and **no** Agent/Task tool, and this skill is pre-loaded in your context. **SKIP "Subagent Delegation (parent orchestrator only)" and "Synthesize" below — those describe how a *parent* dispatches *you*, not work for you to do.** Do **not** dispatch anything, do **not** try to spawn a verifier. Go straight to **Prerequisites → Steps 1–6**, execute the checks yourself, and **return your findings as your response** (the parent writes the document to disk). Dispatching a subagent from here is the classic self-referential loop — never do it.
-- **You are the parent orchestrator** — a navigator (`/feature-forge:forge`), a stage skill's in-stage auto-verify, or a direct `/feature-forge:forge-verify` invocation, and you have the Agent tool. Use "Subagent Delegation" to dispatch the `forge-verifier` subagent, then "Synthesize" to assemble and write the document.
+- **You ARE the `forge-verifier` subagent** — you were dispatched via the `Agent` tool, you have read-only tools (Read, Glob, Grep, Bash) and **no** Agent/`Agent` tool, and this skill is pre-loaded in your context. **SKIP "Subagent Delegation (parent orchestrator only)" and "Synthesize" below — those describe how a *parent* dispatches *you*, not work for you to do.** Do **not** dispatch anything, do **not** try to spawn a verifier. Go straight to **Prerequisites → Steps 1–6**, execute the checks yourself, and **return your findings as your response** (the parent writes the document to disk). Dispatching a subagent from here is the classic self-referential loop — never do it.
+- **You are the parent orchestrator** — a navigator (`/feature-forge:forge`), a stage skill's in-stage auto-verify, or a direct `/feature-forge:forge-verify` invocation, and you have the `Agent` tool. Use "Subagent Delegation" to dispatch the `forge-verifier` subagent, then "Synthesize" to assemble and write the document.
 
 ## Subagent Delegation (parent orchestrator only)
 
-This skill is delegated to the `forge-verifier` subagent via the Agent tool. The verifier subagent has:
+This skill is delegated to the `forge-verifier` subagent via the `Agent` tool. The verifier subagent has:
 - **Read-only tools** (Read, Glob, Grep, Bash) — it cannot accidentally modify specs
 - **Persistent memory** — it accumulates knowledge about this project's recurring issues and patterns across sessions
 - **The forge-verify skill pre-loaded** — so it has all verification checklists and guidance at startup
@@ -27,7 +27,7 @@ This skill is delegated to the `forge-verifier` subagent via the Agent tool. The
 
 Pick based on how many checks the mode carries (see the per-mode totals in Step 3):
 
-- **Small modes (prd 15, tech 17): single verifier.** Use the Agent tool once with
+- **Small modes (prd 15, tech 17): single verifier.** Use the `Agent` tool once with
   `subagent_type="forge-verifier"`, passing the feature name and mode. It runs all
   checks and returns findings.
 - **Large modes (specs 39, backlog 29, impl 25): parallel dimensioned fan-out.**
@@ -170,7 +170,7 @@ Read `references/verification-checklists/{mode}.md` for the detailed checklist f
 
 Each check in that mode checklist has a unique ID (CHECK-P01, CHECK-T01, CHECK-S01, CHECK-B01, etc.). As you execute each check, record its ID and result (pass/fail/not-applicable). After completing all checks, report the total: "Executed N of M checks. Results: X pass, Y fail, Z not-applicable." If your count is significantly below the expected total for the mode (prd: 15 checks, tech: 17 checks, specs: 39 checks, backlog: 29 checks, impl: 25 checks, epic: 10 checks), you likely skipped checks — go back and complete them.
 
-**Epic mode dispatch.** Epic mode is a small (10-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the Agent tool, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E10 from the `## Epic Mode Checklist` in `references/verification-checklists/epic.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07, E09, and E10 are verifier judgment) and returns its findings.
+**Epic mode dispatch.** Epic mode is a small (10-check) checklist, so per the single-vs-parallel rule above, dispatch a **single `forge-verifier`** via the `Agent` tool, passing the epic name and `mode=epic`. The verifier runs CHECK-E01..E10 from the `## Epic Mode Checklist` in `references/verification-checklists/epic.md` (E01/E02/E03/E08 are delegated to `epic-manifest.py validate`/`check-name`; E04–E07, E09, and E10 are verifier judgment) and returns its findings.
 
 ### Important: Be Specific, Not General
 

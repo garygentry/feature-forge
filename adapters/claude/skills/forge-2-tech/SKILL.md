@@ -33,7 +33,7 @@ Before interviewing, you need to understand the existing codebase. This involves
 
 ### Recommended: Delegate to forge-researcher Subagent
 
-Spawn the `forge-researcher` subagent via the Agent tool to scan the codebase. Pass a prompt like: "Research the codebase for planning the {feature} feature. Focus on integration points, established patterns, and relevant packages."
+Spawn the `forge-researcher` subagent via the `Agent` tool to scan the codebase. Pass a prompt like: "Research the codebase for planning the {feature} feature. Focus on integration points, established patterns, and relevant packages."
 
 If this feature belongs to an epic, also add to the dispatch prompt: "If this feature belongs to an epic, also account for these epic contracts: {paste this feature's `consumes` and the `exposes` of its direct deps}, and the completed dependency tech-specs at {paths}. Do not re-research transitive deps." This threads epic context into the researcher without changing the agent's behavior.
 

@@ -39,7 +39,7 @@ The template writes `autoVerify: false`. After the config is created (and only w
 actually created it — skip this if it reported the file already exists), offer to turn
 auto-verify on, then write the choice back into `forge.config.json`.
 
-If the `AskUserQuestion` tool is available, ask exactly one question:
+If the `AskUserQuestion` is available, ask exactly one question:
 
 > **Enable auto-verify?** Verification runs in a clean-room subagent in-stage after each
 > authoring stage completes — in the same session, before the exit block, so any fix

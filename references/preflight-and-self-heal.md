@@ -55,7 +55,7 @@ runner-answer/unblock apply mechanism of its own).
 ### Step 3 — Consolidated prompts
 
 - **Input:** the cluster set from step 2.
-- **Mechanism:** one question per cluster (never one per check) via `AskUserQuestion`
+- **Mechanism:** one question per cluster (never one per check) via {{ASK_TOOL}}
   (rung 1/2) or the ladder's rung-3 default (§4). Name the **exact remedy command**, its
   **safety tier**, and **every member check id** the cluster covers — e.g. *"`runner-wired`
   and `runner-legacy-layout` both resolve by running `{bin} migrate .` (local-write).

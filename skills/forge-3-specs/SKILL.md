@@ -13,7 +13,7 @@ Generate a comprehensive suite of numbered implementation specification document
 
 Read and follow `references/shared-conventions.md` for feature name validation, configuration reading, and force mode handling before proceeding.
 
-**Turn structure reminder:** Text first, then `AskUserQuestion` for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
+**Turn structure reminder:** Text first, then {{ASK_TOOL}} for all questions — never embed one in your text (it stalls). At rung 2/3, see the Interaction Capability Ladder.
 
 ## Step 1: Validate Prerequisites
 
@@ -41,7 +41,7 @@ After reading the PRD and tech spec, invoke the **Epic Context Injection** block
 
 Read `references/spec-archetypes.md` for the menu of document types.
 
-Based on the feature's complexity, propose a document plan to the user before writing. Output the document list as text, then use `AskUserQuestion` for the question — do NOT include the question in your text output.
+Based on the feature's complexity, propose a document plan to the user before writing. Output the document list as text, then use {{ASK_TOOL}} for the question — do NOT include the question in your text output.
 
 **Example text output (no question here):**
 ```
@@ -58,7 +58,7 @@ Feature-specific:
   04-integration-points.md    — Integration with existing project modules
 ```
 
-**Then call `AskUserQuestion`** following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this plan as the default (it's your evidence-backed read of the feature's complexity) and name the trade-off so the user can push back knowingly — more documents means finer separation of concerns but more to keep in sync; fewer means tighter docs but risks one document carrying multiple concerns. Lead with: "I recommend this plan. Add or remove any documents?" Note the guidance below — resist splitting a concern into a sub-50-line document.
+**Then call {{ASK_TOOL}}** following the **Decision Support** protocol in `references/shared-conventions.md`: recommend this plan as the default (it's your evidence-backed read of the feature's complexity) and name the trade-off so the user can push back knowingly — more documents means finer separation of concerns but more to keep in sync; fewer means tighter docs but risks one document carrying multiple concerns. Lead with: "I recommend this plan. Add or remove any documents?" Note the guidance below — resist splitting a concern into a sub-50-line document.
 
 **Incremental artifact tracking:** After each spec document is written (by you or a writer subagent), immediately run `state-artifact` with the new file path — once per file, not once at the end. This enables crash recovery if the session is interrupted mid-suite (see shared-conventions.md "Stage-Entry Guard"). Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
 
@@ -143,7 +143,7 @@ List any gaps or inconsistencies found and resolve them.
 
 This is a **blocking review** — per the **Stage Review Gate** in `references/shared-conventions.md`, do not proceed until the user confirms.
 
-Present a summary of all documents created as text, with key decisions highlighted. Then use `AskUserQuestion` to collect feedback — do NOT include these questions in your text output:
+Present a summary of all documents created as text, with key decisions highlighted. Then use {{ASK_TOOL}} to collect feedback — do NOT include these questions in your text output:
 
 "1. Does the level of detail match what you need? 2. Any areas that need more depth? 3. Any missing subsystems or concerns?"
 
@@ -170,7 +170,7 @@ python3 "$R/scripts/forge-session.py" state-note \
   --feature "{feature}" --note "<what the user volunteered>" --specs-dir "{specsDir}"
 ```
 
-**Determine `--verify-capability` before running the exit** (full rule: `references/stage-exit-protocol.md`; summary: **Verify Capability** in `references/shared-conventions.md`). Pass `interactive` only when a question mechanism equivalent to `AskUserQuestion` is available **and** a clean-room `forge-verifier` may be dispatched; otherwise pass `manual`. Dispatch capability means **permitted** dispatch, not a listed tool — the test is "may I dispatch `forge-verifier` right now", not "is a dispatch tool in my tool surface". A session that bars *unsolicited* dispatch while offering a question mechanism is therefore **`interactive`, not `manual`**: the gate's affirmative choice is the user request that authorizes the dispatch. Such a bar is never grounds to skip verification, and never grounds to fence the production successor while verification is unresolved — on the `runInStageVerify: true` path the emitted `verifyGate` stays `none`, so reuse the Standard Verify Gate block for consent with **choice 2 omitted**, leaving exactly two choices: *Verify now* (recommended) and *Skip for now*. The clean-room `forge-verifier` is **dispatched on the affirmative choice**, never merely printed for the user to run later; *Skip for now* is persisted as an explicit `skipped` before any advancing block. Add `--epic "{epic}"` to the call below when this feature is an epic member.
+**Determine `--verify-capability` before running the exit** (full rule: `references/stage-exit-protocol.md`; summary: **Verify Capability** in `references/shared-conventions.md`). Pass `interactive` only when a question mechanism equivalent to {{ASK_TOOL}} is available **and** a clean-room `forge-verifier` may be dispatched; otherwise pass `manual`. Dispatch capability means **permitted** dispatch, not a listed tool — the test is "may I dispatch `forge-verifier` right now", not "is a dispatch tool in my tool surface". A session that bars *unsolicited* dispatch while offering a question mechanism is therefore **`interactive`, not `manual`**: the gate's affirmative choice is the user request that authorizes the dispatch. Such a bar is never grounds to skip verification, and never grounds to fence the production successor while verification is unresolved — on the `runInStageVerify: true` path the emitted `verifyGate` stays `none`, so reuse the Standard Verify Gate block for consent with **choice 2 omitted**, leaving exactly two choices: *Verify now* (recommended) and *Skip for now*. The clean-room `forge-verifier` is **dispatched on the affirmative choice**, never merely printed for the user to run later; *Skip for now* is persisted as an explicit `skipped` before any advancing block. Add `--epic "{epic}"` to the call below when this feature is an epic member.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 

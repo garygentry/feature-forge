@@ -4,7 +4,7 @@ Loaded by the **parent orchestrator** role of `forge-verify` at Step 4 (write th
 
 ## Truncated Verifier Returns (Synthesize gate)
 
-The Agent tool hands the parent **only the verifier's final message**. A verifier that
+The {{AGENT_TOOL}} hands the parent **only the verifier's final message**. A verifier that
 ends its run on a status line instead of the report returns *that line* as the entire
 result — the digest it built exists in its transcript but never reaches you. Observed
 in the wild (issue #183): two ~130k-token, 40+-tool-call runs each returned a single
@@ -107,7 +107,7 @@ Here are complete example findings showing the expected quality:
 - **Severity:** inconsistency
 - **Location:** 00-core-definitions.md section 2.3 vs 03-session-management.md section 1.1
 - **Issue:** 00-core-definitions.md defines `SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000` (7 days), but 03-session-management.md section 1.1 states "sessions expire after 30 days." These contradict each other.
-- **Suggested fix:** Align both documents to the PRD requirement. PRD.md REQ-SEC-03 says "sessions should have a reasonable expiry" without specifying a duration — use `AskUserQuestion` to ask the user which value is intended, then update both documents.
+- **Suggested fix:** Align both documents to the PRD requirement. PRD.md REQ-SEC-03 says "sessions should have a reasonable expiry" without specifying a duration — use {{ASK_TOOL}} to ask the user which value is intended, then update both documents.
 - **References:** PRD.md REQ-SEC-03, 00-core-definitions.md section 2.3, 03-session-management.md section 1.1
 ```
 

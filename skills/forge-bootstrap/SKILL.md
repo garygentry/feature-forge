@@ -22,7 +22,7 @@ toolchain-missing.
 
 ## Host adaptation (conversational fallback)
 
-If the `AskUserQuestion` tool is available, ask the interview questions through it. If it is
+If the {{ASK_TOOL}} is available, ask the interview questions through it. If it is
 **not** available (a non-Claude host such as Codex), emit the same questions as a single
 **numbered text list** — each line one question with its options in brackets and the default
 marked — then **stop and wait for a single text reply**. Parse the reply positionally
@@ -34,7 +34,7 @@ the rendering changes. Never assume answers; always wait for the reply. At rung 
 this interview has no sane unattended default: `no-default: abort — the bootstrap interview
 requires a human answer`.
 
-Emit any context as plain text, then route **all** questions through `AskUserQuestion` (or the
+Emit any context as plain text, then route **all** questions through {{ASK_TOOL}} (or the
 fallback) — never as inline prose questions, which stall the session.
 
 ## Flow (Mode A — default)
@@ -135,7 +135,7 @@ it null.
 schema. Two fields come from your runtime, not the interview: `author` from `git config
 user.name` (else the project name; it is the LICENSE copyright holder), and `host` —
 `"claude"` when you are running as Claude, else `"codex"`/`"other"`. Use your own runtime
-identity, never a capability proxy: **do not** infer `"claude"` from `AskUserQuestion`
+identity, never a capability proxy: **do not** infer `"claude"` from {{ASK_TOOL}}
 availability alone — Pi's compatibility extension registers it too, so an available
 question tool does not prove you are Claude specifically (host never implies, and is
 never implied by, a capability; Interaction Capability Ladder,

@@ -987,6 +987,97 @@ _PI_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = _PI_BASE_HOST_TERM_REP
 )
 
 
+#: Placeholder tokens canon uses to name Claude-native tools abstractly (#271 P1.2).
+#: Each placeholder binds per host to a bare NP: Claude gets the tool identifier
+#: (backticked), non-Claude hosts get a "host's <kind> mechanism" NP without a leading
+#: article — so canon prose owns the article ("the {{ASK_TOOL}}", "the same {{ASK_TOOL}}
+#: surface") and composition never doubles up regardless of what modifier precedes it.
+#: Pi keeps the Claude form because it ships a compatibility extension for AskUserQuestion
+#: (see _HOST_NOTES_PI). Add a token here BEFORE using it in canon; the sentinel scan
+#: below refuses any unresolved ``{{...}}`` after this pass.
+_PLACEHOLDER_BINDINGS: dict[str, dict[str, str]] = {
+    "claude": {
+        "{{ASK_TOOL}}": "`AskUserQuestion`",
+        "{{AGENT_TOOL}}": "`Agent` tool",
+        "{{SKILL_TOOL}}": "`Skill` tool",
+        "{{MONITOR_TOOL}}": "`Monitor` tool",
+        "{{SKILL_AND_AGENT_TOOLS}}": "`Skill`/`Agent` tools",
+        "{{BACKGROUND_FLAG}}": "`run_in_background`",
+    },
+    "pi": {
+        "{{ASK_TOOL}}": "`AskUserQuestion`",  # Pi ships an AskUserQuestion compat extension
+        "{{AGENT_TOOL}}": "host's subagent mechanism",
+        "{{SKILL_TOOL}}": "host's skill-invocation mechanism",
+        "{{MONITOR_TOOL}}": "host's monitoring mechanism",
+        "{{SKILL_AND_AGENT_TOOLS}}": "host's skill-invocation and subagent mechanisms",
+        "{{BACKGROUND_FLAG}}": "host's background-execution mechanism",
+    },
+    "codex": {
+        "{{ASK_TOOL}}": "host's question mechanism",
+        "{{AGENT_TOOL}}": "host's subagent mechanism",
+        "{{SKILL_TOOL}}": "host's skill-invocation mechanism",
+        "{{MONITOR_TOOL}}": "host's monitoring mechanism",
+        "{{SKILL_AND_AGENT_TOOLS}}": "host's skill-invocation and subagent mechanisms",
+        "{{BACKGROUND_FLAG}}": "host's background-execution mechanism",
+    },
+    "copilot": {
+        "{{ASK_TOOL}}": "host's question mechanism",
+        "{{AGENT_TOOL}}": "host's subagent mechanism",
+        "{{SKILL_TOOL}}": "host's skill-invocation mechanism",
+        "{{MONITOR_TOOL}}": "host's monitoring mechanism",
+        "{{SKILL_AND_AGENT_TOOLS}}": "host's skill-invocation and subagent mechanisms",
+        "{{BACKGROUND_FLAG}}": "host's background-execution mechanism",
+    },
+    "cursor": {
+        "{{ASK_TOOL}}": "host's question mechanism",
+        "{{AGENT_TOOL}}": "host's subagent mechanism",
+        "{{SKILL_TOOL}}": "host's skill-invocation mechanism",
+        "{{MONITOR_TOOL}}": "host's monitoring mechanism",
+        "{{SKILL_AND_AGENT_TOOLS}}": "host's skill-invocation and subagent mechanisms",
+        "{{BACKGROUND_FLAG}}": "host's background-execution mechanism",
+    },
+    "gemini": {
+        "{{ASK_TOOL}}": "host's question mechanism",
+        "{{AGENT_TOOL}}": "host's subagent mechanism",
+        "{{SKILL_TOOL}}": "host's skill-invocation mechanism",
+        "{{MONITOR_TOOL}}": "host's monitoring mechanism",
+        "{{SKILL_AND_AGENT_TOOLS}}": "host's skill-invocation and subagent mechanisms",
+        "{{BACKGROUND_FLAG}}": "host's background-execution mechanism",
+    },
+}
+
+#: Any residual ``{{TOKEN}}`` after apply_placeholders() means canon used a placeholder
+#: that no _PLACEHOLDER_BINDINGS row covers — an authoring error that would otherwise
+#: ship a literal Mustache-shaped token into the emitted bundle. The scan skips tokens
+#: containing a colon (``{{FEATURE_FORGE_ROOT:-}}``) or a whitespace-heavy jinja-like
+#: form; canon placeholders are ALL-CAPS single-word tokens.
+_PLACEHOLDER_RESIDUAL_RE = re.compile(r"\{\{[A-Z][A-Z0-9_]*\}\}")
+
+
+def apply_placeholders(text: str, agent_id: str) -> str:
+    """Bind canon placeholder tokens to their per-host form (#271 P1.2).
+
+    Runs unconditionally on every text surface — bodies, descriptions, and copied
+    reference files — for EVERY host including Claude, so canon can name Claude tools
+    abstractly (``{{ASK_TOOL}}``) and each host receives the right form. Substitutions
+    are literal, one pass, order-independent (placeholder tokens are non-overlapping).
+    Raises ``CanonError`` if any placeholder-shaped residue survives — an unbound token
+    is an authoring defect, not a runtime translation.
+    """
+    bindings = _PLACEHOLDER_BINDINGS.get(agent_id)
+    if bindings is None:
+        raise CanonError(f"apply_placeholders: no bindings for agent_id={agent_id!r}")
+    for token, value in bindings.items():
+        text = text.replace(token, value)
+    residual = _PLACEHOLDER_RESIDUAL_RE.search(text)
+    if residual is not None:
+        raise CanonError(
+            f"apply_placeholders: unresolved placeholder {residual.group(0)!r} "
+            f"(agent_id={agent_id!r}); add a binding in _PLACEHOLDER_BINDINGS."
+        )
+    return text
+
+
 def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
     """Rewrite Claude-native tool names to host-specific safe phrasing.
 
@@ -995,6 +1086,7 @@ def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
     form is rewritten by regex. Pi uses a specialized table that preserves
     ``AskUserQuestion`` because the Pi bundle ships a compatibility extension for it.
     """
+    text = apply_placeholders(text, agent_id or "claude")
     text = _SUBAGENT_TYPE_QUOTED.sub(r"the \1 custom agent", text)
     text = _SUBAGENT_TYPE_BARE.sub(r"the \1 custom agent", text)
     text = _AGENT_CALL.sub(r"subagent\1call", text)
@@ -1054,9 +1146,14 @@ def inject_pi_supervise_redirect(content: str, *, at_top: bool) -> str:
 
 
 def skill_body_for(body: str, agent_id: str) -> str:
-    """Body for a skill on ``agent_id``: verbatim for Claude; translated + overlay else."""
+    """Body for a skill on ``agent_id``: placeholder-bound then (non-Claude) translated + overlay.
+
+    Placeholders (``{{ASK_TOOL}}`` etc., #271 P1.2) resolve on every host including
+    Claude — canon names Claude tools abstractly and each host binds. Non-Claude
+    additionally runs ``translate_host_terms`` and appends the host-notes overlay.
+    """
     if agent_id == "claude":
-        return body
+        return apply_placeholders(body, agent_id)
     translated = translate_host_terms(body, agent_id=agent_id)
     overlay = _HOST_NOTES.get(agent_id, _HOST_NOTES_NEUTRAL)
     # Separate the overlay from the body with a horizontal rule; body already ends
@@ -1065,12 +1162,14 @@ def skill_body_for(body: str, agent_id: str) -> str:
 
 
 def agent_body_for(body: str, agent_id: str) -> str:
-    """Body for a sub-agent on ``agent_id``: verbatim for Claude; translated else.
+    """Body for a sub-agent on ``agent_id``: placeholder-bound then (non-Claude) translated.
 
     No overlay — a sub-agent definition is not an interactive instruction surface;
     the tool-name translation alone keeps its developer_instructions executable.
     """
-    return body if agent_id == "claude" else translate_host_terms(body, agent_id=agent_id)
+    if agent_id == "claude":
+        return apply_placeholders(body, agent_id)
+    return translate_host_terms(body, agent_id=agent_id)
 
 # --------------------------------------------------------------------------- #
 # claude emitter (03 §3, REQ-VND-01, REQ-VND-02, REQ-GEN-06) — CONFIRMED
@@ -1090,21 +1189,31 @@ class ClaudeEmitter:
 
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
         """Emit ``skills/<name>/SKILL.md`` with {name, description, argument-hint?}."""
-        native: dict[str, Any] = {"name": skill.name, "description": skill.description}
+        native: dict[str, Any] = {
+            "name": skill.name,
+            "description": apply_placeholders(skill.description, "claude"),
+        }
         hint = hint_value(skill)
         if hint is not None:  # REQ-VND-01: reconstruct top-level argument-hint
             native["argument-hint"] = hint
         fields = order_fields(native)
-        content = render_frontmatter_block(fields, skill.source_path) + skill.body
+        content = render_frontmatter_block(fields, skill.source_path) + skill_body_for(
+            skill.body, "claude"
+        )
         rel = f"skills/{skill.name}/SKILL.md"
         return EmitResult(files=(EmittedFile(relpath=rel, content=content),), drops=())
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
         """Emit ``agents/<name>.md`` with full {name, description, **claude_keys}."""
-        native: dict[str, Any] = {"name": agent.name, "description": agent.description}
+        native: dict[str, Any] = {
+            "name": agent.name,
+            "description": apply_placeholders(agent.description, "claude"),
+        }
         native.update(agent.claude_keys)  # all representable for Claude → no drops
         fields = order_fields(native)
-        content = render_frontmatter_block(fields, agent.source_path) + agent.body
+        content = render_frontmatter_block(fields, agent.source_path) + agent_body_for(
+            agent.body, "claude"
+        )
         rel = f"agents/{agent.name}.md"
         return EmitResult(files=(EmittedFile(relpath=rel, content=content),), drops=())
 
@@ -1588,8 +1697,12 @@ def run_self_containment_pass(
     #      (#167). Runs AFTER (1)/(2)/(2b) so bundle-root, skill-local, and fanned copies
     #      are all translated identically; BEFORE (3) by convention only (.md never
     #      collides with the runtime helpers, whose byte-identity assertion is untouched).
-    #      Claude bundles skip it entirely — their references remain byte-verbatim canon.
-    if bundle_root.name != "claude":
+    #      Claude gets only the placeholder pass (#271 P1.2) — no host-term rewrites — so
+    #      canon's abstract tokens (``{{ASK_TOOL}}``) bind to the Claude form and references
+    #      never ship a literal Mustache-shaped token, while the rest stays byte-verbatim.
+    if bundle_root.name == "claude":
+        _apply_reference_placeholders(bundle_root, "claude")
+    else:
         _translate_reference_host_terms(bundle_root, bundle_root.name)
 
     # (3) Byte-identical runtime-helper copies, NO header (§2.3, REQ-GEN-04/05). forge-root.sh
@@ -1846,6 +1959,28 @@ def _reference_translation_exempt(rel: Path) -> bool:
     if "templates" in rel.parts:
         return True
     return rel.name in {"vendor-construct-inventory.md", "portable-root.md"}
+
+
+def _apply_reference_placeholders(bundle_root: Path, agent_id: str) -> None:
+    """Bind canon placeholder tokens in copied reference markdown for one bundle (#271 P1.2).
+
+    Runs on the same file set as ``_translate_reference_host_terms`` (same exempt list,
+    same sorted walk) but only applies the ``{{TOKEN}}`` binding pass — no host-term
+    substitutions and no subagent-type rewrites. Used for the Claude bundle so its
+    references resolve ``{{ASK_TOOL}}`` to ``\\`AskUserQuestion\\``` while every other
+    literal stays byte-verbatim; non-Claude bundles get the same binding for free
+    inside ``translate_host_terms`` (which now runs the placeholder pass first).
+    """
+    for path in sorted(bundle_root.rglob("*.md")):
+        rel = path.relative_to(bundle_root)
+        if "references" not in rel.parts:
+            continue
+        if _reference_translation_exempt(rel):
+            continue
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        bound = apply_placeholders(text, agent_id)
+        if bound != text:
+            path.write_text(bound, encoding="utf-8", errors="surrogateescape")
 
 
 def _translate_reference_host_terms(bundle_root: Path, agent_id: str) -> None:

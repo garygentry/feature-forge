@@ -4,7 +4,7 @@ Loaded by the **parent orchestrator** role of `forge-verify` at Step 4 (write th
 
 ## Truncated Verifier Returns (Synthesize gate)
 
-The Agent tool hands the parent **only the verifier's final message**. A verifier that
+The `Agent` tool hands the parent **only the verifier's final message**. A verifier that
 ends its run on a status line instead of the report returns *that line* as the entire
 result — the digest it built exists in its transcript but never reaches you. Observed
 in the wild (issue #183): two ~130k-token, 40+-tool-call runs each returned a single

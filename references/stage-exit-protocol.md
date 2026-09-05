@@ -116,7 +116,7 @@ prose). Nothing else.
 
 **`--verify-capability interactive`** is passed only when **both** of these hold:
 
-- **(a)** a question mechanism equivalent to `AskUserQuestion` is available, **and**
+- **(a)** a question mechanism equivalent to {{ASK_TOOL}} is available, **and**
 - **(b)** a clean-room `forge-verifier` subagent can be dispatched.
 
 If either is absent, or capability cannot be established, pass `manual`. **(a) is rung 1 or

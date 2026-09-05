@@ -19,7 +19,7 @@ question in inline prose — every question goes through `AskUserQuestion`.
 
 Read and follow `references/shared-conventions.md` for:
 - the **Feature Name Requirement** (applied here to the *epic* name — see below),
-- the **User Input Protocol** (the AskUserQuestion guardrail — all questions go through the tool),
+- the **User Input Protocol** (the `AskUserQuestion` guardrail — all questions go through the tool),
 - **Configuration Reading**, and
 - the **Git Commit Protocol**.
 

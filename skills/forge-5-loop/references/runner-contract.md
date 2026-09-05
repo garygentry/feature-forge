@@ -31,7 +31,7 @@ pass after all iterations complete (an extra agent session that re-examines the
 finished work and can file follow-up backlog items). feature-forge treats **running
 with review as the recommended default** — a review pass is cheap relative to the
 loop it audits, and catches gaps before the pipeline moves on to docs. So Step 2d
-adds a **"Run mode"** question, via `AskUserQuestion`, to the confirmation surface with a
+adds a **"Run mode"** question, via {{ASK_TOOL}}, to the confirmation surface with a
 **fixed, non-improvised option order** (determinism is the point — the option set
 must not vary run-to-run). **Rung-3 default**
 (`references/shared-conventions.md` § Interaction Capability Ladder, "launch / run-mode"
@@ -69,7 +69,7 @@ Notes:
 - **Option 1 is the default** and the confirmation's rendered command line shows
   `--review` appended. On any pick, append the option's flags to the rendered run
   command before Step 3 (launch).
-- **`AskUserQuestion`'s built-in "Other"** already lets the user type ad-hoc flags
+- **{{ASK_TOOL}}'s built-in "Other"** already lets the user type ad-hoc flags
   (`--model <model>`, `--timeout <min>`, or any combination) — do **not** add a
   separate open-ended option for that.
 - **Option 3 is conditional.** Include it only when the Step 2a tally has `blocked
@@ -120,7 +120,7 @@ a descriptor on the file the runner immediately rotates away, so the redirected
 rotation timing. So:
 
 - **Self-persisting runner (default — rauf writes `{stateDir}/events.ndjson`):**
-  launch the **plain `runCommand`** with `run_in_background: true` and **no
+  launch the **plain `runCommand`** with {{BACKGROUND_FLAG}}: true and **no
   redirect** — the Bash tool already captures the run's stdout/stderr to the
   background task's output file (use it to diagnose a launch refusal). Supervise by
   arming the Monitor on the runner's **native** `{backlogDir}/{stateDir}/events.ndjson`
@@ -146,8 +146,8 @@ backlog size).
 
 ## Arm a Monitor on the event stream (Step 3d)
 
-Arm the **`Monitor` tool** on the structured event stream so events flow back into
-this session as they happen. Use **`persistent: true`** — runs can exceed `Monitor`'s
+Arm the **{{MONITOR_TOOL}}** on the structured event stream so events flow back into
+this session as they happen. Use **`persistent: true`** — runs can exceed {{MONITOR_TOOL}}'s
 maximum `timeout_ms` (1 hour), and a bounded timeout would silently stop watching a
 still-running loop.
 
@@ -196,7 +196,7 @@ high and the noise low:
   immediately** and send a **`PushNotification`** (an hours-long run means the user has
   likely stepped away). **Important — the loop is NOT paused:** the runner has set that
   item aside and kept working other items. So report *what* needs a human and *which*
-  item, then either (a) collect the user's answer via `AskUserQuestion` and **record it via
+  item, then either (a) collect the user's answer via {{ASK_TOOL}} and **record it via
   `decision-record` now** — SKILL Step 4c's unconditional **Post-Run Recovery Procedure**
   pass (`references/recovery-procedure.md`) applies it after the run ends — or (b) offer
   to **cancel the run early** (also recorded via `decision-record` — a deferral) if the

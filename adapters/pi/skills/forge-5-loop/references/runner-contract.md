@@ -123,7 +123,7 @@ a descriptor on the file the runner immediately rotates away, so the redirected
 rotation timing. So:
 
 - **Self-persisting runner (default — rauf writes `{stateDir}/events.ndjson`):**
-  launch the **plain `runCommand`** with the host's background-execution mechanism and **no
+  launch the **plain `runCommand`** with host's background-execution mechanism: true and **no
   redirect** — the Bash tool already captures the run's stdout/stderr to the
   background task's output file (use it to diagnose a launch refusal). Supervise by
   arming the Monitor on the runner's **native** `{backlogDir}/{stateDir}/events.ndjson`
@@ -150,7 +150,7 @@ backlog size).
 ## Arm a Monitor on the event stream (Step 3d)
 
 Arm the **host's monitoring mechanism** on the structured event stream so events flow back into
-this session as they happen. Use **a continuous watch** — runs can exceed the host's monitoring mechanism's
+this session as they happen. Use **a continuous watch** — runs can exceed host's monitoring mechanism's
 maximum `timeout_ms` (1 hour), and a bounded timeout would silently stop watching a
 still-running loop.
 

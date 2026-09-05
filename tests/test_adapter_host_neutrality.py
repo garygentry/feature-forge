@@ -238,28 +238,18 @@ def test_no_claude_slash_command_prefix_in_non_claude_bundles(target: str) -> No
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#271 (P1.2): literal term substitution corrupts grammar — `the same "
-        "AskUserQuestion surface` degrades to `the same the host's question mechanism "
-        "surface`. Placeholder-based binding is the fix; removing this marker is part "
-        "of #271."
-    ),
-)
 @pytest.mark.parametrize("target", NON_CLAUDE_TARGETS)
 def test_no_host_term_grammar_artifacts(target: str) -> None:
-    """#265 F2 — and the count in that finding does NOT reproduce.
+    """#265 F2 — closed by #271 P1.2 (placeholder-based tool-name binding).
 
-    F2 records 96 artifacts per non-Claude bundle and 24 in Pi. Measured with F2's own
-    regex, at F2's own commit (`fedd219`) and on `main`: **1** per non-Claude bundle and
-    **0** in Pi — a single site, `the same the host's question mechanism surface` in
-    forge-5-loop. The tree has not drifted; the finding's number is wrong.
-
-    Recorded here rather than quietly implemented, because #271 is scoped and titled off
-    that number ("96 grammar artifacts/bundle") and a 1-site fix is a different piece of
-    work from a 96-site one. The guard is still correct and still red — the defect is
-    real, just far smaller than filed.
+    F2 originally recorded 96 artifacts per non-Claude bundle and 24 in Pi; the number
+    was wrong (the real count was 1 per non-Claude bundle and 0 in Pi — a single
+    ``the same the host's question mechanism surface`` in forge-5-loop). #271 P1.2
+    replaces literal term substitution with placeholder binding — canon writes
+    ``{{ASK_TOOL}}`` and each host binds its own NP — so the defect class cannot
+    recur regardless of what modifier ("same", "this", any future word) precedes.
+    The guard runs strict on every non-Claude bundle; Pi has its own strict pin
+    below (``test_pi_has_no_host_term_grammar_artifacts``).
     """
     hits = [
         (path.relative_to(ADAPTERS_ROOT), len(_GRAMMAR_ARTIFACT_RE.findall(text)))
