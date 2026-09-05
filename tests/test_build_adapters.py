@@ -324,19 +324,21 @@ def test_pi_support_files_use_skill_command_wording(fixture_copy):
 
 
 def test_reference_host_term_translation_per_agent(fixture_copy):
-    """Copied reference markdown is host-term translated per agent (#167).
+    """Copied reference markdown is host-term translated per agent (#167, #271 P1.2).
 
     Pi gets its real commands (`/new`, `/skill:`, `--host pi`) and keeps
-    `AskUserQuestion` (the bundle ships a compatibility extension); the other
-    non-Claude targets get the host-neutral degradations; Claude stays
-    byte-verbatim. Non-prose reference files (.json) and the exempt meta-docs
-    (`_reference_translation_exempt`) stay untouched everywhere.
+    `AskUserQuestion` (the bundle ships a compatibility extension, so
+    ``{{ASK_TOOL}}`` binds to the backticked Claude token). The other non-Claude
+    targets get the host-neutral binding (``host's question mechanism``). Claude
+    stays byte-verbatim except for placeholder resolution. Non-prose reference
+    files (.json) and the exempt meta-docs (``_reference_translation_exempt``)
+    stay untouched everywhere.
     """
     root = fixture_copy("minimal-canon")
     shared = root / "references" / "shared-conventions.md"
     shared.write_text(
         shared.read_text()
-        + "\nClose with `/clear` via the `AskUserQuestion` tool; needs a `/clear`;"
+        + "\nClose with `/clear` via the {{ASK_TOOL}}; needs a `/clear`;"
         + " then --host claude applies.\n",
         encoding="utf-8",
     )
@@ -354,7 +356,14 @@ def test_reference_host_term_translation_per_agent(fixture_copy):
     assert run_build(root).returncode == 0
 
     claude_copy = root / "adapters" / "claude" / "references" / "shared-conventions.md"
-    assert claude_copy.read_bytes() == shared.read_bytes(), "claude refs must stay verbatim"
+    # Claude refs are byte-verbatim to placeholder-RESOLVED canon (#271 P1.2): the
+    # ``{{ASK_TOOL}}`` binding is ``\`AskUserQuestion\```, and no other translation runs.
+    expected_claude = shared.read_text(encoding="utf-8").replace(
+        "{{ASK_TOOL}}", "`AskUserQuestion`"
+    )
+    assert claude_copy.read_text(encoding="utf-8") == expected_claude, (
+        "claude refs must be byte-identical to placeholder-resolved canon"
+    )
 
     codex_copy = (root / "adapters" / "codex" / "references" / "shared-conventions.md").read_text()
     assert "/clear" not in codex_copy
@@ -994,22 +1003,30 @@ def _load_generator_module():
 
 
 def test_translate_host_terms_is_deterministic_and_idempotent():
-    """The translation maps known tokens and is a fixed point on its own output."""
+    """The translation binds placeholders, rewrites the non-placeholder degradations,
+    and is a fixed point on its own output (#271 P1.2)."""
     mod = _load_generator_module()
+    # Canon-shape input: tool names as placeholders (bound by ``apply_placeholders``);
+    # ``subagent_type=`` and the ``Agent call`` idiom handled by regex; ``/clear`` and
+    # the ``Agent tool`` safety-net row handled by the ordered table.
     src = (
-        'Use the `AskUserQuestion` tool. Dispatch via the Agent tool with '
-        'subagent_type="forge-verifier". Launch `run_in_background: true` and arm '
-        "the `Monitor` tool. Use multiple Agent calls. Then `/clear` and re-run."
+        "Use the {{ASK_TOOL}}. Dispatch via {{AGENT_TOOL}} with "
+        'subagent_type="forge-verifier". Launch {{BACKGROUND_FLAG}} and arm '
+        "the {{MONITOR_TOOL}}. Use multiple Agent calls. Then `/clear` and re-run."
     )
-    once = mod.translate_host_terms(src)
-    for token in ("AskUserQuestion", "subagent_type=", "Agent tool", "run_in_background", "`Monitor`", "/clear"):
+    once = mod.translate_host_terms(src)  # default agent_id="claude" for the placeholder pass
+    for token in ("{{ASK_TOOL}}", "{{AGENT_TOOL}}", "{{BACKGROUND_FLAG}}", "{{MONITOR_TOOL}}", "/clear"):
         assert token not in once
+    # subagent_type= rewrite fires
+    assert "subagent_type=" not in once
     assert "the forge-verifier custom agent" in once
+    # Agent-call idiom rewrite fires
     assert "subagent calls" in once
-    # Longest-match ordering: the backticked `` `/clear` `` must collapse to the bare
-    # phrase with NO surrounding backticks left. If the order were reversed (bare
-    # "/clear" fired first), the output would be "`clear your session / …`" — so assert
-    # the exact rendered span, which only holds when the backticked form matches first.
+    # Claude bindings resolve
+    assert "`AskUserQuestion`" in once and "`Agent` tool" in once
+    # Longest-match ordering on the /clear family: the backticked `` `/clear` `` must
+    # collapse to the bare phrase with NO surrounding backticks left. If the order were
+    # reversed (bare "/clear" fired first), the output would be "`clear your session / …`".
     assert "Then clear your session / start a fresh session and re-run." in once
     assert "`clear your session" not in once  # no orphaned opening backtick
     assert mod.translate_host_terms(once) == once  # idempotent
@@ -1033,15 +1050,26 @@ def test_pi_translation_uses_real_pi_commands_not_neutral_prose():
 
 
 def test_claude_body_helpers_are_verbatim_passthrough():
-    """skill_body_for / agent_body_for never alter the Claude path (byte-identical)."""
+    """skill_body_for / agent_body_for on the Claude path only bind placeholders —
+    literal Claude tokens pass through unchanged (#271 P1.2)."""
     mod = _load_generator_module()
     body = 'Use `AskUserQuestion` and the Agent tool with subagent_type="x".\n'
+    # No placeholders in `body`, so apply_placeholders is a no-op — Claude output is
+    # byte-identical to canon.
     assert mod.skill_body_for(body, "claude") == body
     assert mod.agent_body_for(body, "claude") == body
-    # A non-Claude skill body is translated AND gains the overlay.
+    # A non-Claude skill body binds placeholders (none here), then runs the
+    # non-Claude table (the `Agent tool` safety-net row degrades) and appends the
+    # overlay. The literal `` `AskUserQuestion` `` has no placeholder or table row
+    # after PR B, so it survives — an authoring defect the reference-purity test
+    # catches on the committed adapter tree, not this unit test.
     codex = mod.skill_body_for(body, "codex")
-    assert "AskUserQuestion" not in codex
     assert "Host execution notes (Codex)" in codex
+    assert "the host's subagent mechanism" in codex  # `Agent tool` safety-net row fired
+    # Placeholder input DOES translate on the non-Claude path.
+    codex_ph = mod.skill_body_for("Use {{ASK_TOOL}}.\n", "codex")
+    assert "host's question mechanism" in codex_ph
+    assert "{{ASK_TOOL}}" not in codex_ph
 
 
 # --------------------------------------------------------------------------- #

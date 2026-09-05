@@ -722,53 +722,31 @@ def drop_all_claude_keys(
 # host-neutral phrasing onto their own tools.
 
 # (literal_old, replacement) — applied in order; longest/most-specific first so a
-# wrapper phrase is consumed before its bare token. Backticked forms precede bare.
+# wrapper phrase is consumed before its bare token (the /clear and /feature-forge
+# families still depend on that ordering; the backticked form must precede the bare
+# one so `` `/clear` `` collapses cleanly).
+#
+# Tool-name binding for AskUserQuestion / Agent / Skill / Monitor / run_in_background
+# no longer lives in this table — canon names them with placeholder tokens
+# (``{{ASK_TOOL}}``, ``{{AGENT_TOOL}}``, ``{{SKILL_TOOL}}``, ``{{MONITOR_TOOL}}``,
+# ``{{SKILL_AND_AGENT_TOOLS}}``, ``{{BACKGROUND_FLAG}}``) and each host binds them
+# through ``_PLACEHOLDER_BINDINGS`` at ``apply_placeholders()`` time. This kills the
+# article-aware degradation class entirely (a canon "same the host's …" artifact
+# cannot recur regardless of what modifier precedes the token). What remains here
+# is the non-placeholder degradation set plus a narrow safety net for two canon
+# literals in ``agents/forge-verifier.md`` that PR A's placeholder rewrite did not
+# reach (converting them would change Claude prose and violate #271 PR B's
+# "Claude bundle diff = empty" acceptance criterion, so they stay as bare-form
+# rows here; a later PR can convert them alongside a targeted Claude prose update).
 _HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
-    # user-input surface → host question mechanism. Article-aware pairs come first
-    # (longest-match) so a canon "the" preceding the token is consumed rather than
-    # doubled ("the the host's …" — the #79 `an the` class, now for the article).
-    # Backticked forms precede bare tokens.
-    ("the `AskUserQuestion` tool", "the host's question mechanism"),
-    ("the `AskUserQuestion`", "the host's question mechanism"),
-    ("the AskUserQuestion", "the host's question mechanism"),
-    ("`AskUserQuestion` tool", "the host's question mechanism"),
-    ("`AskUserQuestion`", "the host's question mechanism"),
-    ("AskUserQuestion", "the host's question mechanism"),
-    # The compound "the `Skill`/`Agent` tools" must be consumed BEFORE either the
-    # single `Skill` or `Agent` forms below — otherwise the bare `Agent` tools pair
-    # eats "`Agent` tools" from inside it and strands a literal `Skill` token.
-    ("the `Skill`/`Agent` tools", "the host's skill-invocation and subagent mechanisms"),
-    ("`Skill`/`Agent` tools", "host's skill-invocation and subagent mechanisms"),
-    # sub-agent dispatch surface → host subagent mechanism. Backticked `Agent`
-    # forms (article-aware first, then plural, then bare) precede the un-backticked
-    # `Agent`/`Task` tokens so a non-Claude reader never sees a literal `Agent` tool.
-    ("the `Agent` tool", "the host's subagent mechanism"),
-    ("`Agent` tools", "host's subagent mechanisms"),
-    ("`Agent` tool", "host's subagent mechanism"),
-    ("the Agent tool", "the host's subagent mechanism"),
-    ("the Task tool", "the host's subagent mechanism"),
+    # Bare Claude subagent-tool tokens in ``agents/forge-verifier.md`` (pre-PR A
+    # canon leakage). Two sites: ``The Agent tool returns your final response`` (the
+    # bare pair below catches it inside the sentence) and ``You have no Agent/Task
+    # tool`` (``Task tool`` fires here; ``Agent/`` is left literal because degrading
+    # it would break the compound). These are the only surviving non-placeholder
+    # tool-name rows.
     ("Agent tool", "host's subagent mechanism"),
     ("Task tool", "host's subagent mechanism"),
-    # skill-invocation surface → host skill-invocation mechanism (single-tool forms;
-    # the compound above already handled the "`Skill`/`Agent` tools" construct).
-    ("the `Skill` tool", "the host's skill-invocation mechanism"),
-    ("`Skill` tool", "host's skill-invocation mechanism"),
-    # background-execution surface → host background mechanism
-    ("`run_in_background: true`", "the host's background-execution mechanism"),
-    ("run_in_background: true", "the host's background-execution mechanism"),
-    ("`run_in_background`", "the host's background-execution mechanism"),
-    ("run_in_background", "the host's background-execution mechanism"),
-    # monitoring surface → host monitoring mechanism (backtick-scoped so the bare
-    # verb "Monitor the stream" is never rewritten — only the tool reference is).
-    # Bold- and article-aware variants first so a preceding "the **" / "The " is not
-    # doubled into "the **the …" / "The the …".
-    ("the **`Monitor` tool**", "the **host's monitoring mechanism**"),
-    ("the `Monitor` tool", "the host's monitoring mechanism"),
-    ("`Monitor` tool", "the host's monitoring mechanism"),
-    ("The `Monitor`", "The host's monitoring mechanism"),
-    ("the `Monitor`", "the host's monitoring mechanism"),
-    ("`Monitor`", "the host's monitoring mechanism"),
-    ("Monitor tool", "host's monitoring mechanism"),
     # Claude slash-command surface → host-neutral phrasing. The Stage Exit Protocol
     # (references/stage-exit-protocol.md) stamps a literal `/clear` into every stage
     # closing; on a non-Claude host that is not a real command, so degrade it to a
@@ -944,8 +922,7 @@ _PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({
 })
 
 _PI_BASE_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
-    pair for pair in _HOST_TERM_REPLACEMENTS
-    if "AskUserQuestion" not in pair[0] and pair[0] not in _PI_OVERRIDDEN_HOST_TERMS
+    pair for pair in _HOST_TERM_REPLACEMENTS if pair[0] not in _PI_OVERRIDDEN_HOST_TERMS
 )
 
 # Import-time guard for the "every LHS Pi rewrites to a real command must be Pi-overridden"
@@ -1079,12 +1056,19 @@ def apply_placeholders(text: str, agent_id: str) -> str:
 
 
 def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
-    """Rewrite Claude-native tool names to host-specific safe phrasing.
+    """Rewrite host-degradation surfaces to host-specific safe phrasing.
 
-    Applied to NON-Claude emitter bodies only. Literal substitutions run in a fixed
-    order (longest/most-specific first); the parameterized ``subagent_type="<name>``
-    form is rewritten by regex. Pi uses a specialized table that preserves
-    ``AskUserQuestion`` because the Pi bundle ships a compatibility extension for it.
+    Applied to NON-Claude emitter bodies and the copied non-Claude reference closure.
+    Three passes run in fixed order:
+      1. ``apply_placeholders`` binds canon's tool-name placeholders
+         (``{{ASK_TOOL}}`` etc.) to the per-host form from ``_PLACEHOLDER_BINDINGS``
+         — this is where AskUserQuestion / Agent / Skill / Monitor / run_in_background
+         are resolved (Pi keeps ``AskUserQuestion`` because its binding does, since
+         the Pi bundle ships a compatibility extension).
+      2. Regex passes rewrite ``subagent_type="…"`` and the ``Agent call(s)`` idiom.
+      3. The ordered ``_HOST_TERM_REPLACEMENTS`` table (or the Pi-specialized version)
+         handles the remaining non-placeholder degradations: Claude-only slash
+         commands, host flags, and the ``${CLAUDE_PLUGIN_ROOT}`` root hint.
     """
     text = apply_placeholders(text, agent_id or "claude")
     text = _SUBAGENT_TYPE_QUOTED.sub(r"the \1 custom agent", text)
