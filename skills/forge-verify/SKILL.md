@@ -20,7 +20,7 @@ This skill is loaded in two different roles. Determine yours before proceeding:
 
 This skill is delegated to the `forge-verifier` subagent via the {{AGENT_TOOL}}. The verifier subagent has:
 - **Read-only tools** (Read, Glob, Grep, Bash) — it cannot accidentally modify specs
-- **Persistent memory** — it accumulates knowledge about this project's recurring issues and patterns across sessions
+- **Persistent memory + shipped patterns** — it accumulates knowledge about this project's recurring issues across sessions, and on start reads the versioned, reviewed heuristics in `references/verifier-patterns/MEMORY.md` that ship with the pipeline (the two layers are distinct)
 - **The forge-verify skill pre-loaded** — so it has all verification checklists and guidance at startup
 
 ### Choose single vs. parallel dispatch

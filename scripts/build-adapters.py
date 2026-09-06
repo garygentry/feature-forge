@@ -2225,6 +2225,15 @@ _REFERENCE_CITATION_RE: re.Pattern[str] = re.compile(
     r"references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*)"
 )
 
+#: Shared reference subtrees fanned WHOLE (every file, not just the cited one) when a
+#: skill body cites any path inside them, keyed by first path segment.
+#:   - `stacks/`: the concrete stack is unknown at build time, so one citation fans the
+#:     whole profile tree (REQ-SCALE-01).
+#:   - `verifier-patterns/`: the forge-verifier agent opens the index (`MEMORY.md`) and
+#:     follows its intra-dir links, so a per-file fan of only the cited index would leave
+#:     those links dangling on the skill-local (non-plugin npm-installer Claude) layout.
+_WHOLE_DIR_FANNED_REFERENCE_ROOTS: frozenset[str] = frozenset({"stacks", "verifier-patterns"})
+
 
 def _fan_out_shared_references(
     skill: SkillRecord, bundle_root: Path, repo_root: Path
@@ -2254,17 +2263,17 @@ def _fan_out_shared_references(
     """
     src_refs = repo_root / "references"
     dst_skill_refs = bundle_root / "skills" / skill.name / "references"
-    stacks_fanned = False
+    fanned_whole: set[str] = set()
     for subpath in sorted(set(_REFERENCE_CITATION_RE.findall(skill.body))):
         head = subpath.split("/", 1)[0]
-        # The stacks/ profile is dynamic — the stack is unknown at build time — so a
-        # `references/stacks/{stack}.md` / `stacks/*.md` / `stacks/_generic.md`
-        # citation fans the WHOLE stacks/ tree once (REQ-SCALE-01).
-        if head == "stacks":
-            src_stacks = src_refs / "stacks"
-            if not stacks_fanned and src_stacks.is_dir():
-                _copytree_verbatim(src_stacks, dst_skill_refs / "stacks", bundle_root)
-                stacks_fanned = True
+        # A whole-dir-fanned root (stacks/, verifier-patterns/) fans its ENTIRE tree once
+        # on any citation inside it — the cited file names the tree, not the file
+        # (see _WHOLE_DIR_FANNED_REFERENCE_ROOTS for why each is fanned whole).
+        if head in _WHOLE_DIR_FANNED_REFERENCE_ROOTS:
+            src_dir = src_refs / head
+            if head not in fanned_whole and src_dir.is_dir():
+                _copytree_verbatim(src_dir, dst_skill_refs / head, bundle_root)
+                fanned_whole.add(head)
             continue
         # Executable-spec modules are test/doc artifacts, never shipped in a bundle
         # (see _copytree_verbatim); no skill cites one, but stay consistent if one does.

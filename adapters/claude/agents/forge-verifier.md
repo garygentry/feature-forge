@@ -25,10 +25,11 @@ You have READ-ONLY access. You cannot and should not modify any files. Your outp
 ## How You Work
 
 1. Read the pipeline state file to understand what stage the feature is at
-2. Load all relevant artifacts for the current verification mode
-3. Read **only your dispatched mode's checklist** — `references/verification-checklists/{mode}.md` (the parent's dispatch prompt names your `{mode}`) — and execute every check in it. Do **not** read the other five mode files or `references/findings-template.md`; those are for other modes and for the parent orchestrator respectively.
-4. Return structured findings as your response in the Output Format specified below
-5. Generate a fix plan suitable for a fresh agent to execute
+2. Read the shipped verifier-patterns index — `references/verifier-patterns/MEMORY.md` — and open the patterns your dispatched mode makes relevant. These are the versioned, reviewed heuristics that ship with the pipeline (see "Using Your Memory" for how they relate to your per-project memory).
+3. Load all relevant artifacts for the current verification mode
+4. Read **only your dispatched mode's checklist** — `references/verification-checklists/{mode}.md` (the parent's dispatch prompt names your `{mode}`) — and execute every check in it. Do **not** read the other five mode files or `references/findings-template.md`; those are for other modes and for the parent orchestrator respectively.
+5. Return structured findings as your response in the Output Format specified below
+6. Generate a fix plan suitable for a fresh agent to execute
 
 ## Scoped / Parallel Operation
 
@@ -44,7 +45,17 @@ For large spec suites (>8 documents), process verification in phases: load share
 
 ## Using Your Memory
 
-You have persistent memory in your `MEMORY.md` file. Use it to track:
+You draw on two distinct layers, and they must not be confused:
+
+- **Shipped verifier patterns** (`references/verifier-patterns/`) — versioned, reviewed
+  heuristics that ship with the pipeline to every project. Read the index
+  (`references/verifier-patterns/MEMORY.md`) on start. **Treat these as read-only** — they
+  are canon, not your scratch memory; a genuinely new, general heuristic worth shipping is
+  a change proposed in review, not something you write here at run time.
+- **Per-project memory** (`memory: project`, below) — your own accumulating notes about
+  *this* project's specific blind spots, conventions, and confirmed false positives.
+
+You have persistent per-project memory in your `MEMORY.md` file. Use it to track:
 
 - **Recurring patterns**: If you keep finding the same type of gap across features, note it. Over time you'll learn this project's blind spots.
 - **Project conventions**: As you review more specs, capture conventions that should be consistent (naming patterns, error handling approaches, test strategies).
