@@ -477,7 +477,10 @@ def test_loaded_keysets_match_schema():
 
     Guards against the checker's key sets drifting from the single declarative
     source of truth (references/skill-frontmatter.schema.json). 00 §3 fixes the
-    6 allowed / 2 required keys; this asserts the loader reproduces them exactly.
+    allowed / required keys; this asserts the loader reproduces them exactly. The
+    Claude-only skill-governance keys (allowed-tools / disallowed-tools /
+    disable-model-invocation) are top-level spec-allowed keys the Claude emitter
+    reconstructs and every other target drop-records (#272).
     """
     schema = json.loads(
         (REPO_ROOT / "references" / "skill-frontmatter.schema.json").read_text("utf-8")
@@ -488,6 +491,9 @@ def test_loaded_keysets_match_schema():
     assert required == frozenset(schema["required"])
     # Belt-and-suspenders: the exact 00 §3 sets.
     assert allowed == frozenset(
-        {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
+        {
+            "name", "description", "license", "compatibility", "metadata",
+            "allowed-tools", "disallowed-tools", "disable-model-invocation",
+        }
     )
     assert required == frozenset({"name", "description"})

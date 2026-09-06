@@ -732,6 +732,65 @@ def test_claude_argument_hint_roundtrip(fixture_copy):
     assert _decode_scalar(_frontmatter_value(no_hint, "argument-hint")) is None
 
 
+def _frontmatter_map(skill_md: Path) -> dict:
+    """Decode a SKILL.md's full frontmatter block into a mapping (lazy YAML).
+
+    Unlike ``_frontmatter_value`` (single-line scalars), this decodes list- and
+    bool-valued keys — needed for the governance keys, whose values are YAML
+    sequences (``allowed-tools``) and booleans (``disable-model-invocation``).
+    """
+    yaml = pytest.importorskip("yaml")
+    text = skill_md.read_text("utf-8")
+    assert text.startswith("---")
+    _, block, _ = text.split("---", 2)
+    return yaml.safe_load(block) or {}
+
+
+def test_claude_governance_keys_roundtrip(fixture_copy):
+    """Claude reconstructs the top-level skill-governance keys; a skill without them emits none (#272).
+
+    The three keys (allowed-tools / disallowed-tools / disable-model-invocation)
+    are Claude-only top-level frontmatter, carried in ``SkillRecord.claude_keys``.
+    `noarg` declares all three; `with-refs` declares none.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    gov = _frontmatter_map(root / "adapters" / "claude" / "skills" / "noarg" / "SKILL.md")
+    assert gov["allowed-tools"] == ["Read", "Grep"]
+    assert gov["disallowed-tools"] == ["Write"]
+    assert gov["disable-model-invocation"] is True
+    # A skill that declares none must not gain them (no invented governance).
+    plain = _frontmatter_map(root / "adapters" / "claude" / "skills" / "with-refs" / "SKILL.md")
+    for key in ("allowed-tools", "disallowed-tools", "disable-model-invocation"):
+        assert key not in plain, key
+
+
+@pytest.mark.parametrize("agent", ["codex", "copilot", "cursor", "gemini", "pi"])
+def test_governance_keys_dropped_and_recorded_non_claude(fixture_copy, agent):
+    """Non-Claude targets drop every governance key AND record each per-file (#272, REQ-FMT-03/OBS-01).
+
+    The keys must not leak into any non-Claude artifact, and each must appear in
+    GENERATION-REPORT.md attributed to `skills/noarg/SKILL.md` and this target.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+    report = (root / "adapters" / "GENERATION-REPORT.md").read_text("utf-8")
+    for key in ("allowed-tools", "disallowed-tools", "disable-model-invocation"):
+        assert key in report, f"{key} missing from GENERATION-REPORT.md"
+    # None of the keys leak into the target's emitted artifacts. references/ is
+    # excluded: the frontmatter schema legitimately *documents* these keys, so its
+    # verbatim copy naming them is not a leak (a skill emitting them as its own
+    # frontmatter would be).
+    agent_files = [
+        p
+        for p in (root / "adapters" / agent).rglob("*")
+        if p.is_file() and "references" not in p.relative_to(root).parts
+    ]
+    bodies = "".join(p.read_text("utf-8", errors="ignore") for p in agent_files)
+    for token in ("allowed-tools:", "disallowed-tools:", "disable-model-invocation:"):
+        assert token not in bodies, f"{token!r} leaked into {agent} output"
+
+
 # --------------------------------------------------------------------------- #
 # 3.7 Description byte-fidelity (REQ-FMT-04)
 # --------------------------------------------------------------------------- #

@@ -47,7 +47,10 @@ SCHEMA_REL_PATH: str = "references/skill-frontmatter.schema.json"
 
 REQUIRED_FRONTMATTER_KEYS: frozenset[str] = frozenset({"name", "description"})
 ALLOWED_FRONTMATTER_KEYS: frozenset[str] = frozenset(
-    {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
+    {
+        "name", "description", "license", "compatibility", "metadata",
+        "allowed-tools", "disallowed-tools", "disable-model-invocation",
+    }
 )
 
 
