@@ -32,12 +32,12 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-5-loop/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 | `skills/forge-6-docs/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 | `skills/forge-bootstrap/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
-| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Codex skill-frontmatter tool-governance field (TQ-1) |
+| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Codex skill-frontmatter skill-governance field (TQ-1) |
 | `skills/forge-fix/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
-| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Codex skill-frontmatter tool-governance field (TQ-1) |
+| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Codex skill-frontmatter skill-governance field (TQ-1) |
 | `skills/forge-guide/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
-| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Codex skill-frontmatter tool-governance field (TQ-1) |
-| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Codex skill-frontmatter tool-governance field (TQ-1) |
+| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Codex skill-frontmatter skill-governance field (TQ-1) |
+| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Codex skill-frontmatter skill-governance field (TQ-1) |
 | `skills/forge-verify/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 | `skills/forge/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 
@@ -65,12 +65,12 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-5-loop/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 | `skills/forge-6-docs/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 | `skills/forge-bootstrap/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Copilot skill-frontmatter tool-governance field (TQ-1) |
+| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Copilot skill-frontmatter skill-governance field (TQ-1) |
 | `skills/forge-fix/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Copilot skill-frontmatter tool-governance field (TQ-1) |
+| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Copilot skill-frontmatter skill-governance field (TQ-1) |
 | `skills/forge-guide/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
-| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Copilot skill-frontmatter tool-governance field (TQ-1) |
-| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Copilot skill-frontmatter tool-governance field (TQ-1) |
+| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Copilot skill-frontmatter skill-governance field (TQ-1) |
+| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Copilot skill-frontmatter skill-governance field (TQ-1) |
 | `skills/forge-verify/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 | `skills/forge/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 
@@ -98,12 +98,12 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-5-loop/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 | `skills/forge-6-docs/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 | `skills/forge-bootstrap/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
-| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Cursor .mdc tool-governance field |
+| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Cursor .mdc skill-governance field |
 | `skills/forge-fix/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
-| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Cursor .mdc tool-governance field |
+| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Cursor .mdc skill-governance field |
 | `skills/forge-guide/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
-| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Cursor .mdc tool-governance field |
-| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Cursor .mdc tool-governance field |
+| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Cursor .mdc skill-governance field |
+| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Cursor .mdc skill-governance field |
 | `skills/forge-verify/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 | `skills/forge/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 
@@ -131,12 +131,12 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-5-loop/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 | `skills/forge-6-docs/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 | `skills/forge-bootstrap/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
-| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Gemini skill-frontmatter tool-governance field (TQ-1) |
+| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Gemini skill-frontmatter skill-governance field (TQ-1) |
 | `skills/forge-fix/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
-| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Gemini skill-frontmatter tool-governance field (TQ-1) |
+| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Gemini skill-frontmatter skill-governance field (TQ-1) |
 | `skills/forge-guide/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
-| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Gemini skill-frontmatter tool-governance field (TQ-1) |
-| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Gemini skill-frontmatter tool-governance field (TQ-1) |
+| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Gemini skill-frontmatter skill-governance field (TQ-1) |
+| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Gemini skill-frontmatter skill-governance field (TQ-1) |
 | `skills/forge-verify/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 | `skills/forge/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 
@@ -155,12 +155,12 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `skills/forge-5-loop/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
 | `skills/forge-6-docs/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
 | `skills/forge-bootstrap/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
-| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Pi skill-frontmatter tool-governance field |
+| `skills/forge-bootstrap/SKILL.md` | `disable-model-invocation` | no Pi skill-frontmatter skill-governance field |
 | `skills/forge-fix/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
-| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Pi skill-frontmatter tool-governance field |
+| `skills/forge-guide/SKILL.md` | `allowed-tools` | no Pi skill-frontmatter skill-governance field |
 | `skills/forge-guide/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
-| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Pi skill-frontmatter tool-governance field |
-| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Pi skill-frontmatter tool-governance field |
+| `skills/forge-guide/SKILL.md` | `disallowed-tools` | no Pi skill-frontmatter skill-governance field |
+| `skills/forge-init/SKILL.md` | `disable-model-invocation` | no Pi skill-frontmatter skill-governance field |
 | `skills/forge-verify/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
 | `skills/forge/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
 
