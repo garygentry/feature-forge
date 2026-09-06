@@ -2232,6 +2232,10 @@ _REFERENCE_CITATION_RE: re.Pattern[str] = re.compile(
 #:   - `verifier-patterns/`: the forge-verifier agent opens the index (`MEMORY.md`) and
 #:     follows its intra-dir links, so a per-file fan of only the cited index would leave
 #:     those links dangling on the skill-local (non-plugin npm-installer Claude) layout.
+#:     The AGENT is the reader, but fan-out scans SKILL bodies (not agent bodies), so the
+#:     triggering citation lives in the forge-verify SKILL body on the agent's behalf; the
+#:     reverse-coverage guard in tests/test_reference_citations.py fails loudly if that
+#:     citation is ever dropped, so the load-bearing citation cannot silently disappear.
 _WHOLE_DIR_FANNED_REFERENCE_ROOTS: frozenset[str] = frozenset({"stacks", "verifier-patterns"})
 
 

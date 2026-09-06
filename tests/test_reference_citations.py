@@ -198,9 +198,12 @@ def _citations_by_skill() -> dict[str, set[str]]:
 
     Kept per skill rather than pooled because the builder's fan-out is per skill: WHICH
     skill cites a shared reference decides whether that reference reaches a skill dir
-    (see `_is_covered`). Templated forms (`stacks/{stack}.md`,
-    `verification-checklists/{mode}.md`) are retained because `_whole_dir_fanned_roots` reads
-    them; `_is_covered` never matches a concrete file against one directly.
+    (see `_is_covered`). Templated forms are retained rather than filtered, for two
+    different reasons: the `stacks/{stack}.md` form is what `_whole_dir_fanned_roots`
+    reads to detect the whole-`stacks/`-tree fan, while `verification-checklists/{mode}.md`
+    is harmless noise — `_is_covered` never matches a concrete file against a templated
+    form, and the concrete checklist files are covered as forge-verify's own references
+    besides.
     """
     return {
         name: {m.group(1) for m in CITE_RE.finditer(body)}
