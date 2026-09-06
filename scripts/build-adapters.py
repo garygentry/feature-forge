@@ -72,6 +72,19 @@ class SkillRecord:
             Copied verbatim into each target's skill artifact.
         own_refs: Absolute path to this skill's own `references/` subdir if it has
             one, else None. 7 of 11 skills have one (see `01-architecture-layout.md §7`).
+        claude_keys: Ordered mapping of every top-level frontmatter key that is NOT
+            one of the spec-allowed portable keys (`_PORTABLE_SKILL_KEYS` —
+            `name`/`description`/`metadata`/`license`/`compatibility`), in source
+            order. These are Claude-only skill-governance keys (`allowed-tools`,
+            `disallowed-tools`, `disable-model-invocation`): the Claude emitter
+            reconstructs them at the top level, and every other target drop-records
+            them. Excluding the portable set (rather than a fixed governance list)
+            keeps a future Claude-only key auto-covered while never mis-sweeping a
+            portable key into `claude_keys` — where it would crash `order_fields`
+            (Claude) or be dropped with a governance reason (others). `metadata`
+            carries `argument-hint`, reconstructed via `hint_value` (REQ-VND-01);
+            `license`/`compatibility` are portable pass-throughs — none is a dropped
+            construct (REQ-SCALE-01, REQ-GEN-06, REQ-FMT-03, REQ-OBS-01).
         source_path: Repo-relative POSIX path of the SKILL.md (for provenance + errors).
     """
 
@@ -80,6 +93,7 @@ class SkillRecord:
     metadata: dict[str, object] | None
     body: str
     own_refs: Path | None
+    claude_keys: dict[str, object]
     source_path: str
 
 
@@ -124,6 +138,9 @@ FRONTMATTER_KEY_ORDER: tuple[str, ...] = (
     "name",
     "description",
     "argument-hint",   # claude only (reconstructed, REQ-VND-01)
+    "allowed-tools",              # claude-only skill governance (SkillRecord.claude_keys)
+    "disallowed-tools",          # claude-only skill governance (SkillRecord.claude_keys)
+    "disable-model-invocation",  # claude-only skill governance (SkillRecord.claude_keys)
     "globs",           # cursor .mdc
     "alwaysApply",     # cursor .mdc
     "tools",           # sub-agents, where representable
@@ -137,6 +154,18 @@ FRONTMATTER_KEY_ORDER: tuple[str, ...] = (
     "inheritProjectContext",  # pi-only
     "acceptanceRole",         # pi-only
     "completionGuard",        # pi-only
+)
+
+#: Spec-allowed portable top-level SKILL.md frontmatter keys — the complement of the
+#: Claude-only skill-governance keys within the schema (references/skill-frontmatter.
+#: schema.json). `parse_skill` sweeps everything NOT in this set into
+#: `SkillRecord.claude_keys`, so the governance trio is captured while portable keys
+#: (`license`/`compatibility` have no dedicated emit path today) are never mis-swept
+#: — a mis-swept portable key would crash `order_fields` on Claude and be
+#: governance-drop-recorded elsewhere. Kept in lockstep with the schema by
+#: `test_portable_skill_keys_match_schema` (REQ-SCALE-01 / REQ-OBS-01).
+_PORTABLE_SKILL_KEYS: frozenset[str] = frozenset(
+    {"name", "description", "metadata", "license", "compatibility"}
 )
 
 
@@ -548,12 +577,21 @@ def parse_skill(path: Path, root: Path) -> SkillRecord:
     own_refs_dir = path.parent / "references"
     own_refs = own_refs_dir if own_refs_dir.is_dir() else None
 
+    # Claude-only top-level skill-governance keys, captured per-file (source order ==
+    # YAML document order). Everything in `_PORTABLE_SKILL_KEYS` is spec-allowed and
+    # portable (handled elsewhere or a pass-through), so only the non-portable
+    # remainder — the governance trio today — is swept in (REQ-SCALE-01).
+    claude_keys: dict[str, object] = {
+        k: v for k, v in fm.items() if k not in _PORTABLE_SKILL_KEYS
+    }
+
     return SkillRecord(
         name=name,
         description=description,
         metadata=metadata,
         body=body,
         own_refs=own_refs,
+        claude_keys=claude_keys,
         source_path=source_path,
     )
 
@@ -668,6 +706,45 @@ def hint_value(skill: SkillRecord) -> str | None:
         return None
     hint = skill.metadata.get("argument-hint")
     return hint if isinstance(hint, str) else None
+
+
+#: Per-target drop reason for the Claude-only skill-governance frontmatter keys
+#: (`allowed-tools` / `disallowed-tools` / `disable-model-invocation`). These express
+#: Claude's per-skill tool pre-approval, tool denial, and auto-invocation control; no
+#: other target's skill format has a confirmed equivalent (TQ-1), so each is
+#: drop-recorded (REQ-GEN-06 / REQ-FMT-03 / REQ-OBS-01). Claude reconstructs them.
+#: Reasons say "skill-governance" (not "tool-governance"): the trio spans tool
+#: pre-approval/denial AND `disable-model-invocation` (auto-invocation control), so a
+#: tool-only label would misattribute the last key's drop (REQ-OBS-01).
+_SKILL_GOVERNANCE_DROP_REASON: dict[str, str] = {
+    "codex": "no Codex skill-frontmatter skill-governance field (TQ-1)",
+    "copilot": "no Copilot skill-frontmatter skill-governance field (TQ-1)",
+    "cursor": "no Cursor .mdc skill-governance field",
+    "gemini": "no Gemini skill-frontmatter skill-governance field (TQ-1)",
+    "pi": "no Pi skill-frontmatter skill-governance field",
+}
+
+
+def drop_skill_claude_keys(skill: SkillRecord, agent_id: str) -> tuple[DropRecord, ...]:
+    """Record EVERY ``SkillRecord.claude_keys`` entry as dropped for a non-Claude target.
+
+    The skill analogue of ``drop_all_claude_keys``: enumerates the per-file
+    ``claude_keys`` map (never a hard-coded list) so a future Claude-only skill
+    frontmatter key is auto-covered (REQ-SCALE-01 / REQ-GEN-06 / REQ-OBS-01). Today
+    those keys are the skill-governance trio; Claude reconstructs them top-level, every
+    other target drops them with the per-target reason in ``_SKILL_GOVERNANCE_DROP_REASON``.
+    Returns an empty tuple for the common skill that carries none.
+    """
+    reason = _SKILL_GOVERNANCE_DROP_REASON[agent_id]
+    return tuple(
+        DropRecord(
+            agent=agent_id,
+            source=skill.source_path,
+            construct=key,
+            reason=reason,
+        )
+        for key in skill.claude_keys  # per-file source order → deterministic
+    )
 
 
 def drop_all_claude_keys(
@@ -1031,6 +1108,19 @@ _PLACEHOLDER_BINDINGS: dict[str, dict[str, str]] = {
 _PLACEHOLDER_RESIDUAL_RE = re.compile(r"\{\{[A-Z][A-Z0-9_]*\}\}")
 
 
+def _flatten_frontmatter(value: object) -> str:
+    """Join every scalar in a nested frontmatter value into one scannable string.
+
+    Governance values are scalars or lists of scalars (e.g. ``allowed-tools``); walk
+    them so the placeholder-residue scan sees each element regardless of nesting.
+    """
+    if isinstance(value, dict):
+        return " ".join(_flatten_frontmatter(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return " ".join(_flatten_frontmatter(v) for v in value)
+    return str(value)
+
+
 def apply_placeholders(text: str, agent_id: str) -> str:
     """Bind canon placeholder tokens to their per-host form (#271 P1.2).
 
@@ -1180,6 +1270,22 @@ class ClaudeEmitter:
         hint = hint_value(skill)
         if hint is not None:  # REQ-VND-01: reconstruct top-level argument-hint
             native["argument-hint"] = hint
+        # Restore the Claude-only skill-governance keys at the top level, where Claude
+        # reads them (allowed-tools/disallowed-tools/disable-model-invocation). Values
+        # are Claude-literal config identifiers, not prose, so they pass through
+        # verbatim (no placeholder resolution). order_fields projects them onto
+        # FRONTMATTER_KEY_ORDER. Because they skip apply_placeholders, guard against a
+        # P1.2 tool-name placeholder ({{TOOL}}) leaking in here — it would ship a
+        # Claude tool-approval matching no real tool, silently (REQ-OBS-01).
+        residual = _PLACEHOLDER_RESIDUAL_RE.search(_flatten_frontmatter(skill.claude_keys))
+        if residual is not None:
+            raise CanonError(
+                skill.source_path,
+                f"governance frontmatter value carries an unresolved placeholder "
+                f"{residual.group(0)!r}; skill-governance keys take Claude-literal "
+                f"tool identifiers, not P1.2 placeholder tokens.",
+            )
+        native.update(skill.claude_keys)
         fields = order_fields(native)
         content = render_frontmatter_block(fields, skill.source_path) + skill_body_for(
             skill.body, "claude"
@@ -1231,6 +1337,7 @@ class CursorEmitter:
         if hint_value(skill) is not None:
             drops = (DropRecord("cursor", skill.source_path, "argument-hint",
                                 "no Cursor .mdc invocation-hint field"),)
+        drops += drop_skill_claude_keys(skill, "cursor")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
@@ -1317,6 +1424,7 @@ class CodexEmitter:
         if hint_value(skill) is not None:  # REQ-FMT-02 branch 2 (TQ-1)
             drops = (DropRecord("codex", skill.source_path, "argument-hint",
                                 "no confirmed Codex invocation-hint field (TQ-1)"),)
+        drops += drop_skill_claude_keys(skill, "codex")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
@@ -1376,6 +1484,7 @@ class CopilotEmitter:
         if hint_value(skill) is not None:
             drops = (DropRecord("copilot", skill.source_path, "argument-hint",
                                 "no known Copilot invocation-hint field (TQ-1)"),)
+        drops += drop_skill_claude_keys(skill, "copilot")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
@@ -1547,6 +1656,7 @@ class PiEmitter:
         if hint_value(skill) is not None:
             drops = (DropRecord("pi", skill.source_path, "argument-hint",
                                 "Pi skills have no invocation-hint field"),)
+        drops += drop_skill_claude_keys(skill, "pi")
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
@@ -1604,6 +1714,7 @@ class GeminiEmitter:
         if hint_value(skill) is not None:
             drops = (DropRecord("gemini", skill.source_path, "argument-hint",
                                 "Gemini manifest hint field unconfirmed (TQ-1)"),)
+        drops += drop_skill_claude_keys(skill, "gemini")
         entry = ManifestEntry(name=skill.name, description=description)
         return EmitResult(
             files=(EmittedFile(rel, content),),

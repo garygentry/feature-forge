@@ -12,6 +12,8 @@
     "license": { "type": "string" },
     "compatibility": {},
     "metadata": { "type": "object" },
-    "allowed-tools": {}
+    "allowed-tools": {},
+    "disallowed-tools": {},
+    "disable-model-invocation": { "type": "boolean" }
   }
 }

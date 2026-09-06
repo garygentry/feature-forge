@@ -3,6 +3,15 @@
 name: forge-guide
 description: Explain what feature-forge is, when to use it, how to configure it, and its best practices — advisory guidance, not stage execution. Use when the user or another agent asks what feature-forge is, whether/when to adopt it, how the pipeline works conceptually, how to set up or configure forge.config.json, or for usage tips and best practices. Do NOT trigger to RUN a pipeline stage (use forge-1-prd … forge-6-docs), to show a specific feature's status (use forge), or for general software questions unrelated to feature-forge.
 argument-hint: '<optional topic: overview | when | setup | config | stages | verify | context | epics | loop | troubleshoot — or --doctor to report and repair the environment>'
+allowed-tools:
+- Read
+- Grep
+- Glob
+disallowed-tools:
+- Write
+- Edit
+- Skill
+- Agent
 ---
 
 # Feature Forge — Usage & Best-Practices Guide

@@ -24,6 +24,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `agents/verifier.md` | `sub-agent key 'model'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
 | `agents/verifier.md` | `sub-agent key 'skills'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
 | `agents/verifier.md` | `sub-agent key 'tools'` | no Codex custom-agent equivalent in safe mapping (TQ-1) |
+| `skills/noarg/SKILL.md` | `allowed-tools` | no Codex skill-frontmatter skill-governance field (TQ-1) |
+| `skills/noarg/SKILL.md` | `disable-model-invocation` | no Codex skill-frontmatter skill-governance field (TQ-1) |
+| `skills/noarg/SKILL.md` | `disallowed-tools` | no Codex skill-frontmatter skill-governance field (TQ-1) |
 | `skills/with-refs/SKILL.md` | `argument-hint` | no confirmed Codex invocation-hint field (TQ-1) |
 
 ## copilot
@@ -42,6 +45,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `agents/verifier.md` | `sub-agent key 'model'` | no Copilot sub-agent construct (TQ-1) |
 | `agents/verifier.md` | `sub-agent key 'skills'` | no Copilot sub-agent construct (TQ-1) |
 | `agents/verifier.md` | `sub-agent key 'tools'` | no Copilot sub-agent construct (TQ-1) |
+| `skills/noarg/SKILL.md` | `allowed-tools` | no Copilot skill-frontmatter skill-governance field (TQ-1) |
+| `skills/noarg/SKILL.md` | `disable-model-invocation` | no Copilot skill-frontmatter skill-governance field (TQ-1) |
+| `skills/noarg/SKILL.md` | `disallowed-tools` | no Copilot skill-frontmatter skill-governance field (TQ-1) |
 | `skills/with-refs/SKILL.md` | `argument-hint` | no known Copilot invocation-hint field (TQ-1) |
 
 ## cursor
@@ -60,6 +66,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `agents/verifier.md` | `sub-agent key 'model'` | no Cursor sub-agent equivalent |
 | `agents/verifier.md` | `sub-agent key 'skills'` | no Cursor sub-agent equivalent |
 | `agents/verifier.md` | `sub-agent key 'tools'` | no Cursor sub-agent equivalent |
+| `skills/noarg/SKILL.md` | `allowed-tools` | no Cursor .mdc skill-governance field |
+| `skills/noarg/SKILL.md` | `disable-model-invocation` | no Cursor .mdc skill-governance field |
+| `skills/noarg/SKILL.md` | `disallowed-tools` | no Cursor .mdc skill-governance field |
 | `skills/with-refs/SKILL.md` | `argument-hint` | no Cursor .mdc invocation-hint field |
 
 ## gemini
@@ -78,6 +87,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `agents/verifier.md` | `sub-agent key 'model'` | no Gemini sub-agent construct (TQ-1) |
 | `agents/verifier.md` | `sub-agent key 'skills'` | no Gemini sub-agent construct (TQ-1) |
 | `agents/verifier.md` | `sub-agent key 'tools'` | no Gemini sub-agent construct (TQ-1) |
+| `skills/noarg/SKILL.md` | `allowed-tools` | no Gemini skill-frontmatter skill-governance field (TQ-1) |
+| `skills/noarg/SKILL.md` | `disable-model-invocation` | no Gemini skill-frontmatter skill-governance field (TQ-1) |
+| `skills/noarg/SKILL.md` | `disallowed-tools` | no Gemini skill-frontmatter skill-governance field (TQ-1) |
 | `skills/with-refs/SKILL.md` | `argument-hint` | Gemini manifest hint field unconfirmed (TQ-1) |
 
 ## pi
@@ -87,6 +99,9 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `agents/author.md` | `sub-agent key 'model'` | Claude model aliases (opus/sonnet) are not Pi model ids; pin via subagents.agentOverrides.<name>.model in Pi settings instead (D1) |
 | `agents/researcher.md` | `sub-agent key 'model'` | Claude model aliases (opus/sonnet) are not Pi model ids; pin via subagents.agentOverrides.<name>.model in Pi settings instead (D1) |
 | `agents/verifier.md` | `sub-agent key 'model'` | Claude model aliases (opus/sonnet) are not Pi model ids; pin via subagents.agentOverrides.<name>.model in Pi settings instead (D1) |
+| `skills/noarg/SKILL.md` | `allowed-tools` | no Pi skill-frontmatter skill-governance field |
+| `skills/noarg/SKILL.md` | `disable-model-invocation` | no Pi skill-frontmatter skill-governance field |
+| `skills/noarg/SKILL.md` | `disallowed-tools` | no Pi skill-frontmatter skill-governance field |
 | `skills/with-refs/SKILL.md` | `argument-hint` | Pi skills have no invocation-hint field |
 
 ## Copied verbatim (no provenance header)
