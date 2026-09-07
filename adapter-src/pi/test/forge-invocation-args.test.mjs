@@ -118,6 +118,15 @@ describe("normalization via the input handler", () => {
 		assert.match(r.text, /<arguments>a&lt;b&gt;c&amp;d&lt;\/arguments&gt;<\/arguments>/);
 	});
 
+	test("an arg that merely starts with the tag (not a full envelope) is still wrapped", async () => {
+		// The idempotency guard must key on a COMPLETE emitted envelope, not on any
+		// argument beginning with the tag name — otherwise this legitimate input would
+		// lose its boundary (the failure #303 fixes).
+		const r = await run("/skill:forge-1-prd <feature-forge-invocation> is a tag");
+		assert.equal(r.action, "transform");
+		assert.match(r.text, /<arguments>&lt;feature-forge-invocation&gt; is a tag<\/arguments>/);
+	});
+
 	test("the forge navigator (bare name, optional arg) is matched", async () => {
 		const r = await run("/skill:forge");
 		assert.equal(r.action, "transform");
@@ -142,6 +151,14 @@ describe("passthrough (leaves unrelated input unchanged)", () => {
 
 	test("an ordinary prompt is untouched", async () => {
 		assert.deepEqual(await run("please summarize the forge pipeline"), { action: "continue" });
+	});
+
+	test("parity with Pi: a name not separated by a space is not a forge command", async () => {
+		// Pi's _expandSkillCommand splits the name on the first SPACE only, so
+		// `/skill:forge-1-prd\tauth` has no space -> name is the whole remainder ->
+		// not a known skill -> Pi does not expand it. We mirror that exactly and pass
+		// it through, rather than "helpfully" expanding a command Pi would not.
+		assert.deepEqual(await run("/skill:forge-1-prd\tauth"), { action: "continue" });
 	});
 
 	test("extension-injected input (source 'extension') is left alone", async () => {

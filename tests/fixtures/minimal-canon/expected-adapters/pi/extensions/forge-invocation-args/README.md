@@ -53,9 +53,10 @@ built-in expansion append it as the skill's arguments:
 </feature-forge-invocation>
 ```
 
-The forge skill bodies read the feature name from `<arguments>` (an empty element
-means none was supplied → STOP and ask). That companion rule lives host-neutrally
-in `references/shared-conventions.md`.
+The forge skill bodies read the feature name from `<arguments>`. An empty element
+means no argument was supplied — for a skill that requires a feature name that means
+STOP and ask; the `forge` navigator (optional argument) proceeds as usual. That
+companion rule lives host-neutrally in `references/shared-conventions.md`.
 
 ### Design decisions
 

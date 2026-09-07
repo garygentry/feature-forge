@@ -35,11 +35,17 @@
 export const ENVELOPE_TAG = "feature-forge-invocation";
 export const ENVELOPE_VERSION = "1";
 
-/** Matches a feature-forge skill command and captures its (un-namespaced) name.
- *  Pi package skills register as `/skill:<name>` with NO `<pkg>:` prefix; the
- *  forge names are `forge` and `forge-<...>`. The `(?=\s|$)` boundary keeps this
- *  from matching an unrelated skill like `/skill:forgery`. */
-const FORGE_SKILL_RE = /^\/skill:(forge(?:-[a-z0-9-]+)?)(?=\s|$)/;
+/** Pi's skill-command prefix. Pi expands `/skill:<name> <args>` only when the
+ *  text starts with this literal at index 0 (verified in agent-session.js
+ *  `_expandSkillCommand`), and package skills register un-namespaced — the
+ *  command is `/skill:forge-1-prd`, never `/skill:<pkg>:forge-1-prd`. */
+const SKILL_PREFIX = "/skill:";
+
+/** A feature-forge skill NAME (not the whole command): `forge` or `forge-<...>`.
+ *  Applied to the name Pi itself would parse out (text up to the first space), so
+ *  our match set is exactly Pi's expansion set — no more, no less. Anchored end
+ *  (`$`) so `forgery` is not matched. */
+const FORGE_NAME_RE = /^forge(?:-[a-z0-9-]+)?$/;
 
 /** Result subset this extension ever returns (a strict subset of Pi's
  *  InputEventResult — we never return `handled`, which would skip the agent). */
@@ -89,23 +95,39 @@ export function buildEnvelope(skillName: string, rawArgs: string): string {
 	);
 }
 
+/** True only for a complete envelope this extension emits (open tag WITH the
+ *  version attribute AND the matching close tag) — not merely any argument that
+ *  happens to begin with the tag name. Keeps the idempotency guard from dropping
+ *  the boundary on a legitimate arg like `<feature-forge-invocation> is a tag`. */
+function isAlreadyEnveloped(rawArgs: string): boolean {
+	return (
+		rawArgs.startsWith(`<${ENVELOPE_TAG} version="`) && rawArgs.trimEnd().endsWith(`</${ENVELOPE_TAG}>`)
+	);
+}
+
 /**
- * Pure normalization: given raw input text, return the transform (for a matched
- * `/skill:forge*` command) or `continue` (for everything else). Exported so it can
- * be unit-tested directly. Parses the command the same way Pi does — name = the
- * matched forge token, args = the entire remainder, trimmed — so the rewritten
- * text re-expands identically.
+ * Pure normalization: given raw input text, return the transform (for a
+ * feature-forge skill command) or `continue` (for everything else). Exported for
+ * direct unit testing. The command is parsed EXACTLY as Pi's `_expandSkillCommand`
+ * does — the text must start with `/skill:` at index 0, the name is the text up to
+ * the first space (or the whole remainder if none), and args are the rest, trimmed
+ * — so our match set equals Pi's expansion set and the rewritten text re-expands
+ * identically. A name that is not a forge skill (or a `/skill:`-less prompt) is
+ * left untouched.
  */
 export function normalizeInput(text: string): InputResult {
-	const match = FORGE_SKILL_RE.exec(text);
-	if (!match) return { action: "continue" };
+	if (!text.startsWith(SKILL_PREFIX)) return { action: "continue" };
 
-	const skillName = match[1];
-	const rawArgs = text.slice(match[0].length).trim();
+	const spaceIndex = text.indexOf(" ");
+	const skillName =
+		spaceIndex === -1 ? text.slice(SKILL_PREFIX.length) : text.slice(SKILL_PREFIX.length, spaceIndex);
+	if (!FORGE_NAME_RE.test(skillName)) return { action: "continue" };
+
+	const rawArgs = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
 
 	// Idempotency: input handlers chain (each sees the prior's output), and a
-	// resend could re-enter here. Never wrap an already-enveloped invocation.
-	if (rawArgs.startsWith(`<${ENVELOPE_TAG}`)) return { action: "continue" };
+	// resend could re-enter here. Never re-wrap an invocation we already enveloped.
+	if (isAlreadyEnveloped(rawArgs)) return { action: "continue" };
 
 	const envelope = buildEnvelope(skillName, rawArgs);
 	return { action: "transform", text: `/skill:${skillName} ${envelope}` };
