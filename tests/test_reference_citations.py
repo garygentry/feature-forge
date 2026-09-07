@@ -94,6 +94,12 @@ UNCITED_ALLOWLIST: dict[tuple[str | None, str], str] = {
         "not skill-loaded prose; a SKILL-body citation would drag it into the prose-change "
         "compliance gate the additive-verb PR is scoped to avoid"
     ),
+    (None, "verify-state.md"): (
+        "the `forge-session.py verify-state` verb contract (#277) — reference material "
+        "read from the bundle root by humans and by an operator debugging an upstream "
+        "verification gate, not skill-loaded prose; a SKILL-body citation would drag it "
+        "into the prose-change compliance gate this additive-verb PR is scoped to avoid"
+    ),
     ("forge-bootstrap", "templates/hygiene/AGENTS.md"): (
         "read by scripts/forge-bootstrap.py from TEMPLATE_ROOT when it composes the "
         "scaffolded repo's hygiene files, not by any skill body"
