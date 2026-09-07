@@ -7,12 +7,16 @@ deterministic verb: one `VerifyStateCase`, one message table, the same "never
 eyeball the graph" move `select-outcome` makes for the exit outcome. Three guards
 live here:
 
-- **Parity (scope 2).** The enum is the union of the cases the three gates spell
-  out. `test_enum_covers_every_case_the_gates_spell_out` greps the enumerating gate
-  sections for the raw verify statuses they key on, maps each through the same
-  status→case contract the verb applies, and asserts the union (plus the `never`
-  fallback every gate carries) IS the whole enum — both ways, so neither the enum nor
-  the gates can grow or drop a case without the other.
+- **Parity (scope 2).** The enum is the union of the cases the reference doc's case
+  table documents. Since #278 (P3.3) the three gates no longer enumerate statuses —
+  they call `verify-state` and follow its `{message, nextCommand}` — so the anchor is
+  `references/verify-state.md`'s ``## The case enum`` table (the move #278 PR A made
+  for `select-outcome`). `test_enum_covers_every_case_the_reference_documents` greps
+  that table for the raw verify statuses, maps each through the same status→case
+  contract the verb applies, and asserts the union (plus the `never` bucket) IS the
+  whole enum — both ways, so neither the enum nor the doc can grow or drop a case
+  without the other. `test_all_three_gates_call_the_verb` separately pins that each
+  flipped gate still invokes the verb.
 
 - **Fixtures (scope 3).** Every enum value is reached from an on-disk fixture.
   `test_every_case_is_reachable` asserts the union of reached cases IS the full enum —
@@ -53,7 +57,7 @@ SESSION = _load_session_module()
 #: statuses to themselves, and `pending` to `never` (the absent/unresolved bucket the
 #: gates collapse to "not verified"). If the verb's classification and this map ever
 #: disagree, the reachability fixtures below catch it — this map only pins what the
-#: gate prose is allowed to key on.
+#: reference enum table is allowed to name.
 STATUS_TO_CASE: Final[dict[str, str]] = {
     "passed": "passed",
     "findings-reported": "findings-reported",
@@ -69,91 +73,106 @@ STATUS_TO_CASE: Final[dict[str, str]] = {
 # --------------------------------------------------------------------------------------
 
 
-def _section(skill: str, heading: str) -> str:
-    """Return a skill body's ``### {heading}`` section, up to the next ``###``/``##``."""
-    text = (SKILLS / f"forge-{skill}" / "SKILL.md").read_text(encoding="utf-8")
-    lines = text.replace("\r\n", "\n").split("\n")
+REFERENCE: Final = REPO_ROOT / "references" / "verify-state.md"
+
+#: The three flipped gate sections and the served upstream stage each now passes to
+#: `verify-state --for-stage`. forge-4 checks the specs, forge-5 the backlog, forge-6
+#: the impl — a fixed upstream production stage per gate, never the epic.
+_GATE_CALLS: Final[tuple[tuple[str, str], ...]] = (
+    ("4-backlog", "forge-3-specs"),
+    ("5-loop", "forge-4-backlog"),
+    ("6-docs", "forge-5-loop"),
+)
+
+
+def _reference_case_enum() -> str:
+    """Return references/verify-state.md's ``## The case enum`` section, up to the next ``##``.
+
+    Since #278 (P3.3) the three gate bodies no longer enumerate the verify statuses —
+    they call `verify-state` and follow its returned `{message, nextCommand}`. The
+    human-facing enumeration of what the verb classifies now lives in this one table,
+    so the parity anchor moved here — the same move #278 PR A made for `select-outcome`'s
+    outcome tables.
+    """
+    text = REFERENCE.read_text(encoding="utf-8")
     body: list[str] = []
     inside = False
-    for line in lines:
-        if line.startswith("### ") or line.startswith("## "):
+    for line in text.replace("\r\n", "\n").split("\n"):
+        if line.startswith("## "):
             if inside:
                 break
-            inside = line.startswith("### ") and line[4:].strip() == heading
+            inside = line[3:].strip() == "The case enum"
             continue
         if inside:
             body.append(line)
-    assert body, f"no '### {heading}' section parsed from forge-{skill}/SKILL.md"
+    assert body, "no '## The case enum' section parsed from references/verify-state.md"
     return "\n".join(body)
 
 
 def _verify_statuses_in(text: str) -> set[str]:
-    """The backtick-quoted KNOWN verify statuses a gate section keys on.
+    """The backtick-quoted KNOWN verify statuses named in a section.
 
-    The backtick requirement is deliberate, not incidental. A status the gate keys on
+    The backtick requirement is deliberate, not incidental. A status the verb keys on
     is written as a `code` literal; matching bare words would over-match ("verification
     passed" is prose, not the `passed` case) and let the union read full even when a
     case was quietly dropped — a false GREEN, the failure a parity guard exists to
     prevent. The cost is the opposite, benign failure: rewording a `status` literal to
     unquoted prose fails this guard even though the verb is unchanged. That RED is the
-    intended prompt — re-quote the status, or, if the gate genuinely stopped covering a
-    case, update `VerifyStateCase` to match. Fail-safe over convenient.
+    intended prompt — re-quote the status, or, if the enum genuinely changed, update
+    `VerifyStateCase` to match. Fail-safe over convenient.
     """
     quoted = set(re.findall(r"`([a-z-]+)`", text))
     return quoted & SESSION.KNOWN_VERIFY_STATUSES
 
 
-#: The two gates that enumerate cases by status (forge-4 is binary, tested below).
-_ENUMERATING_GATES: Final[tuple[tuple[str, str], ...]] = (
-    ("5-loop", "1b. Verification Check"),
-    ("6-docs", "Impl-Verify Backstop"),
-)
-
-
-def test_every_gate_status_is_a_case_the_verb_handles():
-    """Every raw verify status the enumerating gates key on maps to a `VerifyStateCase`."""
+def test_every_documented_status_is_a_case_the_verb_handles():
+    """Every raw verify status the reference enum names maps to a `VerifyStateCase`."""
     cases = set(get_args(SESSION.VerifyStateCase))
-    for skill, heading in _ENUMERATING_GATES:
-        for status in _verify_statuses_in(_section(skill, heading)):
-            assert status in STATUS_TO_CASE, (
-                f"forge-{skill} § {heading} keys on `{status}`, which the verb's "
-                "status→case contract does not map"
-            )
-            assert STATUS_TO_CASE[status] in cases, (
-                f"forge-{skill} § {heading} keys on `{status}` → "
-                f"{STATUS_TO_CASE[status]!r}, absent from VerifyStateCase"
-            )
+    for status in _verify_statuses_in(_reference_case_enum()):
+        assert status in STATUS_TO_CASE, (
+            f"the case-enum table names `{status}`, which the verb's status→case "
+            "contract does not map"
+        )
+        assert STATUS_TO_CASE[status] in cases, (
+            f"the case-enum table names `{status}` → {STATUS_TO_CASE[status]!r}, "
+            "absent from VerifyStateCase"
+        )
 
 
-def test_enum_covers_every_case_the_gates_spell_out():
-    """The enum IS the union of the gate cases — both directions.
+def test_enum_covers_every_case_the_reference_documents():
+    """The enum IS the union of the documented cases — both directions.
 
-    Reached = every gate status mapped through the contract, plus `never` (the
-    absent/not-verified fallback every gate carries, asserted separately below).
+    Reached = every documented status mapped through the contract, plus `never` (the
+    absent/not-verified case, asserted documented separately below).
     """
-    reached = {"never"}
-    for skill, heading in _ENUMERATING_GATES:
-        reached |= {STATUS_TO_CASE[s] for s in _verify_statuses_in(_section(skill, heading))}
+    reached = {STATUS_TO_CASE[s] for s in _verify_statuses_in(_reference_case_enum())}
+    reached.add("never")
     assert reached == set(get_args(SESSION.VerifyStateCase)), (
-        "VerifyStateCase and the gate prose have diverged: "
-        f"only the gates -> {reached - set(get_args(SESSION.VerifyStateCase))}, "
+        "VerifyStateCase and references/verify-state.md have diverged: "
+        f"only the doc -> {reached - set(get_args(SESSION.VerifyStateCase))}, "
         f"only the enum -> {set(get_args(SESSION.VerifyStateCase)) - reached}"
     )
 
 
-def test_all_three_gates_carry_a_not_verified_fallback():
-    """`never` is legitimate because all three gates have an absent/not-verified branch.
+def test_reference_documents_the_never_case():
+    """`never` is legitimate — the reference enum documents its absent/not-verified bucket."""
+    enum_section = _reference_case_enum()
+    assert "`never`" in enum_section
+    assert "absent" in enum_section.lower()
 
-    Includes forge-4-backlog, whose gate is a binary verified/not read that names no
-    intermediate status — so its `never` branch is what puts it among the three.
+
+def test_all_three_gates_call_the_verb():
+    """forge-4/5/6 each invoke `verify-state` instead of hand-rolling the status read (#278).
+
+    The whole point of the flip: the gates stopped branching on raw status and now
+    defer classification to the verb. If a body silently dropped the call, its upstream
+    check would vanish — this catches that.
     """
-    backlog = (SKILLS / "forge-4-backlog" / "SKILL.md").read_text(encoding="utf-8")
-    assert "haven't been verified" in backlog, (
-        "forge-4-backlog's binary verification check is gone; the enum docstring's "
-        "'three gates' claim is now stale"
-    )
-    assert "absent" in _section("5-loop", "1b. Verification Check").lower()
-    assert "absent" in _section("6-docs", "Impl-Verify Backstop").lower()
+    for skill, stage in _GATE_CALLS:
+        body = (SKILLS / f"forge-{skill}" / "SKILL.md").read_text(encoding="utf-8")
+        assert "verify-state --feature" in body and f"--for-stage {stage}" in body, (
+            f"forge-{skill} no longer calls verify-state --for-stage {stage}"
+        )
 
 
 def test_the_synopsis_documents_verify_state():

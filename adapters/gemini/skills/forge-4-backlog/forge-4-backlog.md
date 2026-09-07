@@ -50,7 +50,15 @@ After the prerequisite check, invoke the **Stage-Entry Guard** block in `referen
 
 Then invoke the **Epic-Member Base Guard** block in `references/shared-conventions.md` (this stage does not run Epic Context Injection, so invoke it explicitly here). It self-gates to a no-op for standalone features; for a nested epic member on a branch that lacks the epic manifest it stops with a home-branch pointer (Issue #125).
 
-**Verification check.** Check whether the specs have been verified. If not, use host's question mechanism to warn with the cost of skipping: "Specs haven't been verified yet. Recommended: run `forge-verify {feature}` first — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix. Continue anyway?" Offer **Verify first (recommended)** · **Continue without verifying**.
+**Verification check.** Derive whether the upstream specs have been verified from the settled on-disk record, never by eyeballing conversational state. Run `verify-state --for-stage forge-3-specs` — it reads the served stage's `forge-verify-specs` entry and returns `{case, verified, stale, message, nextCommand}`. Add `--epic "{epic}"` when this feature is an epic member (nested layout). The full case enum and its rationale live in `references/verify-state.md`.
+
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" verify-state --feature "{feature}" --for-stage forge-3-specs --specs-dir "{specsDir}" --json
+```
+
+If `verified` is true, proceed with no prompt. Otherwise print the returned `message`, then use host's question mechanism to warn with the cost of skipping — unverified specs can carry gaps or contradictions that get baked into backlog items and only surface mid-loop, where they're far more expensive to fix — and offer **Verify first (recommended)** (run the returned `nextCommand`) · **Continue without verifying**. This is a pre-stage read of the upstream artifact, so the proceed-anyway path writes nothing.
 
 ## Step 2: Load All Specs
 
