@@ -46,14 +46,15 @@ If the state's `notes` is non-empty, surface it before proceeding and treat it a
 
 ### 1b. Verification Check
 
-Read `stages.forge-verify-backlog` and branch on its status — **four** cases, in this order (the pending case must be tested *before* the generic one, or owed-and-dropped debt gets reported as never-scheduled):
+Derive whether the upstream backlog has been verified from the settled on-disk record, never by eyeballing conversational state. Run `verify-state --for-stage forge-4-backlog` — it reads the served stage's `forge-verify-backlog` entry and returns `{case, verified, stale, message, nextCommand}`. Add `--epic "{epic}"` when this feature is an epic member (nested layout). The full case enum and its rationale live in `references/verify-state.md`.
 
-1. **`passed`** — proceed with no prompt.
-2. **`findings-applied`** — fixes were applied but nothing re-verified them: this status deliberately clears freshness, so the backlog's verification is still outstanding, not silently satisfied. Use host's question mechanism to offer: **Re-verify first (recommended)** (`forge-verify {feature} backlog`) · **Continue without re-verifying**. On continue, write **nothing**: `state-verify` refuses demoting `findings-applied` to `skipped` (#203); the recorded status already says re-verification is outstanding.
-3. **`auto-verify-pending`** — automatic verification *was* scheduled for the backlog stage and the debt *was* durably recorded; it simply has not run. Say exactly that, naming the served stage and the retry command: *"{feature}: automatic verification is still pending for forge-4-backlog; run `forge-verify {feature} backlog` to resolve it."* Then use host's question mechanism to offer the same two choices as case 4. Never report this as "hasn't been verified yet" — "nobody ever asked for this" and "this was owed and dropped" are different facts.
-4. **Anything else** (absent, `pending`, `skipped`, `findings-reported`) — use host's question mechanism to warn with the cost of skipping: "Backlog hasn't been verified yet. Recommended: run `forge-verify {feature}` first — the loop implements items autonomously and commits as it goes, so a bad item (wrong scope, missing dependency, untestable acceptance criteria) is far cheaper to catch now than after several commits build on it. Continue anyway?"
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" verify-state --feature "{feature}" --for-stage forge-4-backlog --specs-dir "{specsDir}" --json
+```
 
-Cases 3 and 4 offer the same choices: **Verify first (recommended)** · **Continue without verifying**. The proceed-anyway path is unchanged.
+If `verified` is true, proceed with no prompt. Otherwise print the returned `message`, then use host's question mechanism to warn with the cost of skipping — the loop implements items autonomously and commits as it goes, so a bad item (wrong scope, missing dependency, untestable acceptance criteria) is far cheaper to catch now than after several commits build on it — and offer **Verify first (recommended)** (run the returned `nextCommand`) · **Continue without verifying**. This is a pre-stage read of the upstream artifact, so the proceed-anyway path writes **nothing** — in particular a `stale` result (fixes applied, re-verify still owed) must not be demoted to `skipped`: `state-verify` refuses that write (#203) and the recorded status already says re-verification is outstanding.
 
 ### 1b-epic. Epic Dependency Gate
 
