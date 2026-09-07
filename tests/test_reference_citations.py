@@ -143,21 +143,27 @@ def _strip_frontmatter(text: str) -> str:
     `description:` as coverage for a shared reference the builder then fans to nobody:
     green guard, unreachable file.
 
-    Mirror the builder's `split_frontmatter` exactly: it is LINE-based — the block runs
-    from the first line whose `.strip() == "---"` to the next such line. A substring scan
-    (`text.find("\\n---")`) instead stops at any *value* line that merely starts with
-    `---` (a wrapped/quoted `description:`), returning half the frontmatter as body; and
-    `text.startswith("---\\n")` treats a file with a BOM or CRLF endings as all-body. Both
-    make the guard count the wrong citations. Normalize newlines and tolerate a leading
-    BOM, then match lines the way the builder does.
+    Mirror the builder's `split_frontmatter` fence rule, which is LINE-based: the block
+    runs from the first line whose `.strip() == "---"` to the next such line. The old form
+    used a substring scan (`text.find("\\n---")`), which stops at any *value* line that
+    merely starts with `---` rather than at a real fence line. Input is already
+    newline-normalized — `read()` opens in text mode (universal newlines) — so this
+    operates on `\\n`.
+
+    This does NOT re-police malformed frontmatter: on a file with no opening fence (or an
+    unterminated one) it returns the whole text as body and moves on. The builder itself
+    *raises* on those, and a BOM makes `lines[0].strip() != "---"` here just as it makes
+    the builder reject the file — so a malformed SKILL.md fails the build's own frontmatter
+    guard long before citation coverage matters. Faithfully matching the builder means
+    matching its fence rule for well-formed files, not reimplementing its error handling.
     """
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    if not lines or lines[0].lstrip("\N{ZERO WIDTH NO-BREAK SPACE}").strip() != "---":
-        return text  # no opening fence → the whole file is body (nothing to strip)
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return text  # no opening fence → whole file is body (build guard polices this)
     for i in range(1, len(lines)):
         if lines[i].strip() == "---":
             return "\n".join(lines[i + 1:])
-    return text  # unterminated frontmatter → treat all as body
+    return text  # unterminated frontmatter → whole file is body (build guard polices this)
 
 
 def _skill_bodies() -> list[tuple[str, str]]:
@@ -620,19 +626,22 @@ def test_ignore_allowlist_makes_is_covered_consult_real_coverage():
     """`_is_covered(..., ignore_allowlist=True)` must re-ask coverage without the allowlist.
 
     Non-vacuity for the fix to test_no_allowlist_entry_excuses_a_file_that_is_now_cited:
-    every allowlisted entry is "covered" via the allowlist branch, so a necessity check
-    that does not remove the allowlist from the answer is tautological. The flag must make
-    at least one entry read as NOT-otherwise-covered, or the necessity guard proves nothing.
+    without the flag every allowlisted key returns True here, so that necessity check is
+    tautological. Asserted PER ENTRY (a for-loop is empty-safe — an emptied allowlist has
+    nothing to prove — where an `any(...)` would fail spuriously on the empty set): each
+    entry is covered WITH the allowlist and NOT covered without it, i.e. genuinely
+    allowlist-dependent (an entry covered without it would be flagged by the sibling test).
     """
     by_skill = _citations_by_skill()
     fanned = _whole_dir_fanned_roots(_all_cited())
-    assert all(_is_covered(o, r, by_skill, fanned) for (o, r) in UNCITED_ALLOWLIST), (
-        "every allowlisted entry should be 'covered' via the allowlist branch"
-    )
-    assert any(
-        not _is_covered(o, r, by_skill, fanned, ignore_allowlist=True)
-        for (o, r) in UNCITED_ALLOWLIST
-    ), "ignore_allowlist did not change any answer — the necessity check is still tautological"
+    for (o, r) in UNCITED_ALLOWLIST:
+        assert _is_covered(o, r, by_skill, fanned), (
+            f"{o, r}: an allowlisted entry should be covered via the allowlist branch"
+        )
+        assert not _is_covered(o, r, by_skill, fanned, ignore_allowlist=True), (
+            f"{o, r}: covered even without its allowlist entry — the flag proves the "
+            "necessity check is not tautological, and this entry is then unnecessary"
+        )
 
 
 def test_skill_own_coverage_requires_the_owning_skills_own_citation():
@@ -648,17 +657,18 @@ def test_skill_own_coverage_requires_the_owning_skills_own_citation():
     )
 
 
-def test_strip_frontmatter_mirrors_the_builder_over_crlf_bom_and_line_delims():
-    """`_strip_frontmatter` must match the builder's LINE-based `.strip() == '---'` rule and
-    survive CRLF / a leading BOM — the old substring+startswith form returned the whole
-    file (frontmatter included) as body in each of these cases."""
+def test_strip_frontmatter_uses_the_builders_line_fence_rule():
+    """`_strip_frontmatter` matches the builder's LINE-based `.strip() == '---'` fence rule
+    (not a `find("\\n---")` substring scan), and returns the whole text as body when there
+    is no well-formed frontmatter (the build's own guard polices malformed files)."""
     marker = "references/x.md"
-    crlf = "---\r\nname: n\r\ndescription: d\r\n---\r\nBODY " + marker
-    assert _strip_frontmatter(crlf).strip() == "BODY " + marker, "CRLF frontmatter not stripped"
-    bom = "\N{ZERO WIDTH NO-BREAK SPACE}---\nname: n\n---\nBODY " + marker
-    assert _strip_frontmatter(bom).strip() == "BODY " + marker, "BOM-prefixed frontmatter not stripped"
-    # A value that merely starts with `---` is not a closing fence (`---x`.strip() != `---`).
+    # A value line that merely starts with `---` is NOT a closing fence.
     tricky = "---\nname: n\ntag: ---x\n---\nBODY " + marker
     assert _strip_frontmatter(tricky).strip() == "BODY " + marker, "closed on a non-fence value line"
-    # No frontmatter → whole text is body.
+    # `.strip()` on the fence lines tolerates CRLF fences (input is normalized upstream anyway).
+    crlf = "---\r\nname: n\r\n---\r\nBODY " + marker
+    assert _strip_frontmatter(crlf).strip() == "BODY " + marker, "line-based rule mishandled CRLF fences"
+    # No opening fence → whole text is body (not re-policed here).
     assert _strip_frontmatter("no frontmatter " + marker) == "no frontmatter " + marker
+    # Unterminated frontmatter → whole text is body (build guard raises on it).
+    assert _strip_frontmatter("---\nname: n\nno close " + marker) == "---\nname: n\nno close " + marker
