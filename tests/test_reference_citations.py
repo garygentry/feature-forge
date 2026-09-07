@@ -141,13 +141,23 @@ def _strip_frontmatter(text: str) -> str:
     The builder fans out by scanning `skill.body`, which its `split_frontmatter` has
     already stripped. Scanning the whole file here instead would count a citation in a
     `description:` as coverage for a shared reference the builder then fans to nobody:
-    green guard, unreachable file. Same parse rule as the builder — a leading `---`
-    line, up to the next `---` line.
+    green guard, unreachable file.
+
+    Mirror the builder's `split_frontmatter` exactly: it is LINE-based — the block runs
+    from the first line whose `.strip() == "---"` to the next such line. A substring scan
+    (`text.find("\\n---")`) instead stops at any *value* line that merely starts with
+    `---` (a wrapped/quoted `description:`), returning half the frontmatter as body; and
+    `text.startswith("---\\n")` treats a file with a BOM or CRLF endings as all-body. Both
+    make the guard count the wrong citations. Normalize newlines and tolerate a leading
+    BOM, then match lines the way the builder does.
     """
-    if not text.startswith("---\n"):
-        return text
-    end = text.find("\n---", 3)
-    return text[end + 4:] if end != -1 else text
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if not lines or lines[0].lstrip("\N{ZERO WIDTH NO-BREAK SPACE}").strip() != "---":
+        return text  # no opening fence → the whole file is body (nothing to strip)
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            return "\n".join(lines[i + 1:])
+    return text  # unterminated frontmatter → treat all as body
 
 
 def _skill_bodies() -> list[tuple[str, str]]:
@@ -246,6 +256,8 @@ def _is_covered(
     rel: str,
     by_skill: dict[str, set[str]],
     fanned_roots: frozenset[str],
+    *,
+    ignore_allowlist: bool = False,
 ) -> bool:
     """Whether a reference file is reachable by the path a skill body would use.
 
@@ -258,14 +270,25 @@ def _is_covered(
     a shared `foo.md` that the builder fans to nobody. No such name collides today; the
     guard models the rule anyway, because the day one does is exactly the day a pooled
     check would go quietly green.
+
+    `ignore_allowlist=True` re-asks the question with the UNCITED_ALLOWLIST branch removed
+    — "would this be covered even WITHOUT its allowlist entry?" — which is how
+    `test_no_allowlist_entry_excuses_a_file_that_is_now_cited` decides an entry is stale.
+    Without it that check is tautological: every allowlisted key returns True here, so the
+    entry always looks covered.
     """
     if rel.split("/", 1)[0] in fanned_roots:
         return True
-    if (owner, rel) in UNCITED_ALLOWLIST:
+    if not ignore_allowlist and (owner, rel) in UNCITED_ALLOWLIST:
         return True
     if owner is not None:
-        # A skill's own references/ is copied wholesale, so any citation resolves it.
-        return any(rel in cited for cited in by_skill.values())
+        # A skill's own references/ ships wholesale, but only its OWNING skill (its body,
+        # or the agent it preloads) reads it. Another skill citing the same relpath resolves
+        # to *that* skill's own or the shared copy, never this one — so only the owner's
+        # citation vouches. Pooling every body would let an unrelated skill's citation mark
+        # this skill-own file "read" when nothing in its own skill reads it (the dead-prose
+        # case the reverse guard exists to catch).
+        return rel in by_skill.get(owner, set())
     return any(
         rel in cited and not (SKILLS / name / "references" / rel).is_file()
         for name, cited in by_skill.items()
@@ -433,9 +456,9 @@ def test_no_allowlist_entry_excuses_a_file_that_is_now_cited():
     unnecessary = [
         _describe((owner, rel))
         for owner, rel in UNCITED_ALLOWLIST
-        # Re-ask coverage with the allowlist itself taken out of the answer.
-        if rel in _all_cited() or rel.split("/", 1)[0] in fanned_roots
-        if _is_covered(owner, rel, by_skill, fanned_roots)
+        # Re-ask coverage with the allowlist itself taken OUT of the answer: an entry is
+        # unnecessary only if the file is reachable by a real citation or a fan-out rule.
+        if _is_covered(owner, rel, by_skill, fanned_roots, ignore_allowlist=True)
     ]
     assert not unnecessary, (
         "these UNCITED_ALLOWLIST entries are no longer needed — the files are cited "
@@ -586,3 +609,56 @@ def test_sibling_allowlist_entries_are_still_needed_and_explained():
         assert not (path.parent / name).is_file(), (
             f"{rel} -> {name}: the sibling is now beside it — the entry is unnecessary"
         )
+
+
+# --------------------------------------------------------------------------------------
+# Robustness fixes surfaced by the #296 review (issue #297)
+# --------------------------------------------------------------------------------------
+
+
+def test_ignore_allowlist_makes_is_covered_consult_real_coverage():
+    """`_is_covered(..., ignore_allowlist=True)` must re-ask coverage without the allowlist.
+
+    Non-vacuity for the fix to test_no_allowlist_entry_excuses_a_file_that_is_now_cited:
+    every allowlisted entry is "covered" via the allowlist branch, so a necessity check
+    that does not remove the allowlist from the answer is tautological. The flag must make
+    at least one entry read as NOT-otherwise-covered, or the necessity guard proves nothing.
+    """
+    by_skill = _citations_by_skill()
+    fanned = _whole_dir_fanned_roots(_all_cited())
+    assert all(_is_covered(o, r, by_skill, fanned) for (o, r) in UNCITED_ALLOWLIST), (
+        "every allowlisted entry should be 'covered' via the allowlist branch"
+    )
+    assert any(
+        not _is_covered(o, r, by_skill, fanned, ignore_allowlist=True)
+        for (o, r) in UNCITED_ALLOWLIST
+    ), "ignore_allowlist did not change any answer — the necessity check is still tautological"
+
+
+def test_skill_own_coverage_requires_the_owning_skills_own_citation():
+    """A skill-own reference is covered only by its OWNING skill's citation, never by an
+    unrelated skill that happens to cite the same relpath (the cross-skill pooling the
+    reverse guard's shared branch already forbids; the owner branch now matches it)."""
+    by_skill = {"skill-a": set(), "skill-b": {"foo.md"}}
+    assert not _is_covered("skill-a", "foo.md", by_skill, frozenset()), (
+        "skill-a owns foo.md but never cites it; skill-b's citation must not vouch for it"
+    )
+    assert _is_covered("skill-b", "foo.md", by_skill, frozenset()), (
+        "the owning skill's own citation is coverage"
+    )
+
+
+def test_strip_frontmatter_mirrors_the_builder_over_crlf_bom_and_line_delims():
+    """`_strip_frontmatter` must match the builder's LINE-based `.strip() == '---'` rule and
+    survive CRLF / a leading BOM — the old substring+startswith form returned the whole
+    file (frontmatter included) as body in each of these cases."""
+    marker = "references/x.md"
+    crlf = "---\r\nname: n\r\ndescription: d\r\n---\r\nBODY " + marker
+    assert _strip_frontmatter(crlf).strip() == "BODY " + marker, "CRLF frontmatter not stripped"
+    bom = "\N{ZERO WIDTH NO-BREAK SPACE}---\nname: n\n---\nBODY " + marker
+    assert _strip_frontmatter(bom).strip() == "BODY " + marker, "BOM-prefixed frontmatter not stripped"
+    # A value that merely starts with `---` is not a closing fence (`---x`.strip() != `---`).
+    tricky = "---\nname: n\ntag: ---x\n---\nBODY " + marker
+    assert _strip_frontmatter(tricky).strip() == "BODY " + marker, "closed on a non-fence value line"
+    # No frontmatter → whole text is body.
+    assert _strip_frontmatter("no frontmatter " + marker) == "no frontmatter " + marker
