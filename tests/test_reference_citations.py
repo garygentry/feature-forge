@@ -198,9 +198,12 @@ def _citations_by_skill() -> dict[str, set[str]]:
 
     Kept per skill rather than pooled because the builder's fan-out is per skill: WHICH
     skill cites a shared reference decides whether that reference reaches a skill dir
-    (see `_is_covered`). Templated forms (`stacks/{stack}.md`,
-    `verification-checklists/{mode}.md`) are retained because `_stacks_is_fanned` reads
-    them; `_is_covered` never matches a concrete file against one directly.
+    (see `_is_covered`). Templated forms are retained rather than filtered, for two
+    different reasons: the `stacks/{stack}.md` form is what `_whole_dir_fanned_roots`
+    reads to detect the whole-`stacks/`-tree fan, while `verification-checklists/{mode}.md`
+    is harmless noise — `_is_covered` never matches a concrete file against a templated
+    form, and the concrete checklist files are covered as forge-verify's own references
+    besides.
     """
     return {
         name: {m.group(1) for m in CITE_RE.finditer(body)}
@@ -213,24 +216,36 @@ def _all_cited() -> set[str]:
     return {rel for cited in _citations_by_skill().values() for rel in cited}
 
 
-def _stacks_is_fanned(cited: set[str]) -> bool:
-    """Whether ANY citation triggers the whole-`stacks/`-tree fan-out.
+#: Shared reference subtrees the builder fans WHOLE on any citation inside them, so every
+#: file in the tree is reachable without a citation naming it individually. Kept
+#: byte-aligned with `_WHOLE_DIR_FANNED_REFERENCE_ROOTS` in scripts/build-adapters.py.
+WHOLE_DIR_FANNED_ROOTS: frozenset[str] = frozenset({"stacks", "verifier-patterns"})
+
+
+def _whole_dir_fanned_roots(cited: set[str]) -> frozenset[str]:
+    """Which whole-dir-fanned roots ANY citation triggers.
 
     `_fan_out_shared_references` (scripts/build-adapters.py) special-cases a citation whose
-    first path segment is `stacks`: the stack is unknown at build time, so ONE such
-    citation — literal, `{stack}`-templated, or globbed — copies the entire `stacks/` tree
-    into that skill's own `references/`. Every `stacks/*.md` file is therefore reachable
-    without a citation naming it, and this guard models that rule rather than allowlisting
-    the individual profiles, which would go stale the moment a stack is added.
+    first path segment is a WHOLE_DIR_FANNED_ROOTS member: ONE such citation — literal,
+    `{stack}`-templated, or globbed — copies that ENTIRE tree into the skill's own
+    `references/`. `stacks/` because the stack is unknown at build time; `verifier-patterns/`
+    because the forge-verifier agent opens the index and follows its intra-dir links. Every
+    file under such a root is therefore reachable without a citation naming it, and this
+    guard models that rule rather than allowlisting the individual files, which would go
+    stale the moment one is added (a new stack profile, a new verifier pattern).
     """
-    return any(rel.split("/", 1)[0] == "stacks" for rel in cited)
+    return frozenset(
+        root
+        for root in WHOLE_DIR_FANNED_ROOTS
+        if any(rel.split("/", 1)[0] == root for rel in cited)
+    )
 
 
 def _is_covered(
     owner: str | None,
     rel: str,
     by_skill: dict[str, set[str]],
-    stacks_fanned: bool,
+    fanned_roots: frozenset[str],
 ) -> bool:
     """Whether a reference file is reachable by the path a skill body would use.
 
@@ -244,7 +259,7 @@ def _is_covered(
     guard models the rule anyway, because the day one does is exactly the day a pooled
     check would go quietly green.
     """
-    if stacks_fanned and rel.split("/", 1)[0] == "stacks":
+    if rel.split("/", 1)[0] in fanned_roots:
         return True
     if (owner, rel) in UNCITED_ALLOWLIST:
         return True
@@ -325,13 +340,13 @@ def test_every_reference_file_is_cited_or_deliberately_allowlisted():
     without a citation.
     """
     by_skill = _citations_by_skill()
-    stacks_fanned = _stacks_is_fanned(_all_cited())
+    fanned_roots = _whole_dir_fanned_roots(_all_cited())
     uncovered = [
         f"references/{rel}"
         + (" (shared — loses its skill-local fan-out)" if owner is None
            else f" (own to {owner} — shipped but read by nothing)")
         for owner, rel in _reference_files()
-        if not _is_covered(owner, rel, by_skill, stacks_fanned)
+        if not _is_covered(owner, rel, by_skill, fanned_roots)
     ]
     assert not uncovered, (
         "these reference files are neither cited by any skill body nor allowlisted:\n  "
@@ -368,8 +383,8 @@ def test_the_reverse_guard_would_catch_a_brand_new_uncited_reference():
     become vacuous and every assertion above it is decoration.
     """
     by_skill = _citations_by_skill()
-    stacks_fanned = _stacks_is_fanned(_all_cited())
-    assert not _is_covered(None, "never-cited.md", by_skill, stacks_fanned)
+    fanned_roots = _whole_dir_fanned_roots(_all_cited())
+    assert not _is_covered(None, "never-cited.md", by_skill, fanned_roots)
 
 
 def test_a_shared_reference_is_not_vouched_for_by_a_skills_own_same_named_file():
@@ -386,9 +401,9 @@ def test_a_shared_reference_is_not_vouched_for_by_a_skills_own_same_named_file()
     assert any("prd-template.md" in cited for cited in by_skill.values()), (
         "fixture drifted: no skill body cites references/prd-template.md any more"
     )
-    assert not _is_covered(None, "prd-template.md", by_skill, stacks_fanned=False)
+    assert not _is_covered(None, "prd-template.md", by_skill, fanned_roots=frozenset())
     # The same path as a SKILL-OWN file is covered — it ships with its own dir.
-    assert _is_covered("forge-1-prd", "prd-template.md", by_skill, stacks_fanned=False)
+    assert _is_covered("forge-1-prd", "prd-template.md", by_skill, fanned_roots=frozenset())
 
 
 def _describe(key: tuple[str | None, str]) -> str:
@@ -414,17 +429,17 @@ def test_no_allowlist_entry_excuses_a_file_that_is_now_cited():
     de-citation of the same path — the exact hole this guard closes.
     """
     by_skill = _citations_by_skill()
-    stacks_fanned = _stacks_is_fanned(_all_cited())
+    fanned_roots = _whole_dir_fanned_roots(_all_cited())
     unnecessary = [
         _describe((owner, rel))
         for owner, rel in UNCITED_ALLOWLIST
         # Re-ask coverage with the allowlist itself taken out of the answer.
-        if rel in _all_cited() or (stacks_fanned and rel.split("/", 1)[0] == "stacks")
-        if _is_covered(owner, rel, by_skill, stacks_fanned)
+        if rel in _all_cited() or rel.split("/", 1)[0] in fanned_roots
+        if _is_covered(owner, rel, by_skill, fanned_roots)
     ]
     assert not unnecessary, (
         "these UNCITED_ALLOWLIST entries are no longer needed — the files are cited "
-        "or covered by the stacks/ rule; delete the entries:\n  "
+        "or covered by a whole-dir fan-out rule; delete the entries:\n  "
         + "\n  ".join(unnecessary)
     )
 
