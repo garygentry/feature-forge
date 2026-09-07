@@ -1163,6 +1163,7 @@ def test_each_corpus_file_is_read_exactly_once(
 # --------------------------------------------------------------------------- #
 
 STAGE_EXIT_PROTOCOL = REPO_ROOT / "references" / "stage-exit-protocol.md"
+SELECT_OUTCOME_REF = REPO_ROOT / "references" / "select-outcome.md"
 BUILD_ADAPTERS = REPO_ROOT / "scripts" / "build-adapters.py"
 
 #: The seven `--outcome` values Step 7's table maps every path onto. This feature adds
@@ -1299,11 +1300,18 @@ def test_operator_escape_hatches_stay_out_of_the_skill() -> None:
 
 
 def test_outcome_table_holds_exactly_the_seven_existing_values() -> None:
-    """Step 7's outcome vocabulary is unchanged by this feature (C-6)."""
-    step7 = _section(FORGE_FIX_SKILL.read_text(encoding="utf-8"), "## Step 7: Close the Stage")
+    """Step 7's outcome vocabulary is unchanged by this feature (C-6).
+
+    Issue #278 flipped forge-fix Step 7 to call `select-outcome` and moved the outcome
+    table out of the SKILL body into `references/select-outcome.md`; this C-6 vocabulary
+    pin follows it to that reference doc's `### fix` section.
+    """
+    fix_table = _section(
+        SELECT_OUTCOME_REF.read_text(encoding="utf-8"), "### fix", level="\n## "
+    )
     rows = [
         line
-        for line in step7.splitlines()
+        for line in fix_table.splitlines()
         if line.startswith("|") and not line.startswith("|---") and "`--outcome`" not in line
     ]
     values = [row.split("|")[2].strip().strip("`") for row in rows]
