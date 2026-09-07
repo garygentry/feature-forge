@@ -411,8 +411,20 @@ def test_pi_bundle_includes_its_extensions(fixture_copy):
     package = json.loads((root / "adapters" / "pi" / "package.json").read_text())
     assert package["pi"]["extensions"] == [
         "./extensions/ask-user-question/index.ts",
+        "./extensions/forge-invocation-args/index.ts",
         "./extensions/forge-loop-supervisor/index.ts",
     ]
+
+    # forge-invocation-args — first-party (issue #303). Preserves /skill:forge-*
+    # invocation arguments across Pi's boundary-less skill expansion. Its whole
+    # graph must ship, and the generated entry carries the provenance header.
+    inv_dir = root / "adapters" / "pi" / "extensions" / "forge-invocation-args"
+    inv_entry = inv_dir / "index.ts"
+    assert inv_entry.is_file(), "the forge-invocation-args manifest entry must exist in the bundle"
+    assert (inv_dir / "wiring.ts").is_file(), "forge-invocation-args wiring module missing from the bundle"
+    assert inv_entry.read_text().startswith(
+        "// GENERATED — DO NOT EDIT. Source: adapter-src/pi/extensions/forge-invocation-args/index.ts"
+    )
 
     # forge-loop-supervisor — first-party. Its whole graph must ship, and the
     # generated entry carries the provenance header naming its adapter-src path.

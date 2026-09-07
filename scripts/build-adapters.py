@@ -934,7 +934,12 @@ _HOST_NOTES_PI = (
     "output, and use `no-default: abort — <question> requires a human answer` for an "
     "interview question with no sane default (`references/shared-conventions.md`).\n"
     "- **Skill dispatch:** Pi uses `/skill:<name>` commands. If you cannot invoke a "
-    "skill directly, print the exact `/skill:<name> ...` command for the user to run.\n"
+    "skill directly, print the exact `/skill:<name> ...` command for the user to run. "
+    "A **forge-invocation-args** compatibility extension wraps the arguments of a "
+    "`/skill:forge-*` command in a `<feature-forge-invocation>` envelope before Pi "
+    "expands it, so read the feature name from that envelope's `<arguments>` element "
+    "(an empty element means none was supplied) rather than from unlabeled trailing "
+    "text — see `references/shared-conventions.md` § Feature Name Requirement.\n"
     "- **Subagents:** this bundle declares its custom agents (`forge-researcher`, "
     "`forge-spec-writer`, `forge-verifier`) as package agents. If a `subagent` tool "
     "is registered, dispatch one with `{ agent: \"forge-verifier\", task: \"...\" }`, "
@@ -1865,6 +1870,7 @@ def _write_pi_package_assets(bundle_root: Path) -> None:
             "skills": ["./skills"],
             "extensions": [
                 "./extensions/ask-user-question/index.ts",
+                "./extensions/forge-invocation-args/index.ts",
                 "./extensions/forge-loop-supervisor/index.ts",
             ],
         },

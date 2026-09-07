@@ -51,6 +51,7 @@
     ],
     "extensions": [
       "./adapters/pi/extensions/ask-user-question/index.ts",
+      "./adapters/pi/extensions/forge-invocation-args/index.ts",
       "./adapters/pi/extensions/forge-loop-supervisor/index.ts"
     ]
   },

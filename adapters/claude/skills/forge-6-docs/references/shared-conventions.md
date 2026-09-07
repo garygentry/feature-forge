@@ -13,6 +13,8 @@ If no feature name is provided:
 4. Do NOT proceed until a feature name is explicitly given
 5. The feature name must be a single kebab-case token. If the user provides multiple words (e.g., "user auth flow"), convert to kebab-case: `user-auth-flow`.
 
+If the invocation includes a `<feature-forge-invocation>` envelope, read the feature name (and any flags) from its `<arguments>` element, unescaping XML entities (`&amp;`→`&`, `&lt;`→`<`, `&gt;`→`>`) — do not treat the envelope's own tags as part of the argument. An envelope whose `<arguments>` element is **empty** means no feature name was supplied: apply the STOP-and-ask rule above. When no envelope is present, read the first argument as usual. (Some hosts append invocation arguments without a semantic boundary; the envelope makes them unambiguous. Read the literal token — never infer the feature name from surrounding phrasing.)
+
 ## User Input Protocol
 
 ### CRITICAL GUARDRAIL: Use `AskUserQuestion` for All Questions
