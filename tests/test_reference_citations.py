@@ -500,7 +500,19 @@ def _reference_basenames() -> set[str]:
 
 def _bare_sibling_citations(path: Path, basenames: set[str]) -> list[str]:
     """Reference basenames the given file cites as a BARE sibling — not path-prefixed, not
-    its own name, not a scaffold-output name."""
+    its own name, not a scaffold-output name.
+
+    Anchored on `name in basenames` (a file that really exists as a reference somewhere) BY
+    DESIGN, and this is the guard's deliberate scope boundary. The bare backticked `<x>.md`
+    form is shared by ~50 NON-citations across canon: pipeline artifacts an agent writes at
+    runtime (`PRD.md`, `EPIC.md`, `tech-spec.md`, `progress.md`, `TRACEABILITY.md`),
+    spec-document examples, and generated docs (`api-reference.md`). So the guard covers the
+    actual #282 gap — a real reference cited as a bare sibling that lives elsewhere and does
+    not travel with the fanned copy — and it deliberately CANNOT flag a citation of a file
+    that exists NOWHERE (a typo, or a since-deleted target): that shape is indistinguishable
+    from those legitimate artifact/spec/output mentions, so catching it would need a
+    different, non-form-based signal, not a wider net here (which would false-positive on
+    all ~50)."""
     body = read(path)
     hits: list[str] = []
     for name in sorted(basenames):
