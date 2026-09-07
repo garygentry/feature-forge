@@ -50,5 +50,5 @@ Stack detection happens during **forge-2-tech** (the technical specification sta
 If `forge.config.json` has no `stack` field and forge-2-tech hasn't run yet (e.g., when using `--force`), skills should:
 
 1. Attempt basic detection from project files (look for manifest files)
-2. Use `_generic.md` as fallback
+2. Use `stacks/_generic.md` as fallback
 3. Note in the pipeline state that stack detection was skipped

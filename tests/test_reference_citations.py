@@ -453,3 +453,136 @@ def test_every_allowlist_entry_states_a_reason():
         "UNCITED_ALLOWLIST entries must say WHY the file is reachable without a "
         "citation:\n  " + "\n  ".join(unexplained)
     )
+
+
+# --------------------------------------------------------------------------------------
+# Guard 3 — reference→reference sibling edges (issue #282)
+# --------------------------------------------------------------------------------------
+#
+# The two guards above are anchored on SKILL bodies: the builder's fan-out scans skill
+# bodies, so it never follows a citation that lives INSIDE a reference. A reference that
+# cites another reference by a BARE sibling name (`recovery-procedure.md`, no path) reads
+# as "the file beside me" — but the cited sibling may live in a different dir and not
+# travel with the fanned copy, so an agent opening it beside the fanned reference finds
+# nothing. This guard walks the reference→reference edges the skill-body guards cannot see.
+#
+# A citation written as a FULL bundle path (`skills/forge-5-loop/references/x.md`) is NOT
+# a sibling read — it resolves from the bundle root, where every skill's tree ships — so
+# the detector below (a lookbehind barring `/`) deliberately ignores it.
+
+#: Reference basenames that are also the names of files a skill SCAFFOLDS into a target
+#: repo (root-hygiene / docs output), so a bare mention names that output file, never a
+#: reference to open beside the citing one. Their template forms are always cited by full
+#: `references/templates/.../` path, which the detector ignores anyway.
+_SCAFFOLD_OUTPUT_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md", "README.md"})
+
+#: Bare reference→reference sibling citations deliberately allowed, each with the reason it
+#: is safe. Keyed by (citing reference's repo-relative path, cited basename). Same
+#: discipline as UNCITED_ALLOWLIST: a claim that must stay true, enforced below.
+SIBLING_CITATION_ALLOWLIST: dict[tuple[str, str], str] = {
+    ("references/stage-exit-protocol.md", "findings-template.md"): (
+        "a provenance mention that names the OWNER in prose (\"forge-verify's "
+        "`findings-template.md`\") to contrast two mechanisms — not a beside-me read; and "
+        "stage-exit-protocol.md is a prose-change-gated surface, so rewording a "
+        "non-behavioral provenance line is not worth a compliance-eval round"
+    ),
+}
+
+
+def _all_reference_paths() -> list[Path]:
+    """Every markdown reference in canon: shared (`references/`) and skill-own."""
+    return sorted(REFERENCES.rglob("*.md")) + sorted(SKILLS.glob("*/references/**/*.md"))
+
+
+def _reference_basenames() -> set[str]:
+    return {p.name for p in _all_reference_paths()}
+
+
+def _bare_sibling_citations(path: Path, basenames: set[str]) -> list[str]:
+    """Reference basenames the given file cites as a BARE sibling — not path-prefixed, not
+    its own name, not a scaffold-output name.
+
+    Anchored on `name in basenames` (a file that really exists as a reference somewhere) BY
+    DESIGN, and this is the guard's deliberate scope boundary. The bare backticked `<x>.md`
+    form is shared by ~50 NON-citations across canon: pipeline artifacts an agent writes at
+    runtime (`PRD.md`, `EPIC.md`, `tech-spec.md`, `progress.md`, `TRACEABILITY.md`),
+    spec-document examples, and generated docs (`api-reference.md`). So the guard covers the
+    actual #282 gap — a real reference cited as a bare sibling that lives elsewhere and does
+    not travel with the fanned copy — and it deliberately CANNOT flag a citation of a file
+    that exists NOWHERE (a typo, or a since-deleted target): that shape is indistinguishable
+    from those legitimate artifact/spec/output mentions, so catching it would need a
+    different, non-form-based signal, not a wider net here (which would false-positive on
+    all ~50)."""
+    body = read(path)
+    hits: list[str] = []
+    for name in sorted(basenames):
+        if name == path.name or name in _SCAFFOLD_OUTPUT_BASENAMES:
+            continue
+        # Bare = not preceded by `/` (a full path) or a word/hyphen char (a longer token),
+        # and not followed by a word char (so `foo.md` never matches inside `foo.mdx`).
+        if re.search(r"(?<![/\w-])" + re.escape(name) + r"(?![\w])", body):
+            hits.append(name)
+    return hits
+
+
+def _rel(path: Path) -> str:
+    """Repo-relative POSIX path (REFERENCES.parent is the repo root)."""
+    return path.relative_to(REFERENCES.parent).as_posix()
+
+
+def test_no_reference_cites_a_bare_sibling_absent_from_its_own_dir():
+    """Guard 3 (issue #282): reference→reference sibling edges the skill-body guards miss.
+
+    A bare `<name>.md` in a reference reads as a file beside it; if that sibling lives
+    elsewhere it does not travel with the fanned copy. Fix by rewording self-contained,
+    using a full `skills/.../references/<name>.md` bundle path (resolves from the root in
+    every bundle), or — for a genuinely safe case — a SIBLING_CITATION_ALLOWLIST entry.
+    """
+    basenames = _reference_basenames()
+    offenders = [
+        f"{_rel(path)} -> {name} (absent from {_rel(path.parent)}/)"
+        for path in _all_reference_paths()
+        for name in _bare_sibling_citations(path, basenames)
+        if not (path.parent / name).is_file()
+        and (_rel(path), name) not in SIBLING_CITATION_ALLOWLIST
+    ]
+    assert not offenders, (
+        "these references cite a bare sibling that is not beside them (issue #282) — an "
+        "agent reading the fanned copy would find nothing; reword self-contained, use a "
+        "full bundle path, or allowlist with a reason:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_guard3_detector_fires_on_a_bare_sibling_but_not_a_full_path():
+    """Non-vacuity: the detector must match the shape it guards and ignore a full path."""
+    name = "recovery-procedure.md"
+    pat = r"(?<![/\w-])" + re.escape(name) + r"(?![\w])"
+    assert re.search(pat, "see `recovery-procedure.md` for the rule"), (
+        "detector stopped matching a bare sibling citation"
+    )
+    assert not re.search(pat, "see `skills/forge-5-loop/references/recovery-procedure.md`"), (
+        "detector wrongly matches a full bundle path (not a sibling read)"
+    )
+
+
+def test_guard3_scans_a_nonempty_reference_set():
+    """A glob that matched nothing would satisfy Guard 3 trivially."""
+    assert len(_all_reference_paths()) >= 10
+    assert len(_reference_basenames()) >= 10
+
+
+def test_sibling_allowlist_entries_are_still_needed_and_explained():
+    """Each SIBLING_CITATION_ALLOWLIST entry must name a citation that is really present
+    and really absent from its dir (else it is a stale standing exemption), and give a
+    reason — the same honesty discipline as UNCITED_ALLOWLIST."""
+    basenames = _reference_basenames()
+    for (rel, name), why in SIBLING_CITATION_ALLOWLIST.items():
+        assert len(why.strip()) >= 20, f"{rel} -> {name}: allowlist entry needs a reason"
+        path = REFERENCES.parent / rel
+        assert path.is_file(), f"{rel}: allowlisted citing file does not exist"
+        assert name in _bare_sibling_citations(path, basenames), (
+            f"{rel} -> {name}: no longer a bare sibling citation — delete the stale entry"
+        )
+        assert not (path.parent / name).is_file(), (
+            f"{rel} -> {name}: the sibling is now beside it — the entry is unnecessary"
+        )

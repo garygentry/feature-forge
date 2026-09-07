@@ -24,8 +24,8 @@ never invents a remedy `doctor` did not emit (INV-4).
 never raises (INV-3) — there is no non-zero exit to catch here. What *can* fail is a
 remedy command: any remedy invocation that exits non-zero, times out, or produces
 output the re-run in step 6 cannot confirm is surfaced **verbatim** and **STOPS** the
-procedure with a **failed preflight** report — never reported as healed. This mirrors
-`recovery-procedure.md` §1's failure rule exactly, narrowed to remedies (preflight has no
+procedure with a **failed preflight** report — never reported as healed. This applies the
+post-run recovery procedure's failure rule, narrowed to remedies (preflight has no
 runner-answer/unblock apply mechanism of its own).
 
 ## 2. The seven steps
@@ -108,8 +108,8 @@ runner-answer/unblock apply mechanism of its own).
   **Any** member still `warn`/`fail` — including a partial move where some member ids
   flipped and others did not — is a **failed preflight**: report it, naming the healed and
   still-failing check ids from this re-read, never from the first run's stale statuses.
-  A remedy that ran but did not prove is a failure, not a partial success (mirrors
-  `recovery-procedure.md` §6's ran-but-nothing-moved shape).
+  A remedy that ran but did not prove is a failure, not a partial success — the
+  ran-but-nothing-moved shape the post-run recovery procedure also treats as a failure.
 - **Output:** either "all affected checks now `ok` → return" or a failed-preflight report.
 
 ### Step 7 — Return
