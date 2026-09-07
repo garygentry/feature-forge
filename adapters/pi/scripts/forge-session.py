@@ -21,6 +21,8 @@ root navigator:
     python3 forge-session.py select-outcome --feature F --served-stage S \
         --skill verify|fix [--op-failure] [--user-deferred] [--decisions-open] \
         [--specs-dir DIR] [--epic E] [--json]
+    python3 forge-session.py verify-state --feature F --for-stage S \
+        [--specs-dir DIR] [--epic E] [--json]
     python3 forge-session.py effective-config [--config FILE] [--schema PATH] [--json]
 
 Plus the `state-*` write verbs, which author `.pipeline-state.json` so no stage
@@ -428,6 +430,53 @@ FixOutcome = Literal[
     "reverify-findings",
     "deferred",
 ]
+#: The union of the verification-state cases the three upstream-verify gates branch
+#: on today — forge-4-backlog (verified / not), forge-5-loop (passed /
+#: findings-applied / auto-verify-pending / else) and forge-6-docs (passed /
+#: findings-reported / findings-applied / auto-verify-pending / absent-or-skipped).
+#: Each gate answers the same question — "has the upstream artifact been verified,
+#: and what do I say if not?" — with a different, hand-rolled branch set. This is the
+#: one enum they collapse into (#277, #265 P3.2): the raw `forge-verify-*` statuses
+#: they key on, plus `never` for the absent/`pending`/unrecognized bucket every gate
+#: folds into "not verified". `verify-state` maps a served stage's entry to exactly
+#: one of these; `test_verify_state.py` pins the enum to the three skill bodies so a
+#: gate cannot grow a seventh case or spell an existing one differently.
+VerifyStateCase = Literal[
+    "passed",
+    "findings-reported",
+    "findings-applied",
+    "auto-verify-pending",
+    "skipped",
+    "never",
+]
+#: The one message table the three gates read instead of each phrasing "not
+#: verified" its own way — one canonical operator sentence per `VerifyStateCase`.
+#: `{subject}` is the feature (or epic member), `{stage}` the production stage whose
+#: verification this describes, `{command}` the forge-verify retry invocation.
+#: `auto-verify-pending` is NOT looked up here at runtime: that case routes through
+#: `auto_pending_message()` (which reads this same `AUTO_PENDING_DIAGNOSTIC` constant
+#: and appends the version-advance clause when the schedule predates the artifact), so
+#: the value is a *reference* to that shared constant — the single normative owed-debt
+#: sentence every read-side emitter already shares (REQ-DEBT-02) — not a copy that
+#: could drift. It stays in the table so the map is complete: one entry per case, the
+#: invariant `test_one_message_per_case` pins.
+VERIFY_STATE_MESSAGES: Final[dict[str, str]] = {
+    "passed": "{subject}'s {stage} verification passed; proceed.",
+    "findings-reported": (
+        "{subject}'s {stage} verification reported unresolved blocking findings; "
+        "apply and re-verify them — run {command}."
+    ),
+    "findings-applied": (
+        "Fixes were applied to {subject}'s {stage} but nothing re-verified them; "
+        "re-verification is still outstanding — run {command}."
+    ),
+    "auto-verify-pending": AUTO_PENDING_DIAGNOSTIC,
+    "skipped": (
+        "{subject}'s {stage} verification was explicitly skipped; "
+        "run {command} to verify it after all."
+    ),
+    "never": "{subject}'s {stage} hasn't been verified yet — run {command}.",
+}
 
 #: Derived, never hand-listed — see the block comment above.
 EXIT_STAGES: Final[tuple[str, ...]] = get_args(ExitStage)
@@ -8974,6 +9023,107 @@ def select_outcome(
     return {"outcome": outcome, "reason": reason, "evidence": evidence}
 
 
+# --------------------------------------------------------------------------- #
+# verify-state — deterministic upstream-verification classification
+# --------------------------------------------------------------------------- #
+#
+# forge-4-backlog, forge-5-loop and forge-6-docs each open by reading a served
+# stage's `stages.forge-verify-*` entry and answering one question — "has the
+# upstream artifact been verified, and what do I say if not?" — with a different
+# hand-rolled branch set (2, 4 and 5 cases). This verb derives that answer from the
+# authoritative on-disk entry instead: one `VerifyStateCase`, one message table
+# (`VERIFY_STATE_MESSAGES`), the same "never eyeball the graph" move `select-outcome`
+# makes for the exit outcome. The full contract is `references/verify-state.md`;
+# `test_verify_state.py` pins the enum to the three skill bodies.
+#
+# It reads raw entry status per served stage — exactly as the three gates do today —
+# and does NOT apply the version-aware freshness `verify_state()` computes for the
+# navigator's most-recent-stage gate: a `passed` entry is `passed` regardless of the
+# stage version, because that is what the gates read. Reusing `verify_state()` would
+# inject a re-verify-on-revision the gates do not have, so it would not be additive.
+
+
+def verify_state_for_stage(
+    feature: str,
+    for_stage: str,
+    specs_dir: Path,
+    epic: str | None,
+) -> dict:
+    """Classify one served stage's ``forge-verify-*`` entry into a ``VerifyStateCase``.
+
+    Returns ``{case, verified, stale, message, nextCommand}``. ``verified`` is true
+    only for ``passed``; ``stale`` only for ``findings-applied`` (resolved once, but a
+    re-verify is still owed). ``nextCommand`` is the forge-verify retry for every case
+    that is not already ``passed`` (which needs no action → ``None``). Never raises for
+    a missing or torn state file — an absent or unreadable entry classifies ``never``,
+    the same fail-safe the three gates take.
+    """
+    token = VERIFY_TOKEN_BY_STAGE[for_stage]
+    verify_key = f"forge-verify-{token}"
+    command = f"/skill:forge-verify {feature} {token}"
+    feature_dir = _resolve_feature_dir(specs_dir, feature, epic)
+    state = _read_state(feature_dir / PIPELINE_STATE_FILENAME)
+    entry = _verify_entry(state, verify_key)
+    raw_status = entry.get("status")
+    status = raw_status if isinstance(raw_status, str) else None
+
+    # Classification mirrors verify_state()'s status ordering (an explicit skip and
+    # recorded auto-verify debt ahead of the generic bucket, so neither falls through
+    # to `never`), but keys on the raw per-stage status the three gates read — no
+    # version-aware freshness.
+    if status == "skipped":
+        case = "skipped"
+    elif status == "auto-verify-pending":
+        # Owed-but-unrun debt with unusable scheduling metadata still stays owed; it
+        # warns once (REQ-DEBT-02), exactly as verify_state() does.
+        if _scheduled_stage_version(entry) is None:
+            _warn_auto_verify_debt_metadata(verify_key)
+        case = "auto-verify-pending"
+    elif status == "findings-reported":
+        case = "findings-reported"
+    elif status == "findings-applied":
+        case = "findings-applied"
+    elif status == "passed":
+        case = "passed"
+    else:
+        # A present status that is torn (non-str) or outside the known vocabulary is
+        # flagged once (#148) then treated as `never` — the same answer an absent
+        # entry gets. A known `pending` (or absent) is quiet, as in verify_state().
+        if raw_status is not None and (
+            not isinstance(raw_status, str) or raw_status not in KNOWN_VERIFY_STATUSES
+        ):
+            _warn_unknown_verify_status(verify_key, raw_status)
+        case = "never"
+
+    if case == "auto-verify-pending":
+        # The `message` is the gates' base owed-debt sentence (+ the version-advance
+        # clause when the schedule predates the artifact). The extra "metadata is
+        # missing/malformed" detail (AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC) is a
+        # navigator-only warnings entry the three gates do NOT carry, so it stays out
+        # of the message and is surfaced once on stderr by the warn above — exactly as
+        # verify_state() does. Enriching the message would diverge from the gates this
+        # verb unifies.
+        message = auto_pending_message(
+            feature,
+            for_stage,
+            command,
+            _scheduled_stage_version(entry),
+            _stage_version(state, for_stage),
+        )
+    else:
+        message = VERIFY_STATE_MESSAGES[case].format(
+            subject=feature, stage=for_stage, command=command
+        )
+
+    return {
+        "case": case,
+        "verified": case == "passed",
+        "stale": case == "findings-applied",
+        "message": message,
+        "nextCommand": None if case == "passed" else command,
+    }
+
+
 def main() -> int:
     parser = _ErrorPrefixParser(prog="forge-session.py", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -9093,6 +9243,18 @@ def main() -> int:
     p_sel.add_argument("--decisions-open", action="store_true", dest="decisions_open",
                        help="fix only: unresolved user decisions block fixes → decisions")
     p_sel.add_argument("--json", action="store_true", dest="json_output")
+
+    p_vst = sub.add_parser(
+        "verify-state",
+        help="Classify a served stage's verification into one VerifyStateCase",
+    )
+    p_vst.add_argument("--feature", required=True, help="Feature name")
+    p_vst.add_argument("--for-stage", required=True, dest="for_stage",
+                       choices=tuple(VERIFY_TOKEN_BY_STAGE),
+                       help="Production stage whose forge-verify-* entry to classify")
+    p_vst.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_vst.add_argument("--epic", default=None, help="Epic name for a nested member")
+    p_vst.add_argument("--json", action="store_true", dest="json_output")
 
     p_eff = sub.add_parser(
         "effective-config",
@@ -9447,6 +9609,27 @@ def main() -> int:
                 print(f"{payload['outcome']}: {payload['reason']}")
                 for line in payload["evidence"]:
                     print(f"  - {line}")
+            return 0
+
+        if args.cmd == "verify-state":
+            payload = verify_state_for_stage(
+                args.feature,
+                args.for_stage,
+                Path(args.specs_dir),
+                args.epic,
+            )
+            if args.json_output:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                flags = []
+                if payload["verified"]:
+                    flags.append("verified")
+                if payload["stale"]:
+                    flags.append("stale")
+                suffix = f" [{', '.join(flags)}]" if flags else ""
+                print(f"{payload['case']}{suffix}: {payload['message']}")
+                if payload["nextCommand"]:
+                    print(f"  next: {payload['nextCommand']}")
             return 0
 
         if args.cmd == "effective-config":
