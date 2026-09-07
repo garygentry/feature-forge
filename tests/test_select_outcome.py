@@ -406,6 +406,30 @@ def test_docs_and_epic_served_stages_are_rejected(tmp_path: Path):
         assert "invalid choice" in result.stderr.lower()
 
 
+def test_passed_entry_is_reverified_without_relying_on_fix_history(tmp_path: Path):
+    """A `passed` served stage at a fix exit is always `reverified` — forge-fix never
+    serves an already-resolved `passed` stage, so the outcome does not depend on a
+    (globally-scoped, ambiguous) fix-applied flag. The reason must not claim 'this pass'."""
+    specs = _feature(
+        tmp_path,
+        entry={"status": "passed", "findingsCount": 0},
+        reports={"VERIFY-tech-2026-09-07.md": _CLEAN_REPORT},  # no Fix Progress on disk
+    )
+    payload = json.loads(_run(specs, "fix").stdout)
+    assert payload["outcome"] == "reverified"
+    assert "this pass" not in payload["reason"]
+
+
+def test_verify_findings_reason_flags_a_missing_report(tmp_path: Path):
+    """A findings-reported entry with no report on disk still returns `findings`, but the
+    reason names the absent file rather than claiming '0 blocking' (review finding 2)."""
+    specs = _feature(tmp_path, entry={"status": "findings-reported"}, reports={})
+    payload = json.loads(_run(specs, "verify").stdout)
+    assert payload["outcome"] == "findings"
+    assert "absent or unreadable" in payload["reason"]
+    assert "0 blocking" not in payload["reason"]
+
+
 def test_evidence_is_always_present(tmp_path: Path):
     """Every derivation carries its on-disk evidence for the operator to audit."""
     specs = _feature(tmp_path, entry={"status": "findings-reported", "findingsCount": 2},

@@ -8713,7 +8713,7 @@ def _verify_reports(feature_dir: Path, mode: str) -> list[_VerifyReport]:
     if not vdir.is_dir():
         return []
     reports: list[_VerifyReport] = []
-    for entry in sorted(vdir.iterdir()):
+    for entry in vdir.iterdir():
         if not entry.is_file():
             continue
         match = _VERIFY_REPORT_RE.match(entry.name)
@@ -8721,7 +8721,9 @@ def _verify_reports(feature_dir: Path, mode: str) -> list[_VerifyReport]:
             continue
         rnd = int(match.group("round")) if match.group("round") else 1
         reports.append(_VerifyReport(entry, match.group("date"), rnd))
-    reports.sort(key=lambda r: (r.date, r.round))
+    # (date, round) is the ordering key; the filename tiebreaks so the sort is total
+    # even for the pathological `…-round1.md` alias of the un-suffixed base file.
+    reports.sort(key=lambda r: (r.date, r.round, r.path.name))
     return reports
 
 
@@ -8797,9 +8799,13 @@ def _verify_outcome(
             "(state-verify --status skipped)"
         )
     if status == "findings-reported":
-        blocking = facts.blocking if facts else 0
+        if facts is None:
+            return "findings", (
+                "the verify entry records findings-reported, but its report file is "
+                "absent or unreadable on disk"
+            )
         return "findings", (
-            f"the recorded verification wrote a report with {blocking} blocking "
+            f"the recorded verification wrote a report with {facts.blocking} blocking "
             "finding(s) (error/gap)"
         )
     if status == "passed":
@@ -8849,14 +8855,16 @@ def _fix_outcome(
             "cleared them; a re-verify is still owed"
         )
     if status == "passed":
-        if fix_applied:
-            return "reverified", (
-                "fixes were applied this pass and a mandatory re-verify recorded a "
-                "passing result for the served stage"
-            )
-        return "no-findings", (
-            "the served stage is already passed and this pass applied no fixes — "
-            "nothing was owed"
+        # A forge-fix pass reaches a `passed` served stage only by re-verifying it:
+        # Step 1.5 resolves the served stage to an UNRESOLVED verify entry
+        # (findings-reported, findings-applied, or a pending debt), never an already
+        # resolved `passed`, so a `passed` entry at a fix exit is the mandatory
+        # re-verify's own passing result. `fix_applied` is deliberately not consulted —
+        # it reads every round on disk and so cannot tell this pass's fixes from an
+        # earlier cycle's, and the reason must not claim "this pass" of either.
+        return "reverified", (
+            "the served stage's verification is passing — the mandatory re-verify "
+            "recorded a passing result and cleared the applied fixes"
         )
     if status == "findings-reported":
         if fix_applied:
@@ -8919,7 +8927,14 @@ def select_outcome(
     status = raw_status if isinstance(raw_status, str) else None
 
     reports = _verify_reports(feature_dir, token)
-    facts = [_parse_report_facts(_read_report_text(r.path)) for r in reports]
+    # verify consumes only the latest report; fix additionally needs the any-fix-applied
+    # flag and the sweep tallies, which require parsing every round.
+    if skill == "fix":
+        facts = [_parse_report_facts(_read_report_text(r.path)) for r in reports]
+    else:
+        facts = (
+            [_parse_report_facts(_read_report_text(reports[-1].path))] if reports else []
+        )
     latest_facts = facts[-1] if facts else None
     fix_applied = any(f.applied_steps >= 1 for f in facts)
 
@@ -8933,7 +8948,7 @@ def select_outcome(
             f"{latest_facts.total} total finding(s)"
         )
         evidence.append(f"round reports on disk: {len(reports)}")
-        if fix_applied:
+        if skill == "fix" and fix_applied:
             fixed = sum(f.fixed for f in facts)
             justified = sum(f.justified for f in facts)
             false_positive = sum(f.false_positive for f in facts)

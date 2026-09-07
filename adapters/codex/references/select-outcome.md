@@ -82,8 +82,13 @@ enum can never drift.
 3. `--decisions-open` → **decisions**.
 4. no report for the mode → **no-findings**.
 5. entry `findings-applied` → **applied** (a re-verify is still owed).
-6. entry `passed` + a fix ran → **reverified**; entry `passed` + no fix ran →
-   **no-findings** (the stage was already clean).
+6. entry `passed` → **reverified**. A forge-fix pass reaches a `passed` served stage
+   only by re-verifying it: forge-fix Step 1.5 resolves its served stage to an
+   *unresolved* verify entry (`findings-reported`, `findings-applied`, or a pending
+   debt), never an already-resolved `passed`, so a `passed` entry at a fix exit is the
+   mandatory re-verify's own passing result. (`fix-applied` is not consulted here — it
+   reads every round on disk and so cannot tell this pass's fixes from an earlier
+   cycle's.)
 7. entry `findings-reported` + a fix ran → **reverify-findings** (a re-verify reopened
    findings); entry `findings-reported` + no fix ran → **fail closed** (exit 2).
 8. any other resolved/absent entry with no fix → **no-findings**.
