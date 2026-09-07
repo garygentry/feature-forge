@@ -88,6 +88,12 @@ UNCITED_ALLOWLIST: dict[tuple[str | None, str], str] = {
         "a REQ-VND-03 audit artifact — a record of the spec-purity sweep, read by humans "
         "reviewing that sweep and by no skill at runtime"
     ),
+    (None, "select-outcome.md"): (
+        "the `forge-session.py select-outcome` verb contract (#276) — reference material "
+        "read from the bundle root by humans and by an operator debugging an exit outcome, "
+        "not skill-loaded prose; a SKILL-body citation would drag it into the prose-change "
+        "compliance gate the additive-verb PR is scoped to avoid"
+    ),
     ("forge-bootstrap", "templates/hygiene/AGENTS.md"): (
         "read by scripts/forge-bootstrap.py from TEMPLATE_ROOT when it composes the "
         "scaffolded repo's hygiene files, not by any skill body"

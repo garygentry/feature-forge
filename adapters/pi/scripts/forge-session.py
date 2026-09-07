@@ -18,6 +18,9 @@ root navigator:
         [--outcome O] [--cause dependency-starvation] [--verify-mode M] \
         [--served-stage S] [--verify-capability interactive|manual] [--specs-dir DIR] \
         [--config FILE] [--epic E] [--next-feature N] [--host claude|generic|pi] [--json]
+    python3 forge-session.py select-outcome --feature F --served-stage S \
+        --skill verify|fix [--op-failure] [--user-deferred] [--decisions-open] \
+        [--specs-dir DIR] [--epic E] [--json]
     python3 forge-session.py effective-config [--config FILE] [--schema PATH] [--json]
 
 Plus the `state-*` write verbs, which author `.pipeline-state.json` so no stage
@@ -8627,6 +8630,335 @@ class _ErrorPrefixParser(argparse.ArgumentParser):
         self.exit(2, f"Error: {message}\nTry '{self.prog} --help' for usage.\n")
 
 
+# --------------------------------------------------------------------------- #
+# select-outcome — deterministic exit-outcome selection (forge-verify/forge-fix)
+# --------------------------------------------------------------------------- #
+#
+# forge-verify and forge-fix each close a run by choosing ONE `stage-exit
+# --outcome` value. That selection used to be model judgment over conversational
+# state; this verb derives it from the authoritative on-disk record instead — the
+# served stage's `forge-verify-*` entry (written mechanically by `state-verify`),
+# the latest `.verification/VERIFY-*.md` report, and its `## Fix Progress` sweep
+# dispositions — the same "never eyeball the graph" move `rank-features` makes for
+# `verifyGate`. The full contract is `references/select-outcome.md`.
+#
+# The outcome vocabularies are NOT re-listed here: they are `VerifyOutcome` and
+# `FixOutcome` (via EXIT_OUTCOMES), and `test_select_outcome.py`'s parity guard
+# pins those aliases to the forge-verify/forge-fix skill-body outcome tables.
+#
+# Three outcomes cannot be read off disk, because the fact that distinguishes each
+# is runtime-only: an operational failure leaves NO state write (so disk shows the
+# prior state), and an explicit user deferral is byte-identical on disk to a
+# nested/manual `applied`. The caller asserts those with a signal flag
+# (`--op-failure`, `--user-deferred`, `--decisions-open`); every other outcome is
+# pure disk derivation.
+
+#: `VERIFY-{mode}-{YYYY-MM-DD}.md`, or `-round{N}.md` for a same-day re-run (N>=2).
+#: The un-suffixed base file is round 1. Naming is owned by
+#: `skills/forge-verify/references/findings-template.md` § Findings Document Template.
+_VERIFY_REPORT_RE: Final = re.compile(
+    r"^VERIFY-(?P<mode>[a-z]+)-(?P<date>\d{4}-\d{2}-\d{2})"
+    r"(?:-round(?P<round>\d+))?\.md$"
+)
+
+#: A `- **Severity:** {value}` line under `## Findings`. Blocking = error + gap.
+_SEVERITY_LINE_RE: Final = re.compile(
+    r"^-\s*\*\*Severity:\*\*\s*([A-Za-z-]+)", re.MULTILINE
+)
+
+
+class _VerifyReport(NamedTuple):
+    """One findings report on disk, ordered by (date, round)."""
+
+    path: Path
+    date: str
+    round: int
+
+
+class _ReportFacts(NamedTuple):
+    """The machine-readable facts a findings report carries.
+
+    Blocking-finding tallies come from the `## Findings` severities (ground truth),
+    never from the human-written `## Summary` line. The fix-side fields read the
+    `## Fix Progress` section the fix pass appends — its `[APPLIED]` steps and the
+    sweep dispositions (`FIXED`/`JUSTIFIED`/`FALSE-POSITIVE`).
+    """
+
+    total: int
+    errors: int
+    gaps: int
+    blocking: int
+    has_fix_progress: bool
+    applied_steps: int
+    fixed: int
+    justified: int
+    false_positive: int
+
+
+def _read_report_text(path: Path) -> str:
+    """Read a findings report as UTF-8, downgrading an unreadable file to ``""``."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _verify_reports(feature_dir: Path, mode: str) -> list[_VerifyReport]:
+    """Every ``VERIFY-{mode}-*.md`` report in ``.verification/``, oldest first.
+
+    The last element is therefore the newest round of the newest day — the report a
+    consumer means by "the latest". A tie on date breaks by round.
+    """
+    vdir = feature_dir / ".verification"
+    if not vdir.is_dir():
+        return []
+    reports: list[_VerifyReport] = []
+    for entry in sorted(vdir.iterdir()):
+        if not entry.is_file():
+            continue
+        match = _VERIFY_REPORT_RE.match(entry.name)
+        if match is None or match.group("mode") != mode:
+            continue
+        rnd = int(match.group("round")) if match.group("round") else 1
+        reports.append(_VerifyReport(entry, match.group("date"), rnd))
+    reports.sort(key=lambda r: (r.date, r.round))
+    return reports
+
+
+def _section_body(text: str, title: str) -> str:
+    """Return the body of the ``## {title}`` section, up to the next ``## `` heading.
+
+    Level-3 (``### ``) finding subsections stay inside their level-2 section, so a
+    ``## Findings`` body keeps every ``### V-NNN`` block. Returns ``""`` when the
+    heading is absent.
+    """
+    body: list[str] = []
+    capturing = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if capturing:
+                break
+            capturing = line[3:].strip().lower() == title.lower()
+            continue
+        if capturing:
+            body.append(line)
+    return "\n".join(body)
+
+
+def _parse_report_facts(text: str) -> _ReportFacts:
+    """Extract the blocking tallies and fix-progress dispositions from a report."""
+    findings = _section_body(text, "Findings")
+    errors = gaps = inconsistencies = improvements = other = 0
+    for match in _SEVERITY_LINE_RE.finditer(findings):
+        sev = match.group(1).strip().lower()
+        if sev == "error":
+            errors += 1
+        elif sev == "gap":
+            gaps += 1
+        elif sev == "inconsistency":
+            inconsistencies += 1
+        elif sev == "improvement":
+            improvements += 1
+        else:
+            other += 1
+    total = errors + gaps + inconsistencies + improvements + other
+
+    has_fp = re.search(r"^##\s+Fix Progress\s*$", text, re.MULTILINE) is not None
+    fp_body = _section_body(text, "Fix Progress")
+    applied = len(re.findall(r"\[APPLIED\]", fp_body))
+    fixed = len(re.findall(r"→\s*FIXED", fp_body))
+    justified = len(re.findall(r"→\s*JUSTIFIED", fp_body))
+    false_positive = len(re.findall(r"→\s*FALSE-POSITIVE", fp_body))
+    return _ReportFacts(
+        total=total,
+        errors=errors,
+        gaps=gaps,
+        blocking=errors + gaps,
+        has_fix_progress=has_fp,
+        applied_steps=applied,
+        fixed=fixed,
+        justified=justified,
+        false_positive=false_positive,
+    )
+
+
+def _verify_outcome(
+    status: str | None, facts: _ReportFacts | None, *, op_failure: bool
+) -> tuple[str, str]:
+    """Map the disk record + the one verify signal to a ``VerifyOutcome``."""
+    if op_failure:
+        return "failed", (
+            "caller asserted an operational failure (a dispatch, a check, or the "
+            "state write failed); no verification result was persisted"
+        )
+    if status == "skipped":
+        return "skipped", (
+            "the served stage's verification was explicitly deferred and persisted "
+            "(state-verify --status skipped)"
+        )
+    if status == "findings-reported":
+        blocking = facts.blocking if facts else 0
+        return "findings", (
+            f"the recorded verification wrote a report with {blocking} blocking "
+            "finding(s) (error/gap)"
+        )
+    if status == "passed":
+        return "passed", (
+            "the recorded verification is passed (a clean report, an advisory-only "
+            "report, or accepted residual findings)"
+        )
+    raise UsageError(
+        "forge-verify has recorded no terminal result for served stage "
+        f"({status or 'no verify entry'}); run state-verify first, or pass "
+        "--op-failure if the run failed before it could record one"
+    )
+
+
+def _fix_outcome(
+    status: str | None,
+    *,
+    has_reports: bool,
+    fix_applied: bool,
+    op_failure: bool,
+    user_deferred: bool,
+    decisions_open: bool,
+) -> tuple[str, str]:
+    """Map the disk record + the three fix signals to a ``FixOutcome``."""
+    if op_failure:
+        return "failed", (
+            "caller asserted an operational failure (a fix step, a validation, a "
+            "commit, or a state write failed); nothing advanced"
+        )
+    if user_deferred:
+        return "deferred", (
+            "caller asserted the user explicitly deferred the fix pass or the "
+            "mandatory re-verify; the served stage's verification stays outstanding"
+        )
+    if decisions_open:
+        return "decisions", (
+            "caller asserted unresolved user decisions block the remaining fixes; "
+            "no advancement"
+        )
+    if not has_reports:
+        return "no-findings", (
+            "no VERIFY findings document exists for the served stage — nothing to fix"
+        )
+    if status == "findings-applied":
+        return "applied", (
+            "fixes are recorded (findings-applied) and no passing re-verify has yet "
+            "cleared them; a re-verify is still owed"
+        )
+    if status == "passed":
+        if fix_applied:
+            return "reverified", (
+                "fixes were applied this pass and a mandatory re-verify recorded a "
+                "passing result for the served stage"
+            )
+        return "no-findings", (
+            "the served stage is already passed and this pass applied no fixes — "
+            "nothing was owed"
+        )
+    if status == "findings-reported":
+        if fix_applied:
+            return "reverify-findings", (
+                "fixes were applied and a re-verify reopened blocking findings for "
+                "the served stage"
+            )
+        raise UsageError(
+            "forge-fix ended with the served stage still findings-reported and no "
+            "fixes recorded; pass --decisions-open, --user-deferred, or --op-failure "
+            "to name the runtime reason, or run forge-fix to apply the plan"
+        )
+    if not fix_applied:
+        return "no-findings", (
+            "no unresolved findings are owed for the served stage "
+            f"(verify entry: {status or 'absent'})"
+        )
+    raise UsageError(
+        "forge-fix reached an inconsistent state — fixes are recorded on disk but the "
+        f"served stage's verify entry is {status or 'absent'}; re-run state-verify to "
+        "record the result before selecting an outcome"
+    )
+
+
+def select_outcome(
+    feature: str,
+    served_stage: str,
+    skill: str,
+    specs_dir: Path,
+    epic: str | None,
+    *,
+    op_failure: bool,
+    user_deferred: bool,
+    decisions_open: bool,
+) -> dict:
+    """Derive the deterministic ``stage-exit --outcome`` for a verify/fix run.
+
+    Returns ``{"outcome", "reason", "evidence": [...]}``. Raises ``UsageError`` (the
+    fail-closed exit-2 path) rather than guessing when the disk record cannot name a
+    terminal outcome and no runtime signal was supplied.
+    """
+    if served_stage not in VERIFY_TOKEN_BY_STAGE:
+        raise UsageError(
+            f"--served-stage {served_stage!r} carries no verify entry; select-outcome "
+            f"serves {', '.join(VERIFY_TOKEN_BY_STAGE)} (forge-0-epic and forge-6-docs "
+            "are out of scope)"
+        )
+    if skill == "verify" and (user_deferred or decisions_open):
+        raise UsageError(
+            "--user-deferred and --decisions-open are forge-fix signals; forge-verify's "
+            "only runtime signal is --op-failure"
+        )
+
+    token = VERIFY_TOKEN_BY_STAGE[served_stage]
+    verify_key = f"forge-verify-{token}"
+    feature_dir = _resolve_feature_dir(specs_dir, feature, epic)
+    state = _read_state(feature_dir / PIPELINE_STATE_FILENAME)
+    entry = _verify_entry(state, verify_key)
+    raw_status = entry.get("status")
+    status = raw_status if isinstance(raw_status, str) else None
+
+    reports = _verify_reports(feature_dir, token)
+    facts = [_parse_report_facts(_read_report_text(r.path)) for r in reports]
+    latest_facts = facts[-1] if facts else None
+    fix_applied = any(f.applied_steps >= 1 for f in facts)
+
+    evidence: list[str] = [f"{verify_key} status = {status or 'absent'}"]
+    if reports and latest_facts is not None:
+        latest = reports[-1]
+        rel = latest.path.relative_to(feature_dir).as_posix()
+        evidence.append(
+            f"latest report {rel} (round {latest.round}): {latest_facts.blocking} "
+            f"blocking = {latest_facts.errors} error + {latest_facts.gaps} gap, "
+            f"{latest_facts.total} total finding(s)"
+        )
+        evidence.append(f"round reports on disk: {len(reports)}")
+        if fix_applied:
+            fixed = sum(f.fixed for f in facts)
+            justified = sum(f.justified for f in facts)
+            false_positive = sum(f.false_positive for f in facts)
+            applied = sum(f.applied_steps for f in facts)
+            evidence.append(
+                f"fix progress: {applied} step(s) applied; sweep {fixed} fixed / "
+                f"{justified} justified / {false_positive} false-positive"
+            )
+    else:
+        evidence.append("no VERIFY report on disk for this mode")
+
+    if skill == "verify":
+        outcome, reason = _verify_outcome(status, latest_facts, op_failure=op_failure)
+    else:
+        outcome, reason = _fix_outcome(
+            status,
+            has_reports=bool(reports),
+            fix_applied=fix_applied,
+            op_failure=op_failure,
+            user_deferred=user_deferred,
+            decisions_open=decisions_open,
+        )
+    return {"outcome": outcome, "reason": reason, "evidence": evidence}
+
+
 def main() -> int:
     parser = _ErrorPrefixParser(prog="forge-session.py", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -8725,6 +9057,27 @@ def main() -> int:
     p_exit.add_argument("--host", default="claude", choices=EXIT_HOSTS,
                         help="Host wording for the NEXT-STEPS block")
     p_exit.add_argument("--json", action="store_true", dest="json_output")
+
+    p_sel = sub.add_parser(
+        "select-outcome",
+        help="Derive the deterministic stage-exit --outcome for a verify/fix run",
+    )
+    p_sel.add_argument("--feature", required=True, help="Feature name")
+    p_sel.add_argument("--served-stage", required=True, dest="served_stage",
+                       choices=tuple(VERIFY_TOKEN_BY_STAGE),
+                       help="Production stage the verify/fix run served")
+    p_sel.add_argument("--skill", required=True, choices=("verify", "fix"),
+                       help="Which branch skill is choosing its exit outcome")
+    p_sel.add_argument("--specs-dir", default="./specs", help="Specs directory")
+    p_sel.add_argument("--epic", default=None, help="Epic name for a nested member")
+    # Runtime signals for the outcomes disk cannot record (see references/select-outcome.md).
+    p_sel.add_argument("--op-failure", action="store_true", dest="op_failure",
+                       help="a dispatch/step/validation/commit/state-write failed → failed")
+    p_sel.add_argument("--user-deferred", action="store_true", dest="user_deferred",
+                       help="fix only: user explicitly deferred the fix/re-verify → deferred")
+    p_sel.add_argument("--decisions-open", action="store_true", dest="decisions_open",
+                       help="fix only: unresolved user decisions block fixes → decisions")
+    p_sel.add_argument("--json", action="store_true", dest="json_output")
 
     p_eff = sub.add_parser(
         "effective-config",
@@ -9060,6 +9413,25 @@ def main() -> int:
                 print(json.dumps(payload, indent=2, ensure_ascii=False))
             else:
                 _print_stage_exit(payload)
+            return 0
+
+        if args.cmd == "select-outcome":
+            payload = select_outcome(
+                args.feature,
+                args.served_stage,
+                args.skill,
+                Path(args.specs_dir),
+                args.epic,
+                op_failure=args.op_failure,
+                user_deferred=args.user_deferred,
+                decisions_open=args.decisions_open,
+            )
+            if args.json_output:
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                print(f"{payload['outcome']}: {payload['reason']}")
+                for line in payload["evidence"]:
+                    print(f"  - {line}")
             return 0
 
         if args.cmd == "effective-config":
