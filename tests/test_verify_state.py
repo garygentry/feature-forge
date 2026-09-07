@@ -173,6 +173,13 @@ def test_all_three_gates_call_the_verb():
         assert "verify-state --feature" in body and f"--for-stage {stage}" in body, (
             f"forge-{skill} no longer calls verify-state --for-stage {stage}"
         )
+        # The flip's point is that the hand-rolled "read the raw entry and branch on
+        # its status" scaffolding is GONE — not merely shadowed by a verb call sitting
+        # beside a surviving status branch. Pin the removal, so a body that kept both
+        # (double-classifying) fails here, as the docstring promises.
+        assert "branch on its status" not in body, (
+            f"forge-{skill} still carries the hand-rolled status branch the verb replaced"
+        )
 
 
 def test_the_synopsis_documents_verify_state():
