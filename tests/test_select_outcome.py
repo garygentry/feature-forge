@@ -5,11 +5,14 @@ model judgment and into a deterministic verb, the same "never eyeball the graph"
 move `rank-features` makes for `verifyGate`. Two guards live here:
 
 - **Parity (scope 2).** The verb's outcome vocabulary is `VerifyOutcome` /
-  `FixOutcome` (via `EXIT_OUTCOMES`). Nothing else pins those aliases to the prose
-  a skill actually reads — the **Outcome.** tables in `skills/forge-verify/SKILL.md`
-  and `skills/forge-fix/SKILL.md`. `test_*_outcome_table_matches_the_enum` asserts
-  the table and the enum enumerate exactly the same values, in both directions, so
-  neither can gain or drop an outcome without the other.
+  `FixOutcome` (via `EXIT_OUTCOMES`). Nothing else pins those aliases to the prose a
+  reader actually reads — the `### verify` / `### fix` Outcome tables in
+  `references/select-outcome.md`. Issue #278 flipped forge-verify/forge-fix to call
+  the verb and moved those tables out of the SKILL bodies into that reference doc,
+  their reader-facing home; this guard follows them there.
+  `test_*_outcome_table_matches_the_enum` asserts the table and the enum enumerate
+  exactly the same values, in both directions, so neither can gain or drop an outcome
+  without the other.
 
 - **Fixtures (scope 3).** Every enum value is reached from an on-disk fixture (plus
   the runtime signal flags for the three outcomes disk cannot record), including the
@@ -32,7 +35,7 @@ from typing import get_args
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HELPER = REPO_ROOT / "scripts" / "forge-session.py"
-SKILLS = REPO_ROOT / "skills"
+REFERENCES = REPO_ROOT / "references"
 
 
 def _load_session_module():
@@ -53,18 +56,29 @@ SESSION = _load_session_module()
 
 
 def _outcome_table_values(skill: str) -> set[str]:
-    """The `--outcome` column of a skill body's **Outcome.** table.
+    """The `--outcome` column of the skill's Outcome table in the reference doc.
 
-    Anchors on the ``| This run's result | `--outcome` | ...`` header, then reads the
-    second content column of each data row until the table ends. Strips markdown
-    emphasis/backticks so `` `no-findings` `` and a bare ``passed`` both normalize.
+    Issue #278 moved these tables out of the SKILL bodies into
+    `references/select-outcome.md`, their reader-facing home; the parity guard
+    follows. Locates the ``### verify`` / ``### fix`` heading, anchors on the
+    ``| This run's result | `--outcome` | ...`` header that follows it, then reads the
+    second content column of each data row until the table (or the section) ends.
+    Strips markdown emphasis/backticks so `` `no-findings` `` and a bare ``passed``
+    both normalize.
     """
-    text = (SKILLS / f"forge-{skill}" / "SKILL.md").read_text(encoding="utf-8")
+    text = (REFERENCES / "select-outcome.md").read_text(encoding="utf-8")
     lines = text.splitlines()
+    heading = f"### {skill}"
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.strip() == heading)
+    except StopIteration:  # pragma: no cover - guards a renamed heading
+        raise AssertionError(f"no '{heading}' section in references/select-outcome.md")
     values: set[str] = set()
     in_table = False
-    for line in lines:
+    for line in lines[start + 1 :]:
         stripped = line.strip()
+        if stripped.startswith("### "):
+            break  # the next section — this skill's table has ended
         is_row = stripped.startswith("|")
         if not in_table:
             if is_row and "this run's result" in stripped.lower() and "--outcome" in stripped:
@@ -81,7 +95,7 @@ def _outcome_table_values(skill: str) -> set[str]:
         token = outcome_cell.strip("`*").strip()
         if token and token != "--outcome":
             values.add(token)
-    assert values, f"no Outcome table parsed from forge-{skill}/SKILL.md"
+    assert values, f"no Outcome table parsed for '{skill}' from references/select-outcome.md"
     return values
 
 

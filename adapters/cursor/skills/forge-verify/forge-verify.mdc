@@ -265,19 +265,15 @@ Epic mode is **epic-scoped**, not per-feature: `--stage forge-0-epic` writes `{s
 
 **Capability.** Pass `--verify-capability interactive` only when **both** a question mechanism equivalent to host's question mechanism is available **and** a clean-room `forge-verifier` may actually be dispatched right now. Clause (b) tests **permitted dispatch, not a listed tool**: a session that may dispatch only when the user asked, but does have a question mechanism, is `interactive` — the gate's affirmative choice supplies the request. Reserve `manual` for **no** question mechanism **and** **no** permitted dispatch. An auto-verify directive under a no-unsolicited-dispatch bar is presented through the gate and dispatched on the affirmative choice — never skipped, and never resolved by advancing to the production successor.
 
-**Outcome.** Invoke the exit **exactly once**, with the `--outcome` this run's result maps to:
+**Outcome.** Derive the `--outcome` from the settled on-disk record, never by eyeballing conversational state. After Step 6's `state-verify` write, run `select-outcome` — it reads the verify entry and the latest report and returns `{outcome, reason, evidence}`, the `outcome` being exactly one of `passed`, `findings`, `skipped`, or `failed`. Add `--op-failure` when a dispatch, check, or state write failed this run (a `CLEAN_ROOM_UNAVAILABLE` sentinel or a non-answer counts): it is the one signal disk cannot record. On exit 2 the disk names no terminal result and no signal was given — surface its `Error:` line rather than guessing. The four-way mapping and its rationale live in `references/select-outcome.md`.
 
-| This run's result | `--outcome` |
-|---|---|
-| Zero findings — the artifacts are clean | `passed` |
-| Advisory-only report (no `error`/`gap`) — recorded `passed` with the report attached | `passed` |
-| A report with at least one blocking finding (`error`/`gap`) was written | `findings` |
-| The user explicitly chose to defer pipeline action **and** that skip was persisted via `state-verify --status skipped` | `skipped` |
-| A dispatch, a check, or a state write failed and needs intervention | `failed` |
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" select-outcome --feature "{feature}" --served-stage "{servedStage}" --skill verify --specs-dir "{specsDir}" --json
+```
 
-Merely **presenting** blocking findings is `findings`, not `skipped` — all three Step 5 options are `findings`, including (a) "review the findings first", which defers *your* next action rather than the pipeline's. `skipped` is available only for an explicit user deferral of **pipeline action** whose skip has already been persisted. A `CLEAN_ROOM_UNAVAILABLE` sentinel or a non-answer from an advertised dispatch is an operational failure, not a user skip: it is `failed`. A state-write failure is `failed`, and no success block may be printed after one.
-
-Add `--epic "{epic}"` when the feature is an epic member, and `--served-stage "{servedStage}"` when the caller supplied one. Pass no other flags.
+Pass the returned `outcome` straight through as the `stage-exit --outcome` below. Add `--epic "{epic}"` (both calls) when the feature is an epic member, and `--served-stage "{servedStage}"` to the exit when the caller supplied one. Pass no other flags.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 

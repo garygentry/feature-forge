@@ -144,19 +144,15 @@ On a **direct** invocation, present the gate with `AskUserQuestion` using these 
 
 **Capability.** Determine `--verify-capability` before running the exit (full rule: `references/stage-exit-protocol.md`; summary: **Verify Capability** in `references/shared-conventions.md`). Pass `interactive` only when a question mechanism equivalent to `AskUserQuestion` is available **and** a clean-room `forge-verifier` may actually be dispatched right now; otherwise pass `manual`. Dispatch capability means **permitted** dispatch, not a listed tool — the test is "may I dispatch `forge-verifier` right now", not "is a dispatch tool in my tool surface". A session that bars *unsolicited* dispatch while offering a question mechanism is therefore **`interactive`, not `manual`**: the gate's affirmative choice is the user request that authorizes the dispatch. An auto-verify or re-verify directive under a no-unsolicited-dispatch bar is presented through the Step 6 gate and dispatched on the affirmative choice — never skipped, and never resolved by closing with an outcome that advances the pipeline.
 
-**Outcome.** Invoke the exit **exactly once**, with the `--outcome` this run maps to. Every path lands on exactly one row; none may be left open:
+**Outcome.** Derive the `--outcome` from the settled on-disk record, never by eyeballing conversational state. After Step 5's `state-verify` write, run `select-outcome --skill fix` — it reads the verify entry and the latest report (including its `## Fix Progress`) and returns `{outcome, reason, evidence}`. Three outcomes turn on facts disk cannot record, asserted with flags: `--op-failure` (a fix step, validation, commit, or state write failed — Steps 4–6; a cancellation or unavailable tool is a failure, never a skip), `--user-deferred` (the user explicitly deferred the fix pass or the re-verify — Steps 3, 6), and `--decisions-open` (user decisions remain unresolved — Step 3). Everything else — `no-findings`, `applied`, `reverified`, `reverify-findings` — is pure disk derivation; on exit 2 the disk names no terminal result and no signal was given, so surface its `Error:` line rather than guessing. The seven-way mapping and each outcome's authoritative downstream action live in `references/select-outcome.md`.
 
-| This run's result | `--outcome` | Authoritative action |
-|---|---|---|
-| No applicable findings document or steps (Step 1.5) | `no-findings` | Re-verify while verification is still owed; otherwise the live production successor |
-| User decisions remain unresolved (Step 3) | `decisions` | Resume `forge-fix` naming the unresolved decisions; no advancement |
-| A fix step, a validation, a commit, or a state write failed (Steps 4–6) | `failed` | Fix/navigator recovery; no advancement |
-| Fixes persisted and re-verify has not been run (nested, or manual capability) | `applied` | Re-run `forge-verify` for the same served stage — re-verification is mandatory |
-| A mandatory re-verify passed | `reverified` | The live production successor |
-| A mandatory re-verify reported an unresolved prior finding or a new blocking defect (a clean-or-advisory-only result is `reverified`) | `reverify-findings` | `forge-fix` for the same served stage |
-| The user explicitly deferred the fix pass or the re-verify (Steps 3, 6) | `deferred` | Deterministic `forge-fix`/navigator resume stating the findings remain unresolved; no advancement |
+```bash
+R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+[ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
+python3 "$R/scripts/forge-session.py" select-outcome --feature "{feature}" --served-stage "{servedStage}" --skill fix --specs-dir "{specsDir}" --json
+```
 
-A cancellation, an unavailable tool, or a non-answer is `deferred` **only** when it was an explicit user choice and `failed` when it was an operational failure — an unavailable tool is never an explicit user skip, and neither ever becomes `reverified`. `applied` is not `reverified`: `findings-applied` cleared the freshness the writer deliberately dropped, so only `reverified` after a passing verify permits advancement.
+`applied` is not `reverified`: `findings-applied` cleared the freshness the writer deliberately dropped, so only `reverified` after a passing verify permits advancement. Pass the returned `outcome` straight through as the `stage-exit --outcome` below.
 
 **Round-ledger escalation binds this row on every capability.** Before closing `reverify-findings` that is the SECOND consecutive for this served stage (count the round-discriminated reports in `.verification/`), present the escalation dispositions per "Escalation (the round ledger)" in `references/stage-exit-protocol.md` — through the question mechanism when `interactive`, or printed as text (digest + the three dispositions, "Accept the residual findings" first) BEFORE the terminal block when `manual`. Never recommend another fix pass at this point.
 

@@ -43,14 +43,33 @@ Output — always `{outcome, reason, evidence: [...]}`:
 ## Outcome vocabularies
 
 The verb chooses from exactly the branch skills' `--outcome` domains — the
-`VerifyOutcome` and `FixOutcome` aliases in `forge-session.py`. It re-lists neither:
-`tests/test_select_outcome.py` pins those aliases to the **Outcome.** tables in
-`skills/forge-verify/SKILL.md` and `skills/forge-fix/SKILL.md`, so the tables and the
-enum can never drift.
+`VerifyOutcome` and `FixOutcome` aliases in `forge-session.py`. Those aliases are
+pinned to the tables below by `tests/test_select_outcome.py` (both directions), so the
+enum and this reader-facing mapping can never drift. `forge-verify` and `forge-fix`
+used to carry these tables in their SKILL bodies; issue #278 flipped the bodies to
+call the verb and moved the tables here, their reader-facing home.
 
-- **verify** — `passed` · `findings` · `skipped` · `failed`
-- **fix** — `no-findings` · `decisions` · `failed` · `applied` · `reverified` ·
-  `reverify-findings` · `deferred`
+### verify
+
+| This run's result | `--outcome` |
+|---|---|
+| Zero findings — the artifacts are clean | `passed` |
+| Advisory-only report (no `error`/`gap`), recorded `passed` with the report attached | `passed` |
+| A report with at least one blocking finding (`error`/`gap`) was written | `findings` |
+| The user explicitly deferred pipeline action and that skip was persisted (`state-verify --status skipped`) | `skipped` |
+| A dispatch, check, or state write failed and needs intervention | `failed` |
+
+### fix
+
+| This run's result | `--outcome` | Authoritative downstream action |
+|---|---|---|
+| No applicable findings document or steps (Step 1.5) | `no-findings` | Re-verify while verification is still owed; otherwise the live production successor |
+| User decisions remain unresolved (Step 3) | `decisions` | Resume `forge-fix` naming the unresolved decisions; no advancement |
+| A fix step, validation, commit, or state write failed (Steps 4–6) | `failed` | Fix/navigator recovery; no advancement |
+| Fixes persisted and re-verify not yet run (nested, or manual capability) | `applied` | Re-run `forge-verify` for the same served stage — re-verification is mandatory |
+| A mandatory re-verify passed | `reverified` | The live production successor |
+| A mandatory re-verify reopened an unresolved prior finding or a new blocking defect (clean-or-advisory-only is `reverified`) | `reverify-findings` | `forge-fix` for the same served stage |
+| The user explicitly deferred the fix pass or the re-verify (Steps 3, 6) | `deferred` | Deterministic `forge-fix`/navigator resume; findings remain unresolved; no advancement |
 
 ## Inputs read from disk
 
