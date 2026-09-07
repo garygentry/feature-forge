@@ -11,6 +11,7 @@
     ],
     "extensions": [
       "./extensions/ask-user-question/index.ts",
+      "./extensions/forge-invocation-args/index.ts",
       "./extensions/forge-loop-supervisor/index.ts"
     ]
   },
