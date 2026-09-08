@@ -112,3 +112,31 @@
   (proven via `git stash`), same `claude -p` sandbox ancestry cause item 001 logged.
   Full run: 3086 passed, 2 skipped, that 1 environmental fail. doctor --json exits 0;
   build-adapters --check exits 0 after regen.
+
+### Item 003 — extract discover / reconcile / check-epic-base
+
+- **The bare-copy fallback set GREW with this move — `_default_branch` must join it.**
+  The discover cluster moved cleanly into `discover.py` (imports `_git_output`,
+  `_parse_ts`, `build_rows`, `_load_config`, and the FILENAME constants from
+  `_common`), but `_default_branch` is used by TWO callers: the moved
+  `reconcile_branch` AND the still-inline **`doctor_report`** (line ~1464,
+  `default_branch = _default_branch()`). Deleting it from the shim body broke the
+  three bare-copy DOCTOR tests — `test_doctor_survives_unresolvable_root_and_bare_dir`,
+  `test_plugin_root_warns_with_global_install_remedy_when_unresolvable`,
+  `test_root_version_skew_na_when_root_is_unresolved` — which copy ONLY
+  forge-session.py (no sibling package) and run `doctor`, hitting the
+  `except ModuleNotFoundError` branch where the moved `_default_branch` is undefined
+  → `NameError` → doctor exits 1 (tests assert 0). Fix: add a byte-equal
+  `_default_branch` to the fallback block (alongside `UsageError`/`VerifyStatus`),
+  exactly the item-001 pattern ("define the primitives the non-topology bare paths
+  touch"). It calls the shim's inline `_git_output` (kept at ~1345), resolved at call
+  time. `_default_branch` stays in `discover.py` for the package-present path; item
+  004 will re-source doctor's copy from `_common` when doctor.py is extracted.
+- **Lesson for the remaining items:** before deleting a moved symbol from the shim,
+  grep the shim body for callers OUTSIDE main()'s verb dispatch — anything reachable
+  from `doctor_report` (the one bare-copy-invoked verb) must survive in the
+  `ModuleNotFoundError` fallback, not just the package.
+- **Pre-existing env failure unchanged:** `test_env_stamp_interactive_never_carries_a_rung`
+  fails at pristine HEAD in this `claude -p` sandbox (confirmed via `git stash`);
+  not caused by the split. doctor --json exits 0; ruff clean; build-adapters --check
+  exits 0 after regen.

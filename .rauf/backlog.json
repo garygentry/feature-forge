@@ -63,8 +63,8 @@
         "python3 scripts/forge-session.py doctor --json exits 0.",
         "bash scripts/validate.sh passes with zero test-file edits."
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-09-08T02:29:22.685Z",
       "dependsOn": [
         "001"
       ],
