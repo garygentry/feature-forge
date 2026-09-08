@@ -899,7 +899,8 @@ def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
         return _result(
             "warn", f"{path.name} has no parseable installedBy ({installed_by!r})", evidence,
             _remedy(
-                "Refresh the runner's per-project artifacts",
+                "Refresh the runner's per-project artifacts (`.rauf.json`, `.rauf/` "
+                "schema) and add its runtime files to `.gitignore`",
                 shlex.join([ctx.runner_bin(), "update", "."]),
                 "local-write",
             ),
@@ -911,7 +912,8 @@ def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
             f"{_fmt_semver(live)}",
             evidence,
             _remedy(
-                "Refresh the runner's per-project artifacts",
+                "Refresh the runner's per-project artifacts (`.rauf.json`, `.rauf/` "
+                "schema) and add its runtime files to `.gitignore`",
                 shlex.join([ctx.runner_bin(), "update", "."]),
                 "local-write",
             ),
