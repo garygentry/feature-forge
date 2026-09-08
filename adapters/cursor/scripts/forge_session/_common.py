@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, TypedDict, get_args
 
 
 class UsageError(Exception):
@@ -559,6 +560,19 @@ def _commit_state(state_path: Path, state: dict) -> dict:
 PIPELINE_STATE_FILENAME: Final = ".pipeline-state.json"
 #: Epic roots hold this (and no .pipeline-state.json) — never a feature.
 MANIFEST_FILENAME: Final = "epic-manifest.json"
+#: Epic-scoped verification state, sibling to the manifest. NEVER a member's
+#: .pipeline-state.json: epic verification is epic-scoped (REQ-SEC-01).
+EPIC_STATE_FILENAME: Final = ".epic-state.json"
+
+#: A safe bare name: one kebab-case token, no separator, no traversal. Same pattern
+#: epic-manifest.py applies (the flat scripts share no import module), so the epic
+#: target of a state write fails closed exactly where the canonical resolver does
+#: (REQ-SEC-01).
+SAFE_NAME_RE: Final = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+#: New non-null commit hashes are full 40-hex only. Loaded legacy short hashes stay
+#: readable — this validates WRITES, and no schema constrains commitHash.
+FULL_GIT_HASH_RE: Final = re.compile(r"[0-9a-fA-F]{40}")
 
 
 #: The ordered production stages. This is the ONE place stage order lives.
@@ -581,6 +595,12 @@ VERIFY_TOKEN_BY_STAGE: Final[dict[str, str]] = {
     "forge-4-backlog": "backlog",
     "forge-5-loop": "impl",
 }
+
+#: The `--stage` domain for `state-verify`: forge-0-epic (whose verification lives
+#: in the epic's own `.epic-state.json`) plus the five stages that carry a verify
+#: token. forge-6-docs is excluded on purpose — it has no verification token, so
+#: there is no `forge-verify-*` key for it to write.
+VERIFY_STAGES: Final[tuple[str, ...]] = ("forge-0-epic", *VERIFY_TOKEN_BY_STAGE)
 
 
 #: The terminal status the completion writer records (and the commit-hash
@@ -611,6 +631,22 @@ KNOWN_VERIFY_STATUSES: Final = frozenset(
 #: subset of KNOWN_VERIFY_STATUSES — not collapsible into it (different meaning).
 #: `auto-verify-pending` is deliberately ABSENT: owed-but-unrun debt is not resolved.
 _VERIFY_RESOLVED: Final = frozenset({"passed", "findings-applied", "skipped"})
+#: Prior verify statuses a `skipped` result write may NOT replace (#203). Mirrors
+#: epic-manifest.py's `_VERIFY_ORCH_COMPLETE`: these two statuses make an epic
+#: member complete-for-orchestration, so silently replacing one with `skipped`
+#: demoted the member out of the rollup and fabricated unmetDeps on every
+#: dependent — the observed 5/6 → 1/6 collapse. A deferral over one of these
+#: needs NO write: the recorded result already carries the outstanding state.
+#: NOT the same set as `_VERIFY_RESOLVED` (`skipped` re-writing `skipped` is a
+#: harmless idempotent refresh and stays legal).
+_SKIP_PROTECTED_PRIOR: Final = frozenset({"passed", "findings-applied"})
+#: The `state-verify --status` domain: every VerifyStatus a result write may record.
+#: `pending` is excluded — it is the pre-existing generic/manual pending marker, not
+#: a verification RESULT, and `auto-verify-pending` is the value that carries owed
+#: automatic debt. Derived so the two lists cannot drift.
+VERIFY_RESULT_STATUSES: Final[tuple[str, ...]] = tuple(
+    status for status in get_args(VerifyStatus) if status != "pending"
+)
 
 
 #: Per-process dedupe for the unknown-verify-status diagnostic (#148) so a single
@@ -1183,10 +1219,17 @@ __all__ = [
     "_commit_state",
     "PIPELINE_STATE_FILENAME",
     "MANIFEST_FILENAME",
+    "EPIC_STATE_FILENAME",
+    "SAFE_NAME_RE",
+    "FULL_GIT_HASH_RE",
     "PRODUCTION_STAGES",
     "VERIFY_TOKEN_BY_STAGE",
+    "VERIFY_STAGES",
     "KNOWN_VERIFY_STATUSES",
+    "_DONE_STATUS",
     "_DONE_STATUSES",
+    "_SKIP_PROTECTED_PRIOR",
+    "VERIFY_RESULT_STATUSES",
     "AUTO_PENDING_DIAGNOSTIC",
     "_read_state",
     "_scan_features",

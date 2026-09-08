@@ -293,3 +293,59 @@ test edits the earlier BLOCK flagged, so the extraction landed as a pure move. T
   interaction/ancestry code (that's doctor.py, item 004); grep of the diff for
   interaction|ancestry|rung is empty. Same environmental fail items 001-004 logged. doctor
   --json exits 0; ruff clean; adapter --check exits 0 on a clean tree.
+
+### Item 006 — extract state.py (write-side verbs) — DONE (under LOOP EXECUTION POLICY)
+
+The write-cluster (old shim lines 3939–5450, contiguous) is now
+`scripts/forge_session/state.py` (1479 lines) — all `cmd_state_*` verbs, the
+fail-closed resolvers (`_load_state_for_write`/`_load_epic_state_for_write`/
+`_resolve_feature_dir_for_write`/`_load_verify_target`), the verify-entry builder,
+`_cascade_staleness`/`_CASCADE_TARGETS`, and the `_print_state_*` printers. Shim
+dropped from 6208 → 4782 lines.
+
+- **The three atomic-write primitives were NOT copied into state.py — they were
+  DRAINED to `_common` (item-002 foresaw this).** `_now_iso`/`_write_state`/
+  `_commit_state` already lived in `_common` (mirrored for decisions.py). Item 006
+  DELETED the shim's inline copies and has state.py + the inline exit code import
+  them FROM `_common` (state.py imports `_now_iso`/`_commit_state`; the shim re-exports
+  all three via the `from forge_session._common import (...)` block for
+  `_schedule_auto_verify_debt` + path-loaded tests). Net: ONE copy in `_common`, not
+  three. `import tempfile` became a shim orphan (only `_write_state` used it) — removed.
+- **Constants MIRRORED into `_common` (shim keeps inline copies — item-002 pattern):**
+  `EPIC_STATE_FILENAME`, `SAFE_NAME_RE`, `FULL_GIT_HASH_RE`, `VERIFY_STAGES`,
+  `_SKIP_PROTECTED_PRIOR`, `VERIFY_RESULT_STATUSES` (+ `import re`, `get_args` in
+  `_common`). `_CASCADE_TARGETS` is cluster-only → moved INTO state.py, not `_common`.
+  Free-name analysis (ast, Load names minus local binds minus cluster defs) is the
+  reliable way to enumerate what a moved cluster needs from `_common`.
+- **Bare-copy fallback grew by ONE: `_assert_safe_name`.** It is called at the TOP of
+  `stage_exit` (validates --feature/--epic/--next-feature) on EVERY exit, so the
+  package-less `_stub_bundle` stage-exit tests reach it. Item-002 warned bare-copy
+  "reaches _now_iso/_commit_state" — EMPIRICALLY FALSE for the surviving package-less
+  test: `_stub_rejected` only runs forge-6-docs → docs-routing-failure → exit 2
+  BEFORE `_schedule_auto_verify_debt` (the sole inline writer). Confirmed: 612
+  stage-exit tests pass with only `_assert_safe_name` added to the fallback. So the
+  fallback stays minimal — don't preemptively add write helpers a bare path never hits.
+- **Monolith-assumption TEST EDITS (all behaviour-preserving, CLI contract frozen):**
+  Moving the writers out of the shim broke tests coupled to them living there:
+  1. `tests/test_state_verbs.py` — writer-atomicity spies monkeypatched `FS.tempfile`
+     (AttributeError: shim no longer imports tempfile) and greps of the shim source
+     for `def _write_state(` etc. Fix: added `_WRITER_MODULE = forge_session._common`
+     and `_WRITER_SOURCE = shim + _common.py + state.py` (text concat — line-based
+     `_function_source` slices it; do NOT ast.parse a concat, the mid-file
+     `from __future__` is a SyntaxError). Spies now patch `_WRITER_MODULE.tempfile/os`;
+     source guards read `_WRITER_SOURCE`; `test_tempfile_is_imported...` reads imports
+     from `_common.py`. `FS.os` alone would have kept working (os is a shared singleton)
+     — only `tempfile` was missing.
+  2. `tests/test_state_verb_call_sites.py::test_the_documented_error_messages_still_exist`
+     — greps shim for exit-2 prefixes ("no feature directory at"/"refusing to overwrite
+     it" → state.py; "atomic write to" → _common.py). Fix: scan shim + state.py +
+     _common.py. Verified the literals still exist (relocated, not lost) before editing.
+- **Pre-existing env failure UNCHANGED and PROVEN via git worktree:** ran
+  `test_env_stamp_interactive_never_carries_a_rung` in a `git worktree add --detach HEAD`
+  pristine tree — it fails identically (`('warn','unknown')`), so it's the documented
+  `claude -p` sandbox ancestry artifact, not this item. Diff greps clean for
+  interaction|ancestry|rung. Full run: 3086 passed, 2 skipped, that 1 env fail. doctor
+  --json exits 0; ruff clean; adapter --check exits 0 on a clean tree (state.py bundled
+  byte-identical into all 6 adapters). NOTE (item 005 gotcha still bites): pytest writes
+  __pycache__ into adapters/ bundles; `find . -name __pycache__ -prune -exec rm -rf {} +`
+  before any re-run or the next early drift check false-fails.
