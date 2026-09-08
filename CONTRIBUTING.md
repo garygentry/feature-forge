@@ -27,6 +27,68 @@ Pipeline-mechanical changes (scripts, adapters, tests, docs, workflows) are outs
 
 Bug reports use the template in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/), which asks for `python3 scripts/forge-session.py doctor --json` output and the host/adapter in use. Those two pieces are what let a maintainer reproduce the environment before reading the report.
 
+## Local development
+
+For contributors editing feature-forge (and rauf) source. End users should use the
+[Install](README.md#install) instructions instead — distribution is unchanged
+(`/plugin marketplace add garygentry/feature-forge`).
+
+### The staleness trap
+
+Installing a plugin from a marketplace copies it into a versioned cache
+(`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>`). Claude Code loads that **cached copy**,
+not your working tree — so edits to the live source are silently ignored until you bump the version
+and reinstall. Worse, a stale marketplace can pin an old version (feature-forge once loaded an old
+`0.6.0` from a legacy marketplace cache while `0.9.0` source sat unused). The fix is to load the
+plugin **live, in place**.
+
+### Live-in-place via skills-dir symlinks (preferred)
+
+Symlink each plugin repo root into `~/.claude/skills/`. Claude Code loads it as `<plugin>@skills-dir`
+straight from your working tree — no cache, no version dance:
+
+```bash
+ln -s ~/workspace/feature-forge ~/.claude/skills/feature-forge
+ln -s ~/workspace/rauf          ~/.claude/skills/rauf
+```
+
+Both repos carry a `.claude-plugin/plugin.json` and a `skills/` dir, so the symlink resolves to a
+named plugin. **Restart Claude Code**, then verify the active source (never a stale cache version):
+
+```bash
+claude plugin list | grep -E 'feature-forge|rauf'   # expect @skills-dir
+```
+
+### Fallback: local marketplace install
+
+If a repo-root symlink does **not** load as `<plugin>@skills-dir`, remove the symlinks and install
+from a local marketplace instead — same end state (live source, no stale cache):
+
+```bash
+claude plugin marketplace add ~/workspace/feature-forge
+claude plugin marketplace add ~/workspace/rauf
+claude plugin install feature-forge@<that-marketplace>
+claude plugin install rauf@<that-marketplace>
+```
+
+Restart and re-check with `claude plugin list`.
+
+### Edit → effect
+
+| You changed…                          | Takes effect…                        |
+| ------------------------------------- | ------------------------------------ |
+| A `SKILL.md` (skill body/description) | Immediately, same session            |
+| `hooks/`, `agents/`, or `.mcp.json`   | After `/reload-plugins` or a restart |
+
+No version bump is ever needed while developing this way.
+
+### rauf as the loop runner
+
+The skills-dir `rauf` symlink also satisfies forge-4's `author-backlog` delegation — it is the
+canonical mechanism (not a marketplace install). For the rauf-side loop workflow (the compiled
+`rauf-stable` runner, the loop safety guard, branch-per-feature), see rauf's
+[`docs/DOGFOODING.md`](https://github.com/garygentry/rauf/blob/main/docs/DOGFOODING.md).
+
 ## Where things live
 
 - `AGENTS.md` — the session contract, read every turn by coding agents (and by you before a first PR).
