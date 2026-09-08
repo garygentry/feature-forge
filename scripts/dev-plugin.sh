@@ -41,7 +41,22 @@ while [ $# -gt 0 ]; do
     -o|--out)   out="${2:?--out needs a value}"; shift 2 ;;
     -f|--force) force=1; shift ;;
     -h|--help)
-      sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
+      cat <<'USAGE'
+dev-plugin.sh — assemble an out-of-repo, self-contained plugin dir from a BUILT
+adapter bundle, for running the LOCAL SOURCE via `claude --plugin-dir <dir>`.
+
+Usage: scripts/dev-plugin.sh [--agent <claude|codex|copilot|cursor|gemini|pi>] [--out <dir>] [--force]
+
+  -a, --agent <id>  Which built adapters/<id> bundle to expose (default: claude).
+  -o, --out <dir>   Where to assemble the plugin dir. Must be OUTSIDE the repo (the
+                    manifest must never ship). Default:
+                    ${XDG_CACHE_HOME:-~/.cache}/feature-forge-dev/<agent>.
+  -f, --force       Overwrite <dir> even if it does not look like a prior assembly.
+  -h, --help        This help.
+
+Then run the printed command, e.g.:  claude --plugin-dir <dir>
+See docs/DOGFOODING.md.
+USAGE
       exit 0 ;;
     *) echo "dev-plugin: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -61,13 +76,23 @@ version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["vers
 # Default target: an out-of-repo cache dir, keyed by agent. NEVER inside the repo (the
 # marketplace ships the repo via source: "."; a manifest there could become a nested dup).
 out="${out:-${XDG_CACHE_HOME:-$HOME/.cache}/feature-forge-dev/$agent}"
+# Canonicalize to an absolute PHYSICAL path first, so the in-repo guard below cannot be
+# bypassed by a relative or symlinked --out that actually resolves inside the checkout.
+case "$out" in /*) : ;; *) out="$PWD/$out" ;; esac
+_p="$out"; _tail=""
+while [ ! -e "$_p" ] && [ "$_p" != "/" ]; do
+  _tail="/$(basename -- "$_p")$_tail"; _p="$(dirname -- "$_p")"
+done
+out="$(cd -- "$_p" && pwd -P)$_tail"
 case "$out" in
   "$repo_root"|"$repo_root"/*)
     echo "dev-plugin: refusing --out inside the repo ($out); the manifest must not ship. Pick a path outside $repo_root." >&2
     exit 2 ;;
 esac
 
-if [ -e "$out" ] && [ "$force" -eq 0 ] && [ ! -e "$out/.feature-forge-bundle.json" ]; then
+# A prior assembly is recognized by the sentinel SYMLINK we create (test the link itself with
+# -L, not -e: -e follows the link and a moved/rebuilt bundle leaves it dangling).
+if [ -e "$out" ] && [ "$force" -eq 0 ] && [ ! -L "$out/.feature-forge-bundle.json" ]; then
   echo "dev-plugin: $out exists and does not look like a prior assembly; pass --force to overwrite." >&2
   exit 1
 fi
@@ -95,6 +120,10 @@ for entry in skills agents references scripts .feature-forge-bundle.json; do
     linked+=("$entry")
   fi
 done
+if [ "${#linked[@]}" -eq 0 ]; then
+  echo "dev-plugin: adapters/$agent carries none of skills/agents/references/scripts — rebuild with 'python3 scripts/build-adapters.py'." >&2
+  exit 1
+fi
 
 echo "dev-plugin: assembled feature-forge@$version ($agent) at:"
 echo "  $out"
