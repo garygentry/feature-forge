@@ -76,8 +76,14 @@ claude --plugin-dir ~/.cache/feature-forge-dev/claude plugin list
   (re-run it only to change agent/version or after moving the checkout).
 - **Revert:** nothing to undo. Launch `claude` without `--plugin-dir` and the released
   install is back. Delete `~/.cache/feature-forge-dev/` whenever.
-- **Other hosts:** `scripts/dev-plugin.sh --agent <codex|cursor|gemini|pi|copilot>` assembles
-  that host's bundle; load it with that host's local-plugin flag.
+- **Other hosts (codex, pi, …):** this workflow is **Claude-specific** — `dev-plugin.sh`
+  assembles a Claude plugin dir (`.claude-plugin/plugin.json` + `claude --plugin-dir`), which
+  codex and pi neither read nor use. Their built bundles are self-contained too (#132), so the
+  safe primitive is loading a **built** bundle their own way — codex installs the built
+  `adapters/codex` into its skills location (`npx @garygentry/feature-forge install -a codex`),
+  pi loads the built package directly with `pi -e ./adapters/pi`. A verified, first-class
+  source-dev workflow for codex and pi (and their canon-load reference-resolution behavior) is
+  tracked in **#315**; until then, install/load a built bundle and never point them at raw canon.
 
 ---
 
