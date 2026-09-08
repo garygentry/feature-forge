@@ -33,6 +33,14 @@ For contributors editing feature-forge (and rauf) source. End users should use t
 [Install](README.md#install) instructions instead — distribution is unchanged
 (`/plugin marketplace add garygentry/feature-forge`).
 
+> **Running the local source? Read [`docs/DOGFOODING.md`](docs/DOGFOODING.md).** It is the
+> prescribed, verified way to activate a local checkout — per-repo or machine-wide — while
+> coexisting with a standard install. The short version for feature-forge: build the bundle
+> and load it with `scripts/dev-plugin.sh` + `claude --plugin-dir`, **not** a repo-root
+> `~/.claude/skills/` symlink. The symlink method below loads un-built canon for
+> feature-forge (shared references absent, #305) **and** is silently shadowed by an installed
+> marketplace version — it remains valid only for **rauf** (self-contained skills).
+
 ### The staleness trap
 
 Installing a plugin from a marketplace copies it into a versioned cache
@@ -58,6 +66,19 @@ named plugin. **Restart Claude Code**, then verify the active source (never a st
 ```bash
 claude plugin list | grep -E 'feature-forge|rauf'   # expect @skills-dir
 ```
+
+> **⚠️ feature-forge caveat (#305).** A repo-**root** `@skills-dir` symlink loads feature-forge's
+> **un-built canon** `skills/` — whose shared references (`references/shared-conventions.md`,
+> `references/stage-exit-protocol.md`, `references/stacks/`) are fanned into the built
+> `adapters/<host>/` bundles at build time (#132), **not** into canon. A canon skill loaded this way
+> dead-references those files the moment it reads one, so most stages fail partway through (silently,
+> until the first missing `Read`). rauf is unaffected — its skills are self-contained. To develop
+> **feature-forge** live, prefer the **local marketplace install** below: it loads feature-forge as a
+> *plugin*, the path #122 established as working, so a skill's `references/…` reads resolve from the
+> plugin root (where the repo-level `references/` lives). Editing canon still takes effect live; only
+> the load mechanism differs. If you do use a symlink, point it at a **built bundle**
+> (`adapters/claude`) and re-run `python3 scripts/build-adapters.py` after each canon edit — never the
+> repo root.
 
 ### Fallback: local marketplace install
 
