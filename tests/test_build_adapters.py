@@ -1248,7 +1248,9 @@ def test_runtime_helpers_has_exactly_seven_entries():
 @pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
 @pytest.mark.parametrize("agent", AGENT_TARGETS)
 def test_no_new_file_appears_under_an_adapter_scripts_dir(agent):
-    """Each bundle's scripts/ holds exactly RUNTIME_HELPERS — nothing more, nothing less."""
+    """Each bundle's scripts/ holds exactly RUNTIME_HELPERS (files) plus RUNTIME_HELPER_DIRS
+    (whole packages, e.g. forge_session/ per #279) — nothing more, nothing less. The guard
+    still fails on any stray/unexpected file OR directory; it only admits the declared set."""
     mod = _load_generator_module()
     scripts_dir = ADAPTERS / agent / "scripts"
 
@@ -1257,8 +1259,10 @@ def test_no_new_file_appears_under_an_adapter_scripts_dir(agent):
     assert emitted == sorted(mod.RUNTIME_HELPERS), (
         f"{agent}: adapters/{agent}/scripts/ diverged from RUNTIME_HELPERS"
     )
-    assert not any(p.is_dir() for p in scripts_dir.iterdir()), (
-        f"{agent}: a directory appeared under adapters/{agent}/scripts/"
+    emitted_dirs = sorted(p.name for p in scripts_dir.iterdir() if p.is_dir())
+    assert emitted_dirs == sorted(mod.RUNTIME_HELPER_DIRS), (
+        f"{agent}: directories under adapters/{agent}/scripts/ diverged from "
+        f"RUNTIME_HELPER_DIRS (got {emitted_dirs}, expected {sorted(mod.RUNTIME_HELPER_DIRS)})"
     )
 
 
