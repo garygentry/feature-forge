@@ -33,6 +33,7 @@ from _forge_paths import REFERENCES, SCRIPTS, read
 from _state_schema import validate_epic_state, validate_state
 
 FORGE_SESSION = SCRIPTS / "forge-session.py"
+_CLI = SCRIPTS / "forge_session" / "cli.py"
 STATE_SCHEMA = REFERENCES / "pipeline-state-schema.json"
 STATE_FILENAME = ".pipeline-state.json"
 
@@ -97,7 +98,7 @@ def _conforms(state: dict, label: str) -> None:
 
 def test_the_guard_covers_every_registered_state_verb():
     """A new verb must not be able to land without joining this guard."""
-    registered = set(re.findall(r'add_parser\(\s*"(state-[a-z-]+)"', read(FORGE_SESSION)))
+    registered = set(re.findall(r'add_parser\(\s*"(state-[a-z-]+)"', read(_CLI)))
     assert registered == set(VERB_INVOCATIONS), (
         f"registered {sorted(registered)} != covered {sorted(VERB_INVOCATIONS)}"
     )

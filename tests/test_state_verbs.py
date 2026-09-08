@@ -55,6 +55,11 @@ import forge_session._common as _WRITER_MODULE  # noqa: E402
 
 _COMMON = SCRIPTS / "forge_session" / "_common.py"
 _STATE = SCRIPTS / "forge_session" / "state.py"
+# #279 P4.1: argparse construction (subparsers + `choices=`) moved into the CLI
+# dispatch module, and the shared domain constants into `_common`; the drift-guard
+# source reads follow the code there. The shim stays the CLI ENTRY (subprocess runs
+# still invoke forge-session.py) and re-exports every symbol path-loaded tests read.
+_CLI = SCRIPTS / "forge_session" / "cli.py"
 #: The shim plus the package modules it re-exports, concatenated as text so the
 #: line-based `_function_source` slicer finds each writer body wherever it now lives.
 _WRITER_SOURCE = "\n".join(read(p) for p in (FORGE_SESSION, _COMMON, _STATE))
@@ -125,7 +130,7 @@ def test_production_stages_is_defined_exactly_once():
     tuple, so a redefinition beginning with forge-0-epic is a runtime behavior
     change (REQ-BEHAV-01), not a cosmetic one.
     """
-    source = read(FORGE_SESSION)
+    source = read(_COMMON)
     assert len(re.findall(r"^PRODUCTION_STAGES: Final", source, re.M)) == 1
 
 
@@ -252,7 +257,7 @@ def test_write_state_wraps_oserror_in_usage_error_and_cleans_up(tmp_path, monkey
     def boom(*_args, **_kwargs):
         raise OSError("Read-only file system")
 
-    monkeypatch.setattr(FS.os, "replace", boom)
+    monkeypatch.setattr(_WRITER_MODULE.os, "replace", boom)
 
     try:
         FS._write_state(target, {"feature": "clobbered"})
@@ -592,7 +597,7 @@ def test_every_verb_appears_in_the_module_docstring_usage_lines():
 
 
 def test_every_verb_is_registered_as_a_subparser_and_dispatched():
-    source = read(FORGE_SESSION)
+    source = read(_CLI)
     for verb in REGISTERED_STATE_VERBS:
         assert re.search(rf'sub\.add_parser\(\s*"{verb}"', source), f"{verb} has no subparser"
         assert f'if args.cmd == "{verb}":' in source, f"{verb} has no dispatch branch"
@@ -3139,7 +3144,7 @@ def test_the_verb_enum_choices_match_the_schema_exactly():
 
 def test_the_registered_choices_are_the_constants_not_a_retyped_literal():
     """A drifting inline tuple would pass the parity test above while the CLI drifts."""
-    source = read(FORGE_SESSION)
+    source = read(_CLI)
     for flag, constant in (
         ("--raised-by", "DECISION_RAISED_BY"),
         ("--target-stage", "DECISION_TARGET_STAGES"),

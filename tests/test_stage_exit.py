@@ -2490,7 +2490,9 @@ def test_docs_a_timeout_at_the_ten_second_bound_is_a_routing_failure(
         seen["cmd"] = cmd
         raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
 
-    monkeypatch.setattr(session.subprocess, "run", fake_run)
+    # #279 P4.1: _render_status now lives in forge_session.routes; patch the shared
+    # subprocess singleton directly (session, the shim, no longer imports it).
+    monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(session.UsageError) as excinfo:
         session._render_status(tmp_path, DOCS_EPIC)
     message = str(excinfo.value)
@@ -2510,7 +2512,9 @@ def test_docs_a_spawn_failure_is_a_routing_failure(tmp_path: Path, monkeypatch) 
     def fake_run(cmd, **kwargs):
         raise OSError("Exec format error")
 
-    monkeypatch.setattr(session.subprocess, "run", fake_run)
+    # #279 P4.1: _render_status now lives in forge_session.routes; patch the shared
+    # subprocess singleton directly (session, the shim, no longer imports it).
+    monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(session.UsageError) as excinfo:
         session._render_status(tmp_path, DOCS_EPIC)
     message = str(excinfo.value)

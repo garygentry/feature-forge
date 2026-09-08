@@ -20,11 +20,20 @@ HELPER = REPO_ROOT / "scripts" / "forge-session.py"
 
 
 def _load_helper_module():
-    """Import forge-session.py as a module (hyphenated filename → importlib)."""
-    spec = importlib.util.spec_from_file_location("forge_session", HELPER)
+    """Return the package module that owns the doctor helpers (#279 P4.1).
+
+    ``_root_sandbox_status`` (and its ``os`` reference) moved out of the now-thin
+    forge-session.py shim into ``forge_session.doctor``. The shim is still loaded
+    first so its ``sys.path`` bootstrap makes ``import forge_session`` resolve, then
+    the doctor module is returned so a monkeypatch of ``module.os`` reaches the
+    namespace ``_root_sandbox_status`` actually reads.
+    """
+    spec = importlib.util.spec_from_file_location("forge_session_doctor_host", HELPER)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module
+    import forge_session.doctor as doctor_module
+
+    return doctor_module
 
 
 def _write_state(specs_dir: Path, name: str, state: dict, epic: str | None = None) -> None:

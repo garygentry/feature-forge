@@ -827,7 +827,7 @@ def verify(target: Path, answers: Answers) -> VerifyResult:
     return {"toolchainPresent": True, "lint": lint, "test": test, "green": green}
 
 
-#: mirrors ``load_json_with_duplicates``/``warn_duplicate_keys`` in scripts/forge-session.py
+#: mirrors ``load_json_with_duplicates``/``warn_duplicate_keys`` in scripts/forge_session/_common.py
 def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
     """Load JSON with last-key-wins values and ordered duplicate key names.
 

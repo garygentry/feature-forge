@@ -1225,8 +1225,12 @@ def test_claude_body_helpers_are_verbatim_passthrough():
 
 from test_json_loader_parity import mirrored_loader_pair  # noqa: E402
 
-#: The two scripts that carry a mirrored copy (05 §3.1/§3.2).
-LOADER_CONSUMERS = ("forge-session.py", "forge-bootstrap.py")
+#: The two shipped files that carry a byte-identical copy of the duplicate-aware JSON
+#: loader (05 §3.1/§3.2). #279 P4.1: the copy forge-session.py used to carry moved into
+#: the package's shared import module, so the mirror pair is now the flat
+#: forge-bootstrap.py and the package's forge_session/_common.py. Each still ships in
+#: every bundle and must survive generation byte-for-byte.
+LOADER_CONSUMERS = ("forge-bootstrap.py", "forge_session/_common.py")
 
 
 def test_runtime_helpers_has_exactly_seven_entries():
@@ -1241,7 +1245,9 @@ def test_runtime_helpers_has_exactly_seven_entries():
 
     assert len(mod.RUNTIME_HELPERS) == 7, mod.RUNTIME_HELPERS
     assert len(set(mod.RUNTIME_HELPERS)) == 7, "duplicate entry in RUNTIME_HELPERS"
-    assert set(LOADER_CONSUMERS) <= set(mod.RUNTIME_HELPERS)
+    # The flat loader consumer is a shipped runtime helper; the package copy ships via
+    # RUNTIME_HELPER_DIRS (#279 P4.1) and is covered by the byte-identical dir gate.
+    assert "forge-bootstrap.py" in mod.RUNTIME_HELPERS
     assert "forge_json.py" not in mod.RUNTIME_HELPERS
 
 

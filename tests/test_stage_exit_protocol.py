@@ -44,7 +44,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REFERENCE = REPO_ROOT / "references" / "stage-exit-protocol.md"
-SESSION = REPO_ROOT / "scripts" / "forge-session.py"
+# #279 P4.1: the shared stage-exit domains (ExitStage/ProductionStage/EXIT_OUTCOMES/
+# NEXT_STEPS_SENTINEL) moved out of the now-thin forge-session.py shim into the
+# package's shared import module; the drift-guard source reads follow them there.
+SESSION = REPO_ROOT / "scripts" / "forge_session" / "_common.py"
 
 
 # ---------------------------------------------------------------------------

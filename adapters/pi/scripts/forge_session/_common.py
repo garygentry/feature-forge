@@ -301,16 +301,17 @@ class VerifyEntry(TypedDict, total=False):
 # the two coexist until later #279 items drain the shim's inline copies. The
 # behaviour is identical either way — a pure move, never a re-derivation.
 #
-# The duplicate-aware JSON loader below is deliberately a SEPARATE copy from the
-# ``load_json_with_duplicates``/``warn_duplicate_keys`` pair mirrored across the flat
-# scripts (forge-session.py / forge-bootstrap.py, byte-identical per
-# tests/test_json_loader_parity.py). That mirror exists because the flat scripts are
-# copied verbatim into per-agent bundles and share no import module; the package
-# layer, by contrast, IS a shared import module, so it reads config through this
-# copy rather than reaching back into the shim (which would be a circular import).
+# The duplicate-aware JSON loader below is the package layer's copy of the pair
+# mirrored with the flat ``scripts/forge-bootstrap.py`` (byte-identical per
+# tests/test_json_loader_parity.py). The mirror exists because forge-bootstrap.py is
+# a standalone flat script — copied verbatim into per-agent bundles, sharing no import
+# module — so it cannot import this one; the drift guard keeps the two shipped copies
+# in lock-step. This IS the shared import module for the package (the shim and every
+# sibling verb read config through this copy rather than each carrying their own).
 # --------------------------------------------------------------------------- #
 
 
+#: mirrors ``load_json_with_duplicates``/``warn_duplicate_keys`` in scripts/forge-bootstrap.py
 def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
     """Load JSON with last-key-wins values and ordered duplicate key names.
 
@@ -1242,6 +1243,14 @@ EPIC_MEMBER_FALLBACK_WARNING: Final = (
     "({reason}); routing to forge-1-prd. Run /skill:forge {member} to "
     "inspect its state."
 )
+#: The closed reason domain for `EPIC_MEMBER_FALLBACK_WARNING`. No other
+#: value may be substituted — `tests/test_stage_exit.py` asserts the literal.
+EPIC_MEMBER_FALLBACK_REASONS: Final[tuple[str, ...]] = (
+    "missing",
+    "unreadable",
+    "malformed",
+    "not a member of this epic",
+)
 
 #: The seven stages that produce a pipeline artifact. forge-0-epic participates in
 #: exit and verify routing but not the member production walk (PRODUCTION_STAGES).
@@ -1277,6 +1286,29 @@ ExitOwner = Literal["direct", "nested"]
 
 #: Whether the host may run an interactive verify gate + clean-room dispatch.
 VerifyCapability = Literal["interactive", "manual"]
+
+#: The navigator/stage-exit freshness label for an artifact's verification.
+VerifyStateLabel = Literal[
+    "fresh", "stale", "failing", "never", "auto-pending", "skipped", "none"
+]
+
+#: Which gate form a stage exit asks the caller to render.
+VerifyGate = Literal["none", "standard", "manual-print"]
+
+#: The union of the verification-state cases the three upstream-verify gates branch
+#: on — the raw `forge-verify-*` statuses they key on, plus `never` for the absent/
+#: `pending`/unrecognized bucket every gate folds into "not verified". `verify-state`
+#: maps a served stage's entry to exactly one of these; `test_verify_state.py` pins
+#: the enum to the three skill bodies so a gate cannot grow a seventh case or spell an
+#: existing one differently.
+VerifyStateCase = Literal[
+    "passed",
+    "findings-reported",
+    "findings-applied",
+    "auto-verify-pending",
+    "skipped",
+    "never",
+]
 
 LoopOutcome = Literal[
     "complete", "partial", "blocked", "needs-human", "deferred", "resolved"
@@ -1384,15 +1416,20 @@ __all__ = [
     "_DONE_STATUS",
     "_DONE_STATUSES",
     "_SKIP_PROTECTED_PRIOR",
+    "_VERIFY_RESOLVED",
     "VERIFY_RESULT_STATUSES",
     "AUTO_PENDING_DIAGNOSTIC",
+    "_UNKNOWN_VERIFY_WARNED",
+    "_AUTO_VERIFY_DEBT_WARNED",
     "_read_state",
     "_scan_features",
     "_stage_status",
     "next_stage",
     "_stage_version",
     "_verify_entry",
+    "_warn_unknown_verify_status",
     "_scheduled_stage_version",
+    "_warn_auto_verify_debt_metadata",
     "auto_pending_message",
     "verify_state",
     "auto_verify_for",
@@ -1412,6 +1449,9 @@ __all__ = [
     "VerifyMode",
     "ExitOwner",
     "VerifyCapability",
+    "VerifyStateLabel",
+    "VerifyGate",
+    "VerifyStateCase",
     "LoopOutcome",
     "DocsOutcome",
     "VerifyOutcome",
@@ -1425,5 +1465,6 @@ __all__ = [
     "AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC",
     "INVALID_AUTO_VERIFY_KEY_WARNING",
     "EPIC_MEMBER_FALLBACK_WARNING",
+    "EPIC_MEMBER_FALLBACK_REASONS",
     "pending_verify",
 ]

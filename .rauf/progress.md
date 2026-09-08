@@ -441,3 +441,73 @@ _common**; neither imports the shim.
   ruff clean; adapter --check exits 0 on a clean tree (exit.py/routes.py bundled byte-identical
   into all 6 adapters). Item-005 `__pycache__` gotcha still bites: clean it before any
   validate.sh re-run or the early drift check false-fails.
+
+### Item 008 — finalize: cli.py + pure shim + doctor split — DONE (under LOOP EXECUTION POLICY)
+
+Completed #279. forge-session.py is now a PURE re-export shim (797 lines: docstring +
+sys.path bootstrap + explicit re-exports + `__main__`) — `grep -E "^(def |class )"` and
+the module-scope-assignment scan both return nothing but `__all__`. Every largest package
+module is under the 2,000-line ceiling (doctor.py 1939 after the split below).
+
+- **doctor.py was 2,119 — OVER the ceiling (item 004 flagged this).** Split by moving two
+  cohesive PURE-helper clusters into a new `forge_session/_doctor_util.py` (218 lines):
+  (1) the SemVer/schema cluster (`_SEMVER_*`, `_parse_semver`, `_fmt_semver`,
+  `_parse_installed_by`, `_first_backticked`, `_JSON_SCHEMA_TYPES`, `_schema_violations`,
+  `_stage_at_or_after`) and (2) the record-builder cluster (`CHECK_STATUSES`,
+  `CHECK_SEVERITIES`, `REMEDY_SAFETY_TIERS`, `_PROBE_OUTPUT_CAP`, `_remedy`, `_result`,
+  `_check_record`, `_exc_text`, `_head`). doctor.py imports them back + re-exports, so
+  `forge_session.doctor.<x>` still resolves. **KEEP in doctor.py:** everything monkeypatched
+  by tests (`DOCTOR_CHECKS`, `_PROBE_TIMEOUT_S`, `_build_check_context`, `_bundle_agent`,
+  `_process_ancestry`) and the `_make_spec("interaction-mode"` literal the host-neutrality
+  grep pins. A new package module needs NO build/gate change — build-adapters copies every
+  `*.py` under forge_session/ and the byte-identical assertion covers it automatically.
+- **The full drain WAS the plan (item 002 foresaw it): "items 006/008 drain the shim's
+  inline copies into _common".** The mirrored loader (`load_json_with_duplicates`/
+  `warn_duplicate_keys`/`_load_config`) and every parity-pinned domain constant moved to
+  `_common`; the readers were already mirrored there (items 001-007), so draining was mostly
+  DELETION. Added to `_common`: `VerifyStateLabel`/`VerifyGate`/`VerifyStateCase`/
+  `EPIC_MEMBER_FALLBACK_REASONS` + `__all__` entries for the warn-helpers/dedupe-sets/
+  `_VERIFY_RESOLVED` the shim re-exports. The context-usage cluster (`_cwd_slug`,
+  `_latest_transcript`, `_last_usage`, `_infer_window`, `context_usage`, `_config_value`,
+  window constants) + the printers + `_ErrorPrefixParser` + the CLI-only argparse-choice
+  constants (`STATE_VERB_STAGES`, `DECISION_*`, `ECR_*`) went to `cli.py` (no test reads them
+  off the shim, so they need no re-export).
+- **The `ModuleNotFoundError` bare-copy fallback was DELETED entirely.** Every former
+  bare-copy test (`test_doctor`, `test_doctor_checks`, `test_stage_exit._stub_bundle`) now
+  `copytree`s the package beside the shim (items 004/006/007), so NO test runs a lone shim —
+  the fallback was dead. A truly pure shim cannot keep it (it would be behavior).
+- **Shim docstring stays in the shim.** Three tests read the PATH-LOADED shim's `__doc__`
+  for the verb synopses (`test_select_outcome`/`test_verify_state`/`test_stage_constants_
+  parity`), so the full verb-reference docstring is duplicated: shim module docstring (for
+  those `module.__doc__` reads) AND `cli.py.__doc__` (argparse `description=__doc__`, i.e.
+  live `--help`). A docstring is not "behavior", so the pure-shim goal holds. **Gotcha:**
+  `ast.get_docstring(clean=False)` COLLAPSES `\`-line-continuations in the source docstring
+  into >100-char lines (ruff E501) — splice the docstring SOURCE TEXT verbatim, never the
+  evaluated value.
+- **Authorized monolith-assumption TEST EDITS (11 files, all behavior-preserving, CLI
+  contract frozen).** SOURCE-GREP retargets (a literal moved into the package):
+  test_stage_exit_protocol (ExitStage/…→_common), test_stage_constants_parity (constants→
+  _common, argparse choices/synopsis→cli), test_state_verbs (PRODUCTION_STAGES→_common,
+  subparser/choices→cli), test_decisions/state_schema_conformance (add_parser→cli),
+  test_compliance_eval (NEXT_STEPS_SENTINEL→_common), test_json_loader_parity (SESSION→
+  _common + MIRROR_COMMENT_BY_FILE), test_effective_config (_LOADER_SOURCES + read-count
+  monkeypatch→_common), test_build_adapters (LOADER_CONSUMERS→forge_session/_common.py, and
+  the RUNTIME_HELPERS-membership check now targets the flat consumer only). MONKEYPATCH-TARGET
+  repoints (os/subprocess are SINGLETONS — patch a module that still imports them):
+  test_doctor `_load_helper_module`→forge_session.doctor (for `module.os`), test_stage_exit
+  docs `session.subprocess`→the test's global `subprocess`, test_state_verbs `FS.os`→
+  `_WRITER_MODULE.os`. NON-test source edit: forge-bootstrap.py's `#: mirrors …` comment now
+  names scripts/forge_session/_common.py (its new mirror partner); `_common` gained the
+  matching `#: mirrors … forge-bootstrap.py` immediately above its loader def.
+- **Loader-mirror parity survives the move.** `_common`'s loader pair is byte-identical to
+  forge-bootstrap.py (verified), so the drift guard just retargets forge-session.py→
+  `forge_session/_common.py`. `test_json_loader_parity.test_no_shared_json_module_was_
+  extracted` still holds (there is no scripts/forge_json.py — _common is the package's
+  shared import module, not a seventh flat RUNTIME_HELPERS entry).
+- **Pre-existing env failure UNCHANGED and RE-PROVEN pristine:** `test_env_stamp_interactive_
+  never_carries_a_rung` fails identically on a `git worktree add --detach HEAD` tree
+  (`('warn','unknown')` — the documented `claude -p` sandbox ancestry artifact); the diff's
+  interaction/ancestry lines are ONLY re-export reordering, not check-logic changes. Full run:
+  1 failed, 3086 passed, 2 skipped. validate.sh's SOLE error is that same env test (`FAIL:
+  epic-manifest pytest suite`); every other gate PASSES incl. "adapters/ matches a fresh
+  generation (no drift)", ruff, spec-purity, version-sync. doctor --json exits 0 (CHECK-I21).
