@@ -62,7 +62,16 @@ def _load_helper_module():
 
 @pytest.fixture(scope="module")
 def fs():
-    return _load_helper_module()
+    # #279 P4.1: doctor's cluster moved from the monolith into
+    # forge_session/doctor.py. These tests monkeypatch doctor's helpers and then
+    # call doctor_report — and a function only observes patches applied to ITS OWN
+    # module — so `fs` must be the package module where those names now live, not
+    # the re-exporting shim (patching the shim would not reach doctor's globals).
+    # Loading the shim first runs its sys.path bootstrap so the import resolves.
+    _load_helper_module()
+    import forge_session.doctor as doctor_module
+
+    return doctor_module
 
 
 def _doctor(cwd: Path, *extra: str) -> subprocess.CompletedProcess[str]:
@@ -415,6 +424,11 @@ def test_plugin_root_warns_with_global_install_remedy_when_unresolvable(tmp_path
     lone.mkdir(parents=True)
     for name in ("forge-session.py", "forge-root.sh"):
         (lone / name).write_bytes((REPO_ROOT / "scripts" / name).read_bytes())
+    # #279 P4.1: the shim delegates to its sibling forge_session/ package, so a
+    # runnable copy ships the package beside it (real degraded installs do too, via
+    # the bundling + forge-root.sh completeness gates). Still "lone" — no sentinel
+    # above scripts/ — so plugin-root stays unresolvable.
+    shutil.copytree(REPO_ROOT / "scripts" / "forge_session", lone / "forge_session")
     project = make_project(tmp_path)
     result = run_doctor(project, scrubbed_env(tmp_path), helper=lone / "forge-session.py")
     assert result.returncode == 0, result.stderr
@@ -1144,6 +1158,9 @@ def test_root_version_skew_na_when_root_is_unresolved(tmp_path: Path) -> None:
     lone = tmp_path / "lone"
     lone.mkdir()
     (lone / "forge-session.py").write_bytes(HELPER.read_bytes())  # no forge-root.sh beside it
+    # #279 P4.1: ship the forge_session/ package the shim delegates to (still no
+    # forge-root.sh, so the root stays unresolvable — the point of this test).
+    shutil.copytree(REPO_ROOT / "scripts" / "forge_session", lone / "forge_session")
     env = scrubbed_env(tmp_path)
     project = make_project(tmp_path)
     result = subprocess.run(
@@ -1839,8 +1856,13 @@ def test_reported_host_arg_is_a_value_stage_exit_actually_accepts(fs) -> None:
         agent if agent in fs._NAMED_HOST_ARGS else "generic"
         for agent in fs._ADAPTER_AGENT_IDS
     }
-    assert emitted <= set(fs.EXIT_HOSTS), (
-        f"doctor would report a --host value stage-exit rejects: {emitted - set(fs.EXIT_HOSTS)}"
+    # EXIT_HOSTS lives in the stage-exit cluster (still in the shim, → exit.py in
+    # #279 item 007), not the doctor module `fs` now points at. Source the real
+    # enum from the shim so this stays pinned against stage-exit's `--host`
+    # vocabulary rather than a constant doctor derives it from.
+    exit_hosts = _load_helper_module().EXIT_HOSTS
+    assert emitted <= set(exit_hosts), (
+        f"doctor would report a --host value stage-exit rejects: {emitted - set(exit_hosts)}"
     )
     assert emitted == {"claude", "pi", "generic"}
 

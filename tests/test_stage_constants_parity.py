@@ -41,6 +41,13 @@ from _forge_paths import REFERENCES, REPO_ROOT, SCRIPTS, read
 
 SESSION = SCRIPTS / "forge-session.py"
 MANIFEST = SCRIPTS / "epic-manifest.py"
+# #279 P4.1: the shared stage/verify domains moved out of the now-thin forge-session.py
+# shim into the package's shared import module (`_common`), and the argparse
+# construction moved into `cli`. The drift-guard SOURCE reads follow the literals to
+# where they now live; the path-loaded module attrs still resolve off the shim via its
+# re-export surface, so `_load_session_module()` is unchanged.
+COMMON = SCRIPTS / "forge_session" / "_common.py"
+CLI = SCRIPTS / "forge_session" / "cli.py"
 STATE_SCHEMA = REFERENCES / "pipeline-state-schema.json"
 
 #: The six production stages in pipeline order. Order is SEMANTIC — `next_stage`,
@@ -140,7 +147,7 @@ def _load_session_module():
 
 def test_forge_session_declares_the_six_production_stages():
     """The owning script's PRODUCTION_STAGES is the six-tuple, in pipeline order."""
-    assert _stages(SESSION, "PRODUCTION_STAGES") == EXPECTED_STAGES
+    assert _stages(COMMON, "PRODUCTION_STAGES") == EXPECTED_STAGES
 
 
 def test_epic_manifest_declares_the_six_production_stages():
@@ -150,7 +157,7 @@ def test_epic_manifest_declares_the_six_production_stages():
 
 def test_the_two_stage_tuples_are_equal():
     """Order-sensitive equality: a new stage cannot land in only one of the two."""
-    assert _stages(MANIFEST, "_PRODUCTION_STAGES") == _stages(SESSION, "PRODUCTION_STAGES")
+    assert _stages(MANIFEST, "_PRODUCTION_STAGES") == _stages(COMMON, "PRODUCTION_STAGES")
 
 
 # --------------------------------------------------------------------------------------
@@ -160,7 +167,7 @@ def test_the_two_stage_tuples_are_equal():
 
 def test_the_two_verify_status_sets_are_equal():
     """Both copies of KNOWN_VERIFY_STATUSES agree with each other and with the schema."""
-    session = _verify_statuses(SESSION)
+    session = _verify_statuses(COMMON)
     manifest = _verify_statuses(MANIFEST)
     assert session == EXPECTED_VERIFY_STATUSES
     assert manifest == EXPECTED_VERIFY_STATUSES
@@ -180,7 +187,7 @@ def test_both_copies_match_the_schema_enum():
         "references/pipeline-state-schema.json's verifyEntry status enum is no longer "
         f"the six statuses of 00 §2: {sorted(schema)}"
     )
-    assert _verify_statuses(SESSION) == schema
+    assert _verify_statuses(COMMON) == schema
     assert _verify_statuses(MANIFEST) == schema
 
 
@@ -191,15 +198,15 @@ def test_the_two_copies_are_byte_identical():
     what keeps the two blocks diffable and makes a one-sided edit obvious.
     """
     blocks = {}
-    for path in (SESSION, MANIFEST):
+    for path in (COMMON, MANIFEST):
         pattern = _assignment_re("KNOWN_VERIFY_STATUSES", "{", "}")
         matches = pattern.findall(read(path))
         assert len(matches) == 1, f"{path.name}: KNOWN_VERIFY_STATUSES assigned != 1x"
         blocks[path.name] = matches[0]
-    session, manifest = blocks[SESSION.name], blocks[MANIFEST.name]
+    session, manifest = blocks[COMMON.name], blocks[MANIFEST.name]
     assert session == manifest, (
         "the two KNOWN_VERIFY_STATUSES literals diverged textually:\n"
-        f"--- {SESSION.name}\n{session}\n--- {MANIFEST.name}\n{manifest}"
+        f"--- {COMMON.name}\n{session}\n--- {MANIFEST.name}\n{manifest}"
     )
 
 
@@ -214,9 +221,9 @@ def test_auto_verify_pending_is_known_but_not_resolved():
     Folding it into `_VERIFY_RESOLVED` would make a dropped `runInStageVerify`
     directive read as success — exactly the conflation REQ-DEBT-02 forbids.
     """
-    resolved = _parse_literal(SESSION, "_VERIFY_RESOLVED", "{", "}")
+    resolved = _parse_literal(COMMON, "_VERIFY_RESOLVED", "{", "}")
     assert isinstance(resolved, set)
-    assert "auto-verify-pending" in _verify_statuses(SESSION)
+    assert "auto-verify-pending" in _verify_statuses(COMMON)
     assert "auto-verify-pending" not in resolved
     assert resolved < set(EXPECTED_VERIFY_STATUSES), "resolved must stay a strict subset"
 
@@ -257,7 +264,7 @@ def test_each_shared_constant_is_assigned_exactly_once():
     module-scope names — so a stray duplicate `NEXT_STEPS_SENTINEL` further down the
     file would win at runtime while every reader assumed the constants block did.
     """
-    source = read(SESSION)
+    source = read(COMMON)
     for name in (
         "EXIT_STAGES",
         "EXIT_OUTCOMES",
@@ -280,7 +287,7 @@ def test_the_cli_stage_choices_are_the_whole_exit_domain():
     The registration must read the shared constant, not a hand-listed copy — a copy
     is the second list `00-core-definitions.md` §2 exists to eliminate.
     """
-    source = read(SESSION)
+    source = read(CLI)
     assert "choices=EXIT_STAGES" in source, "stage-exit --stage must use EXIT_STAGES"
     assert "_STAGE_EXIT_CLI_STAGES" not in source, "the interim subset must be gone"
 
@@ -325,7 +332,7 @@ def test_the_stage_exit_synopsis_lists_every_flag_the_parser_accepts():
     Derived from the parser registration rather than a hand-kept list, so adding a
     sixth flag fails here until the synopsis mentions it.
     """
-    source = read(SESSION)
+    source = read(CLI)
     registered = set(re.findall(r'p_exit\.add_argument\(\s*"(--[a-z-]+)"', source))
     assert len(registered) >= 10, (
         f"only {len(registered)} `p_exit.add_argument` long options found — the "

@@ -44,6 +44,26 @@ def _load_forge_session():
 
 FS = _load_forge_session()
 
+# #279 P4.1: the atomic state writers (`_write_state`/`_commit_state`/`_now_iso`)
+# moved out of the forge-session.py monolith into the forge_session/ package the
+# shim re-exports — `_write_state`/`_commit_state`/`_now_iso` into `_common.py`, the
+# verb + load-for-write helpers into `state.py`. The writer-atomicity spies below
+# patch `tempfile`/`os` on the module that now OWNS the writer, and the source
+# guards read the writer bodies from the package files. Behaviour-preserving
+# adaptations to the split; the CLI contract is unchanged.
+import forge_session._common as _WRITER_MODULE  # noqa: E402
+
+_COMMON = SCRIPTS / "forge_session" / "_common.py"
+_STATE = SCRIPTS / "forge_session" / "state.py"
+# #279 P4.1: argparse construction (subparsers + `choices=`) moved into the CLI
+# dispatch module, and the shared domain constants into `_common`; the drift-guard
+# source reads follow the code there. The shim stays the CLI ENTRY (subprocess runs
+# still invoke forge-session.py) and re-exports every symbol path-loaded tests read.
+_CLI = SCRIPTS / "forge_session" / "cli.py"
+#: The shim plus the package modules it re-exports, concatenated as text so the
+#: line-based `_function_source` slicer finds each writer body wherever it now lives.
+_WRITER_SOURCE = "\n".join(read(p) for p in (FORGE_SESSION, _COMMON, _STATE))
+
 
 def _feature_dir(tmp_path: Path, name: str = "demo") -> Path:
     """Create an EMPTY feature dir (no state file) under a temp specs tree."""
@@ -110,7 +130,7 @@ def test_production_stages_is_defined_exactly_once():
     tuple, so a redefinition beginning with forge-0-epic is a runtime behavior
     change (REQ-BEHAV-01), not a cosmetic one.
     """
-    source = read(FORGE_SESSION)
+    source = read(_COMMON)
     assert len(re.findall(r"^PRODUCTION_STAGES: Final", source, re.M)) == 1
 
 
@@ -163,14 +183,19 @@ def _imported_modules(source: str) -> frozenset[str]:
 
 def test_tempfile_is_imported_and_jsonschema_is_not():
     """The atomic write path needs `tempfile`; importing `jsonschema` would make
-    the script unrunnable where it is absent."""
-    imported = _imported_modules(read(FORGE_SESSION))
-    assert "tempfile" in imported, (
-        f"{FORGE_SESSION.name} does not import tempfile; the atomic write path needs it"
+    the script unrunnable where it is absent.
+
+    #279 P4.1: the write path (`_write_state`) lives in forge_session/_common.py now,
+    so `tempfile` is imported there; `jsonschema` must stay absent from the shim and
+    every package module the shim loads.
+    """
+    assert "tempfile" in _imported_modules(read(_COMMON)), (
+        f"{_COMMON.name} does not import tempfile; the atomic write path needs it"
     )
-    assert "jsonschema" not in imported, (
-        f"{FORGE_SESSION.name} imports jsonschema, which is not available in CI"
-    )
+    for path in (FORGE_SESSION, _COMMON, _STATE):
+        assert "jsonschema" not in _imported_modules(read(path)), (
+            f"{path.name} imports jsonschema, which is not available in CI"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -192,7 +217,11 @@ def test_now_iso_is_z_suffixed_second_precision_utc():
 
 def test_write_state_uses_mkstemp_fsync_and_replace(tmp_path, monkeypatch):
     calls: list[str] = []
-    real_mkstemp, real_fsync, real_replace = FS.tempfile.mkstemp, FS.os.fsync, FS.os.replace
+    real_mkstemp, real_fsync, real_replace = (
+        _WRITER_MODULE.tempfile.mkstemp,
+        _WRITER_MODULE.os.fsync,
+        _WRITER_MODULE.os.replace,
+    )
 
     def spy(name, fn):
         def wrapper(*args, **kwargs):
@@ -201,9 +230,9 @@ def test_write_state_uses_mkstemp_fsync_and_replace(tmp_path, monkeypatch):
 
         return wrapper
 
-    monkeypatch.setattr(FS.tempfile, "mkstemp", spy("mkstemp", real_mkstemp))
-    monkeypatch.setattr(FS.os, "fsync", spy("fsync", real_fsync))
-    monkeypatch.setattr(FS.os, "replace", spy("replace", real_replace))
+    monkeypatch.setattr(_WRITER_MODULE.tempfile, "mkstemp", spy("mkstemp", real_mkstemp))
+    monkeypatch.setattr(_WRITER_MODULE.os, "fsync", spy("fsync", real_fsync))
+    monkeypatch.setattr(_WRITER_MODULE.os, "replace", spy("replace", real_replace))
 
     target = _feature_dir(tmp_path) / FS.PIPELINE_STATE_FILENAME
     FS._write_state(target, {"feature": "demo"})
@@ -228,7 +257,7 @@ def test_write_state_wraps_oserror_in_usage_error_and_cleans_up(tmp_path, monkey
     def boom(*_args, **_kwargs):
         raise OSError("Read-only file system")
 
-    monkeypatch.setattr(FS.os, "replace", boom)
+    monkeypatch.setattr(_WRITER_MODULE.os, "replace", boom)
 
     try:
         FS._write_state(target, {"feature": "clobbered"})
@@ -568,7 +597,7 @@ def test_every_verb_appears_in_the_module_docstring_usage_lines():
 
 
 def test_every_verb_is_registered_as_a_subparser_and_dispatched():
-    source = read(FORGE_SESSION)
+    source = read(_CLI)
     for verb in REGISTERED_STATE_VERBS:
         assert re.search(rf'sub\.add_parser\(\s*"{verb}"', source), f"{verb} has no subparser"
         assert f'if args.cmd == "{verb}":' in source, f"{verb} has no dispatch branch"
@@ -3115,7 +3144,7 @@ def test_the_verb_enum_choices_match_the_schema_exactly():
 
 def test_the_registered_choices_are_the_constants_not_a_retyped_literal():
     """A drifting inline tuple would pass the parity test above while the CLI drifts."""
-    source = read(FORGE_SESSION)
+    source = read(_CLI)
     for flag, constant in (
         ("--raised-by", "DECISION_RAISED_BY"),
         ("--target-stage", "DECISION_TARGET_STAGES"),
@@ -3395,7 +3424,7 @@ _WRITER_FUNCTIONS = (
 
 
 def test_the_state_writers_acquire_no_lock_lease_or_version_guard():
-    source = read(FORGE_SESSION)
+    source = _WRITER_SOURCE
     for name in _WRITER_FUNCTIONS:
         body = _function_source(source, name)
         for token in _MUTEX_TOKENS:
@@ -3412,7 +3441,7 @@ def test_the_single_writer_guard_can_actually_fail():
     Proves the slice really carries the writer's body, stops at the next top-level
     definition, and that the token list catches a lock smuggled into it.
     """
-    body = _function_source(read(FORGE_SESSION), "_write_state")
+    body = _function_source(_WRITER_SOURCE, "_write_state")
     for expected in ("def _write_state(", "tempfile.mkstemp", "os.fsync", "os.replace"):
         assert expected in body, f"{expected} missing from the sliced body"
     assert "def _resolve_feature_dir_for_write(" not in body, "the slice overran"
@@ -3435,7 +3464,7 @@ def _writer_spies(monkeypatch, *, replace_fails: bool = False) -> dict:
     """
     record: dict = {"order": [], "temps": []}
     real_mkstemp, real_fsync, real_replace = (
-        FS.tempfile.mkstemp, FS.os.fsync, FS.os.replace
+        _WRITER_MODULE.tempfile.mkstemp, _WRITER_MODULE.os.fsync, _WRITER_MODULE.os.replace
     )
 
     def mkstemp(*args, **kwargs):
@@ -3454,9 +3483,9 @@ def _writer_spies(monkeypatch, *, replace_fails: bool = False) -> dict:
             raise OSError("Read-only file system")
         return real_replace(*args, **kwargs)
 
-    monkeypatch.setattr(FS.tempfile, "mkstemp", mkstemp)
-    monkeypatch.setattr(FS.os, "fsync", fsync)
-    monkeypatch.setattr(FS.os, "replace", replace)
+    monkeypatch.setattr(_WRITER_MODULE.tempfile, "mkstemp", mkstemp)
+    monkeypatch.setattr(_WRITER_MODULE.os, "fsync", fsync)
+    monkeypatch.setattr(_WRITER_MODULE.os, "replace", replace)
     return record
 
 

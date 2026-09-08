@@ -45,7 +45,11 @@ def test_prelude_matches_the_byte_pinned_source() -> None:
 
 
 def test_sentinel_matches_the_helper() -> None:
-    source = (REPO_ROOT / "scripts" / "forge-session.py").read_text(encoding="utf-8")
+    # #279 P4.1: NEXT_STEPS_SENTINEL moved from the shim into the package's shared
+    # import module; the byte-pinned check follows it there.
+    source = (
+        REPO_ROOT / "scripts" / "forge_session" / "_common.py"
+    ).read_text(encoding="utf-8")
     assert f'NEXT_STEPS_SENTINEL: Final = "{ce.SENTINEL}"' in source
 
 

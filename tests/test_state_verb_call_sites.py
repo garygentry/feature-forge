@@ -451,8 +451,22 @@ def test_the_verb_failure_protocol_is_still_documented():
 
 
 def test_the_documented_error_messages_still_exist_in_the_script():
-    """The operator-facing exit-2 prefixes the protocol describes are still emitted."""
-    source = read(SESSION)
+    """The operator-facing exit-2 prefixes the protocol describes are still emitted.
+
+    #279 P4.1: the state writers moved out of the forge-session.py monolith into the
+    forge_session/ package the shim re-exports — the load-for-write helpers into
+    `state.py`, the atomic writer into `_common.py`. The prefixes are read from the
+    shim plus those package modules (behaviour-preserving; the messages themselves,
+    the verbs, and their exit codes are unchanged).
+    """
+    source = "\n".join(
+        read(p)
+        for p in (
+            SESSION,
+            SCRIPTS / "forge_session" / "state.py",
+            SCRIPTS / "forge_session" / "_common.py",
+        )
+    )
     absent = [prefix for prefix in ERROR_MESSAGE_PREFIXES if prefix not in source]
     assert not absent, (
         "scripts/forge-session.py no longer emits documented exit-2 messages — the "

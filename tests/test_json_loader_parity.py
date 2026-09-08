@@ -31,7 +31,12 @@ from pathlib import Path
 
 from _forge_paths import REPO_ROOT, SCRIPTS, read
 
-SESSION = SCRIPTS / "forge-session.py"
+# #279 P4.1: forge-session.py is now a thin re-exporting shim over the forge_session/
+# package. The loader mirror it used to carry moved into the package's shared import
+# module (`_common`), which is the copy forge-bootstrap.py (still a standalone flat
+# script that cannot import it) now mirrors. The drift guard follows the pair there;
+# the "no shared JSON module" invariant below still holds (there is no forge_json.py).
+SESSION = SCRIPTS / "forge_session" / "_common.py"
 BOOTSTRAP = SCRIPTS / "forge-bootstrap.py"
 
 #: The mirrored pair, in the order both files declare them.
@@ -45,7 +50,7 @@ MIRROR_COMMENT_BY_FILE = {
     ),
     BOOTSTRAP: (
         "#: mirrors ``load_json_with_duplicates``/``warn_duplicate_keys`` "
-        "in scripts/forge-session.py"
+        "in scripts/forge_session/_common.py"
     ),
 }
 

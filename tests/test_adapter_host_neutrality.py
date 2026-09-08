@@ -497,9 +497,14 @@ def test_the_interaction_record_is_reachable_from_every_bundle() -> None:
     for target in ("claude", "pi") + NON_CLAUDE_TARGETS:
         script = ADAPTERS_ROOT / target / "scripts" / "forge-session.py"
         assert script.is_file(), f"{target} bundle is missing scripts/forge-session.py"
-        source = script.read_text(encoding="utf-8")
+        # #279 P4.1: doctor's registry (and the interaction-mode check's `_make_spec`
+        # literal) moved from the monolith into the forge_session/ package the shim
+        # delegates to, so the check now lives in scripts/forge_session/doctor.py.
+        doctor = ADAPTERS_ROOT / target / "scripts" / "forge_session" / "doctor.py"
+        assert doctor.is_file(), f"{target} bundle is missing scripts/forge_session/doctor.py"
+        source = doctor.read_text(encoding="utf-8")
         assert f'_make_spec("{_INTERACTION_CHECK_ID}"' in source, (
-            f"{target}'s bundled forge-session.py has no `{_INTERACTION_CHECK_ID}` check, "
+            f"{target}'s bundled forge_session/doctor.py has no `{_INTERACTION_CHECK_ID}` check, "
             "so its ladder points at a command that cannot answer"
         )
         sentinel = ADAPTERS_ROOT / target / ".feature-forge-bundle.json"

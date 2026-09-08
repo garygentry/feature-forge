@@ -200,7 +200,8 @@ def test_the_validator_flags_a_malformed_block() -> None:
 #: so the matrix below runs twice — once against each real in-file pair.
 _LOADER_SOURCES = {
     "forge-bootstrap.py": SCRIPTS / "forge-bootstrap.py",
-    "forge-session.py": SCRIPTS / "forge-session.py",
+    # #279 P4.1: the shim's loader mirror moved into the package's shared import module.
+    "_common.py": SCRIPTS / "forge_session" / "_common.py",
 }
 
 
@@ -581,7 +582,9 @@ def test_the_mirrored_loader_does_one_local_read_and_nothing_else(script):
 
 def test_load_config_does_not_add_a_second_config_read(tmp_path, monkeypatch):
     """Duplicate detection replaces the existing read; it never adds one (REQ-PERF-02)."""
-    session = _load_script_module("_dupcfg_readcount", SCRIPTS / "forge-session.py")
+    # #279 P4.1: `_load_config` and its `load_json_with_duplicates` co-reside in the
+    # package's shared import module now, so the read-count spy patches it there.
+    session = _load_script_module("_dupcfg_readcount", SCRIPTS / "forge_session" / "_common.py")
     path = _write_json(tmp_path, '{"autoVerify": false, "autoVerify": true}')
 
     calls: list[Path] = []

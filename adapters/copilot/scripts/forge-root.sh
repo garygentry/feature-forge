@@ -33,12 +33,30 @@ CORE_ASSETS=(
   "references/stage-exit-protocol.md"
 )
 
+# scripts/forge-session.py is a thin shim that imports the sibling scripts/forge_session/
+# package (#279); a bundle that ships the shim but not the package cannot run the CLI, so
+# the package is part of a COMPLETE install. It is enforced only when the shipped
+# forge-session.py is ACTUALLY the shim (its body references `forge_session`): a legacy
+# self-contained forge-session.py that predates the split has no such package and must not
+# be spuriously flagged. This marker file proves the package dir shipped alongside the shim.
+PACKAGE_MARKER="scripts/forge_session/__init__.py"
+
+# Precise proxy for "this forge-session.py actually imports the forge_session package" — an
+# `import forge_session` / `from forge_session… import` STATEMENT at line start (leading
+# whitespace allowed). Anchoring to the statement avoids a bare token match (a comment or an
+# unrelated symbol mentioning `forge_session`) firing the package requirement, and a real
+# import line always satisfies it.
+SHIM_IMPORT_RE='^[[:space:]]*(from|import)[[:space:]]+forge_session([._[:space:]]|$)'
+
 # Echo the first missing core asset (relative path) for $1, or nothing when complete.
 first_missing_asset() {  # $1 = candidate dir
   local a
   for a in "${CORE_ASSETS[@]}"; do
     [ -f "$1/$a" ] || { printf '%s' "$a"; return 0; }
   done
+  if grep -qE "$SHIM_IMPORT_RE" "$1/scripts/forge-session.py" 2>/dev/null; then
+    [ -f "$1/$PACKAGE_MARKER" ] || { printf '%s' "$PACKAGE_MARKER"; return 0; }
+  fi
 }
 
 # A sentinel-bearing candidate that lacks a core asset is remembered here (first one wins)

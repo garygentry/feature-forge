@@ -27,6 +27,7 @@ from _forge_paths import SCRIPTS, read
 from _state_schema import validate_decisions
 
 FORGE_SESSION = SCRIPTS / "forge-session.py"
+_CLI = SCRIPTS / "forge_session" / "cli.py"
 DECISIONS_RELPATH = Path(".rauf") / "forge-decisions.json"
 
 #: One realistic single invocation per verb (flags beyond `--backlog-dir`).
@@ -89,7 +90,9 @@ def test_the_guard_covers_every_registered_decision_verb():
     test_state_schema_conformance.py's own scan) is deliberately NOT swept in.
     """
     registered = set(
-        re.findall(r'add_parser\(\s*"(decision-[a-z-]+)"', read(FORGE_SESSION))
+        # #279 P4.1: subparser registration moved from the shim into the CLI dispatch
+        # module; the shim is still the process entry (RUN uses forge-session.py).
+        re.findall(r'add_parser\(\s*"(decision-[a-z-]+)"', read(_CLI))
     )
     assert registered == set(VERB_INVOCATIONS), (
         f"registered {sorted(registered)} != covered {sorted(VERB_INVOCATIONS)}"

@@ -1,6 +1,200 @@
 {
-  "$schema": "https://raw.githubusercontent.com/garygentry/rauf/main/schemas/backlog.schema.json",
-  "project": "",
-  "description": "",
-  "items": []
+  "schemaVersion": "1",
+  "project": "feature-forge",
+  "description": "#265 P4.1 (issue #279): split the 9,804-line scripts/forge-session.py monolith into a scripts/forge_session/ package, keeping scripts/forge-session.py as a thin re-exporting shim. Pure move, ZERO behavior change: verb names, flags, exit codes, and JSON output shapes are frozen. The CLI test suite is the oracle and MUST pass unmodified. Extraction is incremental — the shim stays a valid standalone script throughout, shrinking as each cluster moves into a package module. bash scripts/validate.sh (the full CLI suite + the `forge-session.py doctor --json` smoke / CHECK-I21) is the last acceptance criterion on every item.",
+  "items": [
+    {
+      "id": "001",
+      "type": "refactor",
+      "priority": 1,
+      "title": "Establish forge_session package, thin shim, bundling gates; extract topology.py as pilot",
+      "description": "Create the scripts/forge_session/ package and prove the whole extraction mechanism on ONE self-contained cluster (the backlog-topology verb), leaving all other code in place.\n\nSTEPS:\n1. Create scripts/forge_session/__init__.py (package marker; may hold a module docstring).\n2. Create scripts/forge_session/_common.py and MOVE into it the low-level primitives that later modules will share: the TypedDicts/exceptions (FeatureRow, EpicReconcile, StageExitDirectives, StageExitPayload, VerifyEntry, UsageError) and the shared readers topology needs (at minimum load_json_with_duplicates, warn_duplicate_keys, and any small helper cmd_backlog_topology/_load_topology_items call). Only move what is actually shared; leave everything else in the shim body for now.\n3. Create scripts/forge_session/topology.py and MOVE the topology cluster into it: _id_key, _build_dep_index, _transitive_dependents, _max_chain_depth, _normalize_reason, _jaccard, cluster_blocked, compute_topology, cmd_backlog_topology, _load_topology_items, _print_topology. It imports shared primitives FROM scripts.forge_session._common — NEVER from the shim (that would be circular).\n4. Rewrite scripts/forge-session.py as a thin shim that (a) inserts its own directory on sys.path so `import forge_session` resolves even when the file is loaded by path, then (b) re-exports every public and private symbol the rest of the code and the tests reference (e.g. `from forge_session._common import *`, `from forge_session.topology import *`, and keep the remaining not-yet-extracted definitions inline). The shim MUST still define/expose main() and end with `if __name__ == \"__main__\": raise SystemExit(main())` exactly as today.\n5. Bundling: in scripts/build-adapters.py, RUNTIME_HELPERS lists single files — make the build copy the ENTIRE scripts/forge_session/ directory into every bundle alongside forge-session.py, and extend the byte-identical helper assertion to cover the package files. In scripts/forge-root.sh, add the package to CORE_ASSETS (or its completeness gate) so the self-contained-bundle check still passes.\n6. Regenerate adapters with the yaml venv: .venv-adapters/bin/python scripts/build-adapters.py, then run the adapter --check to confirm no drift.\n\nCRITICAL INVARIANTS: verb names, flags, exit codes, and JSON shapes are frozen. Tests load scripts/forge-session.py by path via importlib spec_from_file_location and read symbols directly off the loaded module (e.g. fs._id_key, fs.compute_topology) AND shell out to it as a CLI — both paths must keep working with ZERO test edits.\n7. STRUCTURAL-GUARD EVOLUTION (design-approved 2026-09-07): introducing the forge_session/ package is the whole point of this item, but tests/test_build_adapters.py::test_no_new_file_appears_under_an_adapter_scripts_dir asserts each bundle's scripts/ holds EXACTLY the flat RUNTIME_HELPERS and NO directory. Evolve THAT ONE test (only) so it permits the known package dir(s) while STILL failing on stray/unexpected entries: assert the emitted top-level dir names equal the generator's new RUNTIME_HELPER_DIRS tuple (e.g. `assert sorted(d.name for d in scripts_dir.iterdir() if d.is_dir()) == sorted(mod.RUNTIME_HELPER_DIRS)`), keeping the existing files==RUNTIME_HELPERS assertion intact. Do NOT touch any other test, and do NOT relax the CLI-contract tests (verb names/flags/exit codes/JSON stay frozen).",
+      "acceptanceCriteria": [
+        "scripts/forge_session/ exists with __init__.py, _common.py, and topology.py; the topology functions listed above live in topology.py and are gone from the shim body.",
+        "scripts/forge-session.py is a shim that inserts its own dir on sys.path and re-exports the package symbols; it still exposes main() and the `if __name__ == \"__main__\"` entry.",
+        "No package module imports from the shim (no circular import); shared primitives are imported from forge_session._common.",
+        "scripts/build-adapters.py copies the whole scripts/forge_session/ dir into every bundle and the byte-identical helper assertion covers the package; scripts/forge-root.sh CORE_ASSETS/completeness gate includes the package.",
+        "Adapters regenerated (.venv-adapters/bin/python scripts/build-adapters.py) and the adapter --check reports no drift.",
+        "tests/test_backlog_topology.py passes unmodified (it path-loads forge-session.py and reads topology symbols off it).",
+        "python3 scripts/forge-session.py doctor --json exits 0 (CHECK-I21 smoke).",
+        "bash scripts/validate.sh passes; the ONLY permitted test edit is evolving test_no_new_file_appears_under_an_adapter_scripts_dir to admit the forge_session/ package dir via RUNTIME_HELPER_DIRS (all other test files unmodified; CLI-contract tests untouched).",
+        "test_no_new_file_appears_under_an_adapter_scripts_dir still FAILS on a stray/unexpected file or directory under adapters/<agent>/scripts/ (it admits only RUNTIME_HELPERS files and RUNTIME_HELPER_DIRS dirs, not arbitrary ones)."
+      ],
+      "status": "done",
+      "completedAt": "2026-09-08T01:34:04.614Z",
+      "notes": "This is the load-bearing item — it proves shim re-export + sys.path + bundling + smoke on a small surface before the bulk moves. Gotcha: path-loading does NOT put scripts/ on sys.path, so the shim must add it itself before importing forge_session. Gotcha: `pytest tests` (validate.sh's scoped run) is authoritative; a bare-root pytest collects 7 forge-bootstrap/.../templates/python/tests/test_smoke.py scaffolding files that error unrelated. Lays the groundwork for 002-008. [2026-09-07 design decision: the flat-bundle structural guard conflicted with the package-dir bundling this item introduces; approved to evolve that single guard test (criterion 8 relaxed accordingly). Frozen CLI contract (verbs/flags/exit/JSON) unchanged.]",
+      "estimatedIterations": 3,
+      "specReferences": []
+    },
+    {
+      "id": "002",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Extract decisions verbs into forge_session/decisions.py",
+      "description": "Move the decisions cluster out of the shim into scripts/forge_session/decisions.py: cmd_decision_record, cmd_decision_list, cmd_decision_apply, _resolve_decisions_path, _read_decisions_for_write, _new_decision_entry, _unapplied_decisions, _default_actor, _print_decision_record, _print_decision_list, _print_decision_apply. Import any shared primitives (state readers/writers, _now_iso, load_json_with_duplicates, UsageError) from forge_session._common — if a needed primitive is not yet in _common, MOVE it there (do not import from the shim). Add `from forge_session.decisions import *` to the shim's re-export block and delete the moved definitions from the shim body. Verb names (decision-record, decision-list, decision-apply), flags, exit codes, and JSON shapes are frozen.",
+      "acceptanceCriteria": [
+        "The listed decisions functions live in scripts/forge_session/decisions.py and are gone from the shim body.",
+        "decisions.py imports shared primitives only from forge_session._common, never from the shim.",
+        "The shim re-exports decisions symbols so path-loaded tests still resolve them.",
+        "tests/test_decisions_schema_conformance.py and any other decisions tests pass unmodified.",
+        "python3 scripts/forge-session.py doctor --json exits 0.",
+        "bash scripts/validate.sh passes with zero test-file edits."
+      ],
+      "status": "done",
+      "completedAt": "2026-09-08T01:58:36.922Z",
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "decision-* verbs are largely self-contained (own decisions-doc reader/writer). Regenerate adapters + --check if the build's byte-identical assertion covers per-file content.",
+      "estimatedIterations": 1,
+      "specReferences": []
+    },
+    {
+      "id": "003",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Extract discover / reconcile / check-epic-base into forge_session/discover.py",
+      "description": "Move the discovery + git-ref cluster into scripts/forge_session/discover.py: discover_feature, discover_all, reconcile_branch, check_epic_base, _default_branch, _specs_rel, _state_paths_in_ref, _all_state_paths_in_ref, _read_state_at_ref, _epic_membership, _list_refs, _git_output (if not shared elsewhere), and the printers _print_discover, _print_discover_all, _print_reconcile, _print_check_epic_base. Import shared primitives from forge_session._common (move any missing ones there — never import from the shim). Add the re-export to the shim and delete the moved definitions. Verbs discover-feature (incl. --all), reconcile-branch, check-epic-base — names, flags, exit codes, JSON shapes frozen.",
+      "acceptanceCriteria": [
+        "The listed discover/reconcile/epic-base functions live in scripts/forge_session/discover.py and are gone from the shim body.",
+        "discover.py imports shared primitives only from forge_session._common.",
+        "The shim re-exports discover symbols; path-loaded tests still resolve them.",
+        "tests/test_clean_env_repro.py and other discover/reconcile tests pass unmodified.",
+        "python3 scripts/forge-session.py doctor --json exits 0.",
+        "bash scripts/validate.sh passes with zero test-file edits."
+      ],
+      "status": "done",
+      "completedAt": "2026-09-08T02:29:22.685Z",
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "_git_output may be shared with doctor.py (004) — if so, place it in _common. Independent of 002/004/005/006.",
+      "estimatedIterations": 1,
+      "specReferences": []
+    },
+    {
+      "id": "004",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Extract doctor checks into forge_session/doctor.py",
+      "description": "Move the doctor cluster into scripts/forge_session/doctor.py: doctor_report, _CheckContext, _CheckSpec, _make_spec, _build_check_context, _run_checks, _checks_summary, cluster_checks, _print_checks, _print_doctor, every _check_* function (plugin_root, runner_binary, runner_version, runner_wired, runner_legacy_layout, runner_artifacts_stale, runner_profile_drift, config_schema, root_version_skew, config_completeness, backlog_valid, gh_available, backlog_present, branch_state, sandbox_root, interaction_mode), plus their helpers (_per_feature_remedy, _feature_label, _remedy, _result, _check_record, _exc_text, _head, _run_probe, _render_runner_command, _parse_semver, _fmt_semver, _parse_installed_by, _first_backticked, _schema_violations, _stage_at_or_after, _root_sandbox_status, _process_ancestry, _classify_ancestry, _bundle_agent, _resolve_plugin_root, _bundle_version). Keep the DOCTOR_CHECK_IDS constant reachable (in _common or doctor.py, whichever cli.py's argparse choices reference). Import shared primitives from _common; move missing ones there. Re-export from the shim; delete moved definitions. The doctor verb, --check IDs, --json shape, and CHECK-I21 output are FROZEN — this is the smoke command that verifies itself, so re-confirm it after every commit.\n\n=== LOOP EXECUTION POLICY (operator-authorized 2026-09-07; applies to this item) ===\n(1) TEST-EVOLUTION ALLOWANCE. This extraction makes forge-session.py a thin shim over the\nforge_session/ package. Some FROZEN tests structurally assume forge-session.py is a SELF-CONTAINED\nMONOLITH — they bare-copy only the shim (no package) and run it, grep the shim SOURCE for a literal\nthat is moving into the package, or otherwise require moved code to physically remain in\nforge-session.py. You ARE pre-authorized to make SCOPED, BEHAVIOR-PRESERVING edits to exactly those\ntests so they work with the package structure (e.g. copy the whole forge_session/ package alongside\nforge-session.py in a bare-copy fixture; point a source-grep at the bundle's forge_session/<module>.py\nwhere the literal now lives). HARD CONSTRAINTS: the CLI CONTRACT STAYS FROZEN — verb names, flags,\n--check IDs, exit codes, --json shapes, and CHECK-I21 doctor output must NOT change; edit ONLY tests\nthat structurally assume the monolith, NEVER a CLI-contract assertion; keep every edit minimal and\nlist each edited test + why in your final summary. This does NOT authorize editing a test to paper\nover a real regression — a failure for any other reason is a real failure, so RAUF_BLOCKED it.\n(2) HEADLESS EXECUTION — NO BACKGROUND WAITS. You run headless inside an autonomous loop; there is\nNO background-job completion notification here. Run `bash scripts/validate.sh` (and every long\ncommand) SYNCHRONOUSLY IN THE FOREGROUND and block on its exit code. Do NOT background it, do NOT\n\"wait for a completion notification\", do NOT poll for an external signal — that wedges the iteration.\nRun it, wait for it to return, read the exit code, THEN emit your RAUF_* signal.\n",
+      "acceptanceCriteria": [
+        "The listed doctor functions/classes live in scripts/forge_session/doctor.py and are gone from the shim body.",
+        "DOCTOR_CHECK_IDS remains resolvable by cli.py's argparse `choices` (still exact same IDs).",
+        "doctor.py imports shared primitives only from forge_session._common.",
+        "The shim re-exports doctor symbols; path-loaded tests still resolve them.",
+        "tests/test_doctor_checks.py (96 tests) and tests/_doctor_fixtures.py-backed tests pass (unmodified EXCEPT for the scoped, behavior-preserving monolith-assumption adaptations authorized in the LOOP EXECUTION POLICY above; CLI-contract assertions unchanged).",
+        "tests/test_adapter_host_neutrality.py still finds the interaction-mode check reachable in every bundle — its assertion target updated (behavior-preserving) to the bundled forge_session/doctor.py where the literal now lives, per the LOOP EXECUTION POLICY; the check remains present in all six bundles.",
+        "python3 scripts/forge-session.py doctor --json exits 0 (CHECK-I21).",
+        "bash scripts/validate.sh passes the ONLY permitted test edits are the scoped, behavior-preserving monolith-assumption adaptations authorized in the LOOP EXECUTION POLICY above (CLI-contract assertions unchanged)."
+      ],
+      "status": "done",
+      "completedAt": "2026-09-08T03:38:36.170Z",
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "Largest single cluster (~1,900 lines) and the self-verifying smoke — go slow, re-run doctor --json between edits. Independent of 002/003/005/006. [2026-09-07: blocked like item 001 on frozen tests assuming forge-session.py is a monolith (bare-copy doctor tests + interaction-mode source grep); resolved under the standing LOOP EXECUTION POLICY — evolve those tests behavior-preservingly, CLI contract frozen.]",
+      "estimatedIterations": 2,
+      "specReferences": []
+    },
+    {
+      "id": "005",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Extract verify/fix outcome logic into forge_session/outcomes.py",
+      "description": "Move the outcome-selection cluster into scripts/forge_session/outcomes.py: select_outcome, verify_state_for_stage, _verify_outcome, _fix_outcome, _verify_reports, _read_report_text, _section_body, _parse_report_facts, _classify_verify_entry, _verify_state_for, and the NamedTuples _VerifyReport, _ReportFacts (place the NamedTuples in _common if state.py/exit.py also need them). Import shared readers (_verify_entry, _stage_version, verify_state, auto_pending_message, KNOWN_VERIFY_STATUSES, VerifyStateCase/VERIFY_STATE_MESSAGES and related tables) from _common; move missing ones there. Re-export from the shim; delete moved definitions. The select-outcome and verify-state verbs — their flags, the outcome/case enums, exit codes, and JSON shapes — are FROZEN (parity tests in tests/test_select_outcome.py and tests/test_verify_state.py pin the enums against references/select-outcome.md and references/verify-state.md).\n\n=== LOOP EXECUTION POLICY (operator-authorized 2026-09-07; applies to this item) ===\n(1) TEST-EVOLUTION ALLOWANCE. This extraction makes forge-session.py a thin shim over the\nforge_session/ package. Some FROZEN tests structurally assume forge-session.py is a SELF-CONTAINED\nMONOLITH — they bare-copy only the shim (no package) and run it, grep the shim SOURCE for a literal\nthat is moving into the package, or otherwise require moved code to physically remain in\nforge-session.py. You ARE pre-authorized to make SCOPED, BEHAVIOR-PRESERVING edits to exactly those\ntests so they work with the package structure (e.g. copy the whole forge_session/ package alongside\nforge-session.py in a bare-copy fixture; point a source-grep at the bundle's forge_session/<module>.py\nwhere the literal now lives). HARD CONSTRAINTS: the CLI CONTRACT STAYS FROZEN — verb names, flags,\n--check IDs, exit codes, --json shapes, and CHECK-I21 doctor output must NOT change; edit ONLY tests\nthat structurally assume the monolith, NEVER a CLI-contract assertion; keep every edit minimal and\nlist each edited test + why in your final summary. This does NOT authorize editing a test to paper\nover a real regression — a failure for any other reason is a real failure, so RAUF_BLOCKED it.\n(2) HEADLESS EXECUTION — NO BACKGROUND WAITS. You run headless inside an autonomous loop; there is\nNO background-job completion notification here. Run `bash scripts/validate.sh` (and every long\ncommand) SYNCHRONOUSLY IN THE FOREGROUND and block on its exit code. Do NOT background it, do NOT\n\"wait for a completion notification\", do NOT poll for an external signal — that wedges the iteration.\nRun it, wait for it to return, read the exit code, THEN emit your RAUF_* signal.\n",
+      "acceptanceCriteria": [
+        "The listed outcome functions live in scripts/forge_session/outcomes.py and are gone from the shim body.",
+        "outcomes.py imports shared primitives only from forge_session._common.",
+        "The shim re-exports outcome symbols; path-loaded tests still resolve them.",
+        "tests/test_select_outcome.py and tests/test_verify_state.py pass (unmodified EXCEPT for the scoped, behavior-preserving monolith-assumption adaptations authorized in the LOOP EXECUTION POLICY above; CLI-contract assertions unchanged) (enum parity intact).",
+        "python3 scripts/forge-session.py doctor --json exits 0.",
+        "bash scripts/validate.sh passes the ONLY permitted test edits are the scoped, behavior-preserving monolith-assumption adaptations authorized in the LOOP EXECUTION POLICY above (CLI-contract assertions unchanged)."
+      ],
+      "status": "done",
+      "completedAt": "2026-09-08T04:16:36.325Z",
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "These verbs were just shipped by #276/#277 (P3.1/P3.2) — do NOT change their behavior; this is a pure move. exit.py (007) calls select_outcome/verify_state_for_stage, so this must land before 007.",
+      "estimatedIterations": 1,
+      "specReferences": []
+    },
+    {
+      "id": "006",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Extract write-side state verbs into forge_session/state.py",
+      "description": "Move the state write cluster into scripts/forge_session/state.py: cmd_state_enter, cmd_state_artifact, cmd_state_complete, cmd_state_skip, cmd_state_branch, cmd_state_note, cmd_state_decision, cmd_state_ecr, cmd_state_verify, plus their writers/helpers (_write_state, _commit_state, _stage_entry, _resolve_feature_dir_for_write, _load_state_for_write, _load_epic_state_for_write, _assert_safe_name, _parse_based_on, _cascade_staleness, _current_artifact_version, _assert_full_commit_hash, _require_positive_int, _validated_findings_file, _load_verify_target, _verify_result_entry, _parse_bool, _now_iso) and the state printers (_print_state_enter/artifact/complete/skip/branch/note/decision/verify/ecr). Import shared read-side primitives (_read_state, next_stage, _stage_status, _stage_version, _verify_entry, _resolve_feature_dir, _epic_member_state, etc.) from _common; move missing ones there. Re-export from the shim; delete moved definitions. All state-* verb names, flags, exit codes, and JSON shapes are FROZEN.\n\n=== LOOP EXECUTION POLICY (operator-authorized 2026-09-07; applies to this item) ===\n(1) TEST-EVOLUTION ALLOWANCE. This extraction makes forge-session.py a thin shim over the\nforge_session/ package. Some FROZEN tests structurally assume forge-session.py is a SELF-CONTAINED\nMONOLITH — they bare-copy only the shim (no package) and run it, grep the shim SOURCE for a literal\nthat is moving into the package, or otherwise require moved code to physically remain in\nforge-session.py. You ARE pre-authorized to make SCOPED, BEHAVIOR-PRESERVING edits to exactly those\ntests so they work with the package structure (e.g. copy the whole forge_session/ package alongside\nforge-session.py in a bare-copy fixture; point a source-grep at the bundle's forge_session/<module>.py\nwhere the literal now lives). HARD CONSTRAINTS: the CLI CONTRACT STAYS FROZEN — verb names, flags,\n--check IDs, exit codes, --json shapes, and CHECK-I21 doctor output must NOT change; edit ONLY tests\nthat structurally assume the monolith, NEVER a CLI-contract assertion; keep every edit minimal and\nlist each edited test + why in your final summary. This does NOT authorize editing a test to paper\nover a real regression — a failure for any other reason is a real failure, so RAUF_BLOCKED it.\n(2) HEADLESS EXECUTION — NO BACKGROUND WAITS. You run headless inside an autonomous loop; there is\nNO background-job completion notification here. Run `bash scripts/validate.sh` (and every long\ncommand) SYNCHRONOUSLY IN THE FOREGROUND and block on its exit code. Do NOT background it, do NOT\n\"wait for a completion notification\", do NOT poll for an external signal — that wedges the iteration.\nRun it, wait for it to return, read the exit code, THEN emit your RAUF_* signal.\n",
+      "acceptanceCriteria": [
+        "The listed state-write functions live in scripts/forge_session/state.py and are gone from the shim body.",
+        "state.py imports shared read-side primitives only from forge_session._common.",
+        "The shim re-exports state symbols; path-loaded tests still resolve them.",
+        "tests/test_state_verbs.py (163 tests), tests/_state_schema.py-backed tests, and tests/test_auto_verify.py pass (unmodified EXCEPT for the scoped, behavior-preserving monolith-assumption adaptations authorized in the LOOP EXECUTION POLICY above; CLI-contract assertions unchanged).",
+        "python3 scripts/forge-session.py doctor --json exits 0.",
+        "bash scripts/validate.sh passes the ONLY permitted test edits are the scoped, behavior-preserving monolith-assumption adaptations authorized in the LOOP EXECUTION POLICY above (CLI-contract assertions unchanged)."
+      ],
+      "status": "done",
+      "completedAt": "2026-09-08T04:51:40.243Z",
+      "dependsOn": [
+        "001"
+      ],
+      "notes": "Write path uses atomic-write + _commit_state — keep that intact (loop runner may crash mid-write). exit.py (007) reads state; this must land before 007. Independent of 002/003/004/005.",
+      "estimatedIterations": 2,
+      "specReferences": []
+    },
+    {
+      "id": "007",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Extract stage-exit and its routes into forge_session/exit.py + routes.py",
+      "description": "Move the largest verb, stage_exit, and its routing engine into two modules so neither exceeds the 2,000-line ceiling.\n\nroutes.py: _branch_route, _render_status, _render_status_failure_detail, _docs_route, _loop_route, _promote_reconcile, _schedule_auto_verify_debt, _debt_metadata_warnings, _production_stage_of, _epic_terminal_state, _host_command, _next_steps_block.\n\nexit.py: stage_exit, resolve_served_stage, _resolve_feature_dir, _same_named_candidates, _epic_member_state, _epic_verify_context, _print_stage_exit.\n\nImport shared primitives from _common; import select_outcome/verify_state_for_stage/outcome helpers from forge_session.outcomes; import state readers from _common (write helpers stay in state.py — exit.py should not duplicate them). Re-export both modules from the shim; delete the moved definitions. The stage-exit verb — flags (--served-stage, --verify-mode, --host, --cause, --verify-capability, --next-feature, --epic, --json), branch routing, exit codes, and the full JSON payload shape — is FROZEN.\n\n=== LOOP EXECUTION POLICY (operator-authorized 2026-09-07; applies to this item) ===\n(1) TEST-EVOLUTION ALLOWANCE. This extraction makes forge-session.py a thin shim over the\nforge_session/ package. Some FROZEN tests structurally assume forge-session.py is a SELF-CONTAINED\nMONOLITH — they bare-copy only the shim (no package) and run it, grep the shim SOURCE for a literal\nthat is moving into the package, or otherwise require moved code to physically remain in\nforge-session.py. You ARE pre-authorized to make SCOPED, BEHAVIOR-PRESERVING edits to exactly those\ntests so they work with the package structure (e.g. copy the whole forge_session/ package alongside\nforge-session.py in a bare-copy fixture; point a source-grep at the bundle's forge_session/<module>.py\nwhere the literal now lives). HARD CONSTRAINTS: the CLI CONTRACT STAYS FROZEN — verb names, flags,\n--check IDs, exit codes, --json shapes, and CHECK-I21 doctor output must NOT change; edit ONLY tests\nthat structurally assume the monolith, NEVER a CLI-contract assertion; keep every edit minimal and\nlist each edited test + why in your final summary. This does NOT authorize editing a test to paper\nover a real regression — a failure for any other reason is a real failure, so RAUF_BLOCKED it.\n(2) HEADLESS EXECUTION — NO BACKGROUND WAITS. You run headless inside an autonomous loop; there is\nNO background-job completion notification here. Run `bash scripts/validate.sh` (and every long\ncommand) SYNCHRONOUSLY IN THE FOREGROUND and block on its exit code. Do NOT background it, do NOT\n\"wait for a completion notification\", do NOT poll for an external signal — that wedges the iteration.\nRun it, wait for it to return, read the exit code, THEN emit your RAUF_* signal.\n",
+      "acceptanceCriteria": [
+        "stage_exit and its route helpers live in scripts/forge_session/exit.py and routes.py and are gone from the shim body.",
+        "exit.py/routes.py import outcome logic from forge_session.outcomes and shared primitives from _common; no circular import back to the shim.",
+        "The shim re-exports exit/routes symbols; path-loaded tests still resolve them.",
+        "tests/test_stage_exit.py (210 tests) and tests/test_stage_exit_protocol.py pass (unmodified EXCEPT for the scoped, behavior-preserving monolith-assumption adaptations authorized in the LOOP EXECUTION POLICY above; CLI-contract assertions unchanged).",
+        "python3 scripts/forge-session.py doctor --json exits 0.",
+        "bash scripts/validate.sh passes the ONLY permitted test edits are the scoped, behavior-preserving monolith-assumption adaptations authorized in the LOOP EXECUTION POLICY above (CLI-contract assertions unchanged)."
+      ],
+      "status": "done",
+      "completedAt": "2026-09-08T05:25:14.902Z",
+      "dependsOn": [
+        "005",
+        "006"
+      ],
+      "notes": "stage_exit is 755 lines; the routes are ~1,300 lines combined — split across exit.py/routes.py keeps both under the 2,000-line acceptance ceiling for #279. Depends on outcomes (005) and state (006) being extracted first.",
+      "estimatedIterations": 2,
+      "specReferences": []
+    },
+    {
+      "id": "008",
+      "type": "refactor",
+      "priority": 2,
+      "title": "Finalize: move cli.py, drain shared readers into _common, thin the shim, assert size ceiling",
+      "description": "Complete the split so the shim carries no behavior.\n\nSTEPS:\n1. Create scripts/forge_session/cli.py holding main(), the argparse construction, _ErrorPrefixParser, _emit, and the remaining small verbs/printers not yet extracted: rank-features (build_rows, _counts, _print_rank_table, _parse_ts), context-usage (context_usage, _cwd_slug, _latest_transcript, _last_usage, _infer_window, _print_context), effective-config (resolve_loop_runner, _loop_runner_defaults, _default_schema_path, _print_effective_config), _default_actor if unused elsewhere, and _default_branch if unused elsewhere.\n2. Drain every remaining shared reader/type/constant still living in the shim body into _common.py (or __init__.py) so the shim defines nothing of its own.\n3. Reduce scripts/forge-session.py to a pure shim: sys.path insertion, `from forge_session.cli import main` (plus any re-exports still required by path-loaded tests), and `if __name__ == \"__main__\": raise SystemExit(main())`. Keep the re-export surface complete — path-loaded tests must still resolve every symbol they read.\n4. Confirm the largest module in scripts/forge_session/ is under 2,000 lines (wc -l scripts/forge_session/*.py).\n5. Regenerate adapters (.venv-adapters/bin/python scripts/build-adapters.py) and run the adapter --check.\n\nAll verb names, flags, exit codes, and JSON shapes remain frozen.\n\n=== LOOP EXECUTION POLICY (operator-authorized 2026-09-07; applies to this item) ===\n(1) TEST-EVOLUTION ALLOWANCE. This extraction makes forge-session.py a thin shim over the\nforge_session/ package. Some FROZEN tests structurally assume forge-session.py is a SELF-CONTAINED\nMONOLITH — they bare-copy only the shim (no package) and run it, grep the shim SOURCE for a literal\nthat is moving into the package, or otherwise require moved code to physically remain in\nforge-session.py. You ARE pre-authorized to make SCOPED, BEHAVIOR-PRESERVING edits to exactly those\ntests so they work with the package structure (e.g. copy the whole forge_session/ package alongside\nforge-session.py in a bare-copy fixture; point a source-grep at the bundle's forge_session/<module>.py\nwhere the literal now lives). HARD CONSTRAINTS: the CLI CONTRACT STAYS FROZEN — verb names, flags,\n--check IDs, exit codes, --json shapes, and CHECK-I21 doctor output must NOT change; edit ONLY tests\nthat structurally assume the monolith, NEVER a CLI-contract assertion; keep every edit minimal and\nlist each edited test + why in your final summary. This does NOT authorize editing a test to paper\nover a real regression — a failure for any other reason is a real failure, so RAUF_BLOCKED it.\n(2) HEADLESS EXECUTION — NO BACKGROUND WAITS. You run headless inside an autonomous loop; there is\nNO background-job completion notification here. Run `bash scripts/validate.sh` (and every long\ncommand) SYNCHRONOUSLY IN THE FOREGROUND and block on its exit code. Do NOT background it, do NOT\n\"wait for a completion notification\", do NOT poll for an external signal — that wedges the iteration.\nRun it, wait for it to return, read the exit code, THEN emit your RAUF_* signal.\n",
+      "acceptanceCriteria": [
+        "scripts/forge_session/cli.py owns main(), argparse, _emit, and the rank-features/context-usage/effective-config verbs.",
+        "scripts/forge-session.py is a pure shim (sys.path + import main + re-exports + __main__ guard) with no behavior of its own.",
+        "wc -l scripts/forge_session/*.py shows the largest module under 2,000 lines.",
+        "Adapters regenerated and the adapter --check reports no drift; the byte-identical helper assertion covers the full package.",
+        "The ENTIRE test suite passes unmodified (the only test edits across this backlog are the scoped, behavior-preserving monolith-assumption adaptations authorized per item; CLI-contract assertions unchanged).",
+        "python3 scripts/forge-session.py doctor --json exits 0 (CHECK-I21).",
+        "bash scripts/validate.sh passes."
+      ],
+      "status": "done",
+      "completedAt": "2026-09-08T06:23:59.874Z",
+      "dependsOn": [
+        "002",
+        "003",
+        "004",
+        "005",
+        "006",
+        "007"
+      ],
+      "notes": "Closes out #279. Final acceptance for the issue: zero test edits, every bundle carries the package, largest module under 2,000 lines. If any test needed editing to pass, STOP and emit RAUF_BLOCKED — a required test edit means the shim's re-export surface is incomplete, not that the test is wrong.",
+      "estimatedIterations": 2,
+      "specReferences": []
+    }
+  ]
 }

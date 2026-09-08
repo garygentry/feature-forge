@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HELPER = REPO_ROOT / "scripts" / "forge-session.py"
+#: Post-#279 the monolith is a thin shim over the forge_session/ package. Source
+#: guards that once grepped the shim body now read the module the code lives in.
+_PACKAGE = REPO_ROOT / "scripts" / "forge_session"
+EXIT_MOD = _PACKAGE / "exit.py"
+ROUTES_MOD = _PACKAGE / "routes.py"
 SENTINEL = "─ forge: end of stage ─"
 
 
@@ -1275,7 +1281,7 @@ def test_the_gate_is_a_pure_function_of_state_and_capability(
 
 def test_no_source_path_selects_the_gate_from_the_host_name() -> None:
     """A structural guard: the retired `host == "claude"` gate branch stays retired."""
-    source = (REPO_ROOT / "scripts" / "forge-session.py").read_text(encoding="utf-8")
+    source = EXIT_MOD.read_text(encoding="utf-8")
     start = source.index("def stage_exit(")
     end = source.index("def _print_stage_exit(", start)
     body = source[start:end]
@@ -2378,6 +2384,11 @@ def _stub_bundle(tmp_path: Path, body: str | None) -> Path:
     bundle = tmp_path / "bundle" / "scripts"
     bundle.mkdir(parents=True)
     (bundle / "forge-session.py").write_text(HELPER.read_text())
+    # Post-#279 the shim is not a self-contained program: stage-exit (and its
+    # routing engine) live in the forge_session/ package, which real bundles ship
+    # beside forge-session.py. Copy it so the stub is a runnable bundle; the test's
+    # intent — resolving the sibling `epic-manifest.py` beside ITSELF — is unchanged.
+    shutil.copytree(_PACKAGE, bundle / "forge_session")
     if body is not None:
         (bundle / "epic-manifest.py").write_text(body)
     return bundle / "forge-session.py"
@@ -2479,7 +2490,9 @@ def test_docs_a_timeout_at_the_ten_second_bound_is_a_routing_failure(
         seen["cmd"] = cmd
         raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
 
-    monkeypatch.setattr(session.subprocess, "run", fake_run)
+    # #279 P4.1: _render_status now lives in forge_session.routes; patch the shared
+    # subprocess singleton directly (session, the shim, no longer imports it).
+    monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(session.UsageError) as excinfo:
         session._render_status(tmp_path, DOCS_EPIC)
     message = str(excinfo.value)
@@ -2499,7 +2512,9 @@ def test_docs_a_spawn_failure_is_a_routing_failure(tmp_path: Path, monkeypatch) 
     def fake_run(cmd, **kwargs):
         raise OSError("Exec format error")
 
-    monkeypatch.setattr(session.subprocess, "run", fake_run)
+    # #279 P4.1: _render_status now lives in forge_session.routes; patch the shared
+    # subprocess singleton directly (session, the shim, no longer imports it).
+    monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(session.UsageError) as excinfo:
         session._render_status(tmp_path, DOCS_EPIC)
     message = str(excinfo.value)
@@ -2509,13 +2524,15 @@ def test_docs_a_spawn_failure_is_a_routing_failure(tmp_path: Path, monkeypatch) 
 
 def test_docs_resolves_the_helper_beside_itself_and_never_a_bare_python3() -> None:
     """The invocation contract 02 §8 makes normative, asserted on the source."""
-    source = HELPER.read_text()
+    source = ROUTES_MOD.read_text()
     body = source[source.index("def _render_status(specs_dir"):]
     body = body[: body.index("\n_DOCS_OUTCOME_TEXT")]
     # Executable lines only: the docstring legitimately explains why a bare `python3`
     # is wrong, and a prose mention must not satisfy (or fail) a behavioral guard.
     code = body[body.index('"""', body.index('"""') + 3) + 3:]
-    assert 'Path(__file__).resolve().parent / "epic-manifest.py"' in code
+    # `_SCRIPTS_DIR` is `Path(__file__).resolve().parent.parent` — the bundle's
+    # scripts/ dir, one level above this package module, where the sibling ships.
+    assert '_SCRIPTS_DIR / "epic-manifest.py"' in code
     assert "sys.executable" in code
     assert "python3" not in code, "a bare python3 may be absent or a different runtime"
     assert "<bundle-root>" not in code
@@ -2530,7 +2547,7 @@ def test_docs_never_reimplements_the_epic_dependency_derivation() -> None:
     docstring naming a derivation in order to say it belongs elsewhere is prose,
     not a reimplementation.
     """
-    source = HELPER.read_text()
+    source = ROUTES_MOD.read_text()
     body = source[source.index("def _render_status(specs_dir"):]
     body = body[: body.index("\n_DOCS_OUTCOME_TEXT")]
     code = body[body.index('"""', body.index('"""') + 3) + 3:]
@@ -2872,7 +2889,7 @@ def test_a_non_complete_loop_closes_even_when_the_epic_graph_is_broken(
 
 def test_loop_never_reimplements_the_epic_handoff_derivation() -> None:
     """tech-spec §3.5: `_loop_route` consumes `_render_status`; it derives nothing."""
-    source = HELPER.read_text()
+    source = ROUTES_MOD.read_text()
     body = source[source.index("def _loop_route("):]
     body = body[: body.index("\ndef _debt_metadata_warnings")]
     assert "_render_status(" in body
