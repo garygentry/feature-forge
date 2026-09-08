@@ -20,8 +20,8 @@
         "bash scripts/validate.sh passes; the ONLY permitted test edit is evolving test_no_new_file_appears_under_an_adapter_scripts_dir to admit the forge_session/ package dir via RUNTIME_HELPER_DIRS (all other test files unmodified; CLI-contract tests untouched).",
         "test_no_new_file_appears_under_an_adapter_scripts_dir still FAILS on a stray/unexpected file or directory under adapters/<agent>/scripts/ (it admits only RUNTIME_HELPERS files and RUNTIME_HELPER_DIRS dirs, not arbitrary ones)."
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-09-08T01:34:04.614Z",
       "notes": "This is the load-bearing item — it proves shim re-export + sys.path + bundling + smoke on a small surface before the bulk moves. Gotcha: path-loading does NOT put scripts/ on sys.path, so the shim must add it itself before importing forge_session. Gotcha: `pytest tests` (validate.sh's scoped run) is authoritative; a bare-root pytest collects 7 forge-bootstrap/.../templates/python/tests/test_smoke.py scaffolding files that error unrelated. Lays the groundwork for 002-008. [2026-09-07 design decision: the flat-bundle structural guard conflicted with the package-dir bundling this item introduces; approved to evolve that single guard test (criterion 8 relaxed accordingly). Frozen CLI contract (verbs/flags/exit/JSON) unchanged.]",
       "estimatedIterations": 3,
       "specReferences": []
@@ -40,8 +40,8 @@
         "python3 scripts/forge-session.py doctor --json exits 0.",
         "bash scripts/validate.sh passes with zero test-file edits."
       ],
-      "status": "pending",
-      "completedAt": null,
+      "status": "done",
+      "completedAt": "2026-09-08T01:58:36.922Z",
       "dependsOn": [
         "001"
       ],

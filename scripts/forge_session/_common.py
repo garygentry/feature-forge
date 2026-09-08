@@ -16,6 +16,12 @@ the monolith it was carved out of.
 
 from __future__ import annotations
 
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal, TypedDict
 
 
@@ -283,6 +289,258 @@ class VerifyEntry(TypedDict, total=False):
     scheduledStageVersion: int | None
 
 
+# --------------------------------------------------------------------------- #
+# Config readers and loop-runner resolution
+#
+# These are the shared config/state primitives the package modules need. They are
+# the package-internal home for logic the ``forge-session.py`` shim also carries
+# inline: the shim keeps its own copies for its not-yet-extracted body and for the
+# degraded bare-copy layout (a lone forge-session.py with no sibling package), so
+# the two coexist until later #279 items drain the shim's inline copies. The
+# behaviour is identical either way — a pure move, never a re-derivation.
+#
+# The duplicate-aware JSON loader below is deliberately a SEPARATE copy from the
+# ``load_json_with_duplicates``/``warn_duplicate_keys`` pair mirrored across the flat
+# scripts (forge-session.py / forge-bootstrap.py, byte-identical per
+# tests/test_json_loader_parity.py). That mirror exists because the flat scripts are
+# copied verbatim into per-agent bundles and share no import module; the package
+# layer, by contrast, IS a shared import module, so it reads config through this
+# copy rather than reaching back into the shim (which would be a circular import).
+# --------------------------------------------------------------------------- #
+
+
+def load_json_with_duplicates(path: Path) -> tuple[object, list[str]]:
+    """Load JSON with last-key-wins values and ordered duplicate key names.
+
+    Args:
+        path: UTF-8 JSON file to read.
+
+    Returns:
+        The parsed JSON value and duplicate key names in deterministic decoder-hook
+        order. A repeated occurrence is appended whenever its key was already seen
+        in that same object. Objects at every nesting depth use the hook.
+
+    Raises:
+        OSError: The path cannot be read as UTF-8 text.
+        json.JSONDecodeError: The file is not valid JSON.
+    """
+    duplicate_keys: list[str] = []
+
+    def object_from_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                duplicate_keys.append(key)
+            result[key] = value
+        return result
+
+    text = path.read_text(encoding="utf-8")
+    value = json.loads(text, object_pairs_hook=object_from_pairs)
+    return value, duplicate_keys
+
+
+def warn_duplicate_keys(path: Path, duplicate_keys: list[str]) -> None:
+    """Write one deterministic warning for each reported duplicate occurrence.
+
+    Args:
+        path: Source file whose duplicate key was accepted.
+        duplicate_keys: Ordered names returned by `load_json_with_duplicates`.
+
+    Raises:
+        OSError: The process cannot write to stderr.
+    """
+    for key in duplicate_keys:
+        rendered_key = json.dumps(key, ensure_ascii=False)
+        print(
+            f"Warning: duplicate JSON key {rendered_key} in {path}; "
+            "using the last value.",
+            file=sys.stderr,
+        )
+
+
+def _load_config(config_path: Path) -> dict:
+    """Read config into a dict, warning on duplicates and tolerating bad input."""
+    try:
+        value, duplicate_keys = load_json_with_duplicates(config_path)
+    except (OSError, ValueError, RecursionError):  # bad JSON, bad UTF-8, absurd nesting
+        return {}
+    try:
+        warn_duplicate_keys(config_path, duplicate_keys)
+    except OSError:
+        pass  # a diagnostic write failure must not break a total read path
+    return value if isinstance(value, dict) else {}
+
+
+def _loop_runner_defaults(schema_path: Path) -> dict[str, object]:
+    """Extract every ``loopRunner`` field's schema ``default``.
+
+    Reads ``properties.loopRunner.properties.<field>.default`` for each field.
+    Stdlib-only (``json`` + dict access), mirroring
+    ``tests/test_config_defaults_parity.py``. The schema is the single source of
+    truth; nothing here is hardcoded.
+
+    Only fields that actually declare a ``default`` keyword are included. Every
+    ``loopRunner`` field does today; a field losing its default would be a schema
+    regression the drift guard catches, not something silently patched here.
+
+    Args:
+        schema_path: Path to ``forge-config-schema.json``.
+
+    Returns:
+        A dict mapping each ``loopRunner`` field name to its declared default
+        value (templates such as ``"{bin} loop run …"`` are returned literally).
+
+    Raises:
+        UsageError: If the schema is missing, unreadable, unparseable, or lacks a
+            ``loopRunner.properties`` object — a deterministic failure that must
+            exit 2. Never returns partial/empty defaults silently.
+    """
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise UsageError(f"config schema unreadable: {schema_path} ({exc})") from exc
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"config schema is not valid JSON: {schema_path} ({exc})") from exc
+
+    props = None
+    if isinstance(schema, dict):
+        loop_runner = schema.get("properties", {})
+        if isinstance(loop_runner, dict):
+            loop_runner = loop_runner.get("loopRunner", {})
+        if isinstance(loop_runner, dict):
+            props = loop_runner.get("properties")
+    if not isinstance(props, dict) or not props:
+        raise UsageError(f"config schema has no loopRunner.properties object: {schema_path}")
+
+    return {
+        field: spec["default"]
+        for field, spec in props.items()
+        if isinstance(spec, dict) and "default" in spec
+    }
+
+
+def resolve_loop_runner(config_path: Path, schema_path: Path) -> dict[str, object]:
+    """Resolve the effective ``loopRunner`` config: schema defaults + user overrides.
+
+    Reads the schema defaults, then merges the user's ``loopRunner`` block (from
+    ``forge.config.json`` via the existing ``_load_config``) OVER them. A user
+    field replaces the default; an absent field keeps the default. The result is
+    the fully-resolved block the loop consumes — computed deterministically so no
+    model ever merges it by hand.
+
+    Args:
+        config_path: Path to ``forge.config.json`` (``_load_config`` tolerates a
+            missing/corrupt file, yielding pure defaults).
+        schema_path: Path to ``forge-config-schema.json`` (source of the defaults).
+
+    Returns:
+        The resolved ``loopRunner`` object: every schema-defaulted field present,
+        with user overrides applied.
+
+    Raises:
+        UsageError: If the schema is unreadable/unparseable (propagated from
+            ``_loop_runner_defaults``) — exit 2, a deterministic failure.
+    """
+    resolved: dict[str, object] = dict(_loop_runner_defaults(schema_path))
+
+    user_loop_runner = _load_config(config_path).get("loopRunner")
+    if isinstance(user_loop_runner, dict):
+        for key, value in user_loop_runner.items():
+            # Flat override: a user value replaces the default for that field.
+            # (A future nested loopRunner field would recurse here; today every
+            # field is a scalar, so a shallow override is exact.) An unknown key
+            # is carried through — the model would have carried it too, and the
+            # config schema is the authority that flags it at author time.
+            resolved[key] = value
+
+    return resolved
+
+
+# --------------------------------------------------------------------------- #
+# State writes (shared machinery for the state-* and decision-* writers)
+# --------------------------------------------------------------------------- #
+
+
+def _now_iso() -> str:
+    """Return the current UTC time as a Z-suffixed, second-precision ISO-8601 string.
+
+    Matches the `.pipeline-state.json` timestamp convention already on disk (the
+    schema's ``format: date-time`` values; the read path normalizes a trailing
+    ``Z``). Second precision keeps `updatedAt`/`startedAt`/`completedAt` visually
+    consistent with the values other pipeline writers produce.
+
+    Returns:
+        A timestamp like ``"2026-07-29T03:30:00Z"``.
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _write_state(state_path: Path, state: dict) -> None:
+    """Atomically write a `.pipeline-state.json` (temp file + os.replace).
+
+    Mirrors epic-manifest.py's ``atomic_write``: write to a sibling temp file in
+    the same directory as the target, flush + fsync the bytes, then os.replace()
+    the temp file onto the target. os.replace is atomic on POSIX within one
+    filesystem, so an interrupted write never leaves a partial or corrupt state
+    file. Concurrent multi-session mutation is out of scope (single writer
+    assumed, matching epic-manifest.py; decision record:
+    references/decisions/single-writer-threat-model.md, issue #180).
+
+    Args:
+        state_path: Destination path, e.g.
+            ``{specsDir}/{feature}/.pipeline-state.json``.
+        state: The fully-formed state dict to serialize.
+
+    Raises:
+        UsageError: If the temp file cannot be created/written or the replace
+            fails (→ exit 2). The temp file is removed first, so a failed write
+            leaves no debris and the original target untouched.
+    """
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{state_path.name}.", suffix=".tmp", dir=state_path.parent
+        )
+    except OSError as exc:
+        raise UsageError(f"atomic write to {state_path} failed: {exc}") from exc
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, state_path)
+    except OSError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise UsageError(f"atomic write to {state_path} failed: {exc}") from exc
+
+
+def _commit_state(state_path: Path, state: dict) -> dict:
+    """Refresh ``updatedAt`` and write ``state`` atomically; return it for echo.
+
+    Every verb calls this exactly once, after its mutation, so ``updatedAt`` is
+    always refreshed on a successful write and the write is atomic.
+
+    Args:
+        state_path: The resolved state-file path — a feature's
+            ``.pipeline-state.json``, or an epic's ``.epic-state.json``. The helper
+            is target-agnostic: it stamps and writes whatever document it is given,
+            so an epic write reuses the same atomic mechanism without
+            going anywhere near the member resolver.
+        state: The mutated state dict.
+
+    Returns:
+        The same ``state`` dict (now carrying a fresh ``updatedAt``), so the verb
+        can echo it under ``--json``.
+
+    Raises:
+        UsageError: If the atomic write fails (→ exit 2).
+    """
+    state["updatedAt"] = _now_iso()
+    _write_state(state_path, state)
+    return state
+
+
 __all__ = [
     "UsageError",
     "VerifyStatus",
@@ -291,4 +549,12 @@ __all__ = [
     "StageExitDirectives",
     "StageExitPayload",
     "VerifyEntry",
+    "load_json_with_duplicates",
+    "warn_duplicate_keys",
+    "_load_config",
+    "_loop_runner_defaults",
+    "resolve_loop_runner",
+    "_now_iso",
+    "_write_state",
+    "_commit_state",
 ]

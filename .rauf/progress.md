@@ -70,3 +70,45 @@
   per the backlog's own convention ("a required test edit means STOP and emit
   RAUF_BLOCKED"). Note: `build-adapters.py --check` PASSES (exit 0) and
   `forge-session.py doctor --json` exits 0 — only this one guard test blocks.
+
+### Item 002 — extract decisions.py
+
+- **The decision-* verbs pull in a config-resolution chain, not just state
+  writers.** `_resolve_decisions_path` → `resolve_loop_runner` →
+  `_loop_runner_defaults` + `_load_config` → the mirrored
+  `load_json_with_duplicates`/`warn_duplicate_keys`. Since decisions.py may import
+  ONLY from `_common`, every link had to become importable from `_common`.
+- **Chosen strategy: ADD the shared primitives to `_common`, KEEP the shim's inline
+  copies.** `_common` gained `_now_iso`, `_write_state`, `_commit_state`,
+  `_load_config`, `_loop_runner_defaults`, `resolve_loop_runner`, and its OWN copy of
+  the duplicate-aware loader pair. The shim was NOT edited to delete or re-import any
+  of these — only the 12 decision functions were excised. Rationale: (1) the shim's
+  ~41 inline call-sites keep working unchanged; (2) the **bare-copy fallback** stays a
+  2-symbol stub — the stage-exit `_stub_bundle` / doctor bare-dir tests run the shim
+  with NO sibling package and assert "no Traceback", and those paths DO reach
+  resolve_loop_runner/_load_config/_now_iso/_commit_state, so deleting them from the
+  shim body would have forced ~150 lines of fallback redefinition (high risk). The
+  duplication is transient — items 006/008 drain the shim's inline copies into
+  `_common`, at which point they'll already be there.
+- **The mirrored-loader constraint does NOT forbid a copy in `_common`.**
+  `tests/test_json_loader_parity.py` asserts `def load_json_with_duplicates(` appears
+  EXACTLY ONCE **per scanned file** (only forge-session.py + forge-bootstrap.py are
+  scanned) and that those two are byte-equal. A third copy inside the package's
+  `_common` is invisible to it. Architecturally sound too: the mirror exists because
+  the *flat* scripts share no import module; `_common` IS the package's shared import
+  module, so it reads config through its own copy instead of reaching back into the
+  shim (which would be circular). Kept the copy behaviour-identical (a pure move,
+  never a re-derivation) so ZERO behaviour change holds — a plain-json reader would
+  have silently dropped the decision-path duplicate-key warning.
+- **`socket` became an orphan import** in the shim once `_default_actor` moved — the
+  only user. ruff `F401` would have failed the lint step; removed it.
+- **Re-export via EXPLICIT imports, never `from forge_session.decisions import *`.**
+  Star would (a) trip ruff F403 and (b) pull decisions.py's OWN `_common` re-imports
+  (`_now_iso`, etc.) into the shim, shadowing the shim's inline defs. Explicit imports
+  of just the 12 functions + 2 constants avoid both. decisions.py does not declare
+  `__all__` (not needed — nothing star-imports it).
+- **Pre-existing failure unchanged:** `test_doctor_checks.py::test_env_stamp_
+  interactive_never_carries_a_rung` still fails identically with these edits STASHED
+  (proven via `git stash`), same `claude -p` sandbox ancestry cause item 001 logged.
+  Full run: 3086 passed, 2 skipped, that 1 environmental fail. doctor --json exits 0;
+  build-adapters --check exits 0 after regen.
