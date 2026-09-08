@@ -875,6 +875,20 @@ def _check_runner_legacy_layout(ctx: _CheckContext) -> dict:
     )
 
 
+def _refresh_artifacts_remedy(ctx: _CheckContext) -> dict:
+    """Shared remedy for the stale-artifacts warn branches: ``<runner> update .``.
+
+    The description is the consent surface, so it names every project file the
+    command rewrites — including ``.gitignore``, which the project owns (#283).
+    """
+    return _remedy(
+        "Refresh the runner's per-project artifacts (`.rauf.json`, `.rauf/` "
+        "schema) and add its runtime files to `.gitignore`",
+        shlex.join([ctx.runner_bin(), "update", "."]),
+        "local-write",
+    )
+
+
 def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
     """The precondition file's ``installedBy`` version matches the live runner."""
     if (na := _runner_unavailable(ctx)) is not None:
@@ -898,12 +912,7 @@ def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
     if parsed is None:
         return _result(
             "warn", f"{path.name} has no parseable installedBy ({installed_by!r})", evidence,
-            _remedy(
-                "Refresh the runner's per-project artifacts (`.rauf.json`, `.rauf/` "
-                "schema) and add its runtime files to `.gitignore`",
-                shlex.join([ctx.runner_bin(), "update", "."]),
-                "local-write",
-            ),
+            _refresh_artifacts_remedy(ctx),
         )
     if parsed[1] < live:
         return _result(
@@ -911,12 +920,7 @@ def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
             f"{path.name} was written by {installed_by}; the live runner is "
             f"{_fmt_semver(live)}",
             evidence,
-            _remedy(
-                "Refresh the runner's per-project artifacts (`.rauf.json`, `.rauf/` "
-                "schema) and add its runtime files to `.gitignore`",
-                shlex.join([ctx.runner_bin(), "update", "."]),
-                "local-write",
-            ),
+            _refresh_artifacts_remedy(ctx),
         )
     if parsed[1] > live:
         return _result(
