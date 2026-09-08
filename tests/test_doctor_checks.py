@@ -864,6 +864,10 @@ def test_runner_artifacts_stale_compares_installed_by_with_live(
     else:
         assert record["remedy"]["command"] == command
         assert record["remedy"]["safety"] == safety
+        if command == "rauf update .":
+            # The description is the consent surface: it must name `.gitignore`,
+            # the project-owned file `rauf update .` rewrites (see #283).
+            assert ".gitignore" in record["remedy"]["description"]
     assert "update" not in " ".join(probe_log(env))
 
 
