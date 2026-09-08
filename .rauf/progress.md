@@ -257,3 +257,39 @@ test edits the earlier BLOCK flagged, so the extraction landed as a pure move. T
   asserts. The body alone is 1,979; header + `__all__` push it over. Item 008 (or a
   follow-up) must either trim/compact doctor.py or split it. Item 004 sets no ceiling, so
   this was left as-specified (single doctor.py).
+
+### Item 005 — extract outcomes.py — DONE (pure move, ZERO test edits)
+
+- **Cleanest extraction so far — no monolith-assumption test edits needed.** Unlike item
+  004, the outcome verbs' oracles (`tests/test_select_outcome.py`, `tests/test_verify_state.py`,
+  46 parity tests) path-load the shim and read the re-exported symbols off it; they do NOT
+  bare-copy the shim, grep its source for a moving literal, or monkeypatch `fs.<attr>`. So the
+  re-export block resolves them unmodified — `git status` shows ZERO test files touched. Enum
+  parity intact. The select-outcome/verify-state CLI contract is frozen and untouched.
+- **`outcomes.py` (574 lines)** holds `select_outcome`, `verify_state_for_stage`,
+  `_verify_outcome`, `_fix_outcome`, `_verify_reports`, `_read_report_text`, `_section_body`,
+  `_parse_report_facts`, `_classify_verify_entry`, `_verify_state_for`, and the NamedTuples
+  `_VerifyReport`/`_ReportFacts` (kept in outcomes.py, not `_common` — state.py/exit.py don't
+  need them yet). Imports only from `_common` (+ stdlib re/pathlib/typing).
+- **Bare-copy fallback GREW by two, same pattern as items 001/003.** `_classify_verify_entry`
+  + `_verify_state_for` are reached on EVERY stage-exit routing read, so the `_stub_bundle`
+  bare-copy stage-exit tests (package-less shim) need them bound in the `except
+  ModuleNotFoundError` block as byte-equal fallbacks. Their transitive deps
+  (`_scheduled_stage_version`, `_warn_auto_verify_debt_metadata`, `_VERIFY_RESOLVED`,
+  `_EXIT_VERIFY_TOKEN`, `_verify_entry`, `_stage_version`) still live inline in the shim body,
+  so the fallback resolves.
+- **GOTCHA — spurious adapter-drift false-positive from `__pycache__`.** `build-adapters.py
+  --check` does a raw `diff -r` of the regenerated tree vs `adapters/`, and it flags the
+  gitignored `adapters/<agent>/scripts/forge_session/__pycache__` that pytest writes when a
+  test imports a bundled package copy. validate.sh's drift check (line 177) runs BEFORE pytest
+  (line 211), so a run from a CLEAN tree passes — but the leftover `__pycache__` makes the
+  NEXT run's early drift check FAIL ("adapters/ is out of date"). Fix: `find . -name __pycache__
+  -type d -prune -exec rm -rf {} +` before re-running. The bundled *content* was in sync the
+  whole time (check exits 0 once caches are cleared). Relevant to items 006/007/008 — always
+  clean caches between validate.sh runs.
+- **Pre-existing env failure UNCHANGED:** clean full run = `1 failed, 3086 passed, 2 skipped`,
+  the one fail being `test_env_stamp_interactive_never_carries_a_rung` (sandbox ancestry
+  reports warn/unknown). PROVEN independent of this item — the diff contains ZERO
+  interaction/ancestry code (that's doctor.py, item 004); grep of the diff for
+  interaction|ancestry|rung is empty. Same environmental fail items 001-004 logged. doctor
+  --json exits 0; ruff clean; adapter --check exits 0 on a clean tree.

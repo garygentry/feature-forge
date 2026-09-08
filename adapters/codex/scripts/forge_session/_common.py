@@ -1106,6 +1106,65 @@ def _default_schema_path() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "references" / "forge-config-schema.json"
 
 
+#: Verify token per exit stage. Extends the production map with the epic stage,
+#: whose verify entry is recorded under ``forge-verify-epic``. The shim keeps a
+#: byte-equal inline copy for its not-yet-extracted stage-exit routing body; this
+#: is the package-side source the outcomes module reads (#279 P4.1).
+_EXIT_VERIFY_TOKEN: Final[dict[str, str]] = {
+    **VERIFY_TOKEN_BY_STAGE,
+    "forge-0-epic": "epic",
+}
+
+#: The one message table the three upstream-verify gates read instead of each
+#: phrasing "not verified" its own way — one canonical operator sentence per
+#: ``VerifyStateCase``. ``{subject}`` is the feature (or epic member), ``{stage}``
+#: the production stage whose verification this describes, ``{command}`` the
+#: forge-verify retry invocation. ``auto-verify-pending`` is NOT looked up here at
+#: runtime: that case routes through ``auto_pending_message()`` (which reads this
+#: same ``AUTO_PENDING_DIAGNOSTIC`` and appends the version-advance clause when the
+#: schedule predates the artifact), so the value is a *reference* to that shared
+#: constant, not a copy that could drift. It stays in the table so the map is
+#: complete: one entry per case, the invariant ``test_one_message_per_case`` pins.
+VERIFY_STATE_MESSAGES: Final[dict[str, str]] = {
+    "passed": "{subject}'s {stage} verification passed; proceed.",
+    "findings-reported": (
+        "{subject}'s {stage} verification reported unresolved blocking findings; "
+        "apply and re-verify them — run {command}."
+    ),
+    "findings-applied": (
+        "Fixes were applied to {subject}'s {stage} but nothing re-verified them; "
+        "re-verification is still outstanding — run {command}."
+    ),
+    "auto-verify-pending": AUTO_PENDING_DIAGNOSTIC,
+    "skipped": (
+        "{subject}'s {stage} verification was explicitly skipped; "
+        "run {command} to verify it after all."
+    ),
+    "never": "{subject}'s {stage} hasn't been verified yet — run {command}.",
+}
+
+
+def _resolve_feature_dir(specs_dir: Path, feature: str, epic: str | None) -> Path:
+    """Best-effort feature dir (flat, else unique nested, else flat literal).
+
+    stage-exit tolerates an unresolvable dir — the state read downgrades to
+    ``{}`` and every directive still computes from defaults.
+    """
+    if epic:
+        return specs_dir / epic / feature
+    flat = specs_dir / feature
+    if (flat / PIPELINE_STATE_FILENAME).is_file():
+        return flat
+    if specs_dir.is_dir():
+        nested = [
+            p for p in specs_dir.glob(f"*/{feature}")
+            if (p / PIPELINE_STATE_FILENAME).is_file()
+        ]
+        if len(nested) == 1:
+            return nested[0]
+    return flat
+
+
 __all__ = [
     "UsageError",
     "VerifyStatus",
@@ -1147,4 +1206,7 @@ __all__ = [
     "_config_duplicate_keys",
     "invalid_auto_verify_keys",
     "_default_schema_path",
+    "_EXIT_VERIFY_TOKEN",
+    "VERIFY_STATE_MESSAGES",
+    "_resolve_feature_dir",
 ]
