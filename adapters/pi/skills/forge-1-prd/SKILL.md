@@ -163,7 +163,7 @@ python3 "$R/scripts/forge-session.py" state-note \
   --feature "{feature}" --note "<what the user volunteered>" --specs-dir "{specsDir}"
 ```
 
-**Determine `--verify-capability` before running the exit** per **Host and capability determination** in `references/stage-exit-protocol.md` (summarized under **Verify Capability** in `references/shared-conventions.md`): pass `interactive` only when a question mechanism equivalent to `AskUserQuestion` is available **and** a clean-room `forge-verifier` may be *permitted* dispatch (the test is "may I dispatch right now", not tool presence) — otherwise `manual`. That reference owns the full rule, including why a consent-only bar is still `interactive` and the `none`-gate consent variant. Add `--epic "{epic}"` to the call below when this feature is an epic member.
+**Determine `--verify-capability` before running the exit** per **Host and capability determination** in `references/stage-exit-protocol.md` (summarized under **Verify Capability** in `references/shared-conventions.md`): pass `interactive` only when a question mechanism equivalent to `AskUserQuestion` is available **and** dispatching a clean-room `forge-verifier` is *permitted* (the test is "may I dispatch right now", not tool presence) — otherwise `manual`. That reference owns the full rule, including why a consent-only bar is still `interactive` and the `none`-gate consent variant. Add `--epic "{epic}"` to the call below when this feature is an epic member.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 
