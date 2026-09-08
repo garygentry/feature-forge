@@ -33,6 +33,14 @@ For contributors editing feature-forge (and rauf) source. End users should use t
 [Install](README.md#install) instructions instead — distribution is unchanged
 (`/plugin marketplace add garygentry/feature-forge`).
 
+> **Running the local source? Read [`docs/DOGFOODING.md`](docs/DOGFOODING.md).** It is the
+> prescribed, verified way to activate a local checkout — per-repo or machine-wide — while
+> coexisting with a standard install. The short version for feature-forge: build the bundle
+> and load it with `scripts/dev-plugin.sh` + `claude --plugin-dir`, **not** a repo-root
+> `~/.claude/skills/` symlink. The symlink method below loads un-built canon for
+> feature-forge (shared references absent, #305) **and** is silently shadowed by an installed
+> marketplace version — it remains valid only for **rauf** (self-contained skills).
+
 ### The staleness trap
 
 Installing a plugin from a marketplace copies it into a versioned cache
