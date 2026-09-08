@@ -2246,6 +2246,30 @@ def _translate_support_command_strings(
                     f"{src_helper} by more than the '/feature-forge:' → "
                     f"'{substitute}' substitution"
                 )
+        # Runtime helper PACKAGES (#279): the bulk of the former monolith now lives in
+        # forge_session/*.py, which the rglob translation pass above rewrites too. Re-verify
+        # each package module exactly like the single-file helpers — its ONLY divergence from
+        # canon must be the '/feature-forge:' → substitute rewrite — so post-translation
+        # corruption cannot ship silently (copy-time _assert_byte_identical, block 3b, runs
+        # BEFORE translation and cannot catch it). Same file selection as the copy pass.
+        for pkg in RUNTIME_HELPER_DIRS:
+            src_pkg = repo_root / "scripts" / pkg
+            for src_file in sorted(src_pkg.rglob("*.py")):
+                if "__pycache__" in src_file.parts:
+                    continue
+                rel = src_file.relative_to(repo_root / "scripts")
+                dst_file = bundle_root / "scripts" / rel
+                expected = _apply_command_prefix(
+                    src_file.read_text(encoding="utf-8", errors="surrogateescape"),
+                    substitute,
+                )
+                actual = dst_file.read_text(encoding="utf-8", errors="surrogateescape")
+                if actual != expected:
+                    raise SystemExit(
+                        f"REQ-GEN-05 violation: pi package module {dst_file} diverges from "
+                        f"canon {src_file} by more than the '/feature-forge:' → "
+                        f"'{substitute}' substitution"
+                    )
 
 
 # A prose citation of a bundle reference: `references/<subpath>`. The subpath char
