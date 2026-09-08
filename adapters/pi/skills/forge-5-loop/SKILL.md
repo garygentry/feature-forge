@@ -205,8 +205,9 @@ human log as fallback) with **a continuous watch**, a coverage-complete filter
 matching every terminal and exception state (silence is not success), and react to
 each event as it arrives. Each NDJSON line is a JSON object whose event kind lives
 under the **`type`** field (rauf's schema — e.g. `{"type":"item_completed",…}`), so
-the filter must select on **`.type`**, **not** `kind`: a `kind`-keyed filter matches
-nothing and the watch goes silently dark for the whole run. The exact Monitor
+the filter must select on **`.type`**, **not** `kind`: a `kind`-keyed filter surfaces
+nothing — it matches no lines (`grep`) or aborts the pipeline on the first event
+(`jq`, since `.kind` is `null`) — so the watch stays dark for the whole run. The exact Monitor
 commands, the filter event list, and the full per-event reaction rules (`needs_human`
 / `loop_error` surfaced immediately with an automatic session wake, `item_completed`
 coalesced into milestones, `llm_stuck_warning` as a hang warning) are in
