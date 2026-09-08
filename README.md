@@ -66,12 +66,7 @@ It is tuned for Claude but stays agent-agnostic, and runs on any of the supporte
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/pipeline-dark.svg" />
-  <img
-    alt="feature-forge pipeline: forge-0-epic (optional) through forge-1-prd, forge-2-tech,
-      forge-3-specs, forge-4-backlog, forge-5-loop, forge-6-docs, with a forge-verify gate
-      available after every stage (PRD through implementation)"
-    src="docs/images/pipeline-light.svg"
-  />
+  <img alt="feature-forge pipeline: optional forge-0-epic, then forge-1-prd through forge-6-docs, with a forge-verify gate available after every stage" src="docs/images/pipeline-light.svg" />
 </picture>
 
 | Stage           | Skill             | Why it exists                                                                                                        |
