@@ -175,6 +175,9 @@ def test_doctor_survives_unresolvable_root_and_bare_dir(tmp_path: Path) -> None:
     scripts.mkdir(parents=True)
     shutil.copy(HELPER, scripts / "forge-session.py")
     shutil.copy(REPO_ROOT / "scripts" / "forge-root.sh", scripts / "forge-root.sh")
+    # #279 P4.1: the shim delegates to its sibling forge_session/ package; a
+    # runnable copy ships it too (a lone shim is no longer a complete program).
+    shutil.copytree(REPO_ROOT / "scripts" / "forge_session", scripts / "forge_session")
     workdir = tmp_path / "empty-project"
     workdir.mkdir()
 

@@ -23,6 +23,7 @@ from pathlib import Path
 from forge_session._common import (
     MANIFEST_FILENAME,
     PIPELINE_STATE_FILENAME,
+    _default_branch,
     _git_output,
     _load_config,
     _parse_ts,
@@ -340,15 +341,6 @@ def _print_discover_all(payload: dict) -> None:
                   f"status={cand['pipelineStatus']}{suffix}")
             if not cand["isCurrentBranch"]:
                 print(f"      switch: {cand['switchCommand']}")
-def _default_branch() -> str | None:
-    """The repo's default branch: origin/HEAD target, else `main`/`master` if present."""
-    ref = _git_output(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])
-    if ref:
-        return ref.rsplit("/", 1)[-1]
-    for cand in ("main", "master"):
-        if _git_output(["rev-parse", "--verify", "--quiet", f"refs/heads/{cand}"]) is not None:
-            return cand
-    return None
 def reconcile_branch(
     name: str, specs_dir: Path, config_path: Path, epic: str | None = None
 ) -> dict:

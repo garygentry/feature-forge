@@ -140,3 +140,120 @@
   fails at pristine HEAD in this `claude -p` sandbox (confirmed via `git stash`);
   not caused by the split. doctor --json exits 0; ruff clean; build-adapters --check
   exits 0 after regen.
+
+### Item 004 — extract doctor.py — BLOCKED (criterion-internal contradiction)
+
+Item 004 as written is **unsatisfiable**: criterion 1 ("the listed doctor
+functions/classes live in doctor.py and are **gone from the shim body**") is in
+direct, provable conflict with criteria 6 & 8 ("these specific tests pass
+**unmodified** / zero test-file edits"). TWO independent frozen tests require the
+doctor cluster to stay physically in `scripts/forge-session.py`:
+
+1. **Bare-copy subprocess doctor tests (3).** `test_doctor.py::test_doctor_survives_
+   unresolvable_root_and_bare_dir`, `test_doctor_checks.py::test_plugin_root_warns_
+   with_global_install_remedy_when_unresolvable`, and `test_doctor_checks.py::test_
+   root_version_skew_na_when_root_is_unresolved` copy ONLY `forge-session.py`
+   (+`forge-root.sh`) into a tmp dir and run `doctor --json` in a scrubbed env with
+   NO package beside it and NO PYTHONPATH → the shim's `except ModuleNotFoundError`
+   fallback runs. Empirically confirmed (stripped `doctor_report` from a lone copy):
+   `NameError: name 'doctor_report' is not defined` at the `doctor` dispatch → the
+   verb crashes. A lone shim cannot run `doctor` once the cluster is moved out; the
+   only fixes are (a) keep the cluster inline (violates crit 1) or (b) duplicate all
+   ~1,900 lines in the fallback (still "in the shim body" → violates crit 1, and the
+   shim never shrinks → defeats #279's stated mechanism + item 008's "pure shim").
+
+2. **Host-neutrality bundle test.** `test_adapter_host_neutrality.py::test_the_
+   interaction_record_is_reachable_from_every_bundle` greps each bundle's
+   `scripts/forge-session.py` **source text** for the literal `_make_spec("interaction-mode"`.
+   That literal lives ONLY in the shim's `DOCTOR_CHECKS` registry (line ~3188), which
+   calls the to-be-moved `_make_spec` + `_check_interaction_mode`. Criterion 6 restates
+   this as a MUST-PASS. Moving those out removes the literal from the shim source →
+   test fails. Keeping a shim-side `DOCTOR_CHECKS` that references package re-exports
+   fails at MODULE LOAD in the bare copy (names undefined in the fallback) → breaks
+   EVERY bare-copy test. So the registry + its `_make_spec`/`_check_*` must stay in the
+   shim source too — again contradicting crit 1.
+
+Both are the SAME class as item 001's blocker (a frozen structural/contract test vs.
+the required split), which was resolved by a **human design decision** pre-authorizing
+ONE scoped, behavior-preserving test edit (item 001 crit 8). Item 004's criteria grant
+NO such carve-out and explicitly forbid test edits, so per the backlog convention
+("a required test edit means STOP and emit RAUF_BLOCKED") I made ZERO repo edits and
+blocked.
+
+**Recommended resolution (design decision needed), mirroring item 001:** pre-authorize
+minimal, behavior-preserving edits to exactly the conflicting tests —
+- the 3 bare-copy subprocess doctor tests: ALSO copy the `forge_session/` package dir
+  beside the lone `forge-session.py` (post-split a lone shim is not a complete program;
+  real degraded installs still ship the package via item-001's bundling gates +
+  forge-root.sh completeness gate), and
+- `test_the_interaction_record_is_reachable_from_every_bundle`: assert the interaction
+  check is reachable in the bundle's `scripts/forge_session/doctor.py` (where it now
+  lives) rather than in the shim source.
+Then doctor moves cleanly to `doctor.py`, the shim shrinks, and item 008's pure-shim
+goal stays reachable. Until that decision lands, item 004 cannot be completed as
+specified. (`_git_output` sharing with discover.py — item 003's note — is a non-issue
+here since no code was moved.)
+
+### Item 004 — extract doctor.py — DONE (under the standing LOOP EXECUTION POLICY)
+
+The 2026-09-07 policy pre-authorized the scoped, behavior-preserving monolith-assumption
+test edits the earlier BLOCK flagged, so the extraction landed as a pure move. The
+1,979-line doctor cluster (lines 1375–3353 of the old shim) is now
+`scripts/forge_session/doctor.py` (2,119 lines with header/`__all__`). Key gotchas:
+
+- **`__file__` anchors MUST be recomputed for the deeper module.** doctor.py ships at
+  `<scripts>/forge_session/doctor.py`, one level below the shim, so the four legacy
+  `Path(__file__)` anchors would silently point one dir too shallow. Fixed with three
+  module constants: `_SCRIPTS_DIR = Path(__file__).resolve().parent.parent`,
+  `_SHIM_PATH = _SCRIPTS_DIR / "forge-session.py"`, `_BUNDLE_ROOT = _SCRIPTS_DIR.parent`.
+  These reproduce the shim's old targets EXACTLY (verified: doctor.py.parent.parent.parent
+  == old forge-session.py.parent.parent). The `_check_branch_state` remedy command
+  `["python3", script, "state-branch", ...]` MUST resolve `script` to the SHIM
+  (`_SHIM_PATH`), never doctor.py — it's operator-facing frozen `--json` output.
+  `_default_schema_path` moved to `_common` with a THREE-parent walk (vs the shim's two)
+  for the same depth reason.
+- **The monkeypatch-target break is the big one.** `test_doctor_checks.py` does
+  `monkeypatch.setattr(fs, "_build_check_context"/"DOCTOR_CHECKS"/"_PROBE_TIMEOUT_S"/
+  "_bundle_agent"/"_process_ancestry", …)` then calls `fs.doctor_report(...)`. After the
+  move a patched function only takes effect in ITS OWN module, so patching the shim `fs`
+  is inert — the code runs in `forge_session.doctor`. Fix with ONE fixture edit: the `fs`
+  fixture now returns `forge_session.doctor` (load the shim first for the sys.path
+  bootstrap, then `import forge_session.doctor`). This fixed ~10 tests at a stroke. The
+  ONE cross-cluster reference, `fs.EXIT_HOSTS` (a stage-exit constant, not in the doctor
+  module), is re-sourced from `_load_helper_module().EXIT_HOSTS` in that single test.
+  Enumerate every `fs.<attr>` before repointing (`grep -oE "fs\.[A-Za-z_]\w*"`): all but
+  `EXIT_HOSTS` already lived in the doctor module (incl. `fs.os`, `fs._git_output`).
+- **`main()`'s argparse needs `DOCTOR_CHECK_IDS` in the bare-copy fallback.** `--check`'s
+  `choices=DOCTOR_CHECK_IDS` is built for EVERY verb, so a package-less copy running a
+  non-doctor verb (the stage-exit `_stub_bundle` test) still needs it bound. Added the
+  frozen 16-ID tuple as a byte-equal literal in the `except ModuleNotFoundError` block
+  (same philosophy as the fallback's `VerifyStatus`). doctor_report/_print_doctor are
+  NOT needed there — no package-less test runs the doctor verb (the 3 bare-copy doctor
+  tests now `shutil.copytree` the package beside the shim).
+- **Bare-copy doctor tests must copy the package.** `test_doctor.py::test_doctor_survives_
+  unresolvable_root_and_bare_dir` + `test_doctor_checks.py`'s two lone-helper tests copied
+  only `forge-session.py` (+`forge-root.sh`); post-split a lone shim can't run doctor, so
+  each now also `copytree`s `scripts/forge_session/`. Still "lone" (no sentinel above
+  `scripts/`) so plugin-root stays unresolvable — the tests' actual intent.
+- **Host-neutrality grep retargeted.** `test_adapter_host_neutrality.py::test_the_
+  interaction_record_is_reachable_from_every_bundle` grepped the bundled shim source for
+  `_make_spec("interaction-mode"`; that literal now lives in the bundled
+  `forge_session/doctor.py`, so the assertion reads that file. Check present in all 6
+  bundles after regen.
+- **Primitives added to `_common` (shim keeps its inline copies — item-002 mirror
+  pattern):** `_default_branch` (MOVED from discover.py; discover now imports it from
+  `_common`), `_counts`, `_config_duplicate_keys`, `invalid_auto_verify_keys`,
+  `_default_schema_path`. `RECOVERY_MIN_RUNNER_VERSION` is doctor-only, so it moved
+  wholesale INTO doctor.py (deleted from the shim), not mirrored.
+- **Orphan shim imports:** moving doctor dropped the only users of `shlex`, `shutil`,
+  `PurePosixPath` in the shim — ruff F401 caught them; removed.
+- **Pre-existing env failure UNCHANGED:** `test_env_stamp_interactive_never_carries_a_rung`
+  still fails in this `claude -p` sandbox — PROVEN environmental by reconstructing the
+  pristine HEAD monolith (`git show HEAD:scripts/forge-session.py`) and running the same
+  `doctor --json --check interaction-mode`: it also reports `warn`/`unknown`. Full run:
+  3086 passed, 2 skipped, that 1 environmental fail. doctor --json exits 0; ruff clean;
+  build-adapters --check exits 0 after regen.
+- **NOTE for item 008:** doctor.py is 2,119 lines — OVER the 2,000-line ceiling item 008
+  asserts. The body alone is 1,979; header + `__all__` push it over. Item 008 (or a
+  follow-up) must either trim/compact doctor.py or split it. Item 004 sets no ceiling, so
+  this was left as-specified (single doctor.py).

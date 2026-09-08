@@ -1041,6 +1041,71 @@ def _git_output(args: list[str]) -> str | None:
     out = proc.stdout.strip()
     return out or None
 
+
+def _default_branch() -> str | None:
+    """The repo's default branch: origin/HEAD target, else `main`/`master` if present."""
+    ref = _git_output(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])
+    if ref:
+        return ref.rsplit("/", 1)[-1]
+    for cand in ("main", "master"):
+        if _git_output(["rev-parse", "--verify", "--quiet", f"refs/heads/{cand}"]) is not None:
+            return cand
+    return None
+
+
+def _counts(specs_dir: Path) -> dict[str, int]:
+    """Tally active/paused/abandoned pipelines across the specs tree."""
+    tally = {"active": 0, "paused": 0, "abandoned": 0}
+    for _name, _epic, state in _scan_features(specs_dir):
+        status = state.get("pipelineStatus", "active")
+        if isinstance(status, str) and status in tally:
+            tally[status] += 1
+    return tally
+
+
+def _config_duplicate_keys(config_path: Path) -> list[str]:
+    """Duplicate key names in the config file, for doctor's health report.
+
+    Empty on a missing/unreadable/invalid config — those conditions are
+    reported by doctor's ``configExists`` field, not here.
+    """
+    try:
+        return load_json_with_duplicates(config_path)[1]
+    except (OSError, ValueError, RecursionError):  # bad JSON, bad UTF-8, absurd nesting
+        return []
+
+
+def invalid_auto_verify_keys(config: dict) -> list[str]:
+    """Return ``autoVerifyStages`` keys outside the verify-capable stage ids.
+
+    An unknown/typo key (e.g. ``forge-1-prod``) would silently never take effect,
+    turning an intended off-switch into a no-op. Surfacing it lets the navigator
+    warn instead of failing quietly. Mirrors the schema's ``propertyNames.enum``.
+
+    Sorted, not insertion-ordered: every diagnostic list must be
+    sorted before rendering, so two configs that differ only in key order produce
+    byte-identical output.
+    """
+    stages = config.get("autoVerifyStages")
+    if not isinstance(stages, dict):
+        return []
+    return sorted(key for key in stages if key not in VERIFY_TOKEN_BY_STAGE)
+
+
+def _default_schema_path() -> Path:
+    """Return the bundled forge-config-schema.json path (sibling references/ dir).
+
+    Resolved relative to this module so it works from any cwd. This module lives at
+    ``<scripts>/forge_session/_common.py`` — one level deeper than the legacy shim —
+    so it walks three parents to the bundle root, matching the shim's target.
+    Overridable via the ``--schema`` flag (chiefly for tests).
+
+    Returns:
+        The Path to ``references/forge-config-schema.json`` at the bundle root.
+    """
+    return Path(__file__).resolve().parent.parent.parent / "references" / "forge-config-schema.json"
+
+
 __all__ = [
     "UsageError",
     "VerifyStatus",
@@ -1077,4 +1142,9 @@ __all__ = [
     "_parse_ts",
     "build_rows",
     "_git_output",
+    "_default_branch",
+    "_counts",
+    "_config_duplicate_keys",
+    "invalid_auto_verify_keys",
+    "_default_schema_path",
 ]
