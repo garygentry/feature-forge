@@ -59,6 +59,19 @@ named plugin. **Restart Claude Code**, then verify the active source (never a st
 claude plugin list | grep -E 'feature-forge|rauf'   # expect @skills-dir
 ```
 
+> **⚠️ feature-forge caveat (#305).** A repo-**root** `@skills-dir` symlink loads feature-forge's
+> **un-built canon** `skills/` — whose shared references (`references/shared-conventions.md`,
+> `references/stage-exit-protocol.md`, `references/stacks/`) are fanned into the built
+> `adapters/<host>/` bundles at build time (#132), **not** into canon. A canon skill loaded this way
+> dead-references those files the moment it reads one, so most stages fail partway through (silently,
+> until the first missing `Read`). rauf is unaffected — its skills are self-contained. To develop
+> **feature-forge** live, prefer the **local marketplace install** below: it loads feature-forge as a
+> *plugin*, the path #122 established as working, so a skill's `references/…` reads resolve from the
+> plugin root (where the repo-level `references/` lives). Editing canon still takes effect live; only
+> the load mechanism differs. If you do use a symlink, point it at a **built bundle**
+> (`adapters/claude`) and re-run `python3 scripts/build-adapters.py` after each canon edit — never the
+> repo root.
+
 ### Fallback: local marketplace install
 
 If a repo-root symlink does **not** load as `<plugin>@skills-dir`, remove the symlinks and install
