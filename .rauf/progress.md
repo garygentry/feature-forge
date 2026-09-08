@@ -349,3 +349,95 @@ dropped from 6208 → 4782 lines.
   byte-identical into all 6 adapters). NOTE (item 005 gotcha still bites): pytest writes
   __pycache__ into adapters/ bundles; `find . -name __pycache__ -prune -exec rm -rf {} +`
   before any re-run or the next early drift check false-fails.
+
+### Item 007 — extract exit.py + routes.py (stage-exit + routing engine) — DONE (under LOOP EXECUTION POLICY)
+
+The largest cluster split cleanly into TWO modules under the 2,000-line ceiling:
+`forge_session/routes.py` (1,162 lines — the branch/docs/loop terminus builders) and
+`forge_session/exit.py` (1,081 lines — `stage_exit` + resolvers + printer). Shim dropped
+4,782 → 2,747 lines (2,115 lines moved). Dependency graph is one-directional and
+acyclic: **exit.py → routes.py, outcomes.py, state.py, _common**; **routes.py → state.py,
+_common**; neither imports the shim.
+
+- **`exit.py` calls 11 route functions; routes calls ZERO exit functions** (AST-verified
+  before splitting). That asymmetry is what makes the two-file split safe — put the leaf
+  routing helpers in routes.py, the orchestrator in exit.py, and exit.py imports routes,
+  never the reverse. `_schedule_auto_verify_debt` (routes) writes state, so routes.py
+  imports `_load_verify_target`/`_verify_result_entry` from **state.py**; `stage_exit`
+  (exit) imports `_assert_safe_name` from state.py. Importing state.py from exit/routes is
+  NOT circular (state.py imports only `_common`).
+
+- **The exit-DOMAIN constants CANNOT leave the shim — they must be MIRRORED to `_common`.**
+  `tests/test_stage_constants_parity.py::test_each_shared_constant_is_assigned_exactly_once`
+  reads `scripts/forge-session.py` SOURCE and asserts `EXIT_STAGES, EXIT_OUTCOMES,
+  VERIFY_MODE_TO_STAGE, NEXT_STEPS_SENTINEL, EXIT_HOSTS` (+ `PRODUCTION_STAGES,
+  FULL_GIT_HASH_RE, KNOWN_VERIFY_STATUSES`) are assigned EXACTLY ONCE in the shim; other
+  parity tests path-load `session.ExitStage/ProductionStage/EXIT_OUTCOMES/...`; `main()`'s
+  argparse (`choices=EXIT_STAGES/EXIT_HOSTS`, `--verify-mode` choices) stays in the shim
+  until item 008. So these stay INLINE in the shim AND get byte-equal MIRROR copies in
+  `_common` (a copy in a DIFFERENT file is invisible to the exactly-once source-grep). The
+  extracted modules import the mirror from `_common`; item 008 drains the shim copy. Added
+  to `_common`: the 9 Literal aliases (ProductionStage/ExitStage/VerifyMode/ExitOwner/
+  VerifyCapability/Loop|Docs|Verify|FixOutcome), EXIT_STAGES, EXIT_OUTCOMES,
+  VERIFY_MODE_TO_STAGE, NEXT_STEPS_SENTINEL, EXIT_HOSTS, STAGE_NOUN, the 3 warning
+  templates, and `pending_verify`. (`_EXIT_VERIFY_TOKEN`, `_resolve_feature_dir` were
+  already there from items 004/006.)
+
+- **Route-local TABLES that are only path-loaded (never source-grepped) CAN move + be
+  re-exported.** `_BRANCH_ROUTE_KIND`, `_BRANCH_OUTCOME_TEXT`, `_LOOP_*` (7), `_DOCS_OUTCOME_TEXT`,
+  `_EPIC_TERMINAL_TEXT`, `_RENDER_STATUS_*`, `_RECONCILE_FIRST_TEXT`, `_NO_FINDINGS_RESOLVED_TEXT`,
+  and the derived `_EXIT_PRODUCTION_STAGES`/`_BRANCH_STAGES`/`_STAGE_TO_VERIFY_MODE`/`_EXIT_NEXT_STAGE`
+  moved INTO the module that uses them (exit.py or routes.py per the AST usage split) and are
+  re-exported from the shim, so `session._BRANCH_ROUTE_KIND` etc. still resolve. The
+  discriminator is **source-grep vs path-load**: grep the whole `tests/` tree for each name in
+  a `read_text()` context — if a parity/`assigned-exactly-once` test greps the shim SOURCE,
+  the constant is pinned to the shim; if tests only read `session.X`, it can move.
+
+- **`__file__` anchor moved one level DEEPER (same class as item 004's doctor.py).**
+  `_render_status`'s docs router shells out to the sibling `epic-manifest.py`; in the shim
+  that was `Path(__file__).resolve().parent / "epic-manifest.py"`. In `routes.py` (at
+  `<scripts>/forge_session/routes.py`) that anchor is one dir too shallow, so it now reads a
+  module constant `_SCRIPTS_DIR = Path(__file__).resolve().parent.parent`. The frozen
+  behaviour (sibling beside the bundle's `forge-session.py`) is preserved; the `_stub_bundle`
+  test that copies the package proves it resolves to `bundle/scripts/epic-manifest.py`.
+
+- **Monolith-assumption TEST EDITS (behaviour-preserving; CLI contract frozen; all in
+  `tests/test_stage_exit.py`):**
+  1. `_stub_bundle` — the bare-copy fixture copied only `forge-session.py`; post-split a lone
+     shim can't run stage-exit, so it now also `shutil.copytree`s the `forge_session/` package
+     beside it (added `import shutil`). Its INTENT (sibling `.py` resolution) is unchanged.
+  2. `test_no_source_path_selects_the_gate_from_the_host_name` — grepped the shim source for
+     `def stage_exit(`…`def _print_stage_exit(`; retargeted to `EXIT_MOD` (exit.py) where both
+     now live (order preserved by emitting moved symbols in original source order).
+  3. `test_docs_resolves_the_helper_beside_itself...` + `test_docs_never_reimplements...` —
+     grepped `def _render_status(specs_dir`…`\n_DOCS_OUTCOME_TEXT`; retargeted to `ROUTES_MOD`;
+     the first's literal assertion updated `Path(__file__)...parent / "epic-manifest.py"` →
+     `_SCRIPTS_DIR / "epic-manifest.py"` (the anchor change above).
+  4. `test_loop_never_reimplements...` — grepped `def _loop_route(`…`\ndef _debt_metadata_warnings`;
+     retargeted to `ROUTES_MOD`. Added `EXIT_MOD`/`ROUTES_MOD` path constants next to `HELPER`.
+  Added a re-exported `_render_status_failure_detail` etc. to the shim's `__all__` (ruff F401
+  requires every re-export import to be in `__all__`). `test_stage_exit_protocol.py` needed NO
+  edit — it greps ExitStage/ProductionStage/EXIT_OUTCOMES/NEXT_STEPS_SENTINEL, all KEPT inline.
+
+- **Method: SCRIPT the move, don't hand-transcribe 2,100 lines.** AST gives exact
+  (start,end) spans (extend upward over `#:` comment blocks); emit each module's symbols in
+  original source order (preserves the adjacencies the slice-based source-grep tests rely on:
+  `_render_status`→`_DOCS_OUTCOME_TEXT`, `_loop_route`→`_debt_metadata_warnings`,
+  `stage_exit`→`_print_stage_exit`); delete the same spans bottom-up from the shim. Free-name
+  analysis (Load names minus local binds minus builtins) drives the exact per-module import
+  list — but it flags comprehension targets (`mode`), `except … as exc`, nested `def fail`,
+  and the `__file__` builtin as false "OTHER"; ignore those.
+
+- **The shim's bare-copy `ModuleNotFoundError` fallback was left UNTOUCHED.** Its
+  `_assert_safe_name`/`_classify_verify_entry`/`_verify_state_for` defs (item 006/005 added
+  them for the inline stage-exit path) are now dead (a package-less shim can't run stage-exit
+  and the bare-copy tests copy the package), but they're harmless — bodies never execute — and
+  removing them risks the item-006 source-grep tests. Item 008 can prune them.
+
+- **Pre-existing env failure UNCHANGED and re-proven:** `test_env_stamp_interactive_never_
+  carries_a_rung` fails identically on a `git worktree add --detach HEAD` pristine tree
+  (`'warn' != 'ok'`); the diff greps clean for interaction|ancestry|rung (that's doctor.py,
+  item 004, untouched). Full run: `1 failed, 3086 passed, 2 skipped`. doctor --json exits 0;
+  ruff clean; adapter --check exits 0 on a clean tree (exit.py/routes.py bundled byte-identical
+  into all 6 adapters). Item-005 `__pycache__` gotcha still bites: clean it before any
+  validate.sh re-run or the early drift check false-fails.

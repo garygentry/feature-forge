@@ -1201,6 +1201,161 @@ def _resolve_feature_dir(specs_dir: Path, feature: str, epic: str | None) -> Pat
     return flat
 
 
+
+
+# --------------------------------------------------------------------------- #
+# Stage-exit domain (mirror of the shim's copies; item 007). The shim keeps its
+# own inline definitions (source-grep + parity tests read them there); these
+# copies exist so the extracted exit/routes modules import them from here
+# rather than the shim (which would be circular). Item 008 drains the shim copy.
+# --------------------------------------------------------------------------- #
+
+#: The directive-facing form of the debt-metadata advisory (`warnings` entry 2).
+#: The stderr twin lives in `_warn_auto_verify_debt_metadata`; this one also
+#: names the subject and the host-translated retry command, because a `warnings` entry
+#: must carry both the affected feature/stage/key AND the recovery action (REQ-OBS-02).
+AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC: Final = (
+    "{subject}: {verify_key} is auto-verify-pending but its scheduledStageVersion "
+    "is missing or malformed (legacy or hand-edited state); the debt stays "
+    "outstanding — run {command} to resolve it and record a usable schedule."
+)
+
+#: The exact template for an `autoVerifyStages` key that names no
+#: verify-capable stage. A typo there silently never takes effect, so the exit
+#: says so — once per offending key, in sorted key order, on stderr, and
+#: WITHOUT failing the exit: an ignored config key is an advisory, not a usage
+#: error. `{valid}` is derived from `VERIFY_TOKEN_BY_STAGE` so the sentence cannot
+#: drift from the domain it describes.
+INVALID_AUTO_VERIFY_KEY_WARNING: Final = (
+    'Warning: autoVerifyStages key "{key}" names no verify-capable stage; it is '
+    "ignored. Valid keys are {valid}."
+)
+
+#: The exact template for an epic edit-mode member whose live pipeline state
+#: cannot be resolved. It is `warnings` entry 1 and the router's
+#: ONE tolerant new case: the exit degrades DOWN to `forge-1-prd <member>` rather
+#: than fabricating progress it could not read (REQ-PROD-06). The trailing sentence
+#: is what makes the warning name both the affected feature and the recovery action
+#: (REQ-OBS-02); `{reason}` is one of `EPIC_MEMBER_FALLBACK_REASONS`.
+EPIC_MEMBER_FALLBACK_WARNING: Final = (
+    "Warning: {member}: pipeline state could not be resolved under epic {epic} "
+    "({reason}); routing to forge-1-prd. Run /skill:forge {member} to "
+    "inspect its state."
+)
+
+#: The seven stages that produce a pipeline artifact. forge-0-epic participates in
+#: exit and verify routing but not the member production walk (PRODUCTION_STAGES).
+ProductionStage = Literal[
+    "forge-0-epic",
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+    "forge-5-loop",
+    "forge-6-docs",
+]
+
+#: Every skill that closes a stage through `stage-exit` — the seven production
+#: stages plus the two branch skills.
+ExitStage = Literal[
+    "forge-0-epic",
+    "forge-1-prd",
+    "forge-2-tech",
+    "forge-3-specs",
+    "forge-4-backlog",
+    "forge-5-loop",
+    "forge-6-docs",
+    "forge-verify",
+    "forge-fix",
+]
+
+#: forge-verify's mode, which selects the production stage a diversion served.
+VerifyMode = Literal["epic", "prd", "tech", "specs", "backlog", "impl"]
+
+#: Who prints the terminal block for a branch exit.
+ExitOwner = Literal["direct", "nested"]
+
+#: Whether the host may run an interactive verify gate + clean-room dispatch.
+VerifyCapability = Literal["interactive", "manual"]
+
+LoopOutcome = Literal[
+    "complete", "partial", "blocked", "needs-human", "deferred", "resolved"
+]
+
+DocsOutcome = Literal["complete", "blocked", "skipped"]
+
+VerifyOutcome = Literal["passed", "findings", "skipped", "failed"]
+
+FixOutcome = Literal[
+    "no-findings",
+    "decisions",
+    "failed",
+    "applied",
+    "reverified",
+    "reverify-findings",
+    "deferred",
+]
+
+#: Derived, never hand-listed — see the block comment above.
+EXIT_STAGES: Final[tuple[str, ...]] = get_args(ExitStage)
+
+#: The stages whose exit carries a multi-way outcome, and each one's legal values.
+#: Stages absent from this table take no `--outcome` at all.
+EXIT_OUTCOMES: Final[dict[str, frozenset[str]]] = {
+    "forge-5-loop": frozenset(get_args(LoopOutcome)),
+    "forge-6-docs": frozenset(get_args(DocsOutcome)),
+    "forge-verify": frozenset(get_args(VerifyOutcome)),
+    "forge-fix": frozenset(get_args(FixOutcome)),
+}
+
+#: The one domain still written twice, because neither side is a subset of the
+#: other: its keys MUST equal set(get_args(VerifyMode)) and its values MUST be a
+#: subset of get_args(ProductionStage). tests/test_stage_constants_parity.py
+#: asserts both. NOT collapsible into VERIFY_TOKEN_BY_STAGE's inverse — that map
+#: has no `epic` mode and exists to name state keys, not to route stages.
+VERIFY_MODE_TO_STAGE: Final[dict[str, str]] = {
+    "epic": "forge-0-epic",
+    "prd": "forge-1-prd",
+    "tech": "forge-2-tech",
+    "specs": "forge-3-specs",
+    "backlog": "forge-4-backlog",
+    "impl": "forge-5-loop",
+}
+
+#: The fixed final line of the NEXT-STEPS block. The stamp instructs the skill
+#: to print the block verbatim as its absolute last output — nothing after this.
+NEXT_STEPS_SENTINEL: Final = "─ forge: end of stage ─"
+
+#: The `--host` domain: command syntax and fresh-session wording only. A host NEVER
+#: implies a verification capability (REQ-EXIT-07).
+EXIT_HOSTS: Final[tuple[str, ...]] = ("claude", "generic", "pi")
+
+#: Stage id -> the noun phrase gate wording uses (the old {stage} stamp slot).
+STAGE_NOUN: Final[dict[str, str]] = {
+    "forge-0-epic": "the epic decomposition",
+    "forge-1-prd": "the PRD",
+    "forge-2-tech": "the tech spec",
+    "forge-3-specs": "the implementation specs",
+    "forge-4-backlog": "the backlog",
+}
+
+def pending_verify(state: dict) -> str | None:
+    """Return the production stage whose verify is outstanding, if any.
+
+    Outstanding means the most-recently-completed production stage's verify is not
+    ``fresh`` (never run, scheduled-but-unrun automatic verification, reported
+    findings, or gone stale after an artifact revision). An ``auto-pending`` stage
+    is returned like any other outstanding one — recorded debt is owed work, and
+    ``_VERIFY_RESOLVED`` deliberately excludes it.
+    An explicit ``skipped`` is treated as resolved (never outstanding).
+    Surfaced so the navigator can offer "verify before continuing" as an
+    alternative to advancing. Returns ``None`` when the latest stage is fresh,
+    skipped, or there is nothing to verify.
+    """
+    stage, label = verify_state(state)
+    return stage if label not in ("fresh", "none", "skipped") else None
+
+
 __all__ = [
     "UsageError",
     "VerifyStatus",
@@ -1252,4 +1407,23 @@ __all__ = [
     "_EXIT_VERIFY_TOKEN",
     "VERIFY_STATE_MESSAGES",
     "_resolve_feature_dir",
+    "ProductionStage",
+    "ExitStage",
+    "VerifyMode",
+    "ExitOwner",
+    "VerifyCapability",
+    "LoopOutcome",
+    "DocsOutcome",
+    "VerifyOutcome",
+    "FixOutcome",
+    "EXIT_STAGES",
+    "EXIT_OUTCOMES",
+    "VERIFY_MODE_TO_STAGE",
+    "NEXT_STEPS_SENTINEL",
+    "EXIT_HOSTS",
+    "STAGE_NOUN",
+    "AUTO_VERIFY_DEBT_METADATA_DIAGNOSTIC",
+    "INVALID_AUTO_VERIFY_KEY_WARNING",
+    "EPIC_MEMBER_FALLBACK_WARNING",
+    "pending_verify",
 ]
