@@ -147,6 +147,18 @@ guards — so an upstream refresh that breaks a feature-forge contract fails bef
 Anything here is dev-only: `adapter-src/*/node_modules/` is gitignored and nothing from it is
 published.
 
+### Docs: the site is canonical for stage detail; README is a quick tour
+
+`docs-site/` (published to <https://garygentry.github.io/feature-forge/>) is the **canonical**
+home for per-stage detail — what each stage consumes, produces, and does — and for the
+`forge.config.json` reference, the dashboard/navigator, verification, epics, and troubleshooting.
+`README.md` is a deliberately short quick tour (hero, agent-led setup, install, quick start, and a
+stage-summary table) that **links out** to the site for detail rather than restating it. When stage
+behavior changes, update the docs-site page; do not grow the README back into a second copy. The
+drift guard (`docs-site/check-docs.mjs`, run by `npm run docs:check` and the `docs.yml` PR build)
+protects the site's internal links and sidebar parity. Contributor/local-dev material lives in
+[`CONTRIBUTING.md`](CONTRIBUTING.md), not the README.
+
 ### Tooling — Python stdlib + pinned YAML; npm confined to two dirs
 
 The generator is Python 3 (3.10+ baseline) + Bash + Markdown. There is exactly one runtime
@@ -241,6 +253,11 @@ workflow, and verify.
    - **A plugin release cuts `[Unreleased]` into a dated `## [X.Y.Z] — YYYY-MM-DD` heading in
      the release commit** (the same commit that bumps the three synced version fields), leaving
      an empty `## [Unreleased]` behind.
+   - **Keep entries short: a CHANGELOG entry is a bulleted list, under ~150 words per version.**
+     A bullet names *what changed* and points at the issue/PR; the *design rationale* — the why,
+     the alternatives weighed, the invariants — belongs in `roadmap/` or `references/decisions/`,
+     linked from the entry, not inlined into it. (Existing long entries are grandfathered; this
+     applies to new entries. See the multi-hundred-word `[Unreleased]` bullets for the anti-pattern.)
 3. **Regenerate + verify** if canon changed: `python3 scripts/build-adapters.py` then
    `bash scripts/validate.sh` (green). Any version bump / changelog edit goes through a PR with
    green CI — never a direct push to `main`.
