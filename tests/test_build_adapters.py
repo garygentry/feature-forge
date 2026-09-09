@@ -1308,6 +1308,7 @@ def test_emitted_consumers_are_non_executable_and_no_generated_header(agent, con
     """
     emitted = ADAPTERS / agent / "scripts" / consumer
 
+    assert emitted.is_file(), f"{agent}: {consumer} missing from the bundle"
     assert not (emitted.stat().st_mode & 0o111), (
         f"{agent}/{consumer}: runtime helper is executable — the byte-copy path must "
         f"not set the exec bit"
