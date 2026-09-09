@@ -868,6 +868,14 @@ def test_runner_artifacts_stale_compares_installed_by_with_live(
             # The description is the consent surface: it must name `.gitignore`,
             # the project-owned file `rauf update .` rewrites (see #283).
             assert ".gitignore" in record["remedy"]["description"]
+        else:
+            # The `> live` branch routes to _install_remedy, i.e. the shipped-default
+            # loopRunner.installHint (CONFIG sets none, so the schema default applies) —
+            # a binary-provisioning path (cross-agent installer / rauf-CLI one-liner)
+            # that rewrites no project file. Its description must therefore NOT name
+            # `.gitignore`. This locks the shipped default; a custom installHint is the
+            # operator's own consent surface, not feature-forge's to author (#317).
+            assert ".gitignore" not in record["remedy"]["description"]
     assert "update" not in " ".join(probe_log(env))
 
 
