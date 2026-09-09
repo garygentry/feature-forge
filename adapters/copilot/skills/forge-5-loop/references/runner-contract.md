@@ -233,13 +233,16 @@ Step 3c's instruction, relocated verbatim from the SKILL body:
 This is the verbatim "Loop started…" output the session shows the user after
 launch. Commands are the rendered `loopRunner` monitoring commands.
 
+**Verification-coverage line (always shown).** Before rendering the template, scan the backlog's **active** items (status `pending` or `in_progress` — the items this run implements; read them from the backlog file resolved at Step 1e, already in hand from the Step 2a analysis) and classify each item's `acceptanceCriteria`. An acceptance criterion is **gate-shaped** when it asserts that a *runnable* verification gate passes — it names an executable check the loop can run to completion (one of the project's configured verify commands in `forge.config.json` — `typeCheckCommand` / `testCommand` / `smokeCommand` — or a bare invocation of the same class of tool: `bash scripts/verify.sh <gate>`, `pytest`, `ruff`, `tsc`, `npm test`, any lint/format/typecheck/test runner) **and** asserts a success outcome (`… passes` / `… succeeds` / `exits 0` / `is green`). A prose assertion about resulting code or file state (e.g. "X is derived from Y", "the schema requires an integer ≥ 1") is **not** gate-shaped even when a test would cover it — it describes an outcome, not a gate the loop runs. An item is **covered** when at least one of its criteria is gate-shaped. Let `covered` = the number of active items that are covered, `active` = the total active count (always ≥ 1 — Step 2a already stopped a run with no active items), and `gap` = the active items with **zero** gate-shaped criteria.
+
+This scan is **runner-agnostic**: it reads only the backlog feature-forge owns, never the runner's own verify profile (the `loopRunner` contract exposes commands, not a verify profile). It is emitted on **every** run at the marked position in the template below — it is context, not a gate (the loop is already launched by Step 3b, so it does not block the run). Its purpose is to give the operator the real coverage picture and to defuse a benign runner warning like rauf's "No verification commands detected — RAUF.md will tell the agent to skip verification entirely": on a forge loop the coverage is the per-item acceptance criteria plus the `--review` pass (when the run mode enables it), so an empty runner *global* verify gate is expected here, not a regression. Render the first coverage line unconditionally; render the `⚠ … gap` line only when `gap` > 0, naming the uncovered item ids so a real gate-coverage gap (items forge-4-backlog left without runnable criteria) surfaces as a specific signal rather than a blanket scare.
+
 When the agent surface is gated on (`loopRunner.agentArgument` present), add the
 `Coding agent:` line shown below immediately after the opening `Loop started …`
 line, using the same `sourceLabel` mapping as the Step 2d confirmation
 (`RUN` → `"per-run selection"`, `PROJECT` →
 `"project default (loopRunner.defaultAgent)"`, `DEFAULT` →
-`"runner default — claude-cli"`). When the gate is off, the line is **absent** and
-the template is byte-identical to today (REQ-PLUG-02). When the launch proceeded via
+`"runner default — claude-cli"`). When the gate is off, the `Coding agent:` line is **absent** — the agent gate contributes nothing to the template when off (REQ-PLUG-02); the always-shown verification-coverage line below is orthogonal to the gate and unaffected by it. When the launch proceeded via
 the UNAVAILABLE *proceed-anyway* path, use the audit variant instead:
 
 ```
@@ -257,6 +260,9 @@ Coding agent: {resolved.agent or claude-cli} (source: {sourceLabel}).   # only w
 This session is now monitoring it live — I'll report milestones and stop you in if
 the loop needs a human. The loop also runs detached and survives this session ending.
 Each item gets a fresh agent session with full context from the backlog and specs.
+
+Verification coverage (item-level): {covered}/{active} active items carry a gate-shaped acceptance criterion (a runnable format / lint / typecheck / test gate). A forge loop verifies per item — these criteria plus the review pass are the coverage, so an empty runner global verify gate (e.g. rauf's "No verification commands detected") is expected here, not a regression.
+⚠ {gap} active item(s) carry NO gate-shaped criterion — this run will implement them without a runnable gate, leaning on the review pass and a later `forge-verify … impl`: {ids}.   # only when gap > 0
 
 Watch directly if you like (another terminal or `!` prefix):
   {rendered statusCommand}              # one-shot status
