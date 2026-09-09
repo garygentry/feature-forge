@@ -194,7 +194,7 @@ Launch the loop **backgrounded** (`run_in_background`: true) so it survives sess
 
 ### 3c. Inform User
 
-Follow the **Inform-user output template (Step 3c)** section of `references/runner-contract.md` — it carries this step's instruction and the verbatim "Loop started…" template.
+Follow the **Inform-user output template (Step 3c)** section of `references/runner-contract.md` — it carries this step's instruction, the always-shown **verification-coverage** scan of the backlog's active items (contextualizing a benign runner warning like rauf's "No verification commands detected"), and the verbatim "Loop started…" template.
 
 ### 3d. Arm a Monitor on the event stream, and react to events
 
