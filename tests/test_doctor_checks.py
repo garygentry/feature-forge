@@ -868,6 +868,13 @@ def test_runner_artifacts_stale_compares_installed_by_with_live(
             # The description is the consent surface: it must name `.gitignore`,
             # the project-owned file `rauf update .` rewrites (see #283).
             assert ".gitignore" in record["remedy"]["description"]
+        else:
+            # The `> live` branch (artifacts newer than the live binary) routes to
+            # the installHint — a binary-provisioning path (cross-agent installer /
+            # rauf-CLI one-liner) that does NOT rewrite the project-owned
+            # `.gitignore`. So its description must NOT name `.gitignore`; the
+            # consent surface stays truthful and the divergence is intentional (#317).
+            assert ".gitignore" not in record["remedy"]["description"]
     assert "update" not in " ".join(probe_log(env))
 
 

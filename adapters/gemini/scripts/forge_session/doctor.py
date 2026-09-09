@@ -923,6 +923,12 @@ def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
             _refresh_artifacts_remedy(ctx),
         )
     if parsed[1] > live:
+        # The artifacts are newer than the live binary: the fix is to obtain/upgrade
+        # the CLI itself, so this routes to _install_remedy (the schema's installHint —
+        # a binary-provisioning path: the cross-agent installer or the rauf-CLI
+        # one-liner). Unlike `<runner> update .` (_refresh_artifacts_remedy), none of
+        # those rewrite the project-owned `.gitignore`, so this remedy's description
+        # intentionally does NOT name it — the consent surface stays truthful (#283/#317).
         return _result(
             "warn",
             f"{path.name} was written by {installed_by}, newer than the live runner "
