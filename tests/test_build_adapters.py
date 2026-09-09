@@ -1295,11 +1295,24 @@ def test_emitted_consumers_carry_the_mirrored_loader_byte_identically(agent, con
 @pytest.mark.skipif(not ADAPTERS.is_dir(), reason="committed adapters/ tree absent")
 @pytest.mark.parametrize("agent", AGENT_TARGETS)
 @pytest.mark.parametrize("consumer", LOADER_CONSUMERS)
-def test_emitted_consumers_keep_mode_0644_and_no_generated_header(agent, consumer):
-    """Runtime helpers use the byte-copy path: mode 0644, no provenance header (05 §5.1)."""
+def test_emitted_consumers_are_non_executable_and_no_generated_header(agent, consumer):
+    """Runtime helpers use the byte-copy path: no exec bit, no provenance header (05 §5.1).
+
+    Only the *executable* bit is asserted, because that is the only mode property git
+    tracks across a checkout. An exact `== 0o644` check tests the developer's umask, not
+    the generator: git stores these helpers as `100644`, so a fresh checkout materialises
+    them at `0666 & ~umask` — `0664` under the common `umask 002` — and the exact check
+    then goes red on a clean tree with byte-identical content (issue #262). The byte-copy
+    path's real invariant is "not executable, no injected header", which holds regardless
+    of umask.
+    """
     emitted = ADAPTERS / agent / "scripts" / consumer
 
-    assert emitted.stat().st_mode & 0o777 == 0o644, f"{agent}/{consumer}: wrong mode"
+    assert emitted.is_file(), f"{agent}: {consumer} missing from the bundle"
+    assert not (emitted.stat().st_mode & 0o111), (
+        f"{agent}/{consumer}: runtime helper is executable — the byte-copy path must "
+        f"not set the exec bit"
+    )
     head = emitted.read_text("utf-8").splitlines()[:5]
     assert not any("DO NOT EDIT" in line for line in head), (
         f"{agent}/{consumer}: a generated header was injected into a byte-copied helper"
