@@ -924,11 +924,16 @@ def _check_runner_artifacts_stale(ctx: _CheckContext) -> dict:
         )
     if parsed[1] > live:
         # The artifacts are newer than the live binary: the fix is to obtain/upgrade
-        # the CLI itself, so this routes to _install_remedy (the schema's installHint —
-        # a binary-provisioning path: the cross-agent installer or the rauf-CLI
-        # one-liner). Unlike `<runner> update .` (_refresh_artifacts_remedy), none of
-        # those rewrite the project-owned `.gitignore`, so this remedy's description
-        # intentionally does NOT name it — the consent surface stays truthful (#283/#317).
+        # the CLI itself, so this routes to _install_remedy, whose description is the
+        # loopRunner.installHint verbatim. The shipped default hint is a binary-
+        # provisioning path (the cross-agent installer — whose sources write no project
+        # file — or the rauf-CLI one-liner); none of those rewrite the project-owned
+        # `.gitignore`, so the default description names no project file. That is the
+        # opposite of `<runner> update .` (_refresh_artifacts_remedy), whose description
+        # MUST name `.gitignore` because that command does rewrite it (#283). If an
+        # operator customises installHint, that authored string is its own consent
+        # surface — feature-forge surfaces it faithfully, it does not edit it. The
+        # `> live` test row locks the shipped-default behaviour (#317).
         return _result(
             "warn",
             f"{path.name} was written by {installed_by}, newer than the live runner "
