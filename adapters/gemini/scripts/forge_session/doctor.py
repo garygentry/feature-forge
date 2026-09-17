@@ -584,7 +584,8 @@ def _build_check_context(
     else:
         # Resolve with per-field provenance (#324) so the runner checks can report which
         # layer — env / machine-local / committed / default — set the effective value.
-        layered = resolve_loop_runner_layers(config_path, schema_path)
+        # warn=False: doctor_report already loaded (and warned about) these files once.
+        layered = resolve_loop_runner_layers(config_path, schema_path, warn=False)
         loop_runner = {field: info["value"] for field, info in layered.items()}
         loop_runner_layers = {field: info["layer"] for field, info in layered.items()}
     return _CheckContext(
@@ -1099,10 +1100,20 @@ def _check_config_schema(ctx: _CheckContext) -> dict:
                 )
                 local_findings.append(evidence["localParseError"])
             else:
-                evidence["localViolations"] = _schema_violations(
-                    local_value, ctx.schema, ctx.schema, "$"
-                )
-                local_findings += evidence["localViolations"]
+                try:
+                    evidence["localViolations"] = _schema_violations(
+                        local_value, ctx.schema, ctx.schema, "$"
+                    )
+                except Exception as exc:  # malformed schema node reached only via a local key
+                    # Same INV-3 guard as the committed call above: a damaged bundled schema is
+                    # captured as data (a warn finding), never propagated as an exit-2 crash.
+                    evidence["schemaError"] = f"schema malformed: {_exc_text(exc)}"
+                    local_findings.append(
+                        f"config schema malformed ({_exc_text(exc)}); "
+                        "local structural validation skipped"
+                    )
+                else:
+                    local_findings += evidence["localViolations"]
 
     if findings:
         return _result(

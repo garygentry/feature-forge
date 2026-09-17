@@ -148,11 +148,6 @@ _WIDE_WINDOW: Final = 1_000_000
 _DEFAULT_THRESHOLD: Final = 0.7
 
 
-def _config_value(config_path: Path, key: str):
-    """Read a single key from forge.config.json, or None if absent/unreadable."""
-    return load_effective_config(config_path).get(key)
-
-
 def _cwd_slug(cwd: Path) -> str:
     """Map a working directory to its Claude Code project-dir slug.
 
@@ -243,9 +238,12 @@ def context_usage(
     ``{available: False, reason}`` otherwise. Never raises for a missing
     transcript — that is the expected non-Claude / fresh-session path.
     """
+    # One read of the effective config (committed + machine-local overlay) for both keys —
+    # not once per key (#324: load_effective_config touches two files).
+    config = load_effective_config(config_path)
     threshold = threshold_override
     if threshold is None:
-        cfg_threshold = _config_value(config_path, "contextWarnThreshold")
+        cfg_threshold = config.get("contextWarnThreshold")
         threshold = (
             float(cfg_threshold)
             if isinstance(cfg_threshold, (int, float))
@@ -262,7 +260,7 @@ def context_usage(
 
     window = window_override
     if window is None or window <= 0:
-        cfg_window = _config_value(config_path, "contextWindowTokens")
+        cfg_window = config.get("contextWindowTokens")
         if isinstance(cfg_window, int) and cfg_window > 0:
             window = cfg_window
         else:

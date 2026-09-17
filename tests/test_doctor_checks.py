@@ -279,6 +279,31 @@ def test_schema_flag_with_corrupt_schema_still_exits_zero(tmp_path: Path) -> Non
     assert json.loads(result.stdout)["checksSummary"]["fail"] == 0
 
 
+def test_malformed_schema_node_reached_only_via_local_overlay_still_exits_zero(
+    tmp_path: Path,
+) -> None:
+    """A damaged schema node reached only through forge.config.local.json is captured as data
+    (INV-3), not propagated as an exit-2 crash — the local validation shares the committed
+    path's try/except guard (#324). The committed config is empty, so only the local key walks
+    the malformed ``stack`` node."""
+    (tmp_path / "forge.config.json").write_text("{}")
+    (tmp_path / "forge.config.local.json").write_text(json.dumps({"stack": "python"}))
+    bad = tmp_path / "schema.json"
+    bad.write_text(json.dumps({"type": "object", "properties": {"stack": {"type": 5}}}))
+    result = _doctor(tmp_path, "--schema", str(bad))
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_duplicate_config_key_warns_once_across_the_doctor_run(tmp_path: Path) -> None:
+    """doctor loads the config for its report AND re-resolves loopRunner layers; the re-resolve
+    uses warn=False so a duplicate-key warning fires exactly once, not twice (#324)."""
+    (tmp_path / "forge.config.json").write_text('{"stack": "a", "stack": "b"}')
+    result = _doctor(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.count('Warning: duplicate JSON key "stack"') == 1
+
+
 @pytest.mark.parametrize("config", [
     {},
     {"stack": "python", "autoVerify": True},

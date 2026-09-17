@@ -361,16 +361,22 @@ def warn_duplicate_keys(path: Path, duplicate_keys: list[str]) -> None:
         )
 
 
-def _load_config(config_path: Path) -> dict:
-    """Read config into a dict, warning on duplicates and tolerating bad input."""
+def _load_config(config_path: Path, *, warn: bool = True) -> dict:
+    """Read config into a dict, warning on duplicates and tolerating bad input.
+
+    ``warn=False`` suppresses the duplicate-key warning for a re-read whose warnings a
+    prior load in the same process already emitted — the doctor loads the config once for
+    its report, then re-resolves the loopRunner layers, and the warning must fire once (#324).
+    """
     try:
         value, duplicate_keys = load_json_with_duplicates(config_path)
     except (OSError, ValueError, RecursionError):  # bad JSON, bad UTF-8, absurd nesting
         return {}
-    try:
-        warn_duplicate_keys(config_path, duplicate_keys)
-    except OSError:
-        pass  # a diagnostic write failure must not break a total read path
+    if warn:
+        try:
+            warn_duplicate_keys(config_path, duplicate_keys)
+        except OSError:
+            pass  # a diagnostic write failure must not break a total read path
     return value if isinstance(value, dict) else {}
 
 
@@ -501,7 +507,7 @@ LOOP_RUNNER_BIN_ENV: Final = "FEATURE_FORGE_LOOP_RUNNER_BIN"
 
 
 def resolve_loop_runner_layers(
-    config_path: Path, schema_path: Path
+    config_path: Path, schema_path: Path, *, warn: bool = True
 ) -> dict[str, dict[str, object]]:
     """Resolve ``loopRunner`` with per-field provenance (#324).
 
@@ -517,20 +523,23 @@ def resolve_loop_runner_layers(
     Args:
         config_path: Path to ``forge.config.json``.
         schema_path: Path to ``forge-config-schema.json`` (source of the defaults).
+        warn: Emit the duplicate-key warning while reading the config files. ``False`` for a
+            re-read whose warnings a prior load already emitted (the doctor path).
 
     Raises:
         UsageError: If the schema is unreadable/unparseable (from ``_loop_runner_defaults``).
     """
     defaults = _loop_runner_defaults(schema_path)
-    committed = _load_config(config_path).get("loopRunner")
+    committed = _load_config(config_path, warn=warn).get("loopRunner")
     committed = committed if isinstance(committed, dict) else {}
-    local = _load_config(_local_config_path(config_path)).get("loopRunner")
+    local = _load_config(_local_config_path(config_path), warn=warn).get("loopRunner")
     local = local if isinstance(local, dict) else {}
     env_bin = os.environ.get(LOOP_RUNNER_BIN_ENV)
 
     layered: dict[str, dict[str, object]] = {}
-    # Every field any layer mentions, defaults first so their order leads.
-    fields = list(defaults) + [k for k in (*committed, *local) if k not in defaults]
+    # Every field any layer mentions, defaults first so their order leads; dict.fromkeys
+    # dedupes a key that appears in more than one layer (e.g. an unknown key in both files).
+    fields = list(dict.fromkeys([*defaults, *committed, *local]))
     for field in fields:
         if field == "bin" and env_bin:
             layered[field] = {"value": env_bin, "layer": "env"}
