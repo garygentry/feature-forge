@@ -1,7 +1,7 @@
 /**
  * Tests for source.ts (spec 03, REQ-OPS-06). --source precedence, SOURCE_MISSING/SOURCE_INVALID
- * naming the offending path, checkIntegrity passing without plugin.json, and locateSource
- * fingerprinting.
+ * naming the offending path, checkIntegrity keying on the neutral sentinel (plus the claude
+ * .claude-plugin/plugin.json requirement, #322), and locateSource fingerprinting.
  */
 
 import { test } from "node:test";
@@ -41,11 +41,22 @@ test("locateBundle returns SOURCE_MISSING naming the expected path + remedy", as
   });
 });
 
-test("checkIntegrity passes for a minimal valid bundle without the Claude-only plugin.json", async () => {
+test("checkIntegrity keys on the neutral sentinel: a non-claude bundle is valid without any plugin.json", async () => {
+  await withSandbox(async (sb) => {
+    const fx = await makeFixtureBundle(sb, "codex");
+    const r = checkIntegrity(fx.dir, "codex");
+    assert.ok(r.ok);
+  });
+});
+
+test("checkIntegrity returns SOURCE_INVALID for a claude bundle missing .claude-plugin/plugin.json (#322)", async () => {
   await withSandbox(async (sb) => {
     const fx = await makeFixtureBundle(sb, "claude");
+    await rm(join(fx.dir, ".claude-plugin", "plugin.json"), { force: true });
     const r = checkIntegrity(fx.dir, "claude");
-    assert.ok(r.ok);
+    assert.ok(!r.ok);
+    assert.equal(r.error.code, "SOURCE_INVALID");
+    assert.equal(r.error.path, join(fx.dir, ".claude-plugin", "plugin.json"));
   });
 });
 

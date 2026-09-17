@@ -359,7 +359,10 @@ RUNTIME_HELPERS: tuple[str, ...] = (
 RUNTIME_HELPER_DIRS: tuple[str, ...] = ("forge_session",)
 
 # The neutral, cross-agent bundle sentinel filename. forge-root.sh keys its is_root() predicate
-# on this file (NOT .claude-plugin/plugin.json), so every per-agent bundle is self-locatable.
+# on this file (not .claude-plugin/plugin.json), so every per-agent bundle is self-locatable
+# regardless of host. The Claude bundle ALSO ships .claude-plugin/plugin.json
+# (_write_claude_plugin_manifest, #322) — not for forge-root.sh, but because Claude's own plugin
+# loader requires it; the two markers serve different loaders and coexist in adapters/claude/.
 BUNDLE_SENTINEL_NAME: str = ".feature-forge-bundle.json"
 
 
@@ -1268,8 +1271,11 @@ class ClaudeEmitter:
 
     Restores Claude-native skills (top-level argument-hint, REQ-VND-01) and full
     sub-agent frontmatter; retains Claude-only artifacts (REQ-VND-02). D1:
-    adapters/claude/ is a parallel packaging copy — plugin.json keeps loading
-    skills/ canon (00 §1 / tech-spec D1).
+    adapters/claude/ is a parallel packaging copy — its skills/ mirror canon
+    (00 §1 / tech-spec D1). The bundle carries its own
+    .claude-plugin/plugin.json (_write_claude_plugin_manifest, #322) so it loads
+    as a first-class plugin from the bundle itself (marketplace / install -a claude
+    / --plugin-dir), not only from the canon repo root.
     """
 
     agent_id = "claude"
@@ -1865,7 +1871,50 @@ def run_self_containment_pass(
 
     if bundle_root.name == "pi":
         _write_pi_package_assets(bundle_root)
+    if bundle_root.name == "claude":
+        _write_claude_plugin_manifest(bundle_root, repo_root)
 
+
+#: Identity fields projected from the canonical repo-root ``.claude-plugin/plugin.json``
+#: into the built Claude bundle's manifest, in this fixed order (byte-determinism, REQ-DET-01).
+_CLAUDE_MANIFEST_FIELDS: tuple[str, ...] = (
+    "name",
+    "version",
+    "description",
+    "author",
+    "keywords",
+)
+
+
+def _write_claude_plugin_manifest(bundle_root: Path, repo_root: Path) -> None:
+    """Write ``.claude-plugin/plugin.json`` into the built ``claude`` bundle (#322).
+
+    The neutral ``.feature-forge-bundle.json`` sentinel makes every bundle self-locatable
+    for ``forge-root.sh``, but Claude's OWN plugin loader is invisible to it: a marketplace
+    install, ``npx … install -a claude``, and ``claude --plugin-dir`` all require
+    ``.claude-plugin/plugin.json`` before they will load a directory as a plugin. A
+    manifest-less Claude bundle therefore installs as a silent no-op. Mirror the identity
+    fields of the canonical repo-root manifest (the source of record ``_bundle_version``
+    reads) into the bundle so the built bundle loads as a first-class plugin.
+
+    Falls back to ``{"name": "feature-forge", "version": _FALLBACK_BUNDLE_VERSION}`` when the
+    repo root carries no manifest (the canon-only test fixtures), staying byte-deterministic
+    instead of crashing a fixture build — mirrors ``_bundle_version``.
+    """
+    try:
+        source = json.loads(
+            (repo_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
+    except (FileNotFoundError, json.JSONDecodeError):
+        source = {}
+    manifest = {k: source[k] for k in _CLAUDE_MANIFEST_FIELDS if k in source}
+    manifest.setdefault("name", "feature-forge")
+    manifest.setdefault("version", _FALLBACK_BUNDLE_VERSION)
+    safe_write(
+        bundle_root,
+        ".claude-plugin/plugin.json",
+        json.dumps(manifest, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
+    )
 
 
 def _write_pi_package_assets(bundle_root: Path) -> None:

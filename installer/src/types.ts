@@ -455,7 +455,7 @@ export const BUNDLE_REQUIRED_PATHS = {
     "scripts/forge-bootstrap.py",
   ] as const,
   /** Additional per-agent requirements. */
-  perAgent: { gemini: ["gemini-extension.json"], pi: ["package.json", "extensions/ask-user-question/index.ts"] } as Partial<Record<AgentId, readonly string[]>>,
+  perAgent: { claude: [".claude-plugin/plugin.json"], gemini: ["gemini-extension.json"], pi: ["package.json", "extensions/ask-user-question/index.ts"] } as Partial<Record<AgentId, readonly string[]>>,
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -231,7 +231,8 @@ def test_bundle_is_self_contained(fixture_copy, agent):
         "forge-bootstrap.py",
     ):
         assert (bundle / "scripts" / helper).is_file(), helper
-    # The neutral cross-agent sentinel forge-root.sh self-locates on (NOT plugin.json).
+    # The neutral cross-agent sentinel forge-root.sh self-locates on (it keys on this, not the
+    # Claude plugin manifest — even for the claude bundle, which now carries both; see #322 below).
     sentinel = bundle / ".feature-forge-bundle.json"
     assert sentinel.is_file()
     meta = json.loads(sentinel.read_text())
@@ -241,6 +242,20 @@ def test_bundle_is_self_contained(fixture_copy, agent):
         "agent": agent,
         "generatedBy": "python3 scripts/build-adapters.py",
     }
+    # The Claude bundle ALSO ships its own plugin manifest (#322) so Claude's plugin loader
+    # (marketplace / `install -a claude` / `--plugin-dir`) recognises the built bundle. The
+    # minimal-canon fixture carries no root plugin.json, so the generator writes the fixed
+    # fallback — assert exactly that (a full-field assertion would track root-manifest edits).
+    manifest_path = bundle / ".claude-plugin" / "plugin.json"
+    if agent == "claude":
+        assert manifest_path.is_file()
+        assert json.loads(manifest_path.read_text()) == {
+            "name": "feature-forge",
+            "version": "0.0.0",
+        }
+    else:
+        # Only the Claude bundle carries a Claude plugin manifest — no other agent does.
+        assert not manifest_path.exists()
     # the fixture's `with-refs` skill has an own references/ subdir
     assert (bundle / "skills" / "with-refs" / "references" / "detail.md").is_file()
     # NEGATIVE (V-017): the `noarg` skill has no own references/ — none must be copied.

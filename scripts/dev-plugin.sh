@@ -11,14 +11,15 @@
 #     RAW CANON (a repo-root symlink) dead-references them mid-stage. A BUILT bundle has
 #     the refs skill-local, so it resolves correctly. This script points a plugin dir at
 #     the built bundle.
-#   • `adapters/<host>/` has a neutral `.feature-forge-bundle.json` but NO
-#     `.claude-plugin/plugin.json`, so `claude --plugin-dir adapters/claude` loads with the
-#     wrong identity (`claude@inline`, version "unknown" — the directory name). This script
-#     writes a REAL `.claude-plugin/plugin.json` (correct name + version) into an
-#     OUT-OF-REPO dir and symlinks the bundle's component trees in — so it loads as
-#     `feature-forge@inline` at the right version, and the manifest NEVER enters the
-#     repo tree the marketplace ships via `source: "."` (so it can never become a nested
-#     duplicate plugin in a standard install).
+#   • As of #322 the built `adapters/claude/` bundle carries its OWN
+#     `.claude-plugin/plugin.json` (correct name + version), so `claude --plugin-dir
+#     adapters/claude` already loads directly as `feature-forge@inline` — for Claude this
+#     script is now redundant and `--plugin-dir adapters/claude` is the simpler primitive
+#     (see docs/DOGFOODING.md). It remains useful for a host whose built bundle carries only
+#     the neutral `.feature-forge-bundle.json` sentinel and no host-native plugin manifest:
+#     it writes a REAL manifest into an OUT-OF-REPO dir and symlinks the bundle's component
+#     trees in, so the source loads at the right identity without a committed manifest in
+#     that host's tree. (Retiring the Claude path here is tracked in #315.)
 #   • The component trees are SYMLINKS into the live built bundle, so a canon edit takes
 #     effect after a rebuild (`python3 scripts/build-adapters.py`) with no re-run of this
 #     script. Re-run it only to change agent/version or after moving the checkout.

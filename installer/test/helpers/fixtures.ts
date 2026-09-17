@@ -1,7 +1,7 @@
 /**
  * The fixture-bundle factory (spec 08 §3.2). Writes a minimal valid `<source>/<agent>/` bundle
  * that passes the integrity check (skills/ non-empty + scripts/forge-root.sh [+ gemini-extension.json
- * for gemini]) without copying the real (large) adapters tree.
+ * for gemini, + .claude-plugin/plugin.json for claude]) without copying the real (large) adapters tree.
  *
  * Reused by items 003, 005, 007, 008, 011. NOT a `.test.ts` file, so the test glob ignores it.
  */
@@ -21,8 +21,9 @@ export interface FixtureBundle {
 
 /**
  * Materialize a minimal valid `<source>/<agent>/` bundle that passes the integrity check
- * (skills/ non-empty + scripts/forge-root.sh [+ gemini-extension.json for gemini]). Mirrors the
- * verified ground-truth shape of the real adapters bundles (00 §6) at minimal size.
+ * (skills/ non-empty + scripts/forge-root.sh [+ gemini-extension.json for gemini,
+ * + .claude-plugin/plugin.json for claude]). Mirrors the verified ground-truth shape of the
+ * real adapters bundles (00 §6) at minimal size.
  *
  * @param sb     the sandbox whose `source` root receives the bundle
  * @param agent  which agent bundle to write
@@ -56,6 +57,15 @@ export async function makeFixtureBundle(
   for (const id of skills) {
     await mkdir(join(dir, "skills", id), { recursive: true });
     await writeFile(join(dir, "skills", id, "SKILL.md"), `# ${id}\nfixture skill body\n`);
+  }
+  if (agent === "claude") {
+    // The Claude bundle ships its own plugin manifest (#322) so Claude's loader recognises it;
+    // required of the claude bundle by BUNDLE_REQUIRED_PATHS.perAgent.
+    await mkdir(join(dir, ".claude-plugin"), { recursive: true });
+    await writeFile(
+      join(dir, ".claude-plugin", "plugin.json"),
+      JSON.stringify({ name: "feature-forge", version: "0.0.0" }, null, 2) + "\n",
+    );
   }
   if (agent === "gemini") {
     const ext = { name: "feature-forge", version: "0.0.0", skills: skills.map((name) => ({ name })) };

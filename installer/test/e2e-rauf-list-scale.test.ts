@@ -114,6 +114,7 @@ test("RAUF unresolvable: skills still install, exit FAILURE, raufError carries t
     assert.deepEqual(
       [...present].sort(),
       [
+        ".claude-plugin/plugin.json",
         ".feature-forge-bundle.json",
         "scripts/epic-manifest.py",
         "scripts/forge-bootstrap.py",

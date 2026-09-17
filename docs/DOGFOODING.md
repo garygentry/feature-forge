@@ -38,13 +38,19 @@ Everything below follows from these, all verified against Claude Code 2.1.x:
    bundle** and the source runs, correctly and reversibly, with the released install
    untouched.
 
-The built bundle `adapters/<host>/` has a neutral `.feature-forge-bundle.json` but **no**
-`.claude-plugin/plugin.json`, so `claude --plugin-dir adapters/claude` loads with the wrong
-identity (`claude@inline`, version "unknown" — the directory name). `scripts/dev-plugin.sh`
-fixes that by assembling a proper plugin dir **outside the repo** (real manifest + symlinks
-into the live bundle). The manifest is created outside the repo on purpose: the marketplace
-ships the repo via `source: "."`, so a manifest committed anywhere in the tree could become
-a nested duplicate plugin in a standard install.
+The built **Claude** bundle `adapters/claude/` now carries its own `.claude-plugin/plugin.json`
+(#322), so `claude --plugin-dir adapters/claude` loads it directly and correctly as
+`feature-forge@inline` at the bundle's real version — no assembly step needed. (The neutral
+`.feature-forge-bundle.json` sentinel is still what `forge-root.sh` self-locates on; the plugin
+manifest is an additional file for Claude's own loader.) The other hosts' bundles carry only the
+neutral sentinel, so `scripts/dev-plugin.sh` still assembles a proper plugin dir **outside the
+repo** for them (real manifest + symlinks into the live bundle).
+
+> **Marketplace note (#322).** `adapters/claude/.claude-plugin/plugin.json` is committed and the
+> marketplace ships the repo via `source: "."`. The marketplace plugin is the one enumerated in
+> the root `marketplace.json`; a standard (manifest-driven, non-recursive) marketplace install does
+> not register the nested bundle manifest as a second plugin. Verify with the T6 marketplace check
+> from a plain terminal in an isolated `CLAUDE_CONFIG_DIR` if you touch the marketplace wiring.
 
 ---
 
@@ -54,28 +60,26 @@ Activates the source **only in the session you launch this way** — the safest 
 with a released install, and the default an agent should choose.
 
 ```bash
-# 1. From your feature-forge checkout: build the bundle, then assemble a plugin dir.
+# 1. From your feature-forge checkout: build the bundle.
 cd ~/workspace/feature-forge
 python3 scripts/build-adapters.py                 # canon -> adapters/<host>
-scripts/dev-plugin.sh --agent claude              # -> ~/.cache/feature-forge-dev/claude
 
-# 2. Launch Claude in your CONSUMING repo with the source plugin loaded:
+# 2. Launch Claude in your CONSUMING repo with the built Claude bundle loaded directly (#322):
 cd ~/workspace/some-consuming-project
-claude --plugin-dir ~/.cache/feature-forge-dev/claude
+claude --plugin-dir ~/workspace/feature-forge/adapters/claude
 ```
 
 Verify it is live and correctly identified:
 
 ```bash
-claude --plugin-dir ~/.cache/feature-forge-dev/claude plugin list
+claude --plugin-dir ~/workspace/feature-forge/adapters/claude plugin list
 # expect:  feature-forge@inline   Version: 0.19.0   Status: ✔ loaded
 ```
 
-- **Edit → effect:** the assembled dir symlinks into the live bundle, so after a canon
-  edit just re-run `python3 scripts/build-adapters.py` — no need to re-run `dev-plugin.sh`
-  (re-run it only to change agent/version or after moving the checkout).
+- **Edit → effect:** `--plugin-dir` points straight at the live built bundle, so after a canon
+  edit just re-run `python3 scripts/build-adapters.py`; the next session picks it up.
 - **Revert:** nothing to undo. Launch `claude` without `--plugin-dir` and the released
-  install is back. Delete `~/.cache/feature-forge-dev/` whenever.
+  install is back.
 - **Other hosts (codex, pi, …):** this workflow is **Claude-specific** — `dev-plugin.sh`
   assembles a Claude plugin dir (`.claude-plugin/plugin.json` + `claude --plugin-dir`), which
   codex and pi neither read nor use. Their built bundles are self-contained too (#132), so the
