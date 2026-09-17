@@ -83,14 +83,9 @@ claude --plugin-dir ~/workspace/feature-forge/adapters/claude plugin list
   edit just re-run `python3 scripts/build-adapters.py`; the next session picks it up.
 - **Revert:** nothing to undo. Launch `claude` without `--plugin-dir` and the released
   install is back.
-- **Other hosts (codex, pi, …):** this workflow is **Claude-specific** — `dev-plugin.sh`
-  assembles a Claude plugin dir (`.claude-plugin/plugin.json` + `claude --plugin-dir`), which
-  codex and pi neither read nor use. Their built bundles are self-contained too (#132), so the
-  safe primitive is loading a **built** bundle their own way — codex installs the built
-  `adapters/codex` into its skills location (`npx @garygentry/feature-forge install -a codex`),
-  pi loads the built package directly with `pi -e ./adapters/pi`. A verified, first-class
-  source-dev workflow for codex and pi (and their canon-load reference-resolution behavior) is
-  tracked in **#315**; until then, install/load a built bundle and never point them at raw canon.
+- **Other hosts:** this whole section is **Claude-specific**. See
+  [Other hosts — codex, pi](#other-hosts--codex-pi-and-copilot--cursor--gemini) below for the
+  codex and pi source-dogfood paths (`dev-plugin.sh` refuses a non-`claude` `--agent`).
 
 ---
 
@@ -146,6 +141,72 @@ python3 "$FEATURE_FORGE_ROOT/scripts/forge-session.py" doctor --json \
 version, so "which install is live here" is a single command.
 
 ---
+
+## Other hosts — codex, pi (and copilot / cursor / gemini)
+
+Everything above is **Claude-specific** (`dev-plugin.sh` builds a `.claude-plugin/plugin.json` and
+loads via `claude --plugin-dir`; it now refuses a non-`claude` `--agent`). But every host's **built**
+bundle is self-contained — #132 fans the shared references (`shared-conventions.md`,
+`stage-exit-protocol.md`, `stacks/`, `verifier-patterns/`) skill-local into
+`adapters/<host>/skills/<stage>/references/` — so **loading a built bundle is safe on every host,
+whatever its reference-resolution rule.** The only hazard is a *canon-load* path: pointing a host at
+the repo-root `skills/`, whose shared refs live only at the repo-root `references/`.
+
+> **Reference-resolution status.** For **Claude** it is verified — a bare prose `Read references/X`
+> resolves skill-local, so canon-load breaks (#305/#314). For **codex** and **pi** the canon-load
+> rule is **unverified** (it needs a live agent run to observe). Every prescription below loads a
+> **built** bundle, which sidesteps the question; never point codex/pi at raw `skills/`.
+
+### codex
+
+Install or symlink the **built** `adapters/codex/` into the location codex discovers skills from —
+`.agents/skills/feature-forge/` (project) or `~/.agents/skills/feature-forge/` (global):
+
+```bash
+python3 scripts/build-adapters.py                     # canon -> adapters/codex
+# EITHER a copy install (released-style):
+npx @garygentry/feature-forge install -a codex        # copies the built bundle into .agents/skills/
+# OR a live symlink for dev (-f/-n REPLACE any existing entry rather than nesting a link inside it):
+ln -sfn "$PWD/adapters/codex" ~/.agents/skills/feature-forge
+```
+
+- **Edit → effect:** with the symlink, re-run `python3 scripts/build-adapters.py`; codex picks up the
+  rebuilt bundle on its next run.
+- **Coexistence:** `.agents/skills/` is a plain name-keyed directory, so a source `feature-forge` and
+  a standard-install `feature-forge` collide — run one at a time (symlink for dev, copy install for
+  released). codex 0.147+ also has a `codex plugin` marketplace; that is a separate channel, not this
+  dev path.
+- **Unverified:** whether codex discovers a **symlink to the bundle dir** vs. wanting flat per-skill
+  entries under `.agents/skills/feature-forge/skills/` was not confirmed here (needs a codex run). If
+  a bundle-dir symlink is not discovered, symlink the built `adapters/codex/skills/<stage>` dirs
+  individually. Tracked in #315.
+
+### pi
+
+Install the **built** `adapters/pi/` **package** (skills + the AskUserQuestion / forge-loop-supervisor
+extensions + the `pi-subagents` agents key). It is a package, so use `pi install` — **not** `pi -e`,
+which loads a single *extension* file, not a package's skills:
+
+```bash
+python3 scripts/build-adapters.py                     # canon -> adapters/pi
+pi install ./adapters/pi -l                           # project-local; records the path, loads live
+# (drop -l for a user-wide install; `pi config` toggles a package's resources)
+```
+
+- **Verified:** the built `adapters/pi` package loads — all 13 forge skills register (pi's package
+  real-load gate).
+- **Edit → effect:** a local-path install is *recorded, not copied*, so pi loads from the live
+  `adapters/pi`; after a canon edit re-run `python3 scripts/build-adapters.py`, then `/reload` (or
+  restart — a settings/`-e` path does not hot-reload).
+- **Coexistence:** a source package and a standard `npm:@garygentry/feature-forge` package register
+  the same skill names → collision; install only one (use `-l` to scope the source to the dev repo),
+  or toggle with `pi config`.
+
+### copilot / cursor / gemini
+
+Same canon-load class: the **built** `adapters/<host>/` bundle carries skill-local references and is
+safe; there is no first-class source-dogfood workflow for them yet — install the built bundle
+(`npx @garygentry/feature-forge install -a <host>`) and never point them at raw `skills/`.
 
 ## rauf (the loop runner)
 

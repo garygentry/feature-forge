@@ -15,11 +15,12 @@
 #     `.claude-plugin/plugin.json` (correct name + version), so `claude --plugin-dir
 #     adapters/claude` already loads directly as `feature-forge@inline` — for Claude this
 #     script is now redundant and `--plugin-dir adapters/claude` is the simpler primitive
-#     (see docs/DOGFOODING.md). It remains useful for a host whose built bundle carries only
-#     the neutral `.feature-forge-bundle.json` sentinel and no host-native plugin manifest:
-#     it writes a REAL manifest into an OUT-OF-REPO dir and symlinks the bundle's component
-#     trees in, so the source loads at the right identity without a committed manifest in
-#     that host's tree. (Retiring the Claude path here is tracked in #315.)
+#     (see docs/DOGFOODING.md). This helper is CLAUDE-ONLY (#315): the `.claude-plugin/plugin.json`
+#     + `claude --plugin-dir` it produces is meaningless for codex/pi/copilot/cursor/gemini, so a
+#     non-`claude` `--agent` is refused (exit 2) with a pointer to that host's own built-bundle
+#     load path (docs/DOGFOODING.md). It still writes a REAL manifest into an OUT-OF-REPO dir and
+#     symlinks the bundle's component trees in, so the Claude source loads at the right identity
+#     without a committed manifest in the repo tree.
 #   • The component trees are SYMLINKS into the live built bundle, so a canon edit takes
 #     effect after a rebuild (`python3 scripts/build-adapters.py`) with no re-run of this
 #     script. Re-run it only to change agent/version or after moving the checkout.
@@ -29,7 +30,7 @@
 # here modifies ~/.claude, the repo tree, or any standard install.
 #
 # Usage:
-#   scripts/dev-plugin.sh [--agent <claude|codex|copilot|cursor|gemini|pi>] [--out <dir>] [--force]
+#   scripts/dev-plugin.sh [--out <dir>] [--force]   # Claude-only (#315); default --agent claude
 #   Then run the printed command, e.g.:  claude --plugin-dir <dir>
 set -euo pipefail
 
@@ -46,9 +47,10 @@ while [ $# -gt 0 ]; do
 dev-plugin.sh — assemble an out-of-repo, self-contained plugin dir from a BUILT
 adapter bundle, for running the LOCAL SOURCE via `claude --plugin-dir <dir>`.
 
-Usage: scripts/dev-plugin.sh [--agent <claude|codex|copilot|cursor|gemini|pi>] [--out <dir>] [--force]
+Usage: scripts/dev-plugin.sh [--out <dir>] [--force]   # Claude-only (#315)
 
-  -a, --agent <id>  Which built adapters/<id> bundle to expose (default: claude).
+  -a, --agent <id>  Claude only (default: claude); a non-claude value is refused with a pointer
+                    to that host's own source-load path (see docs/DOGFOODING.md).
   -o, --out <dir>   Where to assemble the plugin dir. Must be OUTSIDE the repo (the
                     manifest must never ship). Default:
                     ${XDG_CACHE_HOME:-~/.cache}/feature-forge-dev/<agent>.
@@ -62,6 +64,22 @@ USAGE
     *) echo "dev-plugin: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+# This helper is Claude-specific (#315): it assembles a `.claude-plugin/plugin.json` and is loaded
+# via `claude --plugin-dir`, a manifest+flag that codex/pi/copilot/cursor/gemini do not use. Emitting
+# a Claude-shaped dir for another host is a misleading artifact, so refuse it and point at the host's
+# own documented source-load path (docs/DOGFOODING.md).
+if [ "$agent" != "claude" ]; then
+  cat >&2 <<MSG
+dev-plugin: only --agent claude is supported. This helper builds a Claude plugin dir
+(.claude-plugin/plugin.json + \`claude --plugin-dir\`), which "$agent" does not use.
+Load the built adapters/$agent bundle its own way instead (see docs/DOGFOODING.md):
+  codex   npx @garygentry/feature-forge install -a codex   (built bundle -> .agents/skills/)
+  pi      pi install ./adapters/pi                          (built package; -l for project-local)
+The built bundle is self-contained (#132), so its references resolve on every host.
+MSG
+  exit 2
+fi
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 bundle="$repo_root/adapters/$agent"
