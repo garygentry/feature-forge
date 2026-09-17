@@ -18,6 +18,14 @@ The prelude is imported from ``scripts/check-spec-purity.py`` (the byte-pinned
 canon), so the fix to the constant is automatically what these tests exercise —
 no copy of the prelude to drift.
 
+3. ``test_marketplace_channel_resolves_cited_shared_references_skill_local`` — the
+   distributed Claude channel (``marketplace.json`` ``plugins[0].source``) must let every
+   skill resolve the shared ``references/X`` it cites SKILL-LOCAL, since a bare prose read
+   resolves relative to ``skills/<name>/``, not the plugin root (#122/#305). ``source: "."``
+   ships CANON (shared refs only at the repo-root ``references/``), so it fails today; #314's
+   root fix (point ``source`` at ``./adapters/claude``, or fan shared refs into canon) flips
+   it to pass and its marker comes off then.
+
 ``strict=True`` means an unexpected pass fails the suite: whichever PR fixes a
 case MUST also remove its xfail marker, keeping the anchors honest.
 """
@@ -26,12 +34,15 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import os
 import shutil
 import stat
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESOLVER = REPO_ROOT / "scripts" / "forge-root.sh"
@@ -294,3 +305,60 @@ def test_discover_feature_flags_epic_member_across_branches(tmp_path: Path) -> N
     assert cand["isEpicMember"] is True
     assert cand["epic"] == "data-enhancement"
     assert cand["stateBranch"] == "forge/data-enhancement"
+
+
+# whole-dir-fanned shared reference roots (mirror _WHOLE_DIR_FANNED_REFERENCE_ROOTS in
+# build-adapters.py): a citation anywhere inside fans the ENTIRE tree, so the tree — not the
+# individual file — is what must resolve skill-local.
+_WHOLE_DIR_FANNED_ROOTS = frozenset({"stacks", "verifier-patterns"})
+
+#: Mirror of _REFERENCE_CITATION_RE in build-adapters.py — a bare ``references/X`` citation.
+_REFERENCE_CITATION_RE = re.compile(r"references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*)")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "#314: marketplace.json plugins[0].source='.' distributes CANON, whose skills carry no "
+        "skill-local copy of the shared references they cite; a bare prose `Read references/X` "
+        "then dead-references skill-local. Flips to pass when the root fix points source at "
+        "./adapters/claude (which fans the shared refs skill-local) or fans them into canon."
+    ),
+)
+def test_marketplace_channel_resolves_cited_shared_references_skill_local() -> None:
+    """Every shared reference a skill cites must resolve SKILL-LOCAL on the *distributed* Claude
+    channel — the plugin dir Claude installs from ``marketplace.json`` ``plugins[0].source``.
+
+    A bare prose ``Read references/X`` resolves relative to ``skills/<name>/``, not the plugin
+    root (#122/#305), so a shared ref that lives only at the plugin-root ``references/`` (as in
+    canon) is unreadable from a skill. The built ``adapters/claude`` bundle fans every cited
+    shared ref skill-local; ``source: "."`` ships canon and does not — hence the failure this
+    anchor pins until the root fix lands.
+    """
+    marketplace = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    source = marketplace["plugins"][0]["source"]
+    plugin_dir = (REPO_ROOT / source).resolve()
+    refs_root = plugin_dir / "references"
+
+    missing: list[str] = []
+    for skill_md in sorted((plugin_dir / "skills").glob("*/SKILL.md")):
+        skill_dir = skill_md.parent
+        for cited in sorted(set(_REFERENCE_CITATION_RE.findall(skill_md.read_text()))):
+            head = cited.split("/", 1)[0]
+            if head in _WHOLE_DIR_FANNED_ROOTS:
+                # A whole-dir root must exist skill-local as a directory when the plugin root
+                # carries it (a bundle-root shared tree the skill cites).
+                if (refs_root / head).is_dir() and not (skill_dir / "references" / head).is_dir():
+                    missing.append(f"{skill_dir.name}: references/{head}/")
+                continue
+            if cited.endswith(".py") or "{" in cited or "*" in cited:
+                continue  # executable-spec / templated / glob citations are not shipped refs
+            if not (refs_root / cited).is_file():
+                continue  # not a bundle-root shared ref (skill-own or a project-level path)
+            if not (skill_dir / "references" / cited).is_file():
+                missing.append(f"{skill_dir.name}: references/{cited}")
+
+    assert not missing, (
+        "shared references not resolvable skill-local on the distributed channel "
+        f"(source={source!r}):\n  " + "\n  ".join(missing)
+    )
