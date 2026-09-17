@@ -29,7 +29,7 @@
 # here modifies ~/.claude, the repo tree, or any standard install.
 #
 # Usage:
-#   scripts/dev-plugin.sh [--agent <claude|codex|copilot|cursor|gemini|pi>] [--out <dir>] [--force]
+#   scripts/dev-plugin.sh [--out <dir>] [--force]   # Claude-only (#315); default --agent claude
 #   Then run the printed command, e.g.:  claude --plugin-dir <dir>
 set -euo pipefail
 
@@ -46,9 +46,10 @@ while [ $# -gt 0 ]; do
 dev-plugin.sh — assemble an out-of-repo, self-contained plugin dir from a BUILT
 adapter bundle, for running the LOCAL SOURCE via `claude --plugin-dir <dir>`.
 
-Usage: scripts/dev-plugin.sh [--agent <claude|codex|copilot|cursor|gemini|pi>] [--out <dir>] [--force]
+Usage: scripts/dev-plugin.sh [--out <dir>] [--force]   # Claude-only (#315)
 
-  -a, --agent <id>  Which built adapters/<id> bundle to expose (default: claude).
+  -a, --agent <id>  Claude only (default: claude); a non-claude value is refused with a pointer
+                    to that host's own source-load path (see docs/DOGFOODING.md).
   -o, --out <dir>   Where to assemble the plugin dir. Must be OUTSIDE the repo (the
                     manifest must never ship). Default:
                     ${XDG_CACHE_HOME:-~/.cache}/feature-forge-dev/<agent>.
@@ -62,6 +63,22 @@ USAGE
     *) echo "dev-plugin: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+# This helper is Claude-specific (#315): it assembles a `.claude-plugin/plugin.json` and is loaded
+# via `claude --plugin-dir`, a manifest+flag that codex/pi/copilot/cursor/gemini do not use. Emitting
+# a Claude-shaped dir for another host is a misleading artifact, so refuse it and point at the host's
+# own documented source-load path (docs/DOGFOODING.md).
+if [ "$agent" != "claude" ]; then
+  cat >&2 <<MSG
+dev-plugin: only --agent claude is supported. This helper builds a Claude plugin dir
+(.claude-plugin/plugin.json + \`claude --plugin-dir\`), which "$agent" does not use.
+Load the built adapters/$agent bundle its own way instead (see docs/DOGFOODING.md):
+  codex   npx @garygentry/feature-forge install -a codex   (built bundle -> .agents/skills/)
+  pi      pi install ./adapters/pi                          (built package; -l for project-local)
+The built bundle is self-contained (#132), so its references resolve on every host.
+MSG
+  exit 2
+fi
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 bundle="$repo_root/adapters/$agent"

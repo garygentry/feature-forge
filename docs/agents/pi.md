@@ -23,13 +23,20 @@ The installer writes the Pi bundle to:
 
 Pi package metadata lives in the real bundle `package.json`; there is no `package.json.pi` file.
 
-For temporary local development you can also load the generated bundle directly:
+For local development, install the generated **package** from its path — `adapters/pi` is a Pi
+package (skills + extensions), so use `pi install`, not `pi -e` (which loads a single *extension*
+file, not a package's skills):
 
 ```bash
-pi -e ./adapters/pi
+pi install ./adapters/pi -l   # project-local (.pi/settings.json); records the path, loads live
 ```
 
-For project-local resources, trust the project in Pi (`/trust`) or use `--approve` for non-interactive tests.
+A local-path install is recorded, not copied, so Pi loads from the live `adapters/pi`: after a canon
+edit re-run `python3 scripts/build-adapters.py`, then `/reload` (a settings path does not
+hot-reload). Drop `-l` for a user-wide install; `pi config` toggles a package's resources. See
+[`docs/DOGFOODING.md`](../DOGFOODING.md) § *Other hosts* for coexistence with a released install. For
+project-local resources, trust the project in Pi (`/trust`) or use `--approve` for non-interactive
+tests.
 
 ## Commands
 
