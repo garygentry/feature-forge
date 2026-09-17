@@ -1,7 +1,8 @@
 # Plan — self-healing resilience across harnesses
 
 **Written:** 2026-09-01, on `main` @ `3357c49` (v0.19.0 / installer 0.3.6, clean tree).
-**Status:** **proposal** — no code written, no owner approval yet.
+**Status:** **in progress** — P0–P4 shipped 2026-09-03 (#255/#257/#258/#259/#281, released in
+0.20.0); P5 (promote a check to `fail`) is field-gated on D6 evidence.
 **Tracking:** [#244](https://github.com/garygentry/feature-forge/issues/244)
 **Scope:** make the forge pipeline *diagnose and repair* environment/configuration faults
 instead of halting on them, and make that behavior correct on **Claude, Codex, and Pi as
