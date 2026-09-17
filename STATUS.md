@@ -42,7 +42,7 @@ before advancing it.
 ## Shipped recently
 
 - **0.20.0** / installer 0.3.7 (2026-09-17) — #244 P0–P4: `doctor` is a real health surface
-  (16 structured checks, remedies as data), a Preflight & Self-Heal procedure wired into
+  (17 structured checks, remedies as data), a Preflight & Self-Heal procedure wired into
   forge-5-loop's gates, the Interaction Capability Ladder + `interaction-mode` rung detection,
   and the `forge-guide --doctor` repair surface (#250–#254, #261/#263). Plus the 2026-09-17
   catch-up program: ship `.claude-plugin/plugin.json` in the built claude bundle (#322),
