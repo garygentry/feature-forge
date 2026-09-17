@@ -21,7 +21,7 @@ CHANGELOG `[Unreleased]` is empty.
 
 ### rauf coupling
 
-`RAUF_PIN` is **`@garygentry/rauf@0.15.0`** (verified resolving on npm 2026-08-31).
+`RAUF_PIN` is **`@garygentry/rauf@0.16.0`** (verified resolving on npm 2026-08-31).
 0.15.0 ships Codex provider sandbox/network/approval config plus a batch of loop-runner
 fixes (Pi/cursor `E2BIG` prompt delivery, review-pass retry parity, rollback-safety halt,
 stale-profile detection, `--retry-blocked` backlog resolution) — none of it a capability

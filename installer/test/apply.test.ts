@@ -62,7 +62,7 @@ function ctxFor(
     destination: d.destination,
     manifestPath: d.manifestPath,
     source: src,
-    raufPin: "@garygentry/rauf@0.15.0",
+    raufPin: "@garygentry/rauf@0.16.0",
     now: NOW,
     priorManifest: null,
     ...extra,
@@ -356,20 +356,20 @@ test("copy: an all-unchanged re-run with a CHANGED raufPin rewrites the manifest
     // Re-plan: files all unchanged, but the pin was bumped.
     const second = planInstall({
       agent: "claude", scope: "project", mode: "copy", destination: ctx.destination,
-      source: src, priorManifest: m1.value, force: false, raufPin: "@garygentry/rauf@0.15.0",
+      source: src, priorManifest: m1.value, force: false, raufPin: "@garygentry/rauf@0.16.0",
     });
     assert.ok(second.ok);
     assert.ok(second.value.files.every((f) => f.action === "unchanged"), "all files unchanged");
 
     const report = await apply(
       second.value,
-      ctxFor(sb, "claude", src, "copy", { priorManifest: m1.value, raufPin: "@garygentry/rauf@0.15.0" }),
+      ctxFor(sb, "claude", src, "copy", { priorManifest: m1.value, raufPin: "@garygentry/rauf@0.16.0" }),
     );
     assert.equal(report.ok, true);
 
     const m2 = readManifest(ctx.manifestPath);
     assert.ok(m2.ok && m2.value !== null);
-    assert.equal(m2.value.raufPin, "@garygentry/rauf@0.15.0", "pin change persisted despite all-unchanged files");
+    assert.equal(m2.value.raufPin, "@garygentry/rauf@0.16.0", "pin change persisted despite all-unchanged files");
   });
 });
 
