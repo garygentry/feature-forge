@@ -4,17 +4,18 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-08-31 (0.19.0 release cut — Pi forge-loop-supervisor extension (#235/#236),
-loop-runner floor raise (#234), Pi post-fix verification termination fix (#237/#238), and rauf
-pin advance to 0.15.0)._
+_Last updated: 2026-09-17 (0.20.0 release cut — #244 P0–P4 doctor health/repair surface
+(#250–#254), interaction capability ladder + rung detection (#261/#263), Pi invocation-args
+(#303), and the 2026-09-17 catch-up program (#322/#324/#323/#314/#315); rauf pin advance to
+0.16.0)._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.19.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.6** | `installer/package.json` (independent version line) |
-| npm | publishing 0.3.6 | |
+| Plugin | **0.20.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.3.7** | `installer/package.json` (independent version line) |
+| npm | publishing 0.3.7 | |
 | Commit | this release commit | |
 
 CHANGELOG `[Unreleased]` is empty.
@@ -40,6 +41,14 @@ before advancing it.
 
 ## Shipped recently
 
+- **0.20.0** / installer 0.3.7 (2026-09-17) — #244 P0–P4: `doctor` is a real health surface
+  (16 structured checks, remedies as data), a Preflight & Self-Heal procedure wired into
+  forge-5-loop's gates, the Interaction Capability Ladder + `interaction-mode` rung detection,
+  and the `forge-guide --doctor` repair surface (#250–#254, #261/#263). Plus the 2026-09-17
+  catch-up program: ship `.claude-plugin/plugin.json` in the built claude bundle (#322),
+  machine-local `forge.config.local.json` runner override (#324), explicit `FEATURE_FORGE_ROOT`
+  (#323), marketplace-channel shared-ref CI guard (#314), codex/pi source-dogfood docs (#315),
+  and deterministic Pi invocation-args (#303); rauf pin advanced to `0.16.0`.
 - **0.19.0** / installer 0.3.6 (2026-08-31) — Pi `forge-loop-supervisor` extension (#235/#236:
   a first-party Pi extension launches the loop detached and wakes the session only on
   needs-human/blocked/stuck/error/completion, replacing the self-contradictory
