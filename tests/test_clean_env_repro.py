@@ -316,6 +316,13 @@ _WHOLE_DIR_FANNED_ROOTS = frozenset({"stacks", "verifier-patterns"})
 _REFERENCE_CITATION_RE = re.compile(r"references/([A-Za-z0-9_][A-Za-z0-9_./{}*-]*)")
 
 
+def _skill_body(text: str) -> str:
+    """The SKILL.md body after the YAML frontmatter. ``_fan_out_shared_references`` scans
+    ``skill.body`` only, so the mirror must too — a citation in frontmatter is never fanned."""
+    match = re.match(r"^---\n.*?\n---\n", text, re.S)
+    return text[match.end():] if match else text
+
+
 @pytest.mark.xfail(
     strict=True,
     reason=(
@@ -336,29 +343,31 @@ def test_marketplace_channel_resolves_cited_shared_references_skill_local() -> N
     anchor pins until the root fix lands.
     """
     marketplace = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
-    source = marketplace["plugins"][0]["source"]
+    # Select the feature-forge plugin by name, not by index — the manifest could grow or reorder.
+    source = next(p for p in marketplace["plugins"] if p["name"] == "feature-forge")["source"]
     plugin_dir = (REPO_ROOT / source).resolve()
     refs_root = plugin_dir / "references"
 
-    missing: list[str] = []
+    missing: set[str] = set()
     for skill_md in sorted((plugin_dir / "skills").glob("*/SKILL.md")):
         skill_dir = skill_md.parent
-        for cited in sorted(set(_REFERENCE_CITATION_RE.findall(skill_md.read_text()))):
+        for cited in sorted(set(_REFERENCE_CITATION_RE.findall(_skill_body(skill_md.read_text())))):
             head = cited.split("/", 1)[0]
             if head in _WHOLE_DIR_FANNED_ROOTS:
                 # A whole-dir root must exist skill-local as a directory when the plugin root
-                # carries it (a bundle-root shared tree the skill cites).
+                # carries it (a bundle-root shared tree the skill cites). Keyed on the root, so
+                # two citations into the same tree report it once.
                 if (refs_root / head).is_dir() and not (skill_dir / "references" / head).is_dir():
-                    missing.append(f"{skill_dir.name}: references/{head}/")
+                    missing.add(f"{skill_dir.name}: references/{head}/")
                 continue
             if cited.endswith(".py") or "{" in cited or "*" in cited:
                 continue  # executable-spec / templated / glob citations are not shipped refs
             if not (refs_root / cited).is_file():
                 continue  # not a bundle-root shared ref (skill-own or a project-level path)
             if not (skill_dir / "references" / cited).is_file():
-                missing.append(f"{skill_dir.name}: references/{cited}")
+                missing.add(f"{skill_dir.name}: references/{cited}")
 
     assert not missing, (
         "shared references not resolvable skill-local on the distributed channel "
-        f"(source={source!r}):\n  " + "\n  ".join(missing)
+        f"(source={source!r}):\n  " + "\n  ".join(sorted(missing))
     )
