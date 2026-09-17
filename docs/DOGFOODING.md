@@ -47,10 +47,13 @@ neutral sentinel, so `scripts/dev-plugin.sh` still assembles a proper plugin dir
 repo** for them (real manifest + symlinks into the live bundle).
 
 > **Marketplace note (#322).** `adapters/claude/.claude-plugin/plugin.json` is committed and the
-> marketplace ships the repo via `source: "."`. The marketplace plugin is the one enumerated in
-> the root `marketplace.json`; a standard (manifest-driven, non-recursive) marketplace install does
-> not register the nested bundle manifest as a second plugin. Verify with the T6 marketplace check
-> from a plain terminal in an isolated `CLAUDE_CONFIG_DIR` if you touch the marketplace wiring.
+> marketplace ships the repo via `source: "."`, but it is **not** double-registered: Claude Code
+> marketplace installs are manifest-driven and root-only (only the plugins enumerated in
+> `marketplace.json` load — no recursive filesystem discovery), and `--plugin-dir <folder>` scans
+> only **immediate** subfolders one level deep. The nested manifest is two levels below the repo
+> root (`adapters/claude/.claude-plugin/`), so a `source: "."` install and `--plugin-dir <repo-root>`
+> both ignore it; it loads only when pointed at directly (`--plugin-dir adapters/claude`), which is
+> the intended dev path. (Refs: Claude Code plugins + plugin-marketplaces docs.)
 
 ---
 

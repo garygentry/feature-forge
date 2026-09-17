@@ -1875,39 +1875,29 @@ def run_self_containment_pass(
         _write_claude_plugin_manifest(bundle_root, repo_root)
 
 
-#: Identity fields projected from the canonical repo-root ``.claude-plugin/plugin.json``
-#: into the built Claude bundle's manifest, in this fixed order (byte-determinism, REQ-DET-01).
-_CLAUDE_MANIFEST_FIELDS: tuple[str, ...] = (
-    "name",
-    "version",
-    "description",
-    "author",
-    "keywords",
-)
-
-
 def _write_claude_plugin_manifest(bundle_root: Path, repo_root: Path) -> None:
     """Write ``.claude-plugin/plugin.json`` into the built ``claude`` bundle (#322).
 
     The neutral ``.feature-forge-bundle.json`` sentinel makes every bundle self-locatable
-    for ``forge-root.sh``, but Claude's OWN plugin loader is invisible to it: a marketplace
-    install, ``npx … install -a claude``, and ``claude --plugin-dir`` all require
-    ``.claude-plugin/plugin.json`` before they will load a directory as a plugin. A
-    manifest-less Claude bundle therefore installs as a silent no-op. Mirror the identity
-    fields of the canonical repo-root manifest (the source of record ``_bundle_version``
-    reads) into the bundle so the built bundle loads as a first-class plugin.
+    for ``forge-root.sh``, but Claude's OWN plugin loader is invisible to it: it recognises a
+    directory as the feature-forge plugin only via ``.claude-plugin/plugin.json``. Without it a
+    marketplace install / ``--plugin-dir`` / installed skills-dir bundle mis-identifies or does
+    not load. Mirror the canonical repo-root manifest into the bundle so the built bundle is a
+    first-class plugin.
 
-    Falls back to ``{"name": "feature-forge", "version": _FALLBACK_BUNDLE_VERSION}`` when the
-    repo root carries no manifest (the canon-only test fixtures), staying byte-deterministic
-    instead of crashing a fixture build — mirrors ``_bundle_version``.
+    Copied WHOLE (not a field allowlist) so a field Claude's loader may later need — added to the
+    root manifest — is never silently dropped from the built bundle; ``check-version-sync`` keeps
+    the ``version`` in step, and the drift gate (``--check``) catches any other divergence. Falls
+    back to ``{"name": "feature-forge", "version": _FALLBACK_BUNDLE_VERSION}`` when the repo root
+    carries no manifest (the canon-only fixtures), staying byte-deterministic instead of crashing
+    a fixture build — mirrors ``_bundle_version``.
     """
     try:
-        source = json.loads(
+        manifest = json.loads(
             (repo_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
         )
     except (FileNotFoundError, json.JSONDecodeError):
-        source = {}
-    manifest = {k: source[k] for k in _CLAUDE_MANIFEST_FIELDS if k in source}
+        manifest = {}
     manifest.setdefault("name", "feature-forge")
     manifest.setdefault("version", _FALLBACK_BUNDLE_VERSION)
     safe_write(

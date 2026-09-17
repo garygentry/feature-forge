@@ -107,8 +107,10 @@ def main(argv: list[str] | None = None) -> int:
     print(
         "version-sync: reconcile all fields to a single version (the conflicting "
         "values are printed above). marketplace.json is hand-edited; "
-        "gemini-extension.json is REGENERATED via scripts/build-adapters.py "
-        "(bump GEMINI_EXTENSION_VERSION). See 06-packaging-versioning-hygiene.md."
+        "gemini-extension.json AND adapters/claude/.claude-plugin/plugin.json are "
+        "REGENERATED via scripts/build-adapters.py (the claude manifest tracks the root "
+        "plugin.json version; gemini also needs GEMINI_EXTENSION_VERSION bumped). "
+        "See 06-packaging-versioning-hygiene.md."
     )
     return 1
 
