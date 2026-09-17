@@ -119,6 +119,32 @@ claude plugin disable feature-forge@<marketplace-name>   # re-enable to switch b
 > Do **not** symlink the repo **root** into `~/.claude/skills/` — that loads un-built canon
 > (fact 1, #305) and is shadowed anyway (fact 2). Always symlink the assembled dir.
 
+## `FEATURE_FORGE_ROOT` — the host-neutral dev-override (#323)
+
+`FEATURE_FORGE_ROOT` names an explicit bundle root and is **authoritative**: it is probed first
+(the prelude's leading candidate and `forge-root.sh` Step 0), so it **beats discovery** on a
+machine that carries more than one install — the normal state on a dev box (a stable clone, a
+marketplace cache, and a `~/workspace` checkout). It works on **every** host (Claude, Codex, Pi —
+unlike `CLAUDE_PLUGIN_ROOT`, which only Claude sets), so a fleet dev-override sets it once (e.g.
+pointing at the stable-clone symlink):
+
+```bash
+export FEATURE_FORGE_ROOT=~/.local/share/gnet/feature-forge   # or a workspace checkout
+```
+
+An explicit override that does **not** resolve (a missing or degraded bundle) **fails loudly**
+rather than silently falling back to some other install. Prove which install actually resolved,
+and by which channel, with doctor:
+
+```bash
+python3 "$FEATURE_FORGE_ROOT/scripts/forge-session.py" doctor --json \
+  | python3 -c 'import sys,json; d=json.load(sys.stdin); c=[x for x in d["checks"] if x["id"]=="plugin-root"][0]; print(c["detail"], "| channel:", c["evidence"].get("channel"))'
+# → resolved <path> via FEATURE_FORGE_ROOT (version …) | channel: FEATURE_FORGE_ROOT
+```
+
+`root-version-skew` additionally lists every candidate root on the host with its channel and
+version, so "which install is live here" is a single command.
+
 ---
 
 ## rauf (the loop runner)

@@ -103,7 +103,11 @@ SENTINEL = "─ forge: end of stage ─"
 #: scripts/check-spec-purity.py; `_assert_prelude_in_sync` fails loudly if they diverge,
 #: so this copy can never quietly rot into a probe that always passes.
 BOOTSTRAP_PRELUDE = (
-    'R="$(bash -c \'for d in "${CLAUDE_PLUGIN_ROOT:-}" '
+    'R="$(bash -c \'[ -z "${FEATURE_FORGE_ROOT:-}" ] || '
+    '[ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || '
+    '{ echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no '
+    'scripts/forge-root.sh" >&2; exit 2; }; '
+    'for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" '
     '"$HOME"/.claude/skills/feature-forge '
     '"$HOME"/.claude/plugins/cache/*/feature-forge/* '
     '"$HOME"/.claude/plugins/*/feature-forge '
@@ -1728,6 +1732,7 @@ def score_prelude(transcript: dict) -> dict[str, bool]:
     functional = PRELUDE_SENTINEL in executed and all(
         token in executed
         for token in (
+            "${FEATURE_FORGE_ROOT:-}",
             "${CLAUDE_PLUGIN_ROOT:-}",
             "/.claude/skills/feature-forge",
             "/.claude/plugins/cache/*/feature-forge/*",

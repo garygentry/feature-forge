@@ -504,3 +504,51 @@ def test_the_R_fence_guard_would_catch_a_bare_usage() -> None:
     blocks = list(_fenced_blocks(bare))
     assert len(blocks) == 1
     assert '"$R/' in blocks[0][1] and _RESOLVER_MARKER not in blocks[0][1]
+
+
+# --------------------------------------------------------------------------- #
+# #323: explicit FEATURE_FORGE_ROOT override (Step 0) + --explain channel
+# --------------------------------------------------------------------------- #
+
+
+def test_explicit_root_beats_a_valid_discovery(tmp_path: Path) -> None:
+    """FEATURE_FORGE_ROOT (Step 0) wins over a root the resolver would otherwise self-locate."""
+    override = _make_fake_install(tmp_path / "override")
+    discoverable = _make_fake_install(
+        tmp_path / "home" / ".claude" / "skills" / "feature-forge"
+    )
+    result = _run(
+        discoverable / "scripts" / "forge-root.sh",
+        {"HOME": str(tmp_path / "home"), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": str(override)},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(override)  # the override, not the self-located discoverable
+
+
+def test_invalid_explicit_root_fails_loudly_without_fallback(tmp_path: Path) -> None:
+    """A set-but-invalid FEATURE_FORGE_ROOT fails with an actionable message and never falls back
+    to a discovery that would otherwise succeed."""
+    discoverable = _make_fake_install(
+        tmp_path / "home" / ".claude" / "skills" / "feature-forge"
+    )
+    result = _run(
+        discoverable / "scripts" / "forge-root.sh",
+        {"HOME": str(tmp_path / "home"), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": str(tmp_path / "nope")},
+    )
+    assert result.returncode != 0
+    assert "FEATURE_FORGE_ROOT" in result.stderr
+    assert result.stdout.strip() == ""  # nothing resolved; no silent fallback
+
+
+def test_explain_prints_channel_tab_path(tmp_path: Path) -> None:
+    """``--explain`` prints ``channel<TAB>path`` for the resolved root; no-arg stays the bare path."""
+    override = _make_fake_install(tmp_path / "override")
+    script = override / "scripts" / "forge-root.sh"
+    env = {**os.environ, "HOME": str(tmp_path / "empty"), "CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": str(override)}
+    explained = subprocess.run(
+        ["bash", str(script), "--explain"], capture_output=True, text=True, env=env
+    )
+    assert explained.returncode == 0, explained.stderr
+    assert explained.stdout.strip() == f"FEATURE_FORGE_ROOT\t{override}"
+    bare = subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env)
+    assert bare.stdout.strip() == str(override)  # no-arg contract unchanged

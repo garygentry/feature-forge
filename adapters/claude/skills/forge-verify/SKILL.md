@@ -233,7 +233,7 @@ Never hand-author a verify entry. Every `stages.forge-verify-*` transition is wr
 Choose result arguments from the report outcome, never a combined placeholder: clean uses `--status passed --findings-count 0`; advisory-only uses `--status passed` with its positive count; blocking uses `--status findings-reported` with its positive total count. All variants attach the Step 4 report:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{feature}" --stage "{servedStage}" --status "{outcome-specific status}" \
@@ -244,7 +244,7 @@ python3 "$R/scripts/forge-session.py" state-verify \
 **Two-commit provenance — never `--amend`.** The write above records `commitHash: null`. Commit 1 records the findings document and the state together (Git Commit Protocol, `references/shared-conventions.md`). Then record the provenance of that commit in Commit 2, passing the **full 40-character** hash of Commit 1 — an abbreviation is refused rather than expanded, and this call touches nothing but `commitHash`. Add `--epic "{epic}"` when the feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify \
   --feature "{feature}" --stage "{servedStage}" \
@@ -268,7 +268,7 @@ Epic mode is **epic-scoped**, not per-feature: `--stage forge-0-epic` writes `{s
 **Outcome.** Derive the `--outcome` from the settled on-disk record, never by eyeballing conversational state. **For a production-stage verify** (mode `prd`/`tech`/`specs`/`backlog`/`impl`, so `{servedStage}` is `forge-1-prd`…`forge-5-loop`), after Step 6's `state-verify` write run `select-outcome` — it reads the verify entry and the latest report and returns `{outcome, reason, evidence}`, the `outcome` being exactly one of `passed`, `findings`, `skipped`, or `failed`. Add `--op-failure` when a dispatch, check, or state write failed this run (a `CLEAN_ROOM_UNAVAILABLE` sentinel or a non-answer counts): it is the one signal disk cannot record. On exit 2 the disk names no terminal result and no signal was given — surface its `Error:` line rather than guessing. **Epic mode is out of the verb's scope** — an epic's verification lives in `.epic-state.json`, not a member's `.pipeline-state.json`, so the verb rejects `forge-0-epic`; for `epic` choose the `--outcome` directly per the `### verify` mapping. That four-outcome mapping and its rationale live in `references/select-outcome.md`.
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 # production-stage modes only (not epic); append --op-failure on an operational failure per the paragraph above
 python3 "$R/scripts/forge-session.py" select-outcome --feature "{feature}" --served-stage "{servedStage}" --skill verify --specs-dir "{specsDir}" --json
@@ -279,7 +279,7 @@ Pass the returned `outcome` straight through as the `stage-exit --outcome` below
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-verify --owner "{owner}" --outcome "{VerifyOutcome}" --verify-mode "{mode}" --specs-dir "{specsDir}" --host claude --verify-capability "{verify-capability}"
 ```
@@ -297,7 +297,7 @@ Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: sur
 - For specs verification, also run the deterministic traceability validator to supplement agent-driven traceability checks. Include any uncovered requirements or orphaned references as findings:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/validate-traceability.py" {resolvedFeatureDir}/PRD.md {resolvedFeatureDir}/ --json
 ```

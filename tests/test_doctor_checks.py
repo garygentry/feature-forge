@@ -1280,10 +1280,26 @@ def test_gh_available_warns_when_the_binary_is_broken(tmp_path: Path) -> None:
 
 
 def _bundle(path: Path, version: str | None) -> Path:
-    """A minimal feature-forge bundle (neutral manifest) at ``path``."""
+    """A minimal feature-forge bundle (neutral manifest) at ``path`` — sentinel only, so it is
+    is_root but DEGRADED (missing the core assets)."""
     path.mkdir(parents=True, exist_ok=True)
     if version is not None:
         (path / ".feature-forge-bundle.json").write_text(json.dumps({"version": version}))
+    return path
+
+
+def _complete_bundle(path: Path, version: str | None) -> Path:
+    """A COMPLETE bundle: the sentinel PLUS the core assets forge-root.sh requires, so it resolves
+    as a whole root. An explicit FEATURE_FORGE_ROOT override pointing here is honored by Step 0
+    (#323) rather than failing as degraded. forge-session.py is a non-shim placeholder so the
+    forge_session/ package is not additionally required."""
+    _bundle(path, version)
+    (path / "scripts").mkdir(exist_ok=True)
+    (path / "scripts" / "forge-session.py").write_text("#!/usr/bin/env python3\n")
+    refs = path / "references"
+    refs.mkdir(exist_ok=True)
+    (refs / "pipeline-state-schema.json").write_text("{}\n")
+    (refs / "stage-exit-protocol.md").write_text("# stage exit\n")
     return path
 
 
@@ -1314,28 +1330,60 @@ def test_root_version_skew_na_when_root_is_unresolved(tmp_path: Path) -> None:
     assert check(report, "root-version-skew")["status"] == "na"
 
 
-def test_root_version_skew_compares_the_env_override_with_the_resolved_root(
+def test_root_version_skew_flags_an_explicit_override_at_a_different_version(
     tmp_path: Path,
 ) -> None:
+    """Under #323 FEATURE_FORGE_ROOT is authoritative (Step 0), so a COMPLETE override at a
+    different version BECOMES the resolved root; skew is then detected against the doctor's own
+    bundle (which the override displaced)."""
     project = make_project(tmp_path)
     env = scrubbed_env(tmp_path)
-    # A different install at a different version → skew (forge-root.sh self-locates,
-    # so the resolved root stays this checkout while the env points elsewhere).
-    env["FEATURE_FORGE_ROOT"] = str(_bundle(tmp_path / "other", "0.0.1"))
+    env["FEATURE_FORGE_ROOT"] = str(_complete_bundle(tmp_path / "other", "0.0.1"))
     record = check(doctor_report(project, env), "root-version-skew")
     assert record["status"] == "warn" and record["severity"] == "advisory"
     assert record["evidence"]["envVar"] == "FEATURE_FORGE_ROOT"
-    assert record["evidence"]["envVersion"] == "0.0.1"
-    assert "env (0.0.1" in record["detail"] and "resolved (" in record["detail"]
+    assert record["evidence"]["resolvedVersion"] == "0.0.1"  # the override won Step 0
+    assert record["evidence"]["ownVersion"] != "0.0.1"
+    assert "own (" in record["detail"] and "0.0.1" in record["detail"]
     assert record["remedy"]["safety"] == "global-install" and record["remedy"]["command"] is None
-    # No manifest at all cannot be proven equal → still skew.
-    env["FEATURE_FORGE_ROOT"] = str(_bundle(tmp_path / "bare", None))
-    record = check(doctor_report(project, env), "root-version-skew")
-    assert record["status"] == "warn" and "no version" in record["detail"]
-    # Same version elsewhere, or a symlink to this checkout → agree.
+
+
+def test_plugin_root_reports_the_explicit_override_channel(tmp_path: Path) -> None:
+    """A valid FEATURE_FORGE_ROOT override resolves and doctor names the channel (#323)."""
+    project = make_project(tmp_path)
+    env = scrubbed_env(tmp_path)
+    env["FEATURE_FORGE_ROOT"] = str(_complete_bundle(tmp_path / "other", "0.0.1"))
+    record = check(doctor_report(project, env), "plugin-root")
+    assert record["status"] == "ok"
+    assert record["evidence"]["channel"] == "FEATURE_FORGE_ROOT"
+    assert record["evidence"]["root"] == str(tmp_path / "other")
+
+
+def test_plugin_root_unresolved_when_explicit_override_is_invalid(tmp_path: Path) -> None:
+    """An explicit FEATURE_FORGE_ROOT that is not a root fails loudly and never falls back to
+    discovery (#323), so plugin-root is unresolved rather than silently resolving elsewhere."""
+    project = make_project(tmp_path)
+    env = scrubbed_env(tmp_path)
+    env["FEATURE_FORGE_ROOT"] = str(tmp_path / "does-not-exist")
+    record = check(doctor_report(project, env), "plugin-root")
+    assert record["status"] == "warn"
+    assert record["evidence"].get("resolved") is False
+
+
+def test_root_version_skew_agrees_when_the_override_matches_own_version(tmp_path: Path) -> None:
+    """A complete override at the SAME version as the doctor's own bundle → no skew (#323)."""
+    project = make_project(tmp_path)
+    env = scrubbed_env(tmp_path)
     own_version = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
-    env["FEATURE_FORGE_ROOT"] = str(_bundle(tmp_path / "twin", own_version))
+    env["FEATURE_FORGE_ROOT"] = str(_complete_bundle(tmp_path / "twin", own_version))
     assert check(doctor_report(project, env), "root-version-skew")["status"] == "ok"
+
+
+def test_root_version_skew_names_claude_plugin_root_as_the_env_channel(tmp_path: Path) -> None:
+    """CLAUDE_PLUGIN_ROOT is a host fact (Step 3), not an operator override: a symlink to this
+    checkout agrees, and the skew check names it as the env channel."""
+    project = make_project(tmp_path)
+    env = scrubbed_env(tmp_path)
     (tmp_path / "link").symlink_to(REPO_ROOT)
     env["CLAUDE_PLUGIN_ROOT"] = str(tmp_path / "link")
     env["FEATURE_FORGE_ROOT"] = ""
