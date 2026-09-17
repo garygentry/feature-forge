@@ -164,9 +164,10 @@ Install or symlink the **built** `adapters/codex/` into the location codex disco
 
 ```bash
 python3 scripts/build-adapters.py                     # canon -> adapters/codex
+# EITHER a copy install (released-style):
 npx @garygentry/feature-forge install -a codex        # copies the built bundle into .agents/skills/
-# live-edit: symlink instead of copy, then rebuild after each canon edit —
-ln -s "$PWD/adapters/codex" ~/.agents/skills/feature-forge
+# OR a live symlink for dev (-f/-n REPLACE any existing entry rather than nesting a link inside it):
+ln -sfn "$PWD/adapters/codex" ~/.agents/skills/feature-forge
 ```
 
 - **Edit → effect:** with the symlink, re-run `python3 scripts/build-adapters.py`; codex picks up the

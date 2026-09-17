@@ -15,11 +15,12 @@
 #     `.claude-plugin/plugin.json` (correct name + version), so `claude --plugin-dir
 #     adapters/claude` already loads directly as `feature-forge@inline` — for Claude this
 #     script is now redundant and `--plugin-dir adapters/claude` is the simpler primitive
-#     (see docs/DOGFOODING.md). It remains useful for a host whose built bundle carries only
-#     the neutral `.feature-forge-bundle.json` sentinel and no host-native plugin manifest:
-#     it writes a REAL manifest into an OUT-OF-REPO dir and symlinks the bundle's component
-#     trees in, so the source loads at the right identity without a committed manifest in
-#     that host's tree. (Retiring the Claude path here is tracked in #315.)
+#     (see docs/DOGFOODING.md). This helper is CLAUDE-ONLY (#315): the `.claude-plugin/plugin.json`
+#     + `claude --plugin-dir` it produces is meaningless for codex/pi/copilot/cursor/gemini, so a
+#     non-`claude` `--agent` is refused (exit 2) with a pointer to that host's own built-bundle
+#     load path (docs/DOGFOODING.md). It still writes a REAL manifest into an OUT-OF-REPO dir and
+#     symlinks the bundle's component trees in, so the Claude source loads at the right identity
+#     without a committed manifest in the repo tree.
 #   • The component trees are SYMLINKS into the live built bundle, so a canon edit takes
 #     effect after a rebuild (`python3 scripts/build-adapters.py`) with no re-run of this
 #     script. Re-run it only to change agent/version or after moving the checkout.
