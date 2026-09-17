@@ -12,7 +12,7 @@ against the fenced block here, byte-for-byte.
 ## Canonical bootstrap prelude
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 ```
 
@@ -24,24 +24,27 @@ makes several calls, add the prelude once and reuse `$R` for each. A fresh block
 prelude (per-block re-resolution). Worked example:
 
 ```bash
-R="$(bash -c 'for d in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specsDir}" --json
 ```
 
 ## Invariants (do NOT "fix" these)
 
-1. **First hint is the Claude plugin-root env var; the rest are paths.** The prelude's
-   `for d in …` list leads with the `CLAUDE_PLUGIN_ROOT` env var (in default-empty `:-` form)
-   — the exact bundle dir Claude exports in every marketplace/plugin session — followed by the
-   directory-path candidates. The hint gives exact, glob-free resolution on any current/future
-   Claude layout (no version-skew window); when unset it expands to empty and is harmlessly
-   skipped, so other hosts fall through to the path candidates unchanged. This is the **one
-   sanctioned** appearance of that variable in canonical surfaces: spec-purity rule 3 allows it
-   by stripping the byte-pinned prelude before its residual-var scan (so a stray var anywhere
-   else — including the default-empty form — still fails), and `forge-agent-adapters-build`
-   translates it to `FEATURE_FORGE_ROOT` for non-Claude bundles (which `forge-root.sh` already
-   prefers). The exact literal is shown only in the fenced prelude above and audited in
+1. **Explicit `FEATURE_FORGE_ROOT` override first, then the Claude env hint, then paths.** The
+   prelude opens with a guard: if `FEATURE_FORGE_ROOT` is set but carries no
+   `scripts/forge-root.sh`, it fails loudly (`exit 2`) instead of silently falling back to
+   discovery — an operator override that does not resolve is an error, not a hint (the same rule
+   `forge-root.sh` Step 0 applies). The `for d in …` list then leads with the `FEATURE_FORGE_ROOT`
+   env var in default-empty `:-` form (the host-neutral operator override, honored on every agent)
+   followed by the `CLAUDE_PLUGIN_ROOT` env var in the same form (the exact bundle dir Claude
+   exports in every marketplace/plugin session), then the directory-path candidates. Both env hints
+   give exact, glob-free resolution; when unset each expands to empty and is harmlessly skipped, so
+   other hosts fall through to the path candidates unchanged. `CLAUDE_PLUGIN_ROOT` remains the **one
+   sanctioned** appearance of that vendor variable in canonical surfaces: spec-purity rule 3 allows
+   it by stripping the byte-pinned prelude
+   before its residual-var scan (so a stray var anywhere else — including the default-empty form —
+   still fails). The exact literal is shown only in the fenced prelude above and audited in
    `vendor-construct-inventory.md`.
 2. **First-discoverable-resolver-wins.** The `exec` inside the `$(…)` command substitution means
    the loop stops at the first directory holding an executable `forge-root.sh` and delegates ALL
@@ -64,8 +67,9 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
 
 The prelude delegates to [`scripts/forge-root.sh`](../scripts/forge-root.sh) — the portable
 skill/plugin-root resolver. It takes no arguments, prints the absolute plugin root to stdout and
-exits `0`, or writes an actionable message to stderr and exits `1`. It resolves the root by
-self-location → candidate-root probe → plugin-root environment-variable fallback → actionable failure,
-and never sources or executes a discovered path — it only ever prints a directory string. The
+exits `0`, or writes an actionable message to stderr and exits non-zero. It resolves the root by
+explicit `FEATURE_FORGE_ROOT` override (Step 0) → self-location → candidate-root probe →
+`CLAUDE_PLUGIN_ROOT` fallback → actionable failure, and never sources or executes a discovered
+path — it only ever prints a directory string. The
 spec-purity checker (rule 5) enforces that every prelude occurrence across the canon is
 byte-identical to the fenced block in this file.

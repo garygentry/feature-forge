@@ -96,7 +96,7 @@ def _resolve_plugin_root() -> dict:
         return {"resolved": False, "error": f"resolver not found: {resolver}"}
     try:
         proc = subprocess.run(
-            ["bash", str(resolver)], capture_output=True, text=True, timeout=10,
+            ["bash", str(resolver), "--explain"], capture_output=True, text=True, timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"resolved": False, "error": str(exc)}
@@ -105,8 +105,12 @@ def _resolve_plugin_root() -> dict:
             "resolved": False,
             "error": proc.stderr.strip() or f"resolver exited {proc.returncode}",
         }
-    root = proc.stdout.strip()
-    info: dict = {"resolved": True, "root": root}
+    # --explain prints `channel<TAB>path`; a resolver predating it prints the bare path (#323).
+    channel, _, path = proc.stdout.strip().partition("\t")
+    if not path:
+        channel, path = None, channel
+    root = path
+    info: dict = {"resolved": True, "root": root, "channel": channel or None}
     bundle = _bundle_version(Path(root))
     if bundle["version"] is not None:
         info["version"] = bundle["version"]
@@ -116,6 +120,41 @@ def _resolve_plugin_root() -> dict:
     if commit:
         info["commit"] = commit
     return info
+
+
+def _resolve_all_roots() -> list[dict]:
+    """Every candidate root the resolver probed, via ``forge-root.sh --explain --all`` (#323).
+
+    Each entry is ``{"channel", "root", "version"}``; a ``(degraded)`` channel suffix marks a
+    sentinel-bearing but asset-incomplete candidate. Returns ``[]`` when the resolver is absent,
+    predates ``--explain --all``, or errors — this is diagnostic enrichment, never a failure path.
+    """
+    resolver = _SCRIPTS_DIR / "forge-root.sh"
+    if not resolver.is_file():
+        return []
+    try:
+        proc = subprocess.run(
+            ["bash", str(resolver), "--explain", "--all"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    roots: list[dict] = []
+    seen: set[str] = set()
+    for line in proc.stdout.splitlines():
+        channel, _, path = line.partition("\t")
+        if not path:
+            continue  # a resolver predating --explain --all printed a bare path; skip it
+        # A single install reachable by more than one step (e.g. FEATURE_FORGE_ROOT == the
+        # self-located root) is emitted once per matching step; keep only the first (highest-
+        # precedence channel) so the "which install is live" list has one row per path.
+        if path in seen:
+            continue
+        seen.add(path)
+        roots.append(
+            {"channel": channel, "root": path, "version": _bundle_version(Path(path))["version"]}
+        )
+    return roots
 
 
 def _bundle_version(root: Path) -> dict:
@@ -653,8 +692,10 @@ def _check_plugin_root(ctx: _CheckContext) -> dict:
     evidence = dict(root)
     if root.get("resolved"):
         version = root.get("version")
+        channel = root.get("channel")
         suffix = f" (version {version})" if version else " (no version manifest)"
-        return _result("ok", f"resolved {root.get('root')}{suffix}", evidence)
+        chan = f" via {channel}" if channel else ""
+        return _result("ok", f"resolved {root.get('root')}{chan}{suffix}", evidence)
     return _result(
         "warn",
         f"plugin root unresolved: {root.get('error', 'unknown')}",
@@ -799,6 +840,14 @@ def _check_runner_version(ctx: _CheckContext) -> dict:
         payload = None
     reported_text = payload.get("version") if isinstance(payload, dict) else None
     evidence["reported"] = reported_text
+    # rauf >= 0.16.0 (#123) reports its own resolution provenance in `version --json`; surface it
+    # when present so doctor shows which runner binary/channel is live. Absent on older runners
+    # (the floor stays 0.14.0) ⇒ simply omitted, never a failure (#323).
+    if isinstance(payload, dict):
+        for key in ("channel", "path"):
+            value = payload.get(key)
+            if isinstance(value, str) and value:
+                evidence[f"runner{key.capitalize()}"] = value
     reported = _parse_semver(reported_text)
     if reported is None:
         return _result(
@@ -1207,7 +1256,13 @@ def _check_root_version_skew(ctx: _CheckContext) -> dict:
     different path cannot be proven equal and counts as skew.
     """
     if not ctx.plugin_root.get("resolved"):
-        return _result("na", "plugin root unresolved (see plugin-root)", {"resolved": False})
+        # Still enumerate every candidate root: this is exactly the multi-install triage moment
+        # (e.g. a bad FEATURE_FORGE_ROOT override hard-failed Step 0 on a host that also has a
+        # good install) where the operator most needs to see what a working install would be.
+        return _result(
+            "na", "plugin root unresolved (see plugin-root)",
+            {"resolved": False, "candidates": _resolve_all_roots()},
+        )
     own_root = _BUNDLE_ROOT
     resolved_root = Path(str(ctx.plugin_root.get("root")))
     env_var = next(
@@ -1233,12 +1288,18 @@ def _check_root_version_skew(ctx: _CheckContext) -> dict:
             return True
         return a[1] is not None and b[1] is not None and a[1] == b[1]
 
-    labels = list(roots)
+    # For the pairwise skew check, drop `env` when it IS the resolved root — a FEATURE_FORGE_ROOT
+    # override makes resolved == env post-#323, and comparing both would print the same skew twice
+    # (own-vs-resolved and own-vs-env). The env evidence fields below are kept for transparency.
+    compare = dict(roots)
+    if "env" in compare and real(compare["env"][0]) == real(resolved_root):
+        del compare["env"]
+    labels = list(compare)
     disagreements = [
-        f"{x} ({roots[x][1] or 'no version'} at {roots[x][0]}) vs "
-        f"{y} ({roots[y][1] or 'no version'} at {roots[y][0]})"
+        f"{x} ({compare[x][1] or 'no version'} at {compare[x][0]}) vs "
+        f"{y} ({compare[y][1] or 'no version'} at {compare[y][0]})"
         for i, x in enumerate(labels) for y in labels[i + 1:]
-        if not agree(roots[x], roots[y])
+        if not agree(compare[x], compare[y])
     ]
     evidence = {
         "ownRoot": str(own_root),
@@ -1248,6 +1309,10 @@ def _check_root_version_skew(ctx: _CheckContext) -> dict:
         "envVar": env_var,
         "envRoot": str(roots["env"][0]) if "env" in roots else None,
         "envVersion": roots["env"][1] if "env" in roots else None,
+        # Every candidate root the resolver saw, with its channel + version (#323) — the estate's
+        # "which install is live on this host" answer in one command, without duplicating the
+        # candidate list in Python (forge-root.sh --explain --all owns it).
+        "candidates": _resolve_all_roots(),
         "agree": not disagreements,
     }
     if not disagreements:

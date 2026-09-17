@@ -7,7 +7,7 @@ alwaysApply: false
 
 # forge-5-loop — Autonomous Loop Executor
 
-Execute the autonomous coding loop against a forge feature's backlog. The loop spawns a fresh agent session per backlog item, implementing each task with full verification.
+The loop spawns a fresh agent session per backlog item, implementing each task with full verification.
 
 The loop **runner** is configured, not hardcoded. feature-forge talks to it through the `loopRunner` block in `forge.config.json`; rauf is the default and reference implementation (see `references/ralph-loop-contract.md`). Every command below is rendered from `loopRunner` with token substitution — no hardcoded `rauf …` commands; even the human log filename is tokenized (`{loopRunner.logFile}`).
 
@@ -16,7 +16,7 @@ The loop **runner** is configured, not hardcoded. feature-forge talks to it thro
 Resolve the effective `loopRunner` with the command below — it merges this project's `loopRunner` block over the schema defaults deterministically, so do not read the config schema for defaults. **If `forge.config.json` has no `loopRunner` block at all, state plainly: "No loopRunner configured — defaulting to the rauf loop runner."** then proceed with the full default block, which is exactly what the call returns. If the call exits 2, surface the plain `Error:` line from stderr verbatim and fall back to the documented rauf defaults.
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" effective-config --config ./forge.config.json --json
 ```
@@ -49,12 +49,12 @@ If the state's `notes` is non-empty, surface it before proceeding and treat it a
 Derive whether the upstream backlog has been verified from the settled on-disk record, never by eyeballing conversational state. Run `verify-state --for-stage forge-4-backlog` — it reads the served stage's `forge-verify-backlog` entry and returns `{case, verified, stale, message, nextCommand}`. Add `--epic "{epic}"` when this feature is an epic member (nested layout). The full case enum and its rationale live in `references/verify-state.md`.
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" verify-state --feature "{feature}" --for-stage forge-4-backlog --specs-dir "{specsDir}" --json
 ```
 
-If `verified` is true, proceed with no prompt. Otherwise print the returned `message`, then use host's question mechanism to warn with the cost of skipping — the loop implements items autonomously and commits as it goes, so a bad item (wrong scope, missing dependency, untestable acceptance criteria) is far cheaper to catch now than after several commits build on it — and offer **Verify first (recommended)** (run the returned `nextCommand`) · **Continue without verifying**. This is a pre-stage read of the upstream artifact, so the proceed-anyway path writes **nothing** — in particular a `stale` result (fixes applied, re-verify still owed) must not be demoted to `skipped`: `state-verify` refuses that write (#203) and the recorded status already says re-verification is outstanding.
+If `verified` is true, proceed with no prompt. Otherwise print the returned `message`, then use host's question mechanism to warn with the cost of skipping — the loop implements items autonomously and commits as it goes, so a bad item is far cheaper to catch now than after commits build on it — and offer **Verify first (recommended)** (run the returned `nextCommand`) · **Continue without verifying**. This is a pre-stage read of the upstream artifact, so the proceed-anyway path writes **nothing** — in particular a `stale` result (fixes applied, re-verify still owed) must not be demoted to `skipped`: `state-verify` refuses that write (#203) and the recorded status already says re-verification is outstanding.
 
 ### 1b-epic. Epic Dependency Gate
 
@@ -63,7 +63,7 @@ Read the resolved feature's `.pipeline-state.json`. **If it has no `epic` key, s
 1. Run `render-status "{epic}" --specs-dir "{specsDir}" --json` via the helper:
 
    ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/epic-manifest.py" \
   render-status "{epic}" --specs-dir "{specsDir}" --json
@@ -87,7 +87,7 @@ This gate runs **before** the runner version/setup gates (1c/1d) so a blocked fe
 These gate on the loop runner being installed, current, and wired **before** touching it — enforced by `doctor`'s `runner-*` checks, never ad-hoc parsing. Run:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" doctor --json --specs-dir "{specsDir}" --check runner-binary --check runner-version --check runner-wired --check runner-legacy-layout
 ```
@@ -181,7 +181,7 @@ provider default), read references/runner-contract.md.
 Before launching, record the pre-launch marker by running `state-enter` — one atomic write that sets `stages.forge-5-loop.status` to `in-progress`, `stages.forge-5-loop.startedAt` to the current ISO timestamp, `currentStage` to `forge-5-loop`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-enter --feature "{feature}" --stage forge-5-loop --specs-dir "{specsDir}"
 ```
@@ -204,8 +204,7 @@ matching every terminal and exception state (silence is not success), and react 
 each event as it arrives. Each NDJSON line is a JSON object whose event kind lives
 under the **`type`** field (rauf's schema — e.g. `{"type":"item_completed",…}`), so
 the filter must select on **`.type`**, **not** `kind`: a `kind`-keyed filter surfaces
-nothing — it matches no lines (`grep`) or aborts the pipeline on the first event
-(`jq`, since `.kind` is `null`) — so the watch stays dark for the whole run. The exact Monitor
+nothing (no `grep` match; `jq` aborts on the null `.kind`), so the watch stays dark. The exact Monitor
 commands, the filter event list, and the full per-event reaction rules (`needs_human`
 / `loop_error` surfaced immediately with a `PushNotification`, `item_completed`
 coalesced into milestones, `llm_stuck_warning` as a hang warning) are in
@@ -241,7 +240,7 @@ Run the **Post-Run Recovery Procedure** (`references/recovery-procedure.md`) now
 Record completion by running `state-complete` (below). Evaluate "all backlog items are `done`" yourself and pass the result as `--status`: `complete` if every item is `done`, else `in-progress`. The verb records `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-complete --feature "{feature}" --stage forge-5-loop --version {n} --status "<complete|in-progress>" --based-on "forge-4-backlog=<current version from pipeline state>" --artifact "{backlogDir}/{loopRunner.stateDir}/state.json" --specs-dir "{specsDir}"
 ```
@@ -255,7 +254,7 @@ python3 "$R/scripts/forge-session.py" state-complete --feature "{feature}" --sta
 **The skip is written by `state-verify`, never by hand — and never over a resolved entry** (`passed`/`findings-applied`: the verb refuses that demotion, #203 — skip the fence and continue). Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol in `references/shared-conventions.md`. On exit 2, surface the plain `Error:` line verbatim and stop: the skip is not persisted, so Step 7 would route on state that is not on disk.
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" state-verify --feature "{feature}" --stage forge-5-loop --status skipped --specs-dir "{specsDir}"
 ```
@@ -278,7 +277,7 @@ First select the single `LoopOutcome` with the ladder in `references/result-repo
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 
 ```bash
-R="$(bash -c 'for d in "${FEATURE_FORGE_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-5-loop --outcome "{LoopOutcome}" --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
 ```
@@ -289,11 +288,11 @@ Add `--epic "{epic}"` when this feature is an epic member — required, per the 
 
 ## Gotchas
 
-- **Plugin-root discovery (1b-epic helper) covers installed paths, not workspace-dev checkouts.** The `forge-root.sh` search probes the locations of an **installed** plugin only, so a feature-forge **source checkout** (e.g. `~/workspace/feature-forge`) exits "cannot locate plugin root." Expected in a dev environment; run the epic-manifest script from the checkout directly (`python3 <checkout>/scripts/epic-manifest.py …`). The bootstrap prelude wraps its candidate loop in `bash -c` so the `~/.claude/plugins/*/feature-forge` glob is zsh-safe: an empty expansion no longer aborts the loop under zsh's `nomatch`.
+- **Plugin-root discovery (1b-epic helper) covers installed paths, not workspace-dev checkouts.** The `forge-root.sh` search probes the locations of an **installed** plugin only, so a feature-forge **source checkout** (e.g. `~/workspace/feature-forge`) exits "cannot locate plugin root" unless `FEATURE_FORGE_ROOT` points at it (#323). Expected in a dev environment; run the epic-manifest script from the checkout directly (`python3 <checkout>/scripts/epic-manifest.py …`).
 - `{backlogDir}` is a **directory path**, not a file path. Pass `specs/auth`, not `specs/auth/backlog.json`.
 - rauf resolves `RAUF.md` with fallback (`{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`). State files (state.json, {loopRunner.logFile}, etc.) land at `{backlogDir}/{loopRunner.stateDir}/`, isolated per backlog dir, so concurrent features don't collide.
 - If the session disconnects mid-loop, the runner process continues independently — check results later with the status / list commands. A stale lock from a previous run may need `--force` to clear.
-- Never run the run command in the foreground (without host's background-execution mechanism) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the host's monitoring mechanism (3d) — `persistent: true`, the **structured** surface (`events.ndjson`), never raw `RAUF_*` tokens (they false-match in agent prose). A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting. See `references/runner-contract.md` for the full monitoring rules.
+- Never run the run command in the foreground (without host's background-execution mechanism) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the host's monitoring mechanism (3d). A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting. See `references/runner-contract.md` for the full monitoring rules.
 - The version gate (1c) uses the `--json` form on purpose; never parse `rauf version`'s human output.
 - **Implementation artifacts must not cite specs.** The loop should **read** specs and `backlog.json` freely — they are the source of truth, and the backlog rightly cites specs for provenance. But artifacts the loop **writes into the target repo** (source code, generated `SKILL.md`/agent files, configs, code comments) must be **self-contained**: no references to feature-forge spec files (no `See specs/{feature}/NN-*.md`, no "source spec" provenance notes) — specs are pre-implementation inputs that may be archived or deleted once the feature ships. This applies only to shipped implementation output, never to the backlog or spec documents, which keep citing specs.
 
