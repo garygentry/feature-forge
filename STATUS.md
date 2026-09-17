@@ -21,11 +21,12 @@ CHANGELOG `[Unreleased]` is empty.
 
 ### rauf coupling
 
-`RAUF_PIN` is **`@garygentry/rauf@0.15.0`** (verified resolving on npm 2026-08-31).
-0.15.0 ships Codex provider sandbox/network/approval config plus a batch of loop-runner
-fixes (Pi/cursor `E2BIG` prompt delivery, review-pass retry parity, rollback-safety halt,
-stale-profile detection, `--retry-blocked` backlog resolution) — none of it a capability
-feature-forge's stages depend on, so `minRunnerVersion` **stays at 0.14.0** (the recovery
+`RAUF_PIN` is **`@garygentry/rauf@0.16.0`** (verified resolving on npm 2026-09-17).
+0.16.0 adds `rauf version --json` provenance (`channel`/`path`, which feature-forge's
+doctor optionally reads, #323), the `FORGE_INTERACTION=non-interactive` loop-child stamp
+(read by the doctor interaction-mode check, #261), Codex marketplace install, and
+install-binary/loop-runner polish — every one of them a surface feature-forge *may* read
+but no stage *requires*, so `minRunnerVersion` **stays at 0.14.0** (the recovery
 floor from #234); the pin now sits ahead of the floor, which `COMPATIBILITY.md` documents
 as the expected shape (the floor only rises when rauf ships a surface a shipped stage
 actually requires). Agents needing a *newer* rauf than the floor are recorded as prose in
