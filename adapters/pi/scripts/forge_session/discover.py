@@ -25,7 +25,7 @@ from forge_session._common import (
     PIPELINE_STATE_FILENAME,
     _default_branch,
     _git_output,
-    _load_config,
+    load_effective_config,
     _parse_ts,
     build_rows,
 )
@@ -359,7 +359,7 @@ def reconcile_branch(
                 "action": "none", "reason": "not a git repository"}
     current = _git_output(["branch", "--show-current"])
     default = _default_branch()
-    config = _load_config(config_path)
+    config = load_effective_config(config_path)
     row = next(
         (r for r in build_rows(specs_dir, config)
          if r["name"] == name and (epic is None or r["epic"] == epic)),
@@ -437,7 +437,7 @@ def check_epic_base(
     if _git_output(["rev-parse", "--git-dir"]) is None:
         return {**base, "gitRepo": False, "action": "none",
                 "reason": "not a git repository"}
-    config = _load_config(config_path)
+    config = load_effective_config(config_path)
     row = next(
         (r for r in build_rows(specs_dir, config)
          if r["name"] == name and (epic is None or r["epic"] == epic)),

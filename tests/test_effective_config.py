@@ -121,6 +121,66 @@ def test_unknown_user_key_is_passed_through(tmp_path: Path) -> None:
     assert len(resolved) == len(_schema_defaults()) + 1
 
 
+def test_local_overlay_wins_and_leaves_the_committed_file_untouched(tmp_path: Path) -> None:
+    """#324 acceptance (a): the local file changes the result with no tracked-file diff."""
+    committed = tmp_path / "forge.config.json"
+    committed.write_text(json.dumps({"loopRunner": {"bin": "rauf-stable"}}), encoding="utf-8")
+    before = committed.read_text(encoding="utf-8")
+    (tmp_path / "forge.config.local.json").write_text(
+        json.dumps({"loopRunner": {"bin": "rauf-dev"}}), encoding="utf-8"
+    )
+
+    result = _run("--config", str(committed), "--json")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["bin"] == "rauf-dev"
+    assert committed.read_text(encoding="utf-8") == before  # committed file untouched
+
+
+def test_env_overrides_local_and_committed_bin(tmp_path: Path) -> None:
+    """#324 acceptance (b): env > local > committed for loopRunner.bin."""
+    committed = tmp_path / "forge.config.json"
+    committed.write_text(json.dumps({"loopRunner": {"bin": "rauf-stable"}}), encoding="utf-8")
+    (tmp_path / "forge.config.local.json").write_text(
+        json.dumps({"loopRunner": {"bin": "rauf-dev"}}), encoding="utf-8"
+    )
+    result = subprocess.run(
+        [sys.executable, FS, "effective-config", "--config", str(committed), "--json"],
+        capture_output=True, text=True,
+        env={**os.environ, "FEATURE_FORGE_LOOP_RUNNER_BIN": "rauf"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["bin"] == "rauf"
+
+
+def test_json_output_stays_flat_no_layers_key(tmp_path: Path) -> None:
+    """The --json shape is frozen: the flat resolved block only (layers live in the human view)."""
+    committed = tmp_path / "forge.config.json"
+    committed.write_text(json.dumps({"loopRunner": {"bin": "rauf-dev"}}), encoding="utf-8")
+    result = _run("--config", str(committed), "--json")
+    resolved = json.loads(result.stdout)
+    assert "_layers" not in resolved
+    assert validate_effective_config(resolved) == []
+
+
+def test_human_output_annotates_each_field_with_its_layer(tmp_path: Path) -> None:
+    """The human table tags each key with the layer that set it (#324)."""
+    committed = tmp_path / "forge.config.json"
+    committed.write_text(json.dumps({"loopRunner": {"bin": "rauf-stable"}}), encoding="utf-8")
+    (tmp_path / "forge.config.local.json").write_text(
+        json.dumps({"loopRunner": {"defaultAgent": "codex"}}), encoding="utf-8"
+    )
+
+    result = _run("--config", str(committed))
+
+    assert result.returncode == 0, result.stderr
+    lines = {ln.split(":")[0].strip(): ln for ln in result.stdout.splitlines() if " : " in ln}
+    assert "[committed]" in lines["bin"]
+    assert "[local]" in lines["defaultAgent"]
+    assert "[default]" in lines["name"]
+
+
 def test_malformed_config_degrades_to_pure_defaults_at_exit_0(tmp_path: Path) -> None:
     """`_load_config` already degrades a corrupt config to {} — that is not an error."""
     config = tmp_path / "forge.config.json"

@@ -35,7 +35,10 @@ from forge_session._common import (
     _default_schema_path,
     _git_output,
     _load_config,
+    load_effective_config,
     _loop_runner_defaults,
+    resolve_loop_runner_layers,
+    _local_config_path,
     build_rows,
     invalid_auto_verify_keys,
     load_json_with_duplicates,
@@ -174,7 +177,7 @@ def doctor_report(
             (defaults to the sibling ``references/`` copy).
         only: When given, run just these check ids (others are omitted).
     """
-    config = _load_config(config_path)
+    config = load_effective_config(config_path)
     # --show-current (not rev-parse HEAD) so an unborn branch (fresh repo,
     # no commits yet) still reports its name instead of failing.
     current_branch = _git_output(["branch", "--show-current"])
@@ -447,6 +450,7 @@ class _CheckContext:
         schema_error: str | None,
         loop_runner: dict | None,
         loop_runner_defaults: dict | None,
+        loop_runner_layers: dict | None,
         loop_runner_error: str | None,
         plugin_root: dict,
         current_branch: str | None,
@@ -464,6 +468,7 @@ class _CheckContext:
         self.schema_error = schema_error
         self.loop_runner = loop_runner
         self.loop_runner_defaults = loop_runner_defaults
+        self.loop_runner_layers = loop_runner_layers
         self.loop_runner_error = loop_runner_error
         self.plugin_root = plugin_root
         self.current_branch = current_branch
@@ -476,6 +481,10 @@ class _CheckContext:
         """The configured ``loopRunner.bin`` (``""`` when unavailable)."""
         value = (self.loop_runner or {}).get("bin")
         return value if isinstance(value, str) else ""
+
+    def runner_bin_layer(self) -> str | None:
+        """Which layer set the effective ``bin`` (env/local/committed/default), or ``None``."""
+        return (self.loop_runner_layers or {}).get("bin")
 
     def runner_bin_path(self) -> str | None:
         """``shutil.which`` of the runner binary, memoised."""
@@ -566,18 +575,19 @@ def _build_check_context(
             schema_error = "schema top level is not an object"
     defaults: dict | None = None
     loop_runner: dict | None = None
+    loop_runner_layers: dict | None = None
     loop_runner_error: str | None = None
     try:
         defaults = dict(_loop_runner_defaults(schema_path))
     except Exception as exc:  # captured as data (INV-3)
         loop_runner_error = _exc_text(exc)
     else:
-        # The same flat override resolve_loop_runner applies, without re-reading
-        # (and re-warning about) the config the legacy report already loaded.
-        loop_runner = dict(defaults)
-        user_block = config.get("loopRunner")
-        if isinstance(user_block, dict):
-            loop_runner.update(user_block)
+        # Resolve with per-field provenance (#324) so the runner checks can report which
+        # layer — env / machine-local / committed / default — set the effective value.
+        # warn=False: doctor_report already loaded (and warned about) these files once.
+        layered = resolve_loop_runner_layers(config_path, schema_path, warn=False)
+        loop_runner = {field: info["value"] for field, info in layered.items()}
+        loop_runner_layers = {field: info["layer"] for field, info in layered.items()}
     return _CheckContext(
         cwd=Path.cwd(),
         specs_dir=specs_dir,
@@ -589,6 +599,7 @@ def _build_check_context(
         schema_error=schema_error,
         loop_runner=loop_runner,
         loop_runner_defaults=defaults,
+        loop_runner_layers=loop_runner_layers,
         loop_runner_error=loop_runner_error,
         plugin_root=plugin_root,
         current_branch=current_branch,
@@ -704,6 +715,7 @@ def _check_runner_binary(ctx: _CheckContext) -> dict:
     )
     evidence = {
         "bin": name,
+        "layer": ctx.runner_bin_layer(),
         "path": path,
         "defaultBin": default_bin,
         "customized": customized,
@@ -755,6 +767,7 @@ def _check_runner_version(ctx: _CheckContext) -> dict:
     argv = _render_runner_command(template, ctx.loop_runner) if isinstance(template, str) else None
     evidence: dict = {
         "bin": ctx.runner_bin(),
+        "layer": ctx.runner_bin_layer(),
         "command": shlex.join(argv) if argv else template,
         "required": required_text,
         "reported": None,
@@ -1064,6 +1077,44 @@ def _check_config_schema(ctx: _CheckContext) -> dict:
     known = set(props) if isinstance(props, dict) else set()
     evidence["unknownKeys"] = sorted(key for key in value if key not in known)
     findings += evidence["violations"]
+
+    # The machine-local overlay (#324) is validated against the same schema, so an invalid
+    # forge.config.local.json is caught with the file named — not silently merged. It is
+    # OPTIONAL (absent → nothing to check) and only its own keys are validated; unknown-key
+    # noise is left to the committed file's report above.
+    local_path = _local_config_path(ctx.config_path)
+    evidence["localConfigPath"] = str(local_path)
+    evidence["localParseError"] = None
+    evidence["localViolations"] = []
+    local_findings: list[str] = []
+    if local_path.is_file():
+        try:
+            local_value, _ = load_json_with_duplicates(local_path)
+        except (OSError, ValueError, RecursionError) as exc:
+            evidence["localParseError"] = _exc_text(exc)
+            local_findings.append(f"unreadable or invalid JSON: {evidence['localParseError']}")
+        else:
+            if not isinstance(local_value, dict):
+                evidence["localParseError"] = (
+                    f"top level is {type(local_value).__name__}, expected object"
+                )
+                local_findings.append(evidence["localParseError"])
+            else:
+                try:
+                    evidence["localViolations"] = _schema_violations(
+                        local_value, ctx.schema, ctx.schema, "$"
+                    )
+                except Exception as exc:  # malformed schema node reached only via a local key
+                    # Same INV-3 guard as the committed call above: a damaged bundled schema is
+                    # captured as data (a warn finding), never propagated as an exit-2 crash.
+                    evidence["schemaError"] = f"schema malformed: {_exc_text(exc)}"
+                    local_findings.append(
+                        f"config schema malformed ({_exc_text(exc)}); "
+                        "local structural validation skipped"
+                    )
+                else:
+                    local_findings += evidence["localViolations"]
+
     if findings:
         return _result(
             "warn",
@@ -1071,10 +1122,81 @@ def _check_config_schema(ctx: _CheckContext) -> dict:
             evidence,
             _remedy(f"Fix forge.config.json: {findings[0]}", None, "local-write"),
         )
+    if local_findings:
+        return _result(
+            "warn",
+            f"forge.config.local.json has {len(local_findings)} finding(s): {local_findings[0]}",
+            evidence,
+            _remedy(f"Fix forge.config.local.json: {local_findings[0]}", None, "local-write"),
+        )
     detail = "forge.config.json conforms to the schema"
+    if evidence["localConfigPath"] and local_path.is_file():
+        detail += " (with forge.config.local.json overlay)"
     if evidence["unknownKeys"]:
         detail += "; unknown top-level key(s) ignored: " + ", ".join(evidence["unknownKeys"])
     return _result("ok", detail, evidence)
+
+
+def _git_check_ignored(path: Path) -> bool | None:
+    """Whether git ignores ``path``: ``True`` ignored, ``False`` tracked, ``None`` undecidable.
+
+    ``git check-ignore -q`` exits 0 when the path is ignored, 1 when it is not, and 128 outside
+    a work tree (or git missing) — the last collapses to ``None`` so the caller reports ``na``
+    rather than a false "not ignored". Run from the file's own directory so any nested work tree
+    is honoured.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "check-ignore", "-q", path.name],
+            capture_output=True, text=True, timeout=10, cwd=path.parent,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode == 0:
+        return True
+    if proc.returncode == 1:
+        return False
+    return None
+
+
+def _check_config_local_ignored(ctx: _CheckContext) -> dict:
+    """A present ``forge.config.local.json`` is git-ignored (#324).
+
+    The machine-local overlay is a per-machine dev fact (a runner-binary choice, a
+    machine-specific ``contextWindowTokens``) and must never be committed. This advisory check
+    warns when the file exists but git would track it, so the override cannot leak into the repo.
+    It never fails: an absent file, an already-ignored file, or a non-git / git-less environment
+    are all ``ok``/``na`` — doctor reports, it does not rewrite. The remedy NAMES ``.gitignore``
+    (the file it would touch), per the #283/#317 consent rule.
+    """
+    local_path = _local_config_path(ctx.config_path)
+    evidence: dict = {
+        "localConfigPath": str(local_path),
+        "exists": local_path.is_file(),
+        "ignored": None,
+    }
+    if not local_path.is_file():
+        return _result("ok", "no forge.config.local.json present", evidence)
+    ignored = _git_check_ignored(local_path)
+    evidence["ignored"] = ignored
+    if ignored is None:
+        return _result(
+            "na", "cannot determine git-ignore status (not a git work tree?)", evidence
+        )
+    if ignored:
+        return _result("ok", "forge.config.local.json is git-ignored", evidence)
+    return _result(
+        "warn",
+        "forge.config.local.json exists but is not git-ignored — a machine-local override "
+        "could be committed by accident",
+        evidence,
+        _remedy(
+            "Add 'forge.config.local.json' to the project's .gitignore so the machine-local "
+            "override is never committed",
+            None,
+            "local-write",
+        ),
+    )
 
 
 def _check_root_version_skew(ctx: _CheckContext) -> dict:
@@ -1702,6 +1824,7 @@ DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = (
     _make_spec("runner-profile-drift", "advisory", _check_runner_profile_drift),
     _make_spec("config-completeness", "advisory", _check_config_completeness),
     _make_spec("config-schema", "advisory", _check_config_schema),
+    _make_spec("config-local-ignored", "advisory", _check_config_local_ignored),
     _make_spec("backlog-present", "blocking", _check_backlog_present),
     _make_spec("backlog-valid", "blocking", _check_backlog_valid),
     _make_spec("branch-state", "advisory", _check_branch_state),

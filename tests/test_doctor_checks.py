@@ -279,6 +279,31 @@ def test_schema_flag_with_corrupt_schema_still_exits_zero(tmp_path: Path) -> Non
     assert json.loads(result.stdout)["checksSummary"]["fail"] == 0
 
 
+def test_malformed_schema_node_reached_only_via_local_overlay_still_exits_zero(
+    tmp_path: Path,
+) -> None:
+    """A damaged schema node reached only through forge.config.local.json is captured as data
+    (INV-3), not propagated as an exit-2 crash — the local validation shares the committed
+    path's try/except guard (#324). The committed config is empty, so only the local key walks
+    the malformed ``stack`` node."""
+    (tmp_path / "forge.config.json").write_text("{}")
+    (tmp_path / "forge.config.local.json").write_text(json.dumps({"stack": "python"}))
+    bad = tmp_path / "schema.json"
+    bad.write_text(json.dumps({"type": "object", "properties": {"stack": {"type": 5}}}))
+    result = _doctor(tmp_path, "--schema", str(bad))
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_duplicate_config_key_warns_once_across_the_doctor_run(tmp_path: Path) -> None:
+    """doctor loads the config for its report AND re-resolves loopRunner layers; the re-resolve
+    uses warn=False so a duplicate-key warning fires exactly once, not twice (#324)."""
+    (tmp_path / "forge.config.json").write_text('{"stack": "a", "stack": "b"}')
+    result = _doctor(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.count('Warning: duplicate JSON key "stack"') == 1
+
+
 @pytest.mark.parametrize("config", [
     {},
     {"stack": "python", "autoVerify": True},
@@ -491,6 +516,59 @@ def test_config_schema_warns_when_the_bundled_schema_is_unreadable(tmp_path: Pat
     assert record["status"] == "warn"
     assert record["evidence"]["schemaError"]
     assert record["remedy"]["safety"] == "global-install"
+
+
+def test_config_schema_validates_the_local_overlay_and_names_it(tmp_path: Path) -> None:
+    """#324: an invalid forge.config.local.json is caught, named, not silently merged."""
+    project = make_project(tmp_path, config={"stack": "python"})
+    (project / "forge.config.local.json").write_text(
+        json.dumps({"loopRunner": {"bin": 5}}), encoding="utf-8"  # bin must be a string
+    )
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "warn"
+    assert "forge.config.local.json" in record["detail"]
+    assert record["evidence"]["localViolations"]
+    assert "forge.config.local.json" in record["remedy"]["description"]
+    assert record["remedy"]["safety"] == "local-write"
+
+
+def test_config_schema_ok_with_a_valid_local_overlay(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={"stack": "python"})
+    (project / "forge.config.local.json").write_text(
+        json.dumps({"loopRunner": {"bin": "rauf-dev"}}), encoding="utf-8"
+    )
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-schema")
+    assert record["status"] == "ok"
+    assert record["evidence"]["localViolations"] == []
+    assert "overlay" in record["detail"]
+
+
+def test_config_local_ignored_ok_when_absent(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={"stack": "python"})
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-local-ignored")
+    assert record["status"] == "ok"
+    assert record["evidence"]["exists"] is False
+
+
+def test_config_local_ignored_warns_and_names_gitignore_when_tracked(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={"stack": "python"})  # git repo, no .gitignore
+    (project / "forge.config.local.json").write_text("{}", encoding="utf-8")
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-local-ignored")
+    assert record["status"] == "warn"
+    assert record["severity"] == "advisory"
+    assert record["evidence"]["ignored"] is False
+    assert ".gitignore" in record["remedy"]["description"]
+    assert record["remedy"]["safety"] == "local-write"
+    assert record["remedy"]["command"] is None
+
+
+def test_config_local_ignored_ok_when_git_ignored(tmp_path: Path) -> None:
+    project = make_project(tmp_path, config={"stack": "python"})
+    (project / ".gitignore").write_text("forge.config.local.json\n", encoding="utf-8")
+    (project / "forge.config.local.json").write_text("{}", encoding="utf-8")
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-local-ignored")
+    assert record["status"] == "ok"
+    assert record["evidence"]["ignored"] is True
 
 
 def test_backlog_present_na_before_forge_4_and_warns_on_missing(tmp_path: Path) -> None:
@@ -723,6 +801,57 @@ def test_runner_binary_custom_present_is_ok(tmp_path: Path) -> None:
     assert check(report, "runner-version")["status"] == "ok"
     assert probe_log(env)[0] == f"{bin_dir(env)}/rauf-stable version --json"
     assert all(line.startswith(f"{bin_dir(env)}/rauf-stable ") for line in probe_log(env))
+
+
+# --- #324: machine-local override — which layer set the effective loopRunner.bin ---
+
+def test_runner_binary_layer_is_default_with_no_override(tmp_path: Path) -> None:
+    """No loopRunner block anywhere -> the bin is the schema default, layer 'default'."""
+    env = scrubbed_env(tmp_path)
+    fake_runner(env)  # the default 'rauf'
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    report = doctor_report(project, env)
+    assert check(report, "runner-binary")["evidence"]["layer"] == "default"
+    assert check(report, "runner-version")["evidence"]["layer"] == "default"
+
+
+def test_runner_binary_layer_is_committed_from_forge_config(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, name="rauf-stable")
+    config = {**CONFIG, "loopRunner": {"bin": "rauf-stable"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-binary")
+    assert record["status"] == "ok"
+    assert record["evidence"]["bin"] == "rauf-stable"
+    assert record["evidence"]["layer"] == "committed"
+
+
+def test_runner_binary_layer_local_overrides_committed(tmp_path: Path) -> None:
+    """forge.config.local.json wins over the committed bin, and doctor names the layer."""
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, name="rauf-dev")
+    config = {**CONFIG, "loopRunner": {"bin": "rauf-stable"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    (project / "forge.config.local.json").write_text(
+        json.dumps({"loopRunner": {"bin": "rauf-dev"}}), encoding="utf-8"
+    )
+    record = check(doctor_report(project, env), "runner-binary")
+    assert record["evidence"]["bin"] == "rauf-dev"
+    assert record["evidence"]["layer"] == "local"
+
+
+def test_runner_binary_layer_env_wins_over_all(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, name="rauf-env")
+    env["FEATURE_FORGE_LOOP_RUNNER_BIN"] = "rauf-env"
+    config = {**CONFIG, "loopRunner": {"bin": "rauf-stable"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    (project / "forge.config.local.json").write_text(
+        json.dumps({"loopRunner": {"bin": "rauf-dev"}}), encoding="utf-8"
+    )
+    record = check(doctor_report(project, env), "runner-binary")
+    assert record["evidence"]["bin"] == "rauf-env"
+    assert record["evidence"]["layer"] == "env"
 
 
 @pytest.mark.parametrize("version, expect", [

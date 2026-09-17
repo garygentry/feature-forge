@@ -86,6 +86,24 @@ feature-forge floors the runner at **rauf 0.14.0** (`loopRunner.minRunnerVersion
 the package pins and the floor for full needs-human recovery (it subsumes the older 0.6.0
 agent-surface floor: the `--agent` flag, the `agents` probe, and the preset agent registry) — and
 checks `rauf version --json` before any run.
+
+**Machine-local runner override (#324).** *Which* rauf binary drives a repo is a machine fact, not
+a project fact: the fleet standardises three named binaries — `rauf` (published npm pin, every
+host), `rauf-dev` (workspace source, dev boxes), `rauf-stable` (compiled dogfood snapshot, dev
+boxes) — see [rauf's `docs/DOGFOODING.md`](https://github.com/garygentry/rauf/blob/main/docs/DOGFOODING.md).
+Rather than commit a machine name into `forge.config.json`, drop a gitignored **`forge.config.local.json`**
+next to it — it is deep-merged over the committed config (local wins), scoped to the whole config
+(so machine facts like a 1M `contextWindowTokens` get the same home):
+
+```json
+{ "loopRunner": { "bin": "rauf-dev" } }
+```
+
+`FEATURE_FORGE_LOOP_RUNNER_BIN` overrides `loopRunner.bin` above both (one-shot `rauf-dev` runs,
+CI). Precedence: **env > local > committed > schema default**. `forge-session.py doctor --json`
+reports the effective `bin` and which layer set it; `forge-session.py effective-config` prints the
+resolved block with each key's layer. Keep the local file gitignored — `doctor`'s
+`config-local-ignored` check warns (and names `.gitignore`) if it is not.
 *(rauf is published to npm as [`@garygentry/rauf`](https://www.npmjs.com/package/@garygentry/rauf) —
 install the CLI with `npx @garygentry/rauf` (or `npm i -g @garygentry/rauf`), or its binary script:
 `curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash`.)*

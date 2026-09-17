@@ -33,10 +33,10 @@ from forge_session._common import (
     EXIT_STAGES,
     _counts,
     _default_schema_path,
-    _load_config,
+    load_effective_config,
     build_rows,
     invalid_auto_verify_keys,
-    resolve_loop_runner,
+    resolve_loop_runner_layers,
 )
 from forge_session.decisions import (
     _default_actor,
@@ -148,11 +148,6 @@ _WIDE_WINDOW: Final = 1_000_000
 _DEFAULT_THRESHOLD: Final = 0.7
 
 
-def _config_value(config_path: Path, key: str):
-    """Read a single key from forge.config.json, or None if absent/unreadable."""
-    return _load_config(config_path).get(key)
-
-
 def _cwd_slug(cwd: Path) -> str:
     """Map a working directory to its Claude Code project-dir slug.
 
@@ -243,9 +238,12 @@ def context_usage(
     ``{available: False, reason}`` otherwise. Never raises for a missing
     transcript — that is the expected non-Claude / fresh-session path.
     """
+    # One read of the effective config (committed + machine-local overlay) for both keys —
+    # not once per key (#324: load_effective_config touches two files).
+    config = load_effective_config(config_path)
     threshold = threshold_override
     if threshold is None:
-        cfg_threshold = _config_value(config_path, "contextWarnThreshold")
+        cfg_threshold = config.get("contextWarnThreshold")
         threshold = (
             float(cfg_threshold)
             if isinstance(cfg_threshold, (int, float))
@@ -262,7 +260,7 @@ def context_usage(
 
     window = window_override
     if window is None or window <= 0:
-        cfg_window = _config_value(config_path, "contextWindowTokens")
+        cfg_window = config.get("contextWindowTokens")
         if isinstance(cfg_window, int) and cfg_window > 0:
             window = cfg_window
         else:
@@ -351,16 +349,21 @@ def _print_context(usage: dict) -> None:
     )
 
 
-def _print_effective_config(resolved: dict[str, object]) -> None:
+def _print_effective_config(
+    resolved: dict[str, object], layers: dict[str, object] | None = None
+) -> None:
     """Print the resolved loopRunner config as an aligned key: value table.
 
     Args:
         resolved: The resolved loopRunner object from ``resolve_loop_runner``.
+        layers: Optional per-field provenance (env/local/committed/default, #324); when
+            given, each row is annotated with the layer that set it.
     """
     print("Effective loopRunner config:")
     width = max((len(k) for k in resolved), default=0)
     for key in sorted(resolved):
-        print(f"  {key.ljust(width)} : {resolved[key]!r}")
+        suffix = f"  [{layers[key]}]" if layers and key in layers else ""
+        print(f"  {key.ljust(width)} : {resolved[key]!r}{suffix}")
 
 
 class _ErrorPrefixParser(argparse.ArgumentParser):
@@ -747,7 +750,7 @@ def main() -> int:
     try:
         if args.cmd == "rank-features":
             specs_dir = Path(args.specs_dir)
-            config = _load_config(Path(args.config))
+            config = load_effective_config(Path(args.config))
             rows = build_rows(specs_dir, config)
             counts = _counts(specs_dir)
             invalid_keys = invalid_auto_verify_keys(config)
@@ -894,11 +897,15 @@ def main() -> int:
 
         if args.cmd == "effective-config":
             schema_path = Path(args.schema) if args.schema else _default_schema_path()
-            resolved = resolve_loop_runner(Path(args.config), schema_path)
+            layered = resolve_loop_runner_layers(Path(args.config), schema_path)
+            resolved = {field: info["value"] for field, info in layered.items()}
+            layers = {field: info["layer"] for field, info in layered.items()}
             if args.json_output:
+                # --json shape is frozen (spec 04): the flat resolved block, no provenance.
+                # The per-key layer lives in the human view here and in `doctor --json` (#324).
                 print(json.dumps(resolved, indent=2, ensure_ascii=False))
             else:
-                _print_effective_config(resolved)
+                _print_effective_config(resolved, layers)
             return 0
 
         if args.cmd == "state-enter":
