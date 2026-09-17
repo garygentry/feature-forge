@@ -374,6 +374,51 @@ def _load_config(config_path: Path) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _local_config_path(config_path: Path) -> Path:
+    """Sibling machine-local overlay path: ``forge.config.json`` -> ``forge.config.local.json``.
+
+    Inserts a ``.local`` segment before the suffix so the overlay sits next to the committed
+    file under any name (#324). The overlay is a gitignored per-machine dev fact — never
+    committed — so ``forge-root``/``forge-init`` never write it.
+    """
+    return config_path.with_name(f"{config_path.stem}.local{config_path.suffix}")
+
+
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    """Return a new dict: ``overlay`` deep-merged over ``base`` (overlay wins).
+
+    Nested dicts merge recursively; scalars and lists replace wholesale (a list is a value,
+    not a mergeable structure). Neither input is mutated. Used to layer the machine-local
+    config over the committed one (#324) with the same "override the leaf, keep the rest"
+    semantics ``resolve_loop_runner`` already applies to schema defaults.
+    """
+    result = dict(base)
+    for key, value in overlay.items():
+        existing = result.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            result[key] = _deep_merge(existing, value)
+        else:
+            result[key] = value
+    return result
+
+
+def load_effective_config(config_path: Path) -> dict:
+    """Committed ``forge.config.json`` with the machine-local overlay merged over it (#324).
+
+    Reads the committed config, then deep-merges an optional sibling ``forge.config.local.json``
+    (a gitignored per-machine dev override — pick a runner binary, a machine-specific
+    ``contextWindowTokens``, …) over it, local winning. An absent or empty local file yields the
+    committed config unchanged, so this is a drop-in for ``_load_config`` at every *config*
+    call site. NOT for manifest reads (``.claude-plugin/plugin.json`` / the bundle sentinel),
+    which have no ``.local`` overlay concept — those stay on ``_load_config``.
+    """
+    committed = _load_config(config_path)
+    local = _load_config(_local_config_path(config_path))
+    if not local:
+        return committed
+    return _deep_merge(committed, local)
+
+
 def _loop_runner_defaults(schema_path: Path) -> dict[str, object]:
     """Extract every ``loopRunner`` field's schema ``default``.
 
@@ -423,40 +468,79 @@ def _loop_runner_defaults(schema_path: Path) -> dict[str, object]:
 
 
 def resolve_loop_runner(config_path: Path, schema_path: Path) -> dict[str, object]:
-    """Resolve the effective ``loopRunner`` config: schema defaults + user overrides.
+    """Resolve the effective ``loopRunner`` block the loop consumes.
 
-    Reads the schema defaults, then merges the user's ``loopRunner`` block (from
-    ``forge.config.json`` via the existing ``_load_config``) OVER them. A user
-    field replaces the default; an absent field keeps the default. The result is
-    the fully-resolved block the loop consumes — computed deterministically so no
-    model ever merges it by hand.
+    The flat projection of :func:`resolve_loop_runner_layers`: every field's resolved value,
+    with the precedence env > machine-local > committed > schema default applied (#324). A field
+    absent from every user layer keeps its schema default; ``FEATURE_FORGE_LOOP_RUNNER_BIN``
+    overrides ``bin`` only. Computed deterministically so no model ever merges it by hand; the
+    per-field provenance is available via :func:`resolve_loop_runner_layers` for ``doctor``.
 
     Args:
-        config_path: Path to ``forge.config.json`` (``_load_config`` tolerates a
-            missing/corrupt file, yielding pure defaults).
+        config_path: Path to ``forge.config.json`` (a missing/corrupt file — and a missing
+            local overlay — are tolerated, yielding pure defaults).
         schema_path: Path to ``forge-config-schema.json`` (source of the defaults).
 
     Returns:
-        The resolved ``loopRunner`` object: every schema-defaulted field present,
-        with user overrides applied.
+        The resolved ``loopRunner`` object: every schema-defaulted field present, user
+        overrides applied.
 
     Raises:
         UsageError: If the schema is unreadable/unparseable (propagated from
             ``_loop_runner_defaults``) — exit 2, a deterministic failure.
     """
-    resolved: dict[str, object] = dict(_loop_runner_defaults(schema_path))
+    return {
+        field: info["value"]
+        for field, info in resolve_loop_runner_layers(config_path, schema_path).items()
+    }
 
-    user_loop_runner = _load_config(config_path).get("loopRunner")
-    if isinstance(user_loop_runner, dict):
-        for key, value in user_loop_runner.items():
-            # Flat override: a user value replaces the default for that field.
-            # (A future nested loopRunner field would recurse here; today every
-            # field is a scalar, so a shallow override is exact.) An unknown key
-            # is carried through — the model would have carried it too, and the
-            # config schema is the authority that flags it at author time.
-            resolved[key] = value
 
-    return resolved
+#: The environment override for ``loopRunner.bin`` (#324): highest precedence, ``bin`` only.
+#: A one-shot ``rauf-dev`` run or a CI pin sets this without touching any file.
+LOOP_RUNNER_BIN_ENV: Final = "FEATURE_FORGE_LOOP_RUNNER_BIN"
+
+
+def resolve_loop_runner_layers(
+    config_path: Path, schema_path: Path
+) -> dict[str, dict[str, object]]:
+    """Resolve ``loopRunner`` with per-field provenance (#324).
+
+    Returns ``{field: {"value": <value>, "layer": <layer>}}`` where ``layer`` is one of
+    ``"env"``, ``"local"``, ``"committed"``, ``"default"`` — the precedence order (highest
+    first): the ``FEATURE_FORGE_LOOP_RUNNER_BIN`` env var (``bin`` only) over the machine-local
+    ``forge.config.local.json`` over the committed ``forge.config.json`` over the schema
+    default. Fields present in a user file but not in the schema defaults (unknown keys) are
+    carried through with their originating layer — the config schema is the authority that
+    flags them at author time, exactly as the flat resolver did. ``doctor`` reports these
+    layers; ``resolve_loop_runner`` projects just the values.
+
+    Args:
+        config_path: Path to ``forge.config.json``.
+        schema_path: Path to ``forge-config-schema.json`` (source of the defaults).
+
+    Raises:
+        UsageError: If the schema is unreadable/unparseable (from ``_loop_runner_defaults``).
+    """
+    defaults = _loop_runner_defaults(schema_path)
+    committed = _load_config(config_path).get("loopRunner")
+    committed = committed if isinstance(committed, dict) else {}
+    local = _load_config(_local_config_path(config_path)).get("loopRunner")
+    local = local if isinstance(local, dict) else {}
+    env_bin = os.environ.get(LOOP_RUNNER_BIN_ENV)
+
+    layered: dict[str, dict[str, object]] = {}
+    # Every field any layer mentions, defaults first so their order leads.
+    fields = list(defaults) + [k for k in (*committed, *local) if k not in defaults]
+    for field in fields:
+        if field == "bin" and env_bin:
+            layered[field] = {"value": env_bin, "layer": "env"}
+        elif field in local:
+            layered[field] = {"value": local[field], "layer": "local"}
+        elif field in committed:
+            layered[field] = {"value": committed[field], "layer": "committed"}
+        else:
+            layered[field] = {"value": defaults[field], "layer": "default"}
+    return layered
 
 
 # --------------------------------------------------------------------------- #
@@ -1399,8 +1483,11 @@ __all__ = [
     "load_json_with_duplicates",
     "warn_duplicate_keys",
     "_load_config",
+    "load_effective_config",
     "_loop_runner_defaults",
     "resolve_loop_runner",
+    "resolve_loop_runner_layers",
+    "LOOP_RUNNER_BIN_ENV",
     "_now_iso",
     "_write_state",
     "_commit_state",

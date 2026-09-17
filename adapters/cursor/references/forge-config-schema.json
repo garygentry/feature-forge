@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Feature Forge Configuration",
-  "description": "Project-level configuration for the feature-forge plugin. Place as forge.config.json in your project root.",
+  "description": "Project-level configuration for the feature-forge plugin. Place as forge.config.json in your project root. An optional gitignored forge.config.local.json alongside it is deep-merged over the committed file (local wins) so machine-local facts — e.g. loopRunner.bin, contextWindowTokens — live outside version control; FEATURE_FORGE_LOOP_RUNNER_BIN overrides loopRunner.bin above both.",
   "type": "object",
   "properties": {
     "specsDir": {

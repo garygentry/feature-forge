@@ -126,10 +126,15 @@ claude plugin disable feature-forge@<marketplace-name>   # re-enable to switch b
 rauf wears two hats; they activate differently.
 
 - **As the loop runner** (what `forge-5-loop` executes): a compiled `rauf-stable` binary,
-  not a plugin. Build it with `pnpm dogfood:runner` in the rauf checkout and point
-  feature-forge at it via `forge.config.json`:
-  `"loopRunner": { "bin": "rauf-stable" }` (this repo's own config already does). Full
-  workflow — the binary split, the loop safety guard, branch-per-feature — is in
+  not a plugin. Build it with `pnpm dogfood:runner` in the rauf checkout. Because *which* binary
+  drives a repo is a **machine** fact — the fleet runs `rauf` (npm pin) / `rauf-dev` (source) /
+  `rauf-stable` (snapshot) — point feature-forge at it with a **gitignored `forge.config.local.json`**
+  next to `forge.config.json` rather than committing the name (#324):
+  `{ "loopRunner": { "bin": "rauf-stable" } }`. It deep-merges over the committed config (local
+  wins); `FEATURE_FORGE_LOOP_RUNNER_BIN=rauf-dev` overrides `bin` for a one-shot run. Verify with
+  `python3 scripts/forge-session.py effective-config` (shows each key's layer) and keep the local
+  file out of git — `doctor`'s `config-local-ignored` check warns if it is tracked. Full workflow —
+  the binary split, the loop safety guard, branch-per-feature — is in
   [rauf's `docs/DOGFOODING.md`](https://github.com/garygentry/rauf/blob/main/docs/DOGFOODING.md).
 
 - **As skills** (e.g. forge-4's `author-backlog` delegation): rauf's skills **are**

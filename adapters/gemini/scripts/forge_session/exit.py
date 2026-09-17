@@ -38,7 +38,7 @@ from forge_session._common import (
     VerifyCapability,
     _EXIT_VERIFY_TOKEN,
     _git_output,
-    _load_config,
+    load_effective_config,
     _read_state,
     _resolve_feature_dir,
     _stage_version,
@@ -541,7 +541,7 @@ def stage_exit(
     # exactly the readiness claim REQ-PROD-02 forbids.
     loop_incomplete = stage == "forge-5-loop" and outcome != "complete"
 
-    config = _load_config(config_path)
+    config = load_effective_config(config_path)
     invalid_keys = invalid_auto_verify_keys(config)
     for key in invalid_keys:   # already sorted; advisory, never fatal
         print(
