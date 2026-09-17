@@ -38,11 +38,13 @@ The `--dry-run --json` plan reports the resolved install destination. Claude ins
 > taken from the installer's `--dry-run --json` plan rather than hard-coded, because the
 > cross-agent installer treats those config-dir conventions as best-known but unverified.
 
-> **Known gap (installed-bundle self-location):** an installed non-Claude `adapters/<agent>/`
-> bundle does not currently carry `epic-manifest.py` / `.claude-plugin/plugin.json`, so the
-> portable resolver `scripts/forge-root.sh` cannot self-locate from an installed bundle. This
-> is a known limitation owned by the adapter generator; it does not block install/first-use
-> here.
+> **Claude bundle manifest (#322):** the built `adapters/claude/` bundle carries its own
+> `.claude-plugin/plugin.json`, so Claude's plugin loader recognises it whether it is installed
+> via `install -a claude`, added from a marketplace, or loaded with `claude --plugin-dir
+> adapters/claude`. (`forge-root.sh` still self-locates on the neutral `.feature-forge-bundle.json`
+> sentinel every bundle carries; the plugin manifest is the additional file Claude's own loader
+> needs.) The equivalent host-native manifest for the other agents is tracked separately and does
+> not block install/first-use here.
 
 ## First-use check
 

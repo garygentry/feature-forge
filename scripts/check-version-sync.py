@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Assert the three feature-forge version fields agree (REQ-CI-05, REQ-OBS-01).
+"""Assert feature-forge's synced version fields agree (REQ-CI-05, REQ-OBS-01).
 
-Within-repo version-sync gate. The three fields are the version-sync contract from
+Within-repo version-sync gate. These fields are the version-sync contract from
 00-core-definitions.md §5; installer/package.json is EXCLUDED (independent line).
 The gate prints every field and its value, flags conflicts, and exits non-zero on
-any mismatch (REQ-OBS-01 — no silent failure). The three fields were reconciled
+any mismatch (REQ-OBS-01 — no silent failure). The fields were reconciled
 under 06-packaging-versioning-hygiene.md; the gate now enforces that steady-state
 equality and fails only on a genuine future drift.
 
@@ -14,7 +14,7 @@ Usage:
     python3 check-version-sync.py [--root DIR]
 
 Exit codes:
-    0 = all three fields byte-equal
+    0 = all fields byte-equal
     1 = mismatch (conflicting files+values printed)
     2 = a field is missing/unreadable (config error)
 """
@@ -25,7 +25,7 @@ import argparse
 import json
 from pathlib import Path
 
-#: The three synced fields (00 §5). Each: (repo-relative file, accessor label,
+#: The synced version fields (00 §5). Each: (repo-relative file, accessor label,
 #: a function extracting the version string from the parsed JSON).
 FIELDS: tuple[tuple[str, str, "object"], ...] = (
     (".claude-plugin/plugin.json", "version", lambda d: d["version"]),
@@ -35,6 +35,9 @@ FIELDS: tuple[tuple[str, str, "object"], ...] = (
         lambda d: d["plugins"][0]["version"],
     ),
     ("adapters/gemini/gemini-extension.json", "version", lambda d: d["version"]),
+    # Built Claude bundle manifest (#322): generated from the root manifest, so it must carry
+    # the same version. Kept in the sync gate so a hand-edit or a stale regenerate is caught.
+    ("adapters/claude/.claude-plugin/plugin.json", "version", lambda d: d["version"]),
 )
 
 #: EXCLUDED from the gate — installer/ is a separately published sub-package (00 §5).
@@ -62,7 +65,7 @@ def _read_version(root: Path, rel: str, label: str, accessor) -> tuple[str | Non
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="check-version-sync.py",
-        description="Assert feature-forge's three version fields agree (REQ-CI-05).",
+        description="Assert feature-forge's synced version fields agree (REQ-CI-05).",
     )
     parser.add_argument(
         "--root",
@@ -73,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root: Path = args.root.resolve()
 
-    print("version-sync: checking the three synced feature-forge fields (REQ-CI-05)...")
+    print("version-sync: checking the synced feature-forge version fields (REQ-CI-05)...")
     print(f"version-sync: excluded (independent line): {', '.join(EXCLUDED)}")
 
     versions: dict[str, str] = {}
@@ -94,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     distinct = set(versions.values())
     if len(distinct) == 1:
         only = next(iter(distinct))
-        print(f"version-sync: PASS — all three fields agree at {only}.")
+        print(f"version-sync: PASS — all fields agree at {only}.")
         return 0
 
     # Mismatch — print the conflict explicitly (REQ-OBS-01: conflicting files+values).
@@ -102,10 +105,12 @@ def main(argv: list[str] | None = None) -> int:
     for label, value in versions.items():
         print(f"  CONFLICT  {label} = {value}")
     print(
-        "version-sync: reconcile all three fields to a single version (the conflicting "
+        "version-sync: reconcile all fields to a single version (the conflicting "
         "values are printed above). marketplace.json is hand-edited; "
-        "gemini-extension.json is REGENERATED via scripts/build-adapters.py "
-        "(bump GEMINI_EXTENSION_VERSION). See 06-packaging-versioning-hygiene.md."
+        "gemini-extension.json AND adapters/claude/.claude-plugin/plugin.json are "
+        "REGENERATED via scripts/build-adapters.py (the claude manifest tracks the root "
+        "plugin.json version; gemini also needs GEMINI_EXTENSION_VERSION bumped). "
+        "See 06-packaging-versioning-hygiene.md."
     )
     return 1
 
