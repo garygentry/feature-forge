@@ -42,7 +42,7 @@ Parse this rather than inferring commands. Version floors are literal — compar
     "installGlobal": "npm i -g @garygentry/rauf",
     "installOnDemand": "npx @garygentry/rauf",
     "minVersion": "0.14.0",
-    "installerPins": "0.15.0",
+    "installerPins": "0.16.0",
     "verifyVersion": "rauf version",
     "wireIntoProject": "rauf install .",
     "binaryFallback": "curl -fsSL https://raw.githubusercontent.com/garygentry/rauf/main/scripts/install-binary.sh | bash"
