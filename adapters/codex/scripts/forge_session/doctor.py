@@ -1256,7 +1256,13 @@ def _check_root_version_skew(ctx: _CheckContext) -> dict:
     different path cannot be proven equal and counts as skew.
     """
     if not ctx.plugin_root.get("resolved"):
-        return _result("na", "plugin root unresolved (see plugin-root)", {"resolved": False})
+        # Still enumerate every candidate root: this is exactly the multi-install triage moment
+        # (e.g. a bad FEATURE_FORGE_ROOT override hard-failed Step 0 on a host that also has a
+        # good install) where the operator most needs to see what a working install would be.
+        return _result(
+            "na", "plugin root unresolved (see plugin-root)",
+            {"resolved": False, "candidates": _resolve_all_roots()},
+        )
     own_root = _BUNDLE_ROOT
     resolved_root = Path(str(ctx.plugin_root.get("root")))
     env_var = next(
@@ -1282,12 +1288,18 @@ def _check_root_version_skew(ctx: _CheckContext) -> dict:
             return True
         return a[1] is not None and b[1] is not None and a[1] == b[1]
 
-    labels = list(roots)
+    # For the pairwise skew check, drop `env` when it IS the resolved root — a FEATURE_FORGE_ROOT
+    # override makes resolved == env post-#323, and comparing both would print the same skew twice
+    # (own-vs-resolved and own-vs-env). The env evidence fields below are kept for transparency.
+    compare = dict(roots)
+    if "env" in compare and real(compare["env"][0]) == real(resolved_root):
+        del compare["env"]
+    labels = list(compare)
     disagreements = [
-        f"{x} ({roots[x][1] or 'no version'} at {roots[x][0]}) vs "
-        f"{y} ({roots[y][1] or 'no version'} at {roots[y][0]})"
+        f"{x} ({compare[x][1] or 'no version'} at {compare[x][0]}) vs "
+        f"{y} ({compare[y][1] or 'no version'} at {compare[y][0]})"
         for i, x in enumerate(labels) for y in labels[i + 1:]
-        if not agree(roots[x], roots[y])
+        if not agree(compare[x], compare[y])
     ]
     evidence = {
         "ownRoot": str(own_root),

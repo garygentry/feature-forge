@@ -1370,6 +1370,19 @@ def test_plugin_root_unresolved_when_explicit_override_is_invalid(tmp_path: Path
     assert record["evidence"].get("resolved") is False
 
 
+def test_root_version_skew_still_enumerates_candidates_when_unresolved(tmp_path: Path) -> None:
+    """An invalid override hard-fails resolution, but root-version-skew still enumerates candidate
+    roots — the multi-install triage moment where the operator most needs to see the working
+    install the bad override is shadowing (#323)."""
+    project = make_project(tmp_path)
+    env = scrubbed_env(tmp_path)
+    env["FEATURE_FORGE_ROOT"] = str(tmp_path / "does-not-exist")
+    record = check(doctor_report(project, env), "root-version-skew")
+    assert record["status"] == "na"
+    assert record["evidence"].get("resolved") is False
+    assert isinstance(record["evidence"].get("candidates"), list)
+
+
 def test_root_version_skew_agrees_when_the_override_matches_own_version(tmp_path: Path) -> None:
     """A complete override at the SAME version as the doctor's own bundle → no skew (#323)."""
     project = make_project(tmp_path)
