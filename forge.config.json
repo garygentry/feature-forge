@@ -10,8 +10,5 @@
   "testCommand": "bash scripts/validate.sh",
   "smokeCommand": "python3 scripts/forge-session.py doctor --json",
   "loopIterationMultiplier": 1.5,
-  "contextWindowTokens": 1000000,
-  "loopRunner": {
-    "bin": "rauf-stable"
-  }
+  "contextWindowTokens": 1000000
 }

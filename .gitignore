@@ -44,3 +44,6 @@ __pycache__/
 **/.rauf/iteration-status.json
 **/.rauf/rauf.log
 **/.rauf/events.ndjson
+
+# Machine-local forge config overlay (#324) — never committed
+forge.config.local.json
