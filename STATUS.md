@@ -19,7 +19,8 @@ doctor health/repair surface (#250–#254), interaction capability ladder + rung
 | npm | publishing 0.3.8 | |
 | Commit | this release commit | |
 
-CHANGELOG `[Unreleased]` is empty.
+CHANGELOG `[Unreleased]` carries the installer-0.3.8 rauf-pin advance (0.16.0 → 0.16.1);
+it rolls into the next dated plugin release.
 
 ### rauf coupling
 
