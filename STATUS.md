@@ -4,30 +4,31 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-09-17 (0.20.0 release cut — #244 P0–P4 doctor health/repair surface
-(#250–#254), interaction capability ladder + rung detection (#261/#263), Pi invocation-args
-(#303), and the 2026-09-17 catch-up program (#322/#324/#323/#314/#315); rauf pin advance to
-0.16.0)._
+_Last updated: 2026-09-19 (installer 0.3.8 — rauf pin advance 0.16.0 → 0.16.1 for the rauf #137
+loop-halt fix; plugin unchanged at 0.20.0). Prior: 2026-09-17 0.20.0 release cut — #244 P0–P4
+doctor health/repair surface (#250–#254), interaction capability ladder + rung detection
+(#261/#263), Pi invocation-args (#303), and the 2026-09-17 catch-up program
+(#322/#324/#323/#314/#315); rauf pin advance to 0.16.0)._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
 | Plugin | **0.20.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.7** | `installer/package.json` (independent version line) |
-| npm | publishing 0.3.7 | |
+| Installer | **0.3.8** | `installer/package.json` (independent version line) |
+| npm | publishing 0.3.8 | |
 | Commit | this release commit | |
 
 CHANGELOG `[Unreleased]` is empty.
 
 ### rauf coupling
 
-`RAUF_PIN` is **`@garygentry/rauf@0.16.0`** (verified resolving on npm 2026-09-17).
-0.16.0 adds `rauf version --json` provenance (`channel`/`path`, which feature-forge's
-doctor optionally reads, #323), the `FORGE_INTERACTION=non-interactive` loop-child stamp
-(read by the doctor interaction-mode check, #261), Codex marketplace install, and
-install-binary/loop-runner polish — every one of them a surface feature-forge *may* read
-but no stage *requires*, so `minRunnerVersion` **stays at 0.14.0** (the recovery
+`RAUF_PIN` is **`@garygentry/rauf@0.16.1`** (verified resolving on npm 2026-09-19).
+0.16.1 is a loop-runner bugfix (rauf #137: a blocked/failed item with an ignored
+`backlog.json.bak` no longer halts the whole loop) over 0.16.0's additions (`rauf version
+--json` provenance, the `FORGE_INTERACTION=non-interactive` loop-child stamp, Codex
+marketplace install) — all surfaces feature-forge *may* read but no stage *requires*, and
+a bugfix adds no capability, so `minRunnerVersion` **stays at 0.14.0** (the recovery
 floor from #234); the pin now sits ahead of the floor, which `COMPATIBILITY.md` documents
 as the expected shape (the floor only rises when rauf ships a surface a shipped stage
 actually requires). Agents needing a *newer* rauf than the floor are recorded as prose in

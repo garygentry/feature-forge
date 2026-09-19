@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **rauf pin advanced to `@garygentry/rauf@0.16.1`** (installer 0.3.8). rauf 0.16.1 fixes a
+  loop-runner halt (rauf #137: a blocked or failed item that leaves an ignored `backlog.json.bak`
+  in the tree no longer stops the whole loop). Installer-only release — the plugin version is
+  unchanged; `minRunnerVersion` stays `0.14.0` (a bugfix adds no capability).
+
 ## [0.20.0] — 2026-09-17
 
 ### Added
