@@ -38,14 +38,15 @@ before forge-5's setup gate.
 
 The cross-agent installer (`@garygentry/feature-forge`) records a single pinned
 rauf coordinate as the provisioned default loop runner — currently
-**`@garygentry/rauf@0.16.0`** (`installer/src/rauf.ts` `RAUF_PIN`). The **pin** is
+**`@garygentry/rauf@0.16.1`** (`installer/src/rauf.ts` `RAUF_PIN`). The **pin** is
 distinct from the `minRunnerVersion` **floor** above (0.14.0): the floor is the
 minimum rauf an existing install must satisfy, while the pin is the specific
-known-good rauf a fresh install provisions. rauf 0.16.0 ships no new capability
-feature-forge depends on (`rauf version --json` provenance and a
-`FORGE_INTERACTION` loop-child stamp that this package *may* read but no stage
-*requires*, plus Codex marketplace install and install-binary/loop-runner
-polish), so the floor stays at 0.14.0
+known-good rauf a fresh install provisions. rauf 0.16.1 is a loop-runner bugfix
+(rauf #137) over 0.16.0, and neither ships a new capability feature-forge
+depends on (`rauf version --json` provenance and a `FORGE_INTERACTION`
+loop-child stamp that this package *may* read but no stage *requires*, plus
+Codex marketplace install and install-binary/loop-runner polish), so the floor
+stays at 0.14.0
 while the pin advances ahead of it — the floor only rises when rauf ships a
 surface feature-forge's stages actually require (as #234 did). The pin is
 advanced on each feature-forge release to a newly published, compatible rauf;
