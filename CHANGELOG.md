@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **forge-5-loop no longer closes a run as `complete` while its review pass is still pending,
+  and it reports what a stall warning is about (#339).** Targets the rauf release after 0.16.1
+  (rauf #141/#144/#146/#147); every new field is optional, so older rauf behaves as before.
+  A `status --json` `reviewPending: true` (the `--review` pass failed, was cancelled, or hit
+  a usage limit; `loop run` exits 1) now blocks `complete`: Step 4a offers `rauf resume`,
+  which re-runs exactly that review, and a declined resume closes `partial` with the new
+  `stage-exit --cause review-pending`, whose NEXT-STEPS sentence names the pending review.
+  Step 2a re-offers the resume when a pending review is the only work left, instead of
+  "Nothing to run". The Monitor filter adds `review_failed`. `llm_stuck_warning` is reported
+  with its `currentTool` / `toolRunningMs` ("Bash running 31m" vs. a silent model), and the
+  `.rauf.json` `stuckThresholdMs` / `toolStuckThresholdMs` knobs are documented. A new
+  runner-terminal-states table in `result-reporting.md` maps `ITERATIONS_COMPLETE`,
+  `PAUSED` on request vs. with a stale lock, usage halts and backoffs, and an all-zero
+  summary. An empty or unreadable backlog (`total == 0`) is now an operational failure and
+  never a vacuous `complete`. When the runner reports a `loopState`, only `COMPLETE`/`IDLE`
+  counts as a clean finish: `ERROR`, `PAUSED` (incl. a stale lock), `ITERATIONS_COMPLETE`
+  or a usage halt is never `complete`, even with every item done. Following rauf's supervisor
+  table, that rung (and a pending review) sits above needs-human/blocked/deferred in the
+  outcome ladder, with those items still reported alongside. It closes `partial` with
+  the new `--cause runner-stopped`, and Step 2a offers rauf's `resume` rather than "Nothing
+  to run". The Monitor filter now also covers `loop_paused`, `usage_limit_hit`,
+  `usage_limit_cleared`, `sleep_start` and `sleep_end`, with reactions.
+
 - **The Claude marketplace now distributes the built `adapters/claude` bundle, not canon (#314).**
   `marketplace.json` `plugins[0].source` moves from `"."` to `"./adapters/claude"`. A bare prose
   `Read references/X` resolves skill-local, and canon skills carry none of the shared references

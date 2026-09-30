@@ -799,6 +799,27 @@ _LOOP_PARTIAL_STARVED_TEXT: Final[str] = (
     "resumable and nothing downstream is ready: unblock the roots named in the "
     "starvation report above, then run the loop again below to continue."
 )
+#: The pending-review variant of the `partial` next-steps sentence: every item may be
+#: done, but the runner's review pass failed or was interrupted, so the run is not
+#: complete. Selected only by ``--cause review-pending`` (issue #339); the route is
+#: still the loop resume, whose Step 2a re-runs exactly that review.
+_LOOP_PARTIAL_REVIEW_PENDING_TEXT: Final[str] = (
+    "The loop for {feature} is not finished — its review pass failed or was "
+    "interrupted, so the review is still pending even if every item is done. The "
+    "recorded state is resumable and nothing downstream is ready: run the loop again "
+    "below to re-run the pending review."
+)
+#: The unfinished-runner variant of the `partial` next-steps sentence: the runner's
+#: own terminal state (a crash, a stop, a stale lock, a limit halt) says it did not
+#: finish cleanly, so the run is not complete even when every item reads `done`.
+#: Selected only by ``--cause runner-stopped`` (issue #339); the route is still the
+#: loop resume, whose Step 2a offers the runner's own resume.
+_LOOP_PARTIAL_RUNNER_STOPPED_TEXT: Final[str] = (
+    "The loop runner for {feature} did not reach a clean finish — it crashed, was "
+    "stopped, or halted on a limit — so the run is not complete even if every item "
+    "reads done. The recorded state is resumable and nothing downstream is ready: run "
+    "the loop again below to resume the runner."
+)
 #: The `complete` preamble, selected by where the handoff actually lands. The epic
 #: rows name the epic and its live rollup, so the operator can see WHY the handoff is
 #: this member's own documentation rather than another member (or vice versa).
@@ -956,9 +977,11 @@ def _loop_route(
             handoff: findings already exist at this exact revision, so the fenced
             action is applying them, exactly as on a production re-exit.
         cause: The already-validated attribution annotation — only
-            ``"dependency-starvation"`` with ``outcome == "partial"``, else None.
-            Swaps the partial next-steps sentence for the starvation variant; the
-            route itself is unchanged (partial stays a resume either way).
+            ``"dependency-starvation"``, ``"review-pending"`` or
+            ``"runner-stopped"`` with
+            ``outcome == "partial"``, else None. Swaps the partial next-steps
+            sentence for the matching variant; the route itself is unchanged
+            (partial stays a resume either way).
 
     Returns:
         `(primary_canonical, deferred_canonical, outcome_text, advancing)`, matching
@@ -985,6 +1008,10 @@ def _loop_route(
         )
         if outcome == "partial" and cause == "dependency-starvation":
             text = _LOOP_PARTIAL_STARVED_TEXT.format(feature=feature)
+        elif outcome == "partial" and cause == "review-pending":
+            text = _LOOP_PARTIAL_REVIEW_PENDING_TEXT.format(feature=feature)
+        elif outcome == "partial" and cause == "runner-stopped":
+            text = _LOOP_PARTIAL_RUNNER_STOPPED_TEXT.format(feature=feature)
         else:
             text = _LOOP_OUTCOME_TEXT[outcome].format(feature=feature)
         return primary, None, text, False

@@ -2929,6 +2929,38 @@ def test_cause_with_loop_partial_swaps_in_the_starved_text(tmp_path: Path) -> No
     assert "unblock the roots named in the starvation report above" in block
 
 
+def test_review_pending_cause_swaps_in_the_review_text(tmp_path: Path) -> None:
+    """--cause review-pending (#339) names the pending review; route stays a resume."""
+    session = _load_session()
+    root = _project(tmp_path, config={})
+    payload = _loop(root, "partial", "widget", "--cause", "review-pending")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["outcome"] == "partial"
+    assert d["primaryCommand"] == LOOP_RESUME, "the route is unchanged: still a resume"
+    assert session._LOOP_PARTIAL_REVIEW_PENDING_TEXT.format(feature="widget") in block
+    assert session._LOOP_OUTCOME_TEXT["partial"].format(feature="widget") not in block
+    assert STARVED_MARKER not in block
+
+
+def test_runner_stopped_cause_swaps_in_the_runner_text(tmp_path: Path) -> None:
+    """--cause runner-stopped (#339): an unclean runner finish; route stays a resume."""
+    session = _load_session()
+    root = _project(tmp_path, config={})
+    payload = _loop(root, "partial", "widget", "--cause", "runner-stopped")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["primaryCommand"] == LOOP_RESUME, "the route is unchanged: still a resume"
+    assert session._LOOP_PARTIAL_RUNNER_STOPPED_TEXT.format(feature="widget") in block
+    assert session._LOOP_OUTCOME_TEXT["partial"].format(feature="widget") not in block
+
+
+def test_review_pending_cause_is_rejected_off_loop_partial(tmp_path: Path) -> None:
+    """The combination rule covers every cause value, not just starvation."""
+    root = _project(tmp_path, config={})
+    err = _rejected(root, "--feature", "widget", "--stage", "forge-5-loop",
+                    "--outcome", "complete", "--cause", "review-pending")
+    assert "--cause review-pending is valid only with" in err
+
+
 def test_partial_without_cause_renders_todays_text_verbatim(tmp_path: Path) -> None:
     """Absent --cause, partial is byte-for-byte today's sentence — no ripple."""
     session = _load_session()
@@ -2965,7 +2997,7 @@ def test_cause_is_rejected_for_every_other_stage(tmp_path: Path, stage: str) -> 
 
 
 def test_an_unknown_cause_value_is_rejected_by_argparse(tmp_path: Path) -> None:
-    """`choices` holds the value domain closed; only dependency-starvation parses."""
+    """`choices` holds the value domain closed; only the declared causes parse."""
     root = _project(tmp_path, config={})
     for value in ("iteration-limit", "starvation", ""):
         proc = _run(root, "--feature", "widget", "--stage", "forge-5-loop",

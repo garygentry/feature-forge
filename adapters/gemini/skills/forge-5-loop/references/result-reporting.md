@@ -34,6 +34,16 @@ Runner review pass: {itemsCreated} fix item(s) created and implemented.
 Omit this line when no `review_completed` event was emitted (no review flag passed).
 The created items are already counted in the totals above.
 
+**Review pending** (`reviewPending: true` — the review pass failed or was interrupted,
+and the user chose **Stop here** at the Pending review offer in
+`references/runner-contract.md`). Never render the all-done report for this run, even
+when every item is `done`:
+```
+Loop finished the backlog for {feature}, but its review pass did not complete.
+  Completed:      {done}/{total}
+  Review pending: {reviewItemIds count} item(s) ({reason from the last `review_failed` event, if any})
+```
+
 **Some items need a human:**
 ```
 Loop completed for {feature}.
@@ -71,8 +81,11 @@ Loop completed for {feature}.
   Pending:   {pending} items ({cause})
   Blocked:   {blocked} items
 ```
-Render `{cause}` as "iteration limit reached" **only** when `iteration == maxIterations`
-AND `selectable > 0` — cite the `iteration`/`maxIterations` counters from
+Render `{cause}` from the runner's terminal state first (see **Runner terminal states**
+below): "stopped on request", "the run crashed (stale lock)", or "usage limit — resume
+after {sleepUntil}". Otherwise render it as "iteration limit reached" **only** when
+`loopState` is `ITERATIONS_COMPLETE` (the runner's own attestation, when reported) or
+`iteration == maxIterations`, AND `selectable > 0` — cite the `iteration`/`maxIterations` counters from
 `{loopRunner.stateDir}/state.json` and `selectable` from `backlog-topology --items-stdin
 --json` run over the same authoritative item JSON as the counts above. Otherwise —
 `selectable == 0` with items still pending while `iteration < maxIterations` — the
@@ -93,6 +106,37 @@ the `backlog-topology` output (`selectable`, `blockingRoots`, `gatedCount`,
 `itemCount`). A cause any of those counters contradicts — e.g. "iteration limit
 reached" while `iteration < maxIterations` — is a reportable defect.
 
+## Runner terminal states (Step 4a)
+
+`status --json` may also carry `loopState`, `lock`, `sleepUntil`, `reviewPending` and
+`reviewItemIds`. All are optional: when a field is absent, skip its row and read the
+counts as before. These mirror the rows of rauf's supervisor decision table
+(`drive-rauf-loop`) that forge-5-loop decides the same way.
+
+**Clean runner finish.** When `loopState` is reported, only `COMPLETE` or `IDLE` is a
+clean terminal success. Every other value — `ERROR`, `PAUSED` (on request or with a
+stale lock), `ITERATIONS_COMPLETE`, `PAUSED_USAGE_LIMIT`, `WEEKLY_LIMIT`,
+`SLEEPING_LIMIT`, `PAUSED_HUMAN`, a still-live `RUNNING`/`REVIEWING`, or anything
+unrecognized — means the runner did **not** finish cleanly, and the run is **never**
+`complete`, even when `done == total > 0` (e.g. a process killed after its last commit
+but before writing its final state reads `PAUSED` + stale lock with every item done).
+The ladder's rung 2 (runner not finished) catches it, above the needs-human / blocked / deferred rungs. When `loopState` is absent (an older or
+non-rauf runner), this gate does not apply and the counts decide, as before.
+
+| Runner state | What it means here |
+|---|---|
+| `backlogSummary.total == 0` (any `loopState`) | Empty **or unreadable** backlog — a read failure reports all-zero counts. Never `complete`: run the **validate command** and treat it as an **operational failure** (below). |
+| `reviewPending: true` | Not complete, whatever the counts: offer the resume (**Pending review**, `references/runner-contract.md`). If the user stops here, ladder rung 2 closes `partial --cause review-pending` — even with blocked, needs-human or deferred items, which are still reported alongside. |
+| `ITERATIONS_COMPLETE` | Iteration budget spent with eligible work left — the "iteration limit reached" `partial` cause. The next loop run gets a fresh budget. |
+| `PAUSED`, `lock.stale` not true | Stopped on request (Ctrl-C, `SIGTERM`, a stop command). Report "stopped on request"; do not offer to relaunch unless the user asks. |
+| `PAUSED`, `lock.stale: true` | The run died mid-iteration and left its lock. rauf's `{bin} resume . --backlog {backlogDir}` clears the stale lock and continues. Never reach for `--force` or `reset` first. |
+| `PAUSED_USAGE_LIMIT` / `WEEKLY_LIMIT` | Halted on a usage limit: "resume after {sleepUntil}". Not a failure. |
+| `ERROR` | Crash or circuit-breaker halt (`loop_error`). Surface the error alongside the count reports; never `complete`. With work left, the next loop run re-runs it; with none, re-entry offers rauf's resume (**Unfinished runner**, `references/runner-contract.md`). |
+| `COMPLETE` with `done < total` | No eligible work left, but items are unfinished (blocked, needs-human, deferred, or pending behind a blocked dependency). The ladder's non-complete rungs apply; never reset the backlog. |
+
+**Exit codes are not the outcome.** rauf exits 1 both for a crash and for a failed review
+pass, and 0 for a requested stop or a spent budget. Read the fields above, never `$?`.
+
 ## Selecting the one `LoopOutcome` (Step 7)
 
 After Step 5's `state-complete`, select exactly **one** `LoopOutcome` from Step 4a's
@@ -106,26 +150,43 @@ authoritative final counts. Walk this ladder in order and stop at the first matc
    stop the recovery just cleared is not re-reported as still needing a human. (Step
    4c runs the procedure on every close, so an empty affected set is the common case —
    it never selects `resolved`; fall through.)
-2. **`needs-human`** — otherwise, `needsHuman > 0`. This wins even when blocked
+2. **`partial` (runner not finished)** — otherwise, `reviewPending` is true, **or**
+   `loopState` is reported and is not a clean finish (**Clean runner finish**, above).
+   Pass `--cause review-pending` when `reviewPending` is true. Otherwise pass
+   `--cause runner-stopped`, except for `ITERATIONS_COMPLETE`, which is the plain
+   iteration-limit `partial` (no `--cause`). This rung fires **whatever the counts
+   say** — including `done == total`, and **above** the needs-human / blocked / deferred
+   rungs, following rauf's supervisor table: a crashed, stopped, limit-halted or
+   budget-spent runner, or an unfinished review, is recovered or resumed first. It does
+   not hide the backlog: the Step 4b needs-human / blocked / deferred reports still
+   render alongside it, so every set-aside item is surfaced in the same close (e.g.
+   **Stop here** on a pending review with blocked items closes `partial --cause
+   review-pending` and still lists the blocked items).
+3. **`needs-human`** — otherwise, `needsHuman > 0`. This wins even when blocked
    items also exist: a decision only a human can make outranks work that merely
    could not proceed.
-3. **`blocked`** — otherwise, genuine `blocked > 0`.
-4. **`deferred`** — otherwise, runner-deferred items exist (the "false blocks" the
+4. **`blocked`** — otherwise, genuine `blocked > 0`.
+5. **`deferred`** — otherwise, runner-deferred items exist (the "false blocks" the
    runner gave up on after retries).
-5. **`partial`** — otherwise, `pending`/`in_progress` items remain because the
-   iteration limit was reached.
-6. **`complete`** — otherwise, and **only** when every item is `done`.
+6. **`partial`** — otherwise, `pending`/`in_progress` items remain (the report above
+   names the cause). Pass `--cause dependency-starvation` only on the starvation report.
+7. **`complete`** — otherwise, and **only** when `total > 0`, every item is `done`, no
+   review is pending, and the runner finished cleanly (or reports no `loopState`).
 
 This is a priority order, not a set. A run reporting both a needs-human and a blocked
-count renders both reports above and still exits `needs-human`.
+count renders both reports above and still exits `needs-human`; a run whose runner did
+not finish renders every applicable count report and still exits rung 2's `partial`.
 
 **The runner's process exit code is not the outcome.** A loop runner that exits 0 has
 reported only that its process finished; the final backlog state decides. A clean
-exit 0 that still leaves pending items is `partial`, never `complete` — and
-`complete` is legitimate only when the counts show every item `done`.
+exit 0 that still leaves pending items is `partial`, never `complete`; an exit 1 from a
+failed review with every item `done` is `partial` (`--cause review-pending`), not an
+error; and a crash or stale-lock stop with every item `done` is `partial` (`--cause
+runner-stopped`). `complete` is legitimate only when the counts show every item `done`,
+no review is pending, and the runner finished cleanly.
 
-**Retrying the non-complete outcomes.** `partial`, `deferred`, and `resolved` fence
-the loop resume; `blocked` and `needs-human` fence the navigator. Whichever you land on, the
+**Retrying the non-complete outcomes.** `partial` (every cause), `deferred`, and
+`resolved` fence the loop resume; `blocked` and `needs-human` fence the navigator. Whichever you land on, the
 runner's own retry flags still apply to the next run — e.g. rauf's `--retry-blocked`
 picks the set-aside blocked and deferred items back up at Step 2d. Mention that as
 plain prose in the report if it helps; never as a second command block.
@@ -133,8 +194,9 @@ plain prose in the report if it helps; never as a second command block.
 ## Operational failure before the counts are known
 
 If the run cannot produce authoritative counts at all — the status/list command fails,
-its output does not parse, the state directory is gone, or the process died in a way
-that leaves the backlog unreadable — **do not pick an outcome and do not close the
+its output does not parse, the state directory is gone, the summary reports
+`total == 0` (an empty or unreadable backlog — show the validate command's output), or
+the process died in a way that leaves the backlog unreadable — **do not pick an outcome and do not close the
 stage.** There is nothing to select from, and guessing one would record a pipeline
 position that never happened.
 

@@ -40,9 +40,11 @@ defined authoritatively in rauf's
 - **A machine-readable event stream** for live supervision (`loopRunner.eventStreamCommand`,
   rauf: `loop run … --ndjson`): one JSON event per line with a stable `type`
   vocabulary — `item_completed` / `item_blocked` / `needs_human` / `signal_parsed`
-  / `loop_completed` / `loop_error` / `loop_cancelled` / `llm_stuck_warning` (a
-  circuit-breaker halt surfaces as `loop_error`) — plus a
-  derived-status JSON (`loopRunner.statusJsonCommand`, rauf: `status … --json`) and
+  / `loop_completed` / `loop_error` / `loop_cancelled` / `review_failed` /
+  `llm_stuck_warning` (a circuit-breaker halt surfaces as `loop_error`) — plus a
+  derived-status JSON (`loopRunner.statusJsonCommand`, rauf: `status … --json`;
+  forge-5-loop also reads its optional `loopState` / `lock` / `sleepUntil` /
+  `reviewPending` fields when present, and degrades to the counts when absent) and
   per-iteration telemetry with a `stuckWarning` flag (`loopRunner.watchCommand`,
   rauf: `status … --json` — the `loop watch` verb was removed in v0.5.0). `forge-5-loop` supervises the run through these,
   **not** by parsing the human log. `followCommand` / `logCommand` are

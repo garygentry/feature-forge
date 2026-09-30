@@ -467,7 +467,8 @@ def main() -> int:
     p_exit.add_argument("--outcome", default=None,
                         help="Stage-specific outcome (loop/docs/verify/fix only)")
     p_exit.add_argument(
-        "--cause", default=None, dest="cause", choices=("dependency-starvation",),
+        "--cause", default=None, dest="cause",
+        choices=("dependency-starvation", "review-pending", "runner-stopped"),
         help="Pending-attribution cause; valid only with "
              "--stage forge-5-loop --outcome partial",
     )
