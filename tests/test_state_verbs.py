@@ -194,7 +194,7 @@ def test_tempfile_is_imported_and_jsonschema_is_not():
     )
     for path in (FORGE_SESSION, _COMMON, _STATE):
         assert "jsonschema" not in _imported_modules(read(path)), (
-            f"{path.name} imports jsonschema, which is not available in CI"
+            f"{path.name} imports jsonschema; runtime code must stay stdlib-only (it is a test-only dep)"
         )
 
 

@@ -1,4 +1,8 @@
-# Pinned third-party deps for the pytest interpreter (tests/ only — never the generator).
-# Kept separate from requirements-adapters.txt, whose .venv-adapters is PyYAML-only.
-# Installed by .github/actions/quality-gate; under CI, tests hard-import these (tests/_ci_deps.py, #336).
+# Pinned deps for the pytest interpreter (tests/ only — never the generator), provisioned
+# into the gitignored .venv-test by scripts/validate.sh step 7 (locally and in CI alike).
+# Kept separate from requirements-adapters.txt, whose .venv-adapters is PyYAML-only; the
+# generator's pin is pulled in because tests import and drive build-adapters.py.
+# Under CI, tests hard-import the optional deps (tests/_ci_deps.py, #336).
+-r requirements-adapters.txt
+pytest==9.1.1
 jsonschema==4.26.0

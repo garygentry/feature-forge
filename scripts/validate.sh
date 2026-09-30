@@ -216,16 +216,27 @@ if [ -f "$HELPER" ]; then
       ERRORS=$((ERRORS + 1))
     fi
   fi
-  if python3 -c "import pytest" 2>/dev/null; then
-    if python3 -m pytest "$REPO_ROOT/tests" -q -rs; then
+  # The suite runs in an isolated, provisioned venv (pytest + jsonschema + the PyYAML pin,
+  # scripts/requirements-test.txt) so local and CI run it identically: no dep-gated test
+  # silently skips because the ambient python3 lacks a package (#336). Create-or-reuse like
+  # .venv-adapters above; a provisioning failure (e.g. offline first run) is a loud FAIL,
+  # never a skip — the suite did not run.
+  TEST_VENV="$REPO_ROOT/.venv-test"
+  TEST_REQS="$REPO_ROOT/scripts/requirements-test.txt"
+  TEST_PY="$TEST_VENV/bin/python3"
+  if { [ -x "$TEST_PY" ] || python3 -m venv "$TEST_VENV"; } &&
+    "$TEST_PY" -m pip install -q -r "$TEST_REQS"; then
+    if "$TEST_PY" -m pytest "$REPO_ROOT/tests" -q -rs; then
       echo "PASS: epic-manifest pytest suite"
     else
       echo "FAIL: epic-manifest pytest suite"
       ERRORS=$((ERRORS + 1))
     fi
   else
-    echo "SKIP: pytest not installed; skipping epic-manifest test suite (non-fatal)"
-    WARNINGS=$((WARNINGS + 1))
+    echo "FAIL: could not provision .venv-test from scripts/requirements-test.txt — pytest suite NOT run"
+    echo "      (environment/setup fault, NOT a test failure — check network access on the first"
+    echo "       run, PEP-668/externally-managed Python, or a corrupt requirements-test.txt)"
+    ERRORS=$((ERRORS + 1))
   fi
 else
   echo "SKIP: scripts/epic-manifest.py not found; skipping helper checks (non-fatal)"

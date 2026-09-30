@@ -19,6 +19,7 @@ plans/
 
 # Adapter build artefacts (forge-agent-adapters-build)
 .venv-adapters/
+.venv-test/
 adapters.tmp-*/
 
 # Cross-agent installer (Node package)

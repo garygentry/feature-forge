@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -34,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-from _ci_deps import require
+from _ci_deps import ci_active, require
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GENERATOR = REPO_ROOT / "scripts" / "build-adapters.py"
@@ -69,7 +68,7 @@ def _generator_yaml_available() -> bool:
 # Under CI the gate provisions it, so the module never skips there: a missing dep fails the
 # run_build calls loudly instead of leaving every generator guard inert (#336).
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("CI") and not _generator_yaml_available(),
+    not ci_active() and not _generator_yaml_available(),
     reason="build-adapters.py requires the pinned YAML dep — provision .venv-adapters",
 )
 
