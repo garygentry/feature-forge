@@ -38,15 +38,21 @@ before forge-5's setup gate.
 
 The cross-agent installer (`@garygentry/feature-forge`) records a single pinned
 rauf coordinate as the provisioned default loop runner — currently
-**`@garygentry/rauf@0.16.1`** (`installer/src/rauf.ts` `RAUF_PIN`). The **pin** is
+**`@garygentry/rauf@0.17.1`** (`installer/src/rauf.ts` `RAUF_PIN`; 0.17.0 was
+tagged but its npm launcher was never published, so the pin skips it). The **pin** is
 distinct from the `minRunnerVersion` **floor** above (0.14.0): the floor is the
 minimum rauf an existing install must satisfy, while the pin is the specific
-known-good rauf a fresh install provisions. rauf 0.16.1 is a loop-runner bugfix
-(rauf #137) over 0.16.0, and neither ships a new capability feature-forge
-depends on (`rauf version --json` provenance and a `FORGE_INTERACTION`
-loop-child stamp that this package *may* read but no stage *requires*, plus
-Codex marketplace install and install-binary/loop-runner polish), so the floor
-stays at 0.14.0
+known-good rauf a fresh install provisions. rauf 0.17.x adds the status-surface
+fields feature-forge 0.21.0's `forge-5-loop` reads (`status --json`
+`reviewPending` and `loopState`, `llm_stuck_warning` tool context, the
+`loop_paused` / `usage_limit_*` / `sleep_*` events, and `--review` exiting 1 on a
+failed review pass; rauf #141/#144/#146/#147; 0.17.1 adds `status` exiting 1 on
+a pending review and lock/resume hardening, rauf #149/#150). Every one of them is optional: an
+older runner omits the field and the stage behaves as it did before (#339), so
+none is *required* and no new row or floor rise is needed. Like 0.16.x's
+additions (`rauf version --json` provenance and a `FORGE_INTERACTION`
+loop-child stamp that this package *may* read), they are surfaces a stage
+*may* read, so the floor stays at 0.14.0
 while the pin advances ahead of it — the floor only rises when rauf ships a
 surface feature-forge's stages actually require (as #234 did). The pin is
 advanced on each feature-forge release to a newly published, compatible rauf;
@@ -70,3 +76,9 @@ contract could not fully support. Individual agents that need a *newer* rauf tha
   per advertised row, so a rauf that predates a given preset simply never lists it —
   the pipeline degrades gracefully rather than failing. A fresh install provisions
   the pin above, which satisfies the floor and every current agent preset.
+- **Pending-review and terminal-state reporting (all agents)** — `forge-5-loop`'s
+  review-pending gate (`rauf resume` of a failed/cancelled/usage-stopped `--review`
+  pass), its `loopState` terminal-state gate, and the stuck-warning tool context need
+  rauf ≥ 0.17.0 (#339; the pin provisions 0.17.1). On 0.14.0–0.16.x the fields are absent and the stage falls back
+  to its prior outcome derivation from the backlog counts, so a run still completes; it
+  just cannot tell a pending review or a runner stop from a clean finish.
