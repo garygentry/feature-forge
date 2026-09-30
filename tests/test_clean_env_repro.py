@@ -395,8 +395,15 @@ def test_marketplace_channel_carries_root_plugin_hooks() -> None:
 
 
 def _load_build_adapters():
-    """Import the hyphenated generator for its declared runtime-helper lists."""
-    pytest.importorskip("yaml")
+    """Import the hyphenated generator for its declared runtime-helper lists.
+
+    Under CI a missing PyYAML is a hard failure, not a skip: the quality gate provisions it for
+    the pytest interpreter, so its absence means the marketplace guards would go silently inert.
+    """
+    if os.environ.get("CI"):
+        import yaml  # noqa: F401 — hard import: fail loudly under CI
+    else:
+        pytest.importorskip("yaml")
     spec = importlib.util.spec_from_file_location(
         "build_adapters_parity", REPO_ROOT / "scripts" / "build-adapters.py"
     )
@@ -443,6 +450,25 @@ def test_marketplace_channel_matches_canon_plugin_surface() -> None:
             if "__pycache__" not in p.parts
         }
         assert canon_mods and shipped == canon_mods, f"scripts/{pkg}/ diverged from canon"
+
+    # Reference trees: every canon file the builder ships (its own exclusion predicate, not a
+    # hard-coded list) must exist in the bundle — bundle-root references/ as a superset of canon's,
+    # and each skill's own references/ inside that skill (the bundle may add fanned shared refs).
+    def shipped_files(root: Path) -> set[str]:
+        return {
+            p.relative_to(root).as_posix()
+            for p in root.rglob("*")
+            if p.is_file() and not mod._excluded_from_verbatim_copy(p.relative_to(root))
+        }
+
+    canon_refs = shipped_files(REPO_ROOT / "references")
+    assert canon_refs, "canon carries no references — guard would be vacuous"
+    missing_refs = sorted(canon_refs - shipped_files(plugin_dir / "references"))
+    assert not missing_refs, f"bundle-root references/ lacks canon files: {missing_refs}"
+    for own in sorted((REPO_ROOT / "skills").glob("*/references")):
+        skill = own.parent.name
+        lost = sorted(shipped_files(own) - shipped_files(plugin_dir / "skills" / skill / "references"))
+        assert not lost, f"skills/{skill}/references/ lacks canon files: {lost}"
 
     root_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
     shipped_manifest = json.loads((plugin_dir / ".claude-plugin" / "plugin.json").read_text())

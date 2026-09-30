@@ -43,8 +43,9 @@ The built **Claude** bundle `adapters/claude/` now carries its own `.claude-plug
 `feature-forge@inline` at the bundle's real version — no assembly step needed. (The neutral
 `.feature-forge-bundle.json` sentinel is still what `forge-root.sh` self-locates on; the plugin
 manifest is an additional file for Claude's own loader.) The other hosts' bundles carry only the
-neutral sentinel, so `scripts/dev-plugin.sh` still assembles a proper plugin dir **outside the
-repo** for them (real manifest + symlinks into the live bundle).
+neutral sentinel and are not Claude plugins; `scripts/dev-plugin.sh` is **Claude-only** (it refuses
+a non-`claude` `--agent`) — see [Other hosts](#other-hosts--codex-pi-and-copilot--cursor--gemini)
+for their source-dogfood paths.
 
 > **Marketplace note (#322, #314).** The marketplace now distributes the **built** bundle:
 > `marketplace.json` `plugins[0].source` is `./adapters/claude` (#314), so a marketplace install
@@ -77,7 +78,7 @@ Verify it is live and correctly identified:
 
 ```bash
 claude --plugin-dir ~/workspace/feature-forge/adapters/claude plugin list
-# expect:  feature-forge@inline   Version: 0.19.0   Status: ✔ loaded
+# expect:  feature-forge@inline   Version: <version in .claude-plugin/plugin.json>   Status: ✔ loaded
 ```
 
 - **Edit → effect:** `--plugin-dir` points straight at the live built bundle, so after a canon

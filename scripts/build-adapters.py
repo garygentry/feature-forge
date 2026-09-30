@@ -2100,26 +2100,34 @@ def adapter_tree(agent: str, subdir: str) -> list[tuple[str, str]]:
     return emitted
 
 
+def _excluded_from_verbatim_copy(rel: Path) -> bool:
+    """True when a path (relative to the copied tree's root) is NOT shipped by
+    ``_copytree_verbatim`` — the single statement of its exclusions, also read by the
+    marketplace-parity test (#314) so the test never hard-codes them."""
+    # Executable-spec Python modules (e.g. references/loop-agent-selection.py) are
+    # canonical-but-NOT-generated: test-only + doc artifacts imported by pytest, never
+    # wired into a runtime an adapter calls (OQ-T1 RESOLVED, 07-testing-strategy.md §2).
+    # They are excluded from the adapter bundle so the drift guard does not touch them.
+    # Scaffolding under references/templates/ is project-content the bootstrap skill
+    # copies verbatim into a NEW user project — NOT an executable-spec module — so a
+    # template's own `.py` files (e.g. python/src/{{PKG}}/main.py) MUST ship. Skipping
+    # them also left untrackable empty dirs (git cannot track them), so a clean checkout
+    # always drifted from a fresh build.
+    if "__pycache__" in rel.parts or rel.suffix == ".pyc":
+        return True
+    return rel.suffix == ".py" and "templates" not in rel.parts
+
+
 def _copytree_verbatim(src: Path, dst: Path, bundle_root: Path) -> None:
     """Recursively copy ``src`` → ``dst`` byte-for-byte (no header injection, §1.6).
 
     Walks ``src`` in sorted POSIX order (REQ-DET-01) so any incidental ordering is
     stable. Every destination is asserted within ``bundle_root`` (REQ-SEC-01).
+    Skips what ``_excluded_from_verbatim_copy`` names.
     """
     for entry in sorted(src.rglob("*"), key=lambda p: p.relative_to(src).as_posix()):
         rel = entry.relative_to(src)
-        # Executable-spec Python modules (e.g. references/loop-agent-selection.py) are
-        # canonical-but-NOT-generated: test-only + doc artifacts imported by pytest, never
-        # wired into a runtime an adapter calls (OQ-T1 RESOLVED, 07-testing-strategy.md §2).
-        # They are excluded from the adapter bundle so the drift guard does not touch them.
-        # Scaffolding under references/templates/ is project-content the bootstrap skill
-        # copies verbatim into a NEW user project — NOT an executable-spec module — so a
-        # template's own `.py` files (e.g. python/src/{{PKG}}/main.py) MUST ship. Skipping
-        # them also left untrackable empty dirs (git cannot track them), so a clean checkout
-        # always drifted from a fresh build.
-        if "__pycache__" in rel.parts or entry.suffix == ".pyc":
-            continue
-        if entry.suffix == ".py" and "templates" not in rel.parts:
+        if _excluded_from_verbatim_copy(rel):
             continue
         target = dst / rel
         _assert_within(target, bundle_root)
