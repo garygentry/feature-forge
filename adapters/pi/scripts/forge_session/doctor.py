@@ -686,18 +686,23 @@ def _feature_label(feat: dict) -> str:
     return feat["name"] + (f" [{feat['epic']}]" if feat.get("epic") else "")
 
 
-#: Remedy for a resolved root that is un-built canon. Every option loads a BUILT bundle; each
-#: names what it writes (#283/#317): the installs write the host's plugin/skill dirs,
-#: ``dev-plugin.sh`` an out-of-repo dir, the builder ``adapters/``; ``--plugin-dir`` and
-#: ``FEATURE_FORGE_ROOT`` write nothing. Tier = the most conservative option (``network``).
+#: Remedy for a resolved root that is un-built canon. Every route loads a BUILT bundle and names
+#: what it writes (#283/#317) — the npx installer's writes mirror ``installer/src`` (the sibling
+#: ``MANIFEST_PREFIX`` manifest + ``AGENT_TARGETS`` placements), pinned by a test that reads them.
+#: Tier = the most conservative route (``network``: the marketplace and npm fetch).
 _CANON_ROOT_REMEDY: Final[str] = (
-    "Load a built bundle, not the repo checkout: install from the marketplace "
-    "(`/plugin install feature-forge@feature-forge` — it ships ./adapters/claude) or with "
-    "`npx @garygentry/feature-forge install` (both write only the host's plugin/skill dirs); "
-    "for source dogfood, rebuild with `python3 scripts/build-adapters.py` (rewrites adapters/), "
-    "then run `claude --plugin-dir adapters/claude` (another host: set FEATURE_FORGE_ROOT to "
-    "adapters/<host>; neither writes files) or `scripts/dev-plugin.sh` (writes an out-of-repo "
-    "plugin dir, default ~/.cache/feature-forge-dev/claude) — see docs/DOGFOODING.md"
+    "Load a built bundle, not the repo checkout. Install: the Claude marketplace "
+    "(`/plugin install feature-forge@feature-forge`, ships ./adapters/claude; writes under "
+    "~/.claude/plugins and enables it in ~/.claude/settings.json) or "
+    "`npx @garygentry/feature-forge install` (writes the host's bundle dir, e.g. "
+    "~/.claude/skills/feature-forge, plus a sibling .feature-forge.<scope>.json manifest; also "
+    "Codex agent files in .codex/agents, a managed block in .github/copilot-instructions.md for "
+    "Copilot, Pi agent files in .pi/agents or ~/.pi/agent/agents). Source dogfood: rebuild with "
+    "`python3 scripts/build-adapters.py` (rewrites adapters/), then `claude --plugin-dir "
+    "adapters/claude` or FEATURE_FORGE_ROOT=adapters/<host> (neither writes files), "
+    "`pi install ./adapters/pi -l` (writes .pi/settings.json), or `scripts/dev-plugin.sh` "
+    "(writes an out-of-repo plugin dir, default ~/.cache/feature-forge-dev/claude) — see "
+    "docs/DOGFOODING.md"
 )
 
 

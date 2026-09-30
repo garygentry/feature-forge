@@ -28,10 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A resolved root without `.feature-forge-bundle.json` is the repo checkout, whose skills
   dead-reference their shared references when loaded directly (#305/#314). The warn names the
   cause and the built-bundle routes (marketplace, `npx` installer, `claude --plugin-dir
-  adapters/claude`, `FEATURE_FORGE_ROOT=adapters/<host>`, `scripts/dev-plugin.sh`), each with
-  what it writes; `evidence.bundleSentinel` records the probe. Warn only (#244), and doctor still
+  adapters/claude`, `FEATURE_FORGE_ROOT=adapters/<host>`, `pi install ./adapters/pi -l`,
+  `scripts/dev-plugin.sh`), each with what it writes; `evidence.bundleSentinel` records the probe. Warn only (#244), and doctor still
   exits 0 — running `doctor` from the repo checkout (this repo's smoke) now shows this warn by
   design.
+  `forge-init`'s install preflight now includes `--check plugin-root` (advisory, never a stop),
+  so a canon load surfaces before the first stage rather than mid-stage.
 
 ### Changed
 

@@ -450,18 +450,42 @@ def test_plugin_root_warns_that_the_repo_checkout_is_unbuilt_canon(tmp_path: Pat
     assert "shared references" in record["detail"]
     remedy = record["remedy"]
     assert remedy["command"] is None and remedy["safety"] == "network"
-    # Every built-bundle route is named, and each names what it writes (#283/#317).
-    for route in (
-        "/plugin install feature-forge@feature-forge", "npx @garygentry/feature-forge install",
-        "claude --plugin-dir adapters/claude", "FEATURE_FORGE_ROOT", "scripts/dev-plugin.sh",
-        "python3 scripts/build-adapters.py",
+    description = remedy["description"]
+    # Every built-bundle route is named, each paired with what it writes (#283/#317).
+    for route, writes in (
+        ("/plugin install feature-forge@feature-forge", "~/.claude/plugins"),
+        ("npx @garygentry/feature-forge install", "writes the host's bundle dir"),
+        ("python3 scripts/build-adapters.py", "rewrites adapters/"),
+        ("claude --plugin-dir adapters/claude", "neither writes files"),
+        ("FEATURE_FORGE_ROOT=adapters/<host>", "neither writes files"),
+        ("pi install ./adapters/pi -l", "writes .pi/settings.json"),
+        ("scripts/dev-plugin.sh", "writes an out-of-repo plugin dir"),
     ):
-        assert route in remedy["description"], route
-    for writes in (
-        "write only the host's plugin/skill dirs", "rewrites adapters/", "neither writes files",
-        "writes an out-of-repo plugin dir",
-    ):
-        assert writes in remedy["description"], writes
+        assert route in description, route
+        assert writes in description[description.index(route):], (route, writes)
+    assert "only" not in description, "no route writes 'only' its bundle dir"
+
+
+def test_canon_remedy_names_every_npx_installer_write_from_installer_src(fs) -> None:
+    """The npx route's claimed writes are derived from the installer source, not hand-kept:
+    the sibling ``MANIFEST_PREFIX<scope>.json`` manifest and every ``AGENT_TARGETS`` secondary
+    placement (Codex agents, Copilot's managed block, Pi agents — global and project)."""
+    types_ts = (REPO_ROOT / "installer" / "src" / "types.ts").read_text(encoding="utf-8")
+    prefix = re.search(r'MANIFEST_PREFIX = "([^"]+)"', types_ts)
+    assert prefix, "installer MANIFEST_PREFIX moved"
+    placements = re.findall(r"placements: \[\{([^}]*)\}\]", types_ts)
+    assert len(placements) == 3, "installer placements changed — re-derive the remedy's npx writes"
+    expected = {f"{prefix.group(1)}<scope>.json"}
+    for body in placements:
+        fields = dict(re.findall(r'(\w+): "([^"]*)"', body))
+        expected.add(f"{fields['baseDir']}/{fields['subpath']}")
+        if "globalBaseDir" in fields:
+            expected.add(f"~/{fields['globalBaseDir']}/{fields['subpath']}")
+    description = fs._CANON_ROOT_REMEDY
+    npx = description[description.index("npx @garygentry/feature-forge install"):
+                      description.index("Source dogfood")]
+    for write in sorted(expected):
+        assert write in npx, f"npx route omits installer write {write!r}"
 
 
 def test_plugin_root_ok_from_the_built_claude_bundle(tmp_path: Path) -> None:

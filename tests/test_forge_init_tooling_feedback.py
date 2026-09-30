@@ -284,29 +284,31 @@ def test_root_hygiene_template_stands_alone_as_a_root_file(filename: str) -> Non
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("check_id", ["gh-available", "root-version-skew"])
+@pytest.mark.parametrize("check_id", ["gh-available", "root-version-skew", "plugin-root"])
 def test_forge_init_preflights_the_named_checks(check_id: str) -> None:
     """The narrowed `doctor` call names its ids explicitly — never the full catalog."""
     body = _body(read(FORGE_INIT))
     assert f"--check {check_id}" in body, f"forge-init's preflight lost --check {check_id}"
 
 
-def test_forge_init_does_not_preflight_a_check_that_cannot_fire() -> None:
-    """`plugin-root` is excluded on purpose, and the exclusion is explained in place.
+def test_forge_init_preflights_plugin_root_as_an_advisory_canon_tripwire() -> None:
+    """`plugin-root` is preflighted for the canon load it can still catch (#314).
 
-    `_check_plugin_root` warns only when the resolver fails — and forge-init's own
-    prelude hard-exits 1 on exactly that failure, several lines before `doctor` runs.
-    So from THIS call site the check can only ever return `ok`. Narrowing to it would
-    look like coverage while asserting nothing, and would leave a reader wondering why
-    a `blocking`-severity check sits in an advisory-only preflight.
+    forge-init's prelude hard-exits 1 when the resolver fails, so below it the check cannot
+    report "unresolved" — but it DOES warn when the resolved root is un-built canon (no
+    `.feature-forge-bundle.json`), whose skills dead-reference their shared refs mid-stage.
+    Init is the earliest place to surface that, and it must stay advisory: a `blocking`
+    severity check must not abort init, and its `network` remedy is advise-only.
     """
     body = _body(read(FORGE_INIT))
-    assert "--check plugin-root" not in body, (
-        "forge-init narrows to `plugin-root`, which cannot fire below its own prelude"
+    assert "--check plugin-root" in body
+    assert "advisory here despite its `blocking` severity" in body, (
+        "the call site does not say a plugin-root warn is advisory for forge-init"
     )
-    assert "deliberately **not** in that list" in body, (
-        "the exclusion is unexplained, so the next reader will 'fix' it by adding it back"
+    assert "un-built canon" in body and ".feature-forge-bundle.json" in body, (
+        "the call site does not say what a plugin-root warn means below the prelude"
     )
+    assert "can only be `ok`" not in body, "the stale 'cannot fire' rationale is back"
 
 
 def test_forge_init_declares_that_a_preflight_warn_is_not_a_stop() -> None:
@@ -318,7 +320,7 @@ def test_forge_init_declares_that_a_preflight_warn_is_not_a_stop() -> None:
     abort a healthy init on an advisory warn.
     """
     body = _body(read(FORGE_INIT))
-    assert "Neither check is a stop for `forge-init`" in body
+    assert "No check here is a stop for `forge-init`" in body
 
 
 def test_forge_init_follows_the_preflight_procedure() -> None:
