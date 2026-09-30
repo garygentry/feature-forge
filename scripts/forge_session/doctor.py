@@ -688,16 +688,18 @@ def _feature_label(feat: dict) -> str:
 
 #: Remedy for a resolved root that is un-built canon. Every route loads a BUILT bundle and names
 #: what it writes (#283/#317) — the npx installer's writes mirror ``installer/src`` (the sibling
-#: ``MANIFEST_PREFIX`` manifest + ``AGENT_TARGETS`` placements), pinned by a test that reads them.
+#: ``manifestPath`` manifest + every ``resolvePlacements`` destination, both scopes), pinned by
+#: ``installer/test/doctor-canon-remedy.test.ts`` against the installer's typed contract.
 #: Tier = the most conservative route (``network``: the marketplace and npm fetch).
 _CANON_ROOT_REMEDY: Final[str] = (
     "Load a built bundle, not the repo checkout. Install: the Claude marketplace "
     "(`/plugin install feature-forge@feature-forge`, ships ./adapters/claude; writes under "
     "~/.claude/plugins and enables it in ~/.claude/settings.json) or "
-    "`npx @garygentry/feature-forge install` (writes the host's bundle dir, e.g. "
-    "~/.claude/skills/feature-forge, plus a sibling .feature-forge.<scope>.json manifest; also "
-    "Codex agent files in .codex/agents, a managed block in .github/copilot-instructions.md for "
-    "Copilot, Pi agent files in .pi/agents or ~/.pi/agent/agents). Source dogfood: rebuild with "
+    "`npx @garygentry/feature-forge install` (under the install scope's root — the project, or ~ "
+    "for a global install — writes the host's bundle dir, e.g. .claude/skills/feature-forge, plus "
+    "a sibling .feature-forge.<scope>.json manifest; also Codex agent files in .codex/agents, a "
+    "managed block in .github/copilot-instructions.md for Copilot, Pi agent files in .pi/agents "
+    "(global: ~/.pi/agent/agents)). Source dogfood: rebuild with "
     "`python3 scripts/build-adapters.py` (rewrites adapters/), then `claude --plugin-dir "
     "adapters/claude` or FEATURE_FORGE_ROOT=adapters/<host> (neither writes files), "
     "`pi install ./adapters/pi -l` (writes .pi/settings.json), or `scripts/dev-plugin.sh` "

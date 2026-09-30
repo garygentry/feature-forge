@@ -466,28 +466,6 @@ def test_plugin_root_warns_that_the_repo_checkout_is_unbuilt_canon(tmp_path: Pat
     assert "only" not in description, "no route writes 'only' its bundle dir"
 
 
-def test_canon_remedy_names_every_npx_installer_write_from_installer_src(fs) -> None:
-    """The npx route's claimed writes are derived from the installer source, not hand-kept:
-    the sibling ``MANIFEST_PREFIX<scope>.json`` manifest and every ``AGENT_TARGETS`` secondary
-    placement (Codex agents, Copilot's managed block, Pi agents — global and project)."""
-    types_ts = (REPO_ROOT / "installer" / "src" / "types.ts").read_text(encoding="utf-8")
-    prefix = re.search(r'MANIFEST_PREFIX = "([^"]+)"', types_ts)
-    assert prefix, "installer MANIFEST_PREFIX moved"
-    placements = re.findall(r"placements: \[\{([^}]*)\}\]", types_ts)
-    assert len(placements) == 3, "installer placements changed — re-derive the remedy's npx writes"
-    expected = {f"{prefix.group(1)}<scope>.json"}
-    for body in placements:
-        fields = dict(re.findall(r'(\w+): "([^"]*)"', body))
-        expected.add(f"{fields['baseDir']}/{fields['subpath']}")
-        if "globalBaseDir" in fields:
-            expected.add(f"~/{fields['globalBaseDir']}/{fields['subpath']}")
-    description = fs._CANON_ROOT_REMEDY
-    npx = description[description.index("npx @garygentry/feature-forge install"):
-                      description.index("Source dogfood")]
-    for write in sorted(expected):
-        assert write in npx, f"npx route omits installer write {write!r}"
-
-
 def test_plugin_root_ok_from_the_built_claude_bundle(tmp_path: Path) -> None:
     """The built ``adapters/claude`` bundle carries the sentinel, so its own helper resolves it
     by self-location and plugin-root is ``ok`` with no remedy."""
