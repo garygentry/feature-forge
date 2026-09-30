@@ -17,7 +17,11 @@ jobs:
     steps:
       # Third-party actions pinned to a major tag (REQ-SEC-01), matching rauf's
       # pinning convention (actions/checkout@v5, etc.).
+      # Full history: test_check_spec_purity reads a pre-fix revision via `git show`, which a
+      # shallow clone lacks (it would otherwise skip in CI).
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       # Single source of truth for the per-PR gate. All gate steps live in the
       # composite so a green local run (`bash scripts/validate.sh` + lint +

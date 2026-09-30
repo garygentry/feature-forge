@@ -196,8 +196,9 @@ python3 -m pytest tests         # the drift guards
 ```
 
 Two traps worth knowing: `ruff` and `check-spec-purity.py`'s body-size caps are **CI gates
-that local pytest does not surface**, and the CI environment has **no `jsonschema`** — any
-new validation code must be stdlib-only.
+that local pytest does not surface**, and the shipped runtime (`scripts/`) must stay
+**stdlib-only** — `jsonschema` is a pinned *test* dependency (`scripts/requirements-test.txt`),
+never something runtime validation code may import.
 
 ## Adding a Sixth Optimization
 

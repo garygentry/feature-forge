@@ -13,7 +13,7 @@ tests/test_check_spec_purity.py. Shared contracts: 00-core-definitions.md.
 
 This module imports NO YAML library at collection time (06 §2 preamble): the
 generated output is read as text/bytes and JSON; the only YAML decode (§3.6,
-§3.7) is a lazy ``pytest.importorskip("yaml")`` inside the test that needs it.
+§3.7) is a lazy ``require("yaml")`` (tests/_ci_deps.py) inside the test that needs it.
 The generator itself needs the pinned YAML dep, so ``run_build`` is driven by an
 interpreter that can import it — preferring the gitignored ``.venv-adapters``
 when provisioned, else ``sys.executable`` — and the whole module is skipped if
@@ -32,6 +32,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from _ci_deps import ci_active, require
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GENERATOR = REPO_ROOT / "scripts" / "build-adapters.py"
@@ -63,8 +65,10 @@ def _generator_yaml_available() -> bool:
 
 # Keep the module collectable without the venv (06 §2 preamble) while actually
 # running once an interpreter that can import yaml is available.
+# Under CI the gate provisions it, so the module never skips there: a missing dep fails the
+# run_build calls loudly instead of leaving every generator guard inert (#336).
 pytestmark = pytest.mark.skipif(
-    not _generator_yaml_available(),
+    not ci_active() and not _generator_yaml_available(),
     reason="build-adapters.py requires the pinned YAML dep — provision .venv-adapters",
 )
 
@@ -741,7 +745,7 @@ def _decode_scalar(raw: str | None) -> str | None:
     """
     if raw is None:
         return None
-    yaml = pytest.importorskip("yaml")
+    yaml = require("yaml")
     return yaml.safe_load(raw)
 
 
@@ -766,7 +770,7 @@ def _frontmatter_map(skill_md: Path) -> dict:
     bool-valued keys — needed for the governance keys, whose values are YAML
     sequences (``allowed-tools``) and booleans (``disable-model-invocation``).
     """
-    yaml = pytest.importorskip("yaml")
+    yaml = require("yaml")
     text = skill_md.read_text("utf-8")
     assert text.startswith("---")
     _, block, _ = text.split("---", 2)
@@ -1142,7 +1146,7 @@ def test_pi_skill_bodies_use_new_not_clear():
 
 def _load_generator_module():
     """Import the hyphenated generator in-process for unit-testing pure helpers."""
-    pytest.importorskip("yaml")
+    require("yaml")
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("build_adapters_mod", GENERATOR)

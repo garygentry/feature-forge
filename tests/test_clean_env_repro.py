@@ -42,7 +42,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
+from _ci_deps import require
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESOLVER = REPO_ROOT / "scripts" / "forge-root.sh"
@@ -400,10 +400,7 @@ def _load_build_adapters():
     Under CI a missing PyYAML is a hard failure, not a skip: the quality gate provisions it for
     the pytest interpreter, so its absence means the marketplace guards would go silently inert.
     """
-    if os.environ.get("CI"):
-        import yaml  # noqa: F401 — hard import: fail loudly under CI
-    else:
-        pytest.importorskip("yaml")
+    require("yaml")
     spec = importlib.util.spec_from_file_location(
         "build_adapters_parity", REPO_ROOT / "scripts" / "build-adapters.py"
     )

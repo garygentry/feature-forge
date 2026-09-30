@@ -21,7 +21,7 @@ Two structural guards ride along:
   feature that owns it — update ``EPIC_SCHEMA_CONTRACT_OUTSIDE_VERIFY_ENTRY_SHA256``
   in the same PR as the intended schema change, and say in that PR what moved.
 
-Stdlib only (`jsonschema` is absent in CI): conformance goes through
+Stdlib only (`jsonschema` is optional locally): conformance goes through
 `tests/_state_schema.py`, and every subprocess call uses `sys.executable`.
 """
 

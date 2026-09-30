@@ -9,7 +9,7 @@ temp backlog dir, every on-disk write validated through `validate_decisions()`,
 plus the append-only invariants a single-call test cannot see (a later entry
 mutating an earlier one, an apply touching more than `appliedAt`/`appliedBy`).
 
-Stdlib only (`jsonschema` is absent in CI): conformance goes through
+Stdlib only (`jsonschema` is optional locally): conformance goes through
 `tests/_state_schema.py`, and every subprocess call uses `sys.executable`.
 """
 

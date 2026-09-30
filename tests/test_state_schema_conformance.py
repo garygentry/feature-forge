@@ -14,7 +14,7 @@ spec verification (a lone `{"commitHash": ...}` entry, a first-write state
 missing the top-level required fields) are invisible to a single-call test and
 only surface once verbs run in a real order.
 
-Stdlib only (`jsonschema` is absent in CI): conformance goes through
+Stdlib only (`jsonschema` is optional locally): conformance goes through
 `tests/_state_schema.py`, and every subprocess call uses `sys.executable`.
 """
 

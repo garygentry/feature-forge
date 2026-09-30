@@ -6,8 +6,8 @@ guards assert against **canon** â€” ``skills/``, ``references/``, ``scripts/`` â
 never against the generated ``adapters/`` tree, which is ``test_build_adapters.py``'s
 job (the adapter copies legitimately differ; host-term degradation is expected there).
 
-Stdlib only: `jsonschema` is absent in CI, and so is every other third-party package,
-so a bare ``python3 -m pytest tests`` must be enough to run anything importing this.
+Stdlib only: no third-party package is guaranteed in every environment, so a bare
+``python3 -m pytest tests`` must be enough to run anything importing this.
 """
 
 from __future__ import annotations

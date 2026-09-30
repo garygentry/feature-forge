@@ -6,10 +6,9 @@ postponed to a later stage. The array is optional, so legacy states without it
 must still validate (additive-change contract, mirroring ``epicChangeRequests``).
 
 The structural tests run everywhere (no third-party dep). The behavioral
-``jsonschema`` tests are best-effort — CI installs pytest+ruff but not
-jsonschema, so they skip there (mirroring ``test_forge_bootstrap``'s
-schema-validation test); they still exercise the schema locally when the dep is
-present.
+``jsonschema`` tests skip locally when the dep is absent, but CI provisions it
+(``scripts/requirements-test.txt``) and hard-imports it there, so they always run in
+the gate (tests/_ci_deps.py, #336).
 """
 
 from __future__ import annotations
@@ -18,6 +17,8 @@ import json
 from pathlib import Path
 
 import pytest
+
+from _ci_deps import require
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = REPO_ROOT / "references" / "pipeline-state-schema.json"
@@ -64,12 +65,12 @@ def test_current_stage_description_is_unambiguous() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Behavioral checks — best-effort, skip without jsonschema
+# Behavioral checks — jsonschema (skips locally without it; required under CI)
 # --------------------------------------------------------------------------- #
 
 
 def _validator():
-    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema = require("jsonschema")
     schema = _schema()
     jsonschema.Draft7Validator.check_schema(schema)
     return jsonschema.Draft7Validator(schema)
@@ -106,7 +107,7 @@ def test_valid_deferred_decision_validates() -> None:
 
 
 def test_deferred_decision_missing_required_field_fails() -> None:
-    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema = require("jsonschema")
     state = _base_state()
     state["deferredDecisions"] = [
         {"raisedBy": "forge-1-prd", "raisedAt": "2026-07-01T00:00:00Z", "status": "open"}
@@ -116,7 +117,7 @@ def test_deferred_decision_missing_required_field_fails() -> None:
 
 
 def test_deferred_decision_unknown_property_fails() -> None:
-    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema = require("jsonschema")
     state = _base_state()
     state["deferredDecisions"] = [
         {
@@ -132,7 +133,7 @@ def test_deferred_decision_unknown_property_fails() -> None:
 
 
 def test_deferred_decision_bad_status_enum_fails() -> None:
-    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema = require("jsonschema")
     state = _base_state()
     state["deferredDecisions"] = [
         {
