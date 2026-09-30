@@ -26,7 +26,7 @@ This refresh **deliberately omits** three probes the 2026-07-28 baseline recorde
 
 - **`r2-prelude`** — the R2 re-expansion gate for the context-efficiency plugin-root prelude reduction. Its subject prose has not been edited since the July record; nothing to re-baseline against, and the earlier numbers stand.
 - **`branch-path/{successful-rejoin,recovery}`** — the verify/fix diversion. Not touched by #244 either, and the harness's own README emphasises that its cost/duration is the highest of the four probes (~$20–30). Left as an explicit gap so the next PR that changes the diversion routing (or the `forge-verify` / `forge-fix` prose) records it, rather than pretending this baseline covers it.
-- **`loop-outcome`** — the `forge-5-loop` post-recovery `resolved` route. #244 P4 added the `--doctor` pointer inside the 1c/1d STOP text; the pointer is prose, not exit shape, so it does not move this probe by construction. Same reasoning as `r2-prelude`.
+- **`loop-outcome`** — the `forge-5-loop` post-recovery `resolved` route. #244 P4 added the `--doctor` pointer inside the 1c/1d STOP text; the pointer is prose, not exit shape, so it does not move this probe by construction. Same reasoning as `r2-prelude`. *(Since recorded — see §6: #340 changed the loop-outcome exit shape and ran it.)*
 
 If a later phase changes the diversion routing or the loop-outcome exit shape, run the narrowest probe that covers it and append a section here — the harness writes the same JSON shape and the same cell schema, so this document extends by row rather than rewrite.
 
@@ -45,3 +45,23 @@ Runbook, full cost table, and the per-probe cell definitions live in [`eval/READ
 ## 5. How to read it against `phase-0-compliance-baseline.md`
 
 Keep both. The July document is the historical record — its numbers stand and are not restated here — and it also carries the R2 prelude numbers this refresh does not touch. This one is the current reference the `AGENTS.md` prose-change gate points at; when a later phase records a new probe cell here or in a later `baseline-YYYY-MM.md`, the newest recorded cell wins for that probe and the older one stays valid for the ones it still uniquely covers.
+
+## 6. Later runs (appended)
+
+Rows appended per §2, newest last. Same harness, same cell schema, same criteria; subject Opus 5, reference Opus 4.8. These were run as the `AGENTS.md` prose-change gate on the PR named, and the numbers below are the ones reported in that PR's body; the per-run JSON was not committed.
+
+**Probe 4 — loop-outcome** (`resolved-resume`), n=5 per cell. This is the **formal loop-outcome baseline**; the 2026-09-03 refresh omitted it (§2). Criteria: exactly one sentinel, nothing after it, resume command fenced.
+
+| date | PR · canon at | Opus 5 | Opus 4.8 | criteria | cost |
+|---|---|---|---|---|---|
+| 2026-09-30 | #340 · `861c9af0` | **5/5 (100%)** | **5/5 (100%)** | all 100% | $10.01 |
+| 2026-09-30 | #340 · `e015c878` (after the round-1 `forge-5-loop` SKILL.md changes) | **5/5 (100%)** | **5/5 (100%)** | all 100% | $9.82 |
+
+**Probe 1 — stage-exit**, n=5 per cell, same cells as §1.
+
+| date | PR | `cold` Opus 5 | `cold` Opus 4.8 | `warm` Opus 5 | `warm` Opus 4.8 | criteria | cost |
+|---|---|---|---|---|---|---|---|
+| 2026-09-03 | this refresh (§1) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $19.41 |
+| 2026-09-29 | #338 (`forge-init` preflight prose) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $26.35 |
+
+The #338 run is a canon-regression check, not a measurement of `forge-init`'s new text: no probe loads `forge-init`, so `stage-exit` was run as the general prose-change oracle. Stage-exit held at 20/20 again.
