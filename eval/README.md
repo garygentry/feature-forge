@@ -27,13 +27,19 @@ python3 eval/run-compliance-eval.py --probe all --n 5 --json \
 # The narrowest useful probe for a diversion-routing change (verify → fix → re-verify).
 python3 eval/run-compliance-eval.py --probe branch-path --n 5 --models claude-opus-5 \
   --json --out eval/last-branch-path.json
+
+# The narrowest probe for a forge-5-loop close change (the post-recovery `resolved` route).
+python3 eval/run-compliance-eval.py --probe loop-outcome --n 5 --json \
+  --out eval/last-loop-outcome.json
 ```
 
 Absent the `claude` CLI on `PATH`, the harness prints `stage-drive compliance eval: skipped (no driver)`
 and exits 0 — the only non-zero exit is a harness bug. The full-cell cost table is at
 [§ Why it is not in CI](#why-it-is-not-in-ci); the recorded numbers to compare against are
 in [`docs/claude-5/phase-0-compliance-baseline.md`](../docs/claude-5/phase-0-compliance-baseline.md)
-(measurements after that landing are appended there per PR).
+and its refresh [`docs/claude-5/baseline-2026-09.md`](../docs/claude-5/baseline-2026-09.md). The
+refresh holds the current `stage-exit` and `loop-outcome` baselines, and their JSON is under
+`eval/baselines/`.
 
 Also runnable from Actions on demand — `Actions → stage-drive compliance eval (on-demand)
 → Run workflow`, choose branch and probe. Advisory only; the workflow never blocks a PR.
@@ -53,13 +59,15 @@ by a pinned Haiku model. Prints `skipped (no key)` and exits 0 without a key.
 ## `run-compliance-eval.py` — stage-drive compliance
 
 ```bash
-python3 eval/run-compliance-eval.py [--probe stage-exit|r2-prelude|branch-path|all]
+python3 eval/run-compliance-eval.py [--probe stage-exit|r2-prelude|branch-path|loop-outcome|all]
                                     [--models A,B] [--n N] [--variants cold,warm]
                                     [--json] [--out FILE]
 ```
 
-`--variants` selects `stage-exit` variants only. The `branch-path` scenarios are fixed by
-`eval/fixtures/compliance/verify-fix-reverify.json` and are always both reported.
+`--probe` defaults to `all`. `--variants` selects `stage-exit` variants only. The
+`branch-path` scenarios are fixed by `eval/fixtures/compliance/verify-fix-reverify.json` and
+all three are always reported. The `loop-outcome` scenario is fixed by
+`eval/fixtures/compliance/loop-outcome-resolved.json`.
 
 Reports a **rate over N runs per model**, not pass/fail — the failure mode it exists to
 measure is intermittent, so a single run says nothing. Default models are the Claude 5
@@ -85,13 +93,30 @@ separately from a broken one.
 
 **Probe 3 — `branch-path`.** Drives a whole verify → fix → re-verify *diversion* and scores
 whether the model closed every step through the scripted contract and rejoined the
-production stage the diversion served. Two scenarios, reported as separate cells:
+production stage the diversion served. Three scenarios, reported as separate cells:
 `branch-path/successful-rejoin` (re-verify passes, so the final direct exit fences the
-production successor) and `branch-path/recovery` (re-verify reports further findings, so the
+production successor), `branch-path/recovery` (re-verify reports further findings, so the
 final direct exit fences the deterministic `forge-fix` recovery command for the *same* served
-stage). Eight criteria per run — `ordered_command_results`, `all_commands_succeeded`,
-`exactly_one_sentinel`, `nested_steps_emitted_no_sentinel`, `nothing_after_sentinel`,
-`next_command_fenced`, `block_verbatim`, `correct_rejoin_or_recovery`.
+stage), and `branch-path/escalation` (a *second* consecutive red re-verify, seeded with one
+prior red round in the round ledger; the model must surface the ledger's acceptance digest
+rather than recommend another fix). Nine criteria per run: `ordered_command_results`,
+`all_commands_succeeded`, `exactly_one_sentinel`, `nested_steps_emitted_no_sentinel`,
+`nothing_after_sentinel`, `next_command_fenced`, `block_verbatim`,
+`correct_rejoin_or_recovery`, `escalation_digest_presented`. The last is auto-true outside
+`escalation`, which keeps the criterion set uniform across the three cells.
+
+**Probe 4 — `loop-outcome`.** Builds a throwaway repo parked at a `forge-5-loop` close whose
+Post-Run Recovery Procedure already succeeded (a needs-human stop on item `002`, answered),
+which is the `resolved` route. It drives the close in a fresh headless session and scores the
+terminal output. There is one scenario, reported as the cell `loop-outcome/resolved-resume`,
+with three criteria per run: `exactly_one_sentinel`, `nothing_after_sentinel`, and
+`primary_command_fenced`. The fenced primary command must be the loop relaunch
+`/feature-forge:forge-5-loop {feature}`, since the state is resumable and nothing downstream is
+ready. Ground truth comes from running the real `stage-exit` against a separate throwaway repo.
+If the script's primary command drifts from the fixture's `expectedPrimaryCommand`, that is a
+harness/fixture error, not a model miss. This probe covers only the `resolved` close. The
+other loop outcomes (`needs-human`, `blocked`, `deferred`, `partial`, `complete`) are not
+driven.
 
 **A branch run is scored on ordered command *results*, never on prose.** Each expected
 `forge-session.py stage-exit` call must appear as a tool request that was *paired with a
@@ -115,11 +140,12 @@ So:
 
 - **The linear baseline is not evidence for verify/fix diversion compliance.** A high
   `stage-exit/cold`|`warm` rate does not license a claim that "the pipeline complies".
-- **`branch-path/successful-rejoin` and `branch-path/recovery` are separately reported
-  cells.** Do not average them into the linear cells, and do not present them as replacements
-  for — or as a like-for-like comparison against — the linear numbers. They score a different
-  path, a different number of exits, and a different criterion set (eight, not five). A single
-  blended "compliance rate" across all four cells is a meaningless number.
+- **`branch-path/successful-rejoin`, `branch-path/recovery` and `branch-path/escalation` are
+  separately reported cells.** Do not average them into the linear cells, and do not present
+  them as replacements for, or a like-for-like comparison against, the linear numbers. They
+  score a different path, a different number of exits, and a different criterion set (nine,
+  not five). The same goes for `loop-outcome/resolved-resume` (three criteria, a different
+  stage). A single blended "compliance rate" across cells is a meaningless number.
 - **Historical linear results stand as recorded.** They remain valid measurements of the path
   they measured; nothing here restates or revises them.
 
@@ -132,21 +158,24 @@ in CI, with no live model, no network, and no API key.
 ### Why it is not in CI
 
 Each run is a real session against a real model. A linear or prelude run is roughly
-**$0.70–$1.00 and ~60s**; a `branch-path` run drives four scripted exits instead of one, so
-budget at least **$1.00–$1.50 and ~90s** for it (an estimate, not a recorded measurement).
+**$0.70–$1.00 and ~60s**, and a `loop-outcome` run is about the same (recorded: $0.83–$1.24 per
+run, 50–98s). A `branch-path` run drives four scripted exits instead of one, so budget at
+least **$1.00–$1.50 and ~90s** for it (an estimate, not a recorded measurement).
 
 The formula is `models × cells × N`, summed per cell:
 
 | `--probe` | Cells | Runs at 2 models × N=5 | Rough cost |
 |---|---|---|---|
-| `stage-exit` | `stage-exit/cold`, `stage-exit/warm` | 20 | ~$14–20 |
+| `stage-exit` | `stage-exit/cold`, `stage-exit/warm` | 20 | ~$19–27 (recorded: $19.41, $26.35) |
 | `r2-prelude` | `r2-prelude` | 10 | ~$7–10 |
-| `branch-path` | `branch-path/successful-rejoin`, `branch-path/recovery` | 20 | ~$20–30 |
-| `all` | all five of the above | 50 | ~$41–60, ~60 min |
+| `branch-path` | `branch-path/successful-rejoin`, `branch-path/recovery`, `branch-path/escalation` | 30 | ~$30–45 (estimate) |
+| `loop-outcome` | `loop-outcome/resolved-resume` | 10 | ~$10 (recorded: $10.01, $9.82) |
+| `all` | all seven of the above | 70 | ~$66–92, ~90 min (estimate) |
 
-(Before `branch-path` existed, `--probe all` was three cells — 30 runs, about $22 and 40
-minutes. That figure is preserved here only so an older recorded sweep is readable; it is not
-the current default.) It also needs the `claude` CLI and interactive-grade credentials, which
+(Earlier shapes of `--probe all`: three cells and 30 runs, about $22 and 40 minutes, before
+`branch-path` existed; then five cells and 50 runs, before `escalation` and `loop-outcome`.
+Those figures are kept only so an older recorded sweep is readable. Neither is the current
+default.) It also needs the `claude` CLI and interactive-grade credentials, which
 a CI runner does not have. Run it locally when changing a stage's exit path, and keep the
 JSON (`--out`) as the before/after baseline. Narrow the sweep with `--probe branch-path` when
 only the diversion routing changed.
@@ -177,7 +206,9 @@ Probe 1 runs fresh headless sessions of 4–16 turns against one authoring stage
 - **The interactive gates.** `verifyGate: standard` and in-stage auto-verify are
   `AskUserQuestion` surfaces a headless session cannot answer.
 - **The other authoring stages**, and the `forge-5-loop` / `forge-6-docs` scripted exits.
-  (The verify/fix diversion is no longer in this list — Probe 3 covers it, in its own cells.)
+  (The verify/fix diversion is no longer in this list, because Probe 3 covers it in its own
+  cells. Probe 4 covers only `forge-5-loop`'s `resolved` close; the loop's other outcomes are
+  still outside it.)
 
 Rather than approximate these synthetically, record them from real runs — every pipeline
 stage you drive is a free observation at exactly the context length the probe cannot reach.
