@@ -111,8 +111,17 @@ reached" while `iteration < maxIterations` — is a reportable defect.
 `status --json` may also carry `loopState`, `lock`, `sleepUntil`, `reviewPending` and
 `reviewItemIds`. All are optional: when a field is absent, skip its row and read the
 counts as before. These mirror the rows of rauf's supervisor decision table
-(`drive-rauf-loop`) that forge-5-loop decides the same way; the counts still pick the
-outcome.
+(`drive-rauf-loop`) that forge-5-loop decides the same way.
+
+**Clean runner finish.** When `loopState` is reported, only `COMPLETE` or `IDLE` is a
+clean terminal success. Every other value — `ERROR`, `PAUSED` (on request or with a
+stale lock), `ITERATIONS_COMPLETE`, `PAUSED_USAGE_LIMIT`, `WEEKLY_LIMIT`,
+`SLEEPING_LIMIT`, `PAUSED_HUMAN`, a still-live `RUNNING`/`REVIEWING`, or anything
+unrecognized — means the runner did **not** finish cleanly, and the run is **never**
+`complete`, even when `done == total > 0` (e.g. a process killed after its last commit
+but before writing its final state reads `PAUSED` + stale lock with every item done).
+The ladder's runner-stopped rung catches it. When `loopState` is absent (an older or
+non-rauf runner), this gate does not apply and the counts decide, as before.
 
 | Runner state | What it means here |
 |---|---|
@@ -122,7 +131,7 @@ outcome.
 | `PAUSED`, `lock.stale` not true | Stopped on request (Ctrl-C, `SIGTERM`, a stop command). Report "stopped on request"; do not offer to relaunch unless the user asks. |
 | `PAUSED`, `lock.stale: true` | The run died mid-iteration and left its lock. rauf's `{bin} resume . --backlog {backlogDir}` clears the stale lock and continues. Never reach for `--force` or `reset` first. |
 | `PAUSED_USAGE_LIMIT` / `WEEKLY_LIMIT` | Halted on a usage limit: "resume after {sleepUntil}". Not a failure. |
-| `ERROR` | Crash or circuit-breaker halt (`loop_error`). The counts are still authoritative; surface the error alongside the report. |
+| `ERROR` | Crash or circuit-breaker halt (`loop_error`). Surface the error alongside the count reports; never `complete`. With work left, the next loop run re-runs it; with none, re-entry offers rauf's resume (**Unfinished runner**, `references/runner-contract.md`). |
 | `COMPLETE` with `done < total` | No eligible work left, but items are unfinished (blocked, needs-human, deferred, or pending behind a blocked dependency). The ladder's non-complete rungs apply; never reset the backlog. |
 
 **Exit codes are not the outcome.** rauf exits 1 both for a crash and for a failed review
@@ -147,12 +156,16 @@ authoritative final counts. Walk this ladder in order and stop at the first matc
 3. **`blocked`** — otherwise, genuine `blocked > 0`.
 4. **`deferred`** — otherwise, runner-deferred items exist (the "false blocks" the
    runner gave up on after retries).
-5. **`partial`** — otherwise, `pending`/`in_progress` items remain (the report above
-   names the cause), **or** `reviewPending` is true. With `reviewPending`, pass
-   `--cause review-pending`; otherwise pass `--cause dependency-starvation` only on the
-   starvation report.
-6. **`complete`** — otherwise, and **only** when `total > 0`, every item is `done`, and
-   no review is pending.
+5. **`partial` (runner not finished)** — otherwise, `reviewPending` is true, **or**
+   `loopState` is reported and is not a clean finish (**Clean runner finish**, above).
+   Pass `--cause review-pending` when `reviewPending` is true. Otherwise pass
+   `--cause runner-stopped`, except for `ITERATIONS_COMPLETE`, which is the plain
+   iteration-limit `partial` (no `--cause`). This rung fires whatever the counts say,
+   including `done == total`.
+6. **`partial`** — otherwise, `pending`/`in_progress` items remain (the report above
+   names the cause). Pass `--cause dependency-starvation` only on the starvation report.
+7. **`complete`** — otherwise, and **only** when `total > 0`, every item is `done`, no
+   review is pending, and the runner finished cleanly (or reports no `loopState`).
 
 This is a priority order, not a set. A run reporting both a needs-human and a blocked
 count renders both reports above and still exits `needs-human`.
@@ -161,11 +174,12 @@ count renders both reports above and still exits `needs-human`.
 reported only that its process finished; the final backlog state decides. A clean
 exit 0 that still leaves pending items is `partial`, never `complete`; an exit 1 from a
 failed review with every item `done` is `partial` (`--cause review-pending`), not an
-error. `complete` is legitimate only when the counts show every item `done` and no review
-is pending.
+error; and a crash or stale-lock stop with every item `done` is `partial` (`--cause
+runner-stopped`). `complete` is legitimate only when the counts show every item `done`,
+no review is pending, and the runner finished cleanly.
 
-**Retrying the non-complete outcomes.** `partial`, `deferred`, and `resolved` fence
-the loop resume; `blocked` and `needs-human` fence the navigator. Whichever you land on, the
+**Retrying the non-complete outcomes.** `partial` (every cause), `deferred`, and
+`resolved` fence the loop resume; `blocked` and `needs-human` fence the navigator. Whichever you land on, the
 runner's own retry flags still apply to the next run — e.g. rauf's `--retry-blocked`
 picks the set-aside blocked and deferred items back up at Step 2d. Mention that as
 plain prose in the report if it helps; never as a second command block.

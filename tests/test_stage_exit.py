@@ -2942,6 +2942,17 @@ def test_review_pending_cause_swaps_in_the_review_text(tmp_path: Path) -> None:
     assert STARVED_MARKER not in block
 
 
+def test_runner_stopped_cause_swaps_in_the_runner_text(tmp_path: Path) -> None:
+    """--cause runner-stopped (#339): an unclean runner finish; route stays a resume."""
+    session = _load_session()
+    root = _project(tmp_path, config={})
+    payload = _loop(root, "partial", "widget", "--cause", "runner-stopped")
+    d, block = payload["directives"], payload["nextSteps"]
+    assert d["primaryCommand"] == LOOP_RESUME, "the route is unchanged: still a resume"
+    assert session._LOOP_PARTIAL_RUNNER_STOPPED_TEXT.format(feature="widget") in block
+    assert session._LOOP_OUTCOME_TEXT["partial"].format(feature="widget") not in block
+
+
 def test_review_pending_cause_is_rejected_off_loop_partial(tmp_path: Path) -> None:
     """The combination rule covers every cause value, not just starvation."""
     root = _project(tmp_path, config={})

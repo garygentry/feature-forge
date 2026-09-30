@@ -809,6 +809,17 @@ _LOOP_PARTIAL_REVIEW_PENDING_TEXT: Final[str] = (
     "recorded state is resumable and nothing downstream is ready: run the loop again "
     "below to re-run the pending review."
 )
+#: The unfinished-runner variant of the `partial` next-steps sentence: the runner's
+#: own terminal state (a crash, a stop, a stale lock, a limit halt) says it did not
+#: finish cleanly, so the run is not complete even when every item reads `done`.
+#: Selected only by ``--cause runner-stopped`` (issue #339); the route is still the
+#: loop resume, whose Step 2a offers the runner's own resume.
+_LOOP_PARTIAL_RUNNER_STOPPED_TEXT: Final[str] = (
+    "The loop runner for {feature} did not reach a clean finish — it crashed, was "
+    "stopped, or halted on a limit — so the run is not complete even if every item "
+    "reads done. The recorded state is resumable and nothing downstream is ready: run "
+    "the loop again below to resume the runner."
+)
 #: The `complete` preamble, selected by where the handoff actually lands. The epic
 #: rows name the epic and its live rollup, so the operator can see WHY the handoff is
 #: this member's own documentation rather than another member (or vice versa).
@@ -966,7 +977,8 @@ def _loop_route(
             handoff: findings already exist at this exact revision, so the fenced
             action is applying them, exactly as on a production re-exit.
         cause: The already-validated attribution annotation — only
-            ``"dependency-starvation"`` or ``"review-pending"`` with
+            ``"dependency-starvation"``, ``"review-pending"`` or
+            ``"runner-stopped"`` with
             ``outcome == "partial"``, else None. Swaps the partial next-steps
             sentence for the matching variant; the route itself is unchanged
             (partial stays a resume either way).
@@ -998,6 +1010,8 @@ def _loop_route(
             text = _LOOP_PARTIAL_STARVED_TEXT.format(feature=feature)
         elif outcome == "partial" and cause == "review-pending":
             text = _LOOP_PARTIAL_REVIEW_PENDING_TEXT.format(feature=feature)
+        elif outcome == "partial" and cause == "runner-stopped":
+            text = _LOOP_PARTIAL_RUNNER_STOPPED_TEXT.format(feature=feature)
         else:
             text = _LOOP_OUTCOME_TEXT[outcome].format(feature=feature)
         return primary, None, text, False

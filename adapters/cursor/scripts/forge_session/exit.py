@@ -329,8 +329,8 @@ def stage_exit(
             capability is permission, not tool presence: a dispatch permitted
             only once the user has asked is still `interactive`, because the
             `standard` gate's own prompt supplies that request.
-        cause: Pending-attribution annotation (`dependency-starvation` or
-            `review-pending`), valid only with `--stage forge-5-loop --outcome
+        cause: Pending-attribution annotation (`dependency-starvation`,
+            `review-pending` or `runner-stopped`), valid only with `--stage forge-5-loop --outcome
             partial` (REQ-ATTR-04, #339). It swaps the partial next-steps sentence
             for the matching variant and changes no routing.
 

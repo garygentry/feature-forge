@@ -152,12 +152,18 @@ maximum `timeout_ms` (1 hour), and a bounded timeout would silently stop watchin
 still-running loop.
 
 **Coverage-complete filter (silence is not success).** The filter MUST match every
-terminal and exception state, not just the happy path — otherwise a crash or hang
-looks identical to "still running." Monitor command (NDJSON path):
+terminal, exception, and pause/limit event, not just the happy path — otherwise a crash,
+hang, or hours-long usage sleep looks identical to "still running." The list below covers
+every such type in rauf's event schema (terminal: `loop_completed` / `loop_error` /
+`loop_cancelled` / `loop_paused`; exception: `item_blocked` / `needs_human` /
+`review_failed` / `llm_stuck_warning`; pause/limit: `usage_limit_hit` /
+`usage_limit_cleared` / `sleep_start` / `sleep_end`); only per-iteration narration
+(`iteration_start`, `llm_*` activity, `item_selected`, …) is left out. Monitor command
+(NDJSON path):
 
 ```
 tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>/dev/null \
-  | jq -rc --unbuffered 'select(.type | test("item_completed|item_blocked|needs_human|signal_parsed|loop_completed|loop_error|loop_cancelled|review_failed|llm_stuck_warning"))'
+  | jq -rc --unbuffered 'select(.type | test("item_completed|item_blocked|needs_human|signal_parsed|loop_completed|loop_error|loop_cancelled|loop_paused|review_failed|llm_stuck_warning|usage_limit_hit|usage_limit_cleared|sleep_start|sleep_end"))'
 ```
 
 > **Use `tail -F` (follow by name), not `-f` (follow by descriptor).** The runner
@@ -174,11 +180,13 @@ tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>/dev/null \
 
   ```
   tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/{loopRunner.logFile} 2>/dev/null \
-    | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:|Review pass (cancelled|stopped)|cancelled during review pass|Review returned unexpected signal|for review:'
+    | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:|Loop cancelled|Review pass (cancelled|stopped)|Review returned unexpected signal|for review:|[Uu]sage limit'
   ```
 
   (Match `needs human input` **without** a trailing colon — the runner writes
-  `needs human input (set aside):`.)
+  `needs human input (set aside):`. `Loop cancelled` also matches *"Loop cancelled during
+  review pass (review pending)"* and the between-iteration / mid-sleep cancels;
+  `[Uu]sage limit` matches the 5-hour sleep, weekly limit, detection and wake lines.)
 
 If the Monitor is ever auto-stopped for event volume, re-arm with a tighter filter
 (drop `item_completed`, keep the exception/terminal events).
@@ -241,9 +249,21 @@ high and the noise low:
   want to probe on quiet, run `{rendered watchCommand}` and key off `health.stuckWarning`.
   Do **not** infer a stall from `state.json.updatedAt` alone — it is not a liveness
   proof.
-- **Usage-limit waits are not stalls.** A `status --json` showing `SLEEPING_LIMIT`, or
-  `RUNNING` with `sleepUntil` set (a usage-banner backoff: 30 s, then 60 s), is a
-  healthy wait — narrate `sleepUntil`, never offer `--force`.
+- **Usage-limit waits are not stalls.** `usage_limit_hit` (`limitType`, optional
+  `reason: "usage_api_disagreement"`) followed by `sleep_start` (`sleepUntil`, `reason`)
+  means the runner is sleeping until the limit resets (`SLEEPING_LIMIT`) and will resume
+  on its own: surface it once with its `sleepUntil`, and send a `PushNotification` when
+  the sleep is long (a 5-hour window). A `sleep_start` whose `reason` begins *"Usage-limit
+  banner unconfirmed"* is a 30 s / 60 s backoff (`status --json` still `RUNNING` with
+  `sleepUntil`) — narrate it at most briefly. `sleep_end` / `usage_limit_cleared` → the
+  loop is working again. A weekly or no-sleep limit halts the run instead (the process
+  exits; Step 4a reads `WEEKLY_LIMIT` / `PAUSED_USAGE_LIMIT`). None of these is a stall:
+  never offer `--force`.
+- **`loop_paused`** (`reason: "needs_human"`, `itemId`) → the run halted on a needs-human
+  item (only under rauf's opt-in `--pause-on-needs-human`; forge does not pass it by
+  default). Unlike the default set-aside mode, the loop **is** now stopped: surface it
+  with a `PushNotification`; the process exits and Step 4c's recovery pass handles the
+  answer.
 
 **Pending review (Steps 2a / 4a, rauf).** A rauf `--review` run whose review pass failed, was cancelled, or was stopped by a usage
 limit leaves `status --json` with `reviewPending: true` and `reviewItemIds` (the review's
@@ -274,6 +294,28 @@ not a fresh loop. So when Step 4a or Step 2a sees `reviewPending: true`:
 
 At rung 3 (no question mechanism), do not launch: print the rendered resume command and
 close as in 4.
+
+**Unfinished runner (Step 2a re-entry, rauf).** When Step 2a finds no pending or
+in_progress items and no pending review, but `status --json` reports a `loopState` that
+is not a clean finish (**Clean runner finish** in `references/result-reporting.md` —
+e.g. `ERROR`, `PAUSED` with `lock.stale`, `ITERATIONS_COMPLETE`, a usage halt), the
+prior run closed as `partial` with `--cause runner-stopped` (or the plain iteration-limit
+`partial`), and "Nothing to run" would strand it. Instead:
+
+1. Report the state: *"The last run for {feature} did not finish cleanly ({loopState}
+   {— stale lock | — resets {sleepUntil}})."*
+2. Via host's question mechanism, offer **Resume the runner (recommended)** · **Stop here**. For a
+   usage halt, the resume helps only once the limit resets; for `PAUSED` on request
+   (lock released), the stop was the user's — offer, never auto-resume.
+3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` backgrounded exactly as in
+   **Pending review** step 3 (it clears a stale lock and finishes the run's bookkeeping,
+   including any post-loop review), then continue at Step 4a. rauf's recovery for
+   `ERROR` is `resume` or `reset` + re-run — never reach for `reset` or `--force` first.
+4. **Stop here**, or rung 3 (print the rendered command, do not launch): STOP without
+   touching the stage — it is already recorded `in-progress`.
+
+When `loopState` is absent, this never fires: an older or non-rauf runner keeps the
+plain "Nothing to run" stop.
 
 ## Inform-user output template (Step 3c)
 

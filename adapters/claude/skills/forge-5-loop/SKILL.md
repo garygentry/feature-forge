@@ -110,7 +110,7 @@ The runner commits each item onto the current branch. Skip if not a git repo or 
 
 ### 1g. Stranded-Work Pre-flight (if using git)
 
-Run `git status --porcelain`. If it reports changes **and** `{backlogDir}/{loopRunner.stateDir}/state.json` exists from a previous run, **STOP**: name that run (its `startedAt`, `currentItem`, and `blockedItems` from `state.json`) and point the user at the **Post-Run Tree Reconciliation** section of `references/recovery-procedure.md` to commit / stash / discard the stranded work before relaunch — never auto-pass `--force`. If the tree is dirty with **no** prior-run `state.json`, keep today's behavior (surface it; let the user commit/stash or pass `--force`). A clean tree is silent. rauf's own launch refusal remains the backstop.
+Run `git status --porcelain`. If it reports changes **and** `{backlogDir}/{loopRunner.stateDir}/state.json` exists from a previous run, **STOP**: name that run (its `startedAt`, `currentItem`, and `blockedItems` from `state.json`) and point the user at the **Post-Run Tree Reconciliation** section of `references/recovery-procedure.md` to commit / stash / discard the stranded work before relaunch — never auto-pass `--force`. If the tree is dirty with **no** prior-run `state.json`, keep today's behavior (surface it; let the user commit/stash or pass `--force`). A clean tree is silent.
 
 ## Step 2: Construct the Loop Command
 
@@ -120,7 +120,7 @@ Run the **list command** (`loopRunner.listCommand`, default `rauf backlog list .
 
 Calculate the iteration count: `ceil((pending + in_progress) * loopIterationMultiplier)` where `loopIterationMultiplier` comes from `forge.config.json` (default: 1.5, headroom for retries).
 
-Then, **whatever the counts**, run the **status-json command**: `reviewPending: true` (optional field) means a prior review pass failed or was interrupted — follow **Pending review** in `references/runner-contract.md` before any fresh run (which would drop it). Otherwise, with no pending or in_progress items, STOP and tell the user: "All backlog items are already done or blocked. Nothing to run."
+Then, **whatever the counts**, run the **status-json command**: `reviewPending: true` (optional field) means a prior review pass failed or was interrupted — follow **Pending review** in `references/runner-contract.md` before any fresh run (which would drop it). Otherwise, with no pending or in_progress items: a reported `loopState` that is not a clean finish → follow **Unfinished runner** in that file; else STOP and tell the user: "All backlog items are already done or blocked. Nothing to run."
 
 If there are `blocked` items, note them — the user may want `--retry-blocked`.
 
@@ -186,7 +186,7 @@ R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scri
 python3 "$R/scripts/forge-session.py" state-enter --feature "{feature}" --stage forge-5-loop --specs-dir "{specsDir}"
 ```
 
-Then commit this state write before launching (mandatory). The runner refuses to run with uncommitted changes (*"…pass --force"*), and this marker is itself one — so an otherwise-clean repo fails its first launch unless committed. Commit it via the shared-conventions **Git Commit Protocol** (epic members: stage `{specsDir}/{epic}/`): `{commitPrefix}({feature}): forge-5-loop in-progress` — a launch precondition, required regardless of `gitCommitAfterStage`. Unrelated leftover changes still trip the refusal; surface it, never auto-pass `--force`. See `references/runner-contract.md`.
+Then commit this state write before launching (mandatory — the runner refuses a dirty tree, and this marker is itself a change) via the shared-conventions **Git Commit Protocol** (epic members: stage `{specsDir}/{epic}/`): `{commitPrefix}({feature}): forge-5-loop in-progress`, regardless of `gitCommitAfterStage`. Unrelated leftover changes still trip the refusal; surface it, never auto-pass `--force`.
 
 ### 3b. Launch Background Process
 
@@ -198,7 +198,7 @@ Follow the **Inform-user output template (Step 3c)** section of `references/runn
 
 ### 3d. Arm a Monitor on the event stream, and react to events
 
-Arm the **`Monitor` tool** (`persistent: true`) on the structured event stream (the NDJSON file, or the human log as fallback) with a coverage-complete filter matching every terminal and exception state (silence is not success), and react to each event as it arrives. The filter selects on each NDJSON line's **`.type`** field, **never** `kind` (a `kind`-keyed filter matches nothing and the watch stays dark). The exact commands, the filter list (incl. `review_failed`), and the per-event reactions (`needs_human` / `loop_error` / `review_failed` surfaced with a `PushNotification`, `item_completed` coalesced into milestones, `llm_stuck_warning` reported with its in-flight tool) are in `references/runner-contract.md` — follow them verbatim.
+Arm the **`Monitor` tool** (`persistent: true`) on the structured event stream (the NDJSON file, or the human log as fallback) with a coverage-complete filter matching every terminal and exception state (silence is not success). The filter selects on each NDJSON line's **`.type`** field, **never** `kind` (a `kind`-keyed filter matches nothing and the watch stays dark). The exact commands, the filter list (incl. `review_failed` and usage-limit events), and the per-event reactions (`needs_human` / `loop_error` / `review_failed` surfaced with a `PushNotification`, `item_completed` coalesced into milestones, `llm_stuck_warning` reported with its in-flight tool) are in `references/runner-contract.md` — follow them verbatim.
 
 ### 3f. Reach completion
 
@@ -227,7 +227,7 @@ Run the **Post-Run Recovery Procedure** (`references/recovery-procedure.md`) now
 
 ## Step 5: Update Pipeline State
 
-Record completion by running `state-complete` (below). Evaluate "all backlog items are `done`" yourself and pass the result as `--status`: `complete` if every item is `done` (`total > 0`) and no review is pending, else `in-progress`. The verb records `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
+Record completion by running `state-complete` (below). Evaluate "all backlog items are `done`" yourself and pass the result as `--status`: `complete` only when Step 7's ladder selects `complete` (every item `done`, `total > 0`, no pending review, a clean runner finish per `references/result-reporting.md`), else `in-progress`. The verb records `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
 R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -262,7 +262,7 @@ python3 "$R/scripts/forge-session.py" state-verify --feature "{feature}" --stage
 
 Every loop run ends here, and ends here **exactly once** — standalone or epic member, complete or not.
 
-First select the single `LoopOutcome` with the ladder in `references/result-reporting.md` (`resolved` → `needs-human` → `blocked` → `deferred` → `partial` → `complete`, first match wins, plus any `--cause` it names), reading it from Step 4a's authoritative counts and never from the runner's process exit code. If those counts were never obtained, follow that file's operational-failure rule instead: report the failure and its recovery and run no exit at all.
+First select the single `LoopOutcome` with the ladder in `references/result-reporting.md` (`resolved` → `needs-human` → `blocked` → `deferred` → `partial` → `complete`, first match wins, plus any `--cause` it names; runner terminal state gates `complete`), reading it from Step 4a's authoritative counts and never from the runner's process exit code. If those counts were never obtained, follow that file's operational-failure rule instead: report the failure and its recovery and run no exit at all.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 

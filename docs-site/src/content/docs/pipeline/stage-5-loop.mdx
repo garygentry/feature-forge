@@ -82,7 +82,8 @@ verification gate, outlived the tool ceiling. rauf's thresholds live in `.rauf.j
 Raise the second one if your gates legitimately run longer. Usage-limit waits are not
 stalls.
 
-A run is only **complete** when every item is done **and** no review is pending. If the
+A run is only **complete** when every item is done, no review is pending, **and** the
+runner finished cleanly (a crash, a stop or a usage halt is never complete). If the
 `--review` pass fails or is interrupted, rauf reports `reviewPending` and the loop offers
 `rauf resume`, which re-runs exactly that review. If you stop there, the stage closes as
 unfinished and the next `/feature-forge:forge-5-loop` run offers the resume again. An

@@ -23,7 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runner-terminal-states table in `result-reporting.md` maps `ITERATIONS_COMPLETE`,
   `PAUSED` on request vs. with a stale lock, usage halts and backoffs, and an all-zero
   summary. An empty or unreadable backlog (`total == 0`) is now an operational failure and
-  never a vacuous `complete`.
+  never a vacuous `complete`. When the runner reports a `loopState`, only `COMPLETE`/`IDLE`
+  counts as a clean finish: `ERROR`, `PAUSED` (incl. a stale lock), `ITERATIONS_COMPLETE`
+  or a usage halt is never `complete`, even with every item done. It closes `partial` with
+  the new `--cause runner-stopped`, and Step 2a offers rauf's `resume` rather than "Nothing
+  to run". The Monitor filter now also covers `loop_paused`, `usage_limit_hit`,
+  `usage_limit_cleared`, `sleep_start` and `sleep_end`, with reactions.
 
 - **The Claude marketplace now distributes the built `adapters/claude` bundle, not canon (#314).**
   `marketplace.json` `plugins[0].source` moves from `"."` to `"./adapters/claude"`. A bare prose
