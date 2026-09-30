@@ -73,6 +73,21 @@ collects your answer for a post-run retry — **the loop does not pause**, it ke
 the rest of the backlog. You don't need to babysit a terminal, though you still can with
 the `rauf` commands below.
 
+A **stall warning** (`llm_stuck_warning`) names what was running when your runner
+reports it: a warning with no tool in flight means the model itself went silent, while
+one that names a tool (e.g. "Bash running 31m") means a quiet tool call, usually a slow
+verification gate, outlived the tool ceiling. rauf's thresholds live in `.rauf.json`:
+`options.stuckThresholdMs` (silence before the warning, default 5 min) and
+`options.toolStuckThresholdMs` (how long a quiet tool call holds it off, default 30 min).
+Raise the second one if your gates legitimately run longer. Usage-limit waits are not
+stalls.
+
+A run is only **complete** when every item is done **and** no review is pending. If the
+`--review` pass fails or is interrupted, rauf reports `reviewPending` and the loop offers
+`rauf resume`, which re-runs exactly that review. If you stop there, the stage closes as
+unfinished and the next `/feature-forge:forge-5-loop` run offers the resume again. An
+empty or unreadable backlog is never reported as complete.
+
 See [Sessions & monitoring](/pipeline/sessions-and-monitoring/) for how loop sessions fit
 alongside pipeline state and the navigator's context checks.
 

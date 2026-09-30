@@ -14,7 +14,7 @@ root navigator:
     python3 forge-session.py check-epic-base --feature F [--specs-dir DIR] \
         [--config FILE] [--epic E] [--json]
     python3 forge-session.py stage-exit --feature F --stage S [--owner direct|nested] \
-        [--outcome O] [--cause dependency-starvation] [--verify-mode M] \
+        [--outcome O] [--cause dependency-starvation|review-pending] [--verify-mode M] \
         [--served-stage S] [--verify-capability interactive|manual] [--specs-dir DIR] \
         [--config FILE] [--epic E] [--next-feature N] [--host claude|generic|pi] [--json]
     python3 forge-session.py select-outcome --feature F --served-stage S \
@@ -470,6 +470,7 @@ from forge_session.routes import (  # noqa: E402
     _LOOP_COMPLETE_SETTLED,
     _LOOP_COMPLETE_TEXT,
     _LOOP_OUTCOME_TEXT,
+    _LOOP_PARTIAL_REVIEW_PENDING_TEXT,
     _LOOP_PARTIAL_STARVED_TEXT,
     _LOOP_ROUTE_KIND,
     _NO_FINDINGS_RESOLVED_TEXT,
@@ -767,6 +768,7 @@ __all__ = [
     "_LOOP_COMPLETE_SETTLED",
     "_LOOP_COMPLETE_TEXT",
     "_LOOP_OUTCOME_TEXT",
+    "_LOOP_PARTIAL_REVIEW_PENDING_TEXT",
     "_LOOP_PARTIAL_STARVED_TEXT",
     "_LOOP_ROUTE_KIND",
     "_NO_FINDINGS_RESOLVED_TEXT",

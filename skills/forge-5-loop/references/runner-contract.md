@@ -157,7 +157,7 @@ looks identical to "still running." Monitor command (NDJSON path):
 
 ```
 tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>/dev/null \
-  | jq -rc --unbuffered 'select(.type | test("item_completed|item_blocked|needs_human|signal_parsed|loop_completed|loop_error|loop_cancelled|llm_stuck_warning"))'
+  | jq -rc --unbuffered 'select(.type | test("item_completed|item_blocked|needs_human|signal_parsed|loop_completed|loop_error|loop_cancelled|review_failed|llm_stuck_warning"))'
 ```
 
 > **Use `tail -F` (follow by name), not `-f` (follow by descriptor).** The runner
@@ -174,7 +174,7 @@ tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>/dev/null \
 
   ```
   tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/{loopRunner.logFile} 2>/dev/null \
-    | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:'
+    | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:|Review pass (cancelled|stopped)|Review returned unexpected signal|for review:'
   ```
 
   (Match `needs human input` **without** a trailing colon — the runner writes
@@ -182,6 +182,9 @@ tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>/dev/null \
 
 If the Monitor is ever auto-stopped for event volume, re-arm with a tighter filter
 (drop `item_completed`, keep the exception/terminal events).
+
+An older runner that never emits a listed type (e.g. `review_failed`) simply never
+matches it — the filter needs no version gate.
 
 ## React to events as they land (Step 3e)
 
@@ -210,13 +213,59 @@ high and the noise low:
 - **`loop_error`** → a real failure (this is also what a circuit-breaker halt — too many
   consecutive infra failures — emits). Surface now and `PushNotification`. Offer
   inspection / `--force` / re-run as appropriate.
-- **Stall detection** → rauf emits an **`llm_stuck_warning`** event when an iteration
-  stops making progress; the filter above includes it, so surface it live (a hang
-  warning, not yet a failure) and offer `--force` if it persists. If you instead want to
-  probe on quiet, run `{rendered watchCommand}` (or read
-  `{backlogDir}/{loopRunner.stateDir}/iteration-status.json`) and key off its
-  `stuckWarning` flag. Do **not** infer a stall from `state.json.updatedAt` alone — it is
-  not a liveness proof.
+- **`review_failed`** → the post-loop review pass failed, was cancelled, or was stopped
+  by a usage limit (payload `reason`). Surface it now with a `PushNotification`. The run
+  is **not** complete: the review stays pending (`status --json` → `reviewPending: true`),
+  and `loop run --review` exits **1** for it. Nothing to do live — Step 4a sees
+  `reviewPending` and offers the resume (**Pending review**, below).
+- **Stall detection** → rauf emits an **`llm_stuck_warning`** event when an iteration's
+  output stream goes silent. Surface it live as a stall warning, not yet a failure. Read
+  its optional `currentTool` / `toolRunningMs` (absent on older runners — then report
+  the plain `silentMs` and treat it as a possible hang):
+  - `currentTool: null` → **the model itself went silent** with no tool in flight — a
+    likely hang. Offer `--force` / re-run if it persists.
+  - `currentTool` set → **a quiet tool call outlived the tool ceiling** — report it as
+    e.g. *"Bash running 31m"* (`toolRunningMs` rounded to minutes). This is usually a
+    slow verification gate, not a hung LLM: say so, and let it run unless it is clearly
+    wedged.
+
+  The thresholds are the runner's `.rauf.json` `options.stuckThresholdMs` (silence
+  before the warning, default 5 min) and `options.toolStuckThresholdMs` (how long a
+  quiet in-flight tool holds the warning off, default 30 min, measured from the tool's
+  start). A repo whose verification gate legitimately runs longer than 30 min should
+  raise `toolStuckThresholdMs` rather than learn to ignore the warning. If you instead
+  want to probe on quiet, run `{rendered watchCommand}` and key off `health.stuckWarning`.
+  Do **not** infer a stall from `state.json.updatedAt` alone — it is not a liveness
+  proof.
+- **Usage-limit waits are not stalls.** A `status --json` showing `SLEEPING_LIMIT`, or
+  `RUNNING` with `sleepUntil` set (a usage-banner backoff: 30 s, then 60 s), is a
+  healthy wait — narrate `sleepUntil`, never offer `--force`.
+
+**Pending review (Steps 2a / 4a, rauf).** A rauf `--review` run whose review pass failed, was cancelled, or was stopped by a usage
+limit leaves `status --json` with `reviewPending: true` and `reviewItemIds` (the review's
+exact scope). The loop state can read `COMPLETE`/`IDLE` with every item `done`, or
+`PAUSED`/`PAUSED_USAGE_LIMIT` — either way the run is **not complete**, and the process
+exit code (1 for a failed review) does not decide it. Both fields are optional: a runner
+that never reports them never takes this path.
+
+rauf's `resume` re-runs exactly that review (`rauf loop review --items <reviewItemIds>`),
+not a fresh loop. So when Step 4a or Step 2a sees `reviewPending: true`:
+
+1. Report it: *"The review pass for {feature} did not finish ({reason from the last
+   `review_failed` event, if any}); it covers {reviewItemIds}."*
+2. Via {{ASK_TOOL}}, offer **Resume the review now (recommended)** · **Stop here**. On a
+   usage-limit stop (`PAUSED_USAGE_LIMIT` / `WEEKLY_LIMIT`), say the resume only helps
+   once the limit resets (`sleepUntil`). A stop the user requested (`PAUSED`, lock
+   released) is theirs: offer, never auto-resume.
+3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` backgrounded, exactly as a
+   run command (Step 3b launch guards, 3d Monitor, 3f completion), then return to Step 4a.
+   A successful review may file fix items (`review_completed.itemsCreated`); those are
+   ordinary pending work for the next loop run.
+4. **Stop here:** Step 7 closes `partial` with `--cause review-pending` (see
+   `references/result-reporting.md`) — a resume route whose Step 2a re-offers this.
+
+At rung 3 (no question mechanism), do not launch: print the rendered resume command and
+close as in 4.
 
 ## Inform-user output template (Step 3c)
 

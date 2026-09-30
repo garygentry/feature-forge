@@ -120,7 +120,7 @@ Run the **list command** (`loopRunner.listCommand`, default `rauf backlog list .
 
 Calculate the iteration count: `ceil((pending + in_progress) * loopIterationMultiplier)` where `loopIterationMultiplier` comes from `forge.config.json` (default: 1.5, headroom for retries).
 
-If there are no pending or in_progress items, STOP and tell the user: "All backlog items are already done or blocked. Nothing to run."
+If there are no pending or in_progress items, run the **status-json command**: `reviewPending: true` (optional field) means a prior run's review pass failed or was interrupted and is the remaining work: follow **Pending review** in `references/runner-contract.md`. Otherwise STOP and tell the user: "All backlog items are already done or blocked. Nothing to run."
 
 If there are `blocked` items, note them — the user may want `--retry-blocked`.
 
@@ -190,7 +190,7 @@ Then commit this state write before launching (mandatory). The runner refuses to
 
 ### 3b. Launch Background Process
 
-Launch the loop **backgrounded** (`run_in_background`: true) so it survives session end and does not block the session. For a runner that **persists its own structured event file** (the default — rauf writes `{stateDir}/events.ndjson` natively and rotates it per run), launch the **plain `runCommand`** with **no stdout redirect** and supervise the runner's **native** `events.ndjson` directly; do **not** redirect `--ndjson` into `{stateDir}` (it is redundant and collides with the runner's own writer — see `references/runner-contract.md`). Only a stdout-only runner (no native event file) uses `eventStreamCommand`, redirected to a file **outside** `{stateDir}`. The background task's exit notification is the single authoritative terminal signal (Step 4). For the exact launch commands (incl. the `mkdir -p` state-dir guard and the root→`IS_SANDBOX` sandbox guard) and the self-persisting vs. stdout-only detail, read `references/runner-contract.md`.
+Launch the loop **backgrounded** (`run_in_background`: true) so it survives session end and does not block the session. For a runner that **persists its own structured event file** (the default — rauf writes and rotates `{stateDir}/events.ndjson` natively), launch the **plain `runCommand`** with **no stdout redirect** and supervise that native file; never redirect `--ndjson` into `{stateDir}` (it collides with the runner's own writer). Only a stdout-only runner (no native event file) uses `eventStreamCommand`, redirected to a file **outside** `{stateDir}`. The background task's exit notification is the single authoritative terminal signal (Step 4). For the exact launch commands (incl. the `mkdir -p` state-dir guard and the root→`IS_SANDBOX` sandbox guard) and the self-persisting vs. stdout-only detail, read `references/runner-contract.md`.
 
 ### 3c. Inform User
 
@@ -198,21 +198,11 @@ Follow the **Inform-user output template (Step 3c)** section of `references/runn
 
 ### 3d. Arm a Monitor on the event stream, and react to events
 
-Arm the **`Monitor` tool** on the structured event stream (the NDJSON file, or the
-human log as fallback) with **`persistent: true`**, a coverage-complete filter
-matching every terminal and exception state (silence is not success), and react to
-each event as it arrives. Each NDJSON line is a JSON object whose event kind lives
-under the **`type`** field (rauf's schema — e.g. `{"type":"item_completed",…}`), so
-the filter must select on **`.type`**, **not** `kind`: a `kind`-keyed filter surfaces
-nothing (no `grep` match; `jq` aborts on the null `.kind`), so the watch stays dark. The exact Monitor
-commands, the filter event list, and the full per-event reaction rules (`needs_human`
-/ `loop_error` surfaced immediately with a `PushNotification`, `item_completed`
-coalesced into milestones, `llm_stuck_warning` as a hang warning) are in
-`references/runner-contract.md` — follow them verbatim.
+Arm the **`Monitor` tool** (`persistent: true`) on the structured event stream (the NDJSON file, or the human log as fallback) with a coverage-complete filter matching every terminal and exception state (silence is not success), and react to each event as it arrives. The filter selects on each NDJSON line's **`.type`** field, **never** `kind` (a `kind`-keyed filter matches nothing and the watch stays dark). The exact commands, the filter list (incl. `review_failed`), and the per-event reactions (`needs_human` / `loop_error` / `review_failed` surfaced with a `PushNotification`, `item_completed` coalesced into milestones, `llm_stuck_warning` reported with its in-flight tool) are in `references/runner-contract.md` — follow them verbatim.
 
 ### 3f. Reach completion
 
-Step 4 is reached when the backgrounded process exits (its completion notification is authoritative); the `loop_completed` / `loop_error` / `loop_cancelled` event is the live heads-up that it's imminent. Stop the Monitor (it ends on its own when `tail` sees the process-ended log, or via `TaskStop`) and proceed to Step 4. Do NOT foreground-sleep or poll — the harness drives both the Monitor events and the completion notification.
+Step 4 is reached when the backgrounded process exits (its completion notification is authoritative; a `loop_completed` / `loop_error` / `loop_cancelled` event is the live heads-up). Stop the Monitor (`TaskStop` if it has not ended) and proceed. Do NOT foreground-sleep or poll — the harness drives both signals.
 
 ## Step 4: Check Results
 
@@ -224,7 +214,7 @@ Run the **status-json command** (`loopRunner.statusJsonCommand`) and read
 `backlogSummary` for the authoritative counts — it separates the three non-done
 outcomes: genuine `blocked`, `needsHuman`, and runner-`deferred` ("false blocks").
 Fall back to the **list command** (`loopRunner.listCommand`) if `statusJsonCommand`
-is not configured. If the run used a review flag (e.g. rauf's `--review`), also read any `review_completed` event (event stream, or `{loopRunner.stateDir}/events.ndjson`) for its `itemsCreated`/`summary` to surface in 4b — see `references/result-reporting.md`.
+is not configured. Also read the optional `loopState`, `reviewPending`, `lock` fields (absent on older runners = unset); **Runner terminal states** in `references/result-reporting.md` maps them. **`reviewPending: true` is never complete, whatever the counts** — offer the resume per **Pending review** in `references/runner-contract.md` before 4b. If the run used a review flag (e.g. rauf's `--review`), also read any `review_completed` event (event stream, or `{loopRunner.stateDir}/events.ndjson`) for its `itemsCreated`/`summary` to surface in 4b — see `references/result-reporting.md`.
 
 ### 4b. Report Results
 
@@ -233,11 +223,11 @@ blocked and needs-human) and render its report. The five verbatim result-report 
 
 ### 4c. Post-Run Recovery Pass (unconditional)
 
-Run the **Post-Run Recovery Procedure** (`references/recovery-procedure.md`) now — on **every** run close, before Step 5 writes state, so the tree it inspects is exactly what the run left. The live `needs_human` handler (3d) collects answers early but is **not** the entry condition: a run that emitted no event still enters here — this is what makes the plain-blocked unblock reachable on blocked-only runs. With nothing to decide, its step 1 skips straight to the §4 tree reconciliation — silent on a clean tree. A run can strand uncommitted work with no signal (items failing a shared final acceptance criterion are never committed); this pass reconciles it — 1g's pre-flight is only the next-launch backstop. Its step-7 gate feeds Step 7's `resolved` rung; the stage still closes exactly once, in Step 7.
+Run the **Post-Run Recovery Procedure** (`references/recovery-procedure.md`) now — on **every** run close, before Step 5 writes state, so the tree it inspects is exactly what the run left. The live `needs_human` handler (3d) is **not** the entry condition: a run that emitted no event still enters here, so blocked-only runs reach the unblock. With nothing to decide, its step 1 skips to the §4 tree reconciliation — silent on a clean tree — which also reconciles work a run stranded uncommitted with no signal (1g is only the next-launch backstop). Its step-7 gate feeds Step 7's `resolved` rung; the stage still closes exactly once, in Step 7.
 
 ## Step 5: Update Pipeline State
 
-Record completion by running `state-complete` (below). Evaluate "all backlog items are `done`" yourself and pass the result as `--status`: `complete` if every item is `done`, else `in-progress`. The verb records `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
+Record completion by running `state-complete` (below). Evaluate "all backlog items are `done`" yourself and pass the result as `--status`: `complete` if every item is `done` (`total > 0`) and no review is pending, else `in-progress`. The verb records `completedAt`, the version, `basedOnVersions` and `artifacts`, and refreshes `updatedAt`. Add `--epic "{epic}"` when this feature is an epic member — required, per the Pipeline State Protocol.
 
 ```bash
 R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
@@ -272,7 +262,7 @@ python3 "$R/scripts/forge-session.py" state-verify --feature "{feature}" --stage
 
 Every loop run ends here, and ends here **exactly once** — standalone or epic member, complete or not.
 
-First select the single `LoopOutcome` with the ladder in `references/result-reporting.md` (`resolved` → `needs-human` → `blocked` → `deferred` → `partial` → `complete`, first match wins), reading it from Step 4a's authoritative counts and never from the runner's process exit code. If those counts were never obtained, follow that file's operational-failure rule instead: report the failure and its recovery and run no exit at all.
+First select the single `LoopOutcome` with the ladder in `references/result-reporting.md` (`resolved` → `needs-human` → `blocked` → `deferred` → `partial` → `complete`, first match wins, plus any `--cause` it names), reading it from Step 4a's authoritative counts and never from the runner's process exit code. If those counts were never obtained, follow that file's operational-failure rule instead: report the failure and its recovery and run no exit at all.
 
 **Close this stage with the Scripted Stage Exit** (contract: `references/stage-exit-protocol.md`; do not improvise a "Next steps" list). Run:
 
@@ -291,7 +281,7 @@ Add `--epic "{epic}"` when this feature is an epic member — required, per the 
 - **Plugin-root discovery (1b-epic helper) covers installed paths, not workspace-dev checkouts.** The `forge-root.sh` search probes the locations of an **installed** plugin only, so a feature-forge **source checkout** (e.g. `~/workspace/feature-forge`) exits "cannot locate plugin root" unless `FEATURE_FORGE_ROOT` points at it (#323). Expected in a dev environment; run the epic-manifest script from the checkout directly (`python3 <checkout>/scripts/epic-manifest.py …`).
 - `{backlogDir}` is a **directory path**, not a file path. Pass `specs/auth`, not `specs/auth/backlog.json`.
 - rauf resolves `RAUF.md` with fallback (`{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`). State files (state.json, {loopRunner.logFile}, etc.) land at `{backlogDir}/{loopRunner.stateDir}/`, isolated per backlog dir, so concurrent features don't collide.
-- If the session disconnects mid-loop, the runner process continues independently — check results later with the status / list commands. A stale lock from a previous run may need `--force` to clear.
-- Never run the run command in the foreground (without `run_in_background`) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the `Monitor` tool (3d). A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting. See `references/runner-contract.md` for the full monitoring rules.
+- If the session disconnects mid-loop, the runner process continues independently — check results later with the status / list commands. A crashed run's stale lock (`PAUSED` + `lock.stale`) is cleared by rauf's `resume`, not `--force` (see `references/result-reporting.md`).
+- Never run the run command in the foreground (without `run_in_background`) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the `Monitor` tool (3d). A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting.
 - The version gate (1c) uses the `--json` form on purpose; never parse `rauf version`'s human output.
 - **Implementation artifacts must not cite specs.** The loop should **read** specs and `backlog.json` freely — they are the source of truth, and the backlog rightly cites specs for provenance. But artifacts the loop **writes into the target repo** (source code, generated `SKILL.md`/agent files, configs, code comments) must be **self-contained**: no references to feature-forge spec files (no `See specs/{feature}/NN-*.md`, no "source spec" provenance notes) — specs are pre-implementation inputs that may be archived or deleted once the feature ships. This applies only to shipped implementation output, never to the backlog or spec documents, which keep citing specs.

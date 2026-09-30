@@ -329,10 +329,10 @@ def stage_exit(
             capability is permission, not tool presence: a dispatch permitted
             only once the user has asked is still `interactive`, because the
             `standard` gate's own prompt supplies that request.
-        cause: Pending-attribution annotation (`dependency-starvation`), valid
-            only with `--stage forge-5-loop --outcome partial` (REQ-ATTR-04).
-            It swaps the partial next-steps sentence for the starvation variant
-            and changes no routing.
+        cause: Pending-attribution annotation (`dependency-starvation` or
+            `review-pending`), valid only with `--stage forge-5-loop --outcome
+            partial` (REQ-ATTR-04, #339). It swaps the partial next-steps sentence
+            for the matching variant and changes no routing.
 
     Returns:
         A JSON-serializable `StageExitPayload` dictionary.
@@ -486,7 +486,7 @@ def stage_exit(
     # argparse `choices` already restricts the value; this restricts the combination.
     if cause is not None and not (stage == "forge-5-loop" and outcome == "partial"):
         raise UsageError(
-            "--cause dependency-starvation is valid only with "
+            f"--cause {cause} is valid only with "
             "--stage forge-5-loop --outcome partial"
         )
 
