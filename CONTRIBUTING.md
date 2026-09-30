@@ -19,7 +19,7 @@ Pipeline-mechanical changes (scripts, adapters, tests, docs, workflows) are outs
 
 ## Before opening a PR
 
-- `bash scripts/validate.sh` green locally. It runs spec-purity, the adapters drift gate, the full pytest suite, `adapter-src/pi` verify, ruff, traceability, and version-sync.
+- `bash scripts/validate.sh` green locally. It runs spec-purity, the adapters drift gate, the full pytest suite, `adapter-src/pi` verify, ruff, traceability, and version-sync. The pytest suite runs in a `.venv-test` it provisions from `scripts/requirements-test.txt` (pytest, jsonschema, the YAML pin) — the same path CI takes, so no dep-gated test skips locally. The first run needs network access.
 - `python3 scripts/build-adapters.py` (or `--check`) so `adapters/` is in sync with canon. **Never hand-edit `adapters/`** — the drift gate will reject it.
 - If the PR is prose, run the narrowest compliance eval probe that covers it, and paste the JSON summary or per-cell rates into the PR description.
 

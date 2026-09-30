@@ -23,7 +23,9 @@ contribute to this repository.
 | `python3 scripts/check-spec-purity.py` | Check that the canonical surfaces (`skills/`, `agents/`, `references/`) are free of vendor-specific frontmatter. |
 
 `bash scripts/validate.sh` auto-provisions the pinned YAML dependency into `.venv-adapters`
-the first time it runs — no manual setup is needed.
+and the pinned test dependencies (pytest, jsonschema, PyYAML) into `.venv-test` the first time
+it runs — no manual setup is needed. The first run needs network access; if provisioning fails
+the gate FAILS loudly rather than skipping the suite.
 
 ## Branching & merging
 
@@ -165,6 +167,13 @@ The generator is Python 3 (3.10+ baseline) + Bash + Markdown. There is exactly o
 dependency beyond the standard library: a pinned YAML library specified in
 `scripts/requirements-adapters.txt`. `bash scripts/validate.sh` auto-provisions it into the
 gitignored `.venv-adapters` virtual environment on first run; subsequent runs reuse the venv.
+The test suite additionally uses pytest and `jsonschema`, pinned (with the YAML pin) in
+`scripts/requirements-test.txt` — test-only, never imported by runtime code, which stays
+stdlib-only. `validate.sh` provisions them into the gitignored `.venv-test` (recreated from
+scratch whenever the requirements or `python3` version change) and runs the suite there, with
+its `bin/` on `PATH`, locally and in CI alike. A bare `python3 -m pytest tests` without them still works (the
+dep-gated tests skip), but under a truthy `CI` `tests/_ci_deps.py` hard-imports them, so a
+missing dep fails instead of silently skipping.
 There is no `pnpm`.
 
 Node/npm and TypeScript are confined to exactly two places, both gated by `validate.sh` and

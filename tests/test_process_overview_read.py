@@ -18,7 +18,7 @@ Two boundaries have to hold together, and either one alone is a silent regressio
    keeping guard 1 green, so presence alone is not coverage.
 
 Runs against ``skills/`` (canon), never ``adapters/``. Stdlib only, so a bare
-``python3 -m pytest tests`` runs it (`jsonschema` is absent in CI).
+``python3 -m pytest tests`` runs it (`jsonschema` is optional locally).
 """
 
 from __future__ import annotations

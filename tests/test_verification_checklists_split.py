@@ -16,7 +16,7 @@ one checklist it needs. That split is only safe while three boundaries hold:
 
 Runs against ``skills/`` (canon), not ``adapters/`` — the generated bundles are
 ``test_build_adapters.py``'s job. Stdlib only, so a bare ``python3 -m pytest tests``
-runs it (`jsonschema` is absent in CI).
+runs it (`jsonschema` is optional locally).
 """
 
 from __future__ import annotations

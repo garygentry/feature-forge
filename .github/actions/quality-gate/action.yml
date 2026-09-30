@@ -29,21 +29,14 @@ runs:
       with:
         python-version: "3.11"
 
-    - name: Install lint + test + (optional) claude CLI tooling
+    - name: Install lint + (optional) claude CLI tooling
       shell: bash
       run: |
         python3 -m pip install --upgrade pip
         python3 -m pip install ruff
-        # pytest is REQUIRED, not optional: validate.sh step 7 (the
-        # schema↔checker anti-drift test) SOFT-SKIPS non-fatally when pytest is
-        # absent, so CI MUST install it or the drift guard silently no-ops on the
-        # runner (07-testing-strategy.md §2.2). Without this line the gate is
-        # non-effective for REQ-CI-02 / REQ-CONST-03.
-        python3 -m pip install pytest
-        # PyYAML for the pytest interpreter too (same pin as .venv-adapters): tests that import
-        # the generator (build-adapters.py needs yaml) would otherwise importorskip → SKIP in CI,
-        # leaving e.g. the #314 marketplace-parity guard silently inert.
-        python3 -m pip install -r scripts/requirements-adapters.txt
+        # pytest and the test deps (PyYAML pin, jsonschema) are NOT installed here: validate.sh
+        # step 7 provisions .venv-test itself (scripts/requirements-test.txt, recreated when its
+        # fingerprint changes) — the same path as a local run — and fails loudly if it cannot (#336).
         # claude CLI is best-effort (REQ-CI-01 §4.1): install if a published
         # path exists on the runner; validate.sh falls back to the documented
         # equivalent when it is absent (never a no-op, never a silent skip).
@@ -77,7 +70,10 @@ runs:
     #     auditable. Sub-second.
     - name: marketplace channel guards (#314)
       shell: bash
-      run: python3 -m pytest -v -rs tests/test_clean_env_repro.py -k marketplace_channel
+      run: |
+        # .venv-test was provisioned by validate.sh step 7; its bin/ goes on PATH like there.
+        export PATH="$PWD/.venv-test/bin:$PATH"
+        python3 -m pytest -v -rs tests/test_clean_env_repro.py -k marketplace_channel
 
     # 3. shellcheck over the 4 bundled shell scripts (REQ-CI-03). Config:
     #    .shellcheckrc (error+warning floor). feature-forge scope only.
