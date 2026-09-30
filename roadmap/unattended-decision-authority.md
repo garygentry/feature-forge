@@ -86,15 +86,25 @@ matches either form.
 
 ### 2.2 The zero-prompt flag pattern is established and tested
 
-`loopRunner.reviewMode` (`prompt|always|never`), `loopRunner.agentMode` (`prompt|auto`),
-`docsStage` (`prompt|skip`), `autoVerify`/`autoVerifyStages`/`autoFix`, `autoInvokeNextStage`.
-Shared properties, pinned by `tests/test_zero_prompt_loop_config.py` and `tests/test_auto_verify.py`:
+`loopRunner.reviewMode` (`prompt|always|never`) and `loopRunner.agentMode` (`prompt|auto`),
+pinned by `tests/test_zero_prompt_loop_config.py`, and `autoVerify`/`autoVerifyStages`/`autoFix`,
+pinned by `tests/test_auto_verify.py`, share these properties:
 
 - the `prompt` default reproduces today's behavior **byte-identically**;
 - the auto mode suppresses **only the interactive pick** — probes, verdicts, guards still run;
 - the resolved choice is **always printed** ("never hidden");
 - strict-`true` coercion (a string `"true"` does not enable);
 - semantics live in an uncapped reference file; the capped skill body carries a pointer.
+
+Two neighbouring keys are **not** instances of that pattern:
+
+- `docsStage` (`prompt|skip`, default `prompt`) gates forge-6's generate-vs-skip question, but
+  `skip` takes the **non-recommended** skip path: it records the stage via `state-skip` and
+  bypasses the docs stage. It does not take the recommended option on the operator's behalf.
+  Its schema/default contract is guarded by `tests/test_config_defaults_parity.py`.
+- `autoInvokeNextStage` (boolean, default `true`) suppresses no question. It decides whether
+  the navigator invokes the next stage **after the operator confirms** the advance, or only
+  prints the command. No dedicated test pins it.
 
 Cost of one flag, traced via `autoVerify`: schema; `scripts/forge-init.sh` heredoc **and** echo
 block; `scripts/forge-bootstrap.py` config dict; `references/shared-conventions.md`
@@ -111,9 +121,11 @@ declared configuration, not inference.
 ### 2.3 Existing automation of stage chaining
 
 `/feature-forge:forge run` (navigator §6) is an opt-in auto-advance loop over consecutive stages.
-Its stop conditions are explicit: an interview/decision stage (`forge-1-prd`, `forge-2-tech`),
-`nextStage: null`, context over threshold, or a stage signalling needs-human. So chaining exists;
-the gap is exactly the interview stages.
+Its stop conditions are explicit: an interview/decision point that poses a question (the
+`forge-1-prd` and `forge-2-tech` interviews), `nextStage: null`, context over threshold, or a
+stage signalling needs-human. So chaining exists. The gap is the interview stages **plus the
+open-ended review questions later stages still pose**: `forge-3-specs` Step 6 (a blocking Stage
+Review Gate) and `forge-6-docs` Step 4. Those are K2 elicitation (§4), not closed choices.
 
 ### 2.4 Answers-as-data has precedent
 
@@ -222,12 +234,20 @@ determines viability.
 | Kind | Examples | `auto` | `brief` | Notes |
 |---|---|---|---|---|
 | **K1 Closed choice with a recommended option** | Standard Verify Gate; forge-3 document plan; forge-4 breakdown plan; forge-6 generate-vs-skip; Branch Setup; navigator advance gate; forge-5 re-verify-first; impl-verify offer | **yes** — take `(recommended)`; branch creation is reversible and *is* the recommended option, so allow it under declared authority (rung 3 alone still never creates) | yes (as `auto`) | the bulk of the "operator just picks recommended" pain |
-| **K2 Open elicitation** | PRD interview categories (7 × 2–3 questions); tech interview decision areas (9); epic decomposition; "anything I'm missing?" | **no** — nothing to select; self-answering is fabrication | **only path** — answer from the brief; escalate on silence | the interview *is* requirements capture |
-| **K3 Destructive / irreversible** | overwrite a completed artifact (Stage-Entry Guard case 3, Completion Re-check); `abandon`; `--force-standalone` fork; epic member pause; reconcile switch/fetch | **never** | **never** | falls through to the ladder's conservative default or STOP |
+| **K2 Open elicitation** | PRD interview (31 questions across 7 categories in `prd-template.md`, asked 2–3 per question call); tech interview decision areas (9); epic decomposition; "anything I'm missing?"; open-ended stage review questions (`forge-1-prd` Step 5, `forge-2-tech` Step 6, `forge-3-specs` Step 6 blocking gates; `forge-6-docs` Step 4) | **no** — nothing to select; self-answering is fabrication | **only path** — answer from the brief; escalate on silence | the interview *is* requirements capture |
+| **K3 Destructive / irreversible** | overwrite a completed artifact (Stage-Entry Guard case 3, Completion Re-check); `--force-standalone` fork; reconcile switch/fetch | **never** | **never** | falls through to the ladder's conservative default or STOP |
 | **K4 Recovery / needs-human** | loop recovery interview; interrupted resume-vs-restart; preflight `local-write` remedies | resume is already the conservative default; allow `local-write` remedies (idempotent, git-visible) | later, with evidence | keep the operator in v1 |
 
-Consequence: **`auto` over K1 makes `forge run` genuinely unattended from `forge-3-specs`
-through `forge-6-docs`.** `brief` is what K2 needs, and is where the risk lives.
+Lifecycle commands (`pause`, `resume`, `abandon`, and epic pause including the optional member
+pause) are not in any kind above. They are reversible status changes (`abandon` deletes nothing
+and is undone by `resume`), and they are reached only by an explicit operator command, never by
+a running stage, so decision authority does not apply to them.
+
+Consequence: **`auto` over K1 removes the closed-choice prompts from `forge-3-specs` through
+`forge-6-docs`, but not every prompt.** `forge run` still stops at the `forge-3-specs` Step 6
+blocking review and the `forge-6-docs` Step 4 review questions. Those are K2: under `brief` they
+are answered from the brief or escalated, and they are auto-confirmed only under the separate
+`stageReviewMode: auto` opt-in (AP-7). `brief` is what K2 needs, and is where the risk lives.
 
 ---
 
@@ -416,7 +436,10 @@ guards, schema/parity tests, verb conformance tests.
 DIRECTIVES; the navigator advance gate, Standard Verify Gate, forge-3/4/6 plan gates, Branch
 Setup, and forge-5 verify offers consume it; navigator dashboard and every blocking review show
 the ledger digest; compliance-eval probe (K1 advance without prompt; K3 refusal). Result:
-`forge run` unattended from `forge-3-specs` through `forge-6-docs`. Optional spike: the Claude
+`forge run` passes the K1 gates of `forge-3-specs` through `forge-6-docs` without prompting, but
+still stops at their open-ended review questions (the `forge-3-specs` Step 6 blocking gate and
+`forge-6-docs` Step 4, both K2), which need P2's `brief` or AP-7's `stageReviewMode: auto`.
+Optional spike: the Claude
 `PreToolUse` hook as an accelerator.
 
 **P2 — `brief` for the interview stages.** `forge-brief` skill and `BRIEF.md` convention;
@@ -469,3 +492,14 @@ canon placeholder (#271/PR #292) and the resulting site count; rung determinatio
 `interaction-mode` record (#264); the `scripts/forge_session/` package split (#279); the
 `loopRunner` machine-local layer (#324); and the current `forge-verify` / `forge-5-loop` body
 budgets. Every other cited path, section, test name, and budget was re-checked and still holds.
+
+A 2026-09-30 adversarial review corrected four more claims, all of which were already wrong at
+`6015b36`. The design is unchanged:
+
+- §2.3/§4/§8: K1 automation alone does not make `forge-3-specs` through `forge-6-docs`
+  unattended. Their open-ended review questions are now classified as K2.
+- §2.2: `docsStage` and `autoInvokeNextStage` do not share the zero-prompt pattern's semantics,
+  and each property is now tied to the test that actually pins it.
+- §4: `abandon` and epic/member `pause` moved out of K3. They are reversible lifecycle commands.
+- §4: the PRD interview has 31 questions across 7 categories, not "7 × 2–3". The 2–3 figure is
+  questions per call.
