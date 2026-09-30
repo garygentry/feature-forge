@@ -177,7 +177,7 @@ tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/events.ndjson 2>/dev/null \
 
   ```
   tail -n +1 -F {backlogDir}/{loopRunner.stateDir}/{loopRunner.logFile} 2>/dev/null \
-    | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:|Review pass (cancelled|stopped)|Review returned unexpected signal|for review:'
+    | grep -E --line-buffered 'Item [^ ]+ (completed|blocked):|Item [^ ]+ needs human input|Loop completed|Loop error:|Circuit breaker:|Review pass (cancelled|stopped)|cancelled during review pass|Review returned unexpected signal|for review:'
   ```
 
   (Match `needs human input` **without** a trailing colon — the runner writes
@@ -216,11 +216,15 @@ high and the noise low:
 - **`loop_error`** → a real failure (this is also what a circuit-breaker halt — too many
   consecutive infra failures — emits). Surface now and an automatic session wake. Offer
   inspection / `--force` / re-run as appropriate.
-- **`review_failed`** → the post-loop review pass failed, was cancelled, or was stopped
-  by a usage limit (payload `reason`). Surface it now with an automatic session wake. The run
-  is **not** complete: the review stays pending (`status --json` → `reviewPending: true`),
-  and `loop run --review` exits **1** for it. Nothing to do live — Step 4a sees
-  `reviewPending` and offers the resume (**Pending review**, below).
+- **`review_failed`** → the post-loop review pass failed or was stopped by a usage limit
+  (payload `reason`). Surface it now with an automatic session wake. The run is **not**
+  complete: the review stays pending (`status --json` → `reviewPending: true`). A failed
+  review makes `loop run --review` exit **1**; a usage-limit stop is a resumable limit
+  stop, not that exit-1 case. A review **cancelled** mid-pass emits **no**
+  `review_failed` — only `loop_cancelled` (human log: *"Loop cancelled during review pass
+  (review pending)"*) with `reviewPending` still set — so never rely on this event alone.
+  Nothing to do live — Step 4a reads `reviewPending` and offers the resume (**Pending
+  review**, below).
 - **Stall detection** → rauf emits an **`llm_stuck_warning`** event when an iteration's
   output stream goes silent. Surface it live as a stall warning, not yet a failure. Read
   its optional `currentTool` / `toolRunningMs` (absent on older runners — then report
@@ -263,7 +267,11 @@ not a fresh loop. So when Step 4a or Step 2a sees `reviewPending: true`:
 3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` backgrounded, exactly as a
    run command (Step 3b launch guards, 3d Monitor, 3f completion), then return to Step 4a.
    A successful review may file fix items (`review_completed.itemsCreated`); those are
-   ordinary pending work for the next loop run.
+   ordinary pending work for the next loop run. rauf reviews **before** relaunching: when
+   pending items also remain (the review ran after the iteration budget ran out, or
+   blocked items strand their dependents), `resume` re-runs only the review and the
+   remaining items wait for the next loop run — say so, never launch a fresh `loop run`
+   first (it overwrites the state and drops the pending review).
 4. **Stop here:** Step 7 closes `partial` with `--cause review-pending` (see
    `references/result-reporting.md`) — a resume route whose Step 2a re-offers this.
 

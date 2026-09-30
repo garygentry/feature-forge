@@ -119,7 +119,7 @@ Run the **list command** (`loopRunner.listCommand`, default `rauf backlog list .
 
 Calculate the iteration count: `ceil((pending + in_progress) * loopIterationMultiplier)` where `loopIterationMultiplier` comes from `forge.config.json` (default: 1.5, headroom for retries).
 
-If there are no pending or in_progress items, run the **status-json command**: `reviewPending: true` (optional field) means a prior run's review pass failed or was interrupted and is the remaining work: follow **Pending review** in `references/runner-contract.md`. Otherwise STOP and tell the user: "All backlog items are already done or blocked. Nothing to run."
+Then, **whatever the counts**, run the **status-json command**: `reviewPending: true` (optional field) means a prior review pass failed or was interrupted — follow **Pending review** in `references/runner-contract.md` before any fresh run (which would drop it). Otherwise, with no pending or in_progress items, STOP and tell the user: "All backlog items are already done or blocked. Nothing to run."
 
 If there are `blocked` items, note them — the user may want `--retry-blocked`.
 
