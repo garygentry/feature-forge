@@ -142,6 +142,13 @@ python3 "$FEATURE_FORGE_ROOT/scripts/forge-session.py" doctor --json \
 `root-version-skew` additionally lists every candidate root on the host with its channel and
 version, so "which install is live here" is a single command.
 
+`plugin-root` also **warns** when the resolved root is un-built canon (no
+`.feature-forge-bundle.json` — i.e. the repo checkout itself), because skills loaded from it
+dead-reference their shared refs (#305/#314). Running doctor straight from a checkout
+(`python3 scripts/forge-session.py doctor`) therefore always shows that warn — expected, and
+doctor still exits 0; run the bundle's copy (`adapters/claude/scripts/forge-session.py`) to see
+`ok`.
+
 ---
 
 ## Other hosts — codex, pi (and copilot / cursor / gemini)

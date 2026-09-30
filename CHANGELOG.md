@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `claude plugin validate --strict` on `adapters/claude` (the plugin actually distributed), which
   surfaced an unquoted `${CLAUDE_PLUGIN_ROOT}` in the SessionStart hook command; it is now quoted.
 
+### Added
+
+- **`doctor`'s `plugin-root` check now warns on an un-built canon root (#314, deferred from #322).**
+  A resolved root without `.feature-forge-bundle.json` is the repo checkout, whose skills
+  dead-reference their shared references when loaded directly (#305/#314). The warn names the
+  cause and the built-bundle routes (marketplace, `npx` installer, `claude --plugin-dir
+  adapters/claude`, `FEATURE_FORGE_ROOT=adapters/<host>`, `scripts/dev-plugin.sh`), each with
+  what it writes; `evidence.bundleSentinel` records the probe. Warn only (#244), and doctor still
+  exits 0 — running `doctor` from the repo checkout (this repo's smoke) now shows this warn by
+  design.
+
 ### Changed
 
 - **rauf pin advanced to `@garygentry/rauf@0.16.1`** (installer 0.3.8). rauf 0.16.1 fixes a

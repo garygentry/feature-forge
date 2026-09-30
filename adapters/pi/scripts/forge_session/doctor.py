@@ -686,8 +686,30 @@ def _feature_label(feat: dict) -> str:
     return feat["name"] + (f" [{feat['epic']}]" if feat.get("epic") else "")
 
 
+#: Remedy for a resolved root that is un-built canon. Every option loads a BUILT bundle; each
+#: names what it writes (#283/#317): the installs write the host's plugin/skill dirs,
+#: ``dev-plugin.sh`` an out-of-repo dir, the builder ``adapters/``; ``--plugin-dir`` and
+#: ``FEATURE_FORGE_ROOT`` write nothing. Tier = the most conservative option (``network``).
+_CANON_ROOT_REMEDY: Final[str] = (
+    "Load a built bundle, not the repo checkout: install from the marketplace "
+    "(`/plugin install feature-forge@feature-forge` — it ships ./adapters/claude) or with "
+    "`npx @garygentry/feature-forge install` (both write only the host's plugin/skill dirs); "
+    "for source dogfood, rebuild with `python3 scripts/build-adapters.py` (rewrites adapters/), "
+    "then run `claude --plugin-dir adapters/claude` (another host: set FEATURE_FORGE_ROOT to "
+    "adapters/<host>; neither writes files) or `scripts/dev-plugin.sh` (writes an out-of-repo "
+    "plugin dir, default ~/.cache/feature-forge-dev/claude) — see docs/DOGFOODING.md"
+)
+
+
 def _check_plugin_root(ctx: _CheckContext) -> dict:
-    """The sibling ``forge-root.sh`` resolves an install root (never ``na``)."""
+    """The sibling ``forge-root.sh`` resolves an install root (never ``na``).
+
+    A resolved root without the neutral ``.feature-forge-bundle.json`` sentinel is
+    un-built canon (the repo checkout): its skills' prose ``Read references/X`` resolves
+    skill-local, where canon carries none of the shared refs the build fans in, so they
+    dead-reference mid-stage (#122/#305/#314). That warns — never fails (#244 policy), and
+    doctor still exits 0 (INV-3), so the repo's own ``doctor --json`` smoke stays green.
+    """
     root = ctx.plugin_root
     evidence = dict(root)
     if root.get("resolved"):
@@ -695,7 +717,18 @@ def _check_plugin_root(ctx: _CheckContext) -> dict:
         channel = root.get("channel")
         suffix = f" (version {version})" if version else " (no version manifest)"
         chan = f" via {channel}" if channel else ""
-        return _result("ok", f"resolved {root.get('root')}{chan}{suffix}", evidence)
+        built = (Path(str(root.get("root"))) / ".feature-forge-bundle.json").is_file()
+        evidence["bundleSentinel"] = built
+        if built:
+            return _result("ok", f"resolved {root.get('root')}{chan}{suffix}", evidence)
+        return _result(
+            "warn",
+            f"resolved {root.get('root')}{chan}{suffix} is un-built canon (no "
+            ".feature-forge-bundle.json): skills loaded from it cannot Read their shared "
+            "references (references/shared-conventions.md, …) skill-local (#305/#314)",
+            evidence,
+            _remedy(_CANON_ROOT_REMEDY, None, "network"),
+        )
     return _result(
         "warn",
         f"plugin root unresolved: {root.get('error', 'unknown')}",

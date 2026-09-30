@@ -432,14 +432,52 @@ def test_run_probe_never_raises_and_caps_nothing_on_its_own(fs, monkeypatch) -> 
 # branch-state, sandbox-root
 # --------------------------------------------------------------------------- #
 
-def test_plugin_root_ok_from_the_repo_checkout(tmp_path: Path) -> None:
+def test_plugin_root_warns_that_the_repo_checkout_is_unbuilt_canon(tmp_path: Path) -> None:
+    """The repo checkout resolves but carries no ``.feature-forge-bundle.json`` — un-built canon,
+    whose skills dead-reference their shared refs (#305/#314). A warn, never a fail, and doctor
+    still exits 0 — the repo's own ``doctor --json`` smoke stays green."""
     project = make_project(tmp_path)
-    report = doctor_report(project, scrubbed_env(tmp_path))
-    record = check(report, "plugin-root")
-    assert record["status"] == "ok"
+    result = run_doctor(project, scrubbed_env(tmp_path))
+    assert result.returncode == 0, result.stderr
+    record = check(json.loads(result.stdout), "plugin-root")
+    assert record["status"] == "warn"
     assert record["severity"] == "blocking"
+    assert record["evidence"]["resolved"] is True
     assert record["evidence"]["root"] == str(REPO_ROOT)
+    assert record["evidence"]["bundleSentinel"] is False
     assert "version" in record["detail"]
+    assert "un-built canon (no .feature-forge-bundle.json)" in record["detail"]
+    assert "shared references" in record["detail"]
+    remedy = record["remedy"]
+    assert remedy["command"] is None and remedy["safety"] == "network"
+    # Every built-bundle route is named, and each names what it writes (#283/#317).
+    for route in (
+        "/plugin install feature-forge@feature-forge", "npx @garygentry/feature-forge install",
+        "claude --plugin-dir adapters/claude", "FEATURE_FORGE_ROOT", "scripts/dev-plugin.sh",
+        "python3 scripts/build-adapters.py",
+    ):
+        assert route in remedy["description"], route
+    for writes in (
+        "write only the host's plugin/skill dirs", "rewrites adapters/", "neither writes files",
+        "writes an out-of-repo plugin dir",
+    ):
+        assert writes in remedy["description"], writes
+
+
+def test_plugin_root_ok_from_the_built_claude_bundle(tmp_path: Path) -> None:
+    """The built ``adapters/claude`` bundle carries the sentinel, so its own helper resolves it
+    by self-location and plugin-root is ``ok`` with no remedy."""
+    bundle = REPO_ROOT / "adapters" / "claude"
+    project = make_project(tmp_path)
+    result = run_doctor(
+        project, scrubbed_env(tmp_path), helper=bundle / "scripts" / "forge-session.py",
+    )
+    assert result.returncode == 0, result.stderr
+    record = check(json.loads(result.stdout), "plugin-root")
+    assert record["status"] == "ok", record["detail"]
+    assert record["evidence"]["root"] == str(bundle)
+    assert record["evidence"]["bundleSentinel"] is True
+    assert "canon" not in record["detail"]
     assert record["remedy"] is None
 
 
@@ -1357,6 +1395,22 @@ def test_plugin_root_reports_the_explicit_override_channel(tmp_path: Path) -> No
     assert record["status"] == "ok"
     assert record["evidence"]["channel"] == "FEATURE_FORGE_ROOT"
     assert record["evidence"]["root"] == str(tmp_path / "other")
+
+
+def test_plugin_root_warns_when_the_override_names_a_canon_root(tmp_path: Path) -> None:
+    """An override naming a complete root that carries only ``.claude-plugin/plugin.json`` (a canon
+    checkout's shape, no neutral sentinel) resolves — and trips the canon warn."""
+    canon = _complete_bundle(tmp_path / "canon", None)
+    (canon / ".claude-plugin").mkdir()
+    (canon / ".claude-plugin" / "plugin.json").write_text(json.dumps({"version": "0.0.1"}))
+    project = make_project(tmp_path)
+    env = scrubbed_env(tmp_path)
+    env["FEATURE_FORGE_ROOT"] = str(canon)
+    record = check(doctor_report(project, env), "plugin-root")
+    assert record["status"] == "warn"
+    assert record["evidence"]["channel"] == "FEATURE_FORGE_ROOT"
+    assert record["evidence"]["bundleSentinel"] is False
+    assert "un-built canon" in record["detail"]
 
 
 def test_plugin_root_unresolved_when_explicit_override_is_invalid(tmp_path: Path) -> None:
