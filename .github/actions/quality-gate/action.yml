@@ -72,6 +72,13 @@ runs:
       shell: bash
       run: bash scripts/validate.sh
 
+    # 2b. The #314 marketplace-channel guards, verbose, so the log shows each one PASSED
+    #     (not SKIPPED) — they already ran inside validate.sh's suite; this only makes them
+    #     auditable. Sub-second.
+    - name: marketplace channel guards (#314)
+      shell: bash
+      run: python3 -m pytest -v -rs tests/test_clean_env_repro.py -k marketplace_channel
+
     # 3. shellcheck over the 4 bundled shell scripts (REQ-CI-03). Config:
     #    .shellcheckrc (error+warning floor). feature-forge scope only.
     - name: shellcheck

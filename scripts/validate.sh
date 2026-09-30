@@ -217,7 +217,7 @@ if [ -f "$HELPER" ]; then
     fi
   fi
   if python3 -c "import pytest" 2>/dev/null; then
-    if python3 -m pytest "$REPO_ROOT/tests" -q; then
+    if python3 -m pytest "$REPO_ROOT/tests" -q -rs; then
       echo "PASS: epic-manifest pytest suite"
     else
       echo "FAIL: epic-manifest pytest suite"
