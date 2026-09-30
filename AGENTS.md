@@ -169,8 +169,9 @@ dependency beyond the standard library: a pinned YAML library specified in
 gitignored `.venv-adapters` virtual environment on first run; subsequent runs reuse the venv.
 The test suite additionally uses pytest and `jsonschema`, pinned (with the YAML pin) in
 `scripts/requirements-test.txt` — test-only, never imported by runtime code, which stays
-stdlib-only. `validate.sh` provisions them into the gitignored `.venv-test` and runs the suite
-there, locally and in CI alike. A bare `python3 -m pytest tests` without them still works (the
+stdlib-only. `validate.sh` provisions them into the gitignored `.venv-test` (recreated from
+scratch whenever the requirements or `python3` version change) and runs the suite there, with
+its `bin/` on `PATH`, locally and in CI alike. A bare `python3 -m pytest tests` without them still works (the
 dep-gated tests skip), but under a truthy `CI` `tests/_ci_deps.py` hard-imports them, so a
 missing dep fails instead of silently skipping.
 There is no `pnpm`.

@@ -218,15 +218,46 @@ if [ -f "$HELPER" ]; then
   fi
   # The suite runs in an isolated, provisioned venv (pytest + jsonschema + the PyYAML pin,
   # scripts/requirements-test.txt) so local and CI run it identically: no dep-gated test
-  # silently skips because the ambient python3 lacks a package (#336). Create-or-reuse like
-  # .venv-adapters above; a provisioning failure (e.g. offline first run) is a loud FAIL,
-  # never a skip — the suite did not run.
+  # silently skips because the ambient python3 lacks a package (#336). A provisioning failure
+  # (e.g. offline first run) is a loud FAIL, never a skip — the suite did not run.
   TEST_VENV="$REPO_ROOT/.venv-test"
   TEST_REQS="$REPO_ROOT/scripts/requirements-test.txt"
   TEST_PY="$TEST_VENV/bin/python3"
+  TEST_MARKER="$TEST_VENV/.forge-requirements-fingerprint"
+  # `pip install -r` never uninstalls a dropped requirement, so a reused venv can keep a
+  # package CI's fresh one lacks. Fingerprint the resolved requirements (requirements-test.txt
+  # plus every `-r` file it pulls in) and the creating python3's version; on any change,
+  # recreate the venv from scratch. The marker is written only after a successful install.
+  TEST_FINGERPRINT="$(python3 - "$TEST_REQS" <<'PY'
+import hashlib, sys
+from pathlib import Path
+
+digest = hashlib.sha256(sys.version.encode())
+pending, seen = [Path(sys.argv[1]).resolve()], set()
+while pending:
+    req = pending.pop(0)
+    if req in seen:
+        continue
+    seen.add(req)
+    text = req.read_bytes()
+    digest.update(req.name.encode() + b"\0" + text)
+    for line in text.decode("utf-8").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] in ("-r", "--requirement"):
+            pending.append((req.parent / parts[1]).resolve())
+print(digest.hexdigest())
+PY
+)"
+  if [ -d "$TEST_VENV" ] && [ "$(cat "$TEST_MARKER" 2>/dev/null)" != "$TEST_FINGERPRINT" ]; then
+    echo "INFO: .venv-test is stale (requirements or python changed) — recreating it"
+    command rm -rf "$TEST_VENV"
+  fi
   if { [ -x "$TEST_PY" ] || python3 -m venv "$TEST_VENV"; } &&
-    "$TEST_PY" -m pip install -q -r "$TEST_REQS"; then
-    if "$TEST_PY" -m pytest "$REPO_ROOT/tests" -q -rs; then
+    "$TEST_PY" -m pip install -q -r "$TEST_REQS" &&
+    printf '%s\n' "$TEST_FINGERPRINT" > "$TEST_MARKER"; then
+    # The venv's console scripts (e.g. `pytest`, which scaffold green-baseline tests resolve
+    # via shutil.which) go on PATH for the suite only, not just its importable modules.
+    if PATH="$TEST_VENV/bin:$PATH" "$TEST_PY" -m pytest "$REPO_ROOT/tests" -q -rs; then
       echo "PASS: epic-manifest pytest suite"
     else
       echo "FAIL: epic-manifest pytest suite"

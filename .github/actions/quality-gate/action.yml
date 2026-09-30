@@ -35,8 +35,8 @@ runs:
         python3 -m pip install --upgrade pip
         python3 -m pip install ruff
         # pytest and the test deps (PyYAML pin, jsonschema) are NOT installed here: validate.sh
-        # step 7 runs the suite in its own provisioned .venv-test (scripts/requirements-test.txt),
-        # the same path as a local run, and fails loudly if it cannot provision it (#336).
+        # step 7 provisions .venv-test itself (scripts/requirements-test.txt, recreated when its
+        # fingerprint changes) — the same path as a local run — and fails loudly if it cannot (#336).
         # claude CLI is best-effort (REQ-CI-01 §4.1): install if a published
         # path exists on the runner; validate.sh falls back to the documented
         # equivalent when it is absent (never a no-op, never a silent skip).
@@ -51,14 +51,6 @@ runs:
       run: |
         python3 -m venv .venv-adapters
         .venv-adapters/bin/python3 -m pip install -q -r scripts/requirements-adapters.txt
-
-    # 1c'. Likewise warm the pytest venv validate.sh step 7 creates-or-reuses (pytest,
-    #      jsonschema, PyYAML — all pinned), so a provisioning fault is its own clear step.
-    - name: Provision pytest venv (.venv-test)
-      shell: bash
-      run: |
-        python3 -m venv .venv-test
-        .venv-test/bin/python3 -m pip install -q -r scripts/requirements-test.txt
 
     # 1d. shellcheck for REQ-CI-03 (the runner image ships it; install if absent).
     - name: Ensure shellcheck
@@ -78,7 +70,10 @@ runs:
     #     auditable. Sub-second.
     - name: marketplace channel guards (#314)
       shell: bash
-      run: .venv-test/bin/python3 -m pytest -v -rs tests/test_clean_env_repro.py -k marketplace_channel
+      run: |
+        # .venv-test was provisioned by validate.sh step 7; its bin/ goes on PATH like there.
+        export PATH="$PWD/.venv-test/bin:$PATH"
+        python3 -m pytest -v -rs tests/test_clean_env_repro.py -k marketplace_channel
 
     # 3. shellcheck over the 4 bundled shell scripts (REQ-CI-03). Config:
     #    .shellcheckrc (error+warning floor). feature-forge scope only.

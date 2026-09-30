@@ -22,6 +22,9 @@ Stdlib only, so it runs under a bare `python3 -m pytest tests`.
 from __future__ import annotations
 
 import importlib.util
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 from _forge_paths import REPO_ROOT, read
@@ -75,6 +78,49 @@ def test_the_gate_has_a_pass_line_and_no_silent_pytest_less_branch():
         "the provisioning-failure branch no longer increments ERRORS, so an un-run suite "
         "now reads as a clean gate run"
     )
+
+
+def test_the_suite_sees_the_venv_console_scripts():
+    """`pytest` runs with `.venv-test/bin` on PATH, so console scripts resolve (#336 r2).
+
+    Invoking the venv's python alone exposes its modules but not its executables; scaffold
+    green-baseline tests `shutil.which("pytest")` and would skip on a pytest-less PATH.
+    """
+    assert 'PATH="$TEST_VENV/bin:$PATH" "$TEST_PY" -m pytest' in read(VALIDATE)
+
+
+def _fingerprint_script() -> str:
+    match = re.search(r"TEST_FINGERPRINT=.*?<<'PY'\n(.*?)\nPY\n", read(VALIDATE), re.S)
+    assert match, "validate.sh lost its .venv-test requirements fingerprint"
+    return match.group(1)
+
+
+def test_a_stale_venv_is_recreated_not_reused():
+    """A fingerprint mismatch removes `.venv-test` before reprovisioning (#336 r2)."""
+    body = read(VALIDATE)
+    assert '!= "$TEST_FINGERPRINT" ]' in body and 'command rm -rf "$TEST_VENV"' in body
+    assert '"$TEST_FINGERPRINT" > "$TEST_MARKER"' in body, "marker is never written"
+
+
+def test_the_fingerprint_tracks_included_requirements(tmp_path: Path):
+    """The fingerprint moves when a `-r`-included file changes, and is stable otherwise."""
+    script = _fingerprint_script()
+    top, inc = tmp_path / "requirements-test.txt", tmp_path / "requirements-adapters.txt"
+    top.write_text("-r requirements-adapters.txt\njsonschema==1\n")
+    inc.write_text("PyYAML==1\n")
+
+    def fingerprint() -> str:
+        return subprocess.run(
+            [sys.executable, "-c", script, str(top)], capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    first = fingerprint()
+    assert first and fingerprint() == first
+    inc.write_text("PyYAML==2\n")
+    second = fingerprint()
+    assert second != first, "an included requirements file changed but the fingerprint did not"
+    top.write_text("-r requirements-adapters.txt\n")
+    assert fingerprint() != second, "a dropped requirement did not change the fingerprint"
 
 
 def test_this_guard_is_not_skippable():
