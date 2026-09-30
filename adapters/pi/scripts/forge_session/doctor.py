@@ -686,8 +686,37 @@ def _feature_label(feat: dict) -> str:
     return feat["name"] + (f" [{feat['epic']}]" if feat.get("epic") else "")
 
 
+#: Remedy for a resolved root that is un-built canon. Every route loads a BUILT bundle and names
+#: what it writes (#283/#317) — the npx installer's writes mirror ``installer/src`` (the sibling
+#: ``manifestPath`` manifest + every ``resolvePlacements`` destination, both scopes), pinned by
+#: ``installer/test/doctor-canon-remedy.test.ts`` against the installer's typed contract.
+#: Tier = the most conservative route (``network``: the marketplace and npm fetch).
+_CANON_ROOT_REMEDY: Final[str] = (
+    "Load a built bundle, not the repo checkout. Install: the Claude marketplace "
+    "(`/plugin install feature-forge@feature-forge`, ships ./adapters/claude; writes under "
+    "~/.claude/plugins and enables it in ~/.claude/settings.json) or "
+    "`npx @garygentry/feature-forge install` (under the install scope's root — the project, or ~ "
+    "for a global install — writes the host's bundle dir, e.g. .claude/skills/feature-forge, plus "
+    "a sibling .feature-forge.<scope>.json manifest; also Codex agent files in .codex/agents, a "
+    "managed block in .github/copilot-instructions.md for Copilot, Pi agent files in .pi/agents "
+    "(global: ~/.pi/agent/agents)). Source dogfood: rebuild with "
+    "`python3 scripts/build-adapters.py` (rewrites adapters/), then `claude --plugin-dir "
+    "adapters/claude` or FEATURE_FORGE_ROOT=adapters/<host> (neither writes files), "
+    "`pi install ./adapters/pi -l` (writes .pi/settings.json), or `scripts/dev-plugin.sh` "
+    "(writes an out-of-repo plugin dir, default ~/.cache/feature-forge-dev/claude) — see "
+    "docs/DOGFOODING.md"
+)
+
+
 def _check_plugin_root(ctx: _CheckContext) -> dict:
-    """The sibling ``forge-root.sh`` resolves an install root (never ``na``)."""
+    """The sibling ``forge-root.sh`` resolves an install root (never ``na``).
+
+    A resolved root without the neutral ``.feature-forge-bundle.json`` sentinel is
+    un-built canon (the repo checkout): its skills' prose ``Read references/X`` resolves
+    skill-local, where canon carries none of the shared refs the build fans in, so they
+    dead-reference mid-stage (#122/#305/#314). That warns — never fails (#244 policy), and
+    doctor still exits 0 (INV-3), so the repo's own ``doctor --json`` smoke stays green.
+    """
     root = ctx.plugin_root
     evidence = dict(root)
     if root.get("resolved"):
@@ -695,7 +724,18 @@ def _check_plugin_root(ctx: _CheckContext) -> dict:
         channel = root.get("channel")
         suffix = f" (version {version})" if version else " (no version manifest)"
         chan = f" via {channel}" if channel else ""
-        return _result("ok", f"resolved {root.get('root')}{chan}{suffix}", evidence)
+        built = (Path(str(root.get("root"))) / ".feature-forge-bundle.json").is_file()
+        evidence["bundleSentinel"] = built
+        if built:
+            return _result("ok", f"resolved {root.get('root')}{chan}{suffix}", evidence)
+        return _result(
+            "warn",
+            f"resolved {root.get('root')}{chan}{suffix} is un-built canon (no "
+            ".feature-forge-bundle.json): skills loaded from it cannot Read their shared "
+            "references (references/shared-conventions.md, …) skill-local (#305/#314)",
+            evidence,
+            _remedy(_CANON_ROOT_REMEDY, None, "network"),
+        )
     return _result(
         "warn",
         f"plugin root unresolved: {root.get('error', 'unknown')}",

@@ -78,11 +78,11 @@ Once the config exists, check the tooling this project's pipeline will lean on:
 R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 python3 "$R/scripts/forge-session.py" doctor --json \
-  --check root-version-skew --check gh-available
+  --check plugin-root --check root-version-skew --check gh-available
 ```
 
 Follow `references/preflight-and-self-heal.md` with that result: all `ok`/`na` → say nothing and
-move on. Otherwise cluster and report. **Neither check is a stop for `forge-init`** — report and
+move on. Otherwise cluster and report. **No check here is a stop for `forge-init`** — report and
 continue; a `warn` here never aborts initialization (the procedure returns statuses; the caller
 owns its own gate). `gh-available` matters because the tooling-feedback step below tells agents
 to file issues with `gh issue create`; when `gh` is missing or unauthenticated, say so once — its
@@ -93,9 +93,11 @@ interrogated about it on every init.
 `root-version-skew` is reported the same way: a second install shadowing this one is worth
 knowing about before the first stage runs.
 
-(`plugin-root` is deliberately **not** in that list. The prelude above already exits 1 when the
-resolver fails, so by the time `doctor` runs the check can only be `ok` — narrowing to checks
-that cannot fire would be theatre.)
+`plugin-root` is reported the same way, **advisory here despite its `blocking` severity**. The
+prelude above already exits 1 when the resolver fails, so below it the check warns only when the
+resolved root is un-built canon (no `.feature-forge-bundle.json` — a repo checkout loaded
+directly): its skills cannot read their shared references and will break mid-stage. Say so once
+with the check's `remedy.description` (advise-only, `network`) and continue.
 
 ## Root hygiene — tooling feedback
 

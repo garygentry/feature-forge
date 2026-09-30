@@ -366,10 +366,12 @@ def test_doctor_human_output_prints_the_checks_block(tmp_path: Path) -> None:
     assert "   ! branch-state:" in out
     assert "      remedy [local-write]: git switch forge/widget" in out
     assert "   ! backlog-present:" in out
+    # HELPER is the repo checkout — un-built canon — so plugin-root warns (#314 tripwire).
+    assert "   ! plugin-root:" in out and "      remedy [network]: Load a built bundle" in out
     # ok/na lines are hidden by default and shown with --verbose (or --check).
-    assert "  ok plugin-root:" not in out and "  na " not in out
+    assert "  ok config-local-ignored:" not in out and "  na " not in out
     verbose = run("--verbose")
-    assert "  ok plugin-root:" in verbose
+    assert "  ok config-local-ignored:" in verbose
     assert "  na backlog-valid:" in verbose
     # The checks block comes after every legacy line (INV-2: legacy lines unchanged).
     assert out.index("checks: ") > out.index("features: 1 active")
@@ -388,11 +390,11 @@ def test_doctor_check_flag_filters_the_registry_and_rejects_typos(tmp_path: Path
     assert list(report)[:3] == ["pluginRoot", "currentBranch", "specsDir"]
 
     human = subprocess.run(
-        [sys.executable, str(HELPER), "doctor", "--check", "plugin-root"],
+        [sys.executable, str(HELPER), "doctor", "--check", "config-local-ignored"],
         capture_output=True, text=True, cwd=str(tmp_path),
     )
     assert human.returncode == 0
-    assert "  ok plugin-root:" in human.stdout  # --check shows the selected records
+    assert "  ok config-local-ignored:" in human.stdout  # --check shows the selected records
 
     typo = _doctor(tmp_path, HELPER, "--check", "plugin-rooot")
     assert typo.returncode == 2
