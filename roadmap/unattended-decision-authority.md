@@ -2,6 +2,8 @@
 
 **Written:** 2026-09-02, on `main` @ `6015b36` (v0.19.0 / installer 0.3.6; Interaction Capability
 Ladder merged, #258).
+**Refreshed:** 2026-09-30, against `main` @ `bf7871da` (v0.20.0 / installer 0.3.8) — factual
+references only (paths, counts, budgets, test names); the design is unchanged.
 **Status:** **proposal** — assessment and recommended shape only; no code written, no owner approval yet.
 **Tracking:** none yet.
 **Scope:** let a forge pipeline run with most or all operator input **front-loaded**, while keeping
@@ -64,21 +66,23 @@ with an explicit escape hatch (§6.4), because pipeline state is already stage-r
 
 ---
 
-## 2. Ground truth (verified 2026-09-02 against `main` @ `6015b36`)
+## 2. Ground truth (verified 2026-09-02 against `main` @ `6015b36`; refreshed 2026-09-30 against `bf7871da`)
 
 ### 2.1 Three interaction axes exist; a fourth fits cleanly
 
 | Axis | Nature | Where stated |
 |---|---|---|
 | **Host** (`--host claude\|pi\|generic`) | static per adapter bundle, build-substituted; selects command syntax and fresh-session wording, "nothing else" | `references/stage-exit-protocol.md` § Host and capability determination |
-| **Interaction rung** (1 structured tool / 2 prose prompt / 3 non-interactive) | dynamic, self-assessed per turn | `references/shared-conventions.md` § Interaction Capability Ladder |
+| **Interaction rung** (1 structured tool / 2 prose prompt / 3 non-interactive) | dynamic, determined once per session and read from `doctor`'s `interaction-mode` record (never guessed, #264); a launcher can declare rung 3 with `FORGE_INTERACTION=non-interactive` | `references/shared-conventions.md` § Interaction Capability Ladder |
 | **Verify capability** (`interactive\|manual`) | dynamic, permission-based | `references/stage-exit-protocol.md` |
 
 Rung 3 is **conservative-only** (INV-6 in `roadmap/self-healing-resilience.md`): the declared
 default "never advances a pipeline stage, launches a loop, applies a remedy, creates a branch,
 commits, or records a decision", and interview sites at rung 3 emit `no-default: abort`.
 `tests/test_interaction_ladder_prose.py` pins those clauses and requires every canon file that
-contains `AskUserQuestion` to cite the ladder by title.
+poses a question to cite the ladder by title. Since #271 (PR #292) canon writes the question tool
+as the build placeholder `{{ASK_TOOL}}`, not the literal `AskUserQuestion`; the roster scan
+matches either form.
 
 ### 2.2 The zero-prompt flag pattern is established and tested
 
@@ -94,11 +98,15 @@ Shared properties, pinned by `tests/test_zero_prompt_loop_config.py` and `tests/
 
 Cost of one flag, traced via `autoVerify`: schema; `scripts/forge-init.sh` heredoc **and** echo
 block; `scripts/forge-bootstrap.py` config dict; `references/shared-conventions.md`
-§ Configuration Reading; a resolver in `scripts/forge-session.py`; navigator and `forge-guide`
+§ Configuration Reading; a resolver in the `scripts/forge_session/` package (split out of
+`scripts/forge-session.py` by #279, which is now a thin CLI shim); navigator and `forge-guide`
 prose; a dedicated test file; README table; `docs-site/…/advanced/config.mdx`; CHANGELOG;
 adapter regeneration. `tests/test_config_defaults_parity.py` fails if schema and `forge-init.sh`
 disagree. Prefer the `loopRunner` / `effective-config` pattern (schema is the sole default
-source) over the `autoVerify` pattern (defaults duplicated in Python and prose).
+source) over the `autoVerify` pattern (defaults duplicated in Python and prose). Since #324,
+`loopRunner` also layers a machine-local `forge.config.local.json` (and a
+`FEATURE_FORGE_LOOP_RUNNER_BIN` env override for `bin`) over the committed config — still
+declared configuration, not inference.
 
 ### 2.3 Existing automation of stage chaining
 
@@ -140,8 +148,9 @@ alternatives considered." That is the adversary's input, produced today as prose
 | Subagent dispatch | `Agent` tool, Anthropic models only | `pi-subagents`, cross-vendor, incl. external-CLI runner agents | `agents/*.toml`, only when asked | none |
 | Non-interactive invocation | `claude -p` | `pi -p`, `--mode json` | `codex exec` | varies |
 
-The build rewrites `AskUserQuestion` → "the host's question mechanism" for codex / gemini /
-copilot / cursor and forbids the literal in those bundles (`tests/test_adapter_host_neutrality.py`).
+Canon writes the tool as the `{{ASK_TOOL}}` placeholder (#271); the build binds it to
+`AskUserQuestion` for Claude and Pi and to "the host's question mechanism" for codex / gemini /
+copilot / cursor, and forbids the literal in those bundles (`tests/test_adapter_host_neutrality.py`).
 **Any contract here must read correctly as prose after translation** — the constraint the ladder
 was written under.
 
@@ -167,8 +176,9 @@ conclusion for cross-vendor verification: Pi has it natively; everywhere else, s
 - **Anti-churn verify-loop hardening** (R-05 severity floor, R-07 round ledger, R-08 narrative
   rule; #185): agent-versus-agent review loops did not converge on their own. The adversary
   inherits a round cap and a severity floor from day one.
-- **Budget constraints** (`roadmap/self-healing-resilience.md` §2.3–2.4): `forge-verify` is at
-  300/300 body lines; `forge-5-loop` at 4845/5000 words; the frontmatter description total is
+- **Budget constraints** (`roadmap/self-healing-resilience.md` §2.3–2.4; re-measured
+  2026-09-30 by `tests/test_always_loaded_surface.py`'s own counters): `forge-verify` is at
+  297/300 body lines; `forge-5-loop` at 4994/5000 words; the frontmatter description total is
   pinned at 4688/4688 and `EXPECTED_SKILL_COUNT` at 13. A new skill or any capped-body growth is
   a priced trade, not a free choice.
 
@@ -205,7 +215,8 @@ existing invariant alone.
 
 ## 4. Site taxonomy (what can actually be automated)
 
-The 117 `AskUserQuestion` sites across canon fall into four kinds. The kind, not the count,
+The 111 `{{ASK_TOOL}}` question sites across canon (117 literal `AskUserQuestion` sites at
+`6015b36`, before #271 normalized them) fall into four kinds. The kind, not the count,
 determines viability.
 
 | Kind | Examples | `auto` | `brief` | Notes |
@@ -421,7 +432,8 @@ findings. Only then discuss whether `auto` should ever be the `forge-init` recom
 cheap pre-experiment: run today's `forge-2-tech` interview once with a foreign CLI reviewing the
 drafted decision set, by hand, and see whether it changes anything.
 
-**Do not:** add a fourth rung; reuse `forge-decisions.json`; infer authority from `-p` / no-TTY;
+**Do not:** add a fourth rung; reuse `forge-decisions.json`; infer authority from `-p` / no-TTY
+or from the `interaction-mode` record / `FORGE_INTERACTION`;
 let `auto` touch K3; make the Claude hook or the Pi extension the mechanism; auto-confirm stage
 reviews without a distinct opt-in; let the adversary decide anything.
 
@@ -451,3 +463,9 @@ documentation. The reframe in §1.3 and §6 came from the owner's observation th
 value is the disciplined path, not the interview mechanics, and that unattended runs should
 therefore front-load operator input and keep the discipline rather than automate the pauses.
 Line references above were verified at that commit; re-check before acting on them.
+
+Refreshed 2026-09-30 against `main` @ `bf7871da` for facts that moved since: the `{{ASK_TOOL}}`
+canon placeholder (#271/PR #292) and the resulting site count; rung determination via `doctor`'s
+`interaction-mode` record (#264); the `scripts/forge_session/` package split (#279); the
+`loopRunner` machine-local layer (#324); and the current `forge-verify` / `forge-5-loop` body
+budgets. Every other cited path, section, test name, and budget was re-checked and still holds.
