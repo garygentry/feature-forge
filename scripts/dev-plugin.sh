@@ -92,8 +92,8 @@ fi
 version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \
   "$repo_root/.claude-plugin/plugin.json")"
 
-# Default target: an out-of-repo cache dir, keyed by agent. NEVER inside the repo (the
-# marketplace ships the repo via source: "."; a manifest there could become a nested dup).
+# Default target: an out-of-repo cache dir, keyed by agent. NEVER inside the repo (a stray
+# committed manifest there could be picked up as a nested/duplicate plugin).
 out="${out:-${XDG_CACHE_HOME:-$HOME/.cache}/feature-forge-dev/$agent}"
 # Canonicalize to an absolute PHYSICAL path first, so the in-repo guard below cannot be
 # bypassed by a relative or symlinked --out that actually resolves inside the checkout.

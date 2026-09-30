@@ -8,8 +8,9 @@
 >
 > This repository **is** the plugin: the marketplace catalog
 > (`.claude-plugin/marketplace.json`) and the plugin manifest
-> (`.claude-plugin/plugin.json`) both live at the repo root with `"source": "."` (see
-> `scripts/validate.sh`). All paths below are repo-root-relative.
+> (`.claude-plugin/plugin.json`) both live at the repo root (see `scripts/validate.sh`;
+> the marketplace distributes the built `./adapters/claude` bundle since #314). All paths
+> below are repo-root-relative.
 
 ## Requirement Coverage
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Claude marketplace now distributes the built `adapters/claude` bundle, not canon (#314).**
+  `marketplace.json` `plugins[0].source` moves from `"."` to `"./adapters/claude"`. A bare prose
+  `Read references/X` resolves skill-local, and canon skills carry none of the shared references
+  they cite (`shared-conventions.md`, `stage-exit-protocol.md`, `stacks/`, …), so a marketplace
+  install silently dead-referenced 47 citations; the built bundle fans them skill-local (#132) and
+  carries its own `.claude-plugin/plugin.json` (#322). The builder now also copies the SessionStart
+  hook (`hooks/hooks.json` + `scripts/session-check.sh`, byte-identical) into the Claude bundle so
+  marketplace installs keep it. `test_marketplace_channel_resolves_cited_shared_references_skill_local`
+  loses its `xfail(strict=True)` and now passes; a new guard asserts the distributed channel ships
+  the repo-root hooks and every script they run. `validate.sh` now also runs
+  `claude plugin validate --strict` on `adapters/claude` (the plugin actually distributed), which
+  surfaced an unquoted `${CLAUDE_PLUGIN_ROOT}` in the SessionStart hook command; it is now quoted.
+
 ### Changed
 
 - **rauf pin advanced to `@garygentry/rauf@0.16.1`** (installer 0.3.8). rauf 0.16.1 fixes a

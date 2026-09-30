@@ -7,8 +7,8 @@
 > (REQ-COMPAT-01/02/03).
 >
 > This repository **is** the plugin (the marketplace catalog and plugin manifest both
-> live at the repo root with `"source": "."`; see `scripts/validate.sh`). All paths below
-> are repo-root-relative.
+> live at the repo root; see `scripts/validate.sh`; the marketplace distributes the built
+> `./adapters/claude` bundle since #314). All paths below are repo-root-relative.
 
 ## Requirement Coverage
 
