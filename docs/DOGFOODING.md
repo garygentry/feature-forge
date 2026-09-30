@@ -46,14 +46,15 @@ manifest is an additional file for Claude's own loader.) The other hosts' bundle
 neutral sentinel, so `scripts/dev-plugin.sh` still assembles a proper plugin dir **outside the
 repo** for them (real manifest + symlinks into the live bundle).
 
-> **Marketplace note (#322).** `adapters/claude/.claude-plugin/plugin.json` is committed and the
-> marketplace ships the repo via `source: "."`, but it is **not** double-registered: Claude Code
-> marketplace installs are manifest-driven and root-only (only the plugins enumerated in
-> `marketplace.json` load — no recursive filesystem discovery), and `--plugin-dir <folder>` scans
-> only **immediate** subfolders one level deep. The nested manifest is two levels below the repo
-> root (`adapters/claude/.claude-plugin/`), so a `source: "."` install and `--plugin-dir <repo-root>`
-> both ignore it; it loads only when pointed at directly (`--plugin-dir adapters/claude`), which is
-> the intended dev path. (Refs: Claude Code plugins + plugin-marketplaces docs.)
+> **Marketplace note (#322, #314).** The marketplace now distributes the **built** bundle:
+> `marketplace.json` `plugins[0].source` is `./adapters/claude` (#314), so a marketplace install
+> loads the same self-contained tree as `--plugin-dir adapters/claude` — shared references fanned
+> skill-local, plus the SessionStart hook, which the builder copies into the bundle. It is **not**
+> double-registered with the repo-root manifest: marketplace installs are manifest-driven (only
+> the `source` each `marketplace.json` entry names is loaded). The repo-root
+> `.claude-plugin/plugin.json` stays as the version source of record the builder mirrors into the
+> bundle. `--plugin-dir <repo-root>` still loads **canon** (shared refs absent skill-local), so
+> never use it for real runs. (Refs: Claude Code plugins + plugin-marketplaces docs.)
 
 ---
 
@@ -153,7 +154,8 @@ whatever its reference-resolution rule.** The only hazard is a *canon-load* path
 the repo-root `skills/`, whose shared refs live only at the repo-root `references/`.
 
 > **Reference-resolution status.** For **Claude** it is verified — a bare prose `Read references/X`
-> resolves skill-local, so canon-load breaks (#305/#314). For **codex** and **pi** the canon-load
+> resolves skill-local, so canon-load breaks (#305/#314; the marketplace ships the built
+> bundle since #314, so only a manual repo-root load is affected). For **codex** and **pi** the canon-load
 > rule is **unverified** (it needs a live agent run to observe). Every prescription below loads a
 > **built** bundle, which sidesteps the question; never point codex/pi at raw `skills/`.
 
@@ -247,9 +249,10 @@ back — do not improvise a repo-root symlink:
    - machine-wide → add the shell alias (§ Machine-wide A).
 4. **Verify:** `claude --plugin-dir <path> plugin list` shows `feature-forge@inline` at the
    expected version, `✔ loaded`, and **one** entry (not a duplicate).
-5. **Never** symlink the repo root into a skills dir; **never** commit a
-   `.claude-plugin/plugin.json` anywhere under the repo tree (it would ship via the
-   marketplace `source: "."` clone). The assembled manifest lives outside the repo by design.
+5. **Never** symlink the repo root into a skills dir; **never** commit a hand-written
+   `.claude-plugin/plugin.json` anywhere under the repo tree (only the repo-root source of
+   record and the generated `adapters/claude/` copy belong there). The assembled manifest lives
+   outside the repo by design.
 6. If a released `feature-forge` is also installed and the source must be machine-wide via
    skills-dir, remember it will be **shadowed** until you `claude plugin disable
    feature-forge@<marketplace>` (fact 2); the per-repo `--plugin-dir` path needs no such step.

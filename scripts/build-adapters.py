@@ -1871,6 +1871,7 @@ def run_self_containment_pass(
         _write_pi_package_assets(bundle_root)
     if bundle_root.name == "claude":
         _write_claude_plugin_manifest(bundle_root, repo_root)
+        _copy_claude_plugin_hooks(bundle_root, repo_root)
 
 
 def _write_claude_plugin_manifest(bundle_root: Path, repo_root: Path) -> None:
@@ -1903,6 +1904,34 @@ def _write_claude_plugin_manifest(bundle_root: Path, repo_root: Path) -> None:
         ".claude-plugin/plugin.json",
         json.dumps(manifest, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
     )
+
+
+#: Claude plugin hook surface carried into the built ``claude`` bundle (#314): the hook config
+#: and the one script it runs. Copied byte-identical, Claude bundle only (no other host loads
+#: ``hooks/hooks.json``).
+CLAUDE_PLUGIN_HOOK_FILES: tuple[str, ...] = ("hooks/hooks.json", "scripts/session-check.sh")
+
+
+def _copy_claude_plugin_hooks(bundle_root: Path, repo_root: Path) -> None:
+    """Copy the SessionStart hook (``hooks/hooks.json`` + ``scripts/session-check.sh``) into the
+    built ``claude`` bundle (#314).
+
+    The marketplace ships ``adapters/claude`` (not the canon repo root), so the plugin root
+    Claude loads is the bundle: a hook present only at the repo root would silently stop firing.
+    Byte-identical, like the runtime helpers (REQ-GEN-05). Skipped when the repo root carries no
+    ``hooks/hooks.json`` (the canon-only fixtures), mirroring ``_write_claude_plugin_manifest``'s
+    fallback so a fixture build stays deterministic instead of crashing.
+    """
+    if not (repo_root / "hooks" / "hooks.json").is_file():
+        return
+    for rel in CLAUDE_PLUGIN_HOOK_FILES:
+        src = repo_root / rel
+        dst = bundle_root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        _assert_within(dst, bundle_root)
+        shutil.copyfile(src, dst)  # bytes only — never copystat/edit
+        dst.chmod(0o755 if rel.endswith(".sh") else 0o644)
+        _assert_byte_identical(src, dst)
 
 
 def _write_pi_package_assets(bundle_root: Path) -> None:

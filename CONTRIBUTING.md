@@ -84,7 +84,9 @@ claude plugin list | grep -E 'feature-forge|rauf'   # expect @skills-dir
 ### Fallback: local marketplace install
 
 If a repo-root symlink does **not** load as `<plugin>@skills-dir`, remove the symlinks and install
-from a local marketplace instead — same end state (live source, no stale cache):
+from a local marketplace instead. For feature-forge the marketplace entry points at the **built**
+`adapters/claude` bundle (#314), so run `python3 scripts/build-adapters.py` after each canon edit
+before it takes effect:
 
 ```bash
 claude plugin marketplace add ~/workspace/feature-forge

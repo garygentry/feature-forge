@@ -21,10 +21,10 @@ no copy of the prelude to drift.
 3. ``test_marketplace_channel_resolves_cited_shared_references_skill_local`` — the
    distributed Claude channel (``marketplace.json`` ``plugins[0].source``) must let every
    skill resolve the shared ``references/X`` it cites SKILL-LOCAL, since a bare prose read
-   resolves relative to ``skills/<name>/``, not the plugin root (#122/#305). ``source: "."``
-   ships CANON (shared refs only at the repo-root ``references/``), so it fails today; #314's
-   root fix (point ``source`` at ``./adapters/claude``, or fan shared refs into canon) flips
-   it to pass and its marker comes off then.
+   resolves relative to ``skills/<name>/``, not the plugin root (#122/#305). FIXED (marker
+   removed) by #314: ``source`` now points at the built ``./adapters/claude`` bundle, which fans
+   the shared refs skill-local. The test reads ``source`` from ``marketplace.json``, so a revert
+   to ``source: "."`` (canon) fails it again.
 
 ``strict=True`` means an unexpected pass fails the suite: whichever PR fixes a
 case MUST also remove its xfail marker, keeping the anchors honest.
@@ -323,15 +323,6 @@ def _skill_body(text: str) -> str:
     return text[match.end():] if match else text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#314: marketplace.json plugins[0].source='.' distributes CANON, whose skills carry no "
-        "skill-local copy of the shared references they cite; a bare prose `Read references/X` "
-        "then dead-references skill-local. Flips to pass when the root fix points source at "
-        "./adapters/claude (which fans the shared refs skill-local) or fans them into canon."
-    ),
-)
 def test_marketplace_channel_resolves_cited_shared_references_skill_local() -> None:
     """Every shared reference a skill cites must resolve SKILL-LOCAL on the *distributed* Claude
     channel — the plugin dir Claude installs from ``marketplace.json`` ``plugins[0].source``.
@@ -339,14 +330,21 @@ def test_marketplace_channel_resolves_cited_shared_references_skill_local() -> N
     A bare prose ``Read references/X`` resolves relative to ``skills/<name>/``, not the plugin
     root (#122/#305), so a shared ref that lives only at the plugin-root ``references/`` (as in
     canon) is unreadable from a skill. The built ``adapters/claude`` bundle fans every cited
-    shared ref skill-local; ``source: "."`` ships canon and does not — hence the failure this
-    anchor pins until the root fix lands.
+    shared ref skill-local; ``source: "."`` ships canon and does not (#314).
     """
     marketplace = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
     # Select the feature-forge plugin by name, not by index — the manifest could grow or reorder.
     source = next(p for p in marketplace["plugins"] if p["name"] == "feature-forge")["source"]
     plugin_dir = (REPO_ROOT / source).resolve()
     refs_root = plugin_dir / "references"
+    # Non-vacuity: the source must be a loadable Claude plugin carrying skills, or the scan
+    # below would pass on an empty/missing dir.
+    assert (plugin_dir / ".claude-plugin" / "plugin.json").is_file(), (
+        f"marketplace source {source!r} carries no .claude-plugin/plugin.json"
+    )
+    assert any((plugin_dir / "skills").glob("*/SKILL.md")), (
+        f"marketplace source {source!r} carries no skills/*/SKILL.md"
+    )
 
     missing: set[str] = set()
     for skill_md in sorted((plugin_dir / "skills").glob("*/SKILL.md")):
@@ -371,3 +369,26 @@ def test_marketplace_channel_resolves_cited_shared_references_skill_local() -> N
         "shared references not resolvable skill-local on the distributed channel "
         f"(source={source!r}):\n  " + "\n  ".join(sorted(missing))
     )
+
+
+def test_marketplace_channel_carries_root_plugin_hooks() -> None:
+    """The distributed Claude channel must ship the repo-root plugin hooks (#314).
+
+    With ``source`` pointed at the built bundle, Claude loads hooks from the BUNDLE's
+    ``hooks/hooks.json``; a hook that lives only at the canon repo root would silently stop
+    firing on marketplace installs. Asserts the distributed ``hooks/hooks.json`` is byte-equal
+    to canon and that every ``${CLAUDE_PLUGIN_ROOT}/…`` path it runs exists inside the plugin.
+    """
+    marketplace = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    source = next(p for p in marketplace["plugins"] if p["name"] == "feature-forge")["source"]
+    plugin_dir = (REPO_ROOT / source).resolve()
+
+    canon_hooks = REPO_ROOT / "hooks" / "hooks.json"
+    shipped_hooks = plugin_dir / "hooks" / "hooks.json"
+    assert shipped_hooks.is_file(), f"marketplace source {source!r} ships no hooks/hooks.json"
+    assert shipped_hooks.read_bytes() == canon_hooks.read_bytes()
+
+    cited = re.findall(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_./-]+)", shipped_hooks.read_text())
+    assert cited, "hooks.json cites no ${CLAUDE_PLUGIN_ROOT} path — update this guard"
+    missing = [rel for rel in cited if not (plugin_dir / rel).is_file()]
+    assert not missing, f"hook targets absent from marketplace source {source!r}: {missing}"

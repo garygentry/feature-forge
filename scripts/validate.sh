@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Validate the feature-forge single-plugin marketplace.
 #
-# This repo IS the plugin: the repo root contains both the marketplace
-# catalog (.claude-plugin/marketplace.json) and the plugin manifest
-# (.claude-plugin/plugin.json), with the plugin registered as "source": ".".
+# The repo root carries the marketplace catalog (.claude-plugin/marketplace.json)
+# and the canonical plugin manifest (.claude-plugin/plugin.json, the version
+# source of record). The marketplace entry distributes the BUILT Claude bundle,
+# "source": "./adapters/claude" (#314), which carries its own generated manifest.
 #
 # Validates the flattened, self-contained single-plugin layout. Requires python3.
 set -euo pipefail
@@ -40,7 +41,7 @@ else
 fi
 
 # 3. Every plugin listed in marketplace.json must resolve to a plugin.json.
-#    For this single-plugin repo the only entry uses "source": "." -> root.
+#    The only entry uses "source": "./adapters/claude" -> the built Claude bundle (#314).
 if [ -f "$MARKETPLACE" ]; then
   while IFS=$'\t' read -r PNAME PSOURCE; do
     [ -n "$PNAME" ] || continue
@@ -75,6 +76,14 @@ if command -v claude >/dev/null 2>&1; then
     echo "PASS: claude plugin validate --strict"
   else
     echo "FAIL: claude plugin validate --strict reported errors (see above)"
+    ERRORS=$((ERRORS + 1))
+  fi
+  # The marketplace distributes the built bundle (#314), so validate the plugin it ships too
+  # (hooks, agents, skills as Claude will load them), not only the marketplace catalog.
+  if claude plugin validate --strict "$REPO_ROOT/adapters/claude"; then
+    echo "PASS: claude plugin validate --strict adapters/claude"
+  else
+    echo "FAIL: claude plugin validate --strict adapters/claude reported errors (see above)"
     ERRORS=$((ERRORS + 1))
   fi
 else

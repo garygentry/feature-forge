@@ -1270,14 +1270,23 @@ def test_runtime_helpers_has_exactly_seven_entries():
 @pytest.mark.parametrize("agent", AGENT_TARGETS)
 def test_no_new_file_appears_under_an_adapter_scripts_dir(agent):
     """Each bundle's scripts/ holds exactly RUNTIME_HELPERS (files) plus RUNTIME_HELPER_DIRS
-    (whole packages, e.g. forge_session/ per #279) — nothing more, nothing less. The guard
-    still fails on any stray/unexpected file OR directory; it only admits the declared set."""
+    (whole packages, e.g. forge_session/ per #279) — nothing more, nothing less. The Claude
+    bundle additionally carries the script its SessionStart hook runs (CLAUDE_PLUGIN_HOOK_FILES,
+    #314). The guard still fails on any stray/unexpected file OR directory; it only admits the
+    declared set."""
     mod = _load_generator_module()
     scripts_dir = ADAPTERS / agent / "scripts"
 
     emitted = sorted(p.name for p in scripts_dir.iterdir() if p.is_file())
+    expected = list(mod.RUNTIME_HELPERS)
+    if agent == "claude":
+        expected += [
+            rel.split("/", 1)[1]
+            for rel in mod.CLAUDE_PLUGIN_HOOK_FILES
+            if rel.startswith("scripts/")
+        ]
 
-    assert emitted == sorted(mod.RUNTIME_HELPERS), (
+    assert emitted == sorted(expected), (
         f"{agent}: adapters/{agent}/scripts/ diverged from RUNTIME_HELPERS"
     )
     emitted_dirs = sorted(p.name for p in scripts_dir.iterdir() if p.is_dir())
