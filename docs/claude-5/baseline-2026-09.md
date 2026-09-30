@@ -62,6 +62,6 @@ Rows appended per §2, newest last. Same harness, same cell schema, same criteri
 | date | PR | `cold` Opus 5 | `cold` Opus 4.8 | `warm` Opus 5 | `warm` Opus 4.8 | criteria | cost |
 |---|---|---|---|---|---|---|---|
 | 2026-09-03 | this refresh (§1) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $19.41 |
-| 2026-09-29 | #338 (`forge-init` preflight prose) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $26.35 |
+| 2026-09-30 | #338 (`forge-init` preflight prose) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $26.35 |
 
 The #338 run is a canon-regression check, not a measurement of `forge-init`'s new text: no probe loads `forge-init`, so `stage-exit` was run as the general prose-change oracle. Stage-exit held at 20/20 again.

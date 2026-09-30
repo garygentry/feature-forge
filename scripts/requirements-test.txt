@@ -3,14 +3,32 @@
 # Kept separate from requirements-adapters.txt, whose .venv-adapters is PyYAML-only; the
 # generator's pin is pulled in because tests import and drive build-adapters.py.
 # Under CI, tests hard-import the optional deps (tests/_ci_deps.py, #336).
+#
+# This file is a FULL LOCK (#342): every package the two direct deps below resolve to is
+# exact-pinned (from a fresh-venv `pip freeze`), so .venv-test cannot drift under an unchanged
+# file — and any bump changes validate.sh's fingerprint, which recreates the venv. Transitive
+# pins carry their upstream environment markers, so it installs as-is on Python 3.10–3.13.
+# rpds-py ships per-platform wheels; only the ubuntu quality gate installs this file (the
+# os-matrix legs do not), so pytest's Windows-only colorama is deliberately not pinned.
 -r requirements-adapters.txt
+
+# Direct.
 pytest==9.1.1
 jsonschema==4.26.0
-# jsonschema's own runtime deps, exact-pinned to what 4.26.0 resolves (#342) so .venv-test
-# cannot drift under an unchanged file — and a bump here changes validate.sh's fingerprint,
-# which recreates the venv. rpds-py ships per-platform wheels; only the ubuntu quality gate
-# installs this file (the os-matrix legs do not).
+
+# Transitive — pytest.
+iniconfig==2.3.0
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.21.0
+exceptiongroup==1.3.1; python_version < "3.11"
+tomli==2.4.1; python_version < "3.11"
+
+# Transitive — jsonschema.
 attrs==26.1.0
 jsonschema-specifications==2025.9.1
 referencing==0.37.0
 rpds-py==0.30.0
+
+# Transitive — referencing and exceptiongroup (both need it only below 3.13).
+typing_extensions==4.16.0; python_version < "3.13"

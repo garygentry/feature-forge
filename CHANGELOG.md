@@ -64,11 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loop-runner halt (rauf #137: a blocked or failed item that leaves an ignored `backlog.json.bak`
   in the tree no longer stops the whole loop). Installer-only release — the plugin version is
   unchanged; `minRunnerVersion` stays `0.14.0` (a bugfix adds no capability).
-- **The test venv now exact-pins jsonschema's transitive deps (#342).**
-  `scripts/requirements-test.txt` adds `attrs==26.1.0`, `jsonschema-specifications==2025.9.1`,
-  `referencing==0.37.0` and `rpds-py==0.30.0` (what `jsonschema==4.26.0` resolves today), so
+- **`scripts/requirements-test.txt` is now a full lock (#342).** Besides the direct `pytest` and
+  `jsonschema` pins, every package they resolve to is exact-pinned (`iniconfig`, `packaging`,
+  `pluggy`, `Pygments`, `attrs`, `jsonschema-specifications`, `referencing`, `rpds-py`, and
+  marker-gated `exceptiongroup`/`tomli` below 3.11 and `typing_extensions` below 3.13), so
   `.venv-test` cannot drift under an unchanged file; a future bump changes validate.sh's
-  fingerprint and recreates the venv.
+  fingerprint and recreates the venv. Installs closed on Python 3.10–3.13.
 - **`docs/claude-5/baseline-2026-09.md` records the loop-outcome baseline (#342).** A new §6
   appends #340's two `loop-outcome` runs (Opus 5 and Opus 4.8 each 5/5, all criteria 100%) as the
   formal baseline the 2026-09-03 refresh omitted, plus #338's `stage-exit` re-run (20/20).
