@@ -4,45 +4,56 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-09-19 (installer 0.3.8 — rauf pin advance 0.16.0 → 0.16.1 for the rauf #137
-loop-halt fix; plugin unchanged at 0.20.0). Prior: 2026-09-17 0.20.0 release cut — #244 P0–P4
-doctor health/repair surface (#250–#254), interaction capability ladder + rung detection
-(#261/#263), Pi invocation-args (#303), and the 2026-09-17 catch-up program
-(#322/#324/#323/#314/#315); rauf pin advance to 0.16.0)._
+_Last updated: 2026-09-30 (0.21.0 release cut — marketplace distributes the built
+`adapters/claude` bundle (#314/#335), doctor warns on an un-built canon root (#314/#338),
+forge-5-loop consumes rauf's status surface (#339/#340), CI provisions pinned test deps
+(#336/#337); rauf pin advance to 0.17.1). Prior: 2026-09-19 installer 0.3.8 (rauf pin
+0.16.0 → 0.16.1)._
 
 ## Current release
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.20.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.8** | `installer/package.json` (independent version line) |
-| npm | publishing 0.3.8 | |
+| Plugin | **0.21.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.3.9** | `installer/package.json` (independent version line) |
+| npm | publishing 0.3.9 | |
 | Commit | this release commit | |
 
-CHANGELOG `[Unreleased]` carries the installer-0.3.8 rauf-pin advance (0.16.0 → 0.16.1);
-it rolls into the next dated plugin release.
+CHANGELOG `[Unreleased]` is empty.
 
 ### rauf coupling
 
-`RAUF_PIN` is **`@garygentry/rauf@0.16.1`** (verified resolving on npm 2026-09-19).
-0.16.1 is a loop-runner bugfix (rauf #137: a blocked/failed item with an ignored
-`backlog.json.bak` no longer halts the whole loop) over 0.16.0's additions (`rauf version
---json` provenance, the `FORGE_INTERACTION=non-interactive` loop-child stamp, Codex
-marketplace install) — all surfaces feature-forge *may* read but no stage *requires*, and
-a bugfix adds no capability, so `minRunnerVersion` **stays at 0.14.0** (the recovery
+`RAUF_PIN` is **`@garygentry/rauf@0.17.1`** (**not yet on npm** at this cut — the
+`RAUF_PIN resolves on the registry` CI job stays red until the owner publishes it; 0.17.0 was
+tagged but its npm launcher was never published, so the pin skips it).
+0.17.x adds the status-surface fields forge-5-loop now reads (`reviewPending`, `loopState`,
+`llm_stuck_warning` tool context, pause/usage/sleep events; #339) on top of 0.16.x's
+`rauf version --json` provenance and `FORGE_INTERACTION` stamp — all optional surfaces
+feature-forge *may* read but no stage *requires* (older runners degrade to the prior
+count-based outcome), so `minRunnerVersion` **stays at 0.14.0** (the recovery
 floor from #234); the pin now sits ahead of the floor, which `COMPATIBILITY.md` documents
 as the expected shape (the floor only rises when rauf ships a surface a shipped stage
 actually requires). Agents needing a *newer* rauf than the floor are recorded as prose in
 `COMPATIBILITY.md`.
 
-Note for future releases: **feature-forge CI never checks that `RAUF_PIN` resolves** — every
-`os-matrix.yml` leg runs `--skip-rauf`, and `installer/test/rauf.test.ts` injects a `RegistryQuery`
-seam, so no registry call happens anywhere in CI. A pin advanced to an unpublished version merges
-green and only breaks real users at install time. Always confirm `npm view @garygentry/rauf version`
-before advancing it.
+Note for future releases: every `os-matrix.yml` leg runs `--skip-rauf` and
+`installer/test/rauf.test.ts` injects a `RegistryQuery` seam, so the **only** registry check is
+`ci.yml`'s `RAUF_PIN resolves on the registry` job (#267). A pin advanced ahead of the rauf
+publish keeps that job red; publish rauf first (or confirm `npm view @garygentry/rauf version`)
+before merging a pin advance.
 
 ## Shipped recently
 
+- **0.21.0** / installer 0.3.9 (2026-09-30) — the Claude marketplace now installs the built
+  `adapters/claude` bundle instead of canon, so shared references resolve and the SessionStart
+  hook ships with it (#314/#335); `doctor`'s `plugin-root` check warns on an un-built canon
+  root and `forge-init` preflights it (#314/#338); forge-5-loop consumes rauf 0.17's status
+  surface — pending-review gate, terminal-state gate, stuck-warning tool context, pause/usage
+  events (#339/#340); CI and `validate.sh` provision pinned test deps so dep-gated guards run
+  instead of skipping (#336/#337), with `requirements-test.txt` now a full lock, plus formal
+  `loop-outcome`/`stage-exit` eval baselines with committed run JSON (#342/#343);
+  unattended-runs roadmap proposal (#260); rauf pin advanced
+  0.16.0 → 0.16.1 (installer 0.3.8, #334) → `0.17.1`.
 - **0.20.0** / installer 0.3.7 (2026-09-17) — #244 P0–P4: `doctor` is a real health surface
   (17 structured checks, remedies as data), a Preflight & Self-Heal procedure wired into
   forge-5-loop's gates, the Interaction Capability Ladder + `interaction-mode` rung detection,

@@ -7,10 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-09-30
+
+### Upgrade notes
+
+- **Claude marketplace users get the built bundle on this version bump (#314).** The marketplace
+  entry now installs `adapters/claude` instead of the repo root, so a plain plugin update
+  switches an existing install over; nothing to do by hand. Shared references and the
+  SessionStart hook now resolve under a marketplace install.
+- **`doctor` warns when the plugin root is an un-built canon checkout (#314).** Expected when you
+  run it from this repo; it is a warn, and `doctor` still exits 0.
+- **forge-5-loop's pending-review and terminal-state handling needs rauf ≥ 0.17.0 (#339).** Older
+  runners (floor still 0.14.0) omit the fields and the stage falls back to its prior count-based
+  outcome. A fresh `npx @garygentry/feature-forge install` provisions 0.17.1.
+
 ### Fixed
 
 - **forge-5-loop no longer closes a run as `complete` while its review pass is still pending,
-  and it reports what a stall warning is about (#339).** Targets the rauf release after 0.16.1
+  and it reports what a stall warning is about (#339).** Targets rauf 0.17.0
   (rauf #141/#144/#146/#147); every new field is optional, so older rauf behaves as before.
   A `status --json` `reviewPending: true` (the `--review` pass failed, was cancelled, or hit
   a usage limit; `loop run` exits 1) now blocks `complete`: Step 4a offers `rauf resume`,
@@ -45,6 +59,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `claude plugin validate --strict` on `adapters/claude` (the plugin actually distributed), which
   surfaced an unquoted `${CLAUDE_PLUGIN_ROOT}` in the SessionStart hook command; it is now quoted.
 
+- **Dep-gated test guards run in CI and `validate.sh` instead of skipping (#336).** A pinned
+  test-only `scripts/requirements-test.txt` (pytest, jsonschema, PyYAML) provisions a `.venv-test`
+  that `validate.sh` runs the suite in; under CI a missing optional test dep now fails rather than
+  `importorskip`-ing, so 9 schema-validation guards are live again. `requirements-test.txt` is a
+  full lock (#342): the whole resolved closure (pytest/jsonschema deps, marker-gated
+  `exceptiongroup`/`tomli`/`typing_extensions`) is exact-pinned, so `.venv-test` cannot drift
+  under an unchanged file; a bump changes validate.sh's fingerprint and recreates the venv.
+
 ### Added
 
 - **`doctor`'s `plugin-root` check now warns on an un-built canon root (#314, deferred from #322).**
@@ -58,25 +80,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `forge-init`'s install preflight now includes `--check plugin-root` (advisory, never a stop),
   so a canon load surfaces before the first stage rather than mid-stage.
 
+- **Roadmap proposal: unattended pipeline runs (#260).** `roadmap/unattended-decision-authority.md`
+  sketches a config-declared decision-authority axis, an operator brief, and a clean-room adversary
+  agent. Proposal only; no code.
+
+- **Formal eval baselines for `loop-outcome` and `stage-exit`, with committed run JSON (#342).**
+  `docs/claude-5/baseline-2026-09.md` §6 records #340's two `loop-outcome` runs (Opus 5 and
+  Opus 4.8, 5/5 each) and #338's `stage-exit` re-run (20/20); each run's `--out` JSON is under
+  `eval/baselines/`. `eval/README.md` documents Probe 4 and the `branch-path/escalation` cell.
+
 ### Changed
+
+- **rauf pin advanced to `@garygentry/rauf@0.17.1`** (installer 0.3.9). rauf 0.17.x ships the
+  status-surface fields forge-5-loop now reads (#339). All of them are optional, so
+  `minRunnerVersion` stays `0.14.0`. The pin skips 0.17.0: it was tagged, but its npm launcher
+  was never published.
+- **The repo's own `forge.config.json` no longer pins `loopRunner.bin: "rauf-stable"` (#333).**
+  That was a dev-box choice; it now lives in an untracked `forge.config.local.json`, which
+  `.gitignore` excludes. Repo-internal only.
 
 - **rauf pin advanced to `@garygentry/rauf@0.16.1`** (installer 0.3.8). rauf 0.16.1 fixes a
   loop-runner halt (rauf #137: a blocked or failed item that leaves an ignored `backlog.json.bak`
   in the tree no longer stops the whole loop). Installer-only release — the plugin version is
   unchanged; `minRunnerVersion` stays `0.14.0` (a bugfix adds no capability).
-- **`scripts/requirements-test.txt` is now a full lock (#342).** Besides the direct `pytest` and
-  `jsonschema` pins, every package they resolve to is exact-pinned (`iniconfig`, `packaging`,
-  `pluggy`, `Pygments`, `attrs`, `jsonschema-specifications`, `referencing`, `rpds-py`, and
-  marker-gated `exceptiongroup`/`tomli` below 3.11 and `typing_extensions` below 3.13), so
-  `.venv-test` cannot drift under an unchanged file; a future bump changes validate.sh's
-  fingerprint and recreates the venv. Installs closed on Python 3.10–3.13.
-- **`docs/claude-5/baseline-2026-09.md` records the loop-outcome baseline, with its evidence
-  (#342).** A new §6 appends #340's two `loop-outcome` runs (Opus 5 and Opus 4.8 each 5/5, all
-  criteria 100%) as the formal baseline the 2026-09-03 refresh omitted, plus #338's `stage-exit`
-  re-run (20/20). Each run's `--out` JSON is committed verbatim under `eval/baselines/`.
-  `eval/README.md` now documents Probe 4 (`loop-outcome`): its CLI grammar, cell, criteria, run
-  count and recorded cost. It also adds the `branch-path/escalation` cell and its ninth
-  criterion, and corrects the `--probe all` shape to seven cells / 70 runs.
 
 ## [0.20.0] — 2026-09-17
 
