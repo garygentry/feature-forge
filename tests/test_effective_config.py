@@ -7,7 +7,7 @@ that makes true: the defaults come from the schema (not hardcoded), a user value
 wins, an unknown key survives, and the failure modes land on the script's 0/2 exit
 contract.
 
-Stdlib only — no `jsonschema`, which is absent in CI. Schema conformance is checked
+Stdlib only — no `jsonschema`, which is optional locally. Schema conformance is checked
 through the shared `_state_schema` validator, which every R4 guard also imports.
 Subprocess calls use `sys.executable` so the suite tests the interpreter it runs on.
 

@@ -1,6 +1,6 @@
 """Hand-rolled stdlib JSON-Schema validator shared by the R4/R5 drift guards.
 
-`jsonschema` is absent in CI (and in this repo's dev environment), so the guards
+`jsonschema` is optional outside CI (see tests/_ci_deps.py), so the guards
 that prove `forge-session.py`'s state verbs, `effective-config`, and decision verbs
 stay schema-conformant validate structurally instead — mirroring `epic-manifest.py`'s
 `_schema_findings()` precedent. That keeps the schemas the single source of truth

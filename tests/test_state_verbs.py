@@ -10,7 +10,7 @@ plus the end-to-end CLI contracts of ``state-enter``/``-artifact``/``-branch``/
 
 ``scripts/forge-session.py`` is hyphen-named, so it is loaded by path via importlib
 rather than imported — the same trick the script's own flat, dependency-free design
-forces on any in-process caller. Stdlib only (`jsonschema` is absent in CI); schema
+forces on any in-process caller. Stdlib only (`jsonschema` is optional locally); schema
 conformance goes through ``tests/_state_schema.py``.
 """
 

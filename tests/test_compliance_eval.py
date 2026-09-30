@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from _ci_deps import require
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EVAL_SCRIPT = REPO_ROOT / "eval" / "run-compliance-eval.py"
 
@@ -126,7 +128,7 @@ def test_fixture_state_is_schema_valid(tmp_path: Path, variant: str) -> None:
     stage_entry = state["stages"][ce.FIXTURE_STAGE]
     for key in schema["definitions"]["stageEntry"]["required"]:
         assert key in stage_entry
-    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema = require("jsonschema")
     jsonschema.validate(state, schema)
 
 
@@ -1199,7 +1201,7 @@ def test_branch_repo_state_is_schema_valid(tmp_path: Path, branch_fixture: dict)
     )
     for key in schema["required"]:
         assert key in state
-    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema = require("jsonschema")
     jsonschema.validate(state, schema)
 
 

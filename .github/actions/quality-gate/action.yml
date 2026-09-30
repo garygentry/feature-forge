@@ -44,6 +44,9 @@ runs:
         # the generator (build-adapters.py needs yaml) would otherwise importorskip → SKIP in CI,
         # leaving e.g. the #314 marketplace-parity guard silently inert.
         python3 -m pip install -r scripts/requirements-adapters.txt
+        # jsonschema (pinned) for the schema-validation tests, likewise: without it they
+        # importorskip → SKIP in CI (#336). Under CI tests hard-import both (tests/_ci_deps.py).
+        python3 -m pip install -r scripts/requirements-test.txt
         # claude CLI is best-effort (REQ-CI-01 §4.1): install if a published
         # path exists on the runner; validate.sh falls back to the documented
         # equivalent when it is absent (never a no-op, never a silent skip).

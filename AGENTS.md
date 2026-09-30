@@ -165,6 +165,10 @@ The generator is Python 3 (3.10+ baseline) + Bash + Markdown. There is exactly o
 dependency beyond the standard library: a pinned YAML library specified in
 `scripts/requirements-adapters.txt`. `bash scripts/validate.sh` auto-provisions it into the
 gitignored `.venv-adapters` virtual environment on first run; subsequent runs reuse the venv.
+The test suite additionally uses `jsonschema`, pinned in `scripts/requirements-test.txt`
+(test-only, never the generator). Locally its tests skip when it is absent; CI installs it and,
+under `CI`, hard-imports it — and PyYAML — via `tests/_ci_deps.py`, so a missing dep fails instead
+of silently skipping.
 There is no `pnpm`.
 
 Node/npm and TypeScript are confined to exactly two places, both gated by `validate.sh` and

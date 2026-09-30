@@ -24,6 +24,8 @@ from typing import Any, Callable
 
 import pytest
 
+from _ci_deps import require
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HELPER = REPO_ROOT / "scripts" / "forge-bootstrap.py"
 SCHEMA = REPO_ROOT / "references" / "forge-config-schema.json"
@@ -505,7 +507,7 @@ def test_scaffold_emits_stack_file_set_and_commands(
 
 def test_emitted_config_validates_against_schema(run_bootstrap, tmp_path: Path) -> None:
     """Single-package and monorepo forge.config.json both validate against the schema."""
-    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema = require("jsonschema")
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     validator = jsonschema.Draft7Validator(schema)
 
