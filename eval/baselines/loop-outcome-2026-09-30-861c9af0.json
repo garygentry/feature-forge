@@ -1,0 +1,227 @@
+{
+  "driver": "/home/gary/.local/bin/claude",
+  "n": 5,
+  "models": [
+    "claude-opus-5",
+    "claude-opus-4-8"
+  ],
+  "probes": [
+    {
+      "probe": "loop-outcome",
+      "model": "claude-opus-5",
+      "variant": "resolved-resume",
+      "runs": 5,
+      "scored": 5,
+      "compliant": 5,
+      "rate": 1.0,
+      "criteria_rates": {
+        "exactly_one_sentinel": 1.0,
+        "nothing_after_sentinel": 1.0,
+        "primary_command_fenced": 1.0
+      },
+      "cost_usd": 5.269,
+      "results": [
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-5",
+          "variant": "resolved-resume",
+          "index": 0,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 1.0999904999999999,
+          "turns": 14,
+          "duration_ms": 87121,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-5",
+          "variant": "resolved-resume",
+          "index": 1,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 1.0997805,
+          "turns": 14,
+          "duration_ms": 79659,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-5",
+          "variant": "resolved-resume",
+          "index": 2,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 1.176343,
+          "turns": 15,
+          "duration_ms": 80726,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-5",
+          "variant": "resolved-resume",
+          "index": 3,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 0.9889684999999999,
+          "turns": 13,
+          "duration_ms": 69271,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-5",
+          "variant": "resolved-resume",
+          "index": 4,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 0.903967,
+          "turns": 12,
+          "duration_ms": 56931,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        }
+      ]
+    },
+    {
+      "probe": "loop-outcome",
+      "model": "claude-opus-4-8",
+      "variant": "resolved-resume",
+      "runs": 5,
+      "scored": 5,
+      "compliant": 5,
+      "rate": 1.0,
+      "criteria_rates": {
+        "exactly_one_sentinel": 1.0,
+        "nothing_after_sentinel": 1.0,
+        "primary_command_fenced": 1.0
+      },
+      "cost_usd": 4.7362,
+      "results": [
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-4-8",
+          "variant": "resolved-resume",
+          "index": 0,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 1.0253279999999998,
+          "turns": 6,
+          "duration_ms": 98376,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-4-8",
+          "variant": "resolved-resume",
+          "index": 1,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 0.940793,
+          "turns": 6,
+          "duration_ms": 83498,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-4-8",
+          "variant": "resolved-resume",
+          "index": 2,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 0.9714655000000001,
+          "turns": 7,
+          "duration_ms": 56550,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-4-8",
+          "variant": "resolved-resume",
+          "index": 3,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 0.871798,
+          "turns": 5,
+          "duration_ms": 56038,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        },
+        {
+          "probe": "loop-outcome",
+          "model": "claude-opus-4-8",
+          "variant": "resolved-resume",
+          "index": 4,
+          "ok": true,
+          "compliant": true,
+          "criteria": {
+            "exactly_one_sentinel": true,
+            "nothing_after_sentinel": true,
+            "primary_command_fenced": true
+          },
+          "cost_usd": 0.9268099999999999,
+          "turns": 6,
+          "duration_ms": 62215,
+          "note": null,
+          "tail": "it yourself.\n2. Then start a fresh session and run the next stage below \u2014 or re-run `/feature-forge:forge` to let the navigator resume from disk.\n\n```\n/feature-forge:forge-5-loop widget-search\n```\n\u2500 forge: end of stage \u2500"
+        }
+      ]
+    }
+  ],
+  "total_cost_usd": 10.0052,
+  "skipped": false,
+  "skip_reason": null
+}

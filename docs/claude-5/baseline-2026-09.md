@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-03 · **Harness:** `eval/run-compliance-eval.py` (unchanged since the 2026-07-28 baseline; `tests/test_compliance_eval.py` covers the offline pieces in CI)
 **Scope:** the refresh #265 P0.3 (#268) asks for — a current reference for the prose-change gate the same phase declares in `AGENTS.md`. Subject: Claude Opus 5. Reference: Claude Opus 4.8.
-**Baseline JSON:** [`eval/baselines/stage-exit-2026-09-03.json`](../../eval/baselines/stage-exit-2026-09-03.json) — the full per-run record, including tails and `cost_usd` per run.
+**Baseline JSON:** [`eval/baselines/stage-exit-2026-09-03.json`](../../eval/baselines/stage-exit-2026-09-03.json) — the full per-run record, including tails and `cost_usd` per run. Runs appended in §6 link their own JSON.
 **Canon at:** `main` @ `2734d54` (post-#244 P0–P4, post-P0.1, post-P0.2).
 
 ## 1. The numbers
@@ -48,20 +48,22 @@ Keep both. The July document is the historical record — its numbers stand and 
 
 ## 6. Later runs (appended)
 
-Rows appended per §2, newest last. Same harness, same cell schema, same criteria; subject Opus 5, reference Opus 4.8. These were run as the `AGENTS.md` prose-change gate on the PR named, and the numbers below are the ones reported in that PR's body; the per-run JSON was not committed.
+Rows appended per §2, newest last. Same harness, same cell schema, same criteria; subject Opus 5, reference Opus 4.8. Each was run as the `AGENTS.md` prose-change gate on the PR named, and its `--out` JSON is committed verbatim under `eval/baselines/`. That JSON is the full per-run record (criteria, tails, `cost_usd`), and the numbers below are read from it.
 
-**Probe 4 — loop-outcome** (`resolved-resume`), n=5 per cell. This is the **formal loop-outcome baseline**; the 2026-09-03 refresh omitted it (§2). Criteria: exactly one sentinel, nothing after it, resume command fenced.
+**Probe 4 — loop-outcome** (`resolved-resume`), n=5 per cell. This is the **formal loop-outcome baseline**; the 2026-09-03 refresh omitted it (§2). Criteria: `exactly_one_sentinel`, `nothing_after_sentinel`, `primary_command_fenced`. The newest row (`e015c878`) is the reference to compare against; the first stays as the pre-round-1 record.
 
-| date | PR · canon at | Opus 5 | Opus 4.8 | criteria | cost |
-|---|---|---|---|---|---|
-| 2026-09-30 | #340 · `861c9af0` | **5/5 (100%)** | **5/5 (100%)** | all 100% | $10.01 |
-| 2026-09-30 | #340 · `e015c878` (after the round-1 `forge-5-loop` SKILL.md changes) | **5/5 (100%)** | **5/5 (100%)** | all 100% | $9.82 |
+| date | PR · canon at | Opus 5 | Opus 4.8 | criteria | cost | JSON |
+|---|---|---|---|---|---|---|
+| 2026-09-30 | #340 · `861c9af0` | **5/5 (100%)** | **5/5 (100%)** | all 100% | $10.01 | [`loop-outcome-2026-09-30-861c9af0.json`](../../eval/baselines/loop-outcome-2026-09-30-861c9af0.json) |
+| 2026-09-30 | #340 · `e015c878` (after the round-1 `forge-5-loop` SKILL.md changes) | **5/5 (100%)** | **5/5 (100%)** | all 100% | $9.82 | [`loop-outcome-2026-09-30-e015c878.json`](../../eval/baselines/loop-outcome-2026-09-30-e015c878.json) |
+
+#340 had one more round after `e015c878`, before merging as `c15f9025`: `f000b413` reordered the outcome ladder in `forge-5-loop/references/result-reporting.md` and SKILL.md Step 7's summary line. The probe was not re-run after that, so these rows measure `e015c878` canon, not the merge commit. The next PR that touches the loop close should re-run the probe and append a row.
 
 **Probe 1 — stage-exit**, n=5 per cell, same cells as §1.
 
-| date | PR | `cold` Opus 5 | `cold` Opus 4.8 | `warm` Opus 5 | `warm` Opus 4.8 | criteria | cost |
-|---|---|---|---|---|---|---|---|
-| 2026-09-03 | this refresh (§1) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $19.41 |
-| 2026-09-30 | #338 (`forge-init` preflight prose) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $26.35 |
+| date | PR | `cold` Opus 5 | `cold` Opus 4.8 | `warm` Opus 5 | `warm` Opus 4.8 | criteria | cost | JSON |
+|---|---|---|---|---|---|---|---|---|
+| 2026-09-03 | this refresh (§1) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $19.41 | [`stage-exit-2026-09-03.json`](../../eval/baselines/stage-exit-2026-09-03.json) |
+| 2026-09-30 | #338 (`forge-init` preflight prose) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $26.35 | [`stage-exit-2026-09-30.json`](../../eval/baselines/stage-exit-2026-09-30.json) |
 
 The #338 run is a canon-regression check, not a measurement of `forge-init`'s new text: no probe loads `forge-init`, so `stage-exit` was run as the general prose-change oracle. Stage-exit held at 20/20 again.

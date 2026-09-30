@@ -70,9 +70,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marker-gated `exceptiongroup`/`tomli` below 3.11 and `typing_extensions` below 3.13), so
   `.venv-test` cannot drift under an unchanged file; a future bump changes validate.sh's
   fingerprint and recreates the venv. Installs closed on Python 3.10–3.13.
-- **`docs/claude-5/baseline-2026-09.md` records the loop-outcome baseline (#342).** A new §6
-  appends #340's two `loop-outcome` runs (Opus 5 and Opus 4.8 each 5/5, all criteria 100%) as the
-  formal baseline the 2026-09-03 refresh omitted, plus #338's `stage-exit` re-run (20/20).
+- **`docs/claude-5/baseline-2026-09.md` records the loop-outcome baseline, with its evidence
+  (#342).** A new §6 appends #340's two `loop-outcome` runs (Opus 5 and Opus 4.8 each 5/5, all
+  criteria 100%) as the formal baseline the 2026-09-03 refresh omitted, plus #338's `stage-exit`
+  re-run (20/20). Each run's `--out` JSON is committed verbatim under `eval/baselines/`.
+  `eval/README.md` now documents Probe 4 (`loop-outcome`): its CLI grammar, cell, criteria, run
+  count and recorded cost. It also adds the `branch-path/escalation` cell and its ninth
+  criterion, and corrects the `--probe all` shape to seven cells / 70 runs.
 
 ## [0.20.0] — 2026-09-17
 
