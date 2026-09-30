@@ -74,19 +74,20 @@ claude plugin list | grep -E 'feature-forge|rauf'   # expect @skills-dir
 > `adapters/<host>/` bundles at build time (#132), **not** into canon. A canon skill loaded this way
 > dead-references those files the moment it reads one, so most stages fail partway through (silently,
 > until the first missing `Read`). rauf is unaffected — its skills are self-contained. To develop
-> **feature-forge** live, prefer the **local marketplace install** below: it loads feature-forge as a
-> *plugin*, the path #122 established as working, so a skill's `references/…` reads resolve from the
-> plugin root (where the repo-level `references/` lives). Editing canon still takes effect live; only
-> the load mechanism differs. If you do use a symlink, point it at a **built bundle**
-> (`adapters/claude`) and re-run `python3 scripts/build-adapters.py` after each canon edit — never the
-> repo root.
+> **feature-forge** live, load the **built** bundle in place — `claude --plugin-dir adapters/claude`
+> (or the assembled dir from `scripts/dev-plugin.sh`), per [`docs/DOGFOODING.md`](docs/DOGFOODING.md)
+> — and re-run `python3 scripts/build-adapters.py` after each canon edit. If you do use a symlink,
+> point it at a **built bundle** (`adapters/claude`), never the repo root.
 
 ### Fallback: local marketplace install
 
 If a repo-root symlink does **not** load as `<plugin>@skills-dir`, remove the symlinks and install
-from a local marketplace instead. For feature-forge the marketplace entry points at the **built**
-`adapters/claude` bundle (#314), so run `python3 scripts/build-adapters.py` after each canon edit
-before it takes effect:
+from a local marketplace instead. This is **not** live-in-place: a marketplace install is a
+versioned **cached copy** (see [The staleness trap](#the-staleness-trap)). For feature-forge the
+marketplace entry points at the **built** `adapters/claude` bundle (#314), so a canon edit needs
+`python3 scripts/build-adapters.py` **and** a version bump + reinstall before an installed copy sees
+it. Use it to exercise the distributed channel; for live feature-forge iteration use
+`--plugin-dir adapters/claude` (above) instead.
 
 ```bash
 claude plugin marketplace add ~/workspace/feature-forge
@@ -99,12 +100,16 @@ Restart and re-check with `claude plugin list`.
 
 ### Edit → effect
 
+For a **live-in-place** load (a skills-dir symlink, or `--plugin-dir`) — not a marketplace install:
+
 | You changed…                          | Takes effect…                        |
 | ------------------------------------- | ------------------------------------ |
 | A `SKILL.md` (skill body/description) | Immediately, same session            |
 | `hooks/`, `agents/`, or `.mcp.json`   | After `/reload-plugins` or a restart |
 
-No version bump is ever needed while developing this way.
+No version bump is needed while developing this way. For **feature-forge** the loaded tree is the
+built `adapters/claude`, so a canon edit first needs `python3 scripts/build-adapters.py`. A
+marketplace install (the fallback above) instead needs a rebuild, a version bump and a reinstall.
 
 ### rauf as the loop runner
 

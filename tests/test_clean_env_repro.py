@@ -392,3 +392,59 @@ def test_marketplace_channel_carries_root_plugin_hooks() -> None:
     assert cited, "hooks.json cites no ${CLAUDE_PLUGIN_ROOT} path — update this guard"
     missing = [rel for rel in cited if not (plugin_dir / rel).is_file()]
     assert not missing, f"hook targets absent from marketplace source {source!r}: {missing}"
+
+
+def _load_build_adapters():
+    """Import the hyphenated generator for its declared runtime-helper lists."""
+    pytest.importorskip("yaml")
+    spec = importlib.util.spec_from_file_location(
+        "build_adapters_parity", REPO_ROOT / "scripts" / "build-adapters.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses resolve annotations via sys.modules
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_marketplace_channel_matches_canon_plugin_surface() -> None:
+    """The distributed Claude channel must carry the full plugin surface canon provided (#314).
+
+    ``source: "."`` shipped canon's skills, agents, scripts and manifest directly; the built
+    bundle must be a superset-equivalent, not merely "has a skill": the same skill and agent
+    sets, every runtime helper the builder declares plus its helper packages, and a manifest
+    equal to the root source of record (every field) at the marketplace entry's version.
+    """
+    marketplace = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    entry = next(p for p in marketplace["plugins"] if p["name"] == "feature-forge")
+    plugin_dir = (REPO_ROOT / entry["source"]).resolve()
+
+    def names(root: Path, pattern: str) -> set[str]:
+        return {p.parent.name if p.name == "SKILL.md" else p.stem for p in root.glob(pattern)}
+
+    canon_skills = names(REPO_ROOT / "skills", "*/SKILL.md")
+    assert canon_skills, "canon carries no skills — guard would be vacuous"
+    assert names(plugin_dir / "skills", "*/SKILL.md") == canon_skills
+    canon_agents = names(REPO_ROOT / "agents", "*.md")
+    assert canon_agents, "canon carries no agents — guard would be vacuous"
+    assert names(plugin_dir / "agents", "*.md") == canon_agents
+
+    mod = _load_build_adapters()
+    missing = [h for h in mod.RUNTIME_HELPERS if not (plugin_dir / "scripts" / h).is_file()]
+    assert not missing, f"runtime helpers absent from marketplace source: {missing}"
+    for pkg in mod.RUNTIME_HELPER_DIRS:
+        canon_mods = {
+            p.relative_to(REPO_ROOT / "scripts" / pkg).as_posix()
+            for p in (REPO_ROOT / "scripts" / pkg).rglob("*.py")
+            if "__pycache__" not in p.parts
+        }
+        shipped = {
+            p.relative_to(plugin_dir / "scripts" / pkg).as_posix()
+            for p in (plugin_dir / "scripts" / pkg).rglob("*.py")
+            if "__pycache__" not in p.parts
+        }
+        assert canon_mods and shipped == canon_mods, f"scripts/{pkg}/ diverged from canon"
+
+    root_manifest = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
+    shipped_manifest = json.loads((plugin_dir / ".claude-plugin" / "plugin.json").read_text())
+    assert shipped_manifest == root_manifest
+    assert shipped_manifest["version"] == entry["version"]
