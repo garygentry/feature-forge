@@ -62,14 +62,26 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
    project-relative `./.agents/...`) — so a non-Claude install (e.g. Codex under `.agents/skills`)
    can still discover the resolver. When adding an install root, update `forge-root.sh` first;
    extend the prelude only if the new root is needed to bootstrap-discover `forge-root.sh` itself.
+4. **The Copilot bundle swaps the resolver line at build time.** `build-adapters.py` replaces
+   this prelude's first line, in Copilot output only, with a Copilot-ordered bootstrap: the same
+   fail-loud `FEATURE_FORGE_ROOT` guard and override, then the nearest ancestor project
+   `.github/feature-forge` (a guarded walk that stops at `/` or a failed `cd ..`), then Copilot
+   CLI's managed-plugin root `~/.copilot/installed-plugins/<marketplace|_direct>/feature-forge`
+   and personal `~/.copilot/feature-forge`, and only then the other hosts' roots — so a
+   co-installed Claude/Codex bundle never shadows the loaded Copilot one. It carries no
+   `CLAUDE_PLUGIN_ROOT` and no generic `PLUGIN_ROOT` (Copilot sets neither reliably); the
+   found `forge-root.sh` self-locates. This canon file is copied verbatim, so the fenced
+   blocks above stay canon-shaped even in the Copilot bundle; edit the prelude here and the
+   `_CANON_BOOTSTRAP_COMMAND` copy in `build-adapters.py` together (a test pins them equal).
 
 ## The resolver
 
 The prelude delegates to [`scripts/forge-root.sh`](../scripts/forge-root.sh) — the portable
 skill/plugin-root resolver. It takes no arguments, prints the absolute plugin root to stdout and
 exits `0`, or writes an actionable message to stderr and exits non-zero. It resolves the root by
-explicit `FEATURE_FORGE_ROOT` override (Step 0) → self-location → candidate-root probe →
-`CLAUDE_PLUGIN_ROOT` fallback → actionable failure, and never sources or executes a discovered
+explicit `FEATURE_FORGE_ROOT` override (Step 0) → self-location → candidate-root probe
+(including Copilot's managed-plugin and personal roots, and ancestor `.pi` / `.github` project
+roots) → `CLAUDE_PLUGIN_ROOT` fallback → actionable failure, and never sources or executes a discovered
 path — it only ever prints a directory string. The
 spec-purity checker (rule 5) enforces that every prelude occurrence across the canon is
 byte-identical to the fenced block in this file.

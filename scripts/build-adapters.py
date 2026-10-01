@@ -958,6 +958,10 @@ _HOST_NOTES_COPILOT = (
     "execution.\n"
     "- **Background / monitoring:** run long-lived commands in the foreground (or "
     "Copilot's background facility) and report progress as it arrives.\n"
+    "- **Bundle root:** the `$R` bootstrap in each shell block resolves `FEATURE_FORGE_ROOT` "
+    "first, then the nearest project `.github/feature-forge`, then the plugin install "
+    "(`~/.copilot/installed-plugins/*/feature-forge`), then `~/.copilot/feature-forge`. "
+    "Run the blocks as written; set `FEATURE_FORGE_ROOT` only to pin a specific bundle.\n"
 )
 _HOST_NOTES_PI = (
     "## Host execution notes (Pi)\n\n"
@@ -1060,7 +1064,52 @@ _COPILOT_NOUN_PAIRS: tuple[tuple[str, str], ...] = (
     ("/feature-forge:forge navigator", "forge navigator"),
 )
 _COPILOT_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({"/feature-forge:", "--host claude"})
-_COPILOT_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
+
+#: Resolver line of the canonical bootstrap prelude (``references/portable-root.md``;
+#: byte-pinned by check-spec-purity rule 5 and asserted equal in tests). Copilot replaces
+#: this whole line, so a canon edit that misses this copy fails the drift test rather than
+#: silently shipping Copilot the generic discovery order.
+_CANON_BOOTSTRAP_COMMAND = (
+    "R=\"$(bash -c '[ -z \"${FEATURE_FORGE_ROOT:-}\" ] || [ -x "
+    '"$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: '
+    'FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; '
+    'exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" '
+    '"$HOME"/.claude/skills/feature-forge '
+    '"$HOME"/.claude/plugins/cache/*/feature-forge/* '
+    '"$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge '
+    './.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec '
+    "\"$d/scripts/forge-root.sh\"; done')\""
+)
+
+#: Copilot's bootstrap (FORGE-103, DEC-11). Same fail-loud FEATURE_FORGE_ROOT guard, then:
+#: the override; the nearest ancestor project ``.github/feature-forge`` (a guarded walk —
+#: ``cd ..`` failure or ``/`` ends it); Copilot's managed-plugin root
+#: ``~/.copilot/installed-plugins/<marketplace|_direct>/feature-forge`` (verified on Copilot
+#: CLI 1.0.80) and personal ``~/.copilot/feature-forge``; and only then other hosts' roots,
+#: so a co-installed Claude/Codex bundle never shadows the Copilot one. No
+#: ``CLAUDE_PLUGIN_ROOT`` and no generic ``PLUGIN_ROOT``: Copilot sets neither reliably, so
+#: the found ``forge-root.sh`` self-locates. ``$w`` keeps the original cwd for the
+#: project-relative ``.agents`` candidate after the walk moved the subshell.
+_COPILOT_BOOTSTRAP_COMMAND = (
+    "R=\"$(bash -c '[ -z \"${FEATURE_FORGE_ROOT:-}\" ] || [ -x "
+    '"$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: '
+    'FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; '
+    'exit 2; }; [ -z "${FEATURE_FORGE_ROOT:-}" ] || exec '
+    '"$FEATURE_FORGE_ROOT/scripts/forge-root.sh"; w=$PWD; while :; do '
+    'd="$PWD/.github/feature-forge"; [ -x "$d/scripts/forge-root.sh" ] && exec '
+    '"$d/scripts/forge-root.sh"; [ "$PWD" = / ] && break; cd .. || break; done; '
+    'for d in "$HOME"/.copilot/installed-plugins/*/feature-forge '
+    '"$HOME"/.copilot/feature-forge "$HOME"/.claude/skills/feature-forge '
+    '"$HOME"/.claude/plugins/cache/*/feature-forge/* '
+    '"$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge '
+    '"$w"/.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && '
+    "exec \"$d/scripts/forge-root.sh\"; done')\""
+)
+
+_COPILOT_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    # FIRST, on the raw canon line: the bootstrap swap must see the exact canon bytes.
+    (_CANON_BOOTSTRAP_COMMAND, _COPILOT_BOOTSTRAP_COMMAND),
+) + tuple(
     pair for pair in _HOST_TERM_REPLACEMENTS if pair[0] not in _COPILOT_OVERRIDDEN_HOST_TERMS
 ) + _COPILOT_NOUN_PAIRS + (
     ("/feature-forge:", "invoke-skill: "),
