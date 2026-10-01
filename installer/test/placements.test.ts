@@ -10,10 +10,9 @@ import assert from "node:assert/strict";
 import { AGENT_TARGETS } from "../dist/types.js";
 import {
   resolvePlacements,
+  resolveLegacyCopilotBlock,
   selectMirrorFiles,
-  renderCopilotBlock,
   wrapBlock,
-  upsertBlock,
   removeBlock,
   extractManagedRegion,
 } from "../dist/placements.js";
@@ -33,14 +32,13 @@ test("resolvePlacements: codex mirror resolves to .codex/agents under the scope 
   assert.equal(global[0]!.destination, "/h/.codex/agents");
 });
 
-test("resolvePlacements: copilot mirrors native discovery files and retains its legacy block", () => {
+test("resolvePlacements: fresh copilot uses only native mirrors; legacy block is cleanup-only", () => {
   const project = resolvePlacements(AGENT_TARGETS.copilot, "project", opts);
   assert.deepEqual(
     project.map((p) => [p.kind, p.root, p.destination]),
     [
       ["mirror", "/p/.github", "/p/.github/skills"],
       ["mirror", "/p/.github", "/p/.github/agents"],
-      ["managed-block", "/p/.github", "/p/.github/copilot-instructions.md"],
     ],
   );
 
@@ -50,9 +48,10 @@ test("resolvePlacements: copilot mirrors native discovery files and retains its 
     [
       ["mirror", "/h/.copilot", "/h/.copilot/skills"],
       ["mirror", "/h/.copilot", "/h/.copilot/agents"],
-      ["managed-block", "/h/.github", "/h/.github/copilot-instructions.md"],
     ],
   );
+  assert.equal(resolveLegacyCopilotBlock("project", opts).destination, "/p/.github/copilot-instructions.md");
+  assert.equal(resolveLegacyCopilotBlock("global", opts).destination, "/h/.github/copilot-instructions.md");
 });
 
 test("resolvePlacements: agents without a rule return []", () => {
@@ -126,6 +125,22 @@ test("placement planning rejects an escaping destination before reading or writi
   assert.equal(result.error.code, "PATH_ESCAPE");
 });
 
+test("the retired Copilot managed block can never be planned for creation", () => {
+  const result = planInstall({
+    agent: "copilot",
+    scope: "project",
+    mode: "copy",
+    destination: "/p/.github/feature-forge",
+    source: { root: "/src", sourceHash: "x", skills: ["forge"], files: [{ relpath: "skills/forge/SKILL.md", sha256: "a" }] },
+    priorManifest: null,
+    force: false,
+    placements: [resolveLegacyCopilotBlock("project", opts)],
+  });
+  assert.ok(!result.ok);
+  assert.match(result.error.message, /removal-only/);
+  assert.equal(AGENT_TARGETS.copilot.placements!.some((p) => p.kind === "managed-block"), false);
+});
+
 test("selectMirrorFiles: recursive mirrors preserve paths below sourcePrefix", () => {
   const source = {
     root: "/src",
@@ -157,60 +172,22 @@ test("selectMirrorFiles: recursive mirrors preserve paths below sourcePrefix", (
   );
 });
 
-test("renderCopilotBlock: deterministic, lists sorted skills, points at .github/feature-forge", () => {
-  const a = renderCopilotBlock(["forge-2-tech", "forge-1-prd"]);
-  const b = renderCopilotBlock(["forge-2-tech", "forge-1-prd"]);
-  assert.equal(a, b);
-  assert.match(a, /\.github\/feature-forge/);
-  assert.ok(a.indexOf("- forge-1-prd") < a.indexOf("- forge-2-tech"));
-});
-
-test("renderCopilotBlock: native-discovery wording, runtime dir parameterized per scope", () => {
-  const body = renderCopilotBlock(["forge-1-prd"], "~/.copilot/feature-forge");
-  assert.doesNotMatch(body, /no skills loader/);
-  assert.match(body, /discovers its skills and custom agents natively/);
-  assert.match(body, /~\/\.copilot\/feature-forge\/skills\/<name>\/SKILL\.md/);
-  assert.doesNotMatch(body, /\.github\/feature-forge/);
-});
-
-test("upsertBlock: into empty content yields just the wrapped block + trailing newline", () => {
-  const body = renderCopilotBlock(["forge-1-prd"]);
-  const out = upsertBlock("", body);
-  assert.equal(out, wrapBlock(body) + "\n");
-  assert.equal(extractManagedRegion(out), wrapBlock(body));
-});
-
-test("upsertBlock: appends after user content, preserving it", () => {
-  const body = renderCopilotBlock(["forge-1-prd"]);
-  const out = upsertBlock("# My repo rules\n\nBe nice.\n", body);
-  assert.match(out, /^# My repo rules/);
-  assert.match(out, /Be nice\./);
-  assert.equal(extractManagedRegion(out), wrapBlock(body));
-});
-
-test("upsertBlock: replaces an existing block in place, leaving surrounding content", () => {
-  const v1 = renderCopilotBlock(["forge-1-prd"]);
-  const withUser = upsertBlock("intro\n", v1);
-  const v2 = renderCopilotBlock(["forge-1-prd", "forge-2-tech"]);
-  const out = upsertBlock(withUser, v2);
-  assert.match(out, /^intro/);
-  assert.equal(extractManagedRegion(out), wrapBlock(v2));
-  // exactly one managed region remains
-  assert.equal(out.indexOf("feature-forge:managed:start"), out.lastIndexOf("feature-forge:managed:start"));
-});
+const LEGACY_BODY = "# feature-forge\n\nlegacy 0.3.9 pointer";
 
 test("removeBlock: strips the block but keeps user content", () => {
-  const body = renderCopilotBlock(["forge-1-prd"]);
-  const full = upsertBlock("# rules\n\nstuff\n", body);
+  const full = `# rules\n\n${wrapBlock(LEGACY_BODY)}\n\nstuff\n`;
   const out = removeBlock(full);
   assert.doesNotMatch(out, /feature-forge:managed/);
-  assert.match(out, /# rules/);
-  assert.match(out, /stuff/);
+  assert.equal(out, "# rules\n\nstuff\n");
 });
 
 test("removeBlock: returns '' when only the block (and whitespace) remained", () => {
-  const body = renderCopilotBlock(["forge-1-prd"]);
-  assert.equal(removeBlock(upsertBlock("", body)), "");
+  assert.equal(removeBlock(`${wrapBlock(LEGACY_BODY)}\n`), "");
+});
+
+test("extractManagedRegion: returns exactly the wrapped region, null when malformed", () => {
+  assert.equal(extractManagedRegion(`x\n${wrapBlock(LEGACY_BODY)}\ny`), wrapBlock(LEGACY_BODY));
+  assert.equal(extractManagedRegion("<!-- feature-forge:managed:start -->\nno end"), null);
 });
 
 test("extractManagedRegion: null when no well-formed region", () => {

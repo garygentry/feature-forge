@@ -19,6 +19,8 @@ export interface RunCli2Opts {
   readonly registry?: RegistryQuery;
   /** Forced platform for the copy/symlink mode decision (e.g. "win32"). */
   readonly platform?: NodeJS.Platform;
+  /** Replaces the final manifest write (simulates an interrupted migration). */
+  readonly writeManifestSeam?: CliEnv["writeManifestSeam"];
 }
 
 /**
@@ -37,6 +39,7 @@ export function runCli2(argv: string[], sb: Sandbox, opts: RunCli2Opts = {}): Pr
     cwd: sb.cwd,
     registry: opts.registry ?? resolvableRegistry,
     ...(opts.platform ? { platform: opts.platform } : {}),
+    ...(opts.writeManifestSeam ? { writeManifestSeam: opts.writeManifestSeam } : {}),
   };
   return runCli(argv, env);
 }
