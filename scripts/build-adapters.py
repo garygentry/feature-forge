@@ -1083,22 +1083,25 @@ _CANON_BOOTSTRAP_COMMAND = (
 
 #: Copilot's bootstrap (FORGE-103, DEC-11). Same fail-loud FEATURE_FORGE_ROOT guard, then:
 #: the override; the nearest ancestor project ``.github/feature-forge`` (a guarded walk —
-#: ``cd ..`` failure or ``/`` ends it); Copilot's managed-plugin root
+#: a failed ``cd ..`` or a no-op one at the top, including ``//``, ends it); Copilot's
+#: managed-plugin root
 #: ``~/.copilot/installed-plugins/<marketplace|_direct>/feature-forge`` (verified on Copilot
 #: CLI 1.0.80) and personal ``~/.copilot/feature-forge``; and only then other hosts' roots,
 #: so a co-installed Claude/Codex bundle never shadows the Copilot one. No
 #: ``CLAUDE_PLUGIN_ROOT`` and no generic ``PLUGIN_ROOT``: Copilot sets neither reliably, so
-#: the found ``forge-root.sh`` self-locates. ``$w`` keeps the original cwd for the
-#: project-relative ``.agents`` candidate after the walk moved the subshell.
+#: the found ``forge-root.sh`` self-locates. ``$w`` is the original cwd, restored before
+#: every ``exec`` so the resolver's own ``$PWD`` probes (its fallback when the self-located
+#: root is degraded) see the caller's directory, not the ancestor the walk stopped at.
 _COPILOT_BOOTSTRAP_COMMAND = (
     "R=\"$(bash -c '[ -z \"${FEATURE_FORGE_ROOT:-}\" ] || [ -x "
     '"$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: '
     'FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; '
     'exit 2; }; [ -z "${FEATURE_FORGE_ROOT:-}" ] || exec '
     '"$FEATURE_FORGE_ROOT/scripts/forge-root.sh"; w=$PWD; while :; do '
-    'd="$PWD/.github/feature-forge"; [ -x "$d/scripts/forge-root.sh" ] && exec '
-    '"$d/scripts/forge-root.sh"; [ "$PWD" = / ] && break; cd .. || break; done; '
-    'for d in "$HOME"/.copilot/installed-plugins/*/feature-forge '
+    'd="$PWD/.github/feature-forge"; [ -x "$d/scripts/forge-root.sh" ] && { cd '
+    '"$w"||:; exec "$d/scripts/forge-root.sh"; }; p=$PWD; cd .. || break; [ "$PWD" '
+    '= "$p" ] && break; done; cd "$w"||:; for d in '
+    '"$HOME"/.copilot/installed-plugins/*/feature-forge '
     '"$HOME"/.copilot/feature-forge "$HOME"/.claude/skills/feature-forge '
     '"$HOME"/.claude/plugins/cache/*/feature-forge/* '
     '"$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge '
