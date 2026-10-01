@@ -340,8 +340,8 @@ export interface PlannedAction {
 
 /**
  * One secondary placement's resolved plan (A4b): the dry-run = real-run unit for a second root. The
- * planner fills `files` by diffing source ⇆ destination (same classifier as the primary bundle) and,
- * for "managed-block", attaches the rendered `blockContent` the apply step writes between sentinels.
+ * planner fills `files` by diffing source ⇆ destination (same classifier as the primary bundle); a
+ * retired "managed-block" is only ever planned for removal.
  */
 export interface PlannedPlacement {
   readonly kind: PlacementKind;
@@ -362,8 +362,6 @@ export interface PlannedPlacement {
   readonly retention?: "always" | "while-skipped" | "never";
   /** Migration-only authorization to remove an edited, but still sentinel-bounded, managed region. */
   readonly forceRemoval?: boolean;
-  /** "managed-block" only: the rendered block body (without sentinels) a create/overwrite writes. */
-  readonly blockContent?: string;
 }
 
 /** A placement file action: a {@link FileAction} plus the bundle-relative source for "mirror" copies. */

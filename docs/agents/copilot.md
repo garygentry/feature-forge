@@ -36,13 +36,30 @@ placement. GitHub documents project skills at `.github/skills/` and personal ski
 `~/.copilot/skills/`; fresh project and personal installs are runtime-verified on Copilot CLI
 1.0.80 and therefore reported as `verified-current`.
 
-The installer also still writes a transitional managed block into
-`.github/copilot-instructions.md` (under the project or home directory). It is only a fallback
-pointer to the complete runtime; Copilot loads the skills and agents from the native mirrors. The
-block is delimited by
-`<!-- feature-forge:managed:start -->` / `<!-- feature-forge:managed:end -->` and is merged
-without disturbing user content. Its ownership-safe migration is separate from the fresh-install
-layout.
+The installer no longer writes anything into `.github/copilot-instructions.md`; Copilot loads the
+skills and agents from the native mirrors.
+
+### Upgrading an install from installer 0.3.9 or earlier
+
+Installer 0.3.9 and earlier (feature-forge 0.21.0 and earlier) put the whole bundle at
+`.github/feature-forge/` in both scopes (personal installs under `~/.github/`), with skills as
+`skills/<name>/<name>.md`, and wrote a pointer block between
+`<!-- feature-forge:managed:start -->` / `<!-- feature-forge:managed:end -->` in
+`.github/copilot-instructions.md`. Run `npx @garygentry/feature-forge update -a copilot` (add `-g`
+for a personal install) to migrate it; `list` flags such an install as `legacy-layout:true`.
+
+- The update writes and hash-verifies the new runtime and native mirrors first, then removes only
+  the files the old manifest recorded, then writes the new manifest. A personal install moves from
+  `~/.github/feature-forge/` to `~/.copilot/feature-forge/`. If the update fails partway, re-run it.
+- A symlinked old runtime is unlinked, never followed, so the package it pointed at is untouched
+  (it may already be gone from the npx cache).
+- The pointer block is removed only if you never edited it. Your own text in the file stays. An
+  edited block is kept, and `list` reports it as `retired-block:edited` until you run
+  `update --force`, which strips only the sentinel-bounded block.
+- To remove an old install without upgrading, run `uninstall -a copilot` (with `-g` for a personal
+  install). It removes the old runtime, its manifest and an unedited block.
+- An old copy install cannot switch straight to `--symlink`: update without `--symlink`, or add
+  `--force` to replace it.
 
 ## Bundle layout and invoking skills
 

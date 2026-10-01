@@ -38,7 +38,7 @@ import {
   removeEmptyDirsWithin,
 } from "./fsutil.js";
 import { buildManifest, writeManifest } from "./manifest.js";
-import { wrapBlock, upsertBlock, removeBlock, extractManagedRegion } from "./placements.js";
+import { removeBlock, extractManagedRegion } from "./placements.js";
 import type { LocatedSource } from "./source.js";
 
 /**
@@ -108,8 +108,56 @@ export async function apply(
 // Copy mode
 // ---------------------------------------------------------------------------
 
-/** §5.1 copy flow: per-file copy/remove, then write the manifest (unless every action unchanged). */
+/**
+ * §5.1 copy flow. A planned `remove .` switches a recorded symlink-mode primary to copy: the link is
+ * unlinked (never followed) before any write, and restored if the copy then fails, so a failed
+ * switch leaves the prior install usable and never touches the link target.
+ */
 async function applyCopyInstall(
+  planned: PlannedAction,
+  ctx: ApplyContext,
+): Promise<AgentReport> {
+  if (!planned.files.some((f) => f.relpath === "." && f.action === "remove")) {
+    return applyCopyFiles(planned, ctx);
+  }
+  const resolved = resolveWithin(ctx.agentRoot, ctx.destination);
+  if (!resolved.ok) return fail(ctx, planned, resolved.error);
+  const linkPath = resolved.value;
+  let target: string;
+  try {
+    if (!fs.lstatSync(linkPath).isSymbolicLink()) throw new Error("not a symlink");
+    target = fs.readlinkSync(linkPath);
+  } catch {
+    return fail(ctx, planned, {
+      code: "UNEXPECTED",
+      agent: ctx.agent,
+      message: `recorded symlink install changed before the switch to copy: ${linkPath}`,
+      path: linkPath,
+      remedy: "re-run the update",
+    });
+  }
+  const unlinked = await removePath(linkPath);
+  if (!unlinked.ok) return fail(ctx, planned, unlinked.error);
+  const report = await applyCopyFiles(planned, ctx);
+  if (!report.ok) {
+    // Only this run created the directory now at `linkPath`; replace it with the original link.
+    let isDir = false;
+    try {
+      isDir = fs.lstatSync(linkPath).isDirectory();
+    } catch {
+      // absent: nothing to clear
+    }
+    if (isDir) await removePath(linkPath);
+    try {
+      fs.symlinkSync(target, linkPath, "dir");
+    } catch {
+      // Best effort; the report already carries the primary failure.
+    }
+  }
+  return report;
+}
+
+async function applyCopyFiles(
   planned: PlannedAction,
   ctx: ApplyContext,
 ): Promise<AgentReport> {
@@ -127,7 +175,8 @@ async function applyCopyInstall(
 
   const writeFile = ctx.writeFileSeam ?? defaultCopyFile;
   const inventory: ManifestFile[] = [];
-  const removals = planned.files.filter((fa) => fa.action === "remove");
+  // `remove .` (a symlink→copy switch) was executed by applyCopyInstall before any write.
+  const removals = planned.files.filter((fa) => fa.action === "remove" && fa.relpath !== ".");
 
   // Phase 1: materialize required new primary files. Orphan removals wait until native mirrors
   // are applied and the complete new layout has been verified.
@@ -386,7 +435,8 @@ async function applySymlinkInstall(
   try {
     if (effectiveMode === "symlink") {
       if (!fs.lstatSync(linkPath).isSymbolicLink()) throw new Error("not a symlink");
-    } else {
+    } else if (!primaryUntouched) {
+      // A copy the plan deliberately kept (skip-modified mode switch) is not this run's output.
       for (const file of source.files) {
         if (sha256File(path.join(linkPath, file.relpath)) !== file.sha256) {
           throw new Error(`hash mismatch: ${file.relpath}`);
@@ -567,9 +617,9 @@ async function applyMirror(
 }
 
 /**
- * §A4b managed-block: merge/refresh the sentinel block into the (possibly user-owned) target file,
- * preserving everything outside the sentinels. Records a single inventory entry whose sha256 is the
- * written region's hash. skip-modified/unchanged carry the prior record forward (no write).
+ * Retired Copilot managed-block (migration/uninstall only): strip the sentinel region from the
+ * (possibly user-owned) file when it still matches its recorded hash, or under `--force`, preserving
+ * everything outside it. skip-modified/unchanged carry the prior record forward (no write).
  */
 async function applyManagedBlock(
   pl: PlannedPlacement,
@@ -626,23 +676,11 @@ async function applyManagedBlock(
     return ok({ kind: "managed-block", root: pl.root, destination: pl.destination, files: [] });
   }
 
-  // create | overwrite — read existing (or treat as empty), upsert the block, write back.
-  const body = pl.blockContent ?? "";
-  let existing = "";
-  try {
-    existing = fs.readFileSync(fileAbs, "utf8");
-  } catch {
-    existing = "";
-  }
-  const next = upsertBlock(existing, body);
-  const wrote = await writeText(fileAbs, next);
-  if (!wrote.ok) return wrote;
-
-  return ok({
-    kind: "managed-block",
-    root: pl.root,
-    destination: pl.destination,
-    files: [{ path: basename, sha256: sha256String(wrapBlock(body)) }],
+  // create | overwrite: the retired block is never written again (the planner refuses to plan it).
+  return err({
+    code: "UNEXPECTED",
+    message: `refusing to write a retired managed block: ${fileAbs}`,
+    path: fileAbs,
   });
 }
 

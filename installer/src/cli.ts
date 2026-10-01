@@ -41,7 +41,7 @@ import {
   ok,
 } from "./types.js";
 import { detectAgent, detectAgents, agentRootFor, resolveRoots } from "./agent-targets.js"; // 02
-import { resolvePlacements, resolveLegacyCopilotBlock } from "./placements.js"; // 02 (A4b second-root placements)
+import { resolvePlacements, resolveLegacyCopilotBlock, type ResolvedPlacement } from "./placements.js"; // 02 (A4b second-root placements)
 import { locateSource } from "./source.js"; // 03
 import { plan, planManagedBlockRemoval, resolveMode, type PlanContext } from "./plan.js"; // 04
 import { apply, type ApplyContext } from "./apply.js"; // 04
@@ -401,6 +401,63 @@ interface CopilotMigrationState {
   readonly cleanup: readonly PlannedPlacement[];
   readonly legacy: InstallManifest | null;
   readonly legacyManifestPath?: string;
+  /** A pre-native layout is being (or was partly) migrated. */
+  readonly migrating: boolean;
+}
+
+/** A validated pre-native personal Copilot install (installer <= 0.3.9) under `~/.github`. */
+interface LegacyCopilotGlobal {
+  readonly manifest: InstallManifest;
+  readonly manifestPath: string;
+  /** `~/.github`: the historical containment boundary for the primary and its manifest. */
+  readonly root: string;
+}
+
+/** Placements a Copilot manifest may own: today's native mirrors plus the retired managed block. */
+function trustedCopilotPlacements(scope: Scope, env: CliEnv): ResolvedPlacement[] {
+  const roots = { home: env.home, cwd: env.cwd };
+  return [...resolvePlacements(AGENT_TARGETS.copilot, scope, roots), resolveLegacyCopilotBlock(scope, roots)];
+}
+
+/**
+ * Read the historical personal Copilot manifest at `~/.github/.feature-forge.global.json`. Installers
+ * <= 0.3.9 put the personal runtime at `~/.github/feature-forge`; the current target moved it to
+ * `~/.copilot`, so without this lookup update/list/uninstall would strand that install. The manifest
+ * is trusted only when its primary is exactly the historical destination and every placement is a
+ * trusted Copilot boundary. `null` = no legacy install.
+ */
+function readLegacyCopilotGlobal(env: CliEnv): Result<LegacyCopilotGlobal | null> {
+  const home = resolveRoots({ home: env.home, cwd: env.cwd }).home;
+  const root = path.join(home, ".github");
+  const legacyPath = path.join(root, `${MANIFEST_PREFIX}global.json`);
+  const read = readManifest(legacyPath);
+  if (!read.ok) return read;
+  if (read.value === null) return ok(null);
+  const primary = validatePrimaryOwnership(read.value, {
+    agent: "copilot", scope: "global", destination: path.join(root, "feature-forge"),
+  });
+  if (!primary.ok) return primary;
+  const placements = validatePlacementOwnership(read.value, trustedCopilotPlacements("global", env));
+  if (!placements.ok) return placements;
+  return ok({ manifest: read.value, manifestPath: legacyPath, root });
+}
+
+/** Uninstall plan for a Copilot manifest: a retired managed block is removed only if unedited. */
+function planCopilotUninstall(
+  manifest: InstallManifest,
+  scope: Scope,
+  force: boolean,
+  env: CliEnv,
+): Result<PlannedAction> {
+  const rp = planUninstall(manifest);
+  if (!rp.ok) return rp;
+  const block = resolveLegacyCopilotBlock(scope, { home: env.home, cwd: env.cwd });
+  return ok({
+    ...rp.value,
+    placements: (manifest.placements ?? []).map((p) => p.kind === "managed-block"
+      ? planManagedBlockRemoval(block, p, force)
+      : rp.value.placements!.find((planned) => planned.destination === p.destination)!),
+  });
 }
 
 /** Resolve and validate the only trusted historical Copilot direct-install boundaries. */
@@ -411,33 +468,21 @@ function prepareCopilotMigration(
   env: CliEnv,
   destination: string,
 ): Result<CopilotMigrationState> {
-  const active = resolvePlacements(AGENT_TARGETS.copilot, scope, { home: env.home, cwd: env.cwd });
   const legacyBlock = resolveLegacyCopilotBlock(scope, { home: env.home, cwd: env.cwd });
-  const allowed = [...active, legacyBlock];
   if (current !== null) {
     const primary = validatePrimaryOwnership(current, { agent: "copilot", scope, destination });
     if (!primary.ok) return primary;
-    const placements = validatePlacementOwnership(current, allowed);
+    const placements = validatePlacementOwnership(current, trustedCopilotPlacements(scope, env));
     if (!placements.ok) return placements;
   }
 
   let legacy: InstallManifest | null = null;
   let legacyPath: string | undefined;
   if (scope === "global") {
-    const home = resolveRoots({ home: env.home, cwd: env.cwd }).home;
-    legacyPath = path.join(home, ".github", `${MANIFEST_PREFIX}global.json`);
-    const read = readManifest(legacyPath);
+    const read = readLegacyCopilotGlobal(env);
     if (!read.ok) return read;
-    legacy = read.value;
-    if (legacy !== null) {
-      const legacyDestination = path.join(home, ".github", "feature-forge");
-      const primary = validatePrimaryOwnership(legacy, {
-        agent: "copilot", scope: "global", destination: legacyDestination,
-      });
-      if (!primary.ok) return primary;
-      const placements = validatePlacementOwnership(legacy, allowed);
-      if (!placements.ok) return placements;
-    }
+    legacy = read.value?.manifest ?? null;
+    legacyPath = read.value?.manifestPath;
   }
 
   const placementOwner = current ?? legacy;
@@ -460,7 +505,14 @@ function prepareCopilotMigration(
     .find((p) => p.kind === "managed-block" && p.destination === legacyBlock.destination);
   if (blockOwner !== undefined) cleanup.push(planManagedBlockRemoval(legacyBlock, blockOwner, force));
 
-  return ok({ current, inheritedPlacements, cleanup, legacy, ...(legacyPath ? { legacyManifestPath: legacyPath } : {}) });
+  // A current manifest without native mirror records predates them (or its migration was interrupted
+  // before the new manifest committed).
+  const migrating = legacy !== null
+    || (current !== null && !(current.placements ?? []).some((p) => p.kind === "mirror"));
+  return ok({
+    current, inheritedPlacements, cleanup, legacy, migrating,
+    ...(legacyPath ? { legacyManifestPath: legacyPath } : {}),
+  });
 }
 
 /** Run the pipeline for a single agent, returning its AgentReport (catches every expected error). */
@@ -483,52 +535,71 @@ async function runOneAgent(
   if (subcommand === "uninstall") {
     const m = readManifest(mpath);
     if (!m.ok) return failed(agent, detection.detected, m.error);
-    if (m.value === null) {
+    // A pre-native personal Copilot install lives under `~/.github`, beside (never inside) the
+    // current `~/.copilot` destination; uninstall removes it too so it is never stranded.
+    let legacy: LegacyCopilotGlobal | null = null;
+    if (agent === "copilot" && scope === "global") {
+      const lr = readLegacyCopilotGlobal(env);
+      if (!lr.ok) return failed(agent, detection.detected, lr.error);
+      legacy = lr.value;
+    }
+    if (m.value === null && legacy === null) {
       // Nothing installed for this agent: not an error — an "ok, no-op" report.
       return { agent, detected: detection.detected, ok: true, actions: [], raufPin: null };
     }
-    const primaryOwnership = validatePrimaryOwnership(m.value, {
-      agent,
-      scope,
-      destination: detection.destination,
-    });
-    if (!primaryOwnership.ok) return failed(agent, detection.detected, primaryOwnership.error);
-    const allowedPlacements = resolvePlacements(AGENT_TARGETS[agent], scope, {
-      home: env.home,
-      cwd: env.cwd,
-    });
-    if (agent === "copilot") {
-      allowedPlacements.push(resolveLegacyCopilotBlock(scope, { home: env.home, cwd: env.cwd }));
+    const reports: AgentReport[] = [];
+    if (m.value !== null) {
+      const primaryOwnership = validatePrimaryOwnership(m.value, {
+        agent,
+        scope,
+        destination: detection.destination,
+      });
+      if (!primaryOwnership.ok) return failed(agent, detection.detected, primaryOwnership.error);
+      const allowedPlacements = agent === "copilot"
+        ? trustedCopilotPlacements(scope, env)
+        : resolvePlacements(AGENT_TARGETS[agent], scope, { home: env.home, cwd: env.cwd });
+      const ownership = validatePlacementOwnership(m.value, allowedPlacements);
+      if (!ownership.ok) return failed(agent, detection.detected, ownership.error);
+      const rp = agent === "copilot"
+        ? planCopilotUninstall(m.value, scope, flags.force, env)
+        : planUninstall(m.value);
+      if (!rp.ok) return failed(agent, detection.detected, rp.error);
+      const ctx: ApplyContext = {
+        agent,
+        scope,
+        mode: m.value.mode,
+        agentRoot,
+        destination: m.value.destination,
+        manifestPath: mpath,
+        source: null,
+        raufPin: null,
+        now: new Date().toISOString(),
+        priorManifest: m.value,
+      };
+      const r = await finishAgent(agent, detection.detected, rp.value, flags, raufPin, ctx);
+      if (!r.ok) return r;
+      reports.push(r);
     }
-    const ownership = validatePlacementOwnership(m.value, allowedPlacements);
-    if (!ownership.ok) return failed(agent, detection.detected, ownership.error);
-    const rp = planUninstall(m.value);
-    if (!rp.ok) return failed(agent, detection.detected, rp.error);
-    const uninstallPlan = agent === "copilot"
-      ? {
-          ...rp.value,
-          placements: (m.value.placements ?? []).map((p) => {
-            if (p.kind !== "managed-block") {
-              return rp.value.placements!.find((planned) => planned.destination === p.destination)!;
-            }
-            const resolved = resolveLegacyCopilotBlock(scope, { home: env.home, cwd: env.cwd });
-            return planManagedBlockRemoval(resolved, p, flags.force);
-          }),
-        }
-      : rp.value;
-    const ctx: ApplyContext = {
-      agent,
-      scope,
-      mode: m.value.mode,
-      agentRoot,
-      destination: m.value.destination,
-      manifestPath: mpath,
-      source: null,
-      raufPin: null,
-      now: new Date().toISOString(),
-      priorManifest: m.value,
-    };
-    return finishAgent(agent, detection.detected, uninstallPlan, flags, raufPin, ctx);
+    if (legacy !== null) {
+      const rp = planCopilotUninstall(legacy.manifest, scope, flags.force, env);
+      if (!rp.ok) return failed(agent, detection.detected, rp.error);
+      const ctx: ApplyContext = {
+        agent,
+        scope,
+        mode: legacy.manifest.mode,
+        agentRoot: legacy.root,
+        destination: legacy.manifest.destination,
+        manifestPath: legacy.manifestPath,
+        source: null,
+        raufPin: null,
+        now: new Date().toISOString(),
+        priorManifest: legacy.manifest,
+      };
+      const r = await finishAgent(agent, detection.detected, rp.value, flags, raufPin, ctx);
+      if (!r.ok) return r;
+      reports.push(r);
+    }
+    return mergeReports(reports);
   }
 
   // install/update path: locate+integrity+fingerprint → readManifest → plan → apply.
@@ -539,7 +610,9 @@ async function runOneAgent(
   if (!prior.ok) return failed(agent, detection.detected, prior.error);
   const migration = agent === "copilot"
     ? prepareCopilotMigration(scope, prior.value, flags.force, env, detection.destination)
-    : ok<CopilotMigrationState>({ current: prior.value, inheritedPlacements: [], cleanup: [], legacy: null });
+    : ok<CopilotMigrationState>({
+      current: prior.value, inheritedPlacements: [], cleanup: [], legacy: null, migrating: false,
+    });
   if (!migration.ok) return failed(agent, detection.detected, migration.error);
 
   const planCtx: PlanContext = {
@@ -553,14 +626,24 @@ async function runOneAgent(
       ? { priorPlacements: migration.value.inheritedPlacements }
       : {}),
     force: flags.force,
-    ...(migration.value.legacy !== null ? { claimUntrackedPrimary: true } : {}),
+    ...(migration.value.migrating ? { claimUntrackedEqual: true } : {}),
     raufPin,
     // A4b: resolve any second-root placements for this agent under the active scope (codex
-    // `.codex/agents`, copilot `.github/copilot-instructions.md`); empty for the rest.
+    // `.codex/agents`, copilot `skills/` + `agents/` mirrors); empty for the rest.
     placements: resolvePlacements(AGENT_TARGETS[agent], scope, { home: env.home, cwd: env.cwd }),
   };
   const planned = plan(subcommand, planCtx);
   if (!planned.ok) return failed(agent, detection.detected, planned.error);
+  // Migrating around a kept pre-native primary would pair new native mirrors with the stale runtime.
+  if (migration.value.migrating && planned.value.files.some((f) => f.action === "skip-modified" && f.relpath === ".")) {
+    return failed(agent, detection.detected, {
+      code: "UNEXPECTED",
+      agent,
+      message: `the pre-native install at ${detection.destination} cannot switch to --symlink without replacing it`,
+      path: detection.destination,
+      remedy: "run update without --symlink to migrate it in copy mode, or add --force to replace it with a symlink",
+    });
+  }
   const plannedValue: PlannedAction = migration.value.cleanup.length === 0
     ? planned.value
     : {
@@ -626,6 +709,16 @@ async function finishAgent(
   };
 }
 
+/** Combine the ok reports of sequential passes over one agent (current + legacy uninstall). */
+function mergeReports(reports: readonly AgentReport[]): AgentReport {
+  const placements = reports.flatMap((r) => r.placements ?? []);
+  return {
+    ...reports[0]!,
+    actions: reports.flatMap((r) => r.actions),
+    ...(placements.length > 0 ? { placements } : {}),
+  };
+}
+
 /** A failed single-agent report (REQ-OBS-03): ok:false + the structured error. */
 function failed(agent: AgentId, detected: boolean, error: InstallerError): AgentReport {
   return { agent, detected, ok: false, actions: [], error };
@@ -673,7 +766,15 @@ function listOneAgent(
   env: CliEnv,
 ): AgentReport {
   const mpath = manifestPath(agent, scope, { home: env.home, cwd: env.cwd });
-  const m = readManifest(mpath);
+  const read = readManifest(mpath);
+  if (!read.ok) return failed(agent, detection.detected, read.error);
+  let m: Result<InstallManifest | null> = read;
+  // A pre-native personal Copilot install (`~/.github`) still counts as installed, flagged legacy.
+  if (read.value === null && agent === "copilot" && scope === "global") {
+    const legacy = readLegacyCopilotGlobal(env);
+    if (!legacy.ok) return failed(agent, detection.detected, legacy.error);
+    m = ok(legacy.value?.manifest ?? null);
+  }
   if (!m.ok) return failed(agent, detection.detected, m.error);
 
   const installed = m.value !== null;
@@ -698,6 +799,16 @@ function listOneAgent(
     // against a fresh local hash (no network, no source needed). Symlink mode has no per-file
     // sha256 to compare, so drift is reported as not-applicable.
     statusActions.push({ relpath: `drift:${detectDestinationDrift(m.value)}`, action: "unchanged" });
+    // Installers <= 0.3.9 wrote the pre-native Copilot layout; `update` migrates it. An edited
+    // retired instruction block is kept (and still recorded) until `update --force` strips it.
+    if (agent === "copilot") {
+      const placements = m.value.placements ?? [];
+      if (m.value !== read.value || !placements.some((p) => p.kind === "mirror")) {
+        statusActions.push({ relpath: "legacy-layout:true(run update)", action: "unchanged" });
+      } else if (placements.some((p) => p.kind === "managed-block")) {
+        statusActions.push({ relpath: "retired-block:edited(update --force strips it)", action: "unchanged" });
+      }
+    }
   }
 
   return {

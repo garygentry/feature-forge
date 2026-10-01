@@ -49,7 +49,7 @@ exceptions are noted below):
 | ------- | ------------------------------------ | ------------------------------------------------------- |
 | claude  | `.claude/skills/feature-forge/`      | —                                                       |
 | codex   | `.agents/skills/feature-forge/`      | `.codex/agents/*.toml` (custom agents, mirrored flat)   |
-| copilot | `.github/feature-forge/`             | recursive `.github/skills/`, flat `.github/agents/`, and legacy managed block |
+| copilot | `.github/feature-forge/`             | recursive `.github/skills/`, flat `.github/agents/`     |
 | cursor  | `.cursor/rules/feature-forge/`       | —                                                       |
 | gemini  | `.gemini/extensions/feature-forge/`  | —                                                       |
 | pi      | `.pi/skills/feature-forge/`          | `.pi/agents/*.md` (custom agents, mirrored flat)        |
@@ -67,12 +67,12 @@ alongside `.github/skills/` and `.github/agents/`. GitHub documents the native p
 skill roots; the complete layout and skill/agent discovery are runtime-verified against Copilot CLI
 1.0.80.
 
-The legacy Copilot block (`.github/copilot-instructions.md` under the scope root) is a
-transitional fallback pointer: it names the complete runtime and lists the skills, but Copilot
-discovers the skills and agents natively from the mirrors. It is delimited by `<!-- feature-forge:managed:start -->` /
-`<!-- feature-forge:managed:end -->` sentinels and merged without disturbing the rest of the
-file. `update` refreshes it (a hand-edited block is left alone unless `--force`); `uninstall`
-strips only the block, deleting the file only if nothing else remains.
+The installer no longer writes a block into `.github/copilot-instructions.md`. Installs made by
+0.3.9 and earlier (runtime at `.github/feature-forge/`, personal installs under `~/.github/`, plus
+that block) are migrated by `update -a copilot [-g]`: the new layout is applied and verified before
+the old recorded files are removed, and the block is stripped only if unedited (`--force` strips
+an edited one; text outside the sentinels is always kept). `uninstall` and `list` also find an old
+personal install under `~/.github/`. See `docs/agents/copilot.md` for details.
 
 ## Claude
 
