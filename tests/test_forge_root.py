@@ -552,3 +552,223 @@ def test_explain_prints_channel_tab_path(tmp_path: Path) -> None:
     assert explained.stdout.strip() == f"FEATURE_FORGE_ROOT\t{override}"
     bare = subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env)
     assert bare.stdout.strip() == str(override)  # no-arg contract unchanged
+
+
+# ── Copilot roots (#325 F2, FORGE-103) ─────────────────────────────────────────────────────
+# Copilot CLI 1.0.80 installs a marketplace plugin at
+# ~/.copilot/installed-plugins/<marketplace>/feature-forge and a direct (repo/path) install at
+# ~/.copilot/installed-plugins/_direct/feature-forge — both verified empirically in an isolated
+# HOME. Personal direct installs carry the runtime bundle at ~/.copilot/feature-forge.
+
+_ISOLATED = {"CLAUDE_PLUGIN_ROOT": "", "FEATURE_FORGE_ROOT": ""}
+
+
+@pytest.mark.parametrize("marketplace", ["some-marketplace", "_direct"])
+def test_forge_root_copilot_managed_plugin_probe(tmp_path, marketplace):
+    """Step 2 resolves Copilot CLI's managed-plugin install root (marketplace and _direct)."""
+    home = tmp_path / "home"
+    candidate = _make_neutral_install(
+        home / ".copilot" / "installed-plugins" / marketplace / "feature-forge"
+    )
+    result = _run(_lone_resolver(tmp_path), {**_ISOLATED, "HOME": str(home)})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_forge_root_copilot_personal_probe(tmp_path):
+    """Step 2 resolves the personal Copilot runtime bundle at ~/.copilot/feature-forge."""
+    home = tmp_path / "home"
+    candidate = _make_neutral_install(home / ".copilot" / "feature-forge")
+    result = _run(_lone_resolver(tmp_path), {**_ISOLATED, "HOME": str(home)})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_forge_root_copilot_project_ancestor_probe(tmp_path):
+    """Step 2 resolves project .github/feature-forge from a nested directory, like .pi."""
+    project = tmp_path / "proj [x] $v;y"
+    candidate = _make_neutral_install(project / ".github" / "feature-forge")
+    nested = project / "src" / "deep"
+    nested.mkdir(parents=True)
+    result = subprocess.run(
+        ["bash", str(_lone_resolver(tmp_path))],
+        capture_output=True,
+        text=True,
+        cwd=str(nested),
+        env={**os.environ, **_ISOLATED, "HOME": str(tmp_path / "empty-home")},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_explain_all_classifies_copilot_channels(tmp_path):
+    """--explain --all tags Copilot plugin and personal roots with their own channels."""
+    home = tmp_path / "home"
+    plugin = _make_neutral_install(home / ".copilot" / "installed-plugins" / "mp" / "feature-forge")
+    personal = _make_neutral_install(home / ".copilot" / "feature-forge")
+    result = subprocess.run(
+        ["bash", str(_lone_resolver(tmp_path)), "--explain", "--all"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, **_ISOLATED, "HOME": str(home)},
+    )
+    assert result.returncode == 0, result.stderr
+    lines = set(result.stdout.strip().splitlines())
+    assert f"copilot-plugin\t{plugin}" in lines
+    assert f"copilot-personal\t{personal}" in lines
+
+
+# ── The Copilot-emitted bootstrap prelude (build-time swap of the canon resolver line) ────
+
+
+def _load_module(name: str, path: Path):
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # dataclasses need the module registered
+    spec.loader.exec_module(module)
+    return module
+
+
+def _copilot_prelude() -> str:
+    gen = _load_module("_ba_for_forge_root", REPO_ROOT / "scripts" / "build-adapters.py")
+    purity = _load_module("_csp_for_forge_root", REPO_ROOT / "scripts" / "check-spec-purity.py")
+    canon_first, canon_second = purity.BOOTSTRAP_PRELUDE.split("\n")
+    # Drift guard: Copilot's swap matches the canon line byte-for-byte, or it silently no-ops.
+    assert gen._CANON_BOOTSTRAP_COMMAND == canon_first
+    return gen._COPILOT_BOOTSTRAP_COMMAND + "\n" + canon_second
+
+
+def _x(root: Path) -> Path:
+    """The prelude bootstraps only an EXECUTABLE forge-root.sh (``-x``); installers keep the bit."""
+    (root / "scripts" / "forge-root.sh").chmod(0o755)
+    return root
+
+
+def _run_prelude(prelude: str, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", "-c", prelude + '\nprintf "%s\\n" "$R"'],
+        capture_output=True,
+        text=True,
+        cwd=str(cwd),
+        env={**os.environ, **_ISOLATED, **env},
+    )
+
+
+def test_committed_copilot_bundle_ships_copilot_prelude_only():
+    """Every Copilot body/reference carrying a prelude carries the Copilot one, never canon's."""
+    prelude_first = _copilot_prelude().split("\n", 1)[0]
+    gen = _load_module("_ba_for_forge_root", REPO_ROOT / "scripts" / "build-adapters.py")
+    copilot = REPO_ROOT / "adapters" / "copilot"
+    seen = 0
+    for path in sorted(copilot.rglob("*.md")):
+        if path.name == "portable-root.md":  # verbatim canon documentation (exempt)
+            continue
+        text = path.read_text("utf-8")
+        assert gen._CANON_BOOTSTRAP_COMMAND not in text, path
+        seen += text.count(prelude_first)
+    assert seen > 10
+    assert "PLUGIN_ROOT" not in prelude_first
+
+
+def test_copilot_prelude_prefers_managed_plugin_over_other_hosts(tmp_path):
+    """A co-installed ~/.agents (Codex) bundle never shadows the Copilot plugin (FORGE-103 defect)."""
+    home = tmp_path / "home"
+    plugin = _x(_make_neutral_install(home / ".copilot" / "installed-plugins" / "mp" / "feature-forge"))
+    _x(_make_neutral_install(home / ".agents" / "skills" / "feature-forge"))
+    _x(_make_fake_install(home / ".claude" / "skills" / "feature-forge"))
+    work = tmp_path / "work"
+    work.mkdir()
+    result = _run_prelude(_copilot_prelude(), work, {"HOME": str(home)})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(plugin)
+
+
+def test_copilot_prelude_resolves_personal_root(tmp_path):
+    home = tmp_path / "home"
+    personal = _x(_make_neutral_install(home / ".copilot" / "feature-forge"))
+    work = tmp_path / "work"
+    work.mkdir()
+    result = _run_prelude(_copilot_prelude(), work, {"HOME": str(home)})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(personal)
+
+
+def test_copilot_prelude_project_ancestor_beats_plugin(tmp_path):
+    """Nearest-ancestor project .github/feature-forge outranks managed/personal roots."""
+    home = tmp_path / "home"
+    _x(_make_neutral_install(home / ".copilot" / "installed-plugins" / "mp" / "feature-forge"))
+    project = tmp_path / "proj [draft] $v1;safe"
+    candidate = _x(_make_neutral_install(project / ".github" / "feature-forge"))
+    nested = project / "src [pkg]" / "deep;$dir"
+    nested.mkdir(parents=True)
+    result = _run_prelude(_copilot_prelude(), nested, {"HOME": str(home)})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(candidate)
+
+
+def test_copilot_prelude_override_wins_and_bad_override_fails(tmp_path):
+    home = tmp_path / "home"
+    _x(_make_neutral_install(home / ".copilot" / "installed-plugins" / "mp" / "feature-forge"))
+    override = _x(_make_neutral_install(tmp_path / "ops [o] $root;safe"))
+    work = tmp_path / "work"
+    work.mkdir()
+    ok = _run_prelude(_copilot_prelude(), work, {"HOME": str(home), "FEATURE_FORGE_ROOT": str(override)})
+    assert ok.returncode == 0, ok.stderr
+    assert ok.stdout.strip() == str(override)
+    bad = _run_prelude(
+        _copilot_prelude(), work, {"HOME": str(home), "FEATURE_FORGE_ROOT": str(tmp_path / "nope")}
+    )
+    assert bad.returncode != 0
+    assert "has no scripts/forge-root.sh" in bad.stderr
+
+
+def test_copilot_prelude_ancestor_walk_terminates_when_cd_fails(tmp_path):
+    """The guarded walk ends on a failed ``cd ..`` instead of spinning (BASH_ENV injection)."""
+    home = tmp_path / "home"
+    plugin = _x(_make_neutral_install(home / ".copilot" / "installed-plugins" / "mp" / "feature-forge"))
+    inject = tmp_path / "inject.sh"
+    inject.write_text('cd() { [ "$1" = .. ] && return 1; builtin cd "$@"; }\n')
+    work = tmp_path / "work"
+    work.mkdir()
+    result = subprocess.run(
+        ["bash", "-c", _copilot_prelude() + '\nprintf "%s\\n" "$R"'],
+        capture_output=True,
+        text=True,
+        cwd=str(work),
+        env={**os.environ, **_ISOLATED, "HOME": str(home), "BASH_ENV": str(inject)},
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(plugin)
+
+
+def test_copilot_prelude_restores_cwd_for_resolver_fallback(tmp_path):
+    """A degraded plugin's resolver still probes the CALLER's cwd, not where the walk stopped."""
+    home = tmp_path / "home"
+    _x(_make_partial_install(home / ".copilot" / "installed-plugins" / "mp" / "feature-forge"))
+    project = tmp_path / "project"
+    complete = _make_neutral_install(project / ".agents" / "skills" / "feature-forge")
+    result = _run_prelude(_copilot_prelude(), project, {"HOME": str(home)})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(complete)
+
+
+def test_copilot_prelude_ancestor_walk_terminates_on_double_slash_pwd(tmp_path):
+    """POSIX ``//`` is its own parent: the walk must stop when ``cd ..`` no longer moves."""
+    home = tmp_path / "home"
+    plugin = _x(_make_neutral_install(home / ".copilot" / "installed-plugins" / "mp" / "feature-forge"))
+    work = tmp_path / "work"
+    work.mkdir()
+    result = subprocess.run(
+        ["bash", "-c", 'cd "//${PWD#/}" || exit 9\n' + _copilot_prelude() + '\nprintf "%s\\n" "$R"'],
+        capture_output=True,
+        text=True,
+        cwd=str(work),
+        env={**os.environ, **_ISOLATED, "HOME": str(home)},
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(plugin)

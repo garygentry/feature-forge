@@ -39,7 +39,7 @@ _No dropped constructs — every canonical construct is representable in this ag
 | `agents/researcher.md` | `sub-agent key 'maxTurns'` | no equivalent Copilot custom-agent field |
 | `agents/researcher.md` | `sub-agent key 'model'` | no equivalent Copilot custom-agent field |
 | `agents/verifier.md` | `sub-agent key 'maxTurns'` | no equivalent Copilot custom-agent field |
-| `agents/verifier.md` | `sub-agent key 'memory'` | no equivalent Copilot custom-agent field |
+| `agents/verifier.md` | `sub-agent key 'memory'` | no persistent MEMORY.md guarantee for Copilot custom agents |
 | `agents/verifier.md` | `sub-agent key 'model'` | no equivalent Copilot custom-agent field |
 | `agents/verifier.md` | `sub-agent key 'skills'` | no equivalent Copilot custom-agent field |
 | `skills/noarg/SKILL.md` | `allowed-tools` | no Copilot skill-frontmatter skill-governance field (TQ-1) |
