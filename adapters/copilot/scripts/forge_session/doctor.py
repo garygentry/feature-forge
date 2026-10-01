@@ -1809,6 +1809,103 @@ def _bundle_agent(root: Path) -> str | None:
     return agent if isinstance(agent, str) and agent in _ADAPTER_AGENT_IDS else None
 
 
+#: rauf's Pi package (rauf >= 0.18.0) carries the loop supervisor forge-5-loop uses on
+#: Pi (#345). A `packages` entry naming it in any form: the npm spec, a git URL, or a
+#: local checkout path (`…/rauf/adapters/pi`, `…/rauf/npm-dist`).
+_RAUF_PI_PACKAGE_RE: Final = re.compile(
+    r"(@garygentry/rauf|(^|[/:])rauf(/(adapters/pi|npm-dist))?/?$)"
+)
+
+
+def _pi_settings_packages(cwd: Path) -> list[str]:
+    """Every `packages` entry from pi's global and project settings (unreadable → none)."""
+    agent_dir = os.environ.get("PI_CODING_AGENT_DIR") or str(Path.home() / ".pi" / "agent")
+    found: list[str] = []
+    for settings in (Path(agent_dir) / "settings.json", cwd / ".pi" / "settings.json"):
+        try:
+            data = json.loads(settings.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for entry in data.get("packages", []) if isinstance(data, dict) else []:
+            spec = entry.get("source") if isinstance(entry, dict) else entry
+            if isinstance(spec, str):
+                found.append(spec)
+    return found
+
+
+def _codex_stop_hook_wired() -> tuple[bool, Path]:
+    """Whether ``$CODEX_HOME/hooks.json`` (default ``~/.codex``) has a Stop hook running
+    ``rauf hook codex-stop``."""
+    hooks = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "hooks.json"
+    try:
+        data = json.loads(hooks.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False, hooks
+    groups = data.get("hooks", {}).get("Stop", []) if isinstance(data, dict) else []
+    for group in groups if isinstance(groups, list) else []:
+        for hook in group.get("hooks", []) if isinstance(group, dict) else []:
+            if isinstance(hook, dict) and "hook codex-stop" in str(hook.get("command", "")):
+                return True, hooks
+    return False, hooks
+
+
+def _check_loop_supervision(ctx: _CheckContext) -> dict:
+    """The host's loop-supervision surface is in place (#345/#346).
+
+    forge-5-loop supervises a long rauf run differently per host. On **Pi** it needs
+    rauf's Pi package (the ``rauf_loop_*`` tools); without it the skill falls back to the
+    ``rauf loop wait`` recipe. On **Codex** the optional rauf Stop hook keeps the session
+    from ending its turn while the loop runs. Other hosts need nothing: ``na``.
+    """
+    host = (
+        _bundle_agent(_BUNDLE_ROOT)
+        or _classify_ancestry(_process_ancestry(os.getppid()))["host"]
+    )
+    evidence: dict = {"host": host}
+    if host == "pi":
+        packages = _pi_settings_packages(Path.cwd())
+        evidence["piPackages"] = packages
+        if any(_RAUF_PI_PACKAGE_RE.search(p) for p in packages):
+            return _result(
+                "ok", "rauf's Pi package is installed (rauf_loop_* supervisor tools)", evidence
+            )
+        return _result(
+            "warn",
+            "rauf's Pi package is not installed: forge-5-loop falls back to `rauf loop wait` "
+            "instead of the rauf_loop_* supervisor (per-item cards, wakes on exceptions)",
+            evidence,
+            _remedy(
+                "Install rauf's Pi package (rauf >= 0.18.0): it adds the package to the "
+                "`packages` list in ~/.pi/agent/settings.json and installs it under pi's "
+                "package directory. Then restart pi or run /reload.",
+                "pi install npm:@garygentry/rauf",
+                "network",
+            ),
+        )
+    if host == "codex":
+        wired, hooks_path = _codex_stop_hook_wired()
+        evidence["hooksFile"] = str(hooks_path)
+        evidence["stopHookWired"] = wired
+        if wired:
+            return _result("ok", f"rauf's Codex Stop hook is wired in {hooks_path}", evidence)
+        return _result(
+            "warn",
+            "rauf's Codex Stop hook is not wired (optional): a Codex session supervising a "
+            "loop can end its turn early and leave the loop unwatched",
+            evidence,
+            _remedy(
+                f"Wire it (optional): `npx @garygentry/feature-forge install -a codex "
+                f"--codex-stop-hook`, or merge the output of `rauf hook codex-stop "
+                f"--print-config` into {hooks_path} yourself. Either way this edits "
+                f"{hooks_path} (adds one Stop hook entry, keeping the rest); Codex also needs "
+                f"`[features] hooks = true` in its config.toml and asks you to trust the hook.",
+                "npx @garygentry/feature-forge install -a codex --codex-stop-hook",
+                "local-write",
+            ),
+        )
+    return _result("na", "no loop-supervision setup needed for this host", evidence)
+
+
 def _check_interaction_mode(ctx: _CheckContext) -> dict:
     """Report the session's interaction mode and host as DATA a skill reads.
 
@@ -1936,6 +2033,7 @@ DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = (
     _make_spec("gh-available", "advisory", _check_gh_available),
     _make_spec("sandbox-root", "advisory", _check_sandbox_root),
     _make_spec("interaction-mode", "advisory", _check_interaction_mode),
+    _make_spec("loop-supervision", "advisory", _check_loop_supervision),
 )
 
 #: The ids, in registry order, for ``--check`` choices and the catalog parity test.

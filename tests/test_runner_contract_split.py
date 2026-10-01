@@ -34,8 +34,8 @@ AGENT_SELECTION = SKILLS / "forge-5-loop" / "references" / "agent-selection.md"
 ALWAYS_LOADED = [
     "## Model selection precedence (Step 2d)",
     "## Run mode (Step 2d, rauf)",
-    "## Launch detail (Step 3b — background process)",
-    "## Arm a Monitor on the event stream (Step 3d)",
+    "## Launch detail (Step 3b)",
+    "## Supervise the run (Step 3d)",
     "## React to events as they land (Step 3e)",
     "## Inform-user output template (Step 3c)",
 ]

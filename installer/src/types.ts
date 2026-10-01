@@ -399,6 +399,11 @@ export interface RunReport {
    * (REQ-DET-05): consumers reading `renderReport(report, { json: true })` see it verbatim.
    */
   readonly raufError?: InstallerError;
+  /**
+   * The Codex Stop-hook step (#346): present when a codex install/update ran. Wiring writes the
+   * user's global `$CODEX_HOME/hooks.json`, so it happens only with explicit consent.
+   */
+  readonly codexStopHook?: import("./codex-hook.js").CodexStopHookReport;
 }
 
 // ---------------------------------------------------------------------------
@@ -522,5 +527,6 @@ export interface CliFlags {
   readonly yes: boolean;       // -y/--yes (REQ-DIST-02, REQ-FLAG-05)
   readonly json: boolean;      // --json (REQ-DET-05, REQ-OBS-01)
   readonly skipRauf: boolean;  // --skip-rauf (spec 06)
+  readonly codexStopHook: boolean; // --codex-stop-hook: consent to wire rauf's Codex Stop hook (#346)
   readonly source?: string;    // hidden --source <dir> for tests (D7, spec 03)
 }

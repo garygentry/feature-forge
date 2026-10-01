@@ -57,3 +57,26 @@ see the note below.)
 
 See [The default loop runner](claude.md#the-default-loop-runner) — feature-forge defaults to
 rauf and selects the coding agent via the documented precedence.
+
+## Supervising the loop (forge-5-loop)
+
+Codex cannot wake a session when a background process prints or exits, so `forge-5-loop`
+supervises a rauf loop from **inside the turn**: it launches the loop `--detached`, then repeats
+`rauf loop wait … --since-seq N --run-id R --timeout 240s` (rauf ≥ 0.18.0) — one bounded wait per
+shell call — printing each completed item's card and deciding from `rauf status --json` on any
+exception, until the loop ends (`loop wait` exits 11). Add `--notify-cmd 'notify-send rauf
+"$RAUF_CARD"'` for a desktop ping on exceptions and the end.
+
+**Optional Stop hook.** If the session tries to end its turn while the loop still runs, rauf's
+Stop hook blocks the stop and hands it the next `loop wait`; it does nothing for sessions not
+supervising a loop. Wire it with explicit consent:
+
+```bash
+npx @garygentry/feature-forge install -a codex --codex-stop-hook
+```
+
+This adds one Stop entry to `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`), keeping any
+existing hooks; `--yes` alone never writes it. Hooks also need `[features] hooks = true` in
+`~/.codex/config.toml`, and Codex asks you to trust a new hook before running it. To wire it by
+hand instead, merge the output of `rauf hook codex-stop --print-config` into that file.
+`forge-session.py doctor` reports whether it is wired (`loop-supervision`).

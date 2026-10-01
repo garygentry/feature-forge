@@ -193,8 +193,9 @@ ln -sfn "$PWD/adapters/codex" ~/.agents/skills/feature-forge
 
 ### pi
 
-Install the **built** `adapters/pi/` **package** (skills + the AskUserQuestion / forge-loop-supervisor
-extensions + the `pi-subagents` agents key). It is a package, so use `pi install` — **not** `pi -e`,
+Install the **built** `adapters/pi/` **package** (skills + the AskUserQuestion / forge-invocation-args
+extensions + the `pi-subagents` agents key; loop supervision comes from rauf's Pi package —
+`pi install npm:@garygentry/rauf`, or a local rauf checkout's `adapters/pi`). It is a package, so use `pi install` — **not** `pi -e`,
 which loads a single *extension* file, not a package's skills:
 
 ```bash

@@ -417,8 +417,8 @@ def test_pi_bundle_includes_its_extensions(fixture_copy):
     """The Pi adapter is self-contained and ships both bundled extensions whole.
 
     Two extensions ship in the bundle: the vendored ``ask-user-question`` tree
-    (adapter-src/pi/UPSTREAM.md) and the first-party ``forge-loop-supervisor``
-    that lets forge-5-loop run the loop without blocking the Pi session. This
+    (adapter-src/pi/UPSTREAM.md) and the first-party ``forge-invocation-args``.
+    (Loop supervision moved to rauf's Pi package, #345 — it must NOT ship here.) This
     asserts the *bundle* contract — the manifest entry points, and that each
     extension's whole module graph ships (an entry point without its imports
     typechecks in-tree and dies on first load). Behaviour is covered by
@@ -431,8 +431,8 @@ def test_pi_bundle_includes_its_extensions(fixture_copy):
     assert package["pi"]["extensions"] == [
         "./extensions/ask-user-question/index.ts",
         "./extensions/forge-invocation-args/index.ts",
-        "./extensions/forge-loop-supervisor/index.ts",
     ]
+    assert not (root / "adapters" / "pi" / "extensions" / "forge-loop-supervisor").exists()
 
     # forge-invocation-args — first-party (issue #303). Preserves /skill:forge-*
     # invocation arguments across Pi's boundary-less skill expansion. Its whole
@@ -443,17 +443,6 @@ def test_pi_bundle_includes_its_extensions(fixture_copy):
     assert (inv_dir / "wiring.ts").is_file(), "forge-invocation-args wiring module missing from the bundle"
     assert inv_entry.read_text().startswith(
         "// GENERATED — DO NOT EDIT. Source: adapter-src/pi/extensions/forge-invocation-args/index.ts"
-    )
-
-    # forge-loop-supervisor — first-party. Its whole graph must ship, and the
-    # generated entry carries the provenance header naming its adapter-src path.
-    sup_dir = root / "adapters" / "pi" / "extensions" / "forge-loop-supervisor"
-    sup_entry = sup_dir / "index.ts"
-    assert sup_entry.is_file(), "the supervisor manifest entry must exist in the bundle"
-    for module in ("wiring.ts", "supervisor.ts", "tailer.ts", "events.ts", "registry.ts", "types.ts"):
-        assert (sup_dir / module).is_file(), f"supervisor module {module} missing from the bundle"
-    assert sup_entry.read_text().startswith(
-        "// GENERATED — DO NOT EDIT. Source: adapter-src/pi/extensions/forge-loop-supervisor/index.ts"
     )
 
     ext_dir = root / "adapters" / "pi" / "extensions" / "ask-user-question"
@@ -1406,3 +1395,47 @@ def test_the_emitted_consumer_still_executes_with_its_in_file_loader(agent, cons
     )
 
     assert proc.returncode == 0, f"{agent}/{consumer}: {proc.stderr}"
+
+
+# --------------------------------------------------------------------------------------
+# Host-conditional canon blocks (#347)
+# --------------------------------------------------------------------------------------
+
+_HOST_BLOCK_SAMPLE = (
+    "shared\n"
+    "<!-- host:claude -->\nCLAUDE\n<!-- /host -->\n"
+    "<!-- host:pi -->\nPI\n<!-- /host -->\n"
+    "<!-- host:!claude,pi -->\nWAIT\n<!-- /host -->\n"
+    "tail\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("agent", "expected"),
+    [
+        ("claude", "shared\nCLAUDE\ntail\n"),
+        ("pi", "shared\nPI\ntail\n"),
+        ("codex", "shared\nWAIT\ntail\n"),
+        ("gemini", "shared\nWAIT\ntail\n"),
+    ],
+)
+def test_host_blocks_keep_only_the_targets_content(agent, expected):
+    gen = _load_generator_module()
+    assert gen.apply_host_blocks(_HOST_BLOCK_SAMPLE, agent) == expected
+    # Placeholder binding runs the block pass first, so markers never ship.
+    assert "<!--" not in gen.apply_placeholders(_HOST_BLOCK_SAMPLE, agent)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "<!-- host:claude -->\nx\n",  # unclosed
+        "x\n<!-- /host -->\n",  # stray close
+        "<!-- host:claude -->\n<!-- host:pi -->\nx\n<!-- /host -->\n<!-- /host -->\n",  # nested
+        "<!-- host:vscode -->\nx\n<!-- /host -->\n",  # unknown host
+    ],
+)
+def test_malformed_host_blocks_are_canon_errors(bad):
+    gen = _load_generator_module()
+    with pytest.raises(gen.CanonError):
+        gen.apply_host_blocks(bad, "claude")
