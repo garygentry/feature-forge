@@ -98,8 +98,8 @@ python3 "$R/scripts/forge-session.py" stage-exit {stage-exit-args} --specs-dir "
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
 <!-- END: scripted-stage-exit-stamp -->
 
-The stamp is shown with `--host generic`; the adapter build substitutes `pi`/`generic` per
-target, and §"Host and capability determination" below governs the value. The literal is
+The stamp is shown with `--host generic`; the adapter build substitutes `pi`/`copilot`/`generic`
+per target, and §"Host and capability determination" below governs the value. The literal is
 deliberate — `scripts/build-adapters.py` keys its host translation on the exact canon
 value of that flag, and the stamp sites are compared byte-for-byte, so it is the one token
 in that line that is not a placeholder.
@@ -109,9 +109,9 @@ in that line that is not a placeholder.
 Before the call, compute the two inputs independently. They are unrelated: **a host never
 implies a capability**, and the script takes `--verify-capability` at face value.
 
-**`--host`** describes only the active adapter command surface — `claude`, `pi`, or
-`generic`. It selects command syntax (Claude's stage-command prefix vs Pi's `/skill:` vs
-host-neutral) and fresh-session wording (Claude's clear command vs Pi's `/new` vs neutral
+**`--host`** describes only the active adapter command surface — `claude`, `copilot`,
+`pi`, or `generic`. It selects command syntax (Claude's stage-command prefix vs Pi's
+`/skill:` vs Copilot's `invoke-skill:` notation vs host-neutral) and fresh-session wording (Claude's clear command vs Pi's `/new` vs neutral
 prose). Nothing else.
 
 **`--verify-capability interactive`** is passed only when **both** of these hold:
