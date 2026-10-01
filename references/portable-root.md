@@ -65,7 +65,8 @@ python3 "$R/scripts/epic-manifest.py" render-status "{epic}" --specs-dir "{specs
 4. **The Copilot bundle swaps the resolver line at build time.** `build-adapters.py` replaces
    this prelude's first line, in Copilot output only, with a Copilot-ordered bootstrap: the same
    fail-loud `FEATURE_FORGE_ROOT` guard and override, then the nearest ancestor project
-   `.github/feature-forge` (a guarded walk that stops at `/` or a failed `cd ..`), then Copilot
+   `.github/feature-forge` (a guarded walk that stops when `cd ..` fails or no longer moves,
+   restoring the caller's cwd before handing off), then Copilot
    CLI's managed-plugin root `~/.copilot/installed-plugins/<marketplace|_direct>/feature-forge`
    and personal `~/.copilot/feature-forge`, and only then the other hosts' roots — so a
    co-installed Claude/Codex bundle never shadows the loaded Copilot one. It carries no

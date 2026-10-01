@@ -743,3 +743,32 @@ def test_copilot_prelude_ancestor_walk_terminates_when_cd_fails(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == str(plugin)
+
+
+def test_copilot_prelude_restores_cwd_for_resolver_fallback(tmp_path):
+    """A degraded plugin's resolver still probes the CALLER's cwd, not where the walk stopped."""
+    home = tmp_path / "home"
+    _x(_make_partial_install(home / ".copilot" / "installed-plugins" / "mp" / "feature-forge"))
+    project = tmp_path / "project"
+    complete = _make_neutral_install(project / ".agents" / "skills" / "feature-forge")
+    result = _run_prelude(_copilot_prelude(), project, {"HOME": str(home)})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(complete)
+
+
+def test_copilot_prelude_ancestor_walk_terminates_on_double_slash_pwd(tmp_path):
+    """POSIX ``//`` is its own parent: the walk must stop when ``cd ..`` no longer moves."""
+    home = tmp_path / "home"
+    plugin = _x(_make_neutral_install(home / ".copilot" / "installed-plugins" / "mp" / "feature-forge"))
+    work = tmp_path / "work"
+    work.mkdir()
+    result = subprocess.run(
+        ["bash", "-c", 'cd "//${PWD#/}" || exit 9\n' + _copilot_prelude() + '\nprintf "%s\\n" "$R"'],
+        capture_output=True,
+        text=True,
+        cwd=str(work),
+        env={**os.environ, **_ISOLATED, "HOME": str(home)},
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(plugin)
