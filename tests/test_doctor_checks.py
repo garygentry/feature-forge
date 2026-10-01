@@ -2122,7 +2122,7 @@ def test_reported_host_arg_is_a_value_stage_exit_actually_accepts(fs) -> None:
     assert emitted <= set(exit_hosts), (
         f"doctor would report a --host value stage-exit rejects: {emitted - set(exit_hosts)}"
     )
-    assert emitted == {"claude", "pi", "generic"}
+    assert emitted == {"claude", "copilot", "pi", "generic"}
 
 
 def test_the_host_axis_is_reported_end_to_end_from_the_bundle_sentinel(
@@ -2136,7 +2136,9 @@ def test_the_host_axis_is_reported_end_to_end_from_the_bundle_sentinel(
     """
     monkeypatch.setattr(fs, "_process_ancestry", lambda *a, **k: [])
     monkeypatch.delenv("FORGE_INTERACTION", raising=False)
-    for agent, expected_arg in (("codex", "generic"), ("pi", "pi"), ("claude", "claude")):
+    for agent, expected_arg in (
+        ("codex", "generic"), ("copilot", "copilot"), ("pi", "pi"), ("claude", "claude"),
+    ):
         monkeypatch.setattr(fs, "_bundle_agent", lambda _root, a=agent: a)
         evidence = fs._check_interaction_mode(object())["evidence"]
         assert (evidence["host"], evidence["hostArg"]) == (agent, expected_arg)

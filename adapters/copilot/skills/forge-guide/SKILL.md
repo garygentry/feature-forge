@@ -2,6 +2,7 @@
 # GENERATED — DO NOT EDIT. Source: skills/forge-guide/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-guide
 description: Explain what feature-forge is, when to use it, how to configure it, and its best practices — advisory guidance, not stage execution. Use when the user or another agent asks what feature-forge is, whether/when to adopt it, how the pipeline works conceptually, how to set up or configure forge.config.json, or for usage tips and best practices. Do NOT trigger to RUN a pipeline stage (use forge-1-prd … forge-6-docs), to show a specific feature's status (use forge), or for general software questions unrelated to feature-forge.
+argument-hint: '<optional topic: overview | when | setup | config | stages | verify | context | epics | loop | troubleshoot — or --doctor to report and repair the environment>'
 ---
 
 # Feature Forge — Usage & Best-Practices Guide
@@ -17,7 +18,7 @@ run pipeline stages; when the user is ready to act, point them at the right skil
 2. **Ground yourself in the canonical source before answering** — read the mapped
    reference file(s) below rather than answering from memory. These are the source
    of truth and stay current as the pipeline evolves.
-3. Answer concisely, then end with the concrete next command (`forge-*`)
+3. Answer concisely, then end with the concrete next command (`invoke-skill: forge-*`)
    or doc pointer the user should go to.
 
 | Topic | Read first |
@@ -87,13 +88,13 @@ carry context across stages instead of reading upstream artifacts.
 | any | `forge-verify` → `forge-fix` | findings report → applied fixes |
 | any | `forge` | status dashboard / navigator |
 
-Drive the whole thing with the **navigator**: `forge <feature>` shows the
+Drive the whole thing with the **navigator**: `invoke-skill: forge <feature>` shows the
 current stage and offers the next; with `autoInvokeNextStage` it launches it directly.
 
 ## Setup & configuration
 
-**First-time setup:** `forge-init` (existing repo) creates `forge.config.json`
-with defaults. `forge-bootstrap` scaffolds a *greenfield* (empty) repo to a
+**First-time setup:** `invoke-skill: forge-init` (existing repo) creates `forge.config.json`
+with defaults. `invoke-skill: forge-bootstrap` scaffolds a *greenfield* (empty) repo to a
 green baseline. On non-Claude agents, install via `npx @garygentry/feature-forge install`.
 
 **Key `forge.config.json` knobs** (authoritative list: `references/forge-config-schema.json`):
@@ -167,11 +168,11 @@ a minimum runner version (the version gate is described in `references/ralph-loo
 - Re-running an upstream stage marks downstream stages **stale** — re-run them rather than
   reaching for `--force`, which skips prerequisite checks and should be rare.
 - Specs are pre-implementation artifacts, not living docs — don't cite them from generated code.
-- Use the navigator (`forge <feature>`) to orient; use `forge-verify` to inspect.
+- Use the navigator (`invoke-skill: forge <feature>`) to orient; use `forge-verify` to inspect.
 
 ## `--doctor` mode
 
-`forge-guide --doctor` is the **repair surface**: it turns `doctor`'s `checks[]`
+`invoke-skill: forge-guide --doctor` is the **repair surface**: it turns `doctor`'s `checks[]`
 into a readable report and, only on an explicit yes, a scripted repair. Enter this mode **only**
 when the argument is `--doctor`; every other invocation of this skill stays purely advisory.
 
@@ -243,7 +244,7 @@ exactly the fabrication step 2 forbids.
 
 ## Troubleshooting starters
 
-- **Anything environmental:** point the user at `forge-guide --doctor` — it
+- **Anything environmental:** point the user at `invoke-skill: forge-guide --doctor` — it
   reports every `doctor` check and walks the consented repair. Name it; do not enter that
   mode from an answer that was not invoked with `--doctor`.
 - **Stage 5 won't start:** backlog exists and is verified? runner installed and ≥ min version?
@@ -251,7 +252,7 @@ exactly the fabrication step 2 forbids.
 - **Loop stopped mid-run:** check the signal — `BLOCKED`/`NEEDS_HUMAN` items are set aside, not
   failures; the loop keeps going.
 - **Downstream flagged stale:** an upstream stage was revised; re-run the downstream stage.
-- **Where am I?** `forge <feature>` renders the full pipeline status.
+- **Where am I?** `invoke-skill: forge <feature>` renders the full pipeline status.
 
 For anything deeper, ground yourself in `references/process-overview.md` and
 `references/shared-conventions.md`, and point the *user* at the hosted docs site —
@@ -259,10 +260,14 @@ For anything deeper, ground yourself in `references/process-overview.md` and
 
 ---
 
-## Host execution notes
+## Host execution notes (GitHub Copilot)
 
-This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+This bundle uses distribution-neutral invocation notation because Copilot assigns different slash-command names to plugin and direct installations:
 
-- **User input:** ask the question directly and wait for the answer when your runtime can prompt and wait; never assume one. Read whether it can from the Interaction Capability Ladder's `interaction-mode` record rather than judging it. When your runtime is genuinely non-interactive, take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
-- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
+- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and references is an instruction, not a literal command to paste. Preserve the named skill and its arguments.
+- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.
+- **Direct project/personal install:** invoke `/<name> [arguments]`.
+- **No universal slash name:** use the form matching the skill's discovery source. If the source is uncertain, use Copilot's skill-invocation mechanism or ask the user instead of guessing.
+- **User input:** Copilot has no structured question tool in this bundle — ask the question directly and wait for the answer when the session can prompt and wait; never assume one. Read whether it can from the Interaction Capability Ladder's `interaction-mode` record rather than judging it. When the session is genuinely non-interactive, take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
+- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. If it is unavailable, run that step inline only when the skill permits inline execution.
+- **Background / monitoring:** run long-lived commands in the foreground (or Copilot's background facility) and report progress as it arrives.

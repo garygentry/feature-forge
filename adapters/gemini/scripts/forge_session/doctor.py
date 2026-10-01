@@ -390,7 +390,7 @@ _ANCESTRY_MAX_DEPTH: Final[int] = 16
 #: evidence field lands in ``doctor --json`` output that gets pasted into issues.
 _EXEC_NAME_RE: Final = re.compile(r"^[A-Za-z0-9._+-]{1,64}$")
 #: Adapter ids that keep their own ``--host`` value; every other id is generic.
-_NAMED_HOST_ARGS: Final[frozenset[str]] = frozenset({"claude", "pi"})
+_NAMED_HOST_ARGS: Final[frozenset[str]] = frozenset({"claude", "copilot", "pi"})
 
 
 def _run_probe(

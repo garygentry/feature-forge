@@ -1,7 +1,8 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-6-docs/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-6-docs
-description: Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs forge-6-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline.
+description: 'Generate developer-focused architecture documentation for a forge pipeline feature. Use when user runs invoke-skill: forge-6-docs or asks to generate docs after implementation is complete. Do NOT trigger for general documentation writing, README creation, or doc generation outside the forge pipeline.'
+argument-hint: <feature-name>
 ---
 
 # forge-6-docs — Architecture Documentation Generator
@@ -69,7 +70,7 @@ python3 "$R/scripts/forge-session.py" verify-state --feature "{feature}" --for-s
 Branch on the result:
 
 - **`verified` true** (`passed`) — verification ran and resolved clean (or advisory-only, report attached); proceed with no warning.
-- **`case` is `findings-reported`** — blocking findings are live and **unresolved**: docs generated over them can document known defects as intended behavior. Use host's question mechanism to offer: **Apply the findings first (recommended)** (`forge-fix {feature} --served-stage forge-5-loop`) · **Generate docs anyway**. Proceeding is an explicit deferral, persisted per the skip rule below — the findings documents stay on disk and the deferral is a recorded decision.
+- **`case` is `findings-reported`** — blocking findings are live and **unresolved**: docs generated over them can document known defects as intended behavior. Use host's question mechanism to offer: **Apply the findings first (recommended)** (`invoke-skill: forge-fix {feature} --served-stage forge-5-loop`) · **Generate docs anyway**. Proceeding is an explicit deferral, persisted per the skip rule below — the findings documents stay on disk and the deferral is a recorded decision.
 - **`stale` true** (`findings-applied`) — fixes landed but nothing re-verified them, so the implementation's verification is still outstanding, not silently satisfied. Use host's question mechanism to offer: **Re-verify first (recommended)** (run the returned `nextCommand`) · **Generate docs anyway**. On proceed, **write nothing to the verify entry** — the skip rule below does NOT apply to this case. `findings-applied` counts as complete-for-orchestration, so replacing it with `skipped` would demote the member out of its epic rollup and re-block dependents (`state-verify` refuses exactly that write — issue #203's 5/6 → 1/6 collapse). The recorded status already says re-verification is outstanding; proceeding is the deferral, and later gates keep surfacing it.
 - **any other unresolved case** (`auto-verify-pending`, `skipped`, or never-verified) — print the returned `message`, then use host's question mechanism to warn with the cost of skipping: docs generated over unverified code can document bugs or gaps as if they were intended behavior, and readers will trust them. Offer **Verify first (recommended)** (run the returned `nextCommand`) · **Generate docs anyway**.
 
@@ -249,7 +250,7 @@ Select `{DocsOutcome}` first, from what actually landed:
 ```bash
 R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-6-docs --outcome "{DocsOutcome}" --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
+python3 "$R/scripts/forge-session.py" stage-exit --feature "{feature}" --stage forge-6-docs --outcome "{DocsOutcome}" --specs-dir "{specsDir}" --host copilot --verify-capability "{verify-capability}"
 ```
 
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
@@ -259,7 +260,7 @@ Add `--epic "{epic}"` when this feature is an epic member — required, per the 
 The script owns the routing for both outcomes, so append nothing to its block — no hand-off paragraph, no "start a new feature" list, no second command:
 
 - **Epic member** — the script reads live epic status **at exit time**, after this stage's own state write and commit. Do **not** reuse Step 1's `render-status` snapshot and do **not** pass a member you picked yourself: that snapshot predates the docs state it would be routing from. An actionable member gets its own live command fenced; nothing actionable routes to the epic dashboard; every member complete routes to the dashboard completion view.
-- **Standalone** — `complete` fences `forge {feature}` as the authoritative completion action, and leaves starting a new feature (or grouping several with `forge-0-epic`) as secondary unfenced text.
+- **Standalone** — `complete` fences `invoke-skill: forge {feature}` as the authoritative completion action, and leaves starting a new feature (or grouping several with `invoke-skill: forge-0-epic`) as secondary unfenced text.
 
 ## Gotchas
 
@@ -272,10 +273,14 @@ The script owns the routing for both outcomes, so append nothing to its block �
 
 ---
 
-## Host execution notes
+## Host execution notes (GitHub Copilot)
 
-This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+This bundle uses distribution-neutral invocation notation because Copilot assigns different slash-command names to plugin and direct installations:
 
-- **User input:** ask the question directly and wait for the answer when your runtime can prompt and wait; never assume one. Read whether it can from the Interaction Capability Ladder's `interaction-mode` record rather than judging it. When your runtime is genuinely non-interactive, take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
-- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
+- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and references is an instruction, not a literal command to paste. Preserve the named skill and its arguments.
+- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.
+- **Direct project/personal install:** invoke `/<name> [arguments]`.
+- **No universal slash name:** use the form matching the skill's discovery source. If the source is uncertain, use Copilot's skill-invocation mechanism or ask the user instead of guessing.
+- **User input:** Copilot has no structured question tool in this bundle — ask the question directly and wait for the answer when the session can prompt and wait; never assume one. Read whether it can from the Interaction Capability Ladder's `interaction-mode` record rather than judging it. When the session is genuinely non-interactive, take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
+- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. If it is unavailable, run that step inline only when the skill permits inline execution.
+- **Background / monitoring:** run long-lived commands in the foreground (or Copilot's background facility) and report progress as it arrives.

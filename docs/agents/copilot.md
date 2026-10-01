@@ -37,6 +37,22 @@ see the note below.)
 > auto-discovery — the install report labels it as such. Use the `--dry-run --json` plan for
 > the exact resolved path.
 
+## Bundle layout and invoking skills
+
+The generated `adapters/copilot/` bundle uses Copilot's native layout: a `plugin.json` manifest
+(the legacy Copilot plugin format, which declares its `skills/` and `agents/` roots; it is not an
+Agent Plugins 1.0 manifest), one `skills/<name>/SKILL.md` per skill (with `argument-hint` where
+the skill takes arguments), and `agents/<name>.agent.md` custom agents. The three worker agents
+(`forge-researcher`, `forge-spec-writer`, `forge-verifier`) are subagent-only
+(`user-invocable: false`) and carry least-privilege Copilot tool aliases.
+
+Copilot names the same skill differently depending on how it was installed: a plugin install
+exposes `/feature-forge:<name>`, a direct project or personal install exposes `/<name>`. The
+bundle therefore never hard-codes either form — skill bodies, references, and the stage-exit
+NEXT-STEPS block (`forge-session.py stage-exit --host copilot`) write
+`invoke-skill: <name> [arguments]`, and each skill's closing "Host execution notes (GitHub
+Copilot)" section maps that notation to whichever form your install provides.
+
 ## First-use check
 
 1. List what got installed:

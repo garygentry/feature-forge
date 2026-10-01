@@ -137,11 +137,19 @@ def _host_command(command: str, host: str) -> str:
     """Rewrite a `/feature-forge:` slash command to the host's surface.
 
     Pi's slash-command surface is `/skill:` (matching the adapter body's
-    `/feature-forge:` -> `/skill:` translation). The scripted stage-exit output bypasses
-    that body translation, so it rewrites the commands it emits here. No-op for
-    claude/generic, which keep the canonical `/feature-forge:` form.
+    `/feature-forge:` -> `/skill:` translation). Copilot has no one universal slash
+    name — plugin skills are prefixed (`/feature-forge:<name>`), direct project/personal
+    skills are not (`/<name>`) — so it gets the distribution-neutral `invoke-skill: `
+    notation its adapter bodies use, which the Copilot host overlay maps to the
+    discovered distribution. The scripted stage-exit output bypasses that body
+    translation, so it rewrites the commands it emits here. No-op for claude/generic,
+    which keep the canonical `/feature-forge:` form.
     """
-    return command.replace("/feature-forge:", "/skill:") if host == "pi" else command
+    if host == "pi":
+        return command.replace("/feature-forge:", "/skill:")
+    if host == "copilot":
+        return command.replace("/feature-forge:", "invoke-skill: ")
+    return command
 def _next_steps_block(
     primary_command: str | None,
     host: str,
@@ -167,9 +175,11 @@ def _next_steps_block(
         A string whose final line is exactly `NEXT_STEPS_SENTINEL`.
 
     The Claude wording uses the literal ``/clear`` slash-command; the generic
-    wording is host-neutral (matching the adapter build's host-term table, so
-    a non-Claude bundle invoking ``--host generic`` never instructs a fake
-    slash-command).
+    and Copilot wording is host-neutral (matching the adapter build's host-term
+    table, so a non-Claude bundle invoking ``--host generic``/``--host copilot``
+    never instructs a fake slash-command). Copilot's commands additionally use
+    ``invoke-skill:`` notation (see ``_host_command``) rather than guessing whether
+    a plugin-prefixed or direct slash name is available.
 
     ``deferred_command`` is the caller's signal that ``primary_command`` is a
     verification/recovery action standing in front of a production successor: it
