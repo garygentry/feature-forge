@@ -34,6 +34,19 @@ test("resolveWithinNoSymlinks rejects a symlink ancestor inside the lexical root
   });
 });
 
+test("resolveWithinNoSymlinks trusts a symlinked placement root (dotfile-managed config dir)", { skip: isWindows() }, async () => {
+  await withSandbox(async (sb) => {
+    const real = path.join(sb.home, "dotfiles", "copilot");
+    await fsp.mkdir(path.join(real, "skills"), { recursive: true });
+    const root = path.join(sb.home, ".copilot");
+    await fsp.symlink(real, root, "dir");
+
+    const result = resolveWithinNoSymlinks(root, "skills", "forge", "SKILL.md");
+    assert.ok(result.ok);
+    assert.equal(result.value, path.join(root, "skills", "forge", "SKILL.md"));
+  });
+});
+
 test("resolveWithin accepts in-root segments and rejects escapes before any write", async () => {
   await withSandbox(async (sb) => {
     const root = sb.home;
