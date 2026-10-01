@@ -53,6 +53,13 @@ FORBIDDEN_TOKENS: tuple[str, ...] = (
     "`Monitor` tool",    # literal Claude monitoring tool (backticked)
     "/clear",            # Claude-only slash command (must degrade to plain prose)
     "AskUserQuestion",   # literal Claude question tool
+    # forge-5-loop's Claude-only supervision lifecycle (#347): these live in canon's
+    # `<!-- host:claude -->` blocks, so no other host's body or reference may carry them.
+    "`PushNotification`",
+    "`TaskStop`",
+    "`persistent: true`",
+    "run_in_background",
+    "tail -n +1 -F",
 )
 
 # Pi keeps `AskUserQuestion` (the bundle ships a compatibility extension) and the
@@ -63,14 +70,14 @@ PI_FORBIDDEN_TOKENS: tuple[str, ...] = (
     "The the ",
     "/clear",              # Pi's fresh-session command is /new
     "/feature-forge:",     # Pi's skill-invocation prefix is /skill:
-    # forge-5-loop's Claude-shaped supervision lifecycle tokens: on Pi these are
-    # degraded to the forge-loop-supervisor extension's surface (#235/#236), so a
-    # literal one surviving means the Pi host-term pass regressed. (Still present
-    # in the OTHER non-Claude agents, which have no supervisor extension — hence
-    # Pi-only here, not in FORBIDDEN_TOKENS.)
+    # forge-5-loop's Claude-only supervision lifecycle (#347) — host-blocked in canon.
     "`PushNotification`",
     "`TaskStop`",
     "`persistent: true`",
+    "run_in_background",
+    "tail -n +1 -F",
+    # feature-forge's retired Pi supervisor (#345): rauf's `rauf_loop_*` replaced it.
+    "forge_loop_",
 )
 
 
@@ -113,60 +120,55 @@ def test_scan_surface_discovered() -> None:
         )
 
 
-def test_pi_forge_5_loop_supervises_via_extension_not_foreground() -> None:
-    """Pi forge-5-loop drives the loop through the bundled forge-loop-supervisor
-    extension — no foreground, no background/foreground contradiction (#235/#236).
+def _loop_files(target: str) -> tuple[str, str]:
+    base = ADAPTERS_ROOT / target / "skills" / "forge-5-loop"
+    body = next(p for p in (base / "SKILL.md", base / "forge-5-loop.md", base / "forge-5-loop.mdc") if p.is_file())
+    return (
+        body.read_text(encoding="utf-8"),
+        (base / "references" / "runner-contract.md").read_text(encoding="utf-8"),
+    )
 
-    The generic contract is Claude-shaped (background the process, arm a Monitor,
-    PushNotification on exceptions). Pi has no such surface, so the generated
-    skill must (a) name the concrete registered tools, and (b) NOT carry the old
-    overlay's affirmative "run long-lived commands in the foreground" instruction,
-    which contradicted the body's own "background it" (the exact defect #235
-    reported). The prohibition "Never run the run command in the foreground" is
-    fine — that is the anti-pattern, not an instruction to foreground.
+
+def test_pi_forge_5_loop_supervises_via_rauf_pi_tools() -> None:
+    """Pi forge-5-loop drives the loop through rauf's Pi package tools (#345).
+
+    Launch with `rauf_loop_launch`, let the supervisor post cards and wake the session,
+    never foreground/nohup/subagent — and the `loop wait` recipe stays available as the
+    fallback when rauf's Pi package is not loaded.
     """
-    skill = ADAPTERS_ROOT / "pi" / "skills" / "forge-5-loop" / "SKILL.md"
-    text = skill.read_text(encoding="utf-8")
+    skill, contract = _loop_files("pi")
+    for tool in ("rauf_loop_launch", "rauf_loop_status", "rauf_loop_stop"):
+        assert tool in skill, f"Pi forge-5-loop host notes must name {tool!r}"
+    assert "rauf_loop_launch" in contract.split("## Launch detail (Step 3b)", 1)[1]
+    assert "## Supervise the run (Step 3d)" in contract
+    assert "end your turn" in contract, "Pi must be told to end its turn after the launch"
+    assert "loop wait" in contract, "Pi keeps the wait-loop fallback for a missing package"
+    for banned in ("run long-lived commands in the foreground", "forge-loop-supervisor"):
+        assert banned not in skill and banned not in contract, banned
 
-    for tool in ("forge_loop_launch", "forge_loop_status", "forge_loop_stop"):
-        assert tool in text, f"Pi forge-5-loop must name the concrete supervision tool {tool!r}"
-    assert "forge-loop-supervisor" in text, "the overlay must name the supervision extension"
 
-    for banned in (
-        "run long-lived commands in the foreground",
-        "in the foreground and report progress",
-    ):
-        assert banned not in text, (
-            f"Pi forge-5-loop still carries the removed foreground instruction {banned!r} "
-            f"— it contradicts the body's background/supervise contract (#235). Fix "
-            f"`_HOST_NOTES_PI` in scripts/build-adapters.py and rebuild adapters."
-        )
+@pytest.mark.parametrize("target", NON_CLAUDE_TARGETS)
+def test_wait_loop_hosts_supervise_with_rauf_loop_wait(target: str) -> None:
+    """Codex and the neutral hosts get the `rauf loop wait` recipe (#346/#347): a detached
+    launch, bounded waits with cards, the exit-code table, and the never-end-your-turn rule."""
+    skill, contract = _loop_files(target)
+    assert "--detached" in contract.split("## Supervise the run (Step 3d)", 1)[0]
+    supervise = contract.split("## Supervise the run (Step 3d)", 1)[1].split("## React to", 1)[0]
+    for needle in ("loop wait", "--since-seq", "`11`", "Never end your turn", "--notify-cmd"):
+        assert needle in supervise, f"{target}: Step 3d wait-loop recipe lacks {needle!r}"
+    assert "rauf_loop_launch" not in contract, f"{target}: the Pi tools leaked into {target}"
+    assert "loop wait" in skill, f"{target}: the host notes must point at the wait loop"
+    if target == "codex":
+        assert "codex-stop" in skill and "codex-stop" in contract
 
-    # The redirect must PRECEDE the manual launch prose, not merely appear somewhere
-    # (the appended overlay alone left the operative Steps 3b-3f still describing the
-    # Claude-shaped manual path — the contradiction the self-review caught). Assert
-    # `forge_loop_launch` is introduced under the Step 3b header BEFORE the
-    # "Launch the loop backgrounded" manual instruction.
-    anchor = "### 3b. Launch Background Process"
-    assert anchor in text, "the Step 3b header anchor moved — update the Pi redirect injection"
-    after_3b = text.split(anchor, 1)[1]
-    launch_pos = after_3b.find("forge_loop_launch")
-    manual_pos = after_3b.find("Launch the loop **backgrounded**")
-    assert launch_pos != -1, "forge_loop_launch must be introduced at Step 3b"
-    assert manual_pos == -1 or launch_pos < manual_pos, (
-        "the forge_loop_launch redirect must come BEFORE the manual 'background it' "
-        "prose at Step 3b, so the model reads the authoritative tool instruction first "
-        "(#235). Fix inject_pi_supervise_redirect in scripts/build-adapters.py."
-    )
 
-    # The runner-contract reference must front-load the same redirect (the manual
-    # launch/monitor recipe lives here too), so forge_loop_launch appears near the top.
-    contract = ADAPTERS_ROOT / "pi" / "skills" / "forge-5-loop" / "references" / "runner-contract.md"
-    ctext = contract.read_text(encoding="utf-8")
-    assert "forge_loop_launch" in ctext[:800], (
-        "the Pi runner-contract must front-load the forge_loop_launch redirect, ahead "
-        "of the manual launch/monitor detail (#235/#236)."
-    )
+def test_claude_forge_5_loop_keeps_background_and_monitor() -> None:
+    """Claude keeps background + persistent Monitor (#348) and gains the enriched card."""
+    _skill, contract = _loop_files("claude")
+    for needle in ("`Monitor` tool", "persistent: true", "tail -n +1 -F", "`PushNotification`"):
+        assert needle in contract, f"Claude runner-contract lost {needle!r}"
+    assert "rauf_loop_launch" not in contract
+    assert "[7/26] ✓ 008" in contract, "the item_completed card format must be shown"
 
 
 @pytest.mark.parametrize(

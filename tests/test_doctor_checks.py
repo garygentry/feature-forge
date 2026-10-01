@@ -2193,3 +2193,79 @@ def test_every_ancestry_host_id_is_a_real_adapter_id(fs) -> None:
         assert host_id in fs._ADAPTER_AGENT_IDS
     assert set(fs._ANCESTRY_MODE_HARNESSES) <= {binary for binary, _ in fs._ANCESTRY_HOSTS}
     assert "codex" not in fs._ANCESTRY_MODE_HARNESSES
+
+
+# --------------------------------------------------------------------------------------
+# loop-supervision (#345/#346)
+# --------------------------------------------------------------------------------------
+
+
+def _loop_supervision(fs, monkeypatch, tmp_path: Path, host: str | None) -> dict:
+    monkeypatch.setattr(fs, "_bundle_agent", lambda _root: host)
+    monkeypatch.setattr(fs, "_process_ancestry", lambda _pid: [])
+    monkeypatch.chdir(tmp_path)
+    return fs._check_loop_supervision(None)
+
+
+def test_loop_supervision_is_na_off_pi_and_codex(fs, monkeypatch, tmp_path: Path) -> None:
+    for host in ("claude", "gemini", None):
+        assert _loop_supervision(fs, monkeypatch, tmp_path, host)["status"] == "na"
+
+
+def test_loop_supervision_pi_warns_without_raufs_package_and_names_the_install(
+    fs, monkeypatch, tmp_path: Path
+) -> None:
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    (agent_dir / "settings.json").write_text(json.dumps({"packages": ["npm:pi-subagents"]}))
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(agent_dir))
+    rec = _loop_supervision(fs, monkeypatch, tmp_path, "pi")
+    assert rec["status"] == "warn"
+    assert rec["remedy"]["command"] == "pi install npm:@garygentry/rauf"
+    assert "~/.pi/agent/settings.json" in rec["remedy"]["description"]
+    assert rec["remedy"]["safety"] == "network"
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "npm:@garygentry/rauf",
+        "npm:@garygentry/rauf@0.18.0",
+        "~/workspace/rauf/adapters/pi",
+        "/opt/src/rauf/npm-dist",
+        {"source": "npm:@garygentry/rauf", "extensions": []},
+    ],
+)
+def test_loop_supervision_pi_ok_with_raufs_package(fs, monkeypatch, tmp_path: Path, spec) -> None:
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    (agent_dir / "settings.json").write_text(json.dumps({"packages": [spec]}))
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(agent_dir))
+    assert _loop_supervision(fs, monkeypatch, tmp_path, "pi")["status"] == "ok"
+
+
+def test_loop_supervision_pi_reads_project_settings_too(fs, monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(tmp_path / "missing"))
+    (tmp_path / ".pi").mkdir()
+    (tmp_path / ".pi" / "settings.json").write_text(json.dumps({"packages": ["npm:@garygentry/rauf"]}))
+    assert _loop_supervision(fs, monkeypatch, tmp_path, "pi")["status"] == "ok"
+
+
+def test_loop_supervision_codex_reports_the_stop_hook_and_names_the_file(
+    fs, monkeypatch, tmp_path: Path
+) -> None:
+    codex_home = tmp_path / "codex"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    rec = _loop_supervision(fs, monkeypatch, tmp_path, "codex")
+    assert rec["status"] == "warn"
+    hooks = str(codex_home / "hooks.json")
+    assert hooks in rec["remedy"]["description"]
+    assert rec["remedy"]["safety"] == "local-write"
+    assert "--codex-stop-hook" in rec["remedy"]["command"]
+
+    (codex_home / "hooks.json").write_text(
+        json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "rauf hook codex-stop"}]}]}})
+    )
+    rec = _loop_supervision(fs, monkeypatch, tmp_path, "codex")
+    assert rec["status"] == "ok" and rec["evidence"]["stopHookWired"] is True
