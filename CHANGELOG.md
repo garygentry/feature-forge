@@ -84,6 +84,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     package lacks the forge-bootstrap templates' `.gitignore` files, because npm always drops them
     ([#359](https://github.com/garygentry/feature-forge/issues/359)).
 
+### Changed
+
+- **Installer 0.3.10: rauf pin advanced to `@garygentry/rauf@0.18.0`** (was 0.17.1). A fresh
+  `npx @garygentry/feature-forge install` now provisions the loop-supervision rauf release:
+  `rauf loop wait` (bounded wait with a per-item card), enriched `item_completed` events, the
+  `rauf-loop-supervisor` Pi extension in rauf's Pi package, and the `rauf hook codex-stop`
+  Codex Stop hook (rauf #152–#156). Installer-only; the plugin is unchanged and
+  `minRunnerVersion` stays 0.14.0 — feature-forge does not require these surfaces yet (ff
+  #349 adopts them).
+
 ### Fixed
 
 - **CI: `claude plugin validate --strict` failed on the repo root.** Starting with claude 2.1.292, validating a directory also lints it as a plugin, which flags the repo's own development `CLAUDE.md` at the root. `--strict` then fails every PR and `main`. `scripts/validate.sh` now validates `.claude-plugin/marketplace.json` directly. The root holds the marketplace and the source-of-record `plugin.json`; the shipped plugin `adapters/claude` (manifest generated from it) is still strictly validated as a plugin.
