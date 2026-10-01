@@ -4,6 +4,7 @@
  * node:path, node:os only (no shelling out). No throw for expected errors — all return `Result`.
  */
 import * as fsp from "node:fs/promises";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import type { InstallerError, Result } from "./types.js";
@@ -42,6 +43,40 @@ export function resolveWithin(root: string, ...segs: string[]): Result<string> {
     });
   }
   return ok(target);
+}
+
+/**
+ * Resolve lexically within `root`, then reject every existing symbolic-link component from the root
+ * through the target. Placement mirrors can create nested paths, so lexical containment alone is
+ * insufficient: `<root>/skills/forge -> /outside` would otherwise redirect a copy/remove outside the
+ * declared boundary. Missing components are safe to stop at because the apply step creates them.
+ * Call again immediately before mutation to narrow the plan→apply TOCTOU window.
+ */
+export function resolveWithinNoSymlinks(root: string, ...segs: string[]): Result<string> {
+  const resolved = resolveWithin(root, ...segs);
+  if (!resolved.ok) return resolved;
+  const base = path.resolve(root);
+  const rel = path.relative(base, resolved.value);
+  const components = rel === "" ? [] : rel.split(path.sep);
+  let current = base;
+
+  for (let i = 0; i <= components.length; i += 1) {
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) {
+        return err({
+          code: "PATH_ESCAPE",
+          message: `refusing to traverse symbolic link inside placement root: ${current}`,
+          path: current,
+          remedy: "replace the symlink with a real directory/file or choose a different scope",
+        });
+      }
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") break;
+      return err(toWriteError(e, current));
+    }
+    if (i < components.length) current = path.join(current, components[i]!);
+  }
+  return resolved;
 }
 
 /**
