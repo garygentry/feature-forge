@@ -32,6 +32,7 @@ import { ok, err } from "./types.js";
 import { sha256File, sha256String } from "./hash.js";
 import {
   resolveWithin,
+  resolveWithinNoSymlinks,
   symlinkDir,
   removePath,
   removeEmptyDirsWithin,
@@ -319,7 +320,7 @@ async function applySymlinkUninstall(
 
 /**
  * Execute every secondary placement for an install/update and return the inventory to record in the
- * manifest. Each placement is contained to ITS OWN root (`resolveWithin(placement.root, …)`), so a
+ * manifest. Each placement is contained to ITS OWN root without traversing symlink ancestors, so a
  * mirror under `.codex` and a managed block under `.github` never escape their boundary (REQ-SEC-02).
  * Unchanged/skip-modified entries carry their prior recorded hash forward so the manifest stays
  * faithful. Never throws for expected errors.
@@ -345,7 +346,7 @@ async function applyPlacements(
   return ok(out);
 }
 
-/** §A4b mirror: copy/refresh/remove flat files under the second root; record per-file sha256. */
+/** §A4b mirror: copy/refresh/remove flat or recursive files; record each owned leaf sha256. */
 async function applyMirror(
   pl: PlannedPlacement,
   ctx: ApplyContext,
@@ -357,9 +358,10 @@ async function applyMirror(
 
   const writeFile = ctx.writeFileSeam ?? defaultCopyFile;
   const inventory: ManifestFile[] = [];
+  const removedParents = new Set<string>();
 
   for (const fa of pl.files) {
-    const resolved = resolveWithin(pl.root, pl.destination, fa.relpath);
+    const resolved = resolveWithinNoSymlinks(pl.root, pl.destination, fa.relpath);
     if (!resolved.ok) return resolved;
     const destAbs = resolved.value;
 
@@ -381,32 +383,42 @@ async function applyMirror(
       case "remove": {
         const removed = await removePath(destAbs);
         if (!removed.ok) return removed;
+        removedParents.add(path.dirname(destAbs));
         break;
       }
-      case "unchanged":
-      case "skip-modified": {
-        // Carry the prior record forward; if none exists (e.g. a v1→v2 manifest migration where the
-        // file is already on disk), reconstruct it by hashing the destination so the inventory stays
-        // faithful rather than silently dropping an unrecorded-but-present file. Guard the hash: a
-        // TOCTOU vanish (file removed after planning) must yield an err Result, never throw ENOENT
-        // out of apply (REQ-OBS-03 — a throw would abort every sibling agent at the CLI boundary).
+      case "unchanged": {
+        // Equal bytes do not prove ownership. Carry an existing record, but never adopt an identical
+        // pre-existing user/distribution file merely because it matches this source. Still verify the
+        // file survived the plan→apply window so a TOCTOU disappearance fails rather than reporting a
+        // healthy install with a missing native mirror.
         const p = priorByPath.get(fa.relpath);
         if (p !== undefined) {
           inventory.push(p);
         } else {
           try {
-            inventory.push({ path: fa.relpath, sha256: sha256File(destAbs) });
+            sha256File(destAbs);
           } catch {
             return err<InstallerError>({
               code: "UNEXPECTED",
               agent: ctx.agent,
-              message: `mirror file "${fa.relpath}" vanished before it could be recorded (${destAbs})`,
+              message: `mirror file "${fa.relpath}" vanished before it could be verified (${destAbs})`,
             });
           }
         }
         break;
       }
+      case "skip-modified": {
+        // Never claim a pre-existing differing user file. Carry ownership only when a prior manifest
+        // already proves this installer owned the path.
+        const p = priorByPath.get(fa.relpath);
+        if (p !== undefined) inventory.push(p);
+        break;
+      }
     }
+  }
+  for (const parent of [...removedParents].sort((a, b) => b.length - a.length)) {
+    const pruned = await removeEmptyDirsWithin(parent, pl.root);
+    if (!pruned.ok) return pruned;
   }
   return ok({ kind: "mirror", root: pl.root, destination: pl.destination, files: inventory });
 }
@@ -422,7 +434,7 @@ async function applyManagedBlock(
 ): Promise<Result<Placement>> {
   const fa = pl.files[0];
   const basename = fa?.relpath ?? path.basename(pl.destination);
-  const resolved = resolveWithin(pl.root, pl.destination);
+  const resolved = resolveWithinNoSymlinks(pl.root, pl.destination);
   if (!resolved.ok) return resolved;
   const fileAbs = resolved.value;
 
@@ -475,7 +487,7 @@ async function removePlacements(
 ): Promise<Result<void>> {
   for (const pl of placements) {
     if (pl.kind === "managed-block") {
-      const resolved = resolveWithin(pl.root, pl.destination);
+      const resolved = resolveWithinNoSymlinks(pl.root, pl.destination);
       if (!resolved.ok) return resolved;
       const fileAbs = resolved.value;
       let existing: string;
@@ -494,15 +506,19 @@ async function removePlacements(
       }
       continue;
     }
-    // mirror: remove each recorded file, then prune the now-empty destination dir.
+    // mirror: remove each recorded file, then prune its empty recursive parents up to the root.
+    const parents = new Set<string>();
     for (const fa of pl.files) {
-      const resolved = resolveWithin(pl.root, pl.destination, fa.relpath);
+      const resolved = resolveWithinNoSymlinks(pl.root, pl.destination, fa.relpath);
       if (!resolved.ok) return resolved;
       const removed = await removePath(resolved.value);
       if (!removed.ok) return removed;
+      parents.add(path.dirname(resolved.value));
     }
-    const pruned = await removeEmptyDirsWithin(pl.destination, pl.root);
-    if (!pruned.ok) return pruned;
+    for (const parent of [...parents].sort((a, b) => b.length - a.length)) {
+      const pruned = await removeEmptyDirsWithin(parent, pl.root);
+      if (!pruned.ok) return pruned;
+    }
   }
   return ok(undefined);
 }
@@ -576,6 +592,9 @@ function success(ctx: ApplyContext, planned: PlannedAction): AgentReport {
     detected: true,
     ok: true,
     actions: planned.files,
+    ...(planned.placements && planned.placements.length > 0
+      ? { placements: planned.placements }
+      : {}),
     raufPin: ctx.raufPin,
   };
 }
@@ -591,6 +610,9 @@ function fail(
     detected: true,
     ok: false,
     actions: planned.files,
+    ...(planned.placements && planned.placements.length > 0
+      ? { placements: planned.placements }
+      : {}),
     error,
     raufPin: ctx.raufPin,
   };
