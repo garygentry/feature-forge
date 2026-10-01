@@ -30,8 +30,6 @@ import { type LocatedSource } from "./source.js";
 import {
   type ResolvedPlacement,
   selectMirrorFiles,
-  renderCopilotBlock,
-  wrapBlock,
   extractManagedRegion,
 } from "./placements.js";
 import { planUninstall } from "./manifest.js";
@@ -58,8 +56,12 @@ export interface PlanContext {
   readonly priorPlacements?: readonly Placement[];
   /** `--force`: overwrite `skip-modified` destinations instead of skipping. */
   readonly force: boolean;
-  /** Cross-root migration rewrites equal untracked primary files before claiming ownership. */
-  readonly claimUntrackedPrimary?: boolean;
+  /**
+   * Migration only: rewrite byte-equal but untracked primary and mirror files, then record them. A
+   * migration interrupted after apply (e.g. the final manifest write failed) leaves the new layout
+   * on disk unrecorded; without this the retry would never own it and uninstall would strand it.
+   */
+  readonly claimUntrackedEqual?: boolean;
   /** The pinned rauf coordinate to surface on the plan (06); the planner only echoes it. */
   readonly raufPin?: string | null;
   /**
@@ -214,7 +216,14 @@ function planPlacements(ctx: PlanContext, withOrphans: boolean): Result<PlannedP
       if (!mirror.ok) return mirror;
       planned.push(mirror.value);
     } else {
-      planned.push(planManagedBlock(ctx, rp, source, priorByDest.get(rp.destination) ?? null));
+      // The Copilot managed instruction block is retired: migration may plan its removal
+      // (planManagedBlockRemoval), but no target may ever create one again.
+      return err({
+        code: "UNEXPECTED",
+        agent: ctx.agent,
+        message: `managed-block placements are removal-only; refusing to create ${rp.destination}`,
+        path: rp.destination,
+      });
     }
   }
   return ok(planned);
@@ -260,7 +269,10 @@ function planMirror(
     if (!resolved.ok) return resolved;
     const destHash = hashIfExists(resolved.value);
     const manifestHash = recorded.get(mf.destRelpath)?.sha256;
-    const action = classifyFile(mf.destRelpath, mf.srcHash, destHash, manifestHash, ctx.force);
+    const classified = classifyFile(mf.destRelpath, mf.srcHash, destHash, manifestHash, ctx.force);
+    const action = ctx.claimUntrackedEqual && manifestHash === undefined && classified === "unchanged"
+      ? "overwrite"
+      : classified;
     files.push({ relpath: mf.destRelpath, action, srcRelpath: mf.srcRelpath });
   }
 
@@ -273,43 +285,6 @@ function planMirror(
     }
   }
   return ok({ kind: "mirror", root: rp.root, destination: rp.destination, files });
-}
-
-/** Diff a "managed-block" placement: render the block, compare its region to the on-disk region. */
-function planManagedBlock(
-  ctx: PlanContext,
-  rp: ResolvedPlacement,
-  source: LocatedSource,
-  prior: Placement | null,
-): PlannedPlacement {
-  // Name the runtime relative to the scope root the block sits under (`<scope>/.github/…`):
-  // `.github/feature-forge` for a project, `~/.copilot/feature-forge` for a personal install.
-  const runtimeRel = path.relative(path.dirname(rp.root), ctx.destination).split(path.sep).join("/");
-  const runtimeDir = ctx.scope === "global" ? `~/${runtimeRel}` : runtimeRel;
-  const blockContent = renderCopilotBlock(source.skills, runtimeDir);
-  const newHash = sha256String(wrapBlock(blockContent));
-  const basename = path.basename(rp.destination);
-
-  const current = readManagedRegionHash(rp.destination);
-  const recordedHash = prior?.files.find((f) => f.path === basename)?.sha256;
-
-  let action: FileActionKind;
-  if (current === undefined) {
-    action = "create"; // no managed region present yet
-  } else if (current === newHash) {
-    action = "unchanged";
-  } else {
-    const clean = recordedHash !== undefined && current === recordedHash;
-    action = clean ? "overwrite" : ctx.force ? "overwrite" : "skip-modified";
-  }
-
-  return {
-    kind: "managed-block",
-    root: rp.root,
-    destination: rp.destination,
-    files: [{ relpath: basename, action }],
-    blockContent,
-  };
 }
 
 /**
@@ -363,17 +338,21 @@ function readManagedRegionState(file: string): ManagedRegionState {
     : { kind: "absent" };
 }
 
-/** Hash of a well-formed managed region, or undefined when absent/conflicted. */
-function readManagedRegionHash(file: string): string | undefined {
-  const state = readManagedRegionState(file);
-  return state.kind === "hash" ? state.hash : undefined;
-}
-
 /** Copy-mode per-file diff (spec 04 §6). `ctx.source` is non-null here. */
 function planCopy(ctx: PlanContext, withOrphans: boolean): FileAction[] {
   const source = ctx.source as LocatedSource;
   const manifestByPath = new Map<string, ManifestFile>();
   for (const f of ctx.priorManifest?.files ?? []) manifestByPath.set(f.path, f);
+
+  // A symlink-mode primary switching to copy: hashing or writing under the link would follow it into
+  // the link target (an npx cache or a source checkout). Unlink it first (`remove .`), never record
+  // or remove anything through it, and copy every source file fresh.
+  if (isLiveSymlink(ctx.destination) && isSymlinkManifest(ctx.priorManifest)) {
+    return [
+      { relpath: ".", action: "remove" },
+      ...source.files.map((sf) => ({ relpath: sf.relpath, action: "create" as const })),
+    ];
+  }
 
   const actions: FileAction[] = [];
   for (const sf of source.files) {
@@ -381,7 +360,7 @@ function planCopy(ctx: PlanContext, withOrphans: boolean): FileAction[] {
     const destHash = hashIfExists(destAbs);
     const manifestHash = manifestByPath.get(sf.relpath)?.sha256;
     const classified = classifyFile(sf.relpath, sf.sha256, destHash, manifestHash, ctx.force);
-    const kind = ctx.claimUntrackedPrimary && manifestHash === undefined && classified === "unchanged"
+    const kind = ctx.claimUntrackedEqual && manifestHash === undefined && classified === "unchanged"
       ? "overwrite"
       : classified;
     actions.push({ relpath: sf.relpath, action: kind });
@@ -412,10 +391,15 @@ function planSymlink(ctx: PlanContext): FileAction[] {
     return [{ relpath: ".", action: "create" }];
   }
 
+  // A link that still points exactly where the manifest recorded is provably ours; relinking it to a
+  // new source (every npx upgrade changes the cache path) is an update, not a local modification.
+  const recordedLinkIntact = priorExists && prior.link !== undefined
+    && readLinkIfSymlink(ctx.destination) === prior.link.target;
+
   const action: FileActionKind = manifestSaysLive
     ? "unchanged"
     : priorExists
-      ? ctx.force
+      ? ctx.force || recordedLinkIntact
         ? "overwrite"
         : "skip-modified"
       : "create";
@@ -423,11 +407,25 @@ function planSymlink(ctx: PlanContext): FileAction[] {
   return [{ relpath: ".", action }];
 }
 
+/** The target of the symbolic link at `absPath`, or undefined when it is absent or not a link. */
+function readLinkIfSymlink(absPath: string): string | undefined {
+  try {
+    return fs.lstatSync(absPath).isSymbolicLink() ? fs.readlinkSync(absPath) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** True iff the prior manifest records a whole-destination symlink install. */
+export function isSymlinkManifest(m: InstallManifest | null): boolean {
+  return m !== null && (m.mode === "symlink" || m.link !== undefined);
+}
+
 /**
  * True iff `absPath` exists and is currently a symbolic link. `lstat`, not `readlink` — we only need
  * the node type to decide whether a manifest-recorded symlink is still live (F2). Absent ⇒ false.
  */
-function isLiveSymlink(absPath: string): boolean {
+export function isLiveSymlink(absPath: string): boolean {
   try {
     return fs.lstatSync(absPath).isSymbolicLink();
   } catch {
