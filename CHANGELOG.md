@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Installer 0.3.10: rauf pin advanced to `@garygentry/rauf@0.18.0`** (was 0.17.1). A fresh
+  `npx @garygentry/feature-forge install` now provisions the loop-supervision rauf release:
+  `rauf loop wait` (bounded wait with a per-item card), enriched `item_completed` events, the
+  `rauf-loop-supervisor` Pi extension in rauf's Pi package, and the `rauf hook codex-stop`
+  Codex Stop hook (rauf #152–#156). Installer-only; the plugin is unchanged and
+  `minRunnerVersion` stays 0.14.0 — feature-forge does not require these surfaces yet (ff
+  #349 adopts them).
+
 ## [0.21.0] — 2026-09-30
 
 ### Upgrade notes
