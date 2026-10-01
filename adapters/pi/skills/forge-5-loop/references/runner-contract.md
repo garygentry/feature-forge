@@ -107,7 +107,7 @@ for the whole run (hours) and hits the shell tool's timeout.
 > guard is a no-op. **Surface a one-line note** when you set it — e.g. *"running as root →
 > setting IS_SANDBOX=1 so the sandboxed runner can use --dangerously-skip-permissions"* —
 > so the behavior is never silent. `forge-session.py doctor` also reports this condition.
-> Both launch commands below already carry the guard.
+> The launch commands below already carry the guard.
 
 **On Pi, launch with the `rauf_loop_launch` tool** from rauf's Pi package (rauf ≥ 0.18.0,
 `pi install npm:@garygentry/rauf`). Pass `backlogDir`, plus `iterations`, `agent` and
@@ -121,8 +121,20 @@ the loop in the foreground, behind `nohup`/`setsid`/`&`, or in a subagent: the s
 blocks those calls, and they would tie up or escape the session.
 
 If the `rauf_loop_*` tools are **not registered** (rauf's Pi package is not loaded —
-`forge-session.py doctor` warns), launch as below for other hosts and supervise with the
+`forge-session.py doctor` warns), launch detached as below and supervise with the
 `loop wait` recipe instead.
+**Launch the loop detached** so it runs in rauf's server and returns at once:
+
+```
+mkdir -p {backlogDir}/{loopRunner.stateDir} && { [ "$(id -u)" = 0 ] && export IS_SANDBOX="${IS_SANDBOX:-1}" || true; } && {rendered runCommand} --detached
+```
+
+It prints a `Wait:` line — the `loop wait … --since-seq N --run-id R` to start supervising
+from (Step 3d); keep it. Do not redirect its output into `{loopRunner.stateDir}`: rauf writes
+and rotates `{stateDir}/events.ndjson` itself. A non-rauf runner with no detached mode: run
+`{rendered eventStreamCommand}` with stdout redirected to `{backlogDir}/forge-events.ndjson`
+(outside `{stateDir}`) in your host's background facility; if your host has none, tell the
+user the run will block this session before starting it.
 
 ## Supervise the run (Step 3d)
 
@@ -272,8 +284,11 @@ not a fresh loop. So when Step 4a or Step 2a sees `reviewPending: true`:
    usage-limit stop (`PAUSED_USAGE_LIMIT` / `WEEKLY_LIMIT`), say the resume only helps
    once the limit resets (`sleepUntil`). A stop the user requested (`PAUSED`, lock
    released) is theirs: offer, never auto-resume.
-3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` backgrounded, exactly as a
-   run command (Step 3b launch guards, 3d supervision, 3f completion), then return to Step 4a.
+3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` exactly as Step 3b launches a
+   run command for this host — with its launch guards; backgrounded on Claude, with
+   `--detached` elsewhere (on Pi via bash, which the supervisor attaches to; the detached
+   launch prints the `Wait:` cursor) — and supervise it per Step 3d to its Step 3f completion,
+   then return to Step 4a.
    A successful review may file fix items (`review_completed.itemsCreated`); those are
    ordinary pending work for the next loop run. rauf reviews **before** relaunching: when
    pending items also remain (the review ran after the iteration budget ran out, or
@@ -298,7 +313,7 @@ prior run closed as `partial` with `--cause runner-stopped` (or the plain iterat
 2. Via `AskUserQuestion`, offer **Resume the runner (recommended)** · **Stop here**. For a
    usage halt, the resume helps only once the limit resets; for `PAUSED` on request
    (lock released), the stop was the user's — offer, never auto-resume.
-3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` backgrounded exactly as in
+3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` exactly as in
    **Pending review** step 3 (it clears a stale lock and finishes the run's bookkeeping,
    including any post-loop review), then continue at Step 4a. rauf's recovery for
    `ERROR` is `resume` or `reset` + re-run — never reach for `reset` or `--force` first.

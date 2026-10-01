@@ -140,6 +140,10 @@ def test_pi_forge_5_loop_supervises_via_rauf_pi_tools() -> None:
     for tool in ("rauf_loop_launch", "rauf_loop_status", "rauf_loop_stop"):
         assert tool in skill, f"Pi forge-5-loop host notes must name {tool!r}"
     assert "rauf_loop_launch" in contract.split("## Launch detail (Step 3b)", 1)[1]
+    # The no-package fallback must carry a real launch (review of #351): the detached
+    # command with the state-dir + IS_SANDBOX guards, not a pointer to a stripped block.
+    launch = contract.split("## Launch detail (Step 3b)", 1)[1].split("## Supervise the run", 1)[0]
+    assert "{rendered runCommand} --detached" in launch and "IS_SANDBOX" in launch
     assert "## Supervise the run (Step 3d)" in contract
     assert "end your turn" in contract, "Pi must be told to end its turn after the launch"
     assert "loop wait" in contract, "Pi keeps the wait-loop fallback for a missing package"

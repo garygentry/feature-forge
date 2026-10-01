@@ -206,7 +206,7 @@ Step 4 is reached when the run has ended; Step 3d of `references/runner-contract
 
 ## Step 4: Check Results
 
-When the background process completes (its exit notification):
+When the run has ended (Step 3f):
 
 ### 4a. Get Final Backlog State
 

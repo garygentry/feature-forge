@@ -82,6 +82,23 @@ test("--yes alone, --dry-run, and non-codex installs never write it", async () =
   });
 });
 
+test("a requested hook that cannot be written fails the run; unrequested, the bad file is named", async () => {
+  await withSandbox(async (sb) => {
+    await codexSandbox(sb);
+    await mkdir(join(sb.home, ".codex"), { recursive: true });
+    await writeFile(hooksPath(sb), "{not json");
+    const plain = await runCli2(["install", "-a", "codex", "--source", sb.source], sb);
+    assert.equal(plain.exitCode, EXIT.SUCCESS);
+    assert.equal(plain.codexStopHook?.status, "not-offered");
+    assert.match(plain.codexStopHook?.message ?? "", /not valid JSON/);
+
+    const flagged = await runCli2(["update", "-a", "codex", "--source", sb.source, "--codex-stop-hook"], sb);
+    assert.equal(flagged.codexStopHook?.status, "failed");
+    assert.equal(flagged.exitCode, EXIT.FAILURE);
+    assert.equal(await readFile(hooksPath(sb), "utf8"), "{not json");
+  });
+});
+
 test("a malformed hooks.json is reported, never overwritten", async () => {
   await withSandbox(async (sb) => {
     await mkdir(join(sb.home, ".codex"), { recursive: true });
