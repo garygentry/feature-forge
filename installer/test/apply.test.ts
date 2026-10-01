@@ -217,7 +217,7 @@ test("migration: new-file failure preserves legacy cleanup; final-manifest failu
 
     const retry = planInstall({
       agent: "copilot", scope: "project", mode: "copy", destination: ctx.destination,
-      source: src, priorManifest: null, force: false, claimUntrackedEqual: true,
+      source: src, priorManifest: null, force: false, claimUntrackedPrimary: true,
       raufPin: ctx.raufPin,
     });
     assert.ok(retry.ok);

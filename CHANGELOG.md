@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`update` no longer writes into the target of a symlink install (#325 F4).** Running `update` without `--symlink` over a `--symlink` install hashed and copied files through the link, into the npx cache or source checkout it pointed at, and a later `uninstall` deleted files there. The link is now unlinked first and the runtime copied fresh; if the copy fails, the link is restored. `update --symlink` now relinks when the link still points where the manifest recorded, so an upgrade to a new npx cache path no longer needs `--force`. A link that points elsewhere is still left alone.
 
-- **An interrupted Copilot migration no longer strands its mirrors (#325 F4).** If the final manifest write failed, the retry found the mirrors it had already written byte-identical but unrecorded, so it never took ownership and `uninstall` left them behind. During a migration the retry now rewrites and records them.
+- **An interrupted Copilot migration no longer strands its mirrors (#325 F4).** If the final manifest write failed, the retry found the mirrors it had already written byte-identical but unrecorded, so it never took ownership and `uninstall` left them behind. A migration now journals the files it is about to write (`<manifest>.migrating`, written before any change; the update fails untouched if it cannot be). A retry claims only the journaled files, so a byte-identical file a user placed is never adopted. The journal is deleted when the new manifest commits.
 
 ## [0.21.0] — 2026-09-30
 
