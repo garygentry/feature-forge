@@ -12,7 +12,7 @@ the write if it would introduce a cycle, dangling ref, duplicate, or schema viol
 flag surface (owned by 02 §7):
 
 ```bash
-R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
+R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; [ -z "${FEATURE_FORGE_ROOT:-}" ] || exec "$FEATURE_FORGE_ROOT/scripts/forge-root.sh"; w=$PWD; while :; do d="$PWD/.github/feature-forge"; [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; [ "$PWD" = / ] && break; cd .. || break; done; for d in "$HOME"/.copilot/installed-plugins/*/feature-forge "$HOME"/.copilot/feature-forge "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge "$w"/.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
 # Add a feature — seeds EMPTY exposes/consumes; contracts are populated below.
 python3 "$R/scripts/epic-manifest.py" add-feature "{epic}" "{feature}" \
