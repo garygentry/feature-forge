@@ -36,8 +36,8 @@ Output — always `{case, verified, stale, message, nextCommand}`:
   "case": "findings-applied",
   "verified": false,
   "stale": true,
-  "message": "Fixes were applied to auth's forge-4-backlog but nothing re-verified them; re-verification is still outstanding — run forge-verify auth backlog.",
-  "nextCommand": "forge-verify auth backlog"
+  "message": "Fixes were applied to auth's forge-4-backlog but nothing re-verified them; re-verification is still outstanding — run invoke-skill: forge-verify auth backlog.",
+  "nextCommand": "invoke-skill: forge-verify auth backlog"
 }
 ```
 

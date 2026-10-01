@@ -135,7 +135,7 @@ class StageExitDirectives(TypedDict, total=False):
     terminalOwnedBy: Literal["self", "outer"]
     # Feature (or epic) name this exit concerns. Always present.
     feature: str
-    # Resolved host: "claude", "pi", or "generic". Selects command syntax and
+    # Resolved host: "claude", "copilot", "pi", or "generic". Selects command syntax and
     # fresh-session wording; never inferred downstream, always decided here.
     host: str
     # Whether the host may dispatch a clean-room verifier subagent —
@@ -1453,7 +1453,7 @@ NEXT_STEPS_SENTINEL: Final = "─ forge: end of stage ─"
 
 #: The `--host` domain: command syntax and fresh-session wording only. A host NEVER
 #: implies a verification capability (REQ-EXIT-07).
-EXIT_HOSTS: Final[tuple[str, ...]] = ("claude", "generic", "pi")
+EXIT_HOSTS: Final[tuple[str, ...]] = ("claude", "copilot", "generic", "pi")
 
 #: Stage id -> the noun phrase gate wording uses (the old {stage} stamp slot).
 STAGE_NOUN: Final[dict[str, str]] = {

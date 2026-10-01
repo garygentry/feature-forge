@@ -207,6 +207,38 @@ def _surface_text(target: str) -> list[tuple[Path, str]]:
     return [(p, p.read_text(encoding="utf-8")) for p in _scan_paths(target)]
 
 
+#: Heading of the Copilot overlay (build-adapters.py `_COPILOT_OVERLAY_HEADING`).
+_COPILOT_OVERLAY_HEADING = "## Host execution notes (GitHub Copilot)"
+
+
+def test_copilot_invocation_prose_is_distribution_aware() -> None:
+    """#325 F1: only the overlay names concrete plugin/direct slash forms for Copilot.
+
+    Copilot plugin installs prefix skills (`/feature-forge:<name>`) while direct
+    project/personal installs do not (`/<name>`), so the bundle's guidance uses
+    `invoke-skill:` notation everywhere and every skill body carries the overlay that
+    maps it to both forms. Custom-agent files are scanned too (descriptions included).
+    """
+    paths = _scan_paths("copilot")
+    agents = sorted((ADAPTERS_ROOT / "copilot" / "agents").glob("*.agent.md"))
+    assert paths and agents, "committed Copilot adapter surface is incomplete"
+
+    for path in (*paths, *agents):
+        rel = path.relative_to(ADAPTERS_ROOT / "copilot")
+        guidance = path.read_text(encoding="utf-8").split(_COPILOT_OVERLAY_HEADING, 1)[0]
+        assert "/feature-forge:" not in guidance, (
+            f"{rel} assumes the plugin-only slash prefix outside the distribution overlay"
+        )
+
+    skill_bodies = [p for p in paths if p.name == "SKILL.md"]
+    assert skill_bodies, "no Copilot SKILL.md found — the overlay check would be vacuous"
+    for path in skill_bodies:
+        text = path.read_text(encoding="utf-8")
+        assert "`/feature-forge:<name> [arguments]`" in text
+        assert "`/<name> [arguments]`" in text
+        assert "No universal slash name" in text
+
+
 @pytest.mark.parametrize("target", NON_CLAUDE_TARGETS)
 def test_no_claude_slash_command_prefix_in_non_claude_bundles(target: str) -> None:
     """#265 F1 / #270 P1.1 — no `/feature-forge:` on the reading surface of non-Claude bundles.
@@ -225,11 +257,15 @@ def test_no_claude_slash_command_prefix_in_non_claude_bundles(target: str) -> No
     substituting them with the empty string would corrupt `str.replace(...)` /
     `.startswith(...)` / slice-length code in those helpers. Runtime output on
     `--host generic` for those helpers is tracked separately.
+
+    Copilot (#325 F1) degrades the prefix to `invoke-skill: ` notation instead, and
+    its host overlay is the ONE place that names the concrete plugin form
+    (`/feature-forge:<name>`), so the scan stops at the overlay heading there.
     """
     hits = [
-        (path, text.count("/feature-forge:"))
+        (path, guidance.count("/feature-forge:"))
         for path, text in _surface_text(target)
-        if "/feature-forge:" in text
+        if "/feature-forge:" in (guidance := text.split(_COPILOT_OVERLAY_HEADING, 1)[0])
     ]
     total = sum(n for _, n in hits)
     assert total == 0, (
@@ -380,7 +416,9 @@ def test_root_hygiene_template_ships_untranslated(target: str, filename: str) ->
 
     Per-host substitutes (must match `_HOST_COMMAND_PREFIX` in build-adapters.py):
       - Pi: `/feature-forge:` → `/skill:` (Pi's real slash-command surface).
-      - codex/copilot/cursor/gemini (#270 P1.1): `/feature-forge:` → bare skill name;
+      - Copilot (#325 F1): `/feature-forge:` → `invoke-skill: ` notation (the wildcard
+        form still degrades to `` `forge-*` skills ``).
+      - codex/cursor/gemini (#270 P1.1): `/feature-forge:` → bare skill name;
         a template landing on those hosts should not name a Claude slash-command that
         does not exist there.
       - Claude: verbatim.
@@ -399,6 +437,10 @@ def test_root_hygiene_template_ships_untranslated(target: str, filename: str) ->
     # prefix between every char). Any OTHER divergence still fails.
     if target == "pi":
         expected = canon_text.replace("/feature-forge:", "/skill:")
+    elif target == "copilot":
+        expected = canon_text.replace(
+            "`/feature-forge:*`", "`forge-*` skills"
+        ).replace("/feature-forge:", "invoke-skill: ")
     elif target in NON_CLAUDE_TARGETS:  # empty per-host substitute
         expected = canon_text.replace(
             "`/feature-forge:*`", "`forge-*` skills"
