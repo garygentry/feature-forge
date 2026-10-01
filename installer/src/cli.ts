@@ -13,7 +13,7 @@
 
 import { parseArgs } from "node:util";
 import process from "node:process";
-import { readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import * as path from "node:path";
 import {
@@ -235,6 +235,8 @@ export interface CliEnv {
   readonly registry?: RegistryQuery;
   /** Forced platform for the copy/symlink mode decision (REQ-FLAG-03); default = process.platform. */
   readonly platform?: NodeJS.Platform;
+  /** Test seam: replaces the final manifest write (simulates an interrupted migration). */
+  readonly writeManifestSeam?: ApplyContext["writeManifestSeam"];
 }
 
 /**
@@ -442,6 +444,50 @@ function readLegacyCopilotGlobal(env: CliEnv): Result<LegacyCopilotGlobal | null
   return ok({ manifest: read.value, manifestPath: legacyPath, root });
 }
 
+/** Paths journaled by an interrupted migration; a missing or unreadable journal claims nothing. */
+function readMigrationJournal(file: string): ReadonlySet<string> {
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as { paths?: unknown };
+    return new Set(Array.isArray(parsed.paths) ? parsed.paths.filter((p): p is string => typeof p === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Record (merged with any earlier journal) every primary and mirror file this migration will write.
+ * Written before the first write, so failing here leaves the install untouched.
+ */
+function writeMigrationJournal(
+  file: string,
+  planned: PlannedAction,
+  destination: string,
+  mode: Mode,
+): Result<void> {
+  const writes = (a: { action: string }) => a.action === "create" || a.action === "overwrite";
+  const paths = new Set(readMigrationJournal(file));
+  if (mode === "copy") {
+    for (const f of planned.files) if (writes(f) && f.relpath !== ".") paths.add(path.join(destination, f.relpath));
+  }
+  for (const p of planned.placements ?? []) {
+    if (p.kind !== "mirror" || (p.retention ?? "always") !== "always") continue;
+    for (const f of p.files) if (writes(f)) paths.add(path.join(p.destination, f.relpath));
+  }
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, `${JSON.stringify({ paths: [...paths].sort() }, null, 2)}\n`, "utf8");
+    return ok(undefined);
+  } catch (e) {
+    return err({
+      code: "WRITE_DENIED",
+      agent: "copilot",
+      message: `cannot record the migration journal at ${file}: ${(e as Error).message}`,
+      path: file,
+      remedy: `ensure you can write to ${path.dirname(file)}, then re-run the update`,
+    });
+  }
+}
+
 /** Uninstall plan for a Copilot manifest: a retired managed block is removed only if unedited. */
 function planCopilotUninstall(
   manifest: InstallManifest,
@@ -608,6 +654,7 @@ async function runOneAgent(
 
   const prior = readManifest(mpath);
   if (!prior.ok) return failed(agent, detection.detected, prior.error);
+  const journalPath = `${mpath}.migrating`;
   const migration = agent === "copilot"
     ? prepareCopilotMigration(scope, prior.value, flags.force, env, detection.destination)
     : ok<CopilotMigrationState>({
@@ -626,7 +673,8 @@ async function runOneAgent(
       ? { priorPlacements: migration.value.inheritedPlacements }
       : {}),
     force: flags.force,
-    ...(migration.value.migrating ? { claimUntrackedEqual: true } : {}),
+    ...(migration.value.legacy !== null ? { claimUntrackedPrimary: true } : {}),
+    ...(migration.value.migrating ? { claimablePaths: readMigrationJournal(journalPath) } : {}),
     raufPin,
     // A4b: resolve any second-root placements for this agent under the active scope (codex
     // `.codex/agents`, copilot `skills/` + `agents/` mirrors); empty for the rest.
@@ -651,6 +699,13 @@ async function runOneAgent(
         placements: [...(planned.value.placements ?? []), ...migration.value.cleanup],
       };
 
+  // Journal what this migration is about to write before writing anything, so an interrupted run's
+  // retry can claim exactly those files (and nothing a user placed) once they exist unrecorded.
+  if (migration.value.migrating && !flags.dryRun) {
+    const journaled = writeMigrationJournal(journalPath, plannedValue, detection.destination, mode);
+    if (!journaled.ok) return failed(agent, detection.detected, journaled.error);
+  }
+
   const ctx: ApplyContext = {
     agent,
     scope,
@@ -671,6 +726,8 @@ async function runOneAgent(
     ...(migration.value.legacyManifestPath !== undefined && migration.value.legacy !== null
       ? { supersededManifestPath: migration.value.legacyManifestPath }
       : {}),
+    ...(migration.value.migrating ? { migrationJournalPath: journalPath } : {}),
+    ...(env.writeManifestSeam ? { writeManifestSeam: env.writeManifestSeam } : {}),
   };
   return finishAgent(agent, detection.detected, plannedValue, flags, raufPin, ctx);
 }

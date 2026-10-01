@@ -56,12 +56,13 @@ export interface PlanContext {
   readonly priorPlacements?: readonly Placement[];
   /** `--force`: overwrite `skip-modified` destinations instead of skipping. */
   readonly force: boolean;
+  /** Cross-root migration rewrites equal untracked primary files before claiming ownership. */
+  readonly claimUntrackedPrimary?: boolean;
   /**
-   * Migration only: rewrite byte-equal but untracked primary and mirror files, then record them. A
-   * migration interrupted after apply (e.g. the final manifest write failed) leaves the new layout
-   * on disk unrecorded; without this the retry would never own it and uninstall would strand it.
+   * Absolute paths an interrupted migration journaled before writing them. A retry rewrites and
+   * records these when they are byte-equal but untracked; equal bytes alone never prove ownership.
    */
-  readonly claimUntrackedEqual?: boolean;
+  readonly claimablePaths?: ReadonlySet<string>;
   /** The pinned rauf coordinate to surface on the plan (06); the planner only echoes it. */
   readonly raufPin?: string | null;
   /**
@@ -270,7 +271,7 @@ function planMirror(
     const destHash = hashIfExists(resolved.value);
     const manifestHash = recorded.get(mf.destRelpath)?.sha256;
     const classified = classifyFile(mf.destRelpath, mf.srcHash, destHash, manifestHash, ctx.force);
-    const action = ctx.claimUntrackedEqual && manifestHash === undefined && classified === "unchanged"
+    const action = ctx.claimablePaths?.has(resolved.value) && manifestHash === undefined && classified === "unchanged"
       ? "overwrite"
       : classified;
     files.push({ relpath: mf.destRelpath, action, srcRelpath: mf.srcRelpath });
@@ -360,7 +361,8 @@ function planCopy(ctx: PlanContext, withOrphans: boolean): FileAction[] {
     const destHash = hashIfExists(destAbs);
     const manifestHash = manifestByPath.get(sf.relpath)?.sha256;
     const classified = classifyFile(sf.relpath, sf.sha256, destHash, manifestHash, ctx.force);
-    const kind = ctx.claimUntrackedEqual && manifestHash === undefined && classified === "unchanged"
+    const claimable = ctx.claimUntrackedPrimary || ctx.claimablePaths?.has(destAbs);
+    const kind = claimable && manifestHash === undefined && classified === "unchanged"
       ? "overwrite"
       : classified;
     actions.push({ relpath: sf.relpath, action: kind });

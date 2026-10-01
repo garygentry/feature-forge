@@ -129,34 +129,64 @@ for (const scope of ["project", "global"] as const) {
     });
   });
 
-  test(`0.3.9 ${scope} migration interrupted at the final manifest write is owned in full by the retry`, { skip: isWindows() || process.getuid?.() === 0 }, async () => {
+  test(`0.3.9 ${scope} migration that cannot journal its intent fails before any write`, { skip: isWindows() || process.getuid?.() === 0 }, async () => {
     await withSandbox(async (sb) => {
       await setup(sb, scope, "copy");
       const root = nativeRoot(sb, scope);
-      for (const d of ["skills", "agents", "feature-forge"]) await mkdir(join(root, d), { recursive: true });
-      const args = ["-a", "copilot", ...scopeFlag(scope), "--source", sb.source];
-      await chmod(root, 0o555); // subdirs stay writable; only the manifest write is denied
+      await mkdir(root, { recursive: true });
+      const before = [...await snapshotTree(sb.home), ...await snapshotTree(sb.cwd)];
+      await chmod(root, 0o555);
       let failed;
       try {
-        failed = await runCli2(["update", ...args], sb);
+        failed = await runCli2(["update", "-a", "copilot", ...scopeFlag(scope), "--source", sb.source], sb);
       } finally {
         await chmod(root, 0o755);
       }
+      assert.equal(failed.exitCode, EXIT.FAILURE);
+      assert.deepEqual([...await snapshotTree(sb.home), ...await snapshotTree(sb.cwd)], before);
+    });
+  });
+
+  test(`0.3.9 ${scope} migration interrupted at the final manifest write is owned in full by the retry`, async () => {
+    await withSandbox(async (sb) => {
+      await setup(sb, scope, "copy");
+      const root = nativeRoot(sb, scope);
+      const args = ["-a", "copilot", ...scopeFlag(scope), "--source", sb.source];
+      const failed = await runCli2(["update", ...args], sb, {
+        writeManifestSeam: () => ({ ok: false, error: { code: "WRITE_DENIED", message: "interrupted" } }),
+      });
       assert.equal(failed.exitCode, EXIT.FAILURE);
       assert.ok(await exists(join(root, "skills/forge/SKILL.md")), "the new layout was applied before the manifest");
 
       const retry = await runCli2(["update", ...args], sb);
       assert.equal(retry.exitCode, EXIT.SUCCESS, JSON.stringify(retry.agents[0]!.error));
-      const mf = JSON.parse(await readFile(join(root, `.feature-forge.${scope}.json`), "utf8"));
+      const manifest = join(root, `.feature-forge.${scope}.json`);
+      const mf = JSON.parse(await readFile(manifest, "utf8"));
       const recorded = mf.placements.filter((p: { kind: string }) => p.kind === "mirror")
         .flatMap((p: { files: { path: string }[] }) => p.files.map((f) => f.path));
       assert.ok(recorded.includes("forge/SKILL.md") && recorded.includes("forge-verifier.agent.md"), recorded.join(","));
+      assert.ok(mf.files.some((f: { path: string }) => f.path === "skills/forge/SKILL.md"));
+      assert.equal(await exists(`${manifest}.migrating`), false, "journal removed once the manifest commits");
       const again = await runCli2(["update", ...args], sb);
       assert.ok(again.agents[0]!.placements!.every((p) => p.files.every((f) => f.action === "unchanged")));
 
       assert.equal((await runCli2(["uninstall", ...args], sb)).exitCode, EXIT.SUCCESS);
       const base = scope === "global" ? "~" : ".";
       assert.deepEqual(await leftovers(sb), [`${base}/.github/copilot-instructions.md`]);
+    });
+  });
+
+  test(`0.3.9 ${scope} migration never claims a byte-identical file the user already placed`, async () => {
+    await withSandbox(async (sb) => {
+      await setup(sb, scope, "copy");
+      const root = nativeRoot(sb, scope);
+      const committed = join(root, "skills/forge/SKILL.md");
+      await mkdir(join(root, "skills/forge"), { recursive: true });
+      await writeFile(committed, await readFile(join(sb.source, "copilot/skills/forge/SKILL.md")));
+      const args = ["-a", "copilot", ...scopeFlag(scope), "--source", sb.source];
+      assert.equal((await runCli2(["update", ...args], sb)).exitCode, EXIT.SUCCESS);
+      assert.equal((await runCli2(["uninstall", ...args], sb)).exitCode, EXIT.SUCCESS);
+      assert.ok(await exists(committed), "a pre-existing equal file is not ours to delete");
     });
   });
 }
@@ -277,5 +307,26 @@ test("update --symlink relinks a link that still points at its recorded target",
     const kept = await runCli2(["update", "-a", "claude", "--symlink", "--source", sb.source], sb);
     assert.deepEqual(kept.agents[0]!.actions, [{ relpath: ".", action: "skip-modified" }]);
     assert.equal(await readlink(dest), theirs);
+  });
+});
+
+test("update --symlink keeps a user directory that replaced a stale link instead of failing", { skip: isWindows() }, async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "claude", ["forge-1-prd"]);
+    await seedConfigDir(sb, "claude", "project");
+    await runCli2(["install", "-a", "claude", "--symlink", "--source", sb.source], sb);
+    const dest = join(sb.cwd, ".claude/skills/feature-forge");
+    const mfPath = join(sb.cwd, ".claude/skills/.feature-forge.project.json");
+    const mf = JSON.parse(await readFile(mfPath, "utf8"));
+    mf.link = { target: join(sb.home, "old-npx-cache") };
+    await writeFile(mfPath, JSON.stringify(mf));
+    await rm(dest);
+    await mkdir(dest, { recursive: true });
+    await writeFile(join(dest, "mine.md"), "mine\n");
+
+    const r = await runCli2(["update", "-a", "claude", "--symlink", "--source", sb.source], sb);
+    assert.equal(r.exitCode, EXIT.SUCCESS, JSON.stringify(r.agents[0]!.error));
+    assert.deepEqual(r.agents[0]!.actions, [{ relpath: ".", action: "skip-modified" }]);
+    assert.equal(await readFile(join(dest, "mine.md"), "utf8"), "mine\n");
   });
 });

@@ -77,6 +77,8 @@ export interface ApplyContext {
   readonly supersededManifestPath?: string;
   /** Injectable final-manifest seam for deterministic write-last failure tests. */
   readonly writeManifestSeam?: typeof writeManifest;
+  /** Migration intent journal, deleted once the new manifest has committed. */
+  readonly migrationJournalPath?: string;
   /** Injectable symlink seam for deterministic runtime copy-fallback verification tests. */
   readonly symlinkDirSeam?: typeof symlinkDir;
 }
@@ -267,10 +269,8 @@ async function applyCopyFiles(
   });
   const wrote = (ctx.writeManifestSeam ?? writeManifest)(ctx.manifestPath, manifest);
   if (!wrote.ok) return fail(ctx, planned, wrote.error);
-  if (ctx.supersededManifestPath !== undefined && ctx.supersededManifestPath !== ctx.manifestPath) {
-    const removed = await removePath(ctx.supersededManifestPath);
-    if (!removed.ok) return fail(ctx, planned, removed.error);
-  }
+  const finished = await finishMigration(ctx);
+  if (!finished.ok) return fail(ctx, planned, finished.error);
   return success(ctx, planned);
 }
 
@@ -433,10 +433,13 @@ async function applySymlinkInstall(
   const desiredResult = await applyPlacements(desiredPlacements, ctx, source);
   if (!desiredResult.ok) return fail(ctx, planned, desiredResult.error);
   try {
-    if (effectiveMode === "symlink") {
+    // A primary the plan deliberately kept (skip-modified) is not this run's output: verify only
+    // what this run linked or copied.
+    if (primaryUntouched) {
+      // nothing to verify
+    } else if (effectiveMode === "symlink") {
       if (!fs.lstatSync(linkPath).isSymbolicLink()) throw new Error("not a symlink");
-    } else if (!primaryUntouched) {
-      // A copy the plan deliberately kept (skip-modified mode switch) is not this run's output.
+    } else {
       for (const file of source.files) {
         if (sha256File(path.join(linkPath, file.relpath)) !== file.sha256) {
           throw new Error(`hash mismatch: ${file.relpath}`);
@@ -476,10 +479,8 @@ async function applySymlinkInstall(
   });
   const wrote = (ctx.writeManifestSeam ?? writeManifest)(ctx.manifestPath, manifest);
   if (!wrote.ok) return fail(ctx, planned, wrote.error);
-  if (ctx.supersededManifestPath !== undefined && ctx.supersededManifestPath !== ctx.manifestPath) {
-    const removed = await removePath(ctx.supersededManifestPath);
-    if (!removed.ok) return fail(ctx, planned, removed.error);
-  }
+  const finished = await finishMigration(ctx);
+  if (!finished.ok) return fail(ctx, planned, finished.error);
   return success(ctx, planned);
 }
 
@@ -790,6 +791,15 @@ async function defaultCopyFile(
       path: destAbs,
     });
   }
+}
+
+/** After the new manifest commits: drop the superseded manifest, then the migration journal. */
+async function finishMigration(ctx: ApplyContext): Promise<Result<void>> {
+  if (ctx.supersededManifestPath !== undefined && ctx.supersededManifestPath !== ctx.manifestPath) {
+    const removed = await removePath(ctx.supersededManifestPath);
+    if (!removed.ok) return removed;
+  }
+  return ctx.migrationJournalPath === undefined ? ok(undefined) : removePath(ctx.migrationJournalPath);
 }
 
 /** Delete the manifest file (containment-checked), idempotent (ENOENT → ok). */
