@@ -46,8 +46,10 @@ export function resolveWithin(root: string, ...segs: string[]): Result<string> {
 }
 
 /**
- * Resolve lexically within `root`, then reject every existing symbolic-link component from the root
- * through the target. Placement mirrors can create nested paths, so lexical containment alone is
+ * Resolve lexically within `root`, then reject every existing symbolic-link component BELOW the root
+ * through the target. The root itself (an agent config dir such as `~/.codex`, `~/.copilot` or
+ * `.github`) may be a symlink — dotfile managers commonly link it — and is trusted like the
+ * primary install's root. Placement mirrors can create nested paths, so lexical containment alone is
  * insufficient: `<root>/skills/forge -> /outside` would otherwise redirect a copy/remove outside the
  * declared boundary. Missing components are safe to stop at because the apply step creates them.
  * Call again immediately before mutation to narrow the plan→apply TOCTOU window.
@@ -60,7 +62,8 @@ export function resolveWithinNoSymlinks(root: string, ...segs: string[]): Result
   const components = rel === "" ? [] : rel.split(path.sep);
   let current = base;
 
-  for (let i = 0; i <= components.length; i += 1) {
+  for (let i = 0; i < components.length; i += 1) {
+    current = path.join(current, components[i]!);
     try {
       if (fs.lstatSync(current).isSymbolicLink()) {
         return err({
@@ -74,7 +77,6 @@ export function resolveWithinNoSymlinks(root: string, ...segs: string[]): Result
       if ((e as NodeJS.ErrnoException).code === "ENOENT") break;
       return err(toWriteError(e, current));
     }
-    if (i < components.length) current = path.join(current, components[i]!);
   }
   return resolved;
 }
