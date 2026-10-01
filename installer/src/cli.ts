@@ -47,6 +47,13 @@ import { preflightRauf, RAUF_PIN, type RegistryQuery } from "./rauf.js"; // 06
 import { sha256File, sha256String } from "./hash.js"; // 03 (list destination-drift hashing)
 import { extractManagedRegion } from "./placements.js"; // A4b managed-block drift
 import { renderReport } from "./report.js"; // 09
+import {
+  codexHome,
+  hooksFeatureEnabled,
+  inspectCodexStopHook,
+  wireCodexStopHook,
+  type CodexStopHookReport,
+} from "./codex-hook.js";
 
 // ---------------------------------------------------------------------------
 // 1. The single CLI spec (CLI_SPEC) — source of truth for parse + help (§1.5)
@@ -94,6 +101,7 @@ export const FLAGS: readonly FlagSpec[] = [
   { name: "yes", short: "y", type: "boolean", help: "Non-interactive: assume confirmed; never block on input." },
   { name: "json", type: "boolean", help: "Emit the run report as JSON." },
   { name: "skip-rauf", type: "boolean", help: "Skip the rauf resolvability preflight (records raufPin: null)." },
+  { name: "codex-stop-hook", type: "boolean", help: "Codex: wire rauf's Stop hook into ~/.codex/hooks.json (keeps a session supervising a loop from ending its turn). Explicit consent; --yes alone never writes it." },
   { name: "source", type: "string", arg: "<dir>", hidden: true, help: "(test only) Override the adapters source directory." },
   { name: "help", short: "h", type: "boolean", help: "Show this help and exit." },
   { name: "version", type: "boolean", help: "Print the installer version and exit." },
@@ -162,6 +170,7 @@ export function parseCliArgs(argv: string[]): Result<ParsedCli> {
     yes: values.yes === true,
     json: values.json === true,
     skipRauf: values["skip-rauf"] === true,
+    codexStopHook: values["codex-stop-hook"] === true,
     source: typeof values.source === "string" ? values.source : undefined,
   };
 
@@ -226,6 +235,8 @@ export interface CliEnv {
   readonly registry?: RegistryQuery;
   /** Forced platform for the copy/symlink mode decision (REQ-FLAG-03); default = process.platform. */
   readonly platform?: NodeJS.Platform;
+  /** Process env for `$CODEX_HOME` resolution; default = process.env. */
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -369,8 +380,14 @@ async function runMutation(
     agentReports.push({ ...r, confidence: detection.confidence, docsUrl: detection.docsUrl });
   }
 
+  const codexStopHook = codexStopHookStep(subcommand, flags, env, agentReports);
+
   const anyAgentFailed = agentReports.some((r) => !r.ok);
-  const exitCode = anyAgentFailed || raufError !== undefined ? EXIT.FAILURE : EXIT.SUCCESS;
+  // An explicitly requested Stop hook that could not be written fails the run (#346 review):
+  // a script asking for it must not read success while the hook is missing.
+  const hookFailed = codexStopHook?.status === "failed";
+  const exitCode =
+    anyAgentFailed || raufError !== undefined || hookFailed ? EXIT.FAILURE : EXIT.SUCCESS;
 
   // NOTE (spec 07 §3.2): the `attachRaufError(reports, raufError)` hook is intentionally elided in
   // favor of the sanctioned run-level `RunReport.raufError` field (a §3.2 MAY). renderReport surfaces
@@ -383,6 +400,38 @@ async function runMutation(
     agents: agentReports,
     exitCode,
     ...(raufError ? { raufError } : {}),
+    ...(codexStopHook ? { codexStopHook } : {}),
+  };
+}
+
+/**
+ * rauf's Codex Stop hook after a successful codex install/update (#346). Writes
+ * `$CODEX_HOME/hooks.json` only with explicit consent — the `--codex-stop-hook` flag (the
+ * installer is non-interactive, REQ-DIST-02, so there is no prompt). Never on `--dry-run`,
+ * never for `--yes` alone, never on uninstall; otherwise the report says how to opt in.
+ */
+function codexStopHookStep(
+  subcommand: Exclude<Subcommand, "list">,
+  flags: CliFlags,
+  env: CliEnv,
+  agentReports: AgentReport[],
+): CodexStopHookReport | undefined {
+  if (subcommand === "uninstall" || flags.dryRun) return undefined;
+  if (!agentReports.some((r) => r.agent === "codex" && r.ok)) return undefined;
+  const home = codexHome({ home: env.home, env: env.env });
+  const state = inspectCodexStopHook(home);
+  const feature = hooksFeatureEnabled(home);
+  if (state.wired) {
+    return { status: "already-wired", hooksPath: state.hooksPath, hooksFeatureEnabled: feature, message: `already wired in ${state.hooksPath}` };
+  }
+  if (flags.codexStopHook) return wireCodexStopHook(home);
+  return {
+    status: "not-offered",
+    hooksPath: state.hooksPath,
+    hooksFeatureEnabled: feature,
+    message: state.error
+      ? `not wired (optional) — ${state.error}; fix that file, then re-run with --codex-stop-hook`
+      : `not wired (optional) — re-run with --codex-stop-hook to add it to ${state.hooksPath}`,
   };
 }
 

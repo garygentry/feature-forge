@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes / migration
+
+- **Pi: loop supervision moved to rauf's Pi package (#345).** feature-forge's `forge-loop-supervisor` extension and its `forge_loop_launch` / `forge_loop_status` / `forge_loop_stop` tools are **removed**. Install rauf's Pi package (rauf ≥ 0.18.0): `pi install npm:@garygentry/rauf`. It provides `rauf_loop_launch` / `rauf_loop_status` / `rauf_loop_wait` / `rauf_loop_stop`. Its supervisor still reattaches to a loop the old extension launched (it reads the legacy `.forge-supervisor.json` mirror). Without the package, `forge-5-loop` falls back to the `rauf loop wait` recipe, and `doctor`'s new `loop-supervision` check warns.
+- **forge-5-loop Steps 3b/3d/3f are now host-specific** (#347). The canon SKILL points at `references/runner-contract.md`, which carries only this host's recipe: Claude keeps background + persistent `Monitor`; Pi uses the `rauf_loop_*` tools; Codex, Copilot, Cursor and Gemini use a detached launch plus the `rauf loop wait` loop (rauf ≥ 0.18.0, else a 5–10 s `status --json` poll). The runner-contract sections are renamed "Launch detail (Step 3b)" and "Supervise the run (Step 3d)".
+
+### Added
+
+- **Codex supervision via `rauf loop wait` and an opt-in Stop hook (#346).** On Codex, forge-5-loop stays in the turn and loops on `rauf loop wait … --timeout 240s`, printing each item's card, until the loop ends. It no longer tells Codex to arm a monitor it doesn't have. `npx @garygentry/feature-forge install -a codex --codex-stop-hook` wires rauf's Stop hook (`rauf hook codex-stop`) into `~/.codex/hooks.json` (or `$CODEX_HOME`). The write needs explicit consent: `--yes` alone never writes it. It is additive and idempotent and keeps your other hooks. The report notes when `[features] hooks = true` is missing from Codex's `config.toml`.
+- **`doctor` check `loop-supervision`** (advisory). On Pi it checks that rauf's Pi package is in pi's `packages`. On Codex it checks that the Stop hook is wired. It is `na` elsewhere. Each remedy names the file it edits.
+- **Per-item cards (#348).** Every host reports `item_completed` as one line built from rauf 0.18's enriched event: `[7/26] ✓ 008 <title> — <summary> · abc1234 · 5 files · 6m`. Older runners show the title only.
+- **Host-conditional canon blocks** (`<!-- host:claude -->` … `<!-- /host -->`, `host:!claude,pi` for "every host but"), resolved by `scripts/build-adapters.py` for every host before placeholder binding. A new `{{NOTIFY_USER}}` placeholder replaces the Claude-only `PushNotification` wording on other hosts.
+
 ### Changed
 
+- Non-Claude bundles (bodies **and** bundled references) no longer carry `PushNotification`, `TaskStop`, `persistent: true`, `run_in_background` or `tail -n +1 -F`. `tests/test_adapter_host_neutrality.py` now forbids them, and forbids `forge_loop_` on Pi.
 - **Installer 0.3.10: rauf pin advanced to `@garygentry/rauf@0.18.0`** (was 0.17.1). A fresh
   `npx @garygentry/feature-forge install` now provisions the loop-supervision rauf release:
   `rauf loop wait` (bounded wait with a per-item card), enriched `item_completed` events, the

@@ -37,6 +37,8 @@ export function runCli2(argv: string[], sb: Sandbox, opts: RunCli2Opts = {}): Pr
     cwd: sb.cwd,
     registry: opts.registry ?? resolvableRegistry,
     ...(opts.platform ? { platform: opts.platform } : {}),
+    // Hermetic: never the real $CODEX_HOME (the Codex Stop-hook step resolves from sb.home).
+    env: {},
   };
   return runCli(argv, env);
 }
