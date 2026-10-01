@@ -399,7 +399,11 @@ async function runMutation(
   const codexStopHook = codexStopHookStep(subcommand, flags, env, agentReports);
 
   const anyAgentFailed = agentReports.some((r) => !r.ok);
-  const exitCode = anyAgentFailed || raufError !== undefined ? EXIT.FAILURE : EXIT.SUCCESS;
+  // An explicitly requested Stop hook that could not be written fails the run (#346 review):
+  // a script asking for it must not read success while the hook is missing.
+  const hookFailed = codexStopHook?.status === "failed";
+  const exitCode =
+    anyAgentFailed || raufError !== undefined || hookFailed ? EXIT.FAILURE : EXIT.SUCCESS;
 
   // NOTE (spec 07 §3.2): the `attachRaufError(reports, raufError)` hook is intentionally elided in
   // favor of the sanctioned run-level `RunReport.raufError` field (a §3.2 MAY). renderReport surfaces
@@ -441,7 +445,9 @@ function codexStopHookStep(
     status: "not-offered",
     hooksPath: state.hooksPath,
     hooksFeatureEnabled: feature,
-    message: `not wired (optional) — re-run with --codex-stop-hook to add it to ${state.hooksPath}`,
+    message: state.error
+      ? `not wired (optional) — ${state.error}; fix that file, then re-run with --codex-stop-hook`
+      : `not wired (optional) — re-run with --codex-stop-hook to add it to ${state.hooksPath}`,
   };
 }
 
