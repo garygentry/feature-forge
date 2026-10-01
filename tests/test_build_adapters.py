@@ -1008,6 +1008,93 @@ def test_copilot_unknown_canon_tool_fails_loud(fixture_copy):
     assert "no Copilot alias mapping" in result.stderr + result.stdout
 
 
+def _make_forge_verifier_fixture(root: Path, *, with_skill: bool) -> None:
+    """Rename the fixture verifier to ``forge-verifier`` (the composed agent) with real memory prose."""
+    verifier = root / "agents" / "verifier.md"
+    source = verifier.read_text("utf-8").replace("name: verifier", "name: forge-verifier")
+    source = source.replace(
+        "You are a verification sub-agent. The `memory` and `skills` keys appear ONLY\n"
+        "here among the fixture sub-agents, so the per-file drop-with-record test can\n"
+        "prove per-file enumeration rather than a hard-coded list.\n",
+        "You are a verification sub-agent.\n\n"
+        "## Using Your Memory\n\n"
+        "- **Per-project memory** (`memory: project`, below) — your own accumulating notes about\n"
+        "  *this* project's specific blind spots, conventions, and confirmed false positives.\n\n"
+        "You have persistent per-project memory in your `MEMORY.md` file. Use it to track:\n\n"
+        "- **Recurring patterns**: If you keep finding the same type of gap across features, "
+        "note it. Over time you'll learn this project's blind spots.\n"
+        "- **Project conventions**: As you review more specs, capture conventions that should "
+        "be consistent (naming patterns, error handling approaches, test strategies).\n"
+        "- **False positives to avoid**: If you've flagged something before and the user said "
+        "it was intentional, note it so you don't flag it again.\n\n"
+        "At the end of each verification pass, update your memory with any new patterns you've "
+        "observed. Keep `MEMORY.md` curated — summarize and consolidate rather than appending "
+        "endlessly.\n",
+    )
+    verifier.with_name("forge-verifier.md").write_text(source, encoding="utf-8")
+    verifier.unlink()
+    if with_skill:
+        dependency_dir = root / "skills" / "forge-verify"
+        dependency_dir.mkdir()
+        (dependency_dir / "SKILL.md").write_text(
+            "---\nname: forge-verify\ndescription: Verify fixture artifacts.\n---\n\n"
+            "# Fixture Verify Contract\n\nDEPENDENCY_MARKER_42\n",
+            encoding="utf-8",
+        )
+
+
+def test_copilot_composes_required_verifier_skill_and_removes_memory_promises(fixture_copy):
+    """FORGE-102: the verifier embeds its declared skill and promises no persistent memory."""
+    root = fixture_copy("minimal-canon")
+    _make_forge_verifier_fixture(root, with_skill=True)
+
+    result = run_build(root)
+    assert result.returncode == 0, result.stderr
+    output = (root / "adapters" / "copilot" / "agents" / "forge-verifier.agent.md").read_text("utf-8")
+    assert "Source: agents/forge-verifier.md; skills/forge-verify/SKILL.md" in output
+    assert "## Required canonical skill contract: `forge-verify`" in output
+    assert "DEPENDENCY_MARKER_42" in output
+    assert "No per-project memory on Copilot" in output
+    for promise in ("You have persistent", "update your memory with"):
+        assert promise not in output
+
+    report = (root / "adapters" / "GENERATION-REPORT.md").read_text("utf-8")
+    copilot_section = report.split("## copilot", 1)[1].split("## cursor", 1)[0]
+    assert "agents/forge-verifier.md` | `sub-agent key 'skills'" not in copilot_section
+    assert "no persistent MEMORY.md guarantee" in copilot_section
+    # Other hosts are untouched: Claude keeps the canonical keys and memory prose.
+    claude = (root / "adapters" / "claude" / "agents" / "forge-verifier.md").read_text("utf-8")
+    assert "You have persistent per-project memory" in claude
+    assert "DEPENDENCY_MARKER_42" not in claude
+
+
+def test_copilot_required_verifier_skill_fails_loud_when_missing(fixture_copy):
+    """A declared verifier dependency cannot degrade to an inert dropped field."""
+    root = fixture_copy("minimal-canon")
+    _make_forge_verifier_fixture(root, with_skill=False)
+
+    result = run_build(root)
+    assert result.returncode != 0
+    assert "agents/forge-verifier.md: unknown required Copilot skill 'forge-verify'" in (
+        result.stderr + result.stdout
+    )
+
+
+def test_copilot_verifier_memory_promise_drift_fails_loud(fixture_copy):
+    """Reworded canon memory prose the rewrite table misses fails generation, never ships."""
+    root = fixture_copy("minimal-canon")
+    _make_forge_verifier_fixture(root, with_skill=True)
+    agent = root / "agents" / "forge-verifier.md"
+    agent.write_text(
+        agent.read_text("utf-8") + "\nYou have persistent recall of every past run.\n",
+        encoding="utf-8",
+    )
+
+    result = run_build(root)
+    assert result.returncode != 0
+    assert "unsupported Copilot persistent-memory promise" in result.stderr + result.stdout
+
+
 def test_copilot_emits_plugin_manifest(fixture_copy):
     """Legacy Copilot manifest declares roots and never masquerades as Agent Plugins 1.0."""
     root = fixture_copy("minimal-canon")
@@ -1135,6 +1222,25 @@ def test_drift_guard_detects_mutation(fixture_copy):
 # residual tool references there).
 
 ADAPTERS = REPO_ROOT / "adapters"
+
+def test_committed_copilot_verifier_has_composed_dependency_and_memory_limit():
+    """The shipped Copilot verifier embeds forge-verify and promises no MEMORY.md updates."""
+    verifier = (ADAPTERS / "copilot" / "agents" / "forge-verifier.agent.md").read_text("utf-8")
+    assert "skills/forge-verify/SKILL.md" in verifier.split("---\n", 2)[1]
+    assert "## Required canonical skill contract: `forge-verify`" in verifier
+    assert "CHECK-I21/I22" in verifier
+    assert "no per-project `MEMORY.md` update is promised" in verifier
+    skill = (ADAPTERS / "copilot" / "skills" / "forge-verify" / "SKILL.md").read_text("utf-8")
+    for text in (verifier, skill):
+        for promise in (
+            "You have persistent",
+            "update your memory with",
+            "Memory consolidation happens only",
+            "forge-verify skill pre-loaded",
+            "Persistent memory + shipped patterns",
+        ):
+            assert promise not in text
+
 
 # Claude-native tool tokens that MUST NOT survive into a non-Claude skill body.
 _CLAUDE_TOOL_TOKENS = (

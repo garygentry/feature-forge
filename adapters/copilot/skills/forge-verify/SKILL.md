@@ -13,15 +13,15 @@ Analyze feature artifacts for completeness, consistency, and quality. Produce st
 
 This skill is loaded in two different roles. Determine yours before proceeding:
 
-- **You ARE the `forge-verifier` subagent** — you were dispatched via the host's subagent mechanism, you have read-only tools (Read, Glob, Grep, Bash) and **no** Agent/host's subagent mechanism, and this skill is pre-loaded in your context. **SKIP "Subagent Delegation (parent orchestrator only)" and "Synthesize" below — those describe how a *parent* dispatches *you*, not work for you to do.** Do **not** dispatch anything, do **not** try to spawn a verifier. Go straight to **Prerequisites → Steps 1–6**, execute the checks yourself, and **return your findings as your response** (the parent writes the document to disk). Dispatching a subagent from here is the classic self-referential loop — never do it.
+- **You ARE the `forge-verifier` subagent** — you were dispatched via the host's subagent mechanism, you have read-only tools (Read, Glob, Grep, Bash) and **no** Agent/host's subagent mechanism, and the complete forge-verify contract is embedded in your generated context. **SKIP "Subagent Delegation (parent orchestrator only)" and "Synthesize" below — those describe how a *parent* dispatches *you*, not work for you to do.** Do **not** dispatch anything, do **not** try to spawn a verifier. Go straight to **Prerequisites → Steps 1–6**, execute the checks yourself, and **return your findings as your response** (the parent writes the document to disk). Dispatching a subagent from here is the classic self-referential loop — never do it.
 - **You are the parent orchestrator** — a navigator (`invoke-skill: forge`), a stage skill's in-stage auto-verify, or a direct `invoke-skill: forge-verify` invocation, and you have the host's subagent mechanism. Use "Subagent Delegation" to dispatch the `forge-verifier` subagent, then "Synthesize" to assemble and write the document.
 
 ## Subagent Delegation (parent orchestrator only)
 
 This skill is delegated to the `forge-verifier` subagent via the host's subagent mechanism. The verifier subagent has:
 - **Read-only tools** (Read, Glob, Grep, Bash) — it cannot accidentally modify specs
-- **Persistent memory + shipped patterns** — it accumulates knowledge about this project's recurring issues across sessions, and on start reads the versioned, reviewed heuristics in `references/verifier-patterns/MEMORY.md` that ship with the pipeline (the two layers are distinct)
-- **The forge-verify skill pre-loaded** — so it has all verification checklists and guidance at startup
+- **Shipped patterns, no persistent-memory guarantee on Copilot** — on start it reads the versioned, reviewed heuristics in `references/verifier-patterns/MEMORY.md` that ship with the pipeline; no per-project `MEMORY.md` update is promised
+- **The complete forge-verify contract embedded in its generated instructions** — so the verification procedure is present without a host dependency field
 
 ### Choose single vs. parallel dispatch
 
@@ -50,9 +50,8 @@ Pick based on how many checks the mode carries (see the per-mode totals in Step 
   In each parallel instance's prompt, pass: the feature, the mode, the **dimension
   label**, the **exact CHECK-IDs it owns**, and a note that **it is one of several
   parallel instances** — it must verify ONLY its assigned checks and return findings
-  for that slice. Tell parallel instances to treat their `MEMORY.md` as **read-only**
-  (apply learned patterns, but do NOT write it — concurrent writers would race);
-  memory consolidation is left to single-verifier runs.
+  for that slice. Tell parallel instances not to rely on or update a per-project `MEMORY.md`; Copilot
+  does not guarantee persistent memory, so every instance uses only its current context.
 
 ### Synthesize (parent session)
 
