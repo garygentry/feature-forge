@@ -104,14 +104,20 @@ jobs:
           mkdir -p ../release-out
           npm pack --pack-destination ../release-out
           ls -l ../release-out
-          tar -tzf ../release-out/*.tgz | grep -q '^package/dist/cli.js$' \
+          # List once to a file: `tar | grep -q` SIGPIPEs tar on a large listing,
+          # which pipefail turns into a false failure.
+          tar -tzf ../release-out/*.tgz > ../release-out/contents.txt
+          grep -q '^package/dist/cli.js$' ../release-out/contents.txt \
             || { echo "::error::tarball is missing dist/cli.js"; exit 1; }
-          tar -tzf ../release-out/*.tgz | grep -q '^package/adapters/' \
+          grep -q '^package/adapters/' ../release-out/contents.txt \
             || { echo "::error::tarball is missing the bundled adapters/"; exit 1; }
+          rm ../release-out/contents.txt
 
-      # Release notes = CHANGELOG's [Unreleased] section when it has content
-      # (an installer-only release keeps its entries there), else the top dated
-      # `## [X.Y.Z]` section (a plugin release cuts [Unreleased] in its prep PR).
+      # Release notes = the top released `## [...]` section of CHANGELOG.md. The
+      # release-prep PR must cut [Unreleased] into a heading that names THIS
+      # release — `## [<plugin version>]` for a plugin release, or
+      # `## [installer <version>]` for an installer-only one — so notes never
+      # repeat earlier releases' entries. Fail closed otherwise.
       - name: Release notes + summary
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -123,13 +129,17 @@ jobs:
               /^## \[/ { if (on) exit; if ($0 ~ start) { on=1; next } }
               on { print }' CHANGELOG.md
           }
-          NOTES="$(section '^## \\[Unreleased\\]')"
-          SOURCE="[Unreleased]"
-          if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
-            NOTES="$(awk '/^## \[[0-9]/ { print; exit }' CHANGELOG.md)"
-            SOURCE="$NOTES"
-            NOTES="$(section '^## \\[[0-9]')"
+          if [ -n "$(section '^## \\[Unreleased\\]' | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG [Unreleased] is not empty — the release-prep PR must cut it into '## [$PLUGIN_VERSION]' or '## [installer $VERSION]'" >&2
+            exit 1
           fi
+          SOURCE="$(awk '/^## \[/ && !/^## \[Unreleased\]/ { print; exit }' CHANGELOG.md)"
+          case "$SOURCE" in
+            "## [$PLUGIN_VERSION]"*|"## [installer $VERSION]"*) ;;
+            *) echo "::error::top CHANGELOG section '$SOURCE' names neither plugin $PLUGIN_VERSION nor installer $VERSION — add this release's section" >&2
+               exit 1 ;;
+          esac
+          NOTES="$(section '^## \\[[^U]')"
           {
             echo "Installer \`$PACKAGE@$VERSION\` · plugin $PLUGIN_VERSION"
             echo

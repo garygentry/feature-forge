@@ -264,17 +264,19 @@ the owner approves the `release` environment, in GitHub Mobile or on the web.
    (a prior change bumped it), reuse it — **do not double-bump**. Otherwise bump
    `installer/package.json` `version` (independent line; npm rejects republishing a version, 409).
    For a plugin release, also bump the synced plugin fields (`scripts/check-version-sync.py`).
-2. **CHANGELOG.** The release notes come from `CHANGELOG.md`: the `## [Unreleased]` section when
-   it has content, otherwise the top dated `## [X.Y.Z]` section. An installer-only release keeps
-   its entry under `[Unreleased]`, naming the installer version, e.g. `(installer 0.3.10)`. Three
+2. **CHANGELOG.** The release notes are the top released section of `CHANGELOG.md`, and
+   `release.yml`'s `verify` job fails unless `## [Unreleased]` is empty and that section names
+   this release: `## [<plugin version>]` for a plugin release, `## [installer X.Y.Z]` for an
+   installer-only one (e.g. a RAUF_PIN advance). Three
    standing rules, all learned from the 0.14.0 release (which bumped versions without cutting
    `[Unreleased]`, and was followed by two feature merges with no CHANGELOG entries at all — a
    process gap, not a one-off):
    - **Every feature PR adds its own CHANGELOG entry** under `## [Unreleased]`, in the PR
      itself — never deferred to "the release".
-   - **A plugin release cuts `[Unreleased]` into a dated `## [X.Y.Z] — YYYY-MM-DD` heading in
-     the release commit** (the same commit that bumps the three synced version fields), leaving
-     an empty `## [Unreleased]` behind.
+   - **Every release cuts `[Unreleased]` into a dated heading in the release commit**, leaving
+     an empty `## [Unreleased]` behind: `## [X.Y.Z] — YYYY-MM-DD` for a plugin release (the same
+     commit that bumps the synced version fields), `## [installer X.Y.Z] — YYYY-MM-DD` for an
+     installer-only release.
    - **Keep entries short: a CHANGELOG entry is a bulleted list, under ~150 words per version.**
      A bullet names *what changed* and points at the issue/PR; the *design rationale* — the why,
      the alternatives weighed, the invariants — belongs in `roadmap/` or `references/decisions/`,
