@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **CI: `claude plugin validate --strict` failed on the repo root.** Starting with claude 2.1.292, validating a directory also lints it as a plugin, which flags the repo's own development `CLAUDE.md` at the root. `--strict` then fails every PR and `main`. `scripts/validate.sh` now validates `.claude-plugin/marketplace.json` directly; the root is a marketplace, not a plugin. The distributed plugin (`adapters/claude`) is still validated as a plugin.
+- **CI: `claude plugin validate --strict` failed on the repo root.** Starting with claude 2.1.292, validating a directory also lints it as a plugin, which flags the repo's own development `CLAUDE.md` at the root. `--strict` then fails every PR and `main`. `scripts/validate.sh` now validates `.claude-plugin/marketplace.json` directly. The root holds the marketplace and the source-of-record `plugin.json`; the shipped plugin `adapters/claude` (manifest generated from it) is still strictly validated as a plugin.
 
 ## [0.21.0] — 2026-09-30
 
