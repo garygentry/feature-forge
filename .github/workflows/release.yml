@@ -82,11 +82,15 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          # Existing package + missing version → empty output, exit 0. A
-          # registry/network error exits non-zero and fails the job (fail closed).
-          GOT="$(npm view "$PACKAGE@$VERSION" version)"
-          if [ -n "$GOT" ]; then
-            echo "::error::$PACKAGE@$VERSION is already published (npm rejects republishing; bump the version)"
+          # Missing version → npm exits 1 with E404 (the expected case). Any other
+          # registry/network error fails the job (fail closed).
+          if GOT="$(npm view "$PACKAGE@$VERSION" version 2>&1)"; then
+            if [ -n "$GOT" ]; then
+              echo "::error::$PACKAGE@$VERSION is already published (npm rejects republishing; bump the version)"
+              exit 1
+            fi
+          elif ! grep -q E404 <<<"$GOT"; then
+            echo "::error::npm view failed: $GOT"
             exit 1
           fi
 
