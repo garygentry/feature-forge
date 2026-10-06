@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Native GitHub Copilot adapter output (#325 F1).** The generated Copilot bundle now ships a versioned `plugin.json` (the tested legacy Copilot plugin format, explicitly not Agent Plugins 1.0), native `skills/<name>/SKILL.md` files that keep their `argument-hint`, and `agents/<name>.agent.md` custom agents. Canonical tools map to Copilot aliases and fail loudly when a tool has no mapping. Worker agents are subagent-only. The Copilot manifest is part of the version-sync gate.
+
+### Changed
+
+- **Copilot invocation prose is distribution-aware (#325 F1).** Copilot descriptions, skill bodies, references, and stage-exit output (`--host copilot`) write `invoke-skill: <name> [arguments]` instead of assuming one slash name. Each skill's Copilot host notes map that to the plugin form (`/feature-forge:<name>`) and the direct form (`/<name>`). The Copilot host notes keep the Interaction Capability Ladder guidance, and `doctor` now reports `hostArg: copilot` for Copilot bundles.
+
 ## [0.21.0] — 2026-09-30
 
 ### Upgrade notes

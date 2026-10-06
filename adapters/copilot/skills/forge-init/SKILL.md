@@ -1,7 +1,7 @@
 ---
 # GENERATED — DO NOT EDIT. Source: skills/forge-init/SKILL.md. Regenerate: python3 scripts/build-adapters.py
 name: forge-init
-description: Initialize feature-forge configuration in the current project. Use when user runs forge-init or asks to set up forge for the first time. Creates forge.config.json with defaults. Do NOT trigger for general project initialization or setup tasks outside the forge pipeline.
+description: 'Initialize feature-forge configuration in the current project. Use when user runs invoke-skill: forge-init or asks to set up forge for the first time. Creates forge.config.json with defaults. Do NOT trigger for general project initialization or setup tasks outside the forge pipeline.'
 ---
 
 # Initialize Feature Forge
@@ -20,9 +20,9 @@ After initialization, the config file will contain defaults for:
 - `backlogDir`: `null` (backlog lives alongside specs)
 - `gitCommitAfterStage`: `true`
 - `commitPrefix`: `forge`
-- `stack`: `null` (detected during `forge-2-tech`)
-- `typeCheckCommand`: `null` (set during `forge-2-tech`)
-- `testCommand`: `null` (set during `forge-2-tech`)
+- `stack`: `null` (detected during `invoke-skill: forge-2-tech`)
+- `typeCheckCommand`: `null` (set during `invoke-skill: forge-2-tech`)
+- `testCommand`: `null` (set during `invoke-skill: forge-2-tech`)
 - `smokeCommand`: `null` (optional end-to-end smoke that boots the wired app and drives one request; set it to enable impl-verify's runnability check `CHECK-I21` — distinct from `testCommand`)
 - `autoInvokeNextStage`: `true` (the navigator auto-starts the next stage after you confirm; set `false` to only print the command)
 - `contextWindowTokens`: `null` (the navigator infers the context window; set to your model's window, e.g. `1000000` for a 1M-context model, for accurate context-usage advice)
@@ -110,14 +110,18 @@ read from the bundle's own `agent` field — never from tool availability. **At 
 writes nothing and says so** (that block's declared default). This is what makes the `specs/`
 hygiene files' "see the project-root `AGENTS.md`" pointer resolve.
 
-After initialization, start the pipeline with `forge-1-prd <feature-name>`.
+After initialization, start the pipeline with `invoke-skill: forge-1-prd <feature-name>`.
 
 ---
 
-## Host execution notes
+## Host execution notes (GitHub Copilot)
 
-This skill was authored Claude-first; the body above refers to "the host's question mechanism", "the host's subagent mechanism", and "the host's background-execution mechanism". Use your runtime's equivalent for each — and if your runtime has no such tool:
+This bundle uses distribution-neutral invocation notation because Copilot assigns different slash-command names to plugin and direct installations:
 
-- **User input:** ask the question directly and wait for the answer when your runtime can prompt and wait; never assume one. Read whether it can from the Interaction Capability Ladder's `interaction-mode` record rather than judging it. When your runtime is genuinely non-interactive, take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
-- **Subagents:** if your host cannot dispatch the named custom agent, run that step inline yourself.
-- **Background / monitoring:** run long-lived commands in the foreground (or your host's background facility) and report progress as it arrives.
+- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and references is an instruction, not a literal command to paste. Preserve the named skill and its arguments.
+- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.
+- **Direct project/personal install:** invoke `/<name> [arguments]`.
+- **No universal slash name:** use the form matching the skill's discovery source. If the source is uncertain, use Copilot's skill-invocation mechanism or ask the user instead of guessing.
+- **User input:** Copilot has no structured question tool in this bundle — ask the question directly and wait for the answer when the session can prompt and wait; never assume one. Read whether it can from the Interaction Capability Ladder's `interaction-mode` record rather than judging it. When the session is genuinely non-interactive, take the Interaction Capability Ladder's declared conservative default, state it in your output, and use `no-default: abort — <question> requires a human answer` for an interview question with no sane default (`references/shared-conventions.md`).
+- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. If it is unavailable, run that step inline only when the skill permits inline execution.
+- **Background / monitoring:** run long-lived commands in the foreground (or Copilot's background facility) and report progress as it arrives.

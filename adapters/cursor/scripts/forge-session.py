@@ -17,7 +17,7 @@ root navigator:
         [--outcome O] [--cause dependency-starvation|review-pending|runner-stopped] \
         [--verify-mode M] \
         [--served-stage S] [--verify-capability interactive|manual] [--specs-dir DIR] \
-        [--config FILE] [--epic E] [--next-feature N] [--host claude|generic|pi] [--json]
+        [--config FILE] [--epic E] [--next-feature N] [--host claude|copilot|generic|pi] [--json]
     python3 forge-session.py select-outcome --feature F --served-stage S \
         --skill verify|fix [--op-failure] [--user-deferred] [--decisions-open] \
         [--specs-dir DIR] [--epic E] [--json]

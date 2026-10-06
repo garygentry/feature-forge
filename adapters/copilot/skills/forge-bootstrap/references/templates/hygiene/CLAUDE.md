@@ -14,7 +14,7 @@ This project was scaffolded by forge-bootstrap. To continue development:
 
 ## Working with Claude
 
-- Use `forge` to enter the forge pipeline for new features.
+- Use `invoke-skill: forge` to enter the forge pipeline for new features.
 - The `forge.config.json` at the project root defines the stack, commands, and pipeline settings.
 - Follow the patterns established in the existing codebase.
 

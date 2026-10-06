@@ -144,6 +144,8 @@ FRONTMATTER_KEY_ORDER: tuple[str, ...] = (
     "globs",           # cursor .mdc
     "alwaysApply",     # cursor .mdc
     "tools",           # sub-agents, where representable
+    "agents",          # copilot: allowed nested custom agents
+    "user-invocable",  # copilot: picker visibility
     "model",
     "maxTurns",
     "turnBudget",      # pi (mapped from maxTurns)
@@ -927,6 +929,36 @@ _HOST_NOTES_NEUTRAL = (
     "- **Background / monitoring:** run long-lived commands in the foreground (or "
     "your host's background facility) and report progress as it arrives.\n"
 )
+#: Heading of the Copilot overlay. The overlay is the ONE place a Copilot bundle names
+#: concrete plugin/direct slash forms, so the support-file prefix pass stops here
+#: (``_apply_command_prefix``) instead of rewriting the mapping it documents.
+_COPILOT_OVERLAY_HEADING = "## Host execution notes (GitHub Copilot)"
+_HOST_NOTES_COPILOT = (
+    f"{_COPILOT_OVERLAY_HEADING}\n\n"
+    "This bundle uses distribution-neutral invocation notation because Copilot assigns "
+    "different slash-command names to plugin and direct installations:\n\n"
+    "- **Invocation notation:** `invoke-skill: <name> [arguments]` in the body and "
+    "references is an instruction, not a literal command to paste. Preserve the named "
+    "skill and its arguments.\n"
+    "- **Plugin install:** invoke `/feature-forge:<name> [arguments]`.\n"
+    "- **Direct project/personal install:** invoke `/<name> [arguments]`.\n"
+    "- **No universal slash name:** use the form matching the skill's discovery source. "
+    "If the source is uncertain, use Copilot's skill-invocation mechanism or ask the "
+    "user instead of guessing.\n"
+    "- **User input:** Copilot has no structured question tool in this bundle — ask the "
+    "question directly and wait for the answer when the session can prompt and wait; "
+    "never assume one. Read whether it can from the Interaction Capability Ladder's "
+    "`interaction-mode` record rather than judging it. When the session is genuinely "
+    "non-interactive, take the Interaction Capability Ladder's declared conservative "
+    "default, state it in your output, and use `no-default: abort — <question> "
+    "requires a human answer` for an interview question with no sane default "
+    "(`references/shared-conventions.md`).\n"
+    "- **Subagents:** dispatch the named custom agent with Copilot's subagent mechanism. "
+    "If it is unavailable, run that step inline only when the skill permits inline "
+    "execution.\n"
+    "- **Background / monitoring:** run long-lived commands in the foreground (or "
+    "Copilot's background facility) and report progress as it arrives.\n"
+)
 _HOST_NOTES_PI = (
     "## Host execution notes (Pi)\n\n"
     "This Pi bundle preserves Claude's `AskUserQuestion` references because it ships "
@@ -980,7 +1012,7 @@ _HOST_NOTES_PI = (
 _HOST_NOTES: dict[str, str] = {
     "codex": _HOST_NOTES_CODEX,
     "gemini": _HOST_NOTES_NEUTRAL,
-    "copilot": _HOST_NOTES_NEUTRAL,
+    "copilot": _HOST_NOTES_COPILOT,
     "cursor": _HOST_NOTES_NEUTRAL,
     "pi": _HOST_NOTES_PI,
 }
@@ -1011,6 +1043,29 @@ _PI_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({
     "/feature-forge:",
     "`/feature-forge:*`",
 })
+
+# Copilot plugin installs and direct project/personal installs assign different slash
+# names to the same skill (`/feature-forge:<name>` vs `/<name>`), so neither the base
+# table's bare-name degradation nor a guessed prefix is right. Emitted prose uses the
+# explicit non-command notation `invoke-skill: <name>`; the Copilot overlay maps it to
+# both runtime forms without claiming either is universal. Runtime stage-exit output
+# selects the same notation via `--host copilot` (forge_session `_host_command`). The
+# base wildcard pair (`` `/feature-forge:*` `` → `` `forge-*` skills ``) is KEPT: it runs
+# first and keeps the root-hygiene template readable.
+# Attributive uses ("the `/feature-forge:forge` navigator") name the skill, not an
+# action, so they degrade to the bare name (longest-match, #167) rather than to
+# "the `invoke-skill: forge` navigator". Shared with the support-file pass.
+_COPILOT_NOUN_PAIRS: tuple[tuple[str, str], ...] = (
+    ("`/feature-forge:forge` navigator", "`forge` navigator"),
+    ("/feature-forge:forge navigator", "forge navigator"),
+)
+_COPILOT_OVERRIDDEN_HOST_TERMS: frozenset[str] = frozenset({"/feature-forge:", "--host claude"})
+_COPILOT_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
+    pair for pair in _HOST_TERM_REPLACEMENTS if pair[0] not in _COPILOT_OVERRIDDEN_HOST_TERMS
+) + _COPILOT_NOUN_PAIRS + (
+    ("/feature-forge:", "invoke-skill: "),
+    ("--host claude", "--host copilot"),
+)
 
 _PI_BASE_HOST_TERM_REPLACEMENTS: tuple[tuple[str, str], ...] = tuple(
     pair for pair in _HOST_TERM_REPLACEMENTS if pair[0] not in _PI_OVERRIDDEN_HOST_TERMS
@@ -1170,7 +1225,7 @@ def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
          are resolved (Pi keeps ``AskUserQuestion`` because its binding does, since
          the Pi bundle ships a compatibility extension).
       2. Regex passes rewrite ``subagent_type="…"`` and the ``Agent call(s)`` idiom.
-      3. The ordered ``_HOST_TERM_REPLACEMENTS`` table (or the Pi-specialized version)
+      3. The ordered ``_HOST_TERM_REPLACEMENTS`` table (or the Pi/Copilot-specialized version)
          handles the remaining non-placeholder degradations: Claude-only slash
          commands, host flags, and the ``${CLAUDE_PLUGIN_ROOT}`` root hint.
     """
@@ -1178,7 +1233,12 @@ def translate_host_terms(text: str, *, agent_id: str | None = None) -> str:
     text = _SUBAGENT_TYPE_QUOTED.sub(r"the \1 custom agent", text)
     text = _SUBAGENT_TYPE_BARE.sub(r"the \1 custom agent", text)
     text = _AGENT_CALL.sub(r"subagent\1call", text)
-    replacements = _PI_HOST_TERM_REPLACEMENTS if agent_id == "pi" else _HOST_TERM_REPLACEMENTS
+    if agent_id == "pi":
+        replacements = _PI_HOST_TERM_REPLACEMENTS
+    elif agent_id == "copilot":
+        replacements = _COPILOT_HOST_TERM_REPLACEMENTS
+    else:
+        replacements = _HOST_TERM_REPLACEMENTS
     for old, new in replacements:
         text = text.replace(old, new)
     return text
@@ -1469,52 +1529,107 @@ class CodexEmitter:
 
 
 # --------------------------------------------------------------------------- #
-# copilot emitter (03 §5, REQ-FMT-01..03, REQ-GEN-06) — TQ-1 (safe defaults)
+# copilot emitter (03 §5, REQ-FMT-01..03, REQ-GEN-06)
 # --------------------------------------------------------------------------- #
 #
-# TQ-1 resolution (03 §8): GitHub Copilot exposes no confirmed skill invocation-hint
-# field and no native sub-agent construct, so the documented safe default holds —
-# {name, description} skill frontmatter, hint drop-recorded, every sub-agent
-# claude_keys entry drop-recorded (body-only instruction file).
+# Current Copilot Agent Skills use ``skills/<name>/SKILL.md`` and support the
+# top-level ``argument-hint`` field. This emitter deliberately targets the tested
+# legacy Copilot plugin format: its manifest declares ``skills``/``agents`` paths and
+# has no Agent Plugins 1.0 ``$schema``. Legacy plugin custom agents live at
+# ``agents/<name>.agent.md`` and use builtin tool aliases. Do not call this output
+# Agent Plugins 1.0 without migrating the manifest and Copilot-specific namespace.
+
+def _canon_tool_tokens(raw: object) -> list[str]:
+    """Split a canon ``tools`` value (``"Read, Glob"`` scalar or a YAML list) into tokens."""
+    if raw is None:
+        return []
+    items = raw.split(",") if isinstance(raw, str) else list(raw)  # type: ignore[arg-type]
+    return [str(tok).strip() for tok in items if str(tok).strip()]
+
+
+# Canon (Claude) tool name -> Copilot builtin tool alias(es). Unknown tools fail loud,
+# as on Pi: adding a canon agent tool is deliberate, so an unmapped one is a generator
+# defect, not something to drop silently (a dropped tool widens or breaks the agent).
+_COPILOT_TOOL_MAP: dict[str, tuple[str, ...]] = {
+    "Read": ("read",),
+    "Glob": ("search",),
+    "Grep": ("search",),
+    "Bash": ("execute",),
+    "Write": ("edit",),
+}
+
+
+def _copilot_map_tools(tokens: list[str], agent_name: str) -> list[str]:
+    """Map canon tool tokens onto Copilot aliases, deduped in first-seen order."""
+    out: list[str] = []
+    for tok in tokens:
+        mapped = _COPILOT_TOOL_MAP.get(tok)
+        if mapped is None:
+            raise ValueError(
+                f"agent '{agent_name}': canon tool '{tok}' has no Copilot alias mapping "
+                f"(add it to _COPILOT_TOOL_MAP)"
+            )
+        for alias in mapped:
+            if alias not in out:
+                out.append(alias)
+    return out
 
 
 class CopilotEmitter:
-    """Emitter for ``copilot``: skill copy with Copilot frontmatter.
+    """Emitter for native Copilot skills and custom agents.
 
-    Hint + sub-agent structural keys are TQ-1-unconfirmed → drop-recorded
-    (REQ-FMT-03 / REQ-GEN-06).
+    Canonical tool capabilities map to Copilot aliases; worker agents are
+    subagent-only (``user-invocable: false``, no nested ``agents``). Other
+    Claude-specific structural keys remain drop-recorded (REQ-FMT-03 / REQ-GEN-06).
     """
 
     agent_id = "copilot"
 
     def emit_skill(self, skill: SkillRecord) -> EmitResult:
-        """Emit ``skills/<name>/<name>.md`` with {name, description} + body."""
-        native = order_fields({
+        """Emit a native ``skills/<name>/SKILL.md`` with Copilot frontmatter."""
+        native: dict[str, Any] = {
             "name": skill.name,
+            # Descriptions are discovery prose too: a Claude marketplace command here
+            # would teach Copilot one distribution's slash name before the body and
+            # overlay load, so apply the same distribution-neutral translation.
             "description": translate_host_terms(skill.description, agent_id="copilot"),
-        })
-        content = render_frontmatter_block(native, skill.source_path) + skill_body_for(
-            skill.body, "copilot"
+        }
+        hint = hint_value(skill)
+        if hint is not None:
+            native["argument-hint"] = hint
+        content = render_frontmatter_block(order_fields(native), skill.source_path) + (
+            skill_body_for(skill.body, "copilot")
         )
-        rel = f"skills/{skill.name}/{skill.name}.md"
-        drops: tuple[DropRecord, ...] = ()
-        if hint_value(skill) is not None:
-            drops = (DropRecord("copilot", skill.source_path, "argument-hint",
-                                "no known Copilot invocation-hint field (TQ-1)"),)
-        drops += drop_skill_claude_keys(skill, "copilot")
-        return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
+        rel = f"skills/{skill.name}/SKILL.md"
+        return EmitResult(
+            files=(EmittedFile(rel, content),),
+            drops=drop_skill_claude_keys(skill, "copilot"),
+        )
 
     def emit_agent(self, agent: AgentRecord) -> EmitResult:
-        """Emit a body-only ``agents/<name>.md`` and drop-record every claude_keys."""
-        rel = f"agents/{agent.name}.md"
+        """Emit a subagent-only ``agents/<name>.agent.md`` with mapped tools."""
+        tokens = _canon_tool_tokens(agent.claude_keys.get("tools"))
+        native: dict[str, Any] = {
+            "name": agent.name,
+            "description": translate_host_terms(agent.description, agent_id="copilot"),
+            "tools": _copilot_map_tools(tokens, agent.name),
+            "agents": [],
+            "user-invocable": False,
+        }
+        rel = f"agents/{agent.name}.agent.md"
         content = render_frontmatter_block(
-            order_fields({
-                "name": agent.name,
-                "description": translate_host_terms(agent.description, agent_id="copilot"),
-            }),
-            agent.source_path,
+            order_fields(native), agent.source_path
         ) + agent_body_for(agent.body, "copilot")
-        drops = drop_all_claude_keys(agent, "copilot", "no Copilot sub-agent construct (TQ-1)")
+        drops = tuple(
+            DropRecord(
+                "copilot",
+                agent.source_path,
+                f"sub-agent key '{key}'",
+                "no equivalent Copilot custom-agent field",
+            )
+            for key in agent.claude_keys
+            if key != "tools"
+        )
         return EmitResult(files=(EmittedFile(rel, content),), drops=drops)
 
 
@@ -1550,14 +1665,6 @@ _PI_TOOL_MAP: dict[str, tuple[str, ...]] = {
 _PI_MAPPED_AGENT_KEYS: frozenset[str] = frozenset(
     {"tools", "maxTurns", "effort", "memory", "skills"}
 )
-
-
-def _canon_tool_tokens(raw: object) -> list[str]:
-    """Split a canon ``tools`` value (``"Read, Glob"`` scalar or a YAML list) into tokens."""
-    if raw is None:
-        return []
-    items = raw.split(",") if isinstance(raw, str) else list(raw)  # type: ignore[arg-type]
-    return [str(tok).strip() for tok in items if str(tok).strip()]
 
 
 def _pi_map_tools(tokens: list[str], agent_name: str) -> list[str]:
@@ -1867,11 +1974,39 @@ def run_self_containment_pass(
         json.dumps(sentinel, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
     )
 
+    if bundle_root.name == "copilot":
+        _write_copilot_plugin_manifest(bundle_root, repo_root)
     if bundle_root.name == "pi":
         _write_pi_package_assets(bundle_root)
     if bundle_root.name == "claude":
         _write_claude_plugin_manifest(bundle_root, repo_root)
         _copy_claude_plugin_hooks(bundle_root, repo_root)
+
+
+def _write_copilot_plugin_manifest(bundle_root: Path, repo_root: Path) -> None:
+    """Write the tested legacy Copilot CLI manifest for native skills and agents.
+
+    Agent Plugins 1.0 requires its canonical ``$schema``, discovers ``skills/``
+    implicitly, and locates Copilot agents under ``com.github.copilot/agents/``. This
+    legacy manifest instead declares root component paths explicitly — the format Copilot
+    CLI runtime evidence for FORGE-101 pins. ``check-version-sync`` keeps ``version`` in
+    step with the root plugin manifest.
+    """
+    manifest = {
+        "name": "feature-forge",
+        "description": (
+            "End-to-end feature planning, specification, backlog, verification, "
+            "and documentation workflows."
+        ),
+        "version": _bundle_version(repo_root),
+        "agents": "agents/",
+        "skills": "skills/",
+    }
+    safe_write(
+        bundle_root,
+        "plugin.json",
+        json.dumps(manifest, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
+    )
 
 
 def _write_claude_plugin_manifest(bundle_root: Path, repo_root: Path) -> None:
@@ -2216,16 +2351,18 @@ def _translate_reference_host_terms(bundle_root: Path, agent_id: str) -> None:
 
 #: Per-host substitute for canon's ``/feature-forge:`` slash-command dispatch prefix
 #: applied to non-Claude support files (#270 P1.1). Pi has a real prefix (``/skill:``);
-#: other non-Claude hosts have no slash-command surface, so the prefix degrades to the
-#: bare skill name. Claude keeps canon verbatim (not in this table). Kept in step with
-#: the emitter-body pair ``("/feature-forge:", "")`` in ``_HOST_TERM_REPLACEMENTS`` and
-#: with Pi's appended ``("/feature-forge:", "/skill:")`` in
-#: ``_PI_HOST_TERM_REPLACEMENTS`` — a divergence would let bodies say one thing and
-#: reference/template/schema files say another.
+#: Copilot has two distribution-specific forms, so it gets the neutral ``invoke-skill: ``
+#: notation its overlay maps; other non-Claude hosts have no slash-command surface, so
+#: the prefix degrades to the bare skill name. Claude keeps canon verbatim (not in this
+#: table). Kept in step with the emitter-body pair ``("/feature-forge:", "")`` in
+#: ``_HOST_TERM_REPLACEMENTS``, with Pi's appended ``("/feature-forge:", "/skill:")`` in
+#: ``_PI_HOST_TERM_REPLACEMENTS``, and with Copilot's ``("/feature-forge:", "invoke-skill: ")``
+#: in ``_COPILOT_HOST_TERM_REPLACEMENTS`` — a divergence would let bodies say one thing
+#: and reference/template/schema files say another.
 _HOST_COMMAND_PREFIX: dict[str, str] = {
     "pi": "/skill:",
     "codex": "",
-    "copilot": "",
+    "copilot": "invoke-skill: ",
     "cursor": "",
     "gemini": "",
 }
@@ -2246,10 +2383,21 @@ def _apply_command_prefix(text: str, substitute: str) -> str:
     ``("`/feature-forge:*`", "`forge-*` skills")`` and ``("/feature-forge:", "")``
     in ``_HOST_TERM_REPLACEMENTS`` — bodies and support files must degrade the same
     prose to the same phrase.
+
+    Copilot's notation substitute (``invoke-skill: ``) is not a slash prefix either, so it
+    takes the same wildcard branch; and its overlay — the one place a Copilot bundle names
+    the concrete ``/feature-forge:<name>`` plugin form — is left untouched (everything
+    from ``_COPILOT_OVERLAY_HEADING`` on).
     """
-    if not substitute:
+    tail = ""
+    if substitute == _HOST_COMMAND_PREFIX["copilot"]:
+        text, sep, rest = text.partition(_COPILOT_OVERLAY_HEADING)
+        tail = sep + rest
+        for old, new in _COPILOT_NOUN_PAIRS:
+            text = text.replace(old, new)
+    if not substitute.startswith("/"):
         text = text.replace("`/feature-forge:*`", "`forge-*` skills")
-    return text.replace("/feature-forge:", substitute)
+    return text.replace("/feature-forge:", substitute) + tail
 
 
 def _translate_support_command_strings(
@@ -2264,14 +2412,15 @@ def _translate_support_command_strings(
     gemini) to concrete slash-command occurrences, leaving diagnostic strings like
     ``feature-forge: cannot locate install root`` (no leading slash) unchanged.
 
-    Suffixes covered depend on whether the substitute is empty. ``.md`` and ``.json``
-    are always safe — prose replacement never breaks structure. ``.py`` / ``.sh`` are
-    substituted ONLY when the substitute is non-empty (Pi's case): an empty replacement
-    on those suffixes would corrupt ``str.replace("/feature-forge:", …)``,
-    ``str.startswith("/feature-forge:")``, and slice-length code in the helpers into
-    always-true / whole-string forms. Non-Pi non-Claude scripts therefore keep
-    ``/feature-forge:`` string literals as the canonical internal form; the reading
-    surface (skills/refs/templates/schemas) is fully translated.
+    Suffixes covered depend on the host. ``.md`` and ``.json`` are always safe — prose
+    replacement never breaks structure. ``.py`` / ``.sh`` are substituted ONLY on Pi,
+    whose substitute is a real slash prefix: an empty replacement on those suffixes would
+    corrupt ``str.replace("/feature-forge:", …)``, ``str.startswith("/feature-forge:")``,
+    and slice-length code in the helpers into always-true / whole-string forms, and
+    Copilot's ``invoke-skill: `` notation is not a prefix the helpers can parse either
+    (its runtime output is selected by ``--host copilot`` instead). Non-Pi non-Claude
+    scripts therefore keep ``/feature-forge:`` string literals as the canonical internal
+    form; the reading surface (skills/refs/templates/schemas) is fully translated.
 
     Runtime helpers on Pi are re-verified against canon afterwards (REQ-GEN-05): a
     translated helper must differ from its source by EXACTLY this substitution and
@@ -2282,7 +2431,7 @@ def _translate_support_command_strings(
     if agent_id == "claude":
         return
     substitute = _HOST_COMMAND_PREFIX[agent_id]
-    if substitute:
+    if agent_id == "pi":
         suffixes = {".json", ".md", ".py", ".sh"}
     else:
         suffixes = {".json", ".md"}

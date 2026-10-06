@@ -34,6 +34,7 @@ FIELDS: tuple[tuple[str, str, "object"], ...] = (
         "plugins[0].version",
         lambda d: d["plugins"][0]["version"],
     ),
+    ("adapters/copilot/plugin.json", "version", lambda d: d["version"]),
     ("adapters/gemini/gemini-extension.json", "version", lambda d: d["version"]),
     # Built Claude bundle manifest (#322): generated from the root manifest, so it must carry
     # the same version. Kept in the sync gate so a hand-edit or a stale regenerate is caught.
@@ -107,8 +108,9 @@ def main(argv: list[str] | None = None) -> int:
     print(
         "version-sync: reconcile all fields to a single version (the conflicting "
         "values are printed above). marketplace.json is hand-edited; "
-        "gemini-extension.json AND adapters/claude/.claude-plugin/plugin.json are "
-        "REGENERATED via scripts/build-adapters.py (the claude manifest tracks the root "
+        "gemini-extension.json, adapters/copilot/plugin.json AND "
+        "adapters/claude/.claude-plugin/plugin.json are REGENERATED via "
+        "scripts/build-adapters.py (the claude and copilot manifests track the root "
         "plugin.json version; gemini also needs GEMINI_EXTENSION_VERSION bumped). "
         "See 06-packaging-versioning-hygiene.md."
     )

@@ -92,14 +92,14 @@ resolves before running the command, exactly as elsewhere.
 ```bash
 R="$(bash -c '[ -z "${FEATURE_FORGE_ROOT:-}" ] || [ -x "$FEATURE_FORGE_ROOT/scripts/forge-root.sh" ] || { echo "feature-forge: FEATURE_FORGE_ROOT=$FEATURE_FORGE_ROOT has no scripts/forge-root.sh" >&2; exit 2; }; for d in "${FEATURE_FORGE_ROOT:-}" "${CLAUDE_PLUGIN_ROOT:-}" "$HOME"/.claude/skills/feature-forge "$HOME"/.claude/plugins/cache/*/feature-forge/* "$HOME"/.claude/plugins/*/feature-forge "$HOME"/.agents/skills/feature-forge ./.agents/skills/feature-forge; do [ -x "$d/scripts/forge-root.sh" ] && exec "$d/scripts/forge-root.sh"; done')"
 [ -n "$R" ] || { echo "feature-forge: cannot locate plugin root" >&2; exit 1; }
-python3 "$R/scripts/forge-session.py" stage-exit {stage-exit-args} --specs-dir "{specsDir}" --host generic --verify-capability "{verify-capability}"
+python3 "$R/scripts/forge-session.py" stage-exit {stage-exit-args} --specs-dir "{specsDir}" --host copilot --verify-capability "{verify-capability}"
 ```
 
 Obey the DIRECTIVES it prints, in the consumption order this protocol fixes: surface `invalidAutoVerifyKeys` and every `warnings` entry first; `runInStageVerify: true` → run the in-stage clean-room verify chain now (honoring `autoFixEligible`, and asking through the Standard Verify Gate first when you may not dispatch unsolicited); `verifyGate: "standard"` → present the Standard Verify Gate; `verifyGate: "manual-print"` → print the `verifyCommand` for the user and do **not** dispatch inline. Then, and only when `terminalOwnedBy` is `"self"`, **print the NEXT-STEPS block verbatim as your absolute last output — nothing after its sentinel line.** A `terminalOwnedBy: "outer"` payload carries `nextSteps: null`: return your structured result to the caller and print no terminal block at all.
 <!-- END: scripted-stage-exit-stamp -->
 
-The stamp is shown with `--host generic`; the adapter build substitutes `pi`/`generic` per
-target, and §"Host and capability determination" below governs the value. The literal is
+The stamp is shown with `--host copilot`; the adapter build substitutes `pi`/`copilot`/`generic`
+per target, and §"Host and capability determination" below governs the value. The literal is
 deliberate — `scripts/build-adapters.py` keys its host translation on the exact canon
 value of that flag, and the stamp sites are compared byte-for-byte, so it is the one token
 in that line that is not a placeholder.
@@ -109,9 +109,9 @@ in that line that is not a placeholder.
 Before the call, compute the two inputs independently. They are unrelated: **a host never
 implies a capability**, and the script takes `--verify-capability` at face value.
 
-**`--host`** describes only the active adapter command surface — `claude`, `pi`, or
-`generic`. It selects command syntax (Claude's stage-command prefix vs Pi's `/skill:` vs
-host-neutral) and fresh-session wording (Claude's clear command vs Pi's `/new` vs neutral
+**`--host`** describes only the active adapter command surface — `claude`, `copilot`,
+`pi`, or `generic`. It selects command syntax (Claude's stage-command prefix vs Pi's
+`/skill:` vs Copilot's `invoke-skill:` notation vs host-neutral) and fresh-session wording (Claude's clear command vs Pi's `/new` vs neutral
 prose). Nothing else.
 
 **`--verify-capability interactive`** is passed only when **both** of these hold:
@@ -197,7 +197,7 @@ The dispatching caller states ownership in its invocation prompt using a literal
   terminal block.
 
 **Absent the token, the skill treats itself as `direct`.** A user-typed
-`forge-verify` or `forge-fix` is the only path that carries
+`invoke-skill: forge-verify` or `invoke-skill: forge-fix` is the only path that carries
 no dispatcher, so "no token" and "no dispatcher" are the same condition. The skill passes
 the resolved value straight through as `--owner direct|nested`.
 
@@ -396,7 +396,7 @@ features. The script has already folded the routing into the NEXT-STEPS block, s
 directive is informational — you do **not** re-derive the wording:
 
 - `required: true` (at least one `blocksCurrent: true` request) — the reconcile command
-  (`forge-0-epic {epic}`) is promoted ahead of the ordinary production
+  (`invoke-skill: forge-0-epic {epic}`) is promoted ahead of the ordinary production
   successor, and that successor is demoted to a follow-up line ("After reconciling,
   continue the pipeline with …"). This is *reconcile-before-specs*: proceeding would author
   artifacts against a decomposition that is about to change. It is strongest when exiting
