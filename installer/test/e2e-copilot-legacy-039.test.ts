@@ -330,3 +330,45 @@ test("update --symlink keeps a user directory that replaced a stale link instead
     assert.equal(await readFile(join(dest, "mine.md"), "utf8"), "mine\n");
   });
 });
+
+for (const scope of ["project", "global"] as const) {
+  test(`0.3.9 ${scope} copy install with no .copilot dir: plain update finds it by its manifest and migrates it`, async () => {
+    await withSandbox(async (sb) => {
+      await makeFixtureBundle(sb, "copilot", SKILLS, AGENTS);
+      const old = await seed039Copilot(sb, scope, "copy", SKILLS, AGENTS);
+      const configDir = join(scope === "global" ? sb.home : sb.cwd, ".copilot");
+      assert.equal(await exists(configDir), false);
+
+      const listed = await runCli2(["list", ...scopeFlag(scope), "--source", sb.source], sb);
+      const copilot = listed.agents.find((a) => a.agent === "copilot")!;
+      assert.equal(copilot.detected, true, "a recorded install counts as detected");
+      assert.ok(copilot.actions.some((a) => a.relpath === "legacy-layout:true(run update)"));
+
+      const r = await runCli2(["update", ...scopeFlag(scope), "--source", sb.source], sb);
+      assert.equal(r.exitCode, EXIT.SUCCESS, JSON.stringify(r.agents.map((a) => a.error)));
+      assert.deepEqual(r.agents.map((a) => a.agent), ["copilot"]);
+      const root = nativeRoot(sb, scope);
+      assert.ok(await exists(join(root, "skills/forge/SKILL.md")));
+      assert.ok(await exists(join(root, "agents/forge-verifier.agent.md")));
+      assert.ok(await exists(join(root, `.feature-forge.${scope}.json`)));
+      if (scope === "global") assert.equal(await exists(old.manifestPath), false);
+      assert.equal(await readFile(old.instructions, "utf8"), `${old.userPrefix}\n${old.userSuffix}`);
+    });
+  });
+
+  test(`${scope}: .github content without a manifest is never detection for plain update or list`, async () => {
+    await withSandbox(async (sb) => {
+      await makeFixtureBundle(sb, "copilot", SKILLS, AGENTS);
+      const github = join(scope === "global" ? sb.home : sb.cwd, ".github");
+      await mkdir(join(github, "feature-forge"), { recursive: true });
+      await writeFile(join(github, "copilot-instructions.md"), "# mine\n");
+      const before = await snapshotTree(github);
+
+      const listed = await runCli2(["list", ...scopeFlag(scope), "--source", sb.source], sb);
+      assert.equal(listed.agents.find((a) => a.agent === "copilot")!.detected, false);
+      const r = await runCli2(["update", ...scopeFlag(scope), "--source", sb.source], sb);
+      assert.deepEqual(r.agents, []);
+      assert.deepEqual(await snapshotTree(github), before);
+    });
+  });
+}

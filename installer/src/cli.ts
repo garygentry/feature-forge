@@ -13,7 +13,7 @@
 
 import { parseArgs } from "node:util";
 import process from "node:process";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import * as path from "node:path";
 import {
@@ -350,9 +350,12 @@ async function runMutation(
   const mode: Mode = resolveMode(flags.symlink, (env.platform ?? process.platform) === "win32");
   const ropts = { home: env.home, cwd: env.cwd, scope };
 
+  // `update` also targets any agent with an install manifest in this scope, so an install whose
+  // config dir is gone (e.g. a 0.3.9 personal Copilot install without `~/.copilot`) still migrates.
+  const counts = (d: DetectionResult) => d.detected || (subcommand === "update" && hasInstallManifest(d.agent, scope, env));
   const targets: AgentId[] = flags.agent
     ? [flags.agent]
-    : detectAgents(ropts).filter((d) => d.detected).map((d) => d.agent);
+    : detectAgents(ropts).filter(counts).map((d) => d.agent);
 
   let raufPin: string | null = flags.skipRauf ? null : RAUF_PIN;
   let raufError: InstallerError | undefined;
@@ -374,7 +377,8 @@ async function runMutation(
 
   const agentReports: AgentReport[] = [];
   for (const agent of targets) {
-    const detection = detectAgent(agent, ropts);
+    const probed = detectAgent(agent, ropts);
+    const detection = { ...probed, detected: counts(probed) };
     const r = await runOneAgent(subcommand, agent, detection, flags, scope, mode, raufPin, env);
     // Carry the scope-effective confidence + docs URL onto the report for honest labeling (A4).
     agentReports.push({ ...r, confidence: detection.confidence, docsUrl: detection.docsUrl });
@@ -442,6 +446,25 @@ function readLegacyCopilotGlobal(env: CliEnv): Result<LegacyCopilotGlobal | null
   const placements = validatePlacementOwnership(read.value, trustedCopilotPlacements("global", env));
   if (!placements.ok) return placements;
   return ok({ manifest: read.value, manifestPath: legacyPath, root });
+}
+
+/**
+ * True when an install manifest FILE for `agent` exists in `scope`: the current one, or (Copilot
+ * personal scope) the legacy `~/.github/.feature-forge.global.json`. A recorded install counts as
+ * detected for update/list; a bare `.github` directory never does.
+ */
+function hasInstallManifest(agent: AgentId, scope: Scope, env: CliEnv): boolean {
+  const isFile = (p: string) => {
+    try {
+      return statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  };
+  if (isFile(manifestPath(agent, scope, { home: env.home, cwd: env.cwd }))) return true;
+  if (agent !== "copilot" || scope !== "global") return false;
+  const home = resolveRoots({ home: env.home, cwd: env.cwd }).home;
+  return isFile(path.join(home, ".github", `${MANIFEST_PREFIX}global.json`));
 }
 
 /** Paths journaled by an interrupted migration; a missing or unreadable journal claims nothing. */
@@ -798,7 +821,8 @@ async function runList(flags: CliFlags, env: CliEnv): Promise<RunReport> {
 
   const agentReports: AgentReport[] = [];
   for (const agent of targets) {
-    const detection = detectAgent(agent, ropts);
+    const probed = detectAgent(agent, ropts);
+    const detection = { ...probed, detected: probed.detected || hasInstallManifest(agent, scope, env) };
     const base = listOneAgent(agent, detection, flags, scope, env);
     agentReports.push({ ...base, confidence: detection.confidence, docsUrl: detection.docsUrl });
   }
