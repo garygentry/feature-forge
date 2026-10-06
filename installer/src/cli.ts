@@ -350,9 +350,10 @@ async function runMutation(
   const mode: Mode = resolveMode(flags.symlink, (env.platform ?? process.platform) === "win32");
   const ropts = { home: env.home, cwd: env.cwd, scope };
 
-  // `update` also targets any agent with an install manifest in this scope, so an install whose
-  // config dir is gone (e.g. a 0.3.9 personal Copilot install without `~/.copilot`) still migrates.
-  const counts = (d: DetectionResult) => d.detected || (subcommand === "update" && hasInstallManifest(d.agent, scope, env));
+  // update/uninstall also target any agent with an install manifest in this scope, so an install
+  // whose config dir is gone (e.g. a 0.3.9 personal Copilot install without `~/.copilot`) is reached.
+  const counts = (d: DetectionResult) => d.detected
+    || (subcommand !== "install" && hasInstallManifest(d.agent, scope, env));
   const targets: AgentId[] = flags.agent
     ? [flags.agent]
     : detectAgents(ropts).filter(counts).map((d) => d.agent);

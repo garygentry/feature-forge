@@ -140,8 +140,11 @@ async function applyCopyInstall(
   }
   const unlinked = await removePath(linkPath);
   if (!unlinked.ok) return fail(ctx, planned, unlinked.error);
-  const report = await applyCopyFiles(planned, ctx);
-  if (!report.ok) {
+  let committed = false;
+  const report = await applyCopyFiles(planned, ctx, () => { committed = true; });
+  // Once the copy-mode manifest is written, restoring the link would make the manifest lie (and a
+  // later update would hash/copy through the link); a post-commit cleanup failure is retried instead.
+  if (!report.ok && !committed) {
     // Only this run created the directory now at `linkPath`; replace it with the original link.
     let isDir = false;
     try {
@@ -162,6 +165,7 @@ async function applyCopyInstall(
 async function applyCopyFiles(
   planned: PlannedAction,
   ctx: ApplyContext,
+  onManifestCommitted: () => void = () => {},
 ): Promise<AgentReport> {
   const source = ctx.source;
   if (source === null) {
@@ -269,6 +273,7 @@ async function applyCopyFiles(
   });
   const wrote = (ctx.writeManifestSeam ?? writeManifest)(ctx.manifestPath, manifest);
   if (!wrote.ok) return fail(ctx, planned, wrote.error);
+  onManifestCommitted();
   const finished = await finishMigration(ctx);
   if (!finished.ok) return fail(ctx, planned, finished.error);
   return success(ctx, planned);
@@ -492,7 +497,7 @@ async function applySymlinkUninstall(
   const resolved = resolveWithin(ctx.agentRoot, ctx.destination);
   if (!resolved.ok) return fail(ctx, planned, resolved.error);
 
-  const removed = await removePath(resolved.value);
+  const removed = await unlinkIfSymlink(resolved.value);
   if (!removed.ok) return fail(ctx, planned, removed.error);
 
   const placementsRemoved = await removePlacements(planned.placements ?? []);
@@ -575,7 +580,7 @@ async function applyMirror(
         break;
       }
       case "remove": {
-        const removed = await removePath(destAbs);
+        const removed = fa.relpath === "." ? await unlinkIfSymlink(destAbs) : await removePath(destAbs);
         if (!removed.ok) return removed;
         removedParents.add(path.dirname(destAbs));
         break;
@@ -791,6 +796,19 @@ async function defaultCopyFile(
       path: destAbs,
     });
   }
+}
+
+/**
+ * Unlink a recorded whole-primary symlink. If something other than a link now sits there (the user
+ * replaced it), it is not provably ours: leave it in place rather than deleting it recursively.
+ */
+async function unlinkIfSymlink(p: string): Promise<Result<void>> {
+  try {
+    if (!fs.lstatSync(p).isSymbolicLink()) return ok(undefined);
+  } catch {
+    return ok(undefined); // already gone
+  }
+  return removePath(p);
 }
 
 /** After the new manifest commits: drop the superseded manifest, then the migration journal. */

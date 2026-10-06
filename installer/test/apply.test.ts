@@ -508,3 +508,43 @@ test("copy: a vanished mirror file on the reconstruct path → err Result, not a
     assert.equal(report.error?.code, "UNEXPECTED");
   });
 });
+
+test("symlink→copy switch: a cleanup failure after the manifest commits keeps the copy (no link rollback)", { skip: isWindows() || process.getuid?.() === 0 }, async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "claude");
+    const src = located(sb, "claude");
+    const oldTarget = path.join(sb.home, "old-cache");
+    fs.mkdirSync(oldTarget, { recursive: true });
+    fs.writeFileSync(path.join(oldTarget, "keep.md"), "old\n");
+    const base = ctxFor(sb, "claude", src, "copy");
+    fs.mkdirSync(path.dirname(base.destination), { recursive: true });
+    fs.symlinkSync(oldTarget, base.destination, "dir");
+    const prior: InstallManifest = {
+      schemaVersion: 2, agent: "claude", scope: "project", mode: "symlink", destination: base.destination,
+      featureForgeVersion: null, sourceHash: "old", raufPin: null, installedAt: NOW, updatedAt: NOW,
+      skills: [], files: [{ path: "keep.md" }], link: { target: oldTarget },
+    };
+    const planned = planUpdate({
+      agent: "claude", scope: "project", mode: "copy", destination: base.destination,
+      source: src, priorManifest: prior, force: false, raufPin: base.raufPin,
+    });
+    assert.ok(planned.ok);
+    assert.deepEqual(planned.value.files[0], { relpath: ".", action: "remove" });
+    // A superseded manifest that cannot be removed: the failure happens only after the commit.
+    const locked = path.join(sb.home, "locked");
+    fs.mkdirSync(locked);
+    fs.writeFileSync(path.join(locked, "old.json"), "{}");
+    fs.chmodSync(locked, 0o555);
+    let report;
+    try {
+      report = await apply(planned.value, { ...base, priorManifest: prior, supersededManifestPath: path.join(locked, "old.json") });
+    } finally {
+      fs.chmodSync(locked, 0o755);
+    }
+    assert.equal(report.ok, false);
+    assert.equal(fs.lstatSync(base.destination).isSymbolicLink(), false, "the committed copy stays");
+    const m = readManifest(base.destination.replace(/feature-forge$/, ".feature-forge.project.json"));
+    assert.ok(m.ok && m.value?.mode === "copy");
+    assert.deepEqual(fs.readdirSync(oldTarget), ["keep.md"], "old link target untouched");
+  });
+});

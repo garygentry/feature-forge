@@ -372,3 +372,34 @@ for (const scope of ["project", "global"] as const) {
     });
   });
 }
+
+for (const scope of ["project", "global"] as const) {
+  test(`0.3.9 ${scope} symlink install replaced by a user directory is left in place`, async () => {
+    await withSandbox(async (sb) => {
+      const old = await setup(sb, scope, "symlink");
+      await rm(old.runtime);
+      await mkdir(old.runtime, { recursive: true });
+      await writeFile(join(old.runtime, "mine.md"), "mine\n");
+      const args = ["-a", "copilot", ...scopeFlag(scope), "--source", sb.source];
+      if (scope === "global") {
+        assert.equal((await runCli2(["update", ...args], sb)).exitCode, EXIT.SUCCESS);
+      } else {
+        assert.equal((await runCli2(["uninstall", ...args], sb)).exitCode, EXIT.SUCCESS);
+      }
+      assert.equal(await readFile(join(old.runtime, "mine.md"), "utf8"), "mine\n");
+    });
+  });
+}
+
+test("plain uninstall -g removes a 0.3.9 personal install that has no ~/.copilot dir", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "copilot", SKILLS, AGENTS);
+    const old = await seed039Copilot(sb, "global", "copy", SKILLS, AGENTS);
+    const r = await runCli2(["uninstall", "-g"], sb);
+    assert.equal(r.exitCode, EXIT.SUCCESS);
+    assert.deepEqual(r.agents.map((a) => a.agent), ["copilot"]);
+    assert.deepEqual(await snapshotTree(old.runtime), [], "no runtime files remain");
+    assert.equal(await exists(old.manifestPath), false);
+    assert.deepEqual(await leftovers(sb), ["~/.github/copilot-instructions.md"]);
+  });
+});
