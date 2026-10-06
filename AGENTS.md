@@ -38,9 +38,11 @@ Every change reaches `main` **via a pull request** with green CI (`ci.yml` /
 3. Push the branch, open a PR, let CI go green, then merge.
 
 This mirrors the sibling **rauf** repo's process. The shared release principles across both
-repos: (1) a merge to `main` **never publishes**; (2) publishing is **manual, owner-gated**
-`workflow_dispatch`; (3) **bump the version before publishing** (npm rejects republishing a
-version); (4) **offer, don't act** — suggest a release, never cut one yourself. rauf and
+repos: (1) a merge to `main` **never publishes**; (2) publishing is **tag-triggered and gated
+by one owner approval** on the `release` environment (ADR 0046 Amendment 4) — the agent runs
+everything up to the gate, only the owner can approve it; (3) **bump the version before
+publishing** (npm rejects republishing a version); (4) **offer, don't act** — suggest a release,
+and cut one (prep PR + tag) only once the user has said yes. rauf and
 feature-forge are versioned **independently** (no lockstep); the only coupling is the
 `RAUF_PIN` provisioned-default coordinate plus `COMPATIBILITY.md`.
 
@@ -209,18 +211,29 @@ documentation for mechanics; this file does not duplicate them.
 ## Publishing to npm
 
 The installer is published to npm as `@garygentry/feature-forge` — this is what backs
-`npx @garygentry/feature-forge` and `npm i -g @garygentry/feature-forge`. Publishing is
-**manual and deliberate; a merge to `main` never publishes**:
+`npx @garygentry/feature-forge` and `npm i -g @garygentry/feature-forge`. Publishing goes
+through **one human approval per release**, which an agent cannot give itself (ADR 0046
+Amendment 4, #356). **A merge to `main` never publishes.**
 
-- A merge runs CI (`ci.yml`, `os-matrix.yml`) but **no publish step**. The only workflow that
-  runs `npm publish` is `.github/workflows/npm-publish.yml`, whose **sole trigger is
-  `workflow_dispatch`** (Actions → "npm Publish (manual)" → Run workflow).
-- **Bump the version first.** Re-publishing the current `installer/package.json` `version` is
-  rejected by npm (409). So a publish is always: bump `installer/package.json` `version` →
-  merge → dispatch the publish workflow. The workflow's `prepack` builds `dist/` and bundles
-  `adapters/` automatically.
-- It uses npm Trusted Publishing (OIDC) — no token — and must be dispatched by the repository
-  owner.
+- **`.github/workflows/release.yml` is the only workflow that publishes.** Its sole trigger is
+  pushing a `v*` tag. npm Trusted Publishing trusts it **by filename and the `release`
+  environment**, so never rename it or add a second publishing workflow. No npm token exists,
+  anywhere.
+- **The tag tracks the installer version:** `v<installer/package.json version>`, e.g. `v0.3.10`.
+  Every tag is exactly one npm publish. The plugin version (`.claude-plugin/plugin.json`, the
+  0.21.x line) stays independent; the workflow reports it in the summary and puts it in the
+  GitHub Release title (`v0.3.10 (plugin 0.21.0)`). A plugin release still bumps the installer
+  so that it gets a tag.
+- **`verify` job** (no publish credentials) checks that the tag matches
+  `installer/package.json` and runs the full Quality Gate plus the adapters-drift and
+  version-sync pre-publish check. It also confirms that the version isn't on npm yet, packs the
+  tarball (`prepack` builds `dist/` and bundles `adapters/`), and writes the release summary
+  (version, plugin version, changelog section, `git diff --stat` since the previous tag, and a
+  loud flag if `.github/` changed).
+- **`publish` job** (`environment: release`) waits for the owner's approval. It then attests
+  the tarball (`actions/attest-build-provenance`), runs `npm publish <tgz> --provenance` (dist-tag
+  `next` for a prerelease version), and creates the GitHub Release with the changelog section
+  as notes.
 
 ### Does this change impact the published build?
 
@@ -239,24 +252,24 @@ under canon, tests) are not publish-worthy on their own.
 ### Agent guidance — prompt after merge, then offer to run the runbook
 
 When a **publish-worthy** change (per above) is merged to `main`, **proactively prompt the user**:
-note that the change is now on `main` but not yet on npm, and ask whether they want to publish.
-Do **not** publish unprompted and do **not** treat a merge as implying a release — but once the
-user approves, **offer to run the full runbook below on their behalf** rather than just handing
-them steps. Publishing is owner-gated, but with explicit user approval you may bump, dispatch the
-workflow, and verify.
+note that the change is now on `main` but not yet on npm, and ask whether they want to release.
+Do **not** release unprompted and do **not** treat a merge as implying a release. Once the user
+approves, **offer to run the runbook below on their behalf**. You do everything up to the gate;
+the owner approves the `release` environment, in GitHub Mobile or on the web.
 
-### Publish runbook
+### Release runbook
 
 1. **Decide the version.** Compare `installer/package.json` `version` against npm
    (`npm view @garygentry/feature-forge version`). If local is **already ahead** and unpublished
    (a prior change bumped it), reuse it — **do not double-bump**. Otherwise bump
    `installer/package.json` `version` (independent line; npm rejects republishing a version, 409).
-   This repo **does not git-tag releases** — don't create a tag.
-2. **CHANGELOG.** Ensure the change is recorded under `## [Unreleased]` in `CHANGELOG.md` (the
-   installer is an independent version line, so no dated heading rename is required for an
-   installer-only publish). Two standing rules, both learned from the 0.14.0 release (which
-   bumped versions without cutting `[Unreleased]`, and was followed by two feature merges with
-   no CHANGELOG entries at all — a process gap, not a one-off):
+   For a plugin release, also bump the synced plugin fields (`scripts/check-version-sync.py`).
+2. **CHANGELOG.** The release notes come from `CHANGELOG.md`: the `## [Unreleased]` section when
+   it has content, otherwise the top dated `## [X.Y.Z]` section. An installer-only release keeps
+   its entry under `[Unreleased]`, naming the installer version, e.g. `(installer 0.3.10)`. Three
+   standing rules, all learned from the 0.14.0 release (which bumped versions without cutting
+   `[Unreleased]`, and was followed by two feature merges with no CHANGELOG entries at all — a
+   process gap, not a one-off):
    - **Every feature PR adds its own CHANGELOG entry** under `## [Unreleased]`, in the PR
      itself — never deferred to "the release".
    - **A plugin release cuts `[Unreleased]` into a dated `## [X.Y.Z] — YYYY-MM-DD` heading in
@@ -268,8 +281,7 @@ workflow, and verify.
      linked from the entry, not inlined into it. (Existing long entries are grandfathered; this
      applies to new entries. See the multi-hundred-word `[Unreleased]` bullets for the anti-pattern.)
 3. **Regenerate + verify** if canon changed: `python3 scripts/build-adapters.py` then
-   `bash scripts/validate.sh` (green). Any version bump / changelog edit goes through a PR with
-   green CI — never a direct push to `main`.
+   `bash scripts/validate.sh` (green).
 4. **Pre-flight the package locally** to catch build/bundle failures before spending a CI run:
    `cd installer && npm ci && npm run prepack && npm pack --dry-run`. Confirm the new version and
    that `adapters/` carries your change (`grep -rl <marker> adapters/`). **Clean up afterward:**
@@ -279,15 +291,26 @@ workflow, and verify.
    `Cannot find package 'vitest'`). Remove it before re-validating: `rm -rf installer/adapters`.
    CI never hits this (fresh checkout), so a failure that disappears after that `rm` is the
    leftover copy, not your change.
-5. **Dispatch the publish workflow** (only after the version bump is on `main`):
-   `gh workflow run npm-publish.yml -f dist-tag=latest`, then watch it:
-   `gh run watch <run-id> --exit-status`. It uses npm Trusted Publishing (OIDC) — no token.
-6. **Verify it's live:** `npm view @garygentry/feature-forge version dist-tags` shows the new
-   version under `latest`.
+5. **Release-prep PR → merge.** The version bump and CHANGELOG edit go through a PR with green
+   CI, never a direct push to `main`.
+6. **Tag the merge commit:** `git tag v<installer version> <merge-sha> && git push origin
+   v<installer version>`. This starts `release.yml`. If `verify` fails, fix the problem in a new
+   PR and bump the version again; never move or reuse a pushed tag.
+7. **Hand the gate to the owner.** Tell the user the run is waiting on the `release`
+   environment and link it (`gh run list --workflow release.yml`). Point them at the `verify`
+   summary to review, especially the `.github/` flag. Then wait: `gh run watch <run-id>
+   --exit-status`.
+8. **Verify it's live:**
+   - `npm view @garygentry/feature-forge version dist-tags` shows the new version under `latest`.
+   - The package page shows provenance.
+   - The GitHub Release exists.
+   - The `RAUF_PIN resolves` CI check is green.
+   - A dev-box install (`npx @garygentry/feature-forge@<v>`) followed by `doctor` is healthy.
 
-**Human prerequisites:** the npm **Trusted Publisher (OIDC)** must be configured on the package
-(one-time, already done — every prior release used it). The publish must be **dispatched by / on
-behalf of the repository owner**; there is no npm login or token for the agent to manage.
+**Human prerequisites (one-time, operator-only):** the npm package's **Trusted Publisher** points
+at this repo, workflow `release.yml`, **environment `release`**. Its publishing access is
+"Require two-factor authentication and disallow tokens". The `release` environment requires the
+owner's review and only deploys `v*` tags.
 
 ### On a new rauf release — advance the pin
 

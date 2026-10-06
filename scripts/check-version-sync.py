@@ -47,7 +47,9 @@ FIELDS: tuple[tuple[str, str, "object"], ...] = (
     ("adapters/claude/.claude-plugin/plugin.json", "version", lambda d: d["version"]),
 )
 
-#: EXCLUDED from the gate — installer/ is a separately published sub-package (00 §5).
+#: EXCLUDED from the gate — installer/ is a separately published sub-package (00 §5). Its
+#: version is the one the release tag tracks (`v<installer version>`, #356): release.yml checks
+#: the tag against it, so it never needs to match the plugin fields above.
 EXCLUDED = ("installer/package.json",)
 
 
