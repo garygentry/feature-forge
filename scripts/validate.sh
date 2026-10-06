@@ -72,10 +72,14 @@ fi
 echo ""
 echo "Checking claude plugin manifest (claude plugin validate --strict)..."
 if command -v claude >/dev/null 2>&1; then
-  if claude plugin validate --strict "$REPO_ROOT"; then
-    echo "PASS: claude plugin validate --strict"
+  # Validate the marketplace manifest file, not the repo root: given a directory, claude
+  # >= 2.1.292 also lints it as a plugin and flags the repo's own dev CLAUDE.md ("not loaded as
+  # project context"), which --strict turns into a failure. The root is a marketplace, not a
+  # plugin; the distributed plugin is validated separately below.
+  if claude plugin validate --strict "$REPO_ROOT/.claude-plugin/marketplace.json"; then
+    echo "PASS: claude plugin validate --strict .claude-plugin/marketplace.json"
   else
-    echo "FAIL: claude plugin validate --strict reported errors (see above)"
+    echo "FAIL: claude plugin validate --strict .claude-plugin/marketplace.json reported errors (see above)"
     ERRORS=$((ERRORS + 1))
   fi
   # The marketplace distributes the built bundle (#314), so validate the plugin it ships too

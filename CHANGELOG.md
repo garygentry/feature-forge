@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Copilot invocation prose is distribution-aware (#325 F1).** Copilot descriptions, skill bodies, references, and stage-exit output (`--host copilot`) write `invoke-skill: <name> [arguments]` instead of assuming one slash name. Each skill's Copilot host notes map that to the plugin form (`/feature-forge:<name>`) and the direct form (`/<name>`). The Copilot host notes keep the Interaction Capability Ladder guidance, and `doctor` now reports `hostArg: copilot` for Copilot bundles.
 
+### Fixed
+
+- **CI: `claude plugin validate --strict` failed on the repo root.** Starting with claude 2.1.292, validating a directory also lints it as a plugin, which flags the repo's own development `CLAUDE.md` at the root. `--strict` then fails every PR and `main`. `scripts/validate.sh` now validates `.claude-plugin/marketplace.json` directly; the root is a marketplace, not a plugin. The distributed plugin (`adapters/claude`) is still validated as a plugin.
+
 ## [0.21.0] — 2026-09-30
 
 ### Upgrade notes
