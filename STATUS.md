@@ -20,7 +20,9 @@ forge-5-loop consumes rauf's status surface (#339/#340), CI provisions pinned te
 | npm | 0.3.9 published; 0.3.10 pending publish | |
 | Commit | this release commit | |
 
-CHANGELOG `[Unreleased]` records the rauf 0.18.0 pin advance (installer-only).
+CHANGELOG `[Unreleased]` records the rauf 0.18.0 pin advance and native GitHub Copilot support
+(#325/#360: the `adapters/copilot` bundle, the Copilot marketplace manifest, and the installer's
+Copilot layout migration). It is not an installer-only release.
 
 ### rauf coupling
 
