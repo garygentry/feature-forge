@@ -68,11 +68,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `scripts/check-installer-pack.py` (real prepack + `npm pack --dry-run`: the packed `adapters/`
     must equal the source tree with the Copilot bundle complete and nothing outside the package
     surface, and the run must leave `git status` unchanged). Each check has a negative test.
-  - **Known gaps.** No public Copilot plugin source works out of the box yet: this repository's
-    marketplace serves the Claude bundle, and a `garygentry/feature-forge:adapters/copilot` install
-    lands where the resolver does not look ([#360](https://github.com/garygentry/feature-forge/issues/360)).
-    Use the npm installer. The published npm package also lacks the forge-bootstrap templates'
-    `.gitignore` files, because npm always drops them
+  - **Copilot plugin marketplace (#360).** `copilot plugin marketplace add garygentry/feature-forge`
+    then `copilot plugin install feature-forge@feature-forge` now installs the Copilot bundle, which
+    lands at `~/.copilot/installed-plugins/feature-forge/feature-forge/` and resolves its runtime
+    without `FEATURE_FORGE_ROOT` (verified on Copilot CLI 1.0.91). The new
+    `.github/plugin/marketplace.json` serves `./adapters/copilot`. Copilot reads it before
+    `.claude-plugin/marketplace.json`, and Claude Code reads only the latter, so the Claude
+    marketplace still serves `adapters/claude`. This plugin route is now the recommended Copilot
+    install; the npm installer is the compatibility path. `check-copilot-adapter.py` gates the
+    manifest (one `feature-forge` entry, source `./adapters/copilot`, no higher-precedence
+    `marketplace.json` or `.plugin/marketplace.json` shadowing it) and `check-version-sync.py`
+    tracks its version.
+  - **Known gaps.** A `copilot plugin install garygentry/feature-forge:adapters/copilot` install
+    still lands where the resolver does not look; use the marketplace route. The published npm
+    package lacks the forge-bootstrap templates' `.gitignore` files, because npm always drops them
     ([#359](https://github.com/garygentry/feature-forge/issues/359)).
 
 ### Fixed

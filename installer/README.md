@@ -66,7 +66,9 @@ For Copilot, `--global` installs one complete runtime bundle at
 alongside `.github/skills/` and `.github/agents/`. Copilot loads the mirrored `SKILL.md` skills and
 `.agent.md` custom agents natively; skills locate the runtime themselves (or via
 `FEATURE_FORGE_ROOT`). Both scopes are runtime-verified on Copilot CLI 1.0.80. A direct install
-exposes skills as `/<name>` (a Copilot plugin install would expose `/feature-forge:<name>`).
+exposes skills as `/<name>`. The installer is Copilot's compatibility path: the recommended route
+is the Copilot plugin (`copilot plugin marketplace add garygentry/feature-forge`, then
+`copilot plugin install feature-forge@feature-forge`), which exposes `/feature-forge:<name>`.
 
 The installer no longer writes a block into `.github/copilot-instructions.md`. Installs made by
 0.3.9 and earlier (runtime at `.github/feature-forge/`, personal installs under `~/.github/`, plus

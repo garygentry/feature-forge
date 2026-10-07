@@ -32,7 +32,15 @@ Parse this rather than inferring commands. Version floors are literal — compar
       "verify": "The feature-forge skills are available (e.g. /feature-forge:forge-init resolves)."
     },
     "codex":   { "installContext": "shell", "install": ["npx @garygentry/feature-forge install -a codex"],   "verify": "npx @garygentry/feature-forge install -a codex --dry-run --json  # exits 0" },
-    "copilot": { "installContext": "shell", "install": ["npx @garygentry/feature-forge install -a copilot"], "verify": "npx @garygentry/feature-forge install -a copilot --dry-run --json  # exits 0" },
+    "copilot": {
+      "installContext": "shell",
+      "install": [
+        "copilot plugin marketplace add garygentry/feature-forge",
+        "copilot plugin install feature-forge@feature-forge"
+      ],
+      "verify": "copilot plugin list | grep -q 'feature-forge@feature-forge'  # exits 0",
+      "compatibilityInstall": "npx @garygentry/feature-forge install -a copilot"
+    },
     "cursor":  { "installContext": "shell", "install": ["npx @garygentry/feature-forge install -a cursor"],  "verify": "npx @garygentry/feature-forge install -a cursor --dry-run --json  # exits 0" },
     "gemini":  { "installContext": "shell", "install": ["npx @garygentry/feature-forge install -a gemini"],  "verify": "npx @garygentry/feature-forge install -a gemini --dry-run --json  # exits 0" }
   },
@@ -67,20 +75,28 @@ Identify the host agent you are running as, then install:
   /plugin marketplace add garygentry/feature-forge
   /plugin install feature-forge@feature-forge
   ```
-- **Codex / Copilot / Cursor / Gemini** → run in the shell:
+- **Copilot** → install the Copilot plugin in the shell:
   ```bash
-  npx @garygentry/feature-forge install -a <agent>   # <agent> = codex | copilot | cursor | gemini
+  copilot plugin marketplace add garygentry/feature-forge
+  copilot plugin install feature-forge@feature-forge
+  ```
+  If Copilot plugins are unavailable, or you want a project-scoped install, use the npm installer
+  (`npx @garygentry/feature-forge install -a copilot`) instead.
+- **Codex / Cursor / Gemini** → run in the shell:
+  ```bash
+  npx @garygentry/feature-forge install -a <agent>   # <agent> = codex | cursor | gemini
   ```
 - **Can't determine which agent you are → GATE 1.** Ask: "Which coding agent are you running
   in — Claude Code, Codex, Copilot, Cursor, or Gemini?" Then use the matching command above.
 
-**Verify before continuing.** Claude: confirm `/feature-forge:forge-init` resolves. Others:
+**Verify before continuing.** Claude: confirm `/feature-forge:forge-init` resolves. Copilot plugin:
+`copilot plugin list | grep -q feature-forge@feature-forge` exits 0. Others (and the Copilot npm install):
 `npx @garygentry/feature-forge install -a <agent> --dry-run --json` exits 0. Do not proceed
 until the skills are present.
 
-**Skill names below** use the Claude form (`/feature-forge:<name>`). On Copilot, an install made
-with the command above exposes each skill as `/<name>` (for example `/forge-init`); feature-forge's
-own skill text writes `invoke-skill: <name>` for either form. See
+**Skill names below** use the Claude form (`/feature-forge:<name>`), which is also what the Copilot
+plugin exposes. A Copilot npm install exposes each skill as `/<name>` instead (for example
+`/forge-init`); feature-forge's own skill text writes `invoke-skill: <name>` for either form. See
 [docs/agents/copilot.md](docs/agents/copilot.md).
 
 ---

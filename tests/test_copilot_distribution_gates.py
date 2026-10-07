@@ -19,6 +19,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADAPTER_GATE = REPO_ROOT / "scripts" / "check-copilot-adapter.py"
 PACK_GATE = REPO_ROOT / "scripts" / "check-installer-pack.py"
+MARKETPLACE = ".github/plugin/marketplace.json"
 
 
 def _load(path: Path, name: str):
@@ -42,6 +43,8 @@ def repo_copy(tmp_path: Path) -> Path:
         shutil.copytree(REPO_ROOT / rel, root / rel)
     shutil.copy2(REPO_ROOT / "adapters" / "GENERATION-REPORT.md",
                  root / "adapters" / "GENERATION-REPORT.md")
+    (root / ".github" / "plugin").mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / MARKETPLACE, root / MARKETPLACE)
     return root
 
 
@@ -144,6 +147,29 @@ def _stray_cache(root: Path) -> None:
     (cache / "x.cpython-312.pyc").write_bytes(b"\0")
 
 
+def _marketplace_entry(root: Path, **changes) -> None:
+    path = root / MARKETPLACE
+    data = json.loads(path.read_text("utf-8"))
+    data["plugins"][0].update(changes)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _marketplace_serves_claude(root: Path) -> None:
+    _marketplace_entry(root, source="./adapters/claude")
+
+
+def _marketplace_renamed(root: Path) -> None:
+    _marketplace_entry(root, name="forge")
+
+
+def _marketplace_missing(root: Path) -> None:
+    (root / MARKETPLACE).unlink()
+
+
+def _marketplace_shadowed(root: Path) -> None:
+    shutil.copy2(root / MARKETPLACE, root / "marketplace.json")
+
+
 @pytest.mark.parametrize(
     ("mutate", "expected"),
     [
@@ -162,6 +188,10 @@ def _stray_cache(root: Path) -> None:
         (_broken_reference, "cites references/no-such-file.md"),
         (_missing_drop_record, "drops \"sub-agent key 'effort'\" for Copilot with no drop record"),
         (_stray_cache, "__pycache__: stray artifact"),
+        (_marketplace_serves_claude, "source must be './adapters/copilot'"),
+        (_marketplace_renamed, "plugin name must be 'feature-forge'"),
+        (_marketplace_missing, f"{MARKETPLACE}: unreadable"),
+        (_marketplace_shadowed, f"marketplace.json: shadows {MARKETPLACE}"),
     ],
     ids=lambda v: v.__name__ if callable(v) else "",
 )
@@ -274,3 +304,19 @@ def test_version_sync_fails_when_copilot_manifest_drifts(tmp_path: Path) -> None
                          capture_output=True, text=True)
     assert bad.returncode == 1
     assert "adapters/copilot/plugin.json" in bad.stdout + bad.stderr
+
+
+def test_version_sync_fails_when_copilot_marketplace_drifts(tmp_path: Path) -> None:
+    sync = _load(REPO_ROOT / "scripts" / "check-version-sync.py", "check_version_sync")
+    for rel, _label, _accessor in sync.FIELDS:
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / rel, tmp_path / rel)
+    catalog = tmp_path / MARKETPLACE
+    data = json.loads(catalog.read_text("utf-8"))
+    data["plugins"][0]["version"] = "9.9.9"
+    catalog.write_text(json.dumps(data), encoding="utf-8")
+    script = REPO_ROOT / "scripts" / "check-version-sync.py"
+    bad = subprocess.run([sys.executable, str(script), "--root", str(tmp_path)],
+                         capture_output=True, text=True)
+    assert bad.returncode == 1
+    assert f"CONFLICT  {MARKETPLACE}" in bad.stdout

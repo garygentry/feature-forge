@@ -40,9 +40,17 @@ npx @garygentry/feature-forge install --dry-run --json   # preview the plan, cha
 ```
 
 The `--dry-run --json` plan reports the exact install destination per agent. On
-GitHub Copilot this direct install exposes skills as `/<name>` (for example
-`/forge-init`) and installs project scope under `.github/` (personal scope,
-`--global`, under `~/.copilot/`). See [Cross-agent usage](/advanced/cross-agent/)
+GitHub Copilot, prefer the Copilot plugin, which exposes skills as
+`/feature-forge:<name>`:
+
+```bash
+copilot plugin marketplace add garygentry/feature-forge
+copilot plugin install feature-forge@feature-forge
+```
+
+The npm install above is Copilot's compatibility path: it exposes skills as
+`/<name>` (for example `/forge-init`) and installs project scope under `.github/`
+(personal scope, `--global`, under `~/.copilot/`). See [Cross-agent usage](/advanced/cross-agent/)
 for per-agent notes, including Copilot's plugin vs direct installs and upgrades
 from installer 0.3.9, and the agent-selection rules used by the loop.
 

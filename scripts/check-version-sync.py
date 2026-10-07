@@ -35,6 +35,12 @@ FIELDS: tuple[tuple[str, str, "object"], ...] = (
         lambda d: d["plugins"][0]["version"],
     ),
     ("adapters/copilot/plugin.json", "version", lambda d: d["version"]),
+    # Copilot marketplace (#360): its entry serves adapters/copilot, so it tracks that version.
+    (
+        ".github/plugin/marketplace.json",
+        "plugins[0].version",
+        lambda d: d["plugins"][0]["version"],
+    ),
     ("adapters/gemini/gemini-extension.json", "version", lambda d: d["version"]),
     # Built Claude bundle manifest (#322): generated from the root manifest, so it must carry
     # the same version. Kept in the sync gate so a hand-edit or a stale regenerate is caught.
@@ -107,7 +113,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  CONFLICT  {label} = {value}")
     print(
         "version-sync: reconcile all fields to a single version (the conflicting "
-        "values are printed above). marketplace.json is hand-edited; "
+        "values are printed above). Both marketplace.json files (.claude-plugin/ and "
+        ".github/plugin/) are hand-edited; "
         "gemini-extension.json, adapters/copilot/plugin.json AND "
         "adapters/claude/.claude-plugin/plugin.json are REGENERATED via "
         "scripts/build-adapters.py (the claude and copilot manifests track the root "

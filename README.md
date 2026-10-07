@@ -119,7 +119,7 @@ npx @garygentry/feature-forge install --dry-run --json # preview the plan, chang
 | ------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
 | Claude  | `/plugin install feature-forge@feature-forge` _(or `npx @garygentry/feature-forge install -a claude`)_ | [docs/agents/claude.md](docs/agents/claude.md)   |
 | Codex   | `npx @garygentry/feature-forge install -a codex`                                                       | [docs/agents/codex.md](docs/agents/codex.md)     |
-| Copilot | `npx @garygentry/feature-forge install -a copilot`                                                     | [docs/agents/copilot.md](docs/agents/copilot.md) |
+| Copilot | `copilot plugin marketplace add garygentry/feature-forge`, then `copilot plugin install feature-forge@feature-forge` _(or `npx @garygentry/feature-forge install -a copilot`)_ | [docs/agents/copilot.md](docs/agents/copilot.md) |
 | Cursor  | `npx @garygentry/feature-forge install -a cursor`                                                      | [docs/agents/cursor.md](docs/agents/cursor.md)   |
 | Gemini  | `npx @garygentry/feature-forge install -a gemini`                                                      | [docs/agents/gemini.md](docs/agents/gemini.md)   |
 | Pi      | `npx @garygentry/feature-forge install -a pi`                                                          | [docs/agents/pi.md](docs/agents/pi.md)           |
