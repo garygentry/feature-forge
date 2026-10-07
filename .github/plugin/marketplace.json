@@ -1,0 +1,15 @@
+{
+  "name": "feature-forge",
+  "description": "feature-forge — an agent-agnostic, spec-driven feature pipeline (PRD → tech → specs → backlog → loop → docs) installable across Claude, Codex, Copilot, Cursor, and Gemini.",
+  "owner": {
+    "name": "Gary Gentry"
+  },
+  "plugins": [
+    {
+      "name": "feature-forge",
+      "source": "./adapters/copilot",
+      "description": "End-to-end feature development pipeline: PRD → tech spec → implementation specs → backlog → documentation, with verification gates, pipeline state tracking, and specialized subagents for verification and codebase research.",
+      "version": "0.21.0"
+    }
+  ]
+}

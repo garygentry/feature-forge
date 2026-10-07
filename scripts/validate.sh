@@ -204,8 +204,9 @@ fi
 # 6c. Copilot bundle contract gate (FORGE-107). --check (6b) proves adapters/ equals a fresh
 #     generation; this proves that generation is a VALID Copilot bundle: exact legacy plugin
 #     manifest, native skill/agent names + frontmatter, builtin tool aliases, no nested
-#     delegation, resolvable references/ links, a drop record for every dropped canon key, and
-#     no stray artifacts. Runs under .venv-adapters (PyYAML); HARD gate, never skipped.
+#     delegation, resolvable references/ links, a drop record for every dropped canon key, no
+#     stray artifacts, and a Copilot marketplace (.github/plugin/marketplace.json, #360) that
+#     serves ./adapters/copilot and is not shadowed by a file Copilot reads first. Runs under .venv-adapters (PyYAML); HARD gate, never skipped.
 echo ""
 echo "Checking the Copilot bundle contract..."
 if "$ADAPTERS_PY" "$REPO_ROOT/scripts/check-copilot-adapter.py" --root "$REPO_ROOT"; then

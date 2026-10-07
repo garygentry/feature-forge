@@ -19,8 +19,13 @@ emits a well-formed-but-wrong tree (and its regenerated fixture) still fails:
      either deliberately mapped or recorded in GENERATION-REPORT.md's copilot table.
   6. stray files — no Python caches, editor/OS junk, or legacy flat skill files
      anywhere in the bundle.
+  7. marketplace (#360) — ``.github/plugin/marketplace.json`` serves this bundle: one
+     ``feature-forge`` entry with ``source: ./adapters/copilot``, and no repo file Copilot
+     reads before it (``marketplace.json``, ``.plugin/marketplace.json``) shadows it.
+     ``.claude-plugin/marketplace.json`` stays the Claude catalog; Copilot reads it last.
 
-Version sync for plugin.json is check-version-sync.py's job; it is not repeated here.
+Version sync for plugin.json and the marketplace entry is check-version-sync.py's job; it is
+not repeated here.
 Needs PyYAML (validate.sh runs it under the provisioned .venv-adapters).
 
 Usage:
@@ -54,6 +59,10 @@ DESCRIPTION_MAX = 1024
 REFERENCE_RE = re.compile(r"(?<![\w/.$}-])references/([A-Za-z0-9_][A-Za-z0-9_./-]*)")
 STRAY_NAMES = frozenset({"__pycache__", ".DS_Store", "Thumbs.db", "node_modules"})
 STRAY_SUFFIXES = (".pyc", ".pyo", ".orig", ".rej", ".swp", "~")
+#: Copilot CLI 1.0.91's marketplace lookup order in a repo; the first file found wins.
+MARKETPLACE_ORDER = ("marketplace.json", ".plugin/marketplace.json",
+                     ".github/plugin/marketplace.json", ".claude-plugin/marketplace.json")
+COPILOT_MARKETPLACE = ".github/plugin/marketplace.json"
 
 
 def frontmatter(path: Path) -> tuple[dict, str]:
@@ -216,6 +225,30 @@ def check_strays(bundle: Path, errors: list[str]) -> None:
             errors.append(f"{path.relative_to(bundle).as_posix()}: stray artifact in the bundle")
 
 
+def check_marketplace(root: Path, errors: list[str]) -> None:
+    """The Copilot marketplace must be the one Copilot reads and must serve this bundle."""
+    for rel in MARKETPLACE_ORDER[: MARKETPLACE_ORDER.index(COPILOT_MARKETPLACE)]:
+        if (root / rel).exists():
+            errors.append(f"{rel}: shadows {COPILOT_MARKETPLACE} (Copilot reads it first)")
+    try:
+        catalog = json.loads((root / COPILOT_MARKETPLACE).read_text("utf-8"))
+    except (OSError, ValueError) as exc:
+        errors.append(f"{COPILOT_MARKETPLACE}: unreadable ({exc})")
+        return
+    plugins = catalog.get("plugins") if isinstance(catalog, dict) else None
+    if not isinstance(plugins, list) or len(plugins) != 1 or not isinstance(plugins[0], dict):
+        errors.append(f"{COPILOT_MARKETPLACE}: plugins must hold exactly one entry")
+        return
+    entry = plugins[0]
+    if entry.get("name") != "feature-forge":
+        errors.append(f"{COPILOT_MARKETPLACE}: plugin name must be 'feature-forge' (the root "
+                      "resolver globs installed-plugins/*/feature-forge), "
+                      f"found {entry.get('name')!r}")
+    if entry.get("source") != "./adapters/copilot":
+        errors.append(f"{COPILOT_MARKETPLACE}: source must be './adapters/copilot', "
+                      f"found {entry.get('source')!r}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=str(Path(__file__).resolve().parents[1]),
@@ -231,13 +264,15 @@ def main(argv: list[str] | None = None) -> int:
     check_agents(bundle, root, errors)
     check_drops(bundle, root, errors)
     check_strays(bundle, errors)
+    check_marketplace(root, errors)
     for line in errors:
-        repo_relative = line.startswith(("adapters/", "canon "))
+        repo_relative = line.startswith(("adapters/", "canon ") + MARKETPLACE_ORDER)
         print(f"FAIL: {line}" if repo_relative else f"FAIL: adapters/copilot/{line}")
     if errors:
         print(f"{len(errors)} Copilot bundle violation(s)")
         return 1
-    print("Copilot bundle: manifest, skills, agents, resource links, drop records, strays OK")
+    print("Copilot bundle: manifest, skills, agents, resource links, drop records, strays, "
+          "marketplace OK")
     return 0
 
 
