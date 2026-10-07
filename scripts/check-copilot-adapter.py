@@ -162,7 +162,10 @@ def check_agents(bundle: Path, canon: Path, errors: list[str]) -> None:
         if data.get("user-invocable") is not False:
             errors.append(f"{rel}: user-invocable must be false (worker agents stay hidden)")
         # The composed verifier body cites its skill's references; resolve them there too.
-        roots = [bundle] + sorted(p for p in (bundle / "skills").iterdir() if p.is_dir())
+        skills_dir = bundle / "skills"
+        roots = [bundle]
+        if skills_dir.is_dir():
+            roots += sorted(p for p in skills_dir.iterdir() if p.is_dir())
         check_links(rel, body, roots, bundle, errors)
     for name in sorted(expected - emitted):
         errors.append(f"agents/{name}.agent.md: canon agent missing from the Copilot bundle")

@@ -140,10 +140,15 @@ def main(argv: list[str] | None = None) -> int:
             print(pack.stderr, file=sys.stderr)
             print("ERROR: npm pack --dry-run failed", file=sys.stderr)
             return 2
-        report = json.loads(pack.stdout)[0]
+        try:
+            report = json.loads(pack.stdout)[0]
+            packed = [entry["path"] for entry in report["files"]]
+        except (ValueError, LookupError, TypeError) as exc:
+            print(pack.stdout[:2000], file=sys.stderr)
+            print(f"ERROR: unexpected npm pack --json output ({exc!r})", file=sys.stderr)
+            return 2
     finally:
         clean_prepack_artifacts(installer)
-    packed = [entry["path"] for entry in report["files"]]
     errors = evaluate(
         packed,
         tracked,

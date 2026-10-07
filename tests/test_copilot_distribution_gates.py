@@ -172,6 +172,14 @@ def test_adapter_gate_fails_on_bad_bundle(repo_copy: Path, mutate, expected: str
     assert expected in result.stdout, result.stdout
 
 
+def test_adapter_gate_reports_missing_skills_dir_cleanly(repo_copy: Path) -> None:
+    shutil.rmtree(repo_copy / "adapters" / "copilot" / "skills")
+    result = _run_adapter_gate(repo_copy)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Traceback" not in result.stderr
+    assert "canon skill missing from the Copilot bundle" in result.stdout
+
+
 def test_adapter_gate_missing_bundle_is_config_error(tmp_path: Path) -> None:
     assert _run_adapter_gate(tmp_path).returncode == 2
 

@@ -33,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Invocation names.** A plugin install names skills `/feature-forge:<name>`; a direct install
     names them `/<name>`. Copilot descriptions, skill bodies, references and stage-exit output
     (`--host copilot`) write `invoke-skill: <name> [arguments]`, and each skill's Copilot host notes
-    map it to the right form. `doctor` reports `hostArg: copilot` for Copilot bundles.
+    map it to the right form; the host notes keep the Interaction Capability Ladder guidance.
+    `doctor` reports `hostArg: copilot` for Copilot bundles.
   - **Runtime roots.** Copilot skills resolve the runtime from an explicit `FEATURE_FORGE_ROOT`
     (which must be a complete bundle, or the skill stops), then the nearest `.github/feature-forge/`
     at or above the current directory, then `~/.copilot/installed-plugins/*/feature-forge/`, then
