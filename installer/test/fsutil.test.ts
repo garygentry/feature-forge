@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { withSandbox } from "./helpers/sandbox.ts";
 import {
   resolveWithin,
+  resolveWithinNoSymlinks,
   copyDir,
   symlinkDir,
   removePath,
@@ -13,9 +14,37 @@ import {
 } from "../dist/fsutil.js";
 
 test("named exports are present", () => {
-  for (const fn of [resolveWithin, copyDir, symlinkDir, removePath, removeEmptyDirsWithin, isWindows]) {
+  for (const fn of [resolveWithin, resolveWithinNoSymlinks, copyDir, symlinkDir, removePath, removeEmptyDirsWithin, isWindows]) {
     assert.equal(typeof fn, "function");
   }
+});
+
+test("resolveWithinNoSymlinks rejects a symlink ancestor inside the lexical root", { skip: isWindows() }, async () => {
+  await withSandbox(async (sb) => {
+    const root = path.join(sb.cwd, ".github");
+    const outside = path.join(path.dirname(sb.cwd), "outside");
+    await fsp.mkdir(path.join(root, "skills"), { recursive: true });
+    await fsp.mkdir(outside, { recursive: true });
+    await fsp.symlink(outside, path.join(root, "skills", "forge"), "dir");
+
+    const result = resolveWithinNoSymlinks(root, "skills", "forge", "SKILL.md");
+    assert.ok(!result.ok);
+    assert.equal(result.error.code, "PATH_ESCAPE");
+    assert.equal(result.error.path, path.join(root, "skills", "forge"));
+  });
+});
+
+test("resolveWithinNoSymlinks trusts a symlinked placement root (dotfile-managed config dir)", { skip: isWindows() }, async () => {
+  await withSandbox(async (sb) => {
+    const real = path.join(sb.home, "dotfiles", "copilot");
+    await fsp.mkdir(path.join(real, "skills"), { recursive: true });
+    const root = path.join(sb.home, ".copilot");
+    await fsp.symlink(real, root, "dir");
+
+    const result = resolveWithinNoSymlinks(root, "skills", "forge", "SKILL.md");
+    assert.ok(result.ok);
+    assert.equal(result.value, path.join(root, "skills", "forge", "SKILL.md"));
+  });
 });
 
 test("resolveWithin accepts in-root segments and rejects escapes before any write", async () => {
