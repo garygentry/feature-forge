@@ -2,15 +2,15 @@
  * End-to-end A4b second-root placement behavior, hermetic via `withSandbox`:
  *  - codex   → primary bundle under `.agents/skills/feature-forge` AND a mirror of `agents/*.toml`
  *              into `.codex/agents/` (where Codex actually loads custom agents).
- *  - copilot → primary bundle under `.github/feature-forge` AND a managed block merged into
- *              `.github/copilot-instructions.md`, preserving any pre-existing user content.
- * Covers install, idempotent update, --force over a user-edited block, uninstall (mirror removal +
- * block strip with file preservation), and manifest v1 → v2 back-compat read.
+ *  - copilot → complete runtime plus native skill/agent mirrors, with ownership-safe cleanup of
+ *              retired `.github/copilot-instructions.md` regions and the old personal runtime root.
+ * Covers fresh install, migration, dry-run parity, edited-block force behavior, exact uninstall,
+ * copy/symlink/Windows behavior, and manifest v1 → v2 back-compat read.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile, stat, lstat, mkdir, rm, symlink } from "node:fs/promises";
+import { readFile, writeFile, stat, lstat, mkdir, rm, symlink, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { EXIT } from "../dist/types.js";
 import { isWindows } from "../dist/fsutil.js";
@@ -220,6 +220,97 @@ test("copilot global install writes one complete runtime plus native mirrors und
   });
 });
 
+test("copilot migrates the legacy personal root only after native files are planned and preserves lookalikes", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "copilot", ["forge-1-prd"], ["forge-verifier"]);
+    await seedConfigDir(sb, "copilot", "global");
+    await runCli2(["install", "-a", "copilot", "-g", "--source", sb.source], sb);
+
+    const currentManifest = join(sb.home, ".copilot/.feature-forge.global.json");
+    const oldManifest = join(sb.home, ".github/.feature-forge.global.json");
+    const oldRuntime = join(sb.home, ".github/feature-forge");
+    await mkdir(join(sb.home, ".github"), { recursive: true });
+    await rename(join(sb.home, ".copilot/feature-forge"), oldRuntime);
+    const mf = JSON.parse(await readFile(currentManifest, "utf8"));
+    mf.destination = oldRuntime;
+    const start = "<!-- feature-forge:managed:start -->";
+    const end = "<!-- feature-forge:managed:end -->";
+    const region = `${start}\nlegacy body\n${end}`;
+    const { createHash } = await import("node:crypto");
+    const instructions = join(sb.home, ".github/copilot-instructions.md");
+    await writeFile(instructions, `${region}\n`);
+    mf.placements.push({ kind: "managed-block", root: join(sb.home, ".github"), destination: instructions,
+      files: [{ path: "copilot-instructions.md", sha256: createHash("sha256").update(region).digest("hex") }] });
+    await writeFile(oldManifest, JSON.stringify(mf, null, 2));
+    await rm(currentManifest);
+    await rm(join(sb.home, ".copilot/skills/forge-1-prd"), { recursive: true, force: true });
+    await rm(join(sb.home, ".copilot/agents/forge-verifier.agent.md"), { force: true });
+    const userSkill = join(sb.home, ".copilot/skills/my-skill/SKILL.md");
+    const userAgent = join(sb.home, ".copilot/agents/my-agent.agent.md");
+    await mkdir(join(sb.home, ".copilot/skills/my-skill"), { recursive: true });
+    await writeFile(userSkill, "user skill\n");
+    await writeFile(userAgent, "user agent\n");
+    const equalButUnowned = join(sb.home, ".copilot/feature-forge/.feature-forge-bundle.json");
+    await mkdir(join(sb.home, ".copilot/feature-forge"), { recursive: true });
+    await writeFile(equalButUnowned, await readFile(join(sb.source, "copilot/.feature-forge-bundle.json")));
+
+    const dry = await runCli2(["update", "-a", "copilot", "-g", "--dry-run", "--source", sb.source], sb);
+    assert.equal(dry.exitCode, EXIT.SUCCESS);
+    assert.ok(dry.agents[0]!.placements!.some((p) => p.destination === oldRuntime && p.files.every((f) => f.action === "remove")));
+    assert.equal(dry.agents[0]!.actions.find((f) => f.relpath === ".feature-forge-bundle.json")!.action, "overwrite");
+    assert.ok(await exists(oldRuntime));
+    assert.equal(await readFile(equalButUnowned, "utf8"), await readFile(join(sb.source, "copilot/.feature-forge-bundle.json"), "utf8"));
+
+    const migrated = await runCli2(["update", "-a", "copilot", "-g", "--source", sb.source], sb);
+    assert.equal(migrated.exitCode, EXIT.SUCCESS);
+    assert.ok(await exists(join(sb.home, ".copilot/feature-forge/.feature-forge-bundle.json")));
+    assert.ok(await exists(join(sb.home, ".copilot/skills/forge-1-prd/SKILL.md")));
+    assert.ok(await exists(join(sb.home, ".copilot/agents/forge-verifier.agent.md")));
+    assert.equal(await exists(oldRuntime), false);
+    assert.equal(await exists(oldManifest), false);
+    assert.equal(await exists(instructions), false);
+    assert.ok(await exists(userSkill));
+    assert.ok(await exists(userAgent));
+
+    const again = await runCli2(["update", "-a", "copilot", "-g", "--source", sb.source], sb);
+    assert.ok(again.agents[0]!.actions.every((f) => f.action === "unchanged"));
+    assert.ok(again.agents[0]!.placements!.every((p) => p.files.every((f) => f.action === "unchanged")));
+
+    const removed = await runCli2(["uninstall", "-a", "copilot", "-g", "--source", sb.source], sb);
+    assert.equal(removed.exitCode, EXIT.SUCCESS);
+    assert.equal(await exists(join(sb.home, ".copilot/feature-forge/.feature-forge-bundle.json")), false);
+    assert.equal(await exists(join(sb.home, ".copilot/skills/forge-1-prd")), false);
+    assert.equal(await exists(join(sb.home, ".copilot/agents/forge-verifier.agent.md")), false);
+    assert.ok(await exists(userSkill));
+    assert.ok(await exists(userAgent));
+    const removedAgain = await runCli2(["uninstall", "-a", "copilot", "-g", "--source", sb.source], sb);
+    assert.deepEqual(removedAgain.agents[0]!.actions, []);
+  });
+});
+
+test("copilot legacy personal symlink migration unlinks only the old link", { skip: isWindows() }, async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "copilot", ["forge-1-prd"]);
+    await seedConfigDir(sb, "copilot", "global");
+    await runCli2(["install", "-a", "copilot", "-g", "--symlink", "--source", sb.source], sb);
+    const currentManifest = join(sb.home, ".copilot/.feature-forge.global.json");
+    const oldManifest = join(sb.home, ".github/.feature-forge.global.json");
+    const oldRuntime = join(sb.home, ".github/feature-forge");
+    await mkdir(join(sb.home, ".github"), { recursive: true });
+    await rename(join(sb.home, ".copilot/feature-forge"), oldRuntime);
+    const mf = JSON.parse(await readFile(currentManifest, "utf8"));
+    mf.destination = oldRuntime;
+    await writeFile(oldManifest, JSON.stringify(mf, null, 2));
+    await rm(currentManifest);
+
+    const result = await runCli2(["update", "-a", "copilot", "-g", "--symlink", "--source", sb.source], sb);
+    assert.equal(result.exitCode, EXIT.SUCCESS);
+    assert.ok((await lstat(join(sb.home, ".copilot/feature-forge"))).isSymbolicLink());
+    assert.equal(await exists(oldRuntime), false);
+    assert.ok(await exists(join(sb.source, "copilot/skills/forge-1-prd/SKILL.md")));
+  });
+});
+
 test("copilot dry-run reports exact placement actions, writes nothing, and matches the real run", async () => {
   await withSandbox(async (sb) => {
     await makeFixtureBundle(sb, "copilot", ["forge-1-prd"], ["forge-verifier"]);
@@ -230,7 +321,7 @@ test("copilot dry-run reports exact placement actions, writes nothing, and match
       sb,
     );
     const dryAgent = dry.agents[0]!;
-    assert.ok(dryAgent.placements && dryAgent.placements.length === 3);
+    assert.ok(dryAgent.placements && dryAgent.placements.length === 2);
     assert.equal(await exists(join(sb.cwd, ".github/skills/forge-1-prd/SKILL.md")), false);
     assert.equal(await exists(join(sb.cwd, ".github/agents/forge-verifier.agent.md")), false);
     assert.equal(await exists(join(sb.cwd, ".github/.feature-forge.project.json")), false);
@@ -351,55 +442,85 @@ test("copilot does not claim or uninstall modified pre-existing native mirror fi
   });
 });
 
-test("copilot install merges a managed block, preserving pre-existing user content", async () => {
+test("fresh copilot install never creates or changes the obsolete managed block", async () => {
   await withSandbox(async (sb) => {
     await makeFixtureBundle(sb, "copilot", ["forge-1-prd"]);
     await seedConfigDir(sb, "copilot");
-    // user already has a copilot-instructions.md with their own rules
     const file = join(sb.cwd, ".github/copilot-instructions.md");
     await mkdir(join(sb.cwd, ".github"), { recursive: true });
-    await writeFile(file, "# House rules\n\nAlways write tests.\n");
+    const userBytes = "# House rules\n\nAlways write tests.\n";
+    await writeFile(file, userBytes);
 
     const r = await runCli2(["install", "-a", "copilot", "--source", sb.source], sb);
     assert.equal(r.exitCode, EXIT.SUCCESS);
-
-    const content = await readFile(file, "utf8");
-    assert.match(content, /# House rules/);
-    assert.match(content, /Always write tests\./);
-    assert.match(content, /feature-forge:managed:start/);
-    assert.match(content, /\.github\/feature-forge/);
-
-    const mf = JSON.parse(
-      await readFile(join(sb.cwd, ".github/.feature-forge.project.json"), "utf8"),
-    );
-    const block = mf.placements.find((p: { kind: string }) => p.kind === "managed-block");
-    assert.equal(block.files[0].path, "copilot-instructions.md");
-    assert.ok(typeof block.files[0].sha256 === "string");
+    assert.equal(await readFile(file, "utf8"), userBytes);
+    const mf = JSON.parse(await readFile(join(sb.cwd, ".github/.feature-forge.project.json"), "utf8"));
+    assert.equal(mf.placements.some((p: { kind: string }) => p.kind === "managed-block"), false);
   });
 });
 
-test("copilot re-install is a no-op; a user edit inside the block is skipped without --force", async () => {
+test("legacy malformed block is preserved as a conflict; an absent region drops retired ownership", async () => {
   await withSandbox(async (sb) => {
     await makeFixtureBundle(sb, "copilot", ["forge-1-prd"]);
     await seedConfigDir(sb, "copilot");
     await runCli2(["install", "-a", "copilot", "--source", sb.source], sb);
     const file = join(sb.cwd, ".github/copilot-instructions.md");
-    const afterInstall = await readFile(file, "utf8");
+    const mfPath = join(sb.cwd, ".github/.feature-forge.project.json");
+    const mf = JSON.parse(await readFile(mfPath, "utf8"));
+    mf.placements.push({ kind: "managed-block", root: join(sb.cwd, ".github"), destination: file,
+      files: [{ path: "copilot-instructions.md", sha256: "recorded" }] });
+    await writeFile(mfPath, JSON.stringify(mf, null, 2));
+    const malformed = "# user\n<!-- feature-forge:managed:start -->\nunterminated user edit\n";
+    await writeFile(file, malformed);
 
-    // idempotent re-install: bytes unchanged
-    await runCli2(["update", "-a", "copilot", "--source", sb.source], sb);
-    assert.equal(await readFile(file, "utf8"), afterInstall);
+    const conflicted = await runCli2(["update", "-a", "copilot", "--source", sb.source], sb);
+    const block = conflicted.agents[0]!.placements!.find((p) => p.kind === "managed-block")!;
+    assert.equal(block.files[0]!.action, "skip-modified");
+    assert.equal(await readFile(file, "utf8"), malformed);
 
-    // user tampers INSIDE the managed region
-    const tampered = afterInstall.replace("forge-1-prd", "forge-1-prd EDITED");
+    await rm(file);
+    const reconciled = await runCli2(["update", "-a", "copilot", "--source", sb.source], sb);
+    assert.equal(reconciled.exitCode, EXIT.SUCCESS);
+    const updated = JSON.parse(await readFile(mfPath, "utf8"));
+    assert.equal(updated.placements.some((p: { kind: string }) => p.kind === "managed-block"), false);
+  });
+});
+
+test("legacy copilot block migration preserves edits, reports skip-modified, and force removes only the region", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "copilot", ["forge-1-prd"]);
+    await seedConfigDir(sb, "copilot");
+    await runCli2(["install", "-a", "copilot", "--source", sb.source], sb);
+    const file = join(sb.cwd, ".github/copilot-instructions.md");
+    const start = "<!-- feature-forge:managed:start -->";
+    const end = "<!-- feature-forge:managed:end -->";
+    const region = `${start}\nlegacy owned body\n${end}`;
+    const tampered = `# House rules\n\n${region.replace("owned", "owned EDITED")}\n`;
     await writeFile(file, tampered);
-    await runCli2(["update", "-a", "copilot", "--source", sb.source], sb);
-    // without --force the edit is preserved (skip-modified)
-    assert.match(await readFile(file, "utf8"), /forge-1-prd EDITED/);
+    const mfPath = join(sb.cwd, ".github/.feature-forge.project.json");
+    const mf = JSON.parse(await readFile(mfPath, "utf8"));
+    const { createHash } = await import("node:crypto");
+    mf.placements.push({
+      kind: "managed-block", root: join(sb.cwd, ".github"), destination: file,
+      files: [{ path: "copilot-instructions.md", sha256: createHash("sha256").update(region).digest("hex") }],
+    });
+    await writeFile(mfPath, JSON.stringify(mf, null, 2));
 
-    // with --force the block is restored
-    await runCli2(["update", "-a", "copilot", "--force", "--source", sb.source], sb);
-    assert.doesNotMatch(await readFile(file, "utf8"), /EDITED/);
+    const skipped = await runCli2(["update", "-a", "copilot", "--source", sb.source], sb);
+    const block = skipped.agents[0]!.placements!.find((p) => p.kind === "managed-block")!;
+    assert.equal(block.files[0]!.action, "skip-modified");
+    assert.equal(await readFile(file, "utf8"), tampered);
+    const afterSkipManifest = await readFile(mfPath, "utf8");
+    const skippedAgain = await runCli2(["update", "-a", "copilot", "--source", sb.source], sb);
+    assert.equal(skippedAgain.exitCode, EXIT.SUCCESS);
+    assert.equal(await readFile(file, "utf8"), tampered);
+    assert.equal(await readFile(mfPath, "utf8"), afterSkipManifest, "stable conflict is a no-op");
+
+    const forced = await runCli2(["update", "-a", "copilot", "--force", "--source", sb.source], sb);
+    assert.equal(forced.exitCode, EXIT.SUCCESS);
+    assert.equal(await readFile(file, "utf8"), "# House rules\n");
+    const migrated = JSON.parse(await readFile(mfPath, "utf8"));
+    assert.equal(migrated.placements.some((p: { kind: string }) => p.kind === "managed-block"), false);
   });
 });
 
@@ -540,15 +661,16 @@ test("uninstall removes the codex mirror and strips the copilot block, keeping u
   });
 });
 
-test("uninstall deletes a copilot-instructions.md that held only our block", async () => {
+test("fresh copilot uninstall leaves an unrelated instructions file untouched", async () => {
   await withSandbox(async (sb) => {
     await makeFixtureBundle(sb, "copilot", ["forge-1-prd"]);
     await seedConfigDir(sb, "copilot");
     const file = join(sb.cwd, ".github/copilot-instructions.md");
+    await mkdir(join(sb.cwd, ".github"), { recursive: true });
+    await writeFile(file, "user instructions\n");
     await runCli2(["install", "-a", "copilot", "--source", sb.source], sb);
-    assert.ok(await exists(file));
     await runCli2(["uninstall", "-a", "copilot", "--source", sb.source], sb);
-    assert.equal(await exists(file), false);
+    assert.equal(await readFile(file, "utf8"), "user instructions\n");
   });
 });
 

@@ -172,6 +172,65 @@ test("copy: an injected throwing write seam → ok:false WRITE_DENIED and manife
   });
 });
 
+test("migration: new-file failure preserves legacy cleanup; final-manifest failure is retryable", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "copilot");
+    const src = located(sb, "copilot");
+    const ctx = ctxFor(sb, "copilot", src, "copy");
+    const legacyRoot = path.join(sb.home, ".github");
+    const legacyDestination = path.join(legacyRoot, "feature-forge");
+    const legacyFile = path.join(legacyDestination, "legacy-owned.txt");
+    const legacyManifestPath = path.join(legacyRoot, ".feature-forge.global.json");
+    fs.mkdirSync(legacyDestination, { recursive: true });
+    fs.writeFileSync(legacyFile, "legacy\n");
+    fs.writeFileSync(legacyManifestPath, "legacy manifest remains authoritative\n");
+
+    const base = planInstall({
+      agent: "copilot", scope: "project", mode: "copy", destination: ctx.destination,
+      source: src, priorManifest: null, force: false, raufPin: ctx.raufPin,
+    });
+    assert.ok(base.ok);
+    const planned: PlannedAction = {
+      ...base.value,
+      placements: [{
+        kind: "mirror", root: legacyRoot, destination: legacyDestination,
+        files: [{ relpath: "legacy-owned.txt", action: "remove" }], retention: "never",
+      }],
+    };
+
+    const denied = await apply(planned, ctxFor(sb, "copilot", src, "copy", {
+      writeFileSeam: async () => ({ ok: false, error: { code: "WRITE_DENIED", message: "new apply denied" } }),
+      supersededManifestPath: legacyManifestPath,
+    }));
+    assert.equal(denied.ok, false);
+    assert.ok(fs.existsSync(legacyFile), "cleanup cannot run before required new files apply");
+    assert.ok(fs.existsSync(legacyManifestPath));
+
+    const manifestFailed = await apply(planned, ctxFor(sb, "copilot", src, "copy", {
+      supersededManifestPath: legacyManifestPath,
+      writeManifestSeam: () => ({ ok: false, error: { code: "WRITE_DENIED", message: "manifest denied" } }),
+    }));
+    assert.equal(manifestFailed.ok, false);
+    assert.equal(fs.existsSync(legacyFile), false, "cleanup occurs only after new layout verification");
+    assert.ok(fs.existsSync(legacyManifestPath), "old manifest survives until new manifest commits");
+    assert.equal(fs.existsSync(ctx.manifestPath), false);
+
+    const retry = planInstall({
+      agent: "copilot", scope: "project", mode: "copy", destination: ctx.destination,
+      source: src, priorManifest: null, force: false, claimUntrackedPrimary: true,
+      raufPin: ctx.raufPin,
+    });
+    assert.ok(retry.ok);
+    const retryPlan: PlannedAction = { ...retry.value, placements: planned.placements };
+    const recovered = await apply(retryPlan, ctxFor(sb, "copilot", src, "copy", {
+      supersededManifestPath: legacyManifestPath,
+    }));
+    assert.equal(recovered.ok, true);
+    assert.ok(fs.existsSync(ctx.manifestPath));
+    assert.equal(fs.existsSync(legacyManifestPath), false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Gemini — no special branch, parseable gemini-extension.json at the destination
 // ---------------------------------------------------------------------------
@@ -194,6 +253,43 @@ test("gemini copy: lands a valid parseable gemini-extension.json at the destinat
     assert.ok(fs.existsSync(extPath), "gemini-extension.json copied verbatim");
     const parsed = JSON.parse(fs.readFileSync(extPath, "utf8"));
     assert.equal(parsed.name, "feature-forge");
+  });
+});
+
+test("symlink runtime fallback verifies copied leaves before legacy cleanup and records hashes", async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "copilot");
+    const src = located(sb, "copilot");
+    const ctx = ctxFor(sb, "copilot", src, "symlink");
+    const legacyRoot = path.join(sb.home, ".github");
+    const legacyDestination = path.join(legacyRoot, "feature-forge");
+    const legacyFile = path.join(legacyDestination, "owned.txt");
+    fs.mkdirSync(legacyDestination, { recursive: true });
+    fs.writeFileSync(legacyFile, "old\n");
+    const base = planInstall({
+      agent: "copilot", scope: "project", mode: "symlink", destination: ctx.destination,
+      source: src, priorManifest: null, force: false, raufPin: ctx.raufPin,
+    });
+    assert.ok(base.ok);
+    const planned: PlannedAction = {
+      ...base.value,
+      placements: [{ kind: "mirror", root: legacyRoot, destination: legacyDestination,
+        files: [{ relpath: "owned.txt", action: "remove" }], retention: "never" }],
+    };
+    const report = await apply(planned, ctxFor(sb, "copilot", src, "symlink", {
+      symlinkDirSeam: async (target, linkPath) => {
+        fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+        fs.cpSync(target, linkPath, { recursive: true });
+        return { ok: true, value: { mode: "copy" as const } };
+      },
+    }));
+    assert.equal(report.ok, true);
+    assert.equal(fs.existsSync(legacyFile), false);
+    const manifest = readManifest(ctx.manifestPath);
+    assert.ok(manifest.ok && manifest.value !== null);
+    assert.equal(manifest.value.mode, "copy");
+    assert.ok(manifest.value.files.length > 0);
+    assert.ok(manifest.value.files.every((f) => typeof f.sha256 === "string"));
   });
 });
 
@@ -410,5 +506,45 @@ test("copy: a vanished mirror file on the reconstruct path → err Result, not a
     const report = await apply(planned, ctxFor(sb, "codex", src, "copy", { priorManifest: prior }));
     assert.equal(report.ok, false);
     assert.equal(report.error?.code, "UNEXPECTED");
+  });
+});
+
+test("symlink→copy switch: a cleanup failure after the manifest commits keeps the copy (no link rollback)", { skip: isWindows() || process.getuid?.() === 0 }, async () => {
+  await withSandbox(async (sb) => {
+    await makeFixtureBundle(sb, "claude");
+    const src = located(sb, "claude");
+    const oldTarget = path.join(sb.home, "old-cache");
+    fs.mkdirSync(oldTarget, { recursive: true });
+    fs.writeFileSync(path.join(oldTarget, "keep.md"), "old\n");
+    const base = ctxFor(sb, "claude", src, "copy");
+    fs.mkdirSync(path.dirname(base.destination), { recursive: true });
+    fs.symlinkSync(oldTarget, base.destination, "dir");
+    const prior: InstallManifest = {
+      schemaVersion: 2, agent: "claude", scope: "project", mode: "symlink", destination: base.destination,
+      featureForgeVersion: null, sourceHash: "old", raufPin: null, installedAt: NOW, updatedAt: NOW,
+      skills: [], files: [{ path: "keep.md" }], link: { target: oldTarget },
+    };
+    const planned = planUpdate({
+      agent: "claude", scope: "project", mode: "copy", destination: base.destination,
+      source: src, priorManifest: prior, force: false, raufPin: base.raufPin,
+    });
+    assert.ok(planned.ok);
+    assert.deepEqual(planned.value.files[0], { relpath: ".", action: "remove" });
+    // A superseded manifest that cannot be removed: the failure happens only after the commit.
+    const locked = path.join(sb.home, "locked");
+    fs.mkdirSync(locked);
+    fs.writeFileSync(path.join(locked, "old.json"), "{}");
+    fs.chmodSync(locked, 0o555);
+    let report;
+    try {
+      report = await apply(planned.value, { ...base, priorManifest: prior, supersededManifestPath: path.join(locked, "old.json") });
+    } finally {
+      fs.chmodSync(locked, 0o755);
+    }
+    assert.equal(report.ok, false);
+    assert.equal(fs.lstatSync(base.destination).isSymbolicLink(), false, "the committed copy stays");
+    const m = readManifest(base.destination.replace(/feature-forge$/, ".feature-forge.project.json"));
+    assert.ok(m.ok && m.value?.mode === "copy");
+    assert.deepEqual(fs.readdirSync(oldTarget), ["keep.md"], "old link target untouched");
   });
 });

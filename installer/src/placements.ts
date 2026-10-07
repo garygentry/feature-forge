@@ -3,11 +3,11 @@
  * install model can't express. Two kinds (see {@link PlacementKind}):
  *   - "mirror"        — copy a selected bundle subtree either FLAT (custom agents) or recursively
  *                       with paths below its source prefix preserved (native skill directories).
- *   - "managed-block" — copilot writes a sentinel-delimited pointer block into the (possibly
- *                       user-owned) `.github/copilot-instructions.md`, preserving the rest of it.
+ *   - "managed-block" — RETIRED: installers <= 0.3.9 wrote a sentinel-delimited Copilot pointer block
+ *                       into `.github/copilot-instructions.md`; it is now only ever removed.
  *
  * This module is PURE: it resolves declarative {@link PlacementSpec}s to absolute roots, selects the
- * mirror source files, and provides the managed-block string transforms (render/upsert/remove/read).
+ * mirror source files, and provides the managed-block string transforms (wrap/extract/remove).
  * The planner (plan.ts) decides actions and the apply engine (apply.ts) executes them; neither knows
  * the per-kind string mechanics — those live here. Zero runtime dependencies; only `node:` built-ins.
  */
@@ -57,6 +57,26 @@ export function resolvePlacements(
   });
 }
 
+/**
+ * Resolve the retired Copilot managed-instruction placement. It is deliberately absent from
+ * `AGENT_TARGETS`: fresh installs must never create it. Migration and uninstall may trust this
+ * exact historical boundary only after a prior manifest proves ownership.
+ */
+export function resolveLegacyCopilotBlock(
+  scope: Scope,
+  opts?: ResolveOpts,
+): ResolvedPlacement {
+  const roots = resolveRoots(opts);
+  const scopeRoot = scope === "global" ? roots.home : roots.cwd;
+  const spec: PlacementSpec = {
+    kind: "managed-block",
+    baseDir: ".github",
+    subpath: "copilot-instructions.md",
+  };
+  const root = path.resolve(scopeRoot, ".github");
+  return { kind: "managed-block", root, destination: path.resolve(root, spec.subpath), spec };
+}
+
 /** One selected mirror source and its placement-destination-relative path. */
 export interface MirrorFile {
   readonly srcRelpath: string;
@@ -88,34 +108,6 @@ export function selectMirrorFiles(source: LocatedSource, spec: PlacementSpec): M
 // Managed-block string transforms (pure)
 // ---------------------------------------------------------------------------
 
-/**
- * Render the managed-block BODY (without sentinels) for copilot (A4b). Copilot discovers the
- * mirrored skills and custom agents natively; this transitional block is a fallback pointer at the
- * complete runtime (`runtimeDir`, e.g. `.github/feature-forge` or `~/.copilot/feature-forge`) and
- * lists the available skills. Deterministic given its inputs. Pure.
- */
-export function renderCopilotBlock(
-  skills: readonly string[],
-  runtimeDir = ".github/feature-forge",
-): string {
-  const lines = [
-    "# feature-forge",
-    "",
-    `The feature-forge skill suite is installed with its complete runtime under \`${runtimeDir}/\`.`,
-    "GitHub Copilot discovers its skills and custom agents natively from the installed `skills/`",
-    "and `agents/` directories; if a feature-forge workflow is requested and the skill is not",
-    "loaded, consult the runtime files directly.",
-    "",
-    `Each skill lives at \`${runtimeDir}/skills/<name>/SKILL.md\`. Available skills:`,
-    "",
-    ...[...skills].sort().map((s) => `- ${s}`),
-    "",
-    `Shared references are under \`${runtimeDir}/references/\`; helper scripts under`,
-    `\`${runtimeDir}/scripts/\`.`,
-  ];
-  return lines.join("\n");
-}
-
 /** Wrap a rendered block body in the managed sentinels — the exact region written on disk. */
 export function wrapBlock(body: string): string {
   return `${MANAGED_BLOCK_START}\n${body}\n${MANAGED_BLOCK_END}`;
@@ -135,22 +127,6 @@ export function extractManagedRegion(content: string): string | null {
 }
 
 /**
- * Insert or replace the managed block in `existing`, preserving all user content outside the
- * sentinels (A4b). If a region exists it is replaced in place; otherwise the block is appended after
- * the existing content (separated by a blank line). `existing` is `""` for a not-yet-created file.
- * The result always ends with a single trailing newline. Pure.
- */
-export function upsertBlock(existing: string, body: string): string {
-  const region = wrapBlock(body);
-  const current = extractManagedRegion(existing);
-  if (current !== null) {
-    return ensureTrailingNewline(existing.replace(current, region));
-  }
-  if (existing.trim() === "") return ensureTrailingNewline(region);
-  return ensureTrailingNewline(`${existing.replace(/\n+$/, "")}\n\n${region}`);
-}
-
-/**
  * Remove the managed block from `existing`, preserving the rest (A4b uninstall). Returns the
  * remaining content (trailing whitespace trimmed to a single newline), or `""` if nothing but the
  * block (and whitespace) remains — the caller deletes the file in that case. Pure.
@@ -162,7 +138,3 @@ export function removeBlock(existing: string): string {
   return without === "" ? "" : `${without}\n`;
 }
 
-/** Ensure exactly one trailing newline. */
-function ensureTrailingNewline(s: string): string {
-  return `${s.replace(/\n+$/, "")}\n`;
-}
