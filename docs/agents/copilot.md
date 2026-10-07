@@ -15,7 +15,7 @@ Copilot loads feature-forge natively: `skills/<name>/SKILL.md` Agent Skills plus
 
 | Surface | Supported |
 | --- | --- |
-| GitHub Copilot CLI | 1.0.78 or later. Discovery, invocation and runtime-root resolution are runtime-verified on 1.0.80. |
+| GitHub Copilot CLI | 1.0.78 or later. Discovery, invocation and runtime-root resolution are runtime-verified on 1.0.80; the plugin marketplace install on 1.0.91. |
 | VS Code + Copilot Chat | VS Code 1.134.0 with Copilot Chat 0.62.0 or later |
 | Platform | Linux x64, including WSL2. The installer itself is CI-tested on Ubuntu, macOS and Windows, but Copilot runtime behavior is verified on Linux x64 only. |
 | Node.js (installer) | 18 or later |
@@ -23,15 +23,45 @@ Copilot loads feature-forge natively: `skills/<name>/SKILL.md` Agent Skills plus
 
 ## Install
 
-There are two ways to get the bundle into Copilot: as a Copilot **plugin**, or as a **direct
-install** with the npm installer. Plugins are Copilot's preferred distribution, but feature-forge
-does not yet publish a Copilot plugin source that works out of the box (see
-[Plugin install](#plugin-install)). **Use the direct install.**
+There are two ways to get the bundle into Copilot: as a Copilot **plugin** (recommended), or as a
+**direct install** with the npm installer (the compatibility path). Use one or the other.
 
-### Direct install (recommended)
+### Plugin install (recommended)
 
-Project scope writes one complete runtime bundle at `.github/feature-forge/` plus native discovery
-mirrors under `.github/skills/` and `.github/agents/`:
+This repository publishes a Copilot plugin marketplace (`.github/plugin/marketplace.json`) whose
+`feature-forge` plugin is the generated `adapters/copilot/` bundle:
+
+```bash
+copilot plugin marketplace add garygentry/feature-forge
+copilot plugin install feature-forge@feature-forge
+```
+
+Copilot places the bundle at `~/.copilot/installed-plugins/feature-forge/feature-forge/`, where the
+skills find their runtime with no extra setup (no `FEATURE_FORGE_ROOT`). Verified on Copilot CLI
+1.0.91: the install reports 13 skills, `copilot skill list` shows them under "Plugin skills", and
+the skills resolve their runtime from the plugin directory.
+
+The marketplace follows the repository's default branch. To pick up a newer version, run
+`copilot plugin marketplace update feature-forge` and then
+`copilot plugin update feature-forge@feature-forge`. To install from another branch or tag, add the marketplace as
+`garygentry/feature-forge#<ref>`.
+
+Copilot reads a repository's marketplace from the first of `marketplace.json`,
+`.plugin/marketplace.json`, `.github/plugin/marketplace.json` and `.claude-plugin/marketplace.json`
+that exists. feature-forge ships only the last two, so Copilot gets the Copilot bundle while Claude
+Code, which reads `.claude-plugin/marketplace.json`, keeps getting the Claude bundle.
+
+Avoid `copilot plugin install garygentry/feature-forge:adapters/copilot`. It installs the right
+bundle, but under `~/.copilot/installed-plugins/_direct/garygentry--feature-forge--adapters-copilot/`,
+which the runtime resolver does not search, so skills cannot find their runtime unless you set
+`FEATURE_FORGE_ROOT` to that directory. Copilot also marks direct repository installs deprecated.
+
+### Direct install (npm, compatibility)
+
+Use the npm installer when you want a project-scoped install committed with the repository, or
+cannot use Copilot plugins. Project scope writes one complete runtime bundle at
+`.github/feature-forge/` plus native discovery mirrors under `.github/skills/` and
+`.github/agents/`:
 
 ```bash
 npx @garygentry/feature-forge install -a copilot
@@ -58,29 +88,6 @@ The installer records every file it writes in a manifest (`.github/.feature-forg
 or `~/.copilot/.feature-forge.global.json` for personal scope). It never takes ownership of a file
 it did not write: an existing skill or agent file with the same name is left in place, and
 `uninstall` will not remove it.
-
-### Plugin install
-
-A Copilot plugin install of feature-forge works when a Copilot plugin marketplace serves the
-generated `adapters/copilot/` bundle as its `feature-forge` plugin:
-
-```bash
-copilot plugin marketplace add <marketplace-source>
-copilot plugin install feature-forge@<marketplace>
-```
-
-Copilot then places the bundle at `~/.copilot/installed-plugins/<marketplace>/feature-forge/`, where
-the skills find their runtime with no extra setup. This is the layout verified on Copilot CLI 1.0.80.
-
-Two routes look like they should work but do not today (tracked in
-[#360](https://github.com/garygentry/feature-forge/issues/360)):
-
-- `copilot plugin marketplace add garygentry/feature-forge` reads this repository's Claude
-  marketplace, so `feature-forge@feature-forge` installs the **Claude** bundle, not the Copilot one.
-- `copilot plugin install garygentry/feature-forge:adapters/copilot` installs the right bundle, but
-  under `~/.copilot/installed-plugins/_direct/garygentry--feature-forge--adapters-copilot/`, which
-  the runtime resolver does not search. Skills then fail to find their runtime unless you set
-  `FEATURE_FORGE_ROOT` to that directory. Copilot also marks direct repository installs deprecated.
 
 ## Invoking skills
 
@@ -194,7 +201,8 @@ pointer block) without upgrading it first.
 Plugin install:
 
 ```bash
-copilot plugin uninstall feature-forge
+copilot plugin uninstall feature-forge@feature-forge
+copilot plugin marketplace remove feature-forge   # optional: also drop the marketplace
 ```
 
 ## Loop runner (forge-5-loop)
