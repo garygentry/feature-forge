@@ -82,10 +82,11 @@ Notes:
   byte-identical to the pre-review-default behavior. `--review` is a rauf-specific
   flag; a swapped-in runner conforming to the contract need not support it.
 
-## Launch detail (Step 3b — background process)
+## Launch detail (Step 3b)
 
-Launch the loop **backgrounded** so it survives session end and does not block the
-session, then supervise it live via the runner's structured event file.
+Launch the loop so it survives session end and **never blocks this session**, then
+supervise it live (Step 3d). **Never run the run command in the foreground** — it blocks
+for the whole run (hours) and hits the shell tool's timeout.
 
 > **Clean-tree precondition.** rauf refuses to run with uncommitted changes
 > (*"Refusing to run the loop with uncommitted changes… pass --force"*). Step 3a's
@@ -106,7 +107,7 @@ session, then supervise it live via the runner's structured event file.
 > guard is a no-op. **Surface a one-line note** when you set it — e.g. *"running as root →
 > setting IS_SANDBOX=1 so the sandboxed runner can use --dangerously-skip-permissions"* —
 > so the behavior is never silent. `forge-session.py doctor` also reports this condition.
-> Both launch commands below already carry the guard.
+> The launch commands below already carry the guard.
 
 **Do NOT redirect the run's stdout into `{loopRunner.stateDir}`.** rauf **persists
 its own** `{stateDir}/events.ndjson` (structured) and `{stateDir}/{logFile}` (human)
@@ -144,7 +145,11 @@ The background task's exit notification remains the single authoritative termina
 signal (Step 4). Loop runs can take significant time (minutes to hours depending on
 backlog size).
 
-## Arm a Monitor on the event stream (Step 3d)
+## Supervise the run (Step 3d)
+
+Supervise so that **every** terminal and exception state reaches you (silence is not
+success), react per Step 3e, and decide from `{rendered statusJsonCommand}` — never from an
+event line alone.
 
 Arm the **`Monitor` tool** on the structured event stream so events flow back into
 this session as they happen. Use **`persistent: true`** — runs can exceed `Monitor` tool's
@@ -194,15 +199,25 @@ If the Monitor is ever auto-stopped for event volume, re-arm with a tighter filt
 An older runner that never emits a listed type (e.g. `review_failed`) simply never
 matches it — the filter needs no version gate.
 
+**Completion (Step 3f).** Step 4 is reached when the backgrounded process exits — its
+completion notification is authoritative; a `loop_completed` / `loop_error` /
+`loop_cancelled` event is the live heads-up. Stop the Monitor (`TaskStop` if it has not
+ended) and proceed. Do NOT foreground-sleep or poll — the harness drives both signals, so
+you may end your turn between events.
+
 ## React to events as they land (Step 3e)
 
-Each Monitor event arrives as a message. React per type — but keep the user signal
-high and the noise low:
+Each event reaches you as a message (Step 3d says how, per host). React per type — but keep
+the user signal high and the noise low:
 
-- **`item_completed`** → increment a running tally. These land minutes apart, so they
-  won't trip the volume auto-stop; still, surface a coalesced milestone ("12/30 done")
-  rather than echoing every line. For an exact breakdown, run the one-shot
-  `{rendered statusJsonCommand}` and report `done/total` from `backlogSummary`.
+- **`item_completed`** → report its one-line **card**:
+  `[7/26] ✓ 008 <title> — <summary> · abc1234 · 5 files · 6m`. `loop wait` prints exactly
+  this line; from a raw event, build it from the fields — `[doneCount/totalCount]`,
+  `itemId`, `title`, the agent's `summary`, the first 7 chars of `commitSha`,
+  `filesChanged`, `durationMs` in minutes — leaving out any that are absent (an older
+  runner sends only `itemId` and `title`; then report the title and a running tally).
+  Where the host's supervisor already posted the card (Pi), don't repeat it. When several
+  land together, report them in one message.
 - **`needs_human`** (or `signal_parsed` with `signal: "needs_human"`) → **surface
   immediately** and send a **`PushNotification`** (an hours-long run means the user has
   likely stepped away). **Important — the loop is NOT paused:** the runner has set that
@@ -219,10 +234,10 @@ high and the noise low:
   No action is needed now: Step 4c's recovery pass offers the unblock after the run
   ends — a blocked-only run (no `needs_human` event) still enters it.
 - **`loop_error`** → a real failure (this is also what a circuit-breaker halt — too many
-  consecutive infra failures — emits). Surface now and `PushNotification`. Offer
+  consecutive infra failures — emits). Surface now and send a **`PushNotification`**. Offer
   inspection / `--force` / re-run as appropriate.
 - **`review_failed`** → the post-loop review pass failed or was stopped by a usage limit
-  (payload `reason`). Surface it now with a `PushNotification`. The run is **not**
+  (payload `reason`). Surface it now and send a **`PushNotification`**. The run is **not**
   complete: the review stays pending (`status --json` → `reviewPending: true`). A failed
   review makes `loop run --review` exit **1**; a usage-limit stop is a resumable limit
   stop, not that exit-1 case. A review **cancelled** mid-pass emits **no**
@@ -252,7 +267,7 @@ high and the noise low:
 - **Usage-limit waits are not stalls.** `usage_limit_hit` (`limitType`, optional
   `reason: "usage_api_disagreement"`) followed by `sleep_start` (`sleepUntil`, `reason`)
   means the runner is sleeping until the limit resets (`SLEEPING_LIMIT`) and will resume
-  on its own: surface it once with its `sleepUntil`, and send a `PushNotification` when
+  on its own: surface it once with its `sleepUntil`, and send a **`PushNotification`** when
   the sleep is long (a 5-hour window). A `sleep_start` whose `reason` begins *"Usage-limit
   banner unconfirmed"* is a 30 s / 60 s backoff (`status --json` still `RUNNING` with
   `sleepUntil`) — narrate it at most briefly. `sleep_end` / `usage_limit_cleared` → the
@@ -262,7 +277,7 @@ high and the noise low:
 - **`loop_paused`** (`reason: "needs_human"`, `itemId`) → the run halted on a needs-human
   item (only under rauf's opt-in `--pause-on-needs-human`; forge does not pass it by
   default). Unlike the default set-aside mode, the loop **is** now stopped: surface it
-  with a `PushNotification`; the process exits and Step 4c's recovery pass handles the
+  and send a **`PushNotification`**; the process exits and Step 4c's recovery pass handles the
   answer.
 
 **Pending review (Steps 2a / 4a, rauf).** A rauf `--review` run whose review pass failed, was cancelled, or was stopped by a usage
@@ -281,8 +296,11 @@ not a fresh loop. So when Step 4a or Step 2a sees `reviewPending: true`:
    usage-limit stop (`PAUSED_USAGE_LIMIT` / `WEEKLY_LIMIT`), say the resume only helps
    once the limit resets (`sleepUntil`). A stop the user requested (`PAUSED`, lock
    released) is theirs: offer, never auto-resume.
-3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` backgrounded, exactly as a
-   run command (Step 3b launch guards, 3d Monitor, 3f completion), then return to Step 4a.
+3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` exactly as Step 3b launches a
+   run command for this host — with its launch guards; backgrounded on Claude, with
+   `--detached` elsewhere (on Pi via bash, which the supervisor attaches to; the detached
+   launch prints the `Wait:` cursor) — and supervise it per Step 3d to its Step 3f completion,
+   then return to Step 4a.
    A successful review may file fix items (`review_completed.itemsCreated`); those are
    ordinary pending work for the next loop run. rauf reviews **before** relaunching: when
    pending items also remain (the review ran after the iteration budget ran out, or
@@ -307,7 +325,7 @@ prior run closed as `partial` with `--cause runner-stopped` (or the plain iterat
 2. Via `AskUserQuestion`, offer **Resume the runner (recommended)** · **Stop here**. For a
    usage halt, the resume helps only once the limit resets; for `PAUSED` on request
    (lock released), the stop was the user's — offer, never auto-resume.
-3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` backgrounded exactly as in
+3. **Resume:** launch `{bin} resume . --backlog {backlogDir}` exactly as in
    **Pending review** step 3 (it clears a stale lock and finishes the run's bookkeeping,
    including any post-loop review), then continue at Step 4a. rauf's recovery for
    `ERROR` is `resume` or `reset` + re-run — never reach for `reset` or `--force` first.
@@ -351,7 +369,7 @@ Coding agent: {resolved.agent} (source: {sourceLabel}; proceeded despite unavail
 
 (The two lines above are alternatives — the first is the normal line; the second
 replaces it only on the proceed-anyway path. This is session-side prose only; it
-introduces no new event type, so the Step 3d Monitor filter is unchanged.)
+introduces no new event type, so the Step 3d event filter is unchanged.)
 
 ```
 Loop started for {feature} ({N} items to process).

@@ -80,6 +80,11 @@ contract could not fully support. Individual agents that need a *newer* rauf tha
   per advertised row, so a rauf that predates a given preset simply never lists it —
   the pipeline degrades gracefully rather than failing. A fresh install provisions
   the pin above, which satisfies the floor and every current agent preset.
+- **Loop supervision (forge-5-loop, #344–#348)** — the per-host recipe uses rauf ≥ 0.18.0
+  surfaces, all optional: `rauf loop wait` (Codex/Copilot/Cursor/Gemini; older runners fall
+  back to a 5–10 s `status --json` poll), rauf's Pi package and its `rauf_loop_*` tools (Pi;
+  without it the `loop wait` recipe applies), and `rauf hook codex-stop` (Codex, opt-in). The
+  pin provisions 0.18.0; the floor stays 0.14.0 because each has a fallback.
 - **Pending-review and terminal-state reporting (all agents)** — `forge-5-loop`'s
   review-pending gate (`rauf resume` of a failed/cancelled/usage-stopped `--review`
   pass), its `loopState` terminal-state gate, and the stuck-warning tool context need

@@ -226,7 +226,7 @@
         "logFile": {
           "type": "string",
           "default": "rauf.log",
-          "description": "Human-readable event log filename written under {stateDir}. Substituted as {loopRunner.logFile} in the log-tail fallback Monitor command when eventStreamCommand (events.ndjson) is unavailable. The structured NDJSON path uses the contract-standard name events.ndjson and is not configurable here."
+          "description": "Human-readable event log filename written under {stateDir}. Substituted as {loopRunner.logFile} in the log-tail fallback filter when eventStreamCommand (events.ndjson) is unavailable. The structured NDJSON path uses the contract-standard name events.ndjson and is not configurable here."
         },
         "setupHint": {
           "type": "string",

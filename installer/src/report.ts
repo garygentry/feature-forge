@@ -54,6 +54,17 @@ function renderHuman(report: RunReport): string {
     out.push(`  ${formatError(report.raufError)}`);
   }
 
+  // Codex Stop-hook step (#346): wired / already wired / not offered / failed.
+  if (report.codexStopHook) {
+    const h = report.codexStopHook;
+    out.push(`codex stop hook: ${h.status} — ${h.message}`);
+    if ((h.status === "wired" || h.status === "already-wired") && !h.hooksFeatureEnabled) {
+      out.push("  enable it: add `hooks = true` under [features] in Codex's config.toml, then trust the hook in Codex");
+    } else if (h.status === "wired") {
+      out.push("  Codex asks you to trust the new hook before it runs it");
+    }
+  }
+
   const okCount = report.agents.filter((a) => a.ok).length;
   const failCount = report.agents.length - okCount;
   out.push(`Summary: ${okCount} ok, ${failCount} failed (exit ${report.exitCode})`);
