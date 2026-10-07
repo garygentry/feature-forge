@@ -7,25 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **Copilot installs made by installer 0.3.9 or earlier need one `update` (#325).** Run
+  `npx @garygentry/feature-forge update -a copilot` (add `-g` for a personal install; a plain
+  `update` / `update -g` also finds it). It moves the install to Copilot's native layout and removes
+  the old `.github/copilot-instructions.md` pointer block if you never edited it. An edited block is
+  kept, and `list` shows `retired-block:edited`, until you run `update -a copilot --force`.
+  Personal installs move from `~/.github/feature-forge/` to `~/.copilot/feature-forge/`.
+
 ### Added
 
-- **Native GitHub Copilot adapter output (#325 F1).** The generated Copilot bundle now ships a versioned `plugin.json` (the tested legacy Copilot plugin format, explicitly not Agent Plugins 1.0), native `skills/<name>/SKILL.md` files that keep their `argument-hint`, and `agents/<name>.agent.md` custom agents. Canonical tools map to Copilot aliases and fail loudly when a tool has no mapping. Worker agents are subagent-only. The Copilot manifest is part of the version-sync gate.
-
-### Changed
-
-- **The installer places Copilot where Copilot discovers it (#325 F3).** `install -a copilot` now writes one complete runtime per scope (project `.github/feature-forge/`, personal `~/.copilot/feature-forge/`, the roots F2's resolver searches) plus native mirrors: the skill tree is copied recursively into `.github/skills/` (personal `~/.copilot/skills/`) and the custom agents flat into `.github/agents/` (`~/.copilot/agents/`). Dry-run and real-run JSON report placement actions identically. The manifest records every mirrored file it proves it wrote, so an edited or unowned file is preserved, and uninstall removes only recorded files after checking that the manifest's primary destination and placements match this agent and scope. Containment rejects lexical and symlink-ancestor escapes. A bare `.github/` directory still does not count as detecting Copilot. Copilot confidence is now `verified-current` (Copilot CLI 1.0.80 discovers the mirrored skills and agents in both scopes). Doctor's canon-root remedy names the new mirror paths.
-
-- **Copilot installs from installer 0.3.9 and earlier migrate to the native layout (#325 F4).** `update -a copilot [-g]` applies and hash-verifies the new runtime and mirrors, then removes only the files the old manifest recorded, and writes the new manifest last, so a failed update can be re-run. Personal installs move from `~/.github/feature-forge/` to `~/.copilot/feature-forge/`; `list -g` and `uninstall -g` now find an old personal install there instead of reporting nothing installed. An install manifest (current, or the legacy `~/.github/.feature-forge.global.json`) now counts as detection for `update`, `uninstall` and `list`, so a plain `update` / `update -g` (or `uninstall`) reaches an install whose `.copilot/` dir is missing; a bare `.github/` never counts. The installer no longer writes the `.github/copilot-instructions.md` block (Copilot does not need it). Migration strips the old block only when unedited, keeps an edited one until `update --force`, and never touches text outside the sentinels. `list` flags old installs `legacy-layout:true` and a kept edited block `retired-block:edited`. Tested against layouts produced by the published 0.3.9 installer for project and personal scopes in copy and symlink modes.
-
-- **Copilot invocation prose is distribution-aware (#325 F1).** Copilot descriptions, skill bodies, references, and stage-exit output (`--host copilot`) write `invoke-skill: <name> [arguments]` instead of assuming one slash name. Each skill's Copilot host notes map that to the plugin form (`/feature-forge:<name>`) and the direct form (`/<name>`). The Copilot host notes keep the Interaction Capability Ladder guidance, and `doctor` now reports `hostArg: copilot` for Copilot bundles.
+- **Native GitHub Copilot support (#325).** Copilot now loads feature-forge as native Agent Skills
+  and custom agents instead of through an instructions-file pointer. See
+  [docs/agents/copilot.md](docs/agents/copilot.md).
+  - **Bundle.** `adapters/copilot/` ships `skills/<name>/SKILL.md` (keeping `argument-hint`),
+    `agents/<name>.agent.md` and a version-synced `plugin.json` in the tested legacy Copilot plugin
+    format (explicitly not Agent Plugins 1.0). Canonical tools map to Copilot aliases, and an
+    unmapped tool fails generation. Worker agents are subagent-only (`user-invocable: false`), cannot
+    delegate further and inherit the parent's model.
+  - **Verifier.** Copilot custom agents have no skill-dependency field, so `forge-verifier.agent.md`
+    embeds the complete `forge-verify` procedure. Generation fails if the canon declaration drifts or
+    the skill is missing. Copilot guarantees no per-agent memory, so the verifier and `forge-verify`
+    no longer promise a `MEMORY.md`, and a surviving promise fails generation.
+  - **Invocation names.** A plugin install names skills `/feature-forge:<name>`; a direct install
+    names them `/<name>`. Copilot descriptions, skill bodies, references and stage-exit output
+    (`--host copilot`) write `invoke-skill: <name> [arguments]`, and each skill's Copilot host notes
+    map it to the right form. `doctor` reports `hostArg: copilot` for Copilot bundles.
+  - **Runtime roots.** Copilot skills resolve the runtime from an explicit `FEATURE_FORGE_ROOT`
+    (which must be a complete bundle, or the skill stops), then the nearest `.github/feature-forge/`
+    at or above the current directory, then `~/.copilot/installed-plugins/*/feature-forge/`, then
+    `~/.copilot/feature-forge/`, and only then other agents' roots, so a co-installed Claude or Codex
+    bundle never shadows the Copilot one. Nothing depends on `PLUGIN_ROOT`. Verified on Copilot CLI
+    1.0.80.
+  - **Direct installs.** `install -a copilot` writes one complete runtime per scope (project
+    `.github/feature-forge/`, personal `~/.copilot/feature-forge/`) plus native mirrors: skills
+    copied recursively into `.github/skills/` (`~/.copilot/skills/`) and agents into
+    `.github/agents/` (`~/.copilot/agents/`). Dry-run and real-run JSON report placements
+    identically. The manifest records every mirrored file it wrote, so a pre-existing or unowned file
+    is never claimed, and `uninstall` removes only recorded files after checking that the manifest's
+    primary destination and placements belong to Copilot and this scope. Containment rejects lexical
+    and symlink-ancestor escapes. A bare `.github/` directory still does not count as detecting
+    Copilot. Copilot confidence is `verified-current`, and doctor's canon-root remedy names the new
+    mirror paths. The installer no longer writes the `.github/copilot-instructions.md` block.
+  - **Migration from installer 0.3.9 and earlier.** `update -a copilot [-g]` applies and
+    hash-verifies the new runtime and mirrors, removes only the files the old manifest recorded and
+    writes the new manifest last. It journals the files it is about to write
+    (`<manifest>.migrating`), so a failed update can be re-run and a retry claims exactly those
+    files, never a byte-identical file a user placed. An install manifest (current, or the legacy
+    `~/.github/.feature-forge.global.json`) counts as detection for `update`, `uninstall` and `list`,
+    so they reach an install whose `.copilot/` dir is missing. The old pointer block is stripped only
+    when unedited; `--force` strips an edited one, and text outside the sentinels is never touched.
+    `list` flags old installs `legacy-layout:true` and a kept edited block `retired-block:edited`.
+    Tested against layouts produced by the published 0.3.9 installer for project and personal scopes
+    in copy and symlink modes.
+  - **Distribution gates.** `bash scripts/validate.sh` now also runs
+    `scripts/check-copilot-adapter.py` (the committed Copilot bundle's manifest, skill and agent
+    frontmatter, tool aliases, `references/` links, drop records and stray files) and
+    `scripts/check-installer-pack.py` (real prepack + `npm pack --dry-run`: the packed `adapters/`
+    must equal the source tree with the Copilot bundle complete and nothing outside the package
+    surface, and the run must leave `git status` unchanged). Each check has a negative test.
+  - **Known gaps.** No public Copilot plugin source works out of the box yet: this repository's
+    marketplace serves the Claude bundle, and a `garygentry/feature-forge:adapters/copilot` install
+    lands where the resolver does not look ([#360](https://github.com/garygentry/feature-forge/issues/360)).
+    Use the npm installer. The published npm package also lacks the forge-bootstrap templates'
+    `.gitignore` files, because npm always drops them
+    ([#359](https://github.com/garygentry/feature-forge/issues/359)).
 
 ### Fixed
 
 - **CI: `claude plugin validate --strict` failed on the repo root.** Starting with claude 2.1.292, validating a directory also lints it as a plugin, which flags the repo's own development `CLAUDE.md` at the root. `--strict` then fails every PR and `main`. `scripts/validate.sh` now validates `.claude-plugin/marketplace.json` directly. The root holds the marketplace and the source-of-record `plugin.json`; the shipped plugin `adapters/claude` (manifest generated from it) is still strictly validated as a plugin.
 
 - **`update` no longer writes into the target of a symlink install (#325 F4).** Running `update` without `--symlink` over a `--symlink` install hashed and copied files through the link, into the npx cache or source checkout it pointed at, and a later `uninstall` deleted files there. The link is now unlinked first and the runtime copied fresh; if the copy fails, the link is restored. `update --symlink` now relinks when the link still points where the manifest recorded, so an upgrade to a new npx cache path no longer needs `--force`. A link that points elsewhere is still left alone, and a recorded symlink that has been replaced by a real directory is never deleted (uninstall and migration leave it in place).
-
-- **An interrupted Copilot migration no longer strands its mirrors (#325 F4).** If the final manifest write failed, the retry found the mirrors it had already written byte-identical but unrecorded, so it never took ownership and `uninstall` left them behind. A migration now journals the files it is about to write (`<manifest>.migrating`, written before any change; the update fails untouched if it cannot be). A retry claims only the journaled files, so a byte-identical file a user placed is never adopted. The journal is deleted when the new manifest commits.
 
 ## [0.21.0] — 2026-09-30
 
