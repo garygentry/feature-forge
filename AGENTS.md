@@ -296,13 +296,16 @@ the owner approves the `release` environment, in GitHub Mobile or on the web.
 5. **Release-prep PR → merge.** The version bump and CHANGELOG edit go through a PR with green
    CI, never a direct push to `main`.
 6. **Tag the merge commit:** `git tag v<installer version> <merge-sha> && git push origin
-   v<installer version>`. This starts `release.yml`. If `verify` fails, fix the problem in a new
+   v<installer version>`. This starts `release.yml`. (If the push is rejected with GH007, the
+   pusher's commit email is private-protected; the owner fixes that in their git config.) If `verify` fails, fix the problem in a new
    PR and bump the version again; never move or reuse a pushed tag.
 7. **Hand the gate to the owner.** Tell the user the run is waiting on the `release`
    environment and link it (`gh run list --workflow release.yml`). Point them at the `verify`
    summary to review, especially the `.github/` flag. Then wait: `gh run watch <run-id>
    --exit-status`.
-8. **Verify it's live:**
+8. **Verify it's live.** The registry can lag a few minutes after `publish` succeeds (E404 on
+   read-back is normal at first), so poll rather than failing on the first miss:
+   `until npm view @garygentry/feature-forge@<v> version; do sleep 30; done`.
    - `npm view @garygentry/feature-forge version dist-tags` shows the new version under `latest`.
    - The package page shows provenance.
    - The GitHub Release exists.
@@ -310,7 +313,9 @@ the owner approves the `release` environment, in GitHub Mobile or on the web.
    - A dev-box install (`npx @garygentry/feature-forge@<v>`) followed by `doctor` is healthy.
 
 **Human prerequisites (one-time, operator-only):** the npm package's **Trusted Publisher** points
-at this repo, workflow `release.yml`, **environment `release`**. Its publishing access is
+at this repo, workflow `release.yml`, **environment `release`**, with **"Allow npm publish"**
+checked (the workflow runs `npm publish`, not `npm stage publish`; the `release` environment
+approval is the human gate, per ADR 0046 A4). Its publishing access is
 "Require two-factor authentication and disallow tokens". The `release` environment requires the
 owner's review and only deploys `v*` tags.
 
