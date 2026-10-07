@@ -38,7 +38,7 @@ Parse this rather than inferring commands. Version floors are literal — compar
         "copilot plugin marketplace add garygentry/feature-forge",
         "copilot plugin install feature-forge@feature-forge"
       ],
-      "verify": "copilot plugin list  # shows feature-forge@feature-forge",
+      "verify": "copilot plugin list | grep -q 'feature-forge@feature-forge'  # exits 0",
       "compatibilityInstall": "npx @garygentry/feature-forge install -a copilot"
     },
     "cursor":  { "installContext": "shell", "install": ["npx @garygentry/feature-forge install -a cursor"],  "verify": "npx @garygentry/feature-forge install -a cursor --dry-run --json  # exits 0" },
@@ -90,7 +90,7 @@ Identify the host agent you are running as, then install:
   in — Claude Code, Codex, Copilot, Cursor, or Gemini?" Then use the matching command above.
 
 **Verify before continuing.** Claude: confirm `/feature-forge:forge-init` resolves. Copilot plugin:
-`copilot plugin list` shows `feature-forge@feature-forge`. Others (and the Copilot npm install):
+`copilot plugin list | grep -q feature-forge@feature-forge` exits 0. Others (and the Copilot npm install):
 `npx @garygentry/feature-forge install -a <agent> --dry-run --json` exits 0. Do not proceed
 until the skills are present.
 
