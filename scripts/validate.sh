@@ -201,6 +201,20 @@ else
   ERRORS=$((ERRORS + 1))
 fi
 
+# 6c. Copilot bundle contract gate (FORGE-107). --check (6b) proves adapters/ equals a fresh
+#     generation; this proves that generation is a VALID Copilot bundle: exact legacy plugin
+#     manifest, native skill/agent names + frontmatter, builtin tool aliases, no nested
+#     delegation, resolvable references/ links, a drop record for every dropped canon key, and
+#     no stray artifacts. Runs under .venv-adapters (PyYAML); HARD gate, never skipped.
+echo ""
+echo "Checking the Copilot bundle contract..."
+if "$ADAPTERS_PY" "$REPO_ROOT/scripts/check-copilot-adapter.py" --root "$REPO_ROOT"; then
+  echo "PASS: Copilot bundle contract (adapters/copilot)"
+else
+  echo "FAIL: Copilot bundle contract (see above)"
+  ERRORS=$((ERRORS + 1))
+fi
+
 # 7. Compile-check and test epic-manifest helper
 echo ""
 echo "Checking epic-manifest helper..."
@@ -290,6 +304,16 @@ if command -v npm >/dev/null 2>&1; then
     echo "PASS: installer build + node:test suite"
   else
     echo "FAIL: installer build/test (see above)"
+    ERRORS=$((ERRORS + 1))
+  fi
+  # Tarball contents (FORGE-107/202): run the real prepack + `npm pack --dry-run`, assert the
+  # packed adapters/ is exactly the source tree (Copilot bundle included) and nothing outside
+  # the package surface ships, then remove the prepack artifacts and assert git status is
+  # unchanged — a leftover installer/adapters/ would shadow adapters/ in a dev checkout.
+  if python3 "$REPO_ROOT/scripts/check-installer-pack.py" --root "$REPO_ROOT"; then
+    echo "PASS: installer npm tarball contents + clean source tree"
+  else
+    echo "FAIL: installer npm tarball contents / clean source tree (see above)"
     ERRORS=$((ERRORS + 1))
   fi
 else

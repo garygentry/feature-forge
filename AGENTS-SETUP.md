@@ -78,6 +78,11 @@ Identify the host agent you are running as, then install:
 `npx @garygentry/feature-forge install -a <agent> --dry-run --json` exits 0. Do not proceed
 until the skills are present.
 
+**Skill names below** use the Claude form (`/feature-forge:<name>`). On Copilot, an install made
+with the command above exposes each skill as `/<name>` (for example `/forge-init`); feature-forge's
+own skill text writes `invoke-skill: <name>` for either form. See
+[docs/agents/copilot.md](docs/agents/copilot.md).
+
 ---
 
 ## Step 2 — Install the loop runner (rauf)

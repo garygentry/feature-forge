@@ -39,9 +39,12 @@ npx @garygentry/feature-forge install -a codex           # a single agent
 npx @garygentry/feature-forge install --dry-run --json   # preview the plan, change nothing
 ```
 
-The `--dry-run --json` plan reports the exact install destination per agent. See
-[Cross-agent usage](/advanced/cross-agent/) for per-agent notes and the
-agent-selection rules used by the loop.
+The `--dry-run --json` plan reports the exact install destination per agent. On
+GitHub Copilot this direct install exposes skills as `/<name>` (for example
+`/forge-init`) and installs project scope under `.github/` (personal scope,
+`--global`, under `~/.copilot/`). See [Cross-agent usage](/advanced/cross-agent/)
+for per-agent notes, including Copilot's plugin vs direct installs and upgrades
+from installer 0.3.9, and the agent-selection rules used by the loop.
 
 ## Install the loop runner (for Stage 5)
 

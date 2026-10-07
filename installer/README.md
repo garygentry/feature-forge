@@ -63,16 +63,19 @@ resources.
 For Copilot, `--global` installs one complete runtime bundle at
 `~/.copilot/feature-forge/` and native discovery mirrors at `~/.copilot/skills/` and
 `~/.copilot/agents/`. Project scope keeps the complete runtime at `.github/feature-forge/`
-alongside `.github/skills/` and `.github/agents/`. GitHub documents the native project/personal
-skill roots; the complete layout and skill/agent discovery are runtime-verified against Copilot CLI
-1.0.80.
+alongside `.github/skills/` and `.github/agents/`. Copilot loads the mirrored `SKILL.md` skills and
+`.agent.md` custom agents natively; skills locate the runtime themselves (or via
+`FEATURE_FORGE_ROOT`). Both scopes are runtime-verified on Copilot CLI 1.0.80. A direct install
+exposes skills as `/<name>` (a Copilot plugin install would expose `/feature-forge:<name>`).
 
 The installer no longer writes a block into `.github/copilot-instructions.md`. Installs made by
 0.3.9 and earlier (runtime at `.github/feature-forge/`, personal installs under `~/.github/`, plus
-that block) are migrated by `update -a copilot [-g]`: the new layout is applied and verified before
-the old recorded files are removed, and the block is stripped only if unedited (`--force` strips
-an edited one; text outside the sentinels is always kept). `uninstall` and `list` also find an old
-personal install under `~/.github/`. See `docs/agents/copilot.md` for details.
+that block) are migrated by `update -a copilot [-g]`, or by a plain `update` / `update -g`: the new
+layout is applied and verified before the old recorded files are removed, and the block is stripped
+only if unedited (`--force` strips an edited one; text outside the sentinels is always kept).
+`uninstall` and `list` also find an old personal install under `~/.github/`. See
+[docs/agents/copilot.md](https://github.com/garygentry/feature-forge/blob/main/docs/agents/copilot.md)
+for plugin vs direct installs, runtime roots, migration, diagnostics and uninstall.
 
 ## Claude
 
