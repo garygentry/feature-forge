@@ -56,6 +56,7 @@ Rows appended per §2, newest last. Same harness, same cell schema, same criteri
 |---|---|---|---|---|---|---|
 | 2026-09-30 | #340 · `861c9af0` | **5/5 (100%)** | **5/5 (100%)** | all 100% | $10.01 | [`loop-outcome-2026-09-30-861c9af0.json`](../../eval/baselines/loop-outcome-2026-09-30-861c9af0.json) |
 | 2026-09-30 | #340 · `e015c878` (after the round-1 `forge-5-loop` SKILL.md changes) | **5/5 (100%)** | **5/5 (100%)** | all 100% | $9.82 | [`loop-outcome-2026-09-30-e015c878.json`](../../eval/baselines/loop-outcome-2026-09-30-e015c878.json) |
+| 2026-10-07 | #351 · `8922556d` (per-host supervision: Steps 3b/3d/3f become host-neutral pointers) | **5/5 (100%)** | **5/5 (100%)** | all 100% | $10.07 | [`loop-outcome-2026-10-07-8922556d.json`](../../eval/baselines/loop-outcome-2026-10-07-8922556d.json) |
 
 #340 had one more round after `e015c878`, before merging as `c15f9025`: `f000b413` reordered the outcome ladder in `forge-5-loop/references/result-reporting.md` and SKILL.md Step 7's summary line. The probe was not re-run after that, so these rows measure `e015c878` canon, not the merge commit. The next PR that touches the loop close should re-run the probe and append a row.
 
@@ -65,5 +66,6 @@ Rows appended per §2, newest last. Same harness, same cell schema, same criteri
 |---|---|---|---|---|---|---|---|---|
 | 2026-09-03 | this refresh (§1) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $19.41 | [`stage-exit-2026-09-03.json`](../../eval/baselines/stage-exit-2026-09-03.json) |
 | 2026-09-30 | #338 (`forge-init` preflight prose) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $26.35 | [`stage-exit-2026-09-30.json`](../../eval/baselines/stage-exit-2026-09-30.json) |
+| 2026-10-01 | #352 (`--host copilot` in `stage-exit-protocol.md`) | **5/5** | **5/5** | **5/5** | **5/5** | all 100% | $25.21 | [`stage-exit-2026-10-01-ad700a7a.json`](../../eval/baselines/stage-exit-2026-10-01-ad700a7a.json) |
 
 The #338 run is a canon-regression check, not a measurement of `forge-init`'s new text: no probe loads `forge-init`, so `stage-exit` was run as the general prose-change oracle. Stage-exit held at 20/20 again.
