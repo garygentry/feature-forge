@@ -190,19 +190,19 @@ Then commit this state write before launching (mandatory — the runner refuses 
 
 ### 3b. Launch Background Process
 
-Launch the loop **backgrounded** (host's background-execution mechanism: true) so it survives session end and does not block the session. For a runner that **persists its own structured event file** (the default — rauf writes and rotates `{stateDir}/events.ndjson` natively), launch the **plain `runCommand`** with **no stdout redirect** and supervise that native file; never redirect `--ndjson` into `{stateDir}` (it collides with the runner's own writer). Only a stdout-only runner (no native event file) uses `eventStreamCommand`, redirected to a file **outside** `{stateDir}`. The background task's exit notification is the single authoritative terminal signal (Step 4). For the exact launch commands (incl. the `mkdir -p` state-dir guard and the root→`IS_SANDBOX` sandbox guard) and the self-persisting vs. stdout-only detail, read `references/runner-contract.md`.
+Launch the loop so it survives session end and **never blocks this session** — never run the run command in the foreground. Use the launch for this host in **Launch detail (Step 3b)** of `references/runner-contract.md`: the exact command, the `mkdir -p` state-dir and root→`IS_SANDBOX` guards, and why the runner's own `{stateDir}/events.ndjson` is never redirected into.
 
 ### 3c. Inform User
 
 Follow the **Inform-user output template (Step 3c)** section of `references/runner-contract.md` — it carries this step's instruction, the always-shown **verification-coverage** scan of the backlog's active items (contextualizing a benign runner warning like rauf's "No verification commands detected"), and the verbatim "Loop started…" template.
 
-### 3d. Arm a Monitor on the event stream, and react to events
+### 3d. Supervise the run, and react to events
 
-Arm the **host's monitoring mechanism** (`persistent: true`) on the structured event stream (the NDJSON file, or the human log as fallback) with a coverage-complete filter matching every terminal and exception state (silence is not success). The filter selects on each NDJSON line's **`.type`** field, **never** `kind` (a `kind`-keyed filter matches nothing and the watch stays dark). The exact commands, the filter list (incl. `review_failed` and usage-limit events), and the per-event reactions (`needs_human` / `loop_error` / `review_failed` surfaced with a `PushNotification`, `item_completed` coalesced into milestones, `llm_stuck_warning` reported with its in-flight tool) are in `references/runner-contract.md` — follow them verbatim.
+Supervise the run exactly as **Supervise the run (Step 3d)** in `references/runner-contract.md` says for this host — coverage-complete, so every terminal and exception state reaches you (silence is not success) — and react per **React to events as they land (Step 3e)**: report each completed item's one-line card, surface exceptions now. Decide from the status JSON command, never from an event line alone.
 
 ### 3f. Reach completion
 
-Step 4 is reached when the backgrounded process exits (its completion notification is authoritative; a `loop_completed` / `loop_error` / `loop_cancelled` event is the live heads-up). Stop the Monitor (`TaskStop` if it has not ended) and proceed. Do NOT foreground-sleep or poll — the harness drives both signals.
+Step 4 is reached when the run has ended; Step 3d of `references/runner-contract.md` names this host's terminal signal. Never end your turn while the loop runs unless your host wakes you when it ends.
 
 ## Step 4: Check Results
 
@@ -282,7 +282,7 @@ Add `--epic "{epic}"` when this feature is an epic member — required, per the 
 - `{backlogDir}` is a **directory path**, not a file path. Pass `specs/auth`, not `specs/auth/backlog.json`.
 - rauf resolves `RAUF.md` with fallback (`{backlogDir}/.rauf/RAUF.md` first, then the project's `.rauf/RAUF.md`). State files (state.json, {loopRunner.logFile}, etc.) land at `{backlogDir}/{loopRunner.stateDir}/`, isolated per backlog dir, so concurrent features don't collide.
 - If the session disconnects mid-loop, the runner process continues independently — check results later with the status / list commands. A crashed run's stale lock (`PAUSED` + `lock.stale`) is cleared by rauf's `resume`, not `--force` (see `references/result-reporting.md`).
-- Never run the run command in the foreground (without host's background-execution mechanism) — it blocks and will hit the Bash tool timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise via the host's monitoring mechanism (3d). A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting.
+- Never run the run command in the foreground — it blocks for the whole run and hits the shell tool's timeout for any non-trivial backlog. "Don't block the foreground" is NOT "stay silent": supervise per 3d. A `needs_human`/`blocked`/`review` signal does **not** pause the loop — the runner sets the item aside and keeps going; surface it live but don't tell the user the loop is waiting.
 - The version gate (1c) uses the `--json` form on purpose; never parse `rauf version`'s human output.
 - **Implementation artifacts must not cite specs.** The loop should **read** specs and `backlog.json` freely — they are the source of truth, and the backlog rightly cites specs for provenance. But artifacts the loop **writes into the target repo** (source code, generated `SKILL.md`/agent files, configs, code comments) must be **self-contained**: no references to feature-forge spec files (no `See specs/{feature}/NN-*.md`, no "source spec" provenance notes) — specs are pre-implementation inputs that may be archived or deleted once the feature ships. This applies only to shipped implementation output, never to the backlog or spec documents, which keep citing specs.
 
