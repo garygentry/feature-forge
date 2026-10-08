@@ -110,8 +110,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rauf loop wait` (bounded wait with a per-item card), enriched `item_completed` events, the
   `rauf-loop-supervisor` Pi extension in rauf's Pi package, and the `rauf hook codex-stop`
   Codex Stop hook (rauf #152–#156). The pin change itself touches only the installer, and
-  `minRunnerVersion` stays 0.14.0. feature-forge does not require these surfaces yet; ff
-  #344–#348 (umbrella #349) adopt them.
+  `minRunnerVersion` stays 0.14.0: forge-5-loop's per-host supervision (#345–#348, below)
+  uses these surfaces when present and falls back on older runners.
 
 ### Fixed
 
