@@ -103,13 +103,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version; the plugin version stays independent. `npm-publish.yml` (manual dispatch) is removed.
 
 - Non-Claude bundles (bodies **and** bundled references) no longer carry `PushNotification`, `TaskStop`, `persistent: true`, `run_in_background` or `tail -n +1 -F`. `tests/test_adapter_host_neutrality.py` now forbids them, and forbids `forge_loop_` on Pi.
-- **Installer 0.3.10: rauf pin advanced to `@garygentry/rauf@0.18.0`** (was 0.17.1). A fresh
-  `npx @garygentry/feature-forge install` now provisions the loop-supervision rauf release:
+- **Installer 0.3.10: rauf pin advanced to `@garygentry/rauf@0.19.0`** (was 0.17.1). A fresh
+  `npx @garygentry/feature-forge install` now provisions rauf 0.19.0, which adds the dedicated
+  `copilot` loop provider (`--agent copilot`, rauf #131) and exits `1` when a loop halts on an
+  error (rauf #164), on top of 0.18.0's loop-supervision surfaces:
   `rauf loop wait` (bounded wait with a per-item card), enriched `item_completed` events, the
   `rauf-loop-supervisor` Pi extension in rauf's Pi package, and the `rauf hook codex-stop`
   Codex Stop hook (rauf #152–#156). The pin change itself touches only the installer, and
-  `minRunnerVersion` stays 0.14.0. feature-forge does not require these surfaces yet; ff
-  #344–#348 (umbrella #349) adopt them.
+  `minRunnerVersion` stays 0.14.0: forge-5-loop's per-host supervision (#345–#348, below)
+  uses these surfaces when present and falls back on older runners.
 
 ### Fixed
 

@@ -4,8 +4,8 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-10-01 (installer 0.3.10: rauf pin advance 0.17.1 → 0.18.0, the
-loop-supervision rauf release). Prior: 2026-09-30 (0.21.0 release cut — marketplace distributes the built
+_Last updated: 2026-10-08 (installer 0.3.10: rauf pin advance 0.17.1 → 0.19.0, the
+loop-supervision and Copilot-provider rauf releases). Prior: 2026-09-30 (0.21.0 release cut — marketplace distributes the built
 `adapters/claude` bundle (#314/#335), doctor warns on an un-built canon root (#314/#338),
 forge-5-loop consumes rauf's status surface (#339/#340), CI provisions pinned test deps
 (#336/#337); rauf pin advance to 0.17.1). Prior: 2026-09-19 installer 0.3.8 (rauf pin
@@ -20,13 +20,14 @@ forge-5-loop consumes rauf's status surface (#339/#340), CI provisions pinned te
 | npm | 0.3.9 published; 0.3.10 pending publish | |
 | Commit | this release commit | |
 
-CHANGELOG `[Unreleased]` records the rauf 0.18.0 pin advance and native GitHub Copilot support
+CHANGELOG `[Unreleased]` records the rauf 0.19.0 pin advance and native GitHub Copilot support
 (#325/#360: the `adapters/copilot` bundle, the Copilot marketplace manifest, and the installer's
 Copilot layout migration). It is not an installer-only release.
 
 ### rauf coupling
 
-`RAUF_PIN` is **`@garygentry/rauf@0.18.0`** (the loop-supervision release: `rauf loop wait`,
+`RAUF_PIN` is **`@garygentry/rauf@0.19.0`** (0.19.0 adds the dedicated `copilot` provider, rauf #131;
+0.18.0 is the loop-supervision release: `rauf loop wait`,
 enriched `item_completed` cards, the Pi `rauf-loop-supervisor` extension, `rauf hook
 codex-stop`; rauf #152–#156 — feature-forge adopts them in the follow-up host-supervision
 rewrite, ff #344–#348). 0.17.x adds the status-surface fields forge-5-loop now reads (`reviewPending`, `loopState`,
