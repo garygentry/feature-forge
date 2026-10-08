@@ -255,7 +255,9 @@ a remote run showing post-sentinel drift — has **not** fired.
 
 ## Release mechanics (reference)
 
-No git tags. A release = CHANGELOG heading + 3 synced version fields + independent installer
-bump + manual npm dispatch. Full mechanics (gemini via `GEMINI_EXTENSION_VERSION`+regen,
-fixture refresh with `command cp -f`, `gh workflow run npm-publish.yml`, `npm@11` provenance
-pin): `plans/HANDOFF-stabilization-continuation.md` → "Release mechanics".
+A release = CHANGELOG + installer bump (+ for a plugin release, the 3 synced version fields)
+→ merge → push tag `v<installer version>` → `release.yml` (`verify`, then `publish` behind one
+owner approval on the `release` environment; #356). Runbook: AGENTS.md → "Release runbook".
+Older mechanics (gemini via `GEMINI_EXTENSION_VERSION`+regen, fixture refresh with
+`command cp -f`, `npm@11` provenance pin): `plans/HANDOFF-stabilization-continuation.md` →
+"Release mechanics".

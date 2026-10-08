@@ -1,0 +1,253 @@
+name: Release
+
+# The ONLY workflow that publishes (ADR 0046 Amendment 4; #356). npm Trusted
+# Publishing trusts this file BY FILENAME + the `release` environment, so do not
+# rename it and do not add another publishing workflow.
+#
+# Flow: the release-prep PR bumps installer/package.json `version` + CHANGELOG.md
+# → merge → push the tag `v<installer version>` → `verify` (no publish
+# credentials) runs the gate and writes the release summary → `publish` waits on
+# the `release` environment's one human approval → npm publish (provenance) +
+# build attestation + GitHub Release.
+#
+# The tag tracks the INSTALLER version (@garygentry/feature-forge), not the
+# plugin version: every tag is exactly one npm publish. The plugin version (an
+# independent line, see scripts/check-version-sync.py) is reported in the
+# summary and the Release title. No npm token anywhere — OIDC only.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PACKAGE: "@garygentry/feature-forge"
+
+jobs:
+  verify:
+    name: Verify (gate + release summary)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      plugin_version: ${{ steps.meta.outputs.plugin_version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      # Full history + tags: the gate's spec-purity test reads old revisions, and
+      # the summary diffs against the previous tag.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Tag matches installer/package.json
+        id: meta
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          VERSION="$(node -p 'require("./installer/package.json").version')"
+          PLUGIN_VERSION="$(node -p 'require("./.claude-plugin/plugin.json").version')"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::tag $TAG does not match installer/package.json version $VERSION (expected v$VERSION)"
+            exit 1
+          fi
+          case "$VERSION" in *-*) PRE=true ;; *) PRE=false ;; esac
+          {
+            echo "version=$VERSION"
+            echo "plugin_version=$PLUGIN_VERSION"
+            echo "prerelease=$PRE"
+          } >> "$GITHUB_OUTPUT"
+          echo "tag $TAG = installer $VERSION (plugin $PLUGIN_VERSION, prerelease=$PRE)"
+
+      # The same gate ci.yml runs: validate.sh (adapters regen-diff, installer
+      # build + node:test suite, traceability, ...) + shellcheck + ruff +
+      # version-sync. It also provisions Node 22 and Python for later steps.
+      - uses: ./.github/actions/quality-gate
+
+      # Re-run the pre-publish pair explicitly: the package bundles adapters/,
+      # so drift or a version desync would ship stale content under a new version.
+      - name: Pre-publish gate (adapters not drifted + versions synced)
+        run: |
+          .venv-adapters/bin/python3 scripts/build-adapters.py --check
+          python3 scripts/check-version-sync.py
+
+      - name: Version not already on npm
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Missing version → npm exits 1 with E404 (the expected case). Any other
+          # registry/network error fails the job (fail closed).
+          if GOT="$(npm view "$PACKAGE@$VERSION" version 2>&1)"; then
+            if [ -n "$GOT" ]; then
+              echo "::error::$PACKAGE@$VERSION is already published (npm rejects republishing; bump the version)"
+              exit 1
+            fi
+          elif ! grep -q E404 <<<"$GOT"; then
+            echo "::error::npm view failed: $GOT"
+            exit 1
+          fi
+
+      # `npm pack` runs `prepack` (build dist/ + bundle the repo-root adapters/),
+      # so this tarball is exactly what publish ships and attests.
+      - name: Pack installer
+        working-directory: installer
+        run: |
+          set -euo pipefail
+          npm ci
+          mkdir -p ../release-out
+          npm pack --pack-destination ../release-out
+          ls -l ../release-out
+          # List once to a file: `tar | grep -q` SIGPIPEs tar on a large listing,
+          # which pipefail turns into a false failure.
+          tar -tzf ../release-out/*.tgz > ../release-out/contents.txt
+          grep -q '^package/dist/cli.js$' ../release-out/contents.txt \
+            || { echo "::error::tarball is missing dist/cli.js"; exit 1; }
+          grep -q '^package/adapters/' ../release-out/contents.txt \
+            || { echo "::error::tarball is missing the bundled adapters/"; exit 1; }
+          rm ../release-out/contents.txt
+
+      # Release notes = the top released `## [...]` section of CHANGELOG.md. The
+      # release-prep PR must cut [Unreleased] into a heading that names THIS
+      # release — `## [<plugin version>]` for a plugin release, or
+      # `## [installer <version>]` for an installer-only one — so notes never
+      # repeat earlier releases' entries. Fail closed otherwise.
+      - name: Release notes + summary
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          PLUGIN_VERSION: ${{ steps.meta.outputs.plugin_version }}
+        run: |
+          set -euo pipefail
+          section() { # $1 = awk regex for the heading to start at
+            awk -v start="$1" '
+              /^## \[/ { if (on) exit; if ($0 ~ start) { on=1; next } }
+              on { print }' CHANGELOG.md
+          }
+          if [ -n "$(section '^## \\[Unreleased\\]' | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG [Unreleased] is not empty — the release-prep PR must cut it into '## [$PLUGIN_VERSION]' or '## [installer $VERSION]'" >&2
+            exit 1
+          fi
+          SOURCE="$(awk '/^## \[/ && !/^## \[Unreleased\]/ { print; exit }' CHANGELOG.md)"
+          case "$SOURCE" in
+            "## [$PLUGIN_VERSION]"*|"## [installer $VERSION]"*) ;;
+            *) echo "::error::top CHANGELOG section '$SOURCE' names neither plugin $PLUGIN_VERSION nor installer $VERSION — add this release's section" >&2
+               exit 1 ;;
+          esac
+          NOTES="$(section '^## \\[[^U]')"
+          {
+            echo "Installer \`$PACKAGE@$VERSION\` · plugin $PLUGIN_VERSION"
+            echo
+            printf '%s\n' "$NOTES"
+          } > release-out/NOTES.md
+
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_SHA^" 2>/dev/null || true)"
+          {
+            echo "## Release $GITHUB_REF_NAME"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Package | \`$PACKAGE@$VERSION\` |"
+            echo "| Plugin version | $PLUGIN_VERSION |"
+            echo "| Previous tag | ${PREV:-_none (first tagged release)_} |"
+            echo "| Commit | \`$GITHUB_SHA\` |"
+            echo
+            if [ -z "$PREV" ]; then
+              echo "> [!WARNING]"
+              echo "> **First tagged release: there is no previous tag to diff against.** Review \`.github/\` by hand before approving."
+            elif ! git diff --quiet "$PREV" "$GITHUB_SHA" -- .github/; then
+              echo "> [!CAUTION]"
+              echo "> **\`.github/\` CHANGED since $PREV.** Review the workflow/action changes before approving:"
+              echo
+              echo '```'
+              git diff --stat "$PREV" "$GITHUB_SHA" -- .github/
+              echo '```'
+            fi
+            echo
+            echo "### Changes since ${PREV:-the start of history}"
+            echo
+            echo '```'
+            if [ -n "$PREV" ]; then git diff --stat "$PREV" "$GITHUB_SHA" | tail -n 40; else echo "(first tagged release: no diff baseline)"; fi
+            echo '```'
+            echo
+            echo "### Changelog ($SOURCE)"
+            echo
+            printf '%s\n' "$NOTES"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-out
+          path: release-out/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish (environment-gated)
+    needs: verify
+    runs-on: ubuntu-latest
+    # One human approval, which the agent cannot give itself (ADR 0046 A4).
+    environment: release
+    permissions:
+      contents: write # gh release create
+      id-token: write # npm OIDC trusted publishing + provenance; attestation signing
+      attestations: write # actions/attest-build-provenance
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-out
+          path: release-out
+
+      - name: Attest tarball
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release-out/*.tgz
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships npm 10.x.
+      # Pin to the 11.x line, NOT @latest: npm 12.0.0's global install breaks
+      # `--provenance` (MODULE_NOT_FOUND: 'sigstore'), so @latest is not safe here.
+      # 11.x is >= 11.5.1 (OIDC-capable) and bundles sigstore for provenance.
+      - run: npm install -g npm@11
+
+      # OIDC: no token env — npm detects the trusted-publisher OIDC context.
+      # Publishing the packed tarball skips lifecycle scripts, so what ships is
+      # byte-for-byte what verify built and what was just attested.
+      - name: npm publish
+        env:
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          DIST_TAG=latest
+          [ "$PRERELEASE" = "true" ] && DIST_TAG=next
+          npm publish release-out/*.tgz --access public --provenance --tag "$DIST_TAG"
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PLUGIN_VERSION: ${{ needs.verify.outputs.plugin_version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          CHANNEL=--latest
+          [ "$PRERELEASE" = "true" ] && CHANNEL=--prerelease
+          gh release create "$GITHUB_REF_NAME" release-out/*.tgz \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME (plugin $PLUGIN_VERSION)" \
+            --notes-file release-out/NOTES.md \
+            "$CHANNEL"
+          {
+            echo "### Published $PACKAGE@$VERSION"
+            echo "https://www.npmjs.com/package/$PACKAGE/v/$VERSION"
+            echo "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"

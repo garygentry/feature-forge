@@ -10,7 +10,7 @@ runs:
   steps:
     # 1a. Provision Node for the installer build+test and the adapter-src
     #     verifiers that validate.sh runs. Must be >=22, matching os-matrix.yml
-    #     and npm-publish.yml, for two independent reasons:
+    #     and release.yml, for two independent reasons:
     #       - adapter-src/pi's verifier loads @earendil-works/pi-coding-agent,
     #         whose bundled undici calls webidl.util.markAsUncloneable — absent
     #         on Node 20, so every Pi extension test dies in its before hook.

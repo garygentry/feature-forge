@@ -96,6 +96,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Releases are tag-triggered and gated by one owner approval (#356, ADR 0046 A4).** Pushing
+  `v<installer version>` runs `.github/workflows/release.yml`. Its `verify` job runs the gate and
+  writes a release summary; its `publish` job waits on the `release` environment, then publishes
+  with provenance, attests the tarball, and creates a GitHub Release. Tags track the installer
+  version; the plugin version stays independent. `npm-publish.yml` (manual dispatch) is removed.
+
 - Non-Claude bundles (bodies **and** bundled references) no longer carry `PushNotification`, `TaskStop`, `persistent: true`, `run_in_background` or `tail -n +1 -F`. `tests/test_adapter_host_neutrality.py` now forbids them, and forbids `forge_loop_` on Pi.
 - **Installer 0.3.10: rauf pin advanced to `@garygentry/rauf@0.18.0`** (was 0.17.1). A fresh
   `npx @garygentry/feature-forge install` now provisions the loop-supervision rauf release:
