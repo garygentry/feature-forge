@@ -7,117 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-10-08
+
+Installer 0.3.10. Native GitHub Copilot support, and per-host loop supervision on rauf 0.19.0.
+
 ### Upgrade notes
 
-- **Copilot installs made by installer 0.3.9 or earlier need one `update` (#325).** Run
-  `npx @garygentry/feature-forge update -a copilot` (add `-g` for a personal install; a plain
-  `update` / `update -g` also finds it). It moves the install to Copilot's native layout and removes
-  the old `.github/copilot-instructions.md` pointer block if you never edited it. An edited block is
-  kept, and `list` shows `retired-block:edited`, until you run `update -a copilot --force`.
-  Personal installs move from `~/.github/feature-forge/` to `~/.copilot/feature-forge/`.
+- **Copilot users on installer ≤ 0.3.9: run `npx @garygentry/feature-forge update` once** (add
+  `-g` for a personal install). It migrates to Copilot's native layout and removes the old
+  `.github/copilot-instructions.md` block if you didn't edit it (`--force` removes an edited
+  one). Personal installs move to `~/.copilot/feature-forge/` (#325).
+- **Pi: loop supervision moved to rauf's Pi package** (`pi install npm:@garygentry/rauf`). The
+  `forge_loop_*` tools are removed; use rauf's `rauf_loop_*` tools (#345).
+- **forge-5-loop Steps 3b/3d/3f are host-specific.** Claude keeps `Monitor`; the other hosts
+  launch detached and supervise with `rauf loop wait`; see `references/runner-contract.md` (#347).
 
 ### Added
 
-- **Native GitHub Copilot support (#325).** Copilot now loads feature-forge as native Agent Skills
-  and custom agents instead of through an instructions-file pointer. See
-  [docs/agents/copilot.md](docs/agents/copilot.md).
-  - **Bundle.** `adapters/copilot/` ships `skills/<name>/SKILL.md` (keeping `argument-hint`),
-    `agents/<name>.agent.md` and a version-synced `plugin.json` in the tested legacy Copilot plugin
-    format (explicitly not Agent Plugins 1.0). Canonical tools map to Copilot aliases, and an
-    unmapped tool fails generation. Worker agents are subagent-only (`user-invocable: false`), cannot
-    delegate further and inherit the parent's model.
-  - **Verifier.** Copilot custom agents have no skill-dependency field, so `forge-verifier.agent.md`
-    embeds the complete `forge-verify` procedure. Generation fails if the canon declaration drifts or
-    the skill is missing. Copilot guarantees no per-agent memory, so the verifier and `forge-verify`
-    no longer promise a `MEMORY.md`, and a surviving promise fails generation.
-  - **Invocation names.** A plugin install names skills `/feature-forge:<name>`; a direct install
-    names them `/<name>`. Copilot descriptions, skill bodies, references and stage-exit output
-    (`--host copilot`) write `invoke-skill: <name> [arguments]`, and each skill's Copilot host notes
-    map it to the right form; the host notes keep the Interaction Capability Ladder guidance.
-    `doctor` reports `hostArg: copilot` for Copilot bundles.
-  - **Runtime roots.** Copilot skills resolve the runtime from an explicit `FEATURE_FORGE_ROOT`
-    (which must be a complete bundle, or the skill stops), then the nearest `.github/feature-forge/`
-    at or above the current directory, then `~/.copilot/installed-plugins/*/feature-forge/`, then
-    `~/.copilot/feature-forge/`, and only then other agents' roots, so a co-installed Claude or Codex
-    bundle never shadows the Copilot one. Nothing depends on `PLUGIN_ROOT`. Verified on Copilot CLI
-    1.0.80.
-  - **Direct installs.** `install -a copilot` writes one complete runtime per scope (project
-    `.github/feature-forge/`, personal `~/.copilot/feature-forge/`) plus native mirrors: skills
-    copied recursively into `.github/skills/` (`~/.copilot/skills/`) and agents into
-    `.github/agents/` (`~/.copilot/agents/`). Dry-run and real-run JSON report placements
-    identically. The manifest records every mirrored file it wrote, so a pre-existing or unowned file
-    is never claimed, and `uninstall` removes only recorded files after checking that the manifest's
-    primary destination and placements belong to Copilot and this scope. Containment rejects lexical
-    and symlink-ancestor escapes. A bare `.github/` directory still does not count as detecting
-    Copilot. Copilot confidence is `verified-current`, and doctor's canon-root remedy names the new
-    mirror paths. The installer no longer writes the `.github/copilot-instructions.md` block.
-  - **Migration from installer 0.3.9 and earlier.** `update -a copilot [-g]` applies and
-    hash-verifies the new runtime and mirrors, removes only the files the old manifest recorded and
-    writes the new manifest last. It journals the files it is about to write
-    (`<manifest>.migrating`), so a failed update can be re-run and a retry claims exactly those
-    files, never a byte-identical file a user placed. An install manifest (current, or the legacy
-    `~/.github/.feature-forge.global.json`) counts as detection for `update`, `uninstall` and `list`,
-    so they reach an install whose `.copilot/` dir is missing. The old pointer block is stripped only
-    when unedited; `--force` strips an edited one, and text outside the sentinels is never touched.
-    `list` flags old installs `legacy-layout:true` and a kept edited block `retired-block:edited`.
-    Tested against layouts produced by the published 0.3.9 installer for project and personal scopes
-    in copy and symlink modes.
-  - **Distribution gates.** `bash scripts/validate.sh` now also runs
-    `scripts/check-copilot-adapter.py` (the committed Copilot bundle's manifest, skill and agent
-    frontmatter, tool aliases, `references/` links, drop records and stray files) and
-    `scripts/check-installer-pack.py` (real prepack + `npm pack --dry-run`: the packed `adapters/`
-    must equal the source tree with the Copilot bundle complete and nothing outside the package
-    surface, and the run must leave `git status` unchanged). Each check has a negative test.
-  - **Copilot plugin marketplace (#360).** `copilot plugin marketplace add garygentry/feature-forge`
-    then `copilot plugin install feature-forge@feature-forge` now installs the Copilot bundle, which
-    lands at `~/.copilot/installed-plugins/feature-forge/feature-forge/` and resolves its runtime
-    without `FEATURE_FORGE_ROOT` (verified on Copilot CLI 1.0.91). The new
-    `.github/plugin/marketplace.json` serves `./adapters/copilot`. Copilot reads it before
-    `.claude-plugin/marketplace.json`, and Claude Code reads only the latter, so the Claude
-    marketplace still serves `adapters/claude`. This plugin route is now the recommended Copilot
-    install; the npm installer is the compatibility path. `check-copilot-adapter.py` gates the
-    manifest (one `feature-forge` entry, source `./adapters/copilot`, no higher-precedence
-    `marketplace.json` or `.plugin/marketplace.json` shadowing it) and `check-version-sync.py`
-    tracks its version.
-  - **Known gaps.** A `copilot plugin install garygentry/feature-forge:adapters/copilot` install
-    still lands where the resolver does not look; use the marketplace route. The published npm
-    package lacks the forge-bootstrap templates' `.gitignore` files, because npm always drops them
-    ([#359](https://github.com/garygentry/feature-forge/issues/359)).
-
-- **Codex supervision via `rauf loop wait` and an opt-in Stop hook (#346).** On Codex, forge-5-loop stays in the turn and loops on `rauf loop wait … --timeout 240s`, printing each item's card, until the loop ends. It no longer tells Codex to arm a monitor it doesn't have. `npx @garygentry/feature-forge install -a codex --codex-stop-hook` wires rauf's Stop hook (`rauf hook codex-stop`) into `~/.codex/hooks.json` (or `$CODEX_HOME`). The write needs explicit consent: `--yes` alone never writes it. It is additive and idempotent and keeps your other hooks. The report notes when `[features] hooks = true` is missing from Codex's `config.toml`.
-- **`doctor` check `loop-supervision`** (advisory). On Pi it checks that rauf's Pi package is in pi's `packages`. On Codex it checks that the Stop hook is wired. It is `na` elsewhere. Each remedy names the file it edits.
-- **Per-item cards (#348).** Every host reports `item_completed` as one line built from rauf 0.18's enriched event: `[7/26] ✓ 008 <title> — <summary> · abc1234 · 5 files · 6m`. Older runners show the title only.
-- **Host-conditional canon blocks** (`<!-- host:claude -->` … `<!-- /host -->`, `host:!claude,pi` for "every host but"), resolved by `scripts/build-adapters.py` for every host before placeholder binding. A new `{{NOTIFY_USER}}` placeholder replaces the Claude-only `PushNotification` wording on other hosts.
-
-### Upgrade notes / migration
-
-- **Pi: loop supervision moved to rauf's Pi package (#345).** feature-forge's `forge-loop-supervisor` extension and its `forge_loop_launch` / `forge_loop_status` / `forge_loop_stop` tools are **removed**. Install rauf's Pi package (rauf ≥ 0.18.0): `pi install npm:@garygentry/rauf`. It provides `rauf_loop_launch` / `rauf_loop_status` / `rauf_loop_wait` / `rauf_loop_stop`. Its supervisor still reattaches to a loop the old extension launched (it reads the legacy `.forge-supervisor.json` mirror). Without the package, `forge-5-loop` falls back to the `rauf loop wait` recipe, and `doctor`'s new `loop-supervision` check warns.
-- **forge-5-loop Steps 3b/3d/3f are now host-specific** (#347). The canon SKILL points at `references/runner-contract.md`, which carries only this host's recipe: Claude keeps background + persistent `Monitor`; Pi uses the `rauf_loop_*` tools; Codex, Copilot, Cursor and Gemini use a detached launch plus the `rauf loop wait` loop (rauf ≥ 0.18.0, else a 5–10 s `status --json` poll). The runner-contract sections are renamed "Launch detail (Step 3b)" and "Supervise the run (Step 3d)".
+- **Native GitHub Copilot support** (#325, #360): native skills and custom agents; a plugin
+  install via `copilot plugin marketplace add garygentry/feature-forge` (recommended); `npx`
+  installs into `.github/` or `~/.copilot/`, with a fail-safe migration from 0.3.9; CI checks for
+  the Copilot bundle and the npm package. See [docs/agents/copilot.md](docs/agents/copilot.md).
+- **Codex:** forge-5-loop supervises with `rauf loop wait`; `install --codex-stop-hook` wires
+  rauf's Stop hook into `~/.codex/hooks.json`, only when asked (#346).
+- **Per-item cards** from rauf's enriched `item_completed` on every host (#348).
+- **`doctor` check `loop-supervision`** (advisory; Pi package and Codex hook).
+- Host-conditional canon blocks and a `{{NOTIFY_USER}}` placeholder (#347).
 
 ### Changed
 
-- **Releases are tag-triggered and gated by one owner approval (#356, ADR 0046 A4).** Pushing
-  `v<installer version>` runs `.github/workflows/release.yml`. Its `verify` job runs the gate and
-  writes a release summary; its `publish` job waits on the `release` environment, then publishes
-  with provenance, attests the tarball, and creates a GitHub Release. Tags track the installer
-  version; the plugin version stays independent. `npm-publish.yml` (manual dispatch) is removed.
-
-- Non-Claude bundles (bodies **and** bundled references) no longer carry `PushNotification`, `TaskStop`, `persistent: true`, `run_in_background` or `tail -n +1 -F`. `tests/test_adapter_host_neutrality.py` now forbids them, and forbids `forge_loop_` on Pi.
-- **Installer 0.3.10: rauf pin advanced to `@garygentry/rauf@0.19.0`** (was 0.17.1). A fresh
-  `npx @garygentry/feature-forge install` now provisions rauf 0.19.0, which adds the dedicated
-  `copilot` loop provider (`--agent copilot`, rauf #131) and exits `1` when a loop halts on an
-  error (rauf #164), on top of 0.18.0's loop-supervision surfaces:
-  `rauf loop wait` (bounded wait with a per-item card), enriched `item_completed` events, the
-  `rauf-loop-supervisor` Pi extension in rauf's Pi package, and the `rauf hook codex-stop`
-  Codex Stop hook (rauf #152–#156). The pin change itself touches only the installer, and
-  `minRunnerVersion` stays 0.14.0: forge-5-loop's per-host supervision (#345–#348, below)
-  uses these surfaces when present and falls back on older runners.
+- **Installer 0.3.10 pins `@garygentry/rauf@0.19.0`** (was 0.17.1), which adds the `copilot` loop
+  provider and loop wait/supervision. `minRunnerVersion` stays 0.14.0.
+- **Releases are tag-triggered and publish only after one owner approval** (`release.yml`; #356,
+  ADR 0046 A4).
+- Non-Claude bundles no longer carry Claude-only tool wording (`PushNotification`, `TaskStop`, …).
 
 ### Fixed
 
-- **CI: `claude plugin validate --strict` failed on the repo root.** Starting with claude 2.1.292, validating a directory also lints it as a plugin, which flags the repo's own development `CLAUDE.md` at the root. `--strict` then fails every PR and `main`. `scripts/validate.sh` now validates `.claude-plugin/marketplace.json` directly. The root holds the marketplace and the source-of-record `plugin.json`; the shipped plugin `adapters/claude` (manifest generated from it) is still strictly validated as a plugin.
+- `update` no longer writes through a symlink install into its target (#325).
+- CI: strict plugin validation targets `marketplace.json` (claude 2.1.292 flagged the root
+  `CLAUDE.md`, #358).
 
-- **`update` no longer writes into the target of a symlink install (#325 F4).** Running `update` without `--symlink` over a `--symlink` install hashed and copied files through the link, into the npx cache or source checkout it pointed at, and a later `uninstall` deleted files there. The link is now unlinked first and the runtime copied fresh; if the copy fails, the link is restored. `update --symlink` now relinks when the link still points where the manifest recorded, so an upgrade to a new npx cache path no longer needs `--force`. A link that points elsewhere is still left alone, and a recorded symlink that has been replaced by a real directory is never deleted (uninstall and migration leave it in place).
+### Known gaps
+
+- The npm package lacks the forge-bootstrap templates' `.gitignore` files (#359).
 
 ## [0.21.0] — 2026-09-30
 
