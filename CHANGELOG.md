@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.22.0] — 2026-10-08
 
-Installer 0.3.10. Native GitHub Copilot support, and per-host loop supervision on rauf 0.19.0.
+Installer 0.3.11 (tag `v0.3.10` failed at `npm publish` and was never published). Native GitHub
+Copilot support, and per-host loop supervision on rauf 0.19.0.
 
 ### Upgrade notes
 
@@ -36,7 +37,7 @@ Installer 0.3.10. Native GitHub Copilot support, and per-host loop supervision o
 
 ### Changed
 
-- **Installer 0.3.10 pins `@garygentry/rauf@0.19.0`** (was 0.17.1), which adds the `copilot` loop
+- **Installer 0.3.11 pins `@garygentry/rauf@0.19.0`** (was 0.17.1), which adds the `copilot` loop
   provider and loop wait/supervision. `minRunnerVersion` stays 0.14.0.
 - **Releases are tag-triggered and publish only after one owner approval** (`release.yml`; #356,
   ADR 0046 A4).
