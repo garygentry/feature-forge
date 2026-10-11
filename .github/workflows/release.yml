@@ -228,7 +228,9 @@ jobs:
           set -euo pipefail
           DIST_TAG=latest
           [ "$PRERELEASE" = "true" ] && DIST_TAG=next
-          npm publish release-out/*.tgz --access public --provenance --tag "$DIST_TAG"
+          # `./` is required: npm reads a bare `dir/file.tgz` as a GitHub `owner/repo` spec and
+          # tries to git-clone it (v0.3.10's first publish failed that way).
+          npm publish ./release-out/*.tgz --access public --provenance --tag "$DIST_TAG"
 
       - name: GitHub Release
         env:
