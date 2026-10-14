@@ -302,7 +302,10 @@ the owner approves the `release` environment, in GitHub Mobile or on the web.
 7. **Hand the gate to the owner.** Tell the user the run is waiting on the `release`
    environment and link it (`gh run list --workflow release.yml`). Point them at the `verify`
    summary to review, especially the `.github/` flag. Then wait: `gh run watch <run-id>
-   --exit-status`.
+   --exit-status`. If `publish` fails with **E404 on the PUT right after "Provenance statement
+   published"**, the npm Trusted Publisher entry doesn't match (repo, workflow `release.yml`,
+   environment `release`). The owner fixes it on npmjs.com, then **Re-run failed jobs**; no new
+   version or tag is needed, since nothing was published (0.3.11's first attempt).
 8. **Verify it's live.** The registry can lag a few minutes after `publish` succeeds (E404 on
    read-back is normal at first), so poll rather than failing on the first miss:
    `until npm view @garygentry/feature-forge@<v> version; do sleep 30; done`.
