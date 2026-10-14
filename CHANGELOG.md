@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Release `verify` now rehearses `npm publish --dry-run` and diffs against the last *released*
+  tag.** A bad publish spec (v0.3.10's bare tarball path) now fails before the approval, and a tag
+  whose run never published no longer becomes the summary's diff baseline.
+
 ## [0.22.0] — 2026-10-08
 
 Installer 0.3.11 (tag `v0.3.10` failed at `npm publish` and was never published). Native GitHub

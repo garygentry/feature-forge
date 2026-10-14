@@ -98,6 +98,8 @@ jobs:
       # so this tarball is exactly what publish ships and attests.
       - name: Pack installer
         working-directory: installer
+        env:
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           set -euo pipefail
           npm ci
@@ -112,6 +114,14 @@ jobs:
           grep -q '^package/adapters/' ../release-out/contents.txt \
             || { echo "::error::tarball is missing the bundled adapters/"; exit 1; }
           rm ../release-out/contents.txt
+          # Credential-free rehearsal of publish's argument parsing, so a bad spec fails
+          # here, before the approval. Paths must start with `.`/`..`: npm reads a bare `dir/file.tgz`
+          # as GitHub shorthand and tries to git-clone it (v0.3.10). Same npm major and
+          # --tag as the real publish; --provenance is omitted on purpose (it needs the
+          # publish job's OIDC token, which verify deliberately does not have).
+          DIST_TAG=latest
+          [ "$PRERELEASE" = "true" ] && DIST_TAG=next
+          npx -y npm@11 publish ../release-out/*.tgz --dry-run --access public --tag "$DIST_TAG"
 
       # Release notes = the top released `## [...]` section of CHANGELOG.md. The
       # release-prep PR must cut [Unreleased] into a heading that names THIS
@@ -122,6 +132,7 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           PLUGIN_VERSION: ${{ steps.meta.outputs.plugin_version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           section() { # $1 = awk regex for the heading to start at
@@ -146,7 +157,19 @@ jobs:
             printf '%s\n' "$NOTES"
           } > release-out/NOTES.md
 
-          PREV="$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_SHA^" 2>/dev/null || true)"
+          # Previous RELEASED tag: skip tags whose run never published (no GitHub
+          # Release, e.g. v0.3.10), so the diff covers everything since the last
+          # version users actually got.
+          PREV=""
+          for t in $(git tag --merged "$GITHUB_SHA^" --list 'v*' --sort=-v:refname); do
+            if out="$(gh release view "$t" --json tagName 2>&1)"; then PREV="$t"; break; fi
+            case "$out" in
+              *"release not found"*) continue ;;  # tagged but never published: skip it
+              *) # API/auth/rate-limit error: don't silently drop the diff — use this tag
+                 echo "::warning::could not check the GitHub Release for $t ($out); diffing against it anyway"
+                 PREV="$t"; break ;;
+            esac
+          done
           {
             echo "## Release $GITHUB_REF_NAME"
             echo
