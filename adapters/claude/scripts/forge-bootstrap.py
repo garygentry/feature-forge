@@ -467,6 +467,10 @@ def check(target: Path, specs_dir: Path) -> CheckResult:
     }
 
 
+#: Template basenames stored without their leading dot, because npm-packlist always drops
+#: files named `.gitignore` from a published tarball (#359). Mapped back on emit.
+TEMPLATE_DOTFILE_RENAMES: Final[dict[str, str]] = {"gitignore": ".gitignore"}
+
 #: Repo-relative location of the bundled scaffold templates (00 §1.1). The helper
 #: lives at scripts/forge-bootstrap.py, so the repo root is two levels up.
 TEMPLATE_ROOT: Final = (
@@ -538,6 +542,12 @@ def compose_member(
     member_base = "" if member["path"] == "." else member["path"]
     for src in sorted(p for p in template_root.rglob("*") if p.is_file()):
         rel = src.relative_to(template_root).as_posix()
+        # Templates store dotfiles npm would strip from the published tarball under a
+        # dotless name (`gitignore`); emit them under their real name (#359).
+        head, _, base = rel.rpartition("/")
+        if base in TEMPLATE_DOTFILE_RENAMES:
+            real = TEMPLATE_DOTFILE_RENAMES[base]
+            rel = f"{head}/{real}" if head else real
         for tok, val in tokens.items():
             rel = rel.replace(tok, val)
         rel_path = rel if not member_base else f"{member_base}/{rel}"

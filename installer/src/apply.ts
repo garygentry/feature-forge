@@ -36,6 +36,7 @@ import {
   symlinkDir,
   removePath,
   removeEmptyDirsWithin,
+  removeOwnedBytecache,
 } from "./fsutil.js";
 import { buildManifest, writeManifest } from "./manifest.js";
 import { removeBlock, extractManagedRegion } from "./placements.js";
@@ -359,13 +360,28 @@ async function applyCopyUninstall(
   planned: PlannedAction,
   ctx: ApplyContext,
 ): Promise<AgentReport> {
+  // dir -> basenames of the recorded `.py` files it held (for the owned-bytecache sweep, #366).
+  const recordedDirs = new Map<string, Set<string>>();
   for (const fa of planned.files) {
     const resolved = resolveWithin(ctx.agentRoot, ctx.destination, fa.relpath);
     if (!resolved.ok) return fail(ctx, planned, resolved.error);
     const removed = await removePath(resolved.value);
     if (!removed.ok) return fail(ctx, planned, removed.error);
+    const dir = path.dirname(resolved.value);
+    const names = recordedDirs.get(dir) ?? new Set<string>();
+    if (resolved.value.endsWith(".py")) names.add(path.basename(resolved.value));
+    recordedDirs.set(dir, names);
   }
 
+  // Deepest first: drop each dir's provably-owned `__pycache__`, then prune the now-empty dirs
+  // upward (never past the agent root, never a non-empty dir — REQ-SAFE-01).
+  const dirs = [...recordedDirs.keys()].sort((a, b) => b.split(path.sep).length - a.split(path.sep).length);
+  for (const dir of dirs) {
+    const cache = await removeOwnedBytecache(dir, recordedDirs.get(dir)!);
+    if (!cache.ok) return fail(ctx, planned, cache.error);
+    const prunedDir = await removeEmptyDirsWithin(dir, ctx.agentRoot);
+    if (!prunedDir.ok) return fail(ctx, planned, prunedDir.error);
+  }
   const pruned = await removeEmptyDirsWithin(ctx.destination, ctx.agentRoot);
   if (!pruned.ok) return fail(ctx, planned, pruned.error);
 

@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tag.** A bad publish spec (v0.3.10's bare tarball path) now fails before the approval, and a tag
   whose run never published no longer becomes the summary's diff baseline.
 
+### Fixed
+
+- **npm installs scaffold a `.gitignore` again** (#359). npm always drops files named `.gitignore`
+  from a tarball, so forge-bootstrap's stack templates now store it as `gitignore` and the helper
+  writes `.gitignore`. The pack gate no longer exempts the name.
+- **`uninstall` leaves no bytecode or empty folders behind** (#366). It removes a `__pycache__/`
+  that holds only bytecode of scripts it installed, then prunes the emptied directories; any other
+  cache is left alone.
+
 ## [0.22.0] — 2026-10-08
 
 Installer 0.3.11 (tag `v0.3.10` failed at `npm publish` and was never published). Native GitHub

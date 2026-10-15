@@ -1362,3 +1362,12 @@ def test_unwritable_stderr_keeps_commit_on_its_exit_2_policy(
     # The advisory itself is gone — its write is what failed — and no commit landed.
     assert "Warning: duplicate JSON key" not in result.stderr
     assert _git(tmp_path, "rev-parse", "HEAD").returncode != 0
+
+
+def test_templates_store_gitignore_dotless_for_npm() -> None:
+    """npm-packlist drops every file named `.gitignore` from the published tarball, so the
+    stack templates store it as `gitignore` and the helper emits `.gitignore` (#359)."""
+    templates = REPO_ROOT / "skills" / "forge-bootstrap" / "references" / "templates"
+    assert not list(templates.rglob(".gitignore")), "store template dotfiles dotless (#359)"
+    stacks = ["generic", "go", "python", "rust", "typescript"]
+    assert all((templates / s / "gitignore").is_file() for s in stacks)

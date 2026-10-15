@@ -329,6 +329,52 @@ test("copy uninstall: removes recorded files + manifest; an untracked sibling su
   });
 });
 
+async function installThenCache(sb: Parameters<Parameters<typeof withSandbox>[0]>[0], cacheFiles: string[]) {
+  await makeFixtureBundle(sb, "claude");
+  const src = located(sb, "claude");
+  const ctx = ctxFor(sb, "claude", src, "copy");
+  const planned = planInstall({
+    agent: "claude", scope: "project", mode: "copy", destination: ctx.destination,
+    source: src, priorManifest: null, force: false, raufPin: ctx.raufPin,
+  });
+  assert.ok(planned.ok);
+  await apply(planned.value, ctx);
+  // A bundled script ran (e.g. doctor), so Python wrote bytecode next to it.
+  const cache = path.join(ctx.destination, "scripts", "__pycache__");
+  fs.mkdirSync(cache, { recursive: true });
+  for (const f of cacheFiles) fs.writeFileSync(path.join(cache, f), "\0");
+  const m = readManifest(ctx.manifestPath);
+  assert.ok(m.ok && m.value !== null);
+  const uplan = planUninstall(m.value);
+  assert.ok(uplan.ok);
+  const report = await apply(uplan.value, ctxFor(sb, "claude", null, "copy", { priorManifest: m.value }));
+  assert.equal(report.ok, true);
+  return { ctx, cache };
+}
+
+test("copy uninstall: removes bytecode of recorded scripts and prunes the emptied tree (#366)", async () => {
+  await withSandbox(async (sb) => {
+    const { ctx, cache } = await installThenCache(sb, [
+      "epic-manifest.cpython-310.pyc",
+      "validate-traceability.cpython-312.opt-1.pyc",
+    ]);
+    assert.ok(!fs.existsSync(cache), "owned __pycache__ removed");
+    assert.ok(!fs.existsSync(path.join(ctx.destination, "scripts")), "emptied scripts/ pruned");
+    assert.ok(!fs.existsSync(ctx.destination), "emptied install dir pruned");
+  });
+});
+
+test("copy uninstall: a __pycache__ holding anything unrecorded is left untouched (#366)", async () => {
+  await withSandbox(async (sb) => {
+    const { cache } = await installThenCache(sb, [
+      "epic-manifest.cpython-310.pyc",
+      "users_own_module.cpython-310.pyc",
+    ]);
+    assert.ok(fs.existsSync(path.join(cache, "users_own_module.cpython-310.pyc")), "unowned bytecode survives");
+    assert.ok(fs.existsSync(path.join(cache, "epic-manifest.cpython-310.pyc")), "cache left whole when not provably owned");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Symlink mode (off Windows)
 // ---------------------------------------------------------------------------
