@@ -198,6 +198,44 @@ export async function removeEmptyDirsWithin(
   return ok(undefined);
 }
 
+/**
+ * Remove a `__pycache__/` that holds ONLY bytecode of `.py` files this install recorded in `dir`
+ * (#366). Python writes `<stem>.<tag>[.opt-N].pyc` the first time a bundled script runs, so a
+ * manifest-exact uninstall would otherwise strand the cache and its now-empty parents. Ownership
+ * stays proven: if any entry is not bytecode of a recorded module, the cache is left untouched.
+ *
+ * @param dir - a directory that held recorded files (already removed).
+ * @param recordedPy - basenames of the recorded `.py` files that lived in `dir`.
+ * @returns ok(true) when a cache was removed, ok(false) when absent or not provably owned.
+ */
+export async function removeOwnedBytecache(
+  dir: string,
+  recordedPy: ReadonlySet<string>,
+): Promise<Result<boolean>> {
+  const cache = path.join(dir, "__pycache__");
+  let entries: fs.Dirent[];
+  try {
+    entries = await fsp.readdir(cache, { withFileTypes: true });
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return ok(false);
+    return err(toWriteError(e, cache));
+  }
+  const owned = entries.every((d) => {
+    if (!d.isFile()) return false;
+    const m = /^(.+?)\.[A-Za-z0-9_-]+(?:\.opt-[0-9]+)?\.pyc$/.exec(d.name);
+    return m !== null && recordedPy.has(`${m[1]}.py`);
+  });
+  if (!owned) return ok(false);
+  try {
+    for (const d of entries) await fsp.unlink(path.join(cache, d.name));
+    await fsp.rmdir(cache);
+  } catch (e) {
+    return err(toWriteError(e, cache));
+  }
+  return ok(true);
+}
+
 /** Platform check (REQ-FLAG-03, C-6). Centralized so resolveMode/symlinkDir share one decision. */
 export function isWindows(): boolean {
   return os.platform() === "win32";

@@ -46,11 +46,6 @@ COPILOT_REQUIRED = (
     "adapters/copilot/scripts/forge-session.py",
 )
 PACKAGE_FILES = frozenset({"package.json", "README.md", "LICENSE"})
-#: Basenames npm-packlist ALWAYS drops from a tarball, whatever `files` says. The
-#: forge-bootstrap stack templates carry `.gitignore` files, so they are absent from the
-#: published bundle (a known, pre-existing gap: #359). Listed explicitly so any OTHER
-#: missing file still fails.
-NPM_STRIPPED_BASENAMES = frozenset({".gitignore", ".npmignore"})
 PREPACK_ARTIFACTS = ("adapters", "LICENSE")
 
 
@@ -64,9 +59,9 @@ def evaluate(packed: list[str], tracked_adapters: list[str],
     for path in sorted(packed_adapters - tracked):
         errors.append(f"{path}: in the tarball but not a source adapters/ file (stray or ignored)")
     for path in sorted(tracked - packed_adapters):
-        if path.rsplit("/", 1)[-1] in NPM_STRIPPED_BASENAMES:
-            continue
-        errors.append(f"{path}: source adapters/ file missing from the tarball")
+        hint = (" (npm-packlist always drops this name; store it dotless, cf. #359)"
+                if path.rsplit("/", 1)[-1] in (".gitignore", ".npmignore") else "")
+        errors.append(f"{path}: source adapters/ file missing from the tarball{hint}")
     for path in COPILOT_REQUIRED:
         if path not in packed_set:
             errors.append(f"{path}: required Copilot bundle file missing from the tarball")
@@ -165,10 +160,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(errors)} pack violation(s) in {report['name']}@{report['version']}")
         return 1
     copilot = sum(1 for p in packed if p.startswith("adapters/copilot/"))
-    stripped = sum(1 for p in tracked if p.rsplit("/", 1)[-1] in NPM_STRIPPED_BASENAMES)
-    if stripped:
-        print(f"INFO: {stripped} source file(s) named {sorted(NPM_STRIPPED_BASENAMES)} are "
-              "dropped by npm-packlist (known gap #359, not a gate failure)")
     print(f"{report['name']}@{report['version']}: {len(packed)} files "
           f"({copilot} Copilot bundle files); adapters/ == tracked tree; source tree clean")
     return 0

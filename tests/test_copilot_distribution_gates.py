@@ -240,9 +240,11 @@ def test_pack_gate_accepts_intended_tarball() -> None:
     assert _evaluate(GOOD) == []
 
 
-def test_pack_gate_tolerates_only_npm_stripped_gitignore() -> None:
+def test_pack_gate_fails_on_a_source_gitignore_npm_would_strip() -> None:
+    """npm-packlist always drops `.gitignore`; the gate no longer tolerates it (#359)."""
     gitignore = "adapters/copilot/skills/forge/references/templates/go/.gitignore"
-    assert _evaluate(GOOD, SOURCE + [gitignore]) == []
+    errors = _evaluate(GOOD, SOURCE + [gitignore])
+    assert len(errors) == 1 and gitignore in errors[0] and "store it dotless" in errors[0]
 
 
 @pytest.mark.parametrize(
