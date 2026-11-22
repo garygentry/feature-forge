@@ -57,7 +57,8 @@ git-safety halt exit `1` (rauf #164). rauf 0.19.1 makes `--agent copilot` work o
 1.0.114+, which removed `--no-remote` (rauf #177), and adds rauf's Copilot plugin marketplace
 (rauf #175). Every one of them is optional: an
 older runner omits the field and the stage behaves as it did before (#339), so
-none is *required* and no new row or floor rise is needed. Like 0.16.x's
+none is *required* and no new row or floor rise is needed — except the per-agent
+copilot floor below, which only applies when copilot is the loop agent. Like 0.16.x's
 additions (`rauf version --json` provenance and a `FORGE_INTERACTION`
 loop-child stamp that this package *may* read), they are surfaces a stage
 *may* read, so the floor stays at 0.14.0

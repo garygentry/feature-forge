@@ -16,11 +16,11 @@ forge-5-loop consumes rauf's status surface (#339/#340), CI provisions pinned te
 | | Version | Source of truth |
 |---|---|---|
 | Plugin | **0.22.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.11** | `installer/package.json` (independent version line) |
+| Installer | **0.3.11** (0.3.12 unreleased on `main`) | `installer/package.json` (independent version line) |
 | npm | 0.3.11 (first gated release via `release.yml`; tag `v0.3.10` was never published) | |
 | Commit | this release commit | |
 
-CHANGELOG `## [0.22.0]` records this release; `[Unreleased]` is empty.
+CHANGELOG `## [0.22.0]` records this release; `[Unreleased]` carries the post-release work (installer 0.3.12, not yet published).
 
 ### rauf coupling
 

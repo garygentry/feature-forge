@@ -948,7 +948,7 @@ def _check_runner_version(ctx: _CheckContext) -> dict:
                 "warn",
                 f"runner {_fmt_semver(reported)} is below {_fmt_semver(floor)}, the minimum "
                 f"for the '{agent}' agent (loopRunner.defaultAgent): older rauf drives "
-                f"'{agent}' as a plain-text preset, not the dedicated provider",
+                f"'{agent}' incorrectly (see forge-5-loop references/agent-selection.md)",
                 evidence,
                 _install_remedy(ctx),
             )
