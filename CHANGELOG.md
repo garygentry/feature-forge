@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tag.** A bad publish spec (v0.3.10's bare tarball path) now fails before the approval, and a tag
   whose run never published no longer becomes the summary's diff baseline.
 
+### Added
+
+- **doctor warns when a loop-ready backlog dir is gitignored on an affected rauf** (#369). Keeping
+  specs local-only (`specs/` in `.gitignore`) is supported, but rauf before 0.19.2 halts the
+  whole loop the first time an item with uncommitted code is set aside (`Failed to revert
+  abandoned work … paths are ignored`, rauf#172). The same happens when only its `.rauf/` state
+  dir or `backlog.json` is ignored. The new advisory `backlog-ignored` check probes all three,
+  tracked or not. It warns only while such a rauf is live and is `ok` on rauf ≥ 0.19.2. forge-5-loop's recovery procedure
+  (§4.2a) names the halt's signature, notes that the work is both staged and stashed, and makes
+  `[rauf] <id> (wip)` the default commit so the next iteration builds on it.
+
 ### Fixed
 
 - **A Copilot loop now requires rauf 0.19.1** (#371). rauf before 0.19.0 lists `copilot` in

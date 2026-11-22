@@ -78,6 +78,9 @@ _BUNDLE_ROOT: Final = _SCRIPTS_DIR.parent
 #: surface doctor reports. Distinct from ``loopRunner.minRunnerVersion`` (the launch
 #: floor): this one only DEGRADES the reported surface, never hard-stops.
 RECOVERY_MIN_RUNNER_VERSION: Final[str] = "0.14.0"
+#: First rauf whose dirty-tree revert survives a gitignored backlog dir (rauf#172): older
+#: rauf halts the whole loop the first time an item with uncommitted code is set aside.
+IGNORED_BACKLOG_FIX_RUNNER_VERSION: Final[str] = "0.19.2"
 
 #: Per-agent rauf floors above ``loopRunner.minRunnerVersion``. ``copilot`` needs 0.19.1:
 #: before 0.19.0 rauf still advertises ``copilot`` in ``rauf agents``, but as the old
@@ -1275,17 +1278,24 @@ def _check_config_schema(ctx: _CheckContext) -> dict:
     return _result("ok", detail, evidence)
 
 
-def _git_check_ignored(path: Path) -> bool | None:
+def _git_check_ignored(
+    path: Path, *, no_index: bool = False, is_dir: bool = False
+) -> bool | None:
     """Whether git ignores ``path``: ``True`` ignored, ``False`` tracked, ``None`` undecidable.
 
     ``git check-ignore -q`` exits 0 when the path is ignored, 1 when it is not, and 128 outside
     a work tree (or git missing) — the last collapses to ``None`` so the caller reports ``na``
     rather than a false "not ignored". Run from the file's own directory so any nested work tree
-    is honoured.
+    is honoured. ``no_index`` asks whether an ignore PATTERN matches the path even when it (or
+    content under it) is tracked — git's own answer for a tracked path is always "not ignored".
+    ``is_dir`` probes ``name/`` so a ``dir/`` pattern matches a directory not created yet.
     """
     try:
         proc = subprocess.run(
-            ["git", "check-ignore", "-q", path.name],
+            [
+                "git", "check-ignore", "-q", *(["--no-index"] if no_index else []),
+                path.name + ("/" if is_dir else ""),
+            ],
             capture_output=True, text=True, timeout=10, cwd=path.parent,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -1577,6 +1587,106 @@ def _check_backlog_valid(ctx: _CheckContext) -> dict:
         + " — fix the findings or re-run /feature-forge:forge-4-backlog <feature>",
         evidence,
     )
+
+
+def _check_backlog_ignored(ctx: _CheckContext) -> dict:
+    """A loop-ready backlog under a gitignore pattern is safe only on rauf >= 0.19.2 (#369).
+
+    Keeping specs local-only (``specs/`` in ``.gitignore``) is a supported layout, but rauf
+    before IGNORED_BACKLOG_FIX_RUNNER_VERSION halts the whole loop the first time an item with
+    uncommitted code is set aside: its revert's literal excludes for the backlog dir's state dir
+    and ``backlog.json`` trip git's ignored-path error (rauf#172). Any ignore pattern matching
+    the dir, ``{dir}/{stateDir}`` or the backlog file triggers it — tracked or not, so each is
+    probed with ``check-ignore --no-index``. Advisory, never a stop.
+    """
+    if (na := _runner_unavailable(ctx)) is not None:
+        return na
+    runner_name = ctx.loop_runner.get("name")
+    if runner_name != "rauf":
+        return _result("na", f"runner is {runner_name!r}, not rauf", {"runnerName": runner_name})
+    eligible = [
+        feat for feat in ctx.features
+        if feat["nextStage"] == "forge-5-loop" and feat["backlogExists"]
+    ]
+    version = ctx.runner_version()
+    evidence: dict = {
+        "fixedIn": IGNORED_BACKLOG_FIX_RUNNER_VERSION,
+        "runnerVersion": _fmt_semver(version) if version else None,
+        "features": [],
+    }
+    if not eligible:
+        return _result(
+            "na", "no active feature is about to run forge-5-loop with a backlog on disk",
+            evidence,
+        )
+    state_dir = ctx.loop_runner.get("stateDir")
+    state_dir = state_dir if isinstance(state_dir, str) and state_dir else ".rauf"
+    fixed = _parse_semver(IGNORED_BACKLOG_FIX_RUNNER_VERSION)
+    is_fixed = version is not None and fixed is not None and version >= fixed
+    remedy = _remedy(
+        f"Upgrade rauf to >= {IGNORED_BACKLOG_FIX_RUNNER_VERSION} (rauf#172 fixed), or stop "
+        "git-ignoring the backlog dir, its state dir and backlog.json. Recovery for a run that "
+        "already halted: forge-5-loop references/recovery-procedure.md §4.2a",
+        None,
+        "network",
+    )
+    probes: dict[str, list[str] | None] = {}
+    rows = []
+    for feat in eligible:
+        backlog_file = Path(feat["backlogPath"])
+        backlog_dir = backlog_file.parent
+        key = str(backlog_dir)
+        if key not in probes:
+            results = {
+                label: _git_check_ignored(path, no_index=True, is_dir=is_dir)
+                for label, path, is_dir in (
+                    (key, backlog_dir, True),
+                    (str(backlog_dir / state_dir), backlog_dir / state_dir, True),
+                    (str(backlog_file), backlog_file, False),
+                )
+            }
+            probes[key] = (
+                None if all(v is None for v in results.values())
+                else [label for label, v in results.items() if v]
+            )
+        matched = probes[key]
+        rows.append({
+            "name": feat["name"], "epic": feat["epic"], "backlogDir": key,
+            "ignored": None if matched is None else bool(matched),
+            "ignoredPaths": matched or [],
+            "remedy": remedy if matched and not is_fixed else None,
+        })
+    evidence["features"] = rows
+    ignored = [row for row in rows if row["ignored"]]
+    undecided = [row for row in rows if row["ignored"] is None]
+    if not ignored:
+        if len(undecided) == len(rows):
+            return _result(
+                "na", "cannot determine git-ignore status (not a git work tree?)", evidence
+            )
+        detail = f"{len(rows) - len(undecided)} backlog dir(s) not gitignored"
+        if undecided:
+            detail += f"; {len(undecided)} undetermined (not a git work tree?)"
+        return _result("ok", detail, evidence)
+    names = ", ".join(_feature_label(row) for row in ignored)
+    if is_fixed:
+        return _result(
+            "ok",
+            f"backlog paths gitignored for {names}; rauf {_fmt_semver(version)} handles that "
+            f"(rauf#172 fixed in {IGNORED_BACKLOG_FIX_RUNNER_VERSION})",
+            evidence,
+        )
+    halt = (
+        f"rauf before {IGNORED_BACKLOG_FIX_RUNNER_VERSION} halts the loop ('Failed to revert "
+        "abandoned work … paths are ignored', rauf#172) the first time an item with uncommitted "
+        "code is set aside"
+    )
+    running = (
+        "the rauf version could not be read" if version is None
+        else f"rauf {_fmt_semver(version)} is live"
+    )
+    detail = f"backlog paths are gitignored for {names} and {running}: {halt}"
+    return _result("warn", detail, evidence, remedy)
 
 
 def _check_gh_available(ctx: _CheckContext) -> dict:
@@ -2078,6 +2188,7 @@ DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = (
     _make_spec("config-local-ignored", "advisory", _check_config_local_ignored),
     _make_spec("backlog-present", "blocking", _check_backlog_present),
     _make_spec("backlog-valid", "blocking", _check_backlog_valid),
+    _make_spec("backlog-ignored", "advisory", _check_backlog_ignored),
     _make_spec("branch-state", "advisory", _check_branch_state),
     _make_spec("gh-available", "advisory", _check_gh_available),
     _make_spec("sandbox-root", "advisory", _check_sandbox_root),

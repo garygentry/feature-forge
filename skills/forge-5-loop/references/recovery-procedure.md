@@ -279,6 +279,28 @@ runner-native evidence — reliable per-item provenance is **not** a prerequisit
   `{stateDir}/state.json` / `events.ndjson` run evidence, with every attribution
   explicitly labelled a **candidate**.
 
+#### 4.2a Known signature: ignored-backlog revert halt (rauf < 0.19.2, rauf#172)
+
+A run that ended in a `loop_error` whose error contains both `Failed to revert abandoned
+work` and `paths are ignored` hit rauf#172. A gitignore pattern matches the backlog dir,
+its state dir or `backlog.json`, so rauf's
+dirty-tree revert exited non-zero and the whole loop halted the first time an item with
+uncommitted code was set aside (`needs_human`, a block, or an iteration timeout). The
+signature has three consequences:
+
+- **The dirty paths are attributed, not candidates.** They are the item named in the
+  error (`… for item <id>`). Present them as that item's work.
+- **The work exists twice.** The same changes sit **staged** in the index and in a stash
+  named `rauf: abandoned work from item <id>` (`git stash list`).
+- **The default offer is to commit as `[rauf] <id> (wip)`.** The next iteration then builds
+  on the work instead of redoing it. The `(wip)` subject deliberately does not match rauf's
+  `[rauf] <id>:` recovery pattern, so the item is not mistaken for done. After that commit,
+  name the redundant stash and offer to drop it, under the same discard guard: confirm the
+  specific `stash@{N}` first.
+
+Rung 3 still never mutates (4.3). The cure is rauf ≥ 0.19.2 (doctor's `backlog-ignored`
+check warns while an older rauf is live), or un-ignoring those paths.
+
 ### 4.3 Decide
 
 - **Rung-3 default** (`references/shared-conventions.md` § Interaction Capability Ladder,

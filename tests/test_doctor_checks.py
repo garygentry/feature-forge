@@ -1208,6 +1208,101 @@ def test_config_completeness_blank_values_count_as_missing(tmp_path: Path) -> No
 
 
 # --------------------------------------------------------------------------- #
+# backlog-ignored (#369: a gitignored backlog dir halts rauf < 0.19.2, rauf#172)
+# --------------------------------------------------------------------------- #
+
+
+def _ignore_specs(project: Path) -> None:
+    (project / ".gitignore").write_text("specs/\n", encoding="utf-8")
+
+
+def test_backlog_ignored_ok_when_the_backlog_dir_is_tracked(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.19.1")
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "backlog-ignored")
+    assert record["status"] == "ok", record
+    assert record["severity"] == "advisory"
+    assert record["evidence"]["features"][0]["ignored"] is False
+    assert record["evidence"]["runnerVersion"] == "0.19.1"  # filled even on the ok path
+    assert "not gitignored" in record["detail"]
+
+
+@pytest.mark.parametrize("version", ["0.16.1", "0.19.1"])
+def test_backlog_ignored_warns_for_an_ignored_dir_on_an_affected_rauf(
+    tmp_path: Path, version: str
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version=version)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    _ignore_specs(project)
+    record = check(doctor_report(project, env), "backlog-ignored")
+    assert record["status"] == "warn", record
+    assert record["evidence"]["features"][0]["ignored"] is True
+    assert record["evidence"]["runnerVersion"] == version
+    assert "rauf#172" in record["detail"]
+    # The remedy names the FIXED version, not the (possibly still affected) pin.
+    assert "0.19.2" in record["remedy"]["description"]
+    assert "§4.2a" in record["remedy"]["description"]
+    assert record["remedy"]["safety"] == "network"
+    assert record["evidence"]["features"][0]["remedy"] == record["remedy"]
+
+
+@pytest.mark.parametrize(
+    "gitignore, tracked",
+    [
+        (".rauf/\n", False),  # only the state dir is ignored (the review's repro)
+        ("backlog.json\n", True),  # a pattern matches the TRACKED backlog file
+        ("specs/\n", True),  # ignored dir holding a force-tracked backlog
+    ],
+)
+def test_backlog_ignored_catches_state_dir_file_and_tracked_paths(
+    tmp_path: Path, gitignore: str, tracked: bool
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.19.1")
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    (project / ".gitignore").write_text(gitignore, encoding="utf-8")
+    if tracked:
+        subprocess.run(["git", "add", "-f", "specs/looper/backlog.json"], cwd=project, check=True)
+    record = check(doctor_report(project, env), "backlog-ignored")
+    assert record["status"] == "warn", record
+    assert record["evidence"]["features"][0]["ignoredPaths"]
+
+
+def test_backlog_ignored_ok_for_an_ignored_dir_on_a_fixed_rauf(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.19.2")
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    _ignore_specs(project)
+    record = check(doctor_report(project, env), "backlog-ignored")
+    assert record["status"] == "ok", record
+    assert "gitignored" in record["detail"] and "0.19.2" in record["detail"]
+
+
+def test_backlog_ignored_warns_when_the_runner_version_is_unknown(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version_exit=1)
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    _ignore_specs(project)
+    record = check(doctor_report(project, env), "backlog-ignored")
+    assert record["status"] == "warn"
+    assert record["evidence"]["runnerVersion"] is None
+    assert "could not be read" in record["detail"]
+    assert "predates" not in record["detail"]
+
+
+def test_backlog_ignored_na_unless_a_feature_is_about_to_loop(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.19.1")
+    project = make_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    write_feature(project, "docs-next", pipeline_state(PRODUCTION[:5]), backlog=True)
+    _ignore_specs(project)
+    record = check(doctor_report(project, env), "backlog-ignored")
+    assert record["status"] == "na"
+
+
+# --------------------------------------------------------------------------- #
 # backlog-valid (fake `rauf backlog validate` on the scrubbed PATH)
 # --------------------------------------------------------------------------- #
 
@@ -1630,6 +1725,8 @@ def test_layer_two_every_in_process_spawn_is_allowlisted_and_no_socket_opens(
         # legacy report: branch discovery + the resolved root's short commit
         ("git", "branch", "--show-current"), ("git", "symbolic-ref"),
         ("git", "rev-parse"), ("git", "-C"),
+        # read-only ignore query: config-local-ignored, backlog-ignored (#369)
+        ("git", "check-ignore", "-q"),
         ("bash",),  # forge-root.sh only (asserted below)
         ("rauf", "version", "--json"), ("rauf", "backlog", "validate"),
         ("gh", "--version"), ("gh", "auth", "token"),
