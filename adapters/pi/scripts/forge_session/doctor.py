@@ -79,6 +79,14 @@ _BUNDLE_ROOT: Final = _SCRIPTS_DIR.parent
 #: floor): this one only DEGRADES the reported surface, never hard-stops.
 RECOVERY_MIN_RUNNER_VERSION: Final[str] = "0.14.0"
 
+#: Per-agent rauf floors above ``loopRunner.minRunnerVersion``. rauf 0.19.0 made
+#: ``copilot`` a dedicated provider (JSONL parsing, failure classification, rauf-owned
+#: commits); older rauf still advertises ``copilot`` in ``rauf agents``, but as the old
+#: plain-text preset, so the agent probe alone cannot tell them apart. ``runner-version``
+#: raises its floor to this when the agent is ``loopRunner.defaultAgent``; forge-5-loop's
+#: agent verdict applies it to a per-run pick.
+AGENT_MIN_RUNNER_VERSION: Final[dict[str, str]] = {"copilot": "0.19.0"}
+
 
 def _resolve_plugin_root() -> dict:
     """Resolve the plugin root by running the sibling ``forge-root.sh``.
@@ -838,6 +846,28 @@ def _check_runner_binary(ctx: _CheckContext) -> dict:
                    _install_remedy(ctx))
 
 
+def _agent_runner_floor(ctx: _CheckContext) -> tuple[str, str] | None:
+    """``(agent, floor)`` when ``loopRunner.defaultAgent`` names an agent with a rauf floor.
+
+    Only for the rauf runner (the floors are rauf versions) with the agent surface on
+    (``agentArgument`` non-empty; without it ``defaultAgent`` is ignored and no ``--agent``
+    is sent). The session host is deliberately NOT consulted: an empty ``defaultAgent``
+    launches the runner default (claude-cli) even from a Copilot session, so gating on the
+    host would hard-stop a loop that never runs Copilot. A per-run ``--agent`` pick is
+    forge-5-loop's to check (agent-selection.md reads this check's reported version)."""
+    if ctx.loop_runner.get("name", "rauf") != "rauf":
+        return None
+    agent_argument = ctx.loop_runner.get("agentArgument")
+    if not (isinstance(agent_argument, str) and agent_argument.strip()):
+        return None
+    default_agent = ctx.loop_runner.get("defaultAgent")
+    if not (isinstance(default_agent, str) and default_agent.strip()):
+        return None
+    agent = default_agent.strip()
+    floor = AGENT_MIN_RUNNER_VERSION.get(agent)
+    return (agent, floor) if floor else None
+
+
 def _check_runner_version(ctx: _CheckContext) -> dict:
     """The live runner's ``version --json`` meets ``minRunnerVersion``."""
     if (na := _runner_unavailable(ctx)) is not None:
@@ -906,6 +936,22 @@ def _check_runner_version(ctx: _CheckContext) -> dict:
             _remedy("Fix loopRunner.minRunnerVersion in forge.config.json (X.Y.Z)", None,
                     "local-write"),
         )
+    agent_floor = _agent_runner_floor(ctx)
+    if agent_floor is not None:
+        agent, floor_text = agent_floor
+        evidence["agentFloor"] = {
+            "agent": agent, "source": "loopRunner.defaultAgent", "required": floor_text,
+        }
+        floor = _parse_semver(floor_text)
+        if floor is not None and reported < floor:
+            return _result(
+                "warn",
+                f"runner {_fmt_semver(reported)} is below {_fmt_semver(floor)}, the minimum "
+                f"for the '{agent}' agent (loopRunner.defaultAgent): older rauf drives "
+                f"'{agent}' as a plain-text preset, not the dedicated provider",
+                evidence,
+                _install_remedy(ctx),
+            )
     if reported < required:
         return _result(
             "warn",
@@ -913,10 +959,11 @@ def _check_runner_version(ctx: _CheckContext) -> dict:
             evidence,
             _install_remedy(ctx),
         )
-    return _result(
-        "ok", f"runner {_fmt_semver(reported)} >= minRunnerVersion {_fmt_semver(required)}",
-        evidence,
-    )
+    detail = f"runner {_fmt_semver(reported)} >= minRunnerVersion {_fmt_semver(required)}"
+    if "agentFloor" in evidence:
+        floor = evidence["agentFloor"]
+        detail += f" and the '{floor['agent']}' agent floor {floor['required']}"
+    return _result("ok", detail, evidence)
 
 
 def _check_runner_wired(ctx: _CheckContext) -> dict:
@@ -2281,4 +2328,5 @@ __all__ = [
     "_print_checks",
     "_print_doctor",
     "RECOVERY_MIN_RUNNER_VERSION",
+    "AGENT_MIN_RUNNER_VERSION",
 ]
