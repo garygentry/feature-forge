@@ -78,6 +78,9 @@ _BUNDLE_ROOT: Final = _SCRIPTS_DIR.parent
 #: surface doctor reports. Distinct from ``loopRunner.minRunnerVersion`` (the launch
 #: floor): this one only DEGRADES the reported surface, never hard-stops.
 RECOVERY_MIN_RUNNER_VERSION: Final[str] = "0.14.0"
+#: First rauf whose dirty-tree revert survives a gitignored backlog dir (rauf#172): older
+#: rauf halts the whole loop the first time an item with uncommitted code is set aside.
+IGNORED_BACKLOG_FIX_RUNNER_VERSION: Final[str] = "0.19.2"
 
 #: Per-agent rauf floors above ``loopRunner.minRunnerVersion``. ``copilot`` needs 0.19.1:
 #: before 0.19.0 rauf still advertises ``copilot`` in ``rauf agents``, but as the old
@@ -1579,6 +1582,75 @@ def _check_backlog_valid(ctx: _CheckContext) -> dict:
     )
 
 
+def _check_backlog_ignored(ctx: _CheckContext) -> dict:
+    """A loop-ready backlog dir that git ignores is safe only on rauf >= 0.19.2 (#369).
+
+    Keeping specs local-only (``specs/`` in ``.gitignore``) is a supported layout, but rauf
+    before IGNORED_BACKLOG_FIX_RUNNER_VERSION halts the whole loop the first time an item with
+    uncommitted code is set aside: its revert's exclude pathspecs trip git's ignored-path error
+    (rauf#172). Advisory, never a stop: ``ok`` for an un-ignored dir or a fixed runner, ``warn``
+    while an affected (or unreadable) runner version is live. One ``check-ignore`` per dir.
+    """
+    if (na := _runner_unavailable(ctx)) is not None:
+        return na
+    runner_name = ctx.loop_runner.get("name")
+    if runner_name != "rauf":
+        return _result("na", f"runner is {runner_name!r}, not rauf", {"runnerName": runner_name})
+    eligible = [
+        feat for feat in ctx.features
+        if feat["nextStage"] == "forge-5-loop" and feat["backlogExists"]
+    ]
+    evidence: dict = {
+        "fixedIn": IGNORED_BACKLOG_FIX_RUNNER_VERSION, "runnerVersion": None, "features": [],
+    }
+    if not eligible:
+        return _result(
+            "na", "no active feature is about to run forge-5-loop with a backlog on disk",
+            evidence,
+        )
+    ignored_by_dir: dict[str, bool | None] = {}
+    rows = []
+    for feat in eligible:
+        backlog_dir = Path(feat["backlogPath"]).parent
+        key = str(backlog_dir)
+        if key not in ignored_by_dir:
+            ignored_by_dir[key] = _git_check_ignored(backlog_dir)
+        rows.append({
+            "name": feat["name"], "epic": feat["epic"], "backlogDir": key,
+            "ignored": ignored_by_dir[key], "remedy": None,
+        })
+    evidence["features"] = rows
+    ignored = [row for row in rows if row["ignored"]]
+    if not ignored:
+        if all(row["ignored"] is None for row in rows):
+            return _result(
+                "na", "cannot determine git-ignore status (not a git work tree?)", evidence
+            )
+        return _result("ok", f"{len(rows)} backlog dir(s) tracked by git", evidence)
+    version = ctx.runner_version()
+    evidence["runnerVersion"] = _fmt_semver(version) if version else None
+    fixed = _parse_semver(IGNORED_BACKLOG_FIX_RUNNER_VERSION)
+    names = ", ".join(_feature_label(row) for row in ignored)
+    if version is not None and fixed is not None and version >= fixed:
+        return _result(
+            "ok",
+            f"backlog dir gitignored for {names}; rauf {_fmt_semver(version)} handles that "
+            f"(rauf#172 fixed in {IGNORED_BACKLOG_FIX_RUNNER_VERSION})",
+            evidence,
+        )
+    running = f"rauf {_fmt_semver(version)}" if version else "the live rauf (version unknown)"
+    return _result(
+        "warn",
+        f"backlog dir is gitignored for {names}, and {running} predates "
+        f"{IGNORED_BACKLOG_FIX_RUNNER_VERSION}: the loop halts ('Failed to revert abandoned "
+        "work … paths are ignored', rauf#172) the first time an item with uncommitted code is "
+        "set aside. Upgrade rauf, or stop ignoring the backlog dir. Recovery: "
+        "forge-5-loop references/recovery-procedure.md §4.2a",
+        evidence,
+        _install_remedy(ctx),
+    )
+
+
 def _check_gh_available(ctx: _CheckContext) -> dict:
     """GitHub CLI on PATH with credentials (``gh auth token``; never ``auth status``)."""
     path = shutil.which("gh")
@@ -2078,6 +2150,7 @@ DOCTOR_CHECKS: Final[tuple[_CheckSpec, ...]] = (
     _make_spec("config-local-ignored", "advisory", _check_config_local_ignored),
     _make_spec("backlog-present", "blocking", _check_backlog_present),
     _make_spec("backlog-valid", "blocking", _check_backlog_valid),
+    _make_spec("backlog-ignored", "advisory", _check_backlog_ignored),
     _make_spec("branch-state", "advisory", _check_branch_state),
     _make_spec("gh-available", "advisory", _check_gh_available),
     _make_spec("sandbox-root", "advisory", _check_sandbox_root),
