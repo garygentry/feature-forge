@@ -282,7 +282,8 @@ runner-native evidence — reliable per-item provenance is **not** a prerequisit
 #### 4.2a Known signature: ignored-backlog revert halt (rauf < 0.19.2, rauf#172)
 
 A run that ended in a `loop_error` whose error contains both `Failed to revert abandoned
-work` and `paths are ignored` hit rauf#172. The backlog dir is gitignored, so rauf's
+work` and `paths are ignored` hit rauf#172. A gitignore pattern matches the backlog dir,
+its state dir or `backlog.json`, so rauf's
 dirty-tree revert exited non-zero and the whole loop halted the first time an item with
 uncommitted code was set aside (`needs_human`, a block, or an iteration timeout). The
 signature has three consequences:
@@ -298,7 +299,7 @@ signature has three consequences:
   specific `stash@{N}` first.
 
 Rung 3 still never mutates (4.3). The cure is rauf ≥ 0.19.2 (doctor's `backlog-ignored`
-check warns while an older rauf is live), or un-ignoring the backlog dir.
+check warns while an older rauf is live), or un-ignoring those paths.
 
 ### 4.3 Decide
 
