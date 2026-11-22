@@ -4,7 +4,9 @@ This is the **single canonical status document** for feature-forge. Dated `plans
 files are historical snapshots that rot; this file is kept current. When a piece of work lands,
 update the relevant section here rather than writing a new dated handoff.
 
-_Last updated: 2026-10-08 (0.22.0 / installer 0.3.11 release cut: native GitHub Copilot support
+_Last updated: 2026-11-22 (0.22.1 / installer 0.3.12 release cut: rauf pin 0.19.0 → 0.19.2
+(Copilot CLI 1.0.114 fix, gitignored-backlog halt fix), copilot floor #371, doctor
+`backlog-ignored` #369). Prior: 2026-10-08 (0.22.0 / installer 0.3.11 release cut: native GitHub Copilot support
 #325/#360, per-host loop supervision #345–#348, rauf pin 0.17.1 → 0.19.0, gated releases #356). Prior: 2026-09-30 (0.21.0 release cut — marketplace distributes the built
 `adapters/claude` bundle (#314/#335), doctor warns on an un-built canon root (#314/#338),
 forge-5-loop consumes rauf's status surface (#339/#340), CI provisions pinned test deps
@@ -15,12 +17,12 @@ forge-5-loop consumes rauf's status surface (#339/#340), CI provisions pinned te
 
 | | Version | Source of truth |
 |---|---|---|
-| Plugin | **0.22.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.11** (0.3.12 unreleased on `main`) | `installer/package.json` (independent version line) |
-| npm | 0.3.11 (first gated release via `release.yml`; tag `v0.3.10` was never published) | |
+| Plugin | **0.22.1** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
+| Installer | **0.3.12** | `installer/package.json` (independent version line) |
+| npm | 0.3.12 (tag `v0.3.12`, gated `release.yml`) | |
 | Commit | this release commit | |
 
-CHANGELOG `## [0.22.0]` records this release; `[Unreleased]` carries the post-release work (installer 0.3.12, not yet published).
+CHANGELOG `## [0.22.1]` records this release; `[Unreleased]` is empty.
 
 ### rauf coupling
 
