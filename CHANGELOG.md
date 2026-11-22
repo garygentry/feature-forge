@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A Copilot loop now requires rauf 0.19.0** (#371). Older rauf lists `copilot` in
+  `rauf agents`, but as a plain-text preset rather than the dedicated provider, so the agent
+  check passed it. doctor's `runner-version` now applies a per-agent floor (`copilot` → 0.19.0)
+  when Copilot is the session host or `loopRunner.defaultAgent`; it reports `agentFloor` in its
+  evidence, and forge-5-loop stops at Step 1c. A per-run `--agent copilot` pick on an older rauf
+  is treated as unavailable.
 - **npm installs scaffold a `.gitignore` again** (#359). npm always drops files named `.gitignore`
   from a tarball, so forge-bootstrap's stack templates now store it as `gitignore` and the helper
   writes `.gitignore`. The pack gate no longer exempts the name.

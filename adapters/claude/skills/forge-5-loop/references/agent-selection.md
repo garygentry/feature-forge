@@ -63,7 +63,19 @@ present with `available: false`):
 - **UNAVAILABLE** (member, `available == False`): warn with the row's `detail`, then
   offer **proceed-anyway OR choose-another** — never silent.
 - **AVAILABLE** (member, `available == True`): proceed; the validated id fills
-  `{agent}`.
+  `{agent}` — unless the agent has a **runner floor** (below) the live rauf misses.
+- **Runner floor** (member, below the floor): some agents need a newer rauf than
+  `minRunnerVersion`. **`copilot` needs rauf ≥ 0.19.0**: older rauf still lists
+  `copilot` in `rauf agents`, but drives it as a plain-text preset instead of the
+  dedicated provider (no JSONL parsing, no failure classification, commits not
+  reserved to rauf), so membership and `available` cannot catch it. Compare against
+  the version Step 1c's `runner-version` check reported (`evidence.reported`); when it
+  is below the floor, treat the pick as **UNAVAILABLE** with detail *"`copilot` needs
+  rauf ≥ 0.19.0 (found {reported}); upgrade with `npm i -g @garygentry/rauf@latest` or
+  `npx @garygentry/feature-forge install`"* and offer the same proceed-anyway OR
+  choose-another. doctor's `runner-version` already enforces this floor when
+  `copilot` is `loopRunner.defaultAgent` or the session host (`agentFloor` in its
+  evidence), so a default Copilot run stops at Step 1c instead.
 - **Probe failure** (non-zero exit / unparseable / wrong shape / empty `agents[]` /
   row missing `id`): surface it and offer **choose-another OR abort**; never launch
   the non-default agent unvalidated, never silently fall back to the default.

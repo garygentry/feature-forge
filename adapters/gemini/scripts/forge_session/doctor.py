@@ -79,6 +79,14 @@ _BUNDLE_ROOT: Final = _SCRIPTS_DIR.parent
 #: floor): this one only DEGRADES the reported surface, never hard-stops.
 RECOVERY_MIN_RUNNER_VERSION: Final[str] = "0.14.0"
 
+#: Per-agent rauf floors above ``loopRunner.minRunnerVersion``. rauf 0.19.0 made
+#: ``copilot`` a dedicated provider (JSONL parsing, failure classification, rauf-owned
+#: commits); older rauf still advertises ``copilot`` in ``rauf agents``, but as the old
+#: plain-text preset, so the agent probe alone cannot tell them apart. ``runner-version``
+#: raises its floor to this when the agent is in play (the session host or
+#: ``loopRunner.defaultAgent``); forge-5-loop's agent verdict applies it to a per-run pick.
+AGENT_MIN_RUNNER_VERSION: Final[dict[str, str]] = {"copilot": "0.19.0"}
+
 
 def _resolve_plugin_root() -> dict:
     """Resolve the plugin root by running the sibling ``forge-root.sh``.
@@ -838,6 +846,33 @@ def _check_runner_binary(ctx: _CheckContext) -> dict:
                    _install_remedy(ctx))
 
 
+def _session_host() -> str | None:
+    """The host this bundle runs under: the bundle manifest's agent, else process ancestry."""
+    return (
+        _bundle_agent(_BUNDLE_ROOT)
+        or _classify_ancestry(_process_ancestry(os.getppid()))["host"]
+    )
+
+
+def _agent_runner_floor(ctx: _CheckContext) -> tuple[str, str, str] | None:
+    """``(agent, source, floor)`` when an agent with a rauf floor is in play, else ``None``.
+
+    Only for the rauf runner (the floors are rauf versions). ``loopRunner.defaultAgent``
+    is the agent a default run launches, so it wins; otherwise the session host, because a
+    loop started from that host usually drives the same agent. A per-run ``--agent`` pick
+    is forge-5-loop's to check (it reads this check's reported version)."""
+    if ctx.loop_runner.get("name", "rauf") != "rauf":
+        return None
+    default_agent = ctx.loop_runner.get("defaultAgent")
+    if isinstance(default_agent, str) and default_agent.strip():
+        agent = default_agent.strip()
+        floor = AGENT_MIN_RUNNER_VERSION.get(agent)
+        return (agent, "loopRunner.defaultAgent", floor) if floor else None
+    host = _session_host()
+    floor = AGENT_MIN_RUNNER_VERSION.get(host) if host else None
+    return (host, "session host", floor) if floor else None
+
+
 def _check_runner_version(ctx: _CheckContext) -> dict:
     """The live runner's ``version --json`` meets ``minRunnerVersion``."""
     if (na := _runner_unavailable(ctx)) is not None:
@@ -906,6 +941,20 @@ def _check_runner_version(ctx: _CheckContext) -> dict:
             _remedy("Fix loopRunner.minRunnerVersion in forge.config.json (X.Y.Z)", None,
                     "local-write"),
         )
+    agent_floor = _agent_runner_floor(ctx)
+    if agent_floor is not None:
+        agent, source, floor_text = agent_floor
+        evidence["agentFloor"] = {"agent": agent, "source": source, "required": floor_text}
+        floor = _parse_semver(floor_text)
+        if floor is not None and reported < floor:
+            return _result(
+                "warn",
+                f"runner {_fmt_semver(reported)} is below {_fmt_semver(floor)}, the minimum "
+                f"for the '{agent}' agent ({source}): older rauf drives '{agent}' as a "
+                f"plain-text preset, not the dedicated provider",
+                evidence,
+                _install_remedy(ctx),
+            )
     if reported < required:
         return _result(
             "warn",
@@ -1859,10 +1908,7 @@ def _check_loop_supervision(ctx: _CheckContext) -> dict:
     ``rauf loop wait`` recipe. On **Codex** the optional rauf Stop hook keeps the session
     from ending its turn while the loop runs. Other hosts need nothing: ``na``.
     """
-    host = (
-        _bundle_agent(_BUNDLE_ROOT)
-        or _classify_ancestry(_process_ancestry(os.getppid()))["host"]
-    )
+    host = _session_host()
     evidence: dict = {"host": host}
     if host == "pi":
         packages = _pi_settings_packages(Path.cwd())
@@ -2281,4 +2327,5 @@ __all__ = [
     "_print_checks",
     "_print_doctor",
     "RECOVERY_MIN_RUNNER_VERSION",
+    "AGENT_MIN_RUNNER_VERSION",
 ]

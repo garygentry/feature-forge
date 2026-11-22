@@ -942,6 +942,66 @@ def test_runner_version_honours_a_custom_min_and_command(tmp_path: Path) -> None
     assert record["status"] == "na" and "cannot be rendered" in record["detail"]
 
 
+@pytest.mark.parametrize("version, status", [("0.17.1", "warn"), ("0.19.0", "ok")])
+def test_runner_version_applies_the_copilot_floor_for_a_copilot_default_agent(
+    tmp_path: Path, version, status
+) -> None:
+    """rauf < 0.19.0 advertises `copilot` only as a plain-text preset (agent floor)."""
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version=version)
+    config = {**CONFIG, "loopRunner": {"defaultAgent": "copilot"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == status, record
+    assert record["evidence"]["agentFloor"] == {
+        "agent": "copilot", "source": "loopRunner.defaultAgent", "required": "0.19.0",
+    }
+    if status == "warn":
+        assert "minimum for the 'copilot' agent" in record["detail"]
+        assert record["remedy"]["safety"] == "network"
+
+
+def test_runner_version_has_no_agent_floor_for_other_default_agents(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.17.1")
+    config = {**CONFIG, "loopRunner": {"defaultAgent": "codex"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert record["status"] == "ok", record
+    assert "agentFloor" not in record["evidence"]
+
+
+@pytest.mark.parametrize("host, expect", [("copilot", "warn"), ("claude", "ok"), (None, "ok")])
+def test_runner_version_applies_the_agent_floor_for_the_session_host(
+    fs, monkeypatch, tmp_path: Path, host, expect
+) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.18.0")
+    project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
+    monkeypatch.setenv("PATH", env["PATH"])
+    monkeypatch.setenv("HOME", env["HOME"])
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(fs, "_bundle_agent", lambda _root: host)
+    monkeypatch.setattr(fs, "_process_ancestry", lambda _pid: [])
+    report = fs.doctor_report(
+        Path("specs"), Path("forge.config.json"), only=frozenset({"runner-version"}),
+    )
+    (record,) = report["checks"]
+    assert record["status"] == expect, record
+    if host == "copilot":
+        assert record["evidence"]["agentFloor"]["source"] == "session host"
+        assert "0.19.0" in record["detail"]
+
+
+def test_runner_version_agent_floor_only_applies_to_rauf(tmp_path: Path) -> None:
+    env = scrubbed_env(tmp_path)
+    fake_runner(env, version="0.17.1")
+    config = {**CONFIG, "loopRunner": {"name": "other", "defaultAgent": "copilot"}}
+    project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
+    record = check(doctor_report(project, env), "runner-version")
+    assert "agentFloor" not in record["evidence"], record
+
+
 def test_runner_version_timeout_degrades_to_warn(fs, monkeypatch, tmp_path: Path) -> None:
     """A hung runner is cut off at the probe timeout — a warn, never a hang (INV-3)."""
     env = scrubbed_env(tmp_path)

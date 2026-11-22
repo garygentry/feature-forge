@@ -209,3 +209,19 @@ copilot plugin marketplace remove feature-forge   # optional: also drop the mark
 
 See [The default loop runner](claude.md#the-default-loop-runner): feature-forge defaults to
 rauf and selects the coding agent via the documented precedence.
+
+Driving Copilot as the loop's coding agent (`--agent copilot`) needs **rauf 0.19.0 or later**,
+the release that made `copilot` a dedicated provider. Older rauf still lists `copilot` in
+`rauf agents`, but runs it as a plain-text preset. `forge-session.py doctor` reports this as a
+`runner-version` warning whenever Copilot is the session host or `loopRunner.defaultAgent`, and
+`forge-5-loop` stops before launch until rauf is upgraded:
+
+```bash
+npm i -g @garygentry/rauf@latest     # or: npx @garygentry/feature-forge install
+```
+
+To make Copilot the default agent for a project's loop runs, set it in `forge.config.json`:
+
+```json
+{ "loopRunner": { "defaultAgent": "copilot" } }
+```
