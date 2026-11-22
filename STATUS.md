@@ -16,15 +16,16 @@ forge-5-loop consumes rauf's status surface (#339/#340), CI provisions pinned te
 | | Version | Source of truth |
 |---|---|---|
 | Plugin | **0.22.0** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
-| Installer | **0.3.11** | `installer/package.json` (independent version line) |
+| Installer | **0.3.11** (0.3.12 unreleased on `main`) | `installer/package.json` (independent version line) |
 | npm | 0.3.11 (first gated release via `release.yml`; tag `v0.3.10` was never published) | |
 | Commit | this release commit | |
 
-CHANGELOG `## [0.22.0]` records this release; `[Unreleased]` is empty.
+CHANGELOG `## [0.22.0]` records this release; `[Unreleased]` carries the post-release work (installer 0.3.12, not yet published).
 
 ### rauf coupling
 
-`RAUF_PIN` is **`@garygentry/rauf@0.19.0`** (0.19.0 adds the dedicated `copilot` provider, rauf #131;
+`RAUF_PIN` is **`@garygentry/rauf@0.19.1`** (0.19.1 fixes `--agent copilot` on Copilot CLI 1.0.114+, rauf #177;
+0.19.0 adds the dedicated `copilot` provider, rauf #131;
 0.18.0 is the loop-supervision release: `rauf loop wait`,
 enriched `item_completed` cards, the Pi `rauf-loop-supervisor` extension, `rauf hook
 codex-stop`; rauf #152–#156 — feature-forge adopts them in the follow-up host-supervision

@@ -942,11 +942,11 @@ def test_runner_version_honours_a_custom_min_and_command(tmp_path: Path) -> None
     assert record["status"] == "na" and "cannot be rendered" in record["detail"]
 
 
-@pytest.mark.parametrize("version, status", [("0.17.1", "warn"), ("0.19.0", "ok")])
+@pytest.mark.parametrize("version, status", [("0.17.1", "warn"), ("0.19.0", "warn"), ("0.19.1", "ok")])
 def test_runner_version_applies_the_copilot_floor_for_a_copilot_default_agent(
     tmp_path: Path, version, status
 ) -> None:
-    """rauf < 0.19.0 advertises `copilot` only as a plain-text preset (agent floor)."""
+    """rauf < 0.19.1 drives `copilot` as a preset or with a flag CLI 1.0.114 rejects."""
     env = scrubbed_env(tmp_path)
     fake_runner(env, version=version)
     config = {**CONFIG, "loopRunner": {"defaultAgent": "copilot"}}
@@ -954,7 +954,7 @@ def test_runner_version_applies_the_copilot_floor_for_a_copilot_default_agent(
     record = check(doctor_report(project, env), "runner-version")
     assert record["status"] == status, record
     assert record["evidence"]["agentFloor"] == {
-        "agent": "copilot", "source": "loopRunner.defaultAgent", "required": "0.19.0",
+        "agent": "copilot", "source": "loopRunner.defaultAgent", "required": "0.19.1",
     }
     if status == "warn":
         assert "minimum for the 'copilot' agent" in record["detail"]
@@ -991,8 +991,8 @@ def test_runner_version_ignores_the_session_host_for_the_agent_floor(
 
 
 @pytest.mark.parametrize("loop_runner, expect", [
-    ({"defaultAgent": "copilot"}, ("copilot", "0.19.0")),
-    ({"defaultAgent": " copilot "}, ("copilot", "0.19.0")),
+    ({"defaultAgent": "copilot"}, ("copilot", "0.19.1")),
+    ({"defaultAgent": " copilot "}, ("copilot", "0.19.1")),
     ({"defaultAgent": "codex"}, None),
     ({"defaultAgent": ""}, None),
     ({"defaultAgent": "copilot", "name": "other"}, None),
@@ -1008,12 +1008,12 @@ def test_agent_runner_floor_needs_rauf_an_agent_surface_and_a_floored_default(
 
 def test_runner_version_ok_detail_names_a_met_agent_floor(tmp_path: Path) -> None:
     env = scrubbed_env(tmp_path)
-    fake_runner(env, version="0.19.0")
+    fake_runner(env, version="0.19.1")
     config = {**CONFIG, "loopRunner": {"defaultAgent": "copilot"}}
     project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
     record = check(doctor_report(project, env), "runner-version")
     assert record["status"] == "ok"
-    assert "'copilot' agent floor 0.19.0" in record["detail"]
+    assert "'copilot' agent floor 0.19.1" in record["detail"]
 
 
 def test_runner_version_timeout_degrades_to_warn(fs, monkeypatch, tmp_path: Path) -> None:

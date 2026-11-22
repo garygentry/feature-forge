@@ -79,13 +79,13 @@ _BUNDLE_ROOT: Final = _SCRIPTS_DIR.parent
 #: floor): this one only DEGRADES the reported surface, never hard-stops.
 RECOVERY_MIN_RUNNER_VERSION: Final[str] = "0.14.0"
 
-#: Per-agent rauf floors above ``loopRunner.minRunnerVersion``. rauf 0.19.0 made
-#: ``copilot`` a dedicated provider (JSONL parsing, failure classification, rauf-owned
-#: commits); older rauf still advertises ``copilot`` in ``rauf agents``, but as the old
-#: plain-text preset, so the agent probe alone cannot tell them apart. ``runner-version``
-#: raises its floor to this when the agent is ``loopRunner.defaultAgent``; forge-5-loop's
-#: agent verdict applies it to a per-run pick.
-AGENT_MIN_RUNNER_VERSION: Final[dict[str, str]] = {"copilot": "0.19.0"}
+#: Per-agent rauf floors above ``loopRunner.minRunnerVersion``. ``copilot`` needs 0.19.1:
+#: before 0.19.0 rauf still advertises ``copilot`` in ``rauf agents``, but as the old
+#: plain-text preset, so the agent probe alone cannot tell them apart; 0.19.0's dedicated
+#: provider passes ``--no-remote``, which Copilot CLI 1.0.114 rejects on every spawn (rauf
+#: #177, fixed in 0.19.1). ``runner-version`` raises its floor to this when the agent is
+#: ``loopRunner.defaultAgent``; forge-5-loop's agent verdict applies it to a per-run pick.
+AGENT_MIN_RUNNER_VERSION: Final[dict[str, str]] = {"copilot": "0.19.1"}
 
 
 def _resolve_plugin_root() -> dict:
@@ -948,7 +948,7 @@ def _check_runner_version(ctx: _CheckContext) -> dict:
                 "warn",
                 f"runner {_fmt_semver(reported)} is below {_fmt_semver(floor)}, the minimum "
                 f"for the '{agent}' agent (loopRunner.defaultAgent): older rauf drives "
-                f"'{agent}' as a plain-text preset, not the dedicated provider",
+                f"'{agent}' incorrectly (see forge-5-loop references/agent-selection.md)",
                 evidence,
                 _install_remedy(ctx),
             )
