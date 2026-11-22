@@ -24,7 +24,8 @@ CHANGELOG `## [0.22.0]` records this release; `[Unreleased]` is empty.
 
 ### rauf coupling
 
-`RAUF_PIN` is **`@garygentry/rauf@0.19.0`** (0.19.0 adds the dedicated `copilot` provider, rauf #131;
+`RAUF_PIN` is **`@garygentry/rauf@0.19.1`** (0.19.1 fixes `--agent copilot` on Copilot CLI 1.0.114+, rauf #177;
+0.19.0 adds the dedicated `copilot` provider, rauf #131;
 0.18.0 is the loop-supervision release: `rauf loop wait`,
 enriched `item_completed` cards, the Pi `rauf-loop-supervisor` extension, `rauf hook
 codex-stop`; rauf #152–#156 — feature-forge adopts them in the follow-up host-supervision

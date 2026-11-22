@@ -9,17 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Installer 0.3.12: `RAUF_PIN` advances to `@garygentry/rauf@0.19.1`.** rauf 0.19.1 makes
+  `--agent copilot` work on Copilot CLI 1.0.114+, which removed `--no-remote` (rauf #177), and
+  adds rauf's Copilot plugin marketplace (rauf #175).
 - **Release `verify` now rehearses `npm publish --dry-run` and diffs against the last *released*
   tag.** A bad publish spec (v0.3.10's bare tarball path) now fails before the approval, and a tag
   whose run never published no longer becomes the summary's diff baseline.
 
 ### Fixed
 
-- **A Copilot loop now requires rauf 0.19.0** (#371). Older rauf lists `copilot` in
-  `rauf agents`, but as a plain-text preset rather than the dedicated provider, so the agent
-  check passed it. doctor's `runner-version` now applies a per-agent floor (`copilot` → 0.19.0)
-  when `copilot` is `loopRunner.defaultAgent` (reported as `agentFloor`), so forge-5-loop stops
-  at Step 1c. A per-run `--agent copilot` pick on an older rauf is marked unavailable, with
+- **A Copilot loop now requires rauf 0.19.1** (#371). rauf before 0.19.0 lists `copilot` in
+  `rauf agents`, but as a plain-text preset rather than the dedicated provider, and 0.19.0 passes
+  `--no-remote`, which Copilot CLI 1.0.114 rejects on every iteration (rauf #177); the agent check
+  passed both. doctor's `runner-version` now applies a per-agent floor (`copilot` → 0.19.1) when
+  `copilot` is `loopRunner.defaultAgent` (reported as `agentFloor`), so forge-5-loop stops at
+  Step 1c. A per-run `--agent copilot` pick on an older rauf is marked unavailable, with
   proceed-anyway or choose-another.
 - **npm installs scaffold a `.gitignore` again** (#359). npm always drops files named `.gitignore`
   from a tarball, so forge-bootstrap's stack templates now store it as `gitignore` and the helper
