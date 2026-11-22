@@ -19,7 +19,7 @@ forge-5-loop consumes rauf's status surface (#339/#340), CI provisions pinned te
 |---|---|---|
 | Plugin | **0.22.1** | `.claude-plugin/plugin.json` (+ `marketplace.json`, gemini ext — synced) |
 | Installer | **0.3.12** | `installer/package.json` (independent version line) |
-| npm | 0.3.12 (tag `v0.3.12`, gated `release.yml`) | |
+| npm | 0.3.12 once tag `v0.3.12` publishes via gated `release.yml` (0.3.11 until then) | |
 | Commit | this release commit | |
 
 CHANGELOG `## [0.22.1]` records this release; `[Unreleased]` is empty.
@@ -50,6 +50,13 @@ before merging a pin advance.
 
 ## Shipped recently
 
+- **0.22.1** / installer 0.3.12 (2026-11-22) — rauf pin 0.19.0 → 0.19.2: Copilot CLI 1.0.114
+  `--no-remote` fix, rauf's Copilot marketplace, gitignored-backlog halt fix (#373/#375); copilot
+  loop-agent floor 0.19.1 (#371); `doctor` `backlog-ignored` advisory + recovery §4.2a (#369);
+  npm-safe bootstrap `.gitignore` (#359); uninstall bytecode cleanup (#366); release `verify`
+  dry-run publish (#367).
+- **0.22.0** / installer 0.3.11 (2026-10-08) — native GitHub Copilot support (#325/#360),
+  per-host loop supervision (#345–#348), rauf pin 0.19.0, gated releases via `release.yml` (#356).
 - **0.21.0** / installer 0.3.9 (2026-09-30) — the Claude marketplace now installs the built
   `adapters/claude` bundle instead of canon, so shared references resolve and the SessionStart
   hook ships with it (#314/#335); `doctor`'s `plugin-root` check warns on an un-built canon

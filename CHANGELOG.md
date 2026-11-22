@@ -17,8 +17,7 @@ Installer 0.3.12. The Copilot loop works on current Copilot CLI, through rauf 0.
   `--agent copilot` work on Copilot CLI 1.0.114+ (rauf #177), adds rauf's Copilot marketplace
   (rauf #175), and stops a gitignored backlog dir from halting the loop (rauf #172). It also
   fixes rauf #178, #165 and #173.
-- **Release `verify` rehearses `npm publish --dry-run`** and diffs against the last *released*
-  tag (#367).
+- **Release `verify` rehearses `npm publish --dry-run`** (#367).
 
 ### Added
 
@@ -28,8 +27,8 @@ Installer 0.3.12. The Copilot loop works on current Copilot CLI, through rauf 0.
 
 ### Fixed
 
-- **A Copilot loop requires rauf ≥ 0.19.1** (#371), reported as `runner-version`'s per-agent
-  `agentFloor`.
+- **A Copilot loop requires rauf ≥ 0.19.1** (#371). A `copilot` `defaultAgent` stops at
+  Step 1c; a per-run `--agent copilot` pick is marked unavailable.
 - **npm installs scaffold a `.gitignore` again** (#359).
 - **`uninstall` leaves no installed bytecode or empty folders behind** (#366).
 
