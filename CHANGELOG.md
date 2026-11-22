@@ -9,9 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Installer 0.3.12: `RAUF_PIN` advances to `@garygentry/rauf@0.19.1`.** rauf 0.19.1 makes
-  `--agent copilot` work on Copilot CLI 1.0.114+, which removed `--no-remote` (rauf #177), and
-  adds rauf's Copilot plugin marketplace (rauf #175).
+- **Installer 0.3.12: `RAUF_PIN` advances to `@garygentry/rauf@0.19.2`** (via 0.19.1). rauf 0.19.1
+  makes `--agent copilot` work on Copilot CLI 1.0.114+, which removed `--no-remote` (rauf #177),
+  and adds rauf's Copilot plugin marketplace (rauf #175). rauf 0.19.2 stops a gitignored backlog
+  dir from halting the loop (rauf #172). It also fixes three things: a detached start on a project
+  outside the server's root could act on a same-named project (rauf #178); commit reconciliation
+  could mark items done from another backlog's commits (rauf #165); and a `CLAUDE.md` that
+  imports `AGENTS.md` got a duplicate rauf section (rauf #173).
 - **Release `verify` now rehearses `npm publish --dry-run` and diffs against the last *released*
   tag.** A bad publish spec (v0.3.10's bare tarball path) now fails before the approval, and a tag
   whose run never published no longer becomes the summary's diff baseline.
