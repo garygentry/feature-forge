@@ -7,45 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] — 2026-11-22
+
+Installer 0.3.12. The Copilot loop works on current Copilot CLI, through rauf 0.19.2.
+
 ### Changed
 
-- **Installer 0.3.12: `RAUF_PIN` advances to `@garygentry/rauf@0.19.2`** (via 0.19.1). rauf 0.19.1
-  makes `--agent copilot` work on Copilot CLI 1.0.114+, which removed `--no-remote` (rauf #177),
-  and adds rauf's Copilot plugin marketplace (rauf #175). rauf 0.19.2 stops a gitignored backlog
-  dir from halting the loop (rauf #172). It also fixes three things: a detached start on a project
-  outside the server's root could act on a same-named project (rauf #178); commit reconciliation
-  could mark items done from another backlog's commits (rauf #165); and a `CLAUDE.md` that
-  imports `AGENTS.md` got a duplicate rauf section (rauf #173).
-- **Release `verify` now rehearses `npm publish --dry-run` and diffs against the last *released*
-  tag.** A bad publish spec (v0.3.10's bare tarball path) now fails before the approval, and a tag
-  whose run never published no longer becomes the summary's diff baseline.
+- **`RAUF_PIN` → `@garygentry/rauf@0.19.2`** (via 0.19.1, #373/#375). The new rauf makes
+  `--agent copilot` work on Copilot CLI 1.0.114+ (rauf #177), adds rauf's Copilot marketplace
+  (rauf #175), and stops a gitignored backlog dir from halting the loop (rauf #172). It also
+  fixes rauf #178, #165 and #173.
+- **Release `verify` rehearses `npm publish --dry-run`** (#367).
 
 ### Added
 
-- **doctor warns when a loop-ready backlog dir is gitignored on an affected rauf** (#369). Keeping
-  specs local-only (`specs/` in `.gitignore`) is supported, but rauf before 0.19.2 halts the
-  whole loop the first time an item with uncommitted code is set aside (`Failed to revert
-  abandoned work … paths are ignored`, rauf#172). The same happens when only its `.rauf/` state
-  dir or `backlog.json` is ignored. The new advisory `backlog-ignored` check probes all three,
-  tracked or not. It warns only while such a rauf is live and is `ok` on rauf ≥ 0.19.2. forge-5-loop's recovery procedure
-  (§4.2a) names the halt's signature, notes that the work is both staged and stashed, and makes
-  `[rauf] <id> (wip)` the default commit so the next iteration builds on it.
+- **`doctor` check `backlog-ignored`** (advisory, #369). It warns when a gitignore pattern matches
+  a loop-ready backlog dir, its `.rauf/` or its `backlog.json` while rauf < 0.19.2 is live.
+  forge-5-loop recovery §4.2a covers the resulting halt.
 
 ### Fixed
 
-- **A Copilot loop now requires rauf 0.19.1** (#371). rauf before 0.19.0 lists `copilot` in
-  `rauf agents`, but as a plain-text preset rather than the dedicated provider, and 0.19.0 passes
-  `--no-remote`, which Copilot CLI 1.0.114 rejects on every iteration (rauf #177); the agent check
-  passed both. doctor's `runner-version` now applies a per-agent floor (`copilot` → 0.19.1) when
-  `copilot` is `loopRunner.defaultAgent` (reported as `agentFloor`), so forge-5-loop stops at
-  Step 1c. A per-run `--agent copilot` pick on an older rauf is marked unavailable, with
-  proceed-anyway or choose-another.
-- **npm installs scaffold a `.gitignore` again** (#359). npm always drops files named `.gitignore`
-  from a tarball, so forge-bootstrap's stack templates now store it as `gitignore` and the helper
-  writes `.gitignore`. The pack gate no longer exempts the name.
-- **`uninstall` leaves no bytecode or empty folders behind** (#366). It removes a `__pycache__/`
-  that holds only bytecode of scripts it installed, then prunes the emptied directories; any other
-  cache is left alone.
+- **A Copilot loop requires rauf ≥ 0.19.1** (#371). A `copilot` `defaultAgent` stops at
+  Step 1c; a per-run `--agent copilot` pick is marked unavailable.
+- **npm installs scaffold a `.gitignore` again** (#359).
+- **`uninstall` leaves no installed bytecode or empty folders behind** (#366).
 
 ## [0.22.0] — 2026-10-08
 
