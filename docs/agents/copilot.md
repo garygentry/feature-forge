@@ -212,9 +212,10 @@ rauf and selects the coding agent via the documented precedence.
 
 Driving Copilot as the loop's coding agent (`--agent copilot`) needs **rauf 0.19.0 or later**,
 the release that made `copilot` a dedicated provider. Older rauf still lists `copilot` in
-`rauf agents`, but runs it as a plain-text preset. `forge-session.py doctor` reports this as a
-`runner-version` warning whenever Copilot is the session host or `loopRunner.defaultAgent`, and
-`forge-5-loop` stops before launch until rauf is upgraded:
+`rauf agents`, but runs it as a plain-text preset. When `copilot` is `loopRunner.defaultAgent`,
+`forge-session.py doctor` reports this as a `runner-version` warning and `forge-5-loop` stops
+before launch. When you pick `copilot` for one run, `forge-5-loop` marks it unavailable and asks
+whether to proceed anyway or choose another agent. Either way, upgrade rauf:
 
 ```bash
 npm i -g @garygentry/rauf@latest     # or: npx @garygentry/feature-forge install

@@ -68,14 +68,16 @@ present with `available: false`):
   `minRunnerVersion`. **`copilot` needs rauf ≥ 0.19.0**: older rauf still lists
   `copilot` in `rauf agents`, but drives it as a plain-text preset instead of the
   dedicated provider (no JSONL parsing, no failure classification, commits not
-  reserved to rauf), so membership and `available` cannot catch it. Compare against
-  the version Step 1c's `runner-version` check reported (`evidence.reported`); when it
-  is below the floor, treat the pick as **UNAVAILABLE** with detail *"`copilot` needs
-  rauf ≥ 0.19.0 (found {reported}); upgrade with `npm i -g @garygentry/rauf@latest` or
-  `npx @garygentry/feature-forge install`"* and offer the same proceed-anyway OR
-  choose-another. doctor's `runner-version` already enforces this floor when
-  `copilot` is `loopRunner.defaultAgent` or the session host (`agentFloor` in its
-  evidence), so a default Copilot run stops at Step 1c instead.
+  reserved to rauf), so membership and `available` cannot catch it. Take the live
+  version from Step 1c's `runner-version` result (`evidence.reported`); if that is
+  missing (the check was `na`, or its output is gone), run `loopRunner.versionCommand`
+  (default `{bin} version --json`) once and read `version`. Below the floor — or still
+  unknown — treat the pick as **UNAVAILABLE** with detail *"`copilot` needs rauf ≥
+  0.19.0 (found {version or "unknown"}); upgrade with `npm i -g @garygentry/rauf@latest`
+  or `npx @garygentry/feature-forge install`"* and offer the same proceed-anyway OR
+  choose-another. When `copilot` is `loopRunner.defaultAgent`, doctor's
+  `runner-version` already enforces this floor (`agentFloor` in its evidence), so that
+  run hard-stops at Step 1c instead.
 - **Probe failure** (non-zero exit / unparseable / wrong shape / empty `agents[]` /
   row missing `id`): surface it and offer **choose-another OR abort**; never launch
   the non-default agent unvalidated, never silently fall back to the default.

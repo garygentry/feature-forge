@@ -971,35 +971,49 @@ def test_runner_version_has_no_agent_floor_for_other_default_agents(tmp_path: Pa
     assert "agentFloor" not in record["evidence"]
 
 
-@pytest.mark.parametrize("host, expect", [("copilot", "warn"), ("claude", "ok"), (None, "ok")])
-def test_runner_version_applies_the_agent_floor_for_the_session_host(
-    fs, monkeypatch, tmp_path: Path, host, expect
+def test_runner_version_ignores_the_session_host_for_the_agent_floor(
+    fs, monkeypatch, tmp_path: Path
 ) -> None:
+    """An empty defaultAgent launches claude-cli even from Copilot: no host-based floor."""
     env = scrubbed_env(tmp_path)
     fake_runner(env, version="0.18.0")
     project = _loop_project(tmp_path, config=CONFIG, rauf_json=RAUF_JSON)
     monkeypatch.setenv("PATH", env["PATH"])
     monkeypatch.setenv("HOME", env["HOME"])
     monkeypatch.chdir(project)
-    monkeypatch.setattr(fs, "_bundle_agent", lambda _root: host)
-    monkeypatch.setattr(fs, "_process_ancestry", lambda _pid: [])
+    monkeypatch.setattr(fs, "_bundle_agent", lambda _root: "copilot")
     report = fs.doctor_report(
         Path("specs"), Path("forge.config.json"), only=frozenset({"runner-version"}),
     )
     (record,) = report["checks"]
-    assert record["status"] == expect, record
-    if host == "copilot":
-        assert record["evidence"]["agentFloor"]["source"] == "session host"
-        assert "0.19.0" in record["detail"]
+    assert record["status"] == "ok", record
+    assert "agentFloor" not in record["evidence"]
 
 
-def test_runner_version_agent_floor_only_applies_to_rauf(tmp_path: Path) -> None:
+@pytest.mark.parametrize("loop_runner, expect", [
+    ({"defaultAgent": "copilot"}, ("copilot", "0.19.0")),
+    ({"defaultAgent": " copilot "}, ("copilot", "0.19.0")),
+    ({"defaultAgent": "codex"}, None),
+    ({"defaultAgent": ""}, None),
+    ({"defaultAgent": "copilot", "name": "other"}, None),
+    ({"defaultAgent": "copilot", "agentArgument": ""}, None),
+    ({"defaultAgent": "copilot", "agentArgument": None}, None),
+])
+def test_agent_runner_floor_needs_rauf_an_agent_surface_and_a_floored_default(
+    fs, loop_runner, expect
+) -> None:
+    ctx = type("Ctx", (), {"loop_runner": {"agentArgument": "--agent {agent}", **loop_runner}})()
+    assert fs._agent_runner_floor(ctx) == expect
+
+
+def test_runner_version_ok_detail_names_a_met_agent_floor(tmp_path: Path) -> None:
     env = scrubbed_env(tmp_path)
-    fake_runner(env, version="0.17.1")
-    config = {**CONFIG, "loopRunner": {"name": "other", "defaultAgent": "copilot"}}
+    fake_runner(env, version="0.19.0")
+    config = {**CONFIG, "loopRunner": {"defaultAgent": "copilot"}}
     project = _loop_project(tmp_path, config=config, rauf_json=RAUF_JSON)
     record = check(doctor_report(project, env), "runner-version")
-    assert "agentFloor" not in record["evidence"], record
+    assert record["status"] == "ok"
+    assert "'copilot' agent floor 0.19.0" in record["detail"]
 
 
 def test_runner_version_timeout_degrades_to_warn(fs, monkeypatch, tmp_path: Path) -> None:
