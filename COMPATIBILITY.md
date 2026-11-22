@@ -38,7 +38,7 @@ before forge-5's setup gate.
 
 The cross-agent installer (`@garygentry/feature-forge`) records a single pinned
 rauf coordinate as the provisioned default loop runner — currently
-**`@garygentry/rauf@0.19.1`** (`installer/src/rauf.ts` `RAUF_PIN`). The **pin** is
+**`@garygentry/rauf@0.19.2`** (`installer/src/rauf.ts` `RAUF_PIN`). The **pin** is
 distinct from the `minRunnerVersion` **floor** above (0.14.0): the floor is the
 minimum rauf an existing install must satisfy, while the pin is the specific
 known-good rauf a fresh install provisions. rauf 0.17.x adds the status-surface
@@ -55,7 +55,11 @@ the `rauf hook codex-stop` Codex Stop hook. rauf 0.19.0 adds the dedicated `copi
 provider (`rauf loop run --agent copilot`, rauf #131) and makes a circuit-breaker or
 git-safety halt exit `1` (rauf #164). rauf 0.19.1 makes `--agent copilot` work on Copilot CLI
 1.0.114+, which removed `--no-remote` (rauf #177), and adds rauf's Copilot plugin marketplace
-(rauf #175). Every one of them is optional: an
+(rauf #175). rauf 0.19.2 fixes a loop halt when the backlog dir is gitignored (rauf #172;
+doctor's advisory `backlog-ignored` warns on older rauf, #369), detached starts on a project
+outside the server's `rootDirectory` (rauf #178), cross-backlog commit reconciliation (rauf
+#165), and a duplicated rauf section in a `CLAUDE.md` that imports `AGENTS.md` (rauf #173).
+Every one of them is optional: an
 older runner omits the field and the stage behaves as it did before (#339), so
 none is *required* and no new row or floor rise is needed — except the per-agent
 copilot floor below, which only applies when copilot is the loop agent. Like 0.16.x's
@@ -94,10 +98,10 @@ contract could not fully support. Individual agents that need a *newer* rauf tha
   surfaces, all optional: `rauf loop wait` (Codex/Copilot/Cursor/Gemini; older runners fall
   back to a 5–10 s `status --json` poll), rauf's Pi package and its `rauf_loop_*` tools (Pi;
   without it the `loop wait` recipe applies), and `rauf hook codex-stop` (Codex, opt-in). The
-  pin provisions 0.19.1; the floor stays 0.14.0 because each has a fallback.
+  pin provisions 0.19.2; the floor stays 0.14.0 because each has a fallback.
 - **Pending-review and terminal-state reporting (all agents)** — `forge-5-loop`'s
   review-pending gate (`rauf resume` of a failed/cancelled/usage-stopped `--review`
   pass), its `loopState` terminal-state gate, and the stuck-warning tool context need
-  rauf ≥ 0.17.0 (#339; the pin provisions 0.19.1). On 0.14.0–0.16.x the fields are absent and the stage falls back
+  rauf ≥ 0.17.0 (#339; the pin provisions 0.19.2). On 0.14.0–0.16.x the fields are absent and the stage falls back
   to its prior outcome derivation from the backlog counts, so a run still completes; it
   just cannot tell a pending review or a runner stop from a clean finish.
