@@ -745,11 +745,63 @@ def write_hygiene(answers: Answers, target: Path, sentinel: Sentinel) -> None:
         )
 
 
+#: pnpm major used by the generated CI (pnpm/action-setup needs an explicit version,
+#: since the template's package.json carries no ``packageManager`` field).
+CI_PNPM_VERSION: Final = "11"
+
+#: Frozen-lockfile install per TypeScript package manager, for CI (#378). The lockfile
+#: is committed by ``commit`` after a verify-time install (#377).
+CI_TS_INSTALL: Final[dict[str, str]] = {
+    "npm": "npm ci",
+    "pnpm": "pnpm install --frozen-lockfile",
+    "yarn": "yarn install --frozen-lockfile",
+}
+
+
+def _ci_setup_steps(answers: Answers) -> list[dict[str, object]]:
+    """Toolchain setup steps for the CI job, once per needed toolchain (#378).
+
+    A fresh runner has no pnpm, no project Node version and no ``go.mod``-pinned Go,
+    so the bare lint/test commands fail (``npx tsc`` even resolves the decoy ``tsc``
+    package). Rust (cargo + clippy) and ``sh`` ship on ubuntu-latest and need none.
+    """
+    stacks = [m["stack"] for m in answers["members"]]
+    pms = {m["packageManager"] for m in answers["members"] if m["stack"] == "typescript"}
+    steps: list[dict[str, object]] = []
+    if "pnpm" in pms:
+        steps.append({"uses": "pnpm/action-setup@v4", "with": {"version": CI_PNPM_VERSION}})
+    if "typescript" in stacks:
+        steps.append({"uses": "actions/setup-node@v4", "with": {"node-version": "22"}})
+    if "python" in stacks:
+        steps.append({"uses": "actions/setup-python@v5", "with": {"python-version": "3.12"}})
+    go = next((m for m in answers["members"] if m["stack"] == "go"), None)
+    if go is not None:
+        gomod = "go.mod" if go["path"] == "." else f"{go['path']}/go.mod"
+        steps.append({"uses": "actions/setup-go@v5", "with": {"go-version-file": gomod}})
+    return steps
+
+
+def _ci_install_command(member: Member) -> str | None:
+    """A member's dependency-install command for CI, or None when it needs none (#378).
+
+    Python installs the template's ``[dev]`` extra (mypy + pytest) with pip whatever the
+    chosen package manager: the pyproject is PEP 621, so pip resolves it identically and
+    the bare ``mypy`` / ``pytest`` commands then run without activating a venv.
+    """
+    if member["stack"] == "typescript":
+        return CI_TS_INSTALL[member["packageManager"] or "npm"]
+    if member["stack"] == "python":
+        return "python -m pip install -e '.[dev]'"
+    return None
+
+
 def _compose_ci_workflow(answers: Answers) -> str:
     """Compose the CI workflow, injecting per-member lint+test steps (03 §9).
 
     Reads templates/ci/github-actions.yml and replaces the ``# <<MEMBER_STEPS>>``
-    marker with one lint step + one test step per member. For a single package
+    marker with the toolchain setup steps (:func:`_ci_setup_steps`), then per member an
+    install step where the stack needs one (:func:`_ci_install_command`, #378) and one
+    lint step + one test step. For a single package
     (one implicit member at '.') the steps carry no ``working-directory``; for a
     monorepo every member is pinned to its ``path`` so CI exercises EVERY member
     (REQ-MONO-04).
@@ -764,11 +816,19 @@ def _compose_ci_workflow(answers: Answers) -> str:
     indent = template[: template.index(marker)].rsplit("\n", 1)[-1]
     single = answers["layout"] == "single"
     lines: list[str] = []
+    for step in _ci_setup_steps(answers):
+        lines.append(f"{indent}- uses: {step['uses']}")
+        lines.append(f"{indent}  with:")
+        for key, val in step["with"].items():  # type: ignore[union-attr]
+            lines.append(f'{indent}    {key}: "{val}"')
     for member in answers["members"]:
         lint, test = _resolve_commands(member)
         wd = None if single else member["path"]
         label = member["name"]
-        for kind, cmd in (("lint", lint), ("test", test)):
+        install = _ci_install_command(member)
+        commands = [("install", install)] if install else []
+        commands += [("lint", lint), ("test", test)]
+        for kind, cmd in commands:
             name = kind if single else f"{label} — {kind}"
             lines.append(f"{indent}- name: {name}")
             if wd is not None:

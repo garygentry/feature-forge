@@ -688,8 +688,9 @@ def test_ci_true_monorepo_writes_step_per_member(run_bootstrap, tmp_path: Path) 
     assert "name: cli — test" in text
     assert "working-directory: packages/api" in text
     assert "working-directory: packages/cli" in text
-    # two members × (lint+test) = four steps.
-    assert text.count("run: ") == 4
+    # two members × (lint+test) = four check steps, plus the python member's install.
+    assert text.count("— lint") + text.count("— test") == 4
+    assert "name: api — install" in text and "name: cli — install" not in text
 
 
 # --------------------------------------------------------------------------- #
@@ -1539,3 +1540,63 @@ def test_commit_stages_install_lockfile(run_bootstrap, tmp_path: Path) -> None:
     assert "apps/web/pnpm-workspace.yaml" in payload["staged"]
     tracked = _git(tmp_path, "ls-files").stdout.split()
     assert "apps/web/pnpm-lock.yaml" in tracked and "stray.txt" not in tracked
+
+
+# --------------------------------------------------------------------------- #
+# #378 — generated CI sets up the toolchain and installs dependencies.
+# --------------------------------------------------------------------------- #
+
+
+def _ci_steps(repo: Path) -> list[dict[str, Any]]:
+    yaml = require("yaml")
+    doc = yaml.safe_load((repo / ".github" / "workflows" / "ci.yml").read_text())
+    return doc["jobs"]["verify"]["steps"]
+
+
+def test_ci_ts_pnpm_member_sets_up_and_installs(run_bootstrap, tmp_path: Path) -> None:
+    """A TS/pnpm member gets pnpm + Node setup and a frozen install before its checks."""
+    members = [
+        _member("web", "apps/web", "typescript", "pnpm"),
+        _member("api", "services/api", "generic", None),
+    ]
+    _scaffold(run_bootstrap, tmp_path, _answers(layout="monorepo", members=members, ci=True))
+    steps = _ci_steps(tmp_path)
+    uses = [s.get("uses") for s in steps if "uses" in s]
+    assert uses == ["actions/checkout@v4", "pnpm/action-setup@v4", "actions/setup-node@v4"]
+    names = [s["name"] for s in steps if "name" in s]
+    assert names[:3] == ["web — install", "web — lint", "web — test"]
+    install = next(s for s in steps if s.get("name") == "web — install")
+    assert install == {
+        "name": "web — install",
+        "working-directory": "apps/web",
+        "run": "pnpm install --frozen-lockfile",
+    }
+    # setup precedes every run step; the generic member needs no install.
+    first_run = next(i for i, s in enumerate(steps) if "run" in s)
+    assert all("uses" in s for s in steps[:first_run])
+    assert "api — install" not in names
+
+
+@pytest.mark.parametrize(
+    ("stack", "pm", "setup", "install"),
+    [
+        ("typescript", "npm", "actions/setup-node@v4", "npm ci"),
+        ("typescript", "yarn", "actions/setup-node@v4", "yarn install --frozen-lockfile"),
+        ("python", "uv", "actions/setup-python@v5", "python -m pip install -e '.[dev]'"),
+        ("go", None, "actions/setup-go@v5", None),
+        ("rust", None, None, None),
+    ],
+)
+def test_ci_setup_per_stack(
+    run_bootstrap, tmp_path: Path, stack: str, pm: str | None, setup: str | None,
+    install: str | None,
+) -> None:
+    """Each stack gets its toolchain setup and (where needed) an install step (#378)."""
+    _scaffold(run_bootstrap, tmp_path, _answers(members=[_member("demo", ".", stack, pm)], ci=True))
+    steps = _ci_steps(tmp_path)
+    uses = [s["uses"] for s in steps if "uses" in s][1:]  # drop checkout
+    assert uses == ([setup] if setup else [])
+    if stack == "go":
+        assert steps[1]["with"] == {"go-version-file": "go.mod"}
+    runs = {s["name"]: s["run"] for s in steps if "run" in s}
+    assert runs.get("install") == install

@@ -125,6 +125,11 @@ because pnpm 11 otherwise blocks vitest's esbuild build; a yarn member ships
 `.yarnrc.yml` with `nodeLinker: node-modules` so Yarn Berry's PnP doesn't hide `tsc`.
 A failed `CommandOutcome` carries an `output` tail (stderr, else stdout) (#377).
 
+The optional CI workflow mirrors this on a bare runner: toolchain setup once (pnpm,
+Node 22, Python 3.12, `go.mod`-pinned Go; Rust and `sh` are preinstalled), then per member
+a frozen-lockfile install (`npm ci` / `pnpm|yarn install --frozen-lockfile`, or
+`pip install -e '.[dev]'` for Python) ahead of its lint and test steps (#378).
+
 ## Configuration & the additive `workspaces[]` extension
 
 `write_config` reproduces `forge-init`'s exact field set + defaults (equivalence is
