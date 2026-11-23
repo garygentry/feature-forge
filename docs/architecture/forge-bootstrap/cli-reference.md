@@ -88,10 +88,15 @@ member's directory. Returns `VerifyResult`:
 {
   "green": true,
   "toolchainPresent": true,
-  "lint": [{ "command": "mypy .", "ok": true, "member": "." }],
-  "test": [{ "command": "pytest", "ok": true, "member": "." }]
+  "lint": [{ "command": "mypy .", "ok": true, "member": ".", "output": "" }],
+  "test": [{ "command": "pytest", "ok": true, "member": ".", "output": "" }]
 }
 ```
+
+A failed `CommandOutcome` carries `output`: the last 2000 characters of its stdout +
+stderr (`""` when ok). A TypeScript member's `lint[]` starts with its dependency install
+(`{pm} install`, run with `CI` unset and a 600 s ceiling per command); if that fails, the
+member's lint and test are not run (#377).
 
 Each `CommandOutcome.member` is the member's **path** (`"."` for a single package,
 e.g. `packages/api` for a monorepo member). `green` is true iff `toolchainPresent`

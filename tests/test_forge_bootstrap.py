@@ -1405,3 +1405,137 @@ def test_templates_store_gitignore_dotless_for_npm() -> None:
     assert not list(templates.rglob(".gitignore")), "store template dotfiles dotless (#359)"
     stacks = ["generic", "go", "python", "rust", "typescript"]
     assert all((templates / s / "gitignore").is_file() for s in stacks)
+
+
+# --------------------------------------------------------------------------- #
+# #377 — pnpm 11 build approval, verify-time dependency install, output tails,
+# lockfile staging.
+# --------------------------------------------------------------------------- #
+
+
+def test_scaffold_pnpm_member_preapproves_esbuild(run_bootstrap, tmp_path: Path) -> None:
+    """A TS+pnpm member ships pnpm-workspace.yaml allowing esbuild's build (#377)."""
+    members = [_member("web", "apps/web", "typescript", "pnpm")]
+    result = _scaffold(run_bootstrap, tmp_path, _answers(layout="monorepo", members=members))
+    assert result.returncode == 0
+    ws = tmp_path / "apps" / "web" / "pnpm-workspace.yaml"
+    assert ws.read_text(encoding="utf-8") == (
+        'packages:\n  - "."\nallowBuilds:\n  esbuild: true\n'
+    )
+    assert "apps/web/pnpm-workspace.yaml" in result.json()["artifactsWritten"]
+
+
+def test_scaffold_npm_member_has_no_pnpm_workspace(run_bootstrap, tmp_path: Path) -> None:
+    """Only pnpm members get the workspace file (#377)."""
+    _scaffold(run_bootstrap, tmp_path, _answers(members=[_member("demo", ".", "typescript", "npm")]))
+    assert not (tmp_path / "pnpm-workspace.yaml").exists()
+    assert not (tmp_path / ".yarnrc.yml").exists()
+
+
+def test_scaffold_yarn_member_uses_node_modules_linker(run_bootstrap, tmp_path: Path) -> None:
+    """Yarn Berry's PnP leaves npx tsc blind, so yarn members pin node-modules (#377)."""
+    result = _scaffold(run_bootstrap, tmp_path, _answers(members=[_member("demo", ".", "typescript", "yarn")]))
+    assert (tmp_path / ".yarnrc.yml").read_text(encoding="utf-8") == "nodeLinker: node-modules\n"
+    assert ".yarnrc.yml" in result.json()["artifactsWritten"]
+
+
+def _fake_bin(dir_: Path, log: Path, **scripts: str) -> dict[str, str]:
+    """Write fake executables that log their argv; return an env with them first on PATH."""
+    dir_.mkdir()
+    for name, body in scripts.items():
+        f = dir_ / name
+        f.write_text(f'#!/bin/sh\necho "{name} $*" >> "{log}"\n{body}\n', encoding="utf-8")
+        f.chmod(0o755)
+    return {"PATH": f"{dir_}{os.pathsep}{os.environ.get('PATH', '')}"}
+
+
+def test_verify_installs_ts_deps_first(run_bootstrap, tmp_path: Path) -> None:
+    """A TS member without node_modules is installed before lint, recorded in lint[] (#377)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    answers = _answers(members=[_member("demo", ".", "typescript", "pnpm")])
+    _scaffold(run_bootstrap, repo, answers)
+    log = tmp_path / "calls.log"
+    env = _fake_bin(
+        tmp_path / "bin", log,
+        node="exit 0", npx="exit 0",
+        pnpm='[ "$1" = install ] && mkdir -p node_modules && touch pnpm-lock.yaml; exit 0',
+    )
+    result = _verify(run_bootstrap, repo, answers, env=env)
+    assert result.returncode == 0, result.stderr
+    payload = result.json()
+    assert [o["command"] for o in payload["lint"]] == ["pnpm install", "npx tsc --noEmit"]
+    assert log.read_text(encoding="utf-8").splitlines()[0] == "pnpm install"
+    # a re-run installs again: a half-finished install also leaves node_modules/.
+    again = _verify(run_bootstrap, repo, answers, env=env).json()
+    assert [o["command"] for o in again["lint"]] == ["pnpm install", "npx tsc --noEmit"]
+
+
+def test_verify_install_ignores_host_ci(run_bootstrap, tmp_path: Path) -> None:
+    """The install runs with CI unset (pnpm would default to a frozen lockfile) (#377)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    answers = _answers(members=[_member("demo", ".", "typescript", "pnpm")])
+    _scaffold(run_bootstrap, repo, answers)
+    env = _fake_bin(
+        tmp_path / "bin", tmp_path / "calls.log",
+        node="exit 0", npx="exit 0",
+        pnpm='[ "$1" = install ] && [ -n "$CI" ] && { echo ERR_PNPM_NO_LOCKFILE >&2; exit 1; }; exit 0',
+    )
+    payload = _verify(run_bootstrap, repo, answers, env={**env, "CI": "true"}).json()
+    assert payload["green"] is True, payload
+
+
+def test_verify_failed_install_skips_member_checks(run_bootstrap, tmp_path: Path) -> None:
+    """A failed install is the member's only outcome — no noisy lint/test after it (#377)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    answers = _answers(members=[_member("demo", ".", "typescript", "npm")])
+    _scaffold(run_bootstrap, repo, answers)
+    env = _fake_bin(
+        tmp_path / "bin", tmp_path / "calls.log",
+        node="exit 0", npx="exit 0", npm='echo "npm ERR! network" >&2; exit 1',
+    )
+    result = _verify(run_bootstrap, repo, answers, env=env)
+    assert result.returncode == 1
+    payload = result.json()
+    assert [o["command"] for o in payload["lint"]] == ["npm install"]
+    assert payload["test"] == []
+    assert "npm ERR! network" in payload["lint"][0]["output"]
+
+
+def test_verify_failed_outcome_carries_output_tail(run_bootstrap, tmp_path: Path) -> None:
+    """A failing command's stderr tail is in its outcome; ok outcomes carry "" (#377)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    answers = _answers(members=[_member("demo", ".", "typescript", "pnpm")])
+    _scaffold(run_bootstrap, repo, answers)
+    env = _fake_bin(
+        tmp_path / "bin", tmp_path / "calls.log",
+        node="exit 0", npx="exit 0",
+        pnpm=(
+            '[ "$1" = install ] && exit 0; echo "FAIL test/smoke.test.ts > adds"; '
+            'echo " ELIFECYCLE  Test failed." >&2; exit 1'
+        ),
+    )
+    payload = _verify(run_bootstrap, repo, answers, env=env).json()
+    assert payload["green"] is False
+    assert all(o["output"] == "" for o in payload["lint"])
+    # stdout (where vitest reports) AND stderr (the pm wrapper) both survive.
+    out = payload["test"][0]["output"]
+    assert "FAIL test/smoke.test.ts" in out and "ELIFECYCLE" in out
+
+
+def test_commit_stages_install_lockfile(run_bootstrap, tmp_path: Path) -> None:
+    """The lockfile a verify-time install produced is staged by exact path (#377)."""
+    members = [_member("web", "apps/web", "typescript", "pnpm")]
+    answers = _answers(layout="monorepo", members=members)
+    _scaffold(run_bootstrap, tmp_path, answers)
+    (tmp_path / "apps" / "web" / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
+    (tmp_path / "stray.txt").write_text("not staged\n")
+    _set_git_identity(tmp_path)
+    payload = _commit(run_bootstrap, tmp_path, answers).json()
+    assert "apps/web/pnpm-lock.yaml" in payload["staged"]
+    assert "apps/web/pnpm-workspace.yaml" in payload["staged"]
+    tracked = _git(tmp_path, "ls-files").stdout.split()
+    assert "apps/web/pnpm-lock.yaml" in tracked and "stray.txt" not in tracked

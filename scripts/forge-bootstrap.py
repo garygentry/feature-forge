@@ -191,11 +191,15 @@ class CommandOutcome(TypedDict):
         ok: True iff the command exited 0.
         member: The member's repo-relative path the command ran for ("." for a
             single package; e.g. "packages/api" for a monorepo member).
+        output: On failure, the last OUTPUT_TAIL_CHARS of stdout + stderr combined
+            (tsc and vitest report on stdout, package managers on stderr) so a
+            not-green result is diagnosable (#377); "" when ok.
     """
 
     command: str
     ok: bool
     member: str
+    output: str
 
 
 class VerifyResult(TypedDict):
@@ -205,6 +209,9 @@ class VerifyResult(TypedDict):
         toolchainPresent: True iff every required tool for the resolved stack(s) was
             found via `command -v`. False ⇒ missing-toolchain outcome (exit 2).
         lint: One CommandOutcome per resolved lint command (per member for a monorepo).
+            A TypeScript member's dependency install (TS_INSTALL_COMMANDS) is an extra
+            outcome ahead of its lint; when it fails, that member's lint and test are
+            not run, so the install is the one failing outcome (#377).
         test: One CommandOutcome per resolved test command (per member for a monorepo).
         green: True iff toolchainPresent AND every lint/test outcome is ok. The single
             predicate Mode B gates on (REQ-MODEB-04).
@@ -467,6 +474,47 @@ def check(target: Path, specs_dir: Path) -> CheckResult:
     }
 
 
+#: Dependency-install command per TypeScript package manager. ``verify`` runs it before
+#: a TS member's lint on every run (a half-finished earlier install still leaves a
+#: ``node_modules/`` behind, so its presence proves nothing) — without it ``npx tsc``
+#: resolves the decoy ``tsc`` package and vitest is absent, so a fresh scaffold can never
+#: be green (#377). Installs the scaffold's own devDependencies; never a toolchain. It
+#: runs with ``CI`` removed from the environment: under ``CI`` pnpm defaults to a frozen
+#: lockfile and Yarn Berry to immutable installs, and this install is the one that
+#: *creates* the lockfile.
+TS_INSTALL_COMMANDS: Final[dict[str, str]] = {
+    "npm": "npm install",
+    "pnpm": "pnpm install",
+    "yarn": "yarn install",
+}
+
+#: The lockfile each TypeScript package manager writes. ``commit`` stages it when the
+#: verify-time install produced one, so the baseline reproduces the verified state and
+#: CI can install with a frozen lockfile (#377, #378).
+TS_LOCKFILES: Final[dict[str, str]] = {
+    "npm": "package-lock.json",
+    "pnpm": "pnpm-lock.yaml",
+    "yarn": "yarn.lock",
+}
+
+#: pnpm ≥ 11 refuses to run dependency build scripts unless allowed, and then fails
+#: every later command with ERR_PNPM_IGNORED_BUILDS. vitest pulls in esbuild, whose
+#: postinstall must run, so a pnpm member ships this pre-approved (#377).
+#: ``packages`` is required by pnpm 9, which rejects a workspace file without it.
+PNPM_WORKSPACE_YAML: Final = 'packages:\n  - "."\nallowBuilds:\n  esbuild: true\n'
+
+#: Yarn Berry defaults to Plug'n'Play, which writes no ``node_modules/`` — ``npx tsc``
+#: then cannot see typescript. Yarn Classic ignores this file (#377).
+YARNRC_YML: Final = "nodeLinker: node-modules\n"
+
+#: Ceiling, in seconds, on any one verify command. The install is network-bound; a
+#: registry outage must surface as a failed outcome, never a hung bootstrap (#377).
+VERIFY_COMMAND_TIMEOUT: Final = 600
+
+#: Characters of captured stderr (falling back to stdout) kept on a failed
+#: CommandOutcome, so a not-green verify says *why* without flooding the JSON.
+OUTPUT_TAIL_CHARS: Final = 2000
+
 #: Template basenames stored without their leading dot, because npm-packlist always drops
 #: files named `.gitignore` from a published tarball (#359). Mapped back on emit.
 TEMPLATE_DOTFILE_RENAMES: Final[dict[str, str]] = {"gitignore": ".gitignore"}
@@ -558,6 +606,12 @@ def compose_member(
         # or named *.sh) so the scaffolded baseline passes verify (REQ-STACK-03).
         executable = rel.endswith(".sh") or text.startswith("#!")
         _write_artifact(target, rel_path, text, sentinel, executable=executable)
+    if member["stack"] == "typescript" and member["packageManager"] == "pnpm":
+        ws_rel = "pnpm-workspace.yaml" if not member_base else f"{member_base}/pnpm-workspace.yaml"
+        _write_artifact(target, ws_rel, PNPM_WORKSPACE_YAML, sentinel)
+    if member["stack"] == "typescript" and member["packageManager"] == "yarn":
+        rc_rel = ".yarnrc.yml" if not member_base else f"{member_base}/.yarnrc.yml"
+        _write_artifact(target, rc_rel, YARNRC_YML, sentinel)
 
 
 def _resolve_commands(member: Member) -> tuple[str, str]:
@@ -790,6 +844,35 @@ def toolchain_present(required: list[str]) -> bool:
     return True
 
 
+def _verify_command(
+    cmd: str, cwd: Path, member: Member, env: dict[str, str] | None = None
+) -> CommandOutcome:
+    """Run one verify command and fold it into a CommandOutcome (#377).
+
+    ``cmd`` is a STACK_COMMANDS / TS_INSTALL_COMMANDS template with an allow-listed
+    ``{pm}`` (see _validate_answers), split into argv and run without a shell. A
+    timeout is a failed outcome, not an exception, so verify always returns.
+    """
+    try:
+        proc = subprocess.run(
+            shlex.split(cmd), cwd=cwd, capture_output=True, text=True, env=env,
+            timeout=VERIFY_COMMAND_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "command": cmd, "ok": False, "member": member["path"],
+            "output": f"timed out after {VERIFY_COMMAND_TIMEOUT}s",
+        }
+    except OSError as exc:
+        raise UsageError(f"failed to run {cmd!r}: {exc}")
+    ok = proc.returncode == 0
+    combined = "\n".join(x.strip() for x in (proc.stdout or "", proc.stderr or "") if x.strip())
+    return {
+        "command": cmd, "ok": ok, "member": member["path"],
+        "output": "" if ok else combined[-OUTPUT_TAIL_CHARS:],
+    }
+
+
 def verify(target: Path, answers: Answers) -> VerifyResult:
     """Detect the toolchain and run resolved lint/test per member (02 §5, 00 §6).
 
@@ -802,6 +885,10 @@ def verify(target: Path, answers: Answers) -> VerifyResult:
     ``green`` predicate — toolchainPresent AND every outcome ok — is the single gate
     Mode B checks before launching the next stage (REQ-MODEB-04). Commands resolve
     from STACK_COMMANDS so they match references/stacks/*.md exactly (REQ-STACK-02).
+    A TypeScript member first gets its dependency install (TS_INSTALL_COMMANDS,
+    recorded in ``lint``) — the scaffold's own devDependencies, not a toolchain; a
+    failed install skips that member's lint/test (#377). A failed outcome carries an
+    ``output`` tail; each command is bounded by VERIFY_COMMAND_TIMEOUT.
 
     Args:
         target: The project root being verified.
@@ -831,13 +918,15 @@ def verify(target: Path, answers: Answers) -> VerifyResult:
     for member in answers["members"]:
         lint_cmd, test_cmd = _resolve_commands(member)
         cwd = contained_path(target, member["path"])  # never run outside the target
+        pm = member["packageManager"]
+        if member["stack"] == "typescript" and pm:
+            install_env = {k: v for k, v in os.environ.items() if k != "CI"}
+            outcome = _verify_command(TS_INSTALL_COMMANDS[pm], cwd, member, install_env)
+            lint.append(outcome)
+            if not outcome["ok"]:
+                continue  # lint/test against a broken install only add noise
         for bucket, cmd in ((lint, lint_cmd), (test, test_cmd)):
-            # STACK_COMMANDS templates with an allow-listed {pm} (see _validate_answers)
-            # — split into an argv token list and run without a shell (no `sh -c`).
-            proc = run(shlex.split(cmd), cwd=cwd, check=False)
-            bucket.append(
-                {"command": cmd, "ok": proc.returncode == 0, "member": member["path"]}
-            )
+            bucket.append(_verify_command(cmd, cwd, member))
     green = all(o["ok"] for o in (*lint, *test))
     return {"toolchainPresent": True, "lint": lint, "test": test, "green": green}
 
@@ -924,6 +1013,15 @@ def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:
             "no .forge-bootstrap.json sentinel to commit; run scaffold first"
         )
     staged = list(sentinel["artifactsWritten"])
+    # A verify-time install leaves a lockfile that is not a scaffold artifact; stage
+    # it by exact path so the baseline reproduces the verified state (#377).
+    for member in answers["members"]:
+        lockfile = TS_LOCKFILES.get(member["packageManager"] or "")
+        if member["stack"] != "typescript" or lockfile is None:
+            continue
+        rel = lockfile if member["path"] == "." else f"{member['path']}/{lockfile}"
+        if rel not in staged and contained_path(target, rel).is_file():
+            staged.append(rel)
 
     # OQ-T3: remove the sentinel BEFORE staging so it never enters history.
     (target / SENTINEL_FILENAME).unlink(missing_ok=True)
