@@ -7,39 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [0.22.2] — 2026-11-23
 
-- **Installer 0.3.13: `RAUF_PIN` advances to `@garygentry/rauf@0.20.0`.** rauf 0.20.0 emits
-  `commit_warning` when an item's commit holds build output (rauf #192), which forge-5-loop now
-  surfaces (#389). It also records a shutdown signal as `loop_interrupted` rather than a user
-  cancel, and `rauf resume` keeps or (`--discard-interrupted`) stashes the interrupted item's
-  edits (rauf #191).
+Installer 0.3.13. Fixes from two Copilot field runs, through rauf 0.20.0.
 
-### Fixed
-
-- **forge-5-loop posts each loop card as a chat message** (#388). Tool output doesn't count
-  as a report (Copilot's VS Code collapses it). A heartbeat line follows about 20 quiet minutes.
-- **Build output stays out of the loop's commits** (#389). forge-bootstrap's generic template
-  ignores common build output (.NET `bin/**/Debug|Release/`, `obj/`, `node_modules/`,
-  `dist/`, …), and forge-5-loop surfaces rauf's `commit_warning` card.
-- **forge-bootstrap hygiene templates** (#379). The generated AGENTS.md/CLAUDE.md list the
-  pipeline in order (forge-0-epic optional → forge-1-prd … forge-6-docs). A `license: none`
-  README says "Copyright (c) <year> <author>. All rights reserved; no license is granted.", an
-  unknown license id is refused up front, and the footer links the real repo.
-- **forge-bootstrap TypeScript baseline is green on pnpm 11** (#377). A pnpm member ships
-  `pnpm-workspace.yaml` pre-approving esbuild's build (a yarn member pins the
-  `node-modules` linker); `verify` installs a TS member's dependencies first; `commit` stages
-  the resulting lockfile; and every failed `CommandOutcome` carries an `output` tail.
-- **forge-bootstrap CI passes on first push** (#378). The generated workflow sets up the
-  member toolchains (pnpm, Node, Python, Go) and installs dependencies from the committed
-  lockfile before each member's lint and test.
-- **doctor ignores an enclosing parent repo** (#382). A project with no `.git` of its own,
-  inside a repo that ignores it, now reports `currentBranch: null` and a `branch-state`
-  warning naming the enclosing repo, instead of that repo's branches.
-- **Copilot host notes allow `ask_user`** (#381). The generated Copilot notes no longer say
-  there is no structured question tool. They say to use one, such as `ask_user` in the Copilot
-  SDK / VS Code host, when present. `docs/agents/copilot.md` documents `FORGE_INTERACTION` for
-  doctor's `interaction-mode`.
+- **`RAUF_PIN` → `@garygentry/rauf@0.20.0`** (#392): `commit_warning` (rauf #192) and
+  `loop_interrupted` + `rauf resume --discard-interrupted` (rauf #191).
+- **forge-5-loop posts each loop card as a chat message**, plus a quiet-stretch heartbeat (#388).
+- **Build output stays out of loop commits**: a wider generic `.gitignore`, and forge-5-loop
+  surfaces `commit_warning` (#389).
+- **forge-bootstrap**: hygiene templates (#379), a green TypeScript baseline on pnpm 11 (#377),
+  CI that passes on first push (#378).
+- **`doctor` ignores an enclosing parent repo** (#382).
+- **Copilot host notes use `ask_user`** when the host provides it (#381).
 
 ## [0.22.1] — 2026-11-22
 
