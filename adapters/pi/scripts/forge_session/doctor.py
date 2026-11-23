@@ -232,6 +232,11 @@ def doctor_report(
     # no commits yet) still reports its name instead of failing.
     current_branch = _git_output(["branch", "--show-current"])
     default_branch = _default_branch()
+    # A project with no .git of its own, inside a repo that ignores it, would report
+    # the ENCLOSING repo's branches — act on those and you act on the wrong repo (#382).
+    enclosing_repo = _enclosing_repo(Path.cwd())
+    if enclosing_repo is not None:
+        current_branch = default_branch = None
     specs_error: str | None = None
     try:
         rows = build_rows(specs_dir, config)
@@ -288,6 +293,7 @@ def doctor_report(
             config=config,
             current_branch=current_branch,
             default_branch=default_branch,
+            enclosing_repo=enclosing_repo,
             rows=rows,
             features=features,
             plugin_root=plugin_root,
@@ -507,6 +513,7 @@ class _CheckContext:
         default_branch: str | None,
         rows: list,
         features: list,
+        enclosing_repo: str | None = None,
     ) -> None:
         self.cwd = cwd
         self.specs_dir = specs_dir
@@ -525,6 +532,7 @@ class _CheckContext:
         self.default_branch = default_branch
         self.rows = rows
         self.features = features
+        self.enclosing_repo = enclosing_repo
         self._memo: dict = {}
 
     def runner_bin(self) -> str:
@@ -604,6 +612,7 @@ def _build_check_context(
     rows: list,
     features: list,
     plugin_root: dict,
+    enclosing_repo: str | None = None,
 ) -> _CheckContext:
     """Assemble the shared check context from values the legacy report computed.
 
@@ -656,6 +665,7 @@ def _build_check_context(
         default_branch=default_branch,
         rows=rows,
         features=features,
+        enclosing_repo=enclosing_repo,
     )
 
 
@@ -1307,6 +1317,25 @@ def _git_check_ignored(
     return None
 
 
+def _enclosing_repo(root: Path) -> str | None:
+    """The enclosing work tree's top level when ``root`` has no repo of its own, else None.
+
+    True only when git's top level is a different directory AND that repo ignores ``root``
+    (e.g. a multi-repo workspace whose ``.gitignore`` holds ``/*/``) — the repo then says
+    nothing about this project (#382). A project in a tracked subdirectory of a repo (a
+    monorepo package) is not enclosed: that repo's branch is the project's branch.
+    """
+    top = _git_output(["rev-parse", "--show-toplevel"])
+    if top is None:
+        return None
+    try:
+        if Path(top).resolve() == root.resolve():
+            return None
+    except OSError:
+        return None
+    return top if _git_check_ignored(root, is_dir=True) is True else None
+
+
 def _check_config_local_ignored(ctx: _CheckContext) -> dict:
     """A present ``forge.config.local.json`` is git-ignored (#324).
 
@@ -1766,6 +1795,14 @@ def _check_branch_state(ctx: _CheckContext) -> dict:
     (``adopt-current`` on a topic branch, ``warn-drift`` on the default branch).
     """
     base = {"currentBranch": ctx.current_branch, "defaultBranch": ctx.default_branch}
+    if ctx.enclosing_repo is not None:
+        return _result(
+            "warn",
+            f"project has no git repo of its own: it sits inside an enclosing repo at "
+            f"{ctx.enclosing_repo} that ignores it, so branch state is not reported "
+            "(run `git init` here — forge-bootstrap does — before any branch work)",
+            {**base, "enclosingRepo": ctx.enclosing_repo},
+        )
     if ctx.current_branch is None:
         return _result("na", "not a git repository (no current branch)", base)
     pending = [f for f in ctx.features if f["nextStage"] is not None]

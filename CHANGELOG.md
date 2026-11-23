@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **forge-bootstrap CI passes on first push** (#378). The generated workflow sets up the
   member toolchains (pnpm, Node, Python, Go) and installs dependencies from the committed
   lockfile before each member's lint and test.
+- **doctor ignores an enclosing parent repo** (#382). A project with no `.git` of its own,
+  inside a repo that ignores it, now reports `currentBranch: null` and a `branch-state`
+  warning naming the enclosing repo, instead of that repo's branches.
 
 ## [0.22.1] — 2026-11-22
 
