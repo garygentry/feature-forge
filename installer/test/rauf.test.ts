@@ -12,8 +12,8 @@ import {
   neverCalledRegistry,
 } from "./helpers/registry.ts";
 
-test("RAUF_PIN is the pinned coordinate @garygentry/rauf@0.19.2", () => {
-  assert.equal(RAUF_PIN, "@garygentry/rauf@0.19.2");
+test("RAUF_PIN is the pinned coordinate @garygentry/rauf@0.20.0", () => {
+  assert.equal(RAUF_PIN, "@garygentry/rauf@0.20.0");
 });
 
 test("--skip-rauf returns ok({raufPin:null}) and makes no network call", () => {

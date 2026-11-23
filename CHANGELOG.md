@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Installer 0.3.13: `RAUF_PIN` advances to `@garygentry/rauf@0.20.0`.** rauf 0.20.0 emits
+  `commit_warning` when an item's commit holds build output (rauf #192), which forge-5-loop now
+  surfaces (#389). It also records a shutdown signal as `loop_interrupted` rather than a user
+  cancel, and `rauf resume` keeps or (`--discard-interrupted`) stashes the interrupted item's
+  edits (rauf #191).
+
 ### Fixed
 
 - **forge-5-loop posts each loop card as a chat message** (#388). Tool output doesn't count
