@@ -564,8 +564,16 @@ def test_scaffold_license_none_skips_license(run_bootstrap, tmp_path: Path) -> N
     assert not (tmp_path / "LICENSE").exists()
     # #379: no "licensed under no license" — an explicit all-rights-reserved line.
     readme = (tmp_path / "README.md").read_text(encoding="utf-8")
-    assert "No license is granted; all rights reserved." in readme
+    assert "All rights reserved; no license is granted." in readme
+    assert answers["author"] in readme
     assert "licensed under" not in readme
+
+
+def test_scaffold_unknown_license_is_usage_error(run_bootstrap, tmp_path: Path) -> None:
+    """An id with no bundled LICENSE template is refused before any write (#379)."""
+    result = _scaffold(run_bootstrap, tmp_path, _answers(license="GPL-3.0"))
+    assert result.returncode == 2
+    assert not (tmp_path / "README.md").exists()
 
 
 def test_scaffold_readme_license_and_footer(run_bootstrap, tmp_path: Path) -> None:

@@ -614,8 +614,9 @@ def write_config(answers: Answers, target: Path, sentinel: Sentinel) -> None:
 def _compose_readme(answers: Answers) -> str:
     """Compose README.md from the hygiene template with token substitution (02 §4.5)."""
     text = (TEMPLATE_ROOT / "hygiene" / "README.md").read_text(encoding="utf-8")
+    year = datetime.now(timezone.utc).year
     license_statement = (
-        "No license is granted; all rights reserved."
+        f"Copyright (c) {year} {answers['author']}. All rights reserved; no license is granted."
         if answers["license"] == "none"
         else f"This project is licensed under {answers['license']}. See `LICENSE`."
     )
@@ -1005,7 +1006,17 @@ def _validate_answers(answers: Answers) -> None:
       has a choice; stacks with no choice (go/rust/generic) must leave it ``None``.
     - ``path`` must be a repo-relative string — no absolute path, no ``..``
       component, no backslash — so it can never resolve outside the target.
+    - ``license`` must be ``"none"`` or have a ``templates/licenses/<id>/LICENSE``,
+      so the README never points at a LICENSE that is then refused mid-scaffold.
     """
+    lic = answers.get("license")
+    if lic != "none" and not (
+        isinstance(lic, str)
+        and "/" not in lic
+        and (TEMPLATE_ROOT / "licenses" / lic / "LICENSE").is_file()
+    ):
+        known = sorted(p.name for p in (TEMPLATE_ROOT / "licenses").iterdir() if p.is_dir())
+        raise UsageError(f"license must be 'none' or one of {known}, got {lic!r}")
     members = answers.get("members")
     if not isinstance(members, list) or not members:
         raise UsageError("--answers must include a non-empty members[] array")

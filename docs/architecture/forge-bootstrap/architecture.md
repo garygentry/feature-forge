@@ -99,7 +99,8 @@ Editable assets live under `skills/forge-bootstrap/references/templates/`:
 lives at `scripts/forge-bootstrap.py`) and copies each file with **simple string
 substitution** — not a templating engine. Tokens: `{{PROJECT_NAME}}`, `{{PKG}}`
 (sanitized package id), `{{PM}}`, `{{PURPOSE}}`, plus `{{AUTHOR}}`/`{{YEAR}}`/
-`{{LICENSE}}` in the hygiene/license assets. `{{YEAR}}` is the only token not
+`{{LICENSE_STATEMENT}}` in the hygiene/license assets (the README's license sentence; for
+`license: none` an all-rights-reserved line naming the author). `{{YEAR}}` is the only token not
 sourced from `Answers` — the helper computes it from the current UTC year. `.sh`
 and shebang files are written executable (`0o755`) so the generic baseline is
 genuinely green as scaffolded.
