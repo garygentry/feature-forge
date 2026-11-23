@@ -210,7 +210,8 @@ you may end your turn between events.
 Each event reaches you as a message (Step 3d says how, per host). React per type — but keep
 the user signal high and the noise low:
 
-- **`item_completed`** → report its one-line **card**:
+- **`item_completed`** → post its one-line **card** as your own chat message (a card left
+  only in tool output is not a report):
   `[7/26] ✓ 008 <title> — <summary> · abc1234 · 5 files · 6m`. `loop wait` prints exactly
   this line; from a raw event, build it from the fields — `[doneCount/totalCount]`,
   `itemId`, `title`, the agent's `summary`, the first 7 chars of `commitSha`,
