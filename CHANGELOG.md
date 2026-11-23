@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **forge-5-loop posts each loop card as a chat message** (#388). On Copilot (VS Code)
+  the supervisor let `rauf loop wait` print each card, then went straight to the next wait.
+  Tool output is collapsed there, so the user saw no progress for a whole run. The runner
+  contract (Step 3d/3e) and the Codex, Copilot and neutral host notes now say to post each card
+  verbatim as your own message before the next wait, since tool output doesn't count as a
+  report. After about 20 quiet minutes, the supervisor also posts a one-line heartbeat.
 - **forge-bootstrap hygiene templates** (#379). The generated AGENTS.md/CLAUDE.md list the
   pipeline in order (forge-0-epic optional → forge-1-prd … forge-6-docs). A `license: none`
   README says "Copyright (c) <year> <author>. All rights reserved; no license is granted.", an

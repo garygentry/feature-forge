@@ -139,9 +139,14 @@ printed (or with no cursor, for new events only), repeat:
 Each call blocks at most 240 s (one shell call) and prints one **card**, then a
 `next: --since-seq N --run-id R` line — pass both back on the next call. Exit codes:
 
-- `0` — an event. Print its card. A `✓` card (item done) → wait again. Any other card →
-  read `{rendered statusJsonCommand}`, react per Step 3e, then wait again.
-- `10` — 240 s with nothing new; the loop is still running. Wait again.
+- `0` — an event. **Post its card to the user as your own chat message, verbatim, before
+  the next `loop wait`.** The card in the command's output does not count: many hosts
+  collapse tool output, so a card only the tool printed is a card the user never sees. A
+  `✓` card (item done) → wait again. Any other card → read `{rendered statusJsonCommand}`,
+  react per Step 3e, then wait again.
+- `10` — 240 s with nothing new; the loop is still running. Wait again. After about 20
+  minutes of consecutive `10`s, post a one-line heartbeat (`still running — item 004, 22m`)
+  so a quiet stretch never reads as a stalled supervisor.
 - `11` — the loop has ended and you have seen every event. **Completion (Step 3f):** go to
   Step 4.
 
@@ -163,7 +168,8 @@ changes, and react per Step 3e when `loopState`, `backlogSummary.blocked` or
 Each event reaches you as a message (Step 3d says how, per host). React per type — but keep
 the user signal high and the noise low:
 
-- **`item_completed`** → report its one-line **card**:
+- **`item_completed`** → post its one-line **card** as a chat message (tool output is not
+  a report — see Step 3d):
   `[7/26] ✓ 008 <title> — <summary> · abc1234 · 5 files · 6m`. `loop wait` prints exactly
   this line; from a raw event, build it from the fields — `[doneCount/totalCount]`,
   `itemId`, `title`, the agent's `summary`, the first 7 chars of `commitSha`,

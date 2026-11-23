@@ -591,6 +591,37 @@ def test_pi_host_notes_name_the_real_subagent_dispatch_shape(fixture_copy):
             assert token not in text, f"{path.name} names Claude-only {token!r}"
 
 
+def test_loop_supervision_says_post_cards_as_chat_not_tool_output(fixture_copy):
+    """Every non-Claude host note says to post `loop wait` cards as chat messages (#388).
+
+    On Copilot (VS Code) tool output is collapsed. A supervisor that let the tool print
+    the card, then went straight to the next wait, showed the user nothing for a whole
+    run. The runner contract says the same (Step 3d); the host notes repeat it because
+    they are what the model reads next to the loop.
+    """
+    root = fixture_copy("minimal-canon")
+    assert run_build(root).returncode == 0
+
+    for agent in ("codex", "copilot", "cursor", "gemini"):
+        skills = sorted((root / "adapters" / agent / "skills").rglob("*.md*"))
+        assert skills, f"no {agent} skills built"
+        for path in skills:
+            text = path.read_text(encoding="utf-8")
+            if "Background / monitoring (forge-5-loop)" not in text:
+                continue
+            assert "as your own" in text, f"{agent}/{path.name}: cards must be posted as chat"
+    copilot = (root / "adapters" / "copilot" / "skills" / "noarg" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "VS Code collapses tool output" in copilot
+
+    contract = (
+        REPO_ROOT / "skills" / "forge-5-loop" / "references" / "runner-contract.md"
+    ).read_text(encoding="utf-8")
+    assert "Post its card to the user as your own chat message" in contract
+    assert "post a one-line heartbeat" in contract
+
+
 def test_pi_agent_frontmatter_is_translated_to_the_subagent_schema(fixture_copy):
     """Canon Claude agent frontmatter maps to pi-subagents' schema (W2), not drop-recorded.
 
