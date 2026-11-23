@@ -33,6 +33,8 @@ from forge_session._common import (
     _counts,
     _default_branch,
     _default_schema_path,
+    _enclosing_repo,
+    _git_check_ignored,
     _git_output,
     _load_config,
     load_effective_config,
@@ -232,6 +234,11 @@ def doctor_report(
     # no commits yet) still reports its name instead of failing.
     current_branch = _git_output(["branch", "--show-current"])
     default_branch = _default_branch()
+    # A project with no .git of its own, inside a repo that ignores it, would report
+    # the ENCLOSING repo's branches — act on those and you act on the wrong repo (#382).
+    enclosing_repo = _enclosing_repo(config_path.resolve().parent)
+    if enclosing_repo is not None:
+        current_branch = default_branch = None
     specs_error: str | None = None
     try:
         rows = build_rows(specs_dir, config)
@@ -288,6 +295,7 @@ def doctor_report(
             config=config,
             current_branch=current_branch,
             default_branch=default_branch,
+            enclosing_repo=enclosing_repo,
             rows=rows,
             features=features,
             plugin_root=plugin_root,
@@ -507,6 +515,7 @@ class _CheckContext:
         default_branch: str | None,
         rows: list,
         features: list,
+        enclosing_repo: str | None = None,
     ) -> None:
         self.cwd = cwd
         self.specs_dir = specs_dir
@@ -525,6 +534,7 @@ class _CheckContext:
         self.default_branch = default_branch
         self.rows = rows
         self.features = features
+        self.enclosing_repo = enclosing_repo
         self._memo: dict = {}
 
     def runner_bin(self) -> str:
@@ -604,6 +614,7 @@ def _build_check_context(
     rows: list,
     features: list,
     plugin_root: dict,
+    enclosing_repo: str | None = None,
 ) -> _CheckContext:
     """Assemble the shared check context from values the legacy report computed.
 
@@ -656,6 +667,7 @@ def _build_check_context(
         default_branch=default_branch,
         rows=rows,
         features=features,
+        enclosing_repo=enclosing_repo,
     )
 
 
@@ -1278,33 +1290,12 @@ def _check_config_schema(ctx: _CheckContext) -> dict:
     return _result("ok", detail, evidence)
 
 
-def _git_check_ignored(
-    path: Path, *, no_index: bool = False, is_dir: bool = False
-) -> bool | None:
-    """Whether git ignores ``path``: ``True`` ignored, ``False`` tracked, ``None`` undecidable.
-
-    ``git check-ignore -q`` exits 0 when the path is ignored, 1 when it is not, and 128 outside
-    a work tree (or git missing) — the last collapses to ``None`` so the caller reports ``na``
-    rather than a false "not ignored". Run from the file's own directory so any nested work tree
-    is honoured. ``no_index`` asks whether an ignore PATTERN matches the path even when it (or
-    content under it) is tracked — git's own answer for a tracked path is always "not ignored".
-    ``is_dir`` probes ``name/`` so a ``dir/`` pattern matches a directory not created yet.
-    """
-    try:
-        proc = subprocess.run(
-            [
-                "git", "check-ignore", "-q", *(["--no-index"] if no_index else []),
-                path.name + ("/" if is_dir else ""),
-            ],
-            capture_output=True, text=True, timeout=10, cwd=path.parent,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode == 0:
-        return True
-    if proc.returncode == 1:
-        return False
-    return None
+#: ``na`` detail for a git-backed check when the project sits inside an ignoring parent
+#: repo: that repo's ignore rules say nothing about the project's own future repo (#382).
+_ENCLOSED_DETAIL: Final[str] = (
+    "project has no git repo of its own (the enclosing repo at {repo} ignores it); "
+    "its ignore rules are not this project's"
+)
 
 
 def _check_config_local_ignored(ctx: _CheckContext) -> dict:
@@ -1325,6 +1316,9 @@ def _check_config_local_ignored(ctx: _CheckContext) -> dict:
     }
     if not local_path.is_file():
         return _result("ok", "no forge.config.local.json present", evidence)
+    if ctx.enclosing_repo is not None:
+        return _result("na", _ENCLOSED_DETAIL.format(repo=ctx.enclosing_repo),
+                       {**evidence, "enclosingRepo": ctx.enclosing_repo})
     ignored = _git_check_ignored(local_path)
     evidence["ignored"] = ignored
     if ignored is None:
@@ -1619,6 +1613,9 @@ def _check_backlog_ignored(ctx: _CheckContext) -> dict:
             "na", "no active feature is about to run forge-5-loop with a backlog on disk",
             evidence,
         )
+    if ctx.enclosing_repo is not None:
+        return _result("na", _ENCLOSED_DETAIL.format(repo=ctx.enclosing_repo),
+                       {**evidence, "enclosingRepo": ctx.enclosing_repo})
     state_dir = ctx.loop_runner.get("stateDir")
     state_dir = state_dir if isinstance(state_dir, str) and state_dir else ".rauf"
     fixed = _parse_semver(IGNORED_BACKLOG_FIX_RUNNER_VERSION)
@@ -1766,6 +1763,14 @@ def _check_branch_state(ctx: _CheckContext) -> dict:
     (``adopt-current`` on a topic branch, ``warn-drift`` on the default branch).
     """
     base = {"currentBranch": ctx.current_branch, "defaultBranch": ctx.default_branch}
+    if ctx.enclosing_repo is not None:
+        return _result(
+            "warn",
+            f"project has no git repo of its own: it sits inside an enclosing repo at "
+            f"{ctx.enclosing_repo} that ignores it, so branch state is not reported "
+            "(run `git init` here — forge-bootstrap does — before any branch work)",
+            {**base, "enclosingRepo": ctx.enclosing_repo},
+        )
     if ctx.current_branch is None:
         return _result("na", "not a git repository (no current branch)", base)
     pending = [f for f in ctx.features if f["nextStage"] is not None]

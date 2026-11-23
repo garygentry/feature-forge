@@ -24,12 +24,25 @@ from forge_session._common import (
     MANIFEST_FILENAME,
     PIPELINE_STATE_FILENAME,
     _default_branch,
+    _enclosing_repo,
     _git_output,
     load_effective_config,
     _parse_ts,
     build_rows,
 )
 
+
+
+def _no_own_repo() -> bool:
+    """True outside a git work tree, or inside an enclosing repo that ignores this one.
+
+    In the second case the enclosing repo's branches say nothing about this project, so
+    discovery reports ``gitRepo: false`` rather than act on the wrong repo (#382).
+    """
+    return (
+        _git_output(["rev-parse", "--git-dir"]) is None
+        or _enclosing_repo(Path.cwd()) is not None
+    )
 
 def _specs_rel(specs_dir: str) -> str:
     """Normalize a specs dir to the repo-relative POSIX form git ls-tree uses."""
@@ -116,7 +129,7 @@ def discover_feature(name: str, specs_dir: str) -> dict:
     Never mutates anything: checkout is the caller's decision (and requires
     the user's explicit accept plus a clean tree — see shared-conventions).
     """
-    if _git_output(["rev-parse", "--git-dir"]) is None:
+    if _no_own_repo():
         return {
             "feature": name,
             "gitRepo": False,
@@ -271,7 +284,7 @@ def discover_all(specs_dir: str) -> dict:
     candidates by feature, so a fresh clone / default-branch session can see the whole
     branch-scattered pipeline set instead of nothing. Never mutates anything.
     """
-    if _git_output(["rev-parse", "--git-dir"]) is None:
+    if _no_own_repo():
         return {"gitRepo": False, "currentBranch": None, "features": []}
     current_branch = _git_output(["branch", "--show-current"])
     specs_rel = _specs_rel(specs_dir)
@@ -354,7 +367,7 @@ def reconcile_branch(
     default-branch guardrail so genuine drift-back-to-default is still surfaced, not
     silently adopted.
     """
-    if _git_output(["rev-parse", "--git-dir"]) is None:
+    if _no_own_repo():
         return {"feature": name, "gitRepo": False, "reconcile": False,
                 "action": "none", "reason": "not a git repository"}
     current = _git_output(["branch", "--show-current"])
@@ -434,7 +447,7 @@ def check_epic_base(
         "manifestOnHead": None,
         "homeBranch": None,
     }
-    if _git_output(["rev-parse", "--git-dir"]) is None:
+    if _no_own_repo():
         return {**base, "gitRepo": False, "action": "none",
                 "reason": "not a git repository"}
     config = load_effective_config(config_path)
