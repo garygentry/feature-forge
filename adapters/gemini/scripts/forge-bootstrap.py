@@ -614,11 +614,15 @@ def write_config(answers: Answers, target: Path, sentinel: Sentinel) -> None:
 def _compose_readme(answers: Answers) -> str:
     """Compose README.md from the hygiene template with token substitution (02 §4.5)."""
     text = (TEMPLATE_ROOT / "hygiene" / "README.md").read_text(encoding="utf-8")
-    license_label = answers["license"] if answers["license"] != "none" else "no license"
+    license_statement = (
+        "No license is granted; all rights reserved."
+        if answers["license"] == "none"
+        else f"This project is licensed under {answers['license']}. See `LICENSE`."
+    )
     for tok, val in (
         ("{{PROJECT_NAME}}", answers["projectName"]),
         ("{{PURPOSE}}", answers["purpose"]),
-        ("{{LICENSE}}", license_label),
+        ("{{LICENSE_STATEMENT}}", license_statement),
     ):
         text = text.replace(tok, val)
     return text

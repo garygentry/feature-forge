@@ -29,6 +29,7 @@ from _ci_deps import require
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HELPER = REPO_ROOT / "scripts" / "forge-bootstrap.py"
 SCHEMA = REPO_ROOT / "references" / "forge-config-schema.json"
+_TEMPLATES = REPO_ROOT / "skills" / "forge-bootstrap" / "references" / "templates"
 
 #: command -v probes per stack (00 §6, "Toolchain probe" column). Used by skipif.
 STACK_PROBES: dict[str, list[str]] = {
@@ -561,6 +562,31 @@ def test_scaffold_license_none_skips_license(run_bootstrap, tmp_path: Path) -> N
     assert result.returncode == 0
     assert "LICENSE" not in result.json()["artifactsWritten"]
     assert not (tmp_path / "LICENSE").exists()
+    # #379: no "licensed under no license" — an explicit all-rights-reserved line.
+    readme = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert "No license is granted; all rights reserved." in readme
+    assert "licensed under" not in readme
+
+
+def test_scaffold_readme_license_and_footer(run_bootstrap, tmp_path: Path) -> None:
+    """#379: README names the chosen license and links the real project repo."""
+    _scaffold(run_bootstrap, tmp_path, _answers(license="MIT"))
+    readme = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert "This project is licensed under MIT." in readme
+    assert "https://github.com/garygentry/feature-forge" in readme
+    assert "github.com/feature-forge/feature-forge" not in readme
+
+
+@pytest.mark.parametrize("name", ["AGENTS.md", "CLAUDE.md"])
+def test_hygiene_templates_pipeline_order(name: str) -> None:
+    """#379: hygiene templates list the stages in pipeline order, with none missing."""
+    text = (_TEMPLATES / "hygiene" / name).read_text(encoding="utf-8")
+    line = next(ln for ln in text.splitlines() if "forge-1-prd" in ln)
+    stages = ["forge-0-epic", "forge-1-prd", "forge-2-tech", "forge-3-specs",
+              "forge-4-backlog", "forge-5-loop", "forge-6-docs"]
+    positions = [line.find(s) for s in stages]
+    assert -1 not in positions, line
+    assert positions == sorted(positions), line
 
 
 def test_scaffold_claude_host_emits_claude_md(run_bootstrap, tmp_path: Path) -> None:

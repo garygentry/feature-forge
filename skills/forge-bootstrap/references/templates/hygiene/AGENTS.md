@@ -9,8 +9,8 @@
 This project was scaffolded by forge-bootstrap. To continue development:
 
 1. Review `forge.config.json` for the project configuration.
-2. Run the forge pipeline (forge-1-prd → forge-0-epic → forge-3-specs → forge-4-backlog) to plan and implement features.
-3. Use `forge-5-loop` to drive autonomous implementation.
+2. Run the forge pipeline to plan and implement features: forge-0-epic (optional, for multi-feature work) → forge-1-prd → forge-2-tech → forge-3-specs → forge-4-backlog → forge-5-loop → forge-6-docs.
+3. `forge-5-loop` drives autonomous implementation; `forge` shows pipeline status at any point.
 
 ## Conventions
 
