@@ -687,6 +687,41 @@ def test_branch_state_keeps_branch_in_a_tracked_subdirectory(tmp_path: Path) -> 
     assert "enclosingRepo" not in check(report, "branch-state")["evidence"]
 
 
+def test_ignored_checks_are_na_inside_an_enclosing_repo(tmp_path: Path) -> None:
+    """The parent's ignore rules say nothing about the project's own repo (#382 review)."""
+    project = _enclosing_workspace(tmp_path, "/*/\n")
+    (project / "forge.config.json").write_text("{}")
+    (project / "forge.config.local.json").write_text("{}")
+    record = check(doctor_report(project, scrubbed_env(tmp_path)), "config-local-ignored")
+    assert record["status"] == "na" and "enclosing repo" in record["detail"]
+
+
+def test_ignored_subdir_of_own_repo_is_not_enclosed(tmp_path: Path) -> None:
+    """Running from an ignored subdir of the project's OWN repo keeps its branch (#382 review)."""
+    project = make_project(tmp_path)
+    (project / ".gitignore").write_text("build/\n")
+    (project / "forge.config.json").write_text("{}")
+    (project / "build").mkdir()
+    report = doctor_report(
+        project / "build", scrubbed_env(tmp_path),
+        "--config", "../forge.config.json", "--specs-dir", "../specs",
+    )
+    assert report["currentBranch"] == "main"
+    assert "enclosingRepo" not in check(report, "branch-state")["evidence"]
+
+
+def test_discover_reports_no_repo_inside_an_enclosing_repo(tmp_path: Path) -> None:
+    """discover agrees with doctor: an enclosed project has no repo of its own (#382 review)."""
+    project = _enclosing_workspace(tmp_path, "/*/\n")
+    result = subprocess.run(
+        [sys.executable, str(HELPER), "discover-feature", "--all", "--json"],
+        capture_output=True, text=True, cwd=project, env=scrubbed_env(tmp_path),
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["gitRepo"] is False and payload["currentBranch"] is None
+
+
 def test_branch_state_warn_drift_on_default_branch_suggests_git_switch(tmp_path: Path) -> None:
     project = make_project(tmp_path, git_branch="main")
     write_feature(project, "pending", pipeline_state(["forge-1-prd"], branch="forge/pending"))

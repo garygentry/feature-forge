@@ -1172,6 +1172,59 @@ def _git_output(args: list[str]) -> str | None:
     return out or None
 
 
+def _git_check_ignored(
+    path: Path, *, no_index: bool = False, is_dir: bool = False
+) -> bool | None:
+    """Whether git ignores ``path``: ``True`` ignored, ``False`` tracked, ``None`` undecidable.
+
+    ``git check-ignore -q`` exits 0 when the path is ignored, 1 when it is not, and 128 outside
+    a work tree (or git missing) — the last collapses to ``None`` so the caller reports ``na``
+    rather than a false "not ignored". Run from the file's own directory so any nested work tree
+    is honoured. ``no_index`` asks whether an ignore PATTERN matches the path even when it (or
+    content under it) is tracked — git's own answer for a tracked path is always "not ignored".
+    ``is_dir`` probes ``name/`` so a ``dir/`` pattern matches a directory not created yet.
+    """
+    try:
+        proc = subprocess.run(
+            [
+                "git", "check-ignore", "-q", *(["--no-index"] if no_index else []),
+                path.name + ("/" if is_dir else ""),
+            ],
+            capture_output=True, text=True, timeout=10, cwd=path.parent,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode == 0:
+        return True
+    if proc.returncode == 1:
+        return False
+    return None
+
+
+def _enclosing_repo(root: Path) -> str | None:
+    """The enclosing work tree's top level when ``root`` has no repo of its own, else None.
+
+    True only when ``root`` has no ``.git`` of its own, git's top level (probed FROM
+    ``root``) is a different directory, AND that repo ignores ``root`` — e.g. a multi-repo
+    workspace whose ``.gitignore`` holds ``/*/``. That repo then says nothing about this
+    project, and acting on its branches acts on the wrong repo (#382). A project in a
+    tracked subdirectory of a repo (a monorepo package) is not enclosed: that repo's
+    branch is the project's branch. Known limit: a subdirectory the enclosing repo
+    neither tracks nor ignores is still treated as part of it.
+    """
+    if (root / ".git").exists():
+        return None
+    top = _git_output(["-C", str(root), "rev-parse", "--show-toplevel"])
+    if top is None:
+        return None
+    try:
+        if Path(top).resolve() == root.resolve():
+            return None
+    except OSError:
+        return None
+    return top if _git_check_ignored(root, is_dir=True) is True else None
+
+
 def _default_branch() -> str | None:
     """The repo's default branch: origin/HEAD target, else `main`/`master` if present."""
     ref = _git_output(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])
