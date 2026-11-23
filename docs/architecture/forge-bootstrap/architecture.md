@@ -118,6 +118,12 @@ into config) and `verify` (what actually runs), so config and the run always agr
 | rust | `cargo clippy` | `cargo test` | `cargo` |
 | generic | `sh -n run.sh test.sh` | `./test.sh` | `sh` |
 
+A TypeScript member with no `node_modules/` gets `{pm} install` first (its own
+devDependencies, not a toolchain), recorded as an extra `lint[]` outcome; `commit` then
+stages the lockfile it wrote. A pnpm member ships `pnpm-workspace.yaml` with
+`allowBuilds: {esbuild: true}` because pnpm 11 otherwise blocks vitest's esbuild build.
+A failed `CommandOutcome` carries an `output` tail (stderr, else stdout) (#377).
+
 ## Configuration & the additive `workspaces[]` extension
 
 `write_config` reproduces `forge-init`'s exact field set + defaults (equivalence is

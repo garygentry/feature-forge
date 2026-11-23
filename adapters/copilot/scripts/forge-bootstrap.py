@@ -191,11 +191,14 @@ class CommandOutcome(TypedDict):
         ok: True iff the command exited 0.
         member: The member's repo-relative path the command ran for ("." for a
             single package; e.g. "packages/api" for a monorepo member).
+        output: On failure, the last OUTPUT_TAIL_CHARS of stderr (stdout when
+            stderr is empty) so a not-green result is diagnosable (#377); "" when ok.
     """
 
     command: str
     ok: bool
     member: str
+    output: str
 
 
 class VerifyResult(TypedDict):
@@ -205,6 +208,8 @@ class VerifyResult(TypedDict):
         toolchainPresent: True iff every required tool for the resolved stack(s) was
             found via `command -v`. False ⇒ missing-toolchain outcome (exit 2).
         lint: One CommandOutcome per resolved lint command (per member for a monorepo).
+            A TypeScript member with no ``node_modules/`` gets its dependency install
+            (TS_INSTALL_COMMANDS) as an extra outcome ahead of its lint (#377).
         test: One CommandOutcome per resolved test command (per member for a monorepo).
         green: True iff toolchainPresent AND every lint/test outcome is ok. The single
             predicate Mode B gates on (REQ-MODEB-04).
@@ -467,6 +472,34 @@ def check(target: Path, specs_dir: Path) -> CheckResult:
     }
 
 
+#: Dependency-install command per TypeScript package manager. ``verify`` runs it in a
+#: member dir that has no ``node_modules/`` yet — without it ``npx tsc`` resolves the
+#: decoy ``tsc`` package and vitest is absent, so a fresh scaffold can never be green
+#: (#377). Installs the scaffold's own devDependencies; never a toolchain.
+TS_INSTALL_COMMANDS: Final[dict[str, str]] = {
+    "npm": "npm install",
+    "pnpm": "pnpm install",
+    "yarn": "yarn install",
+}
+
+#: The lockfile each TypeScript package manager writes. ``commit`` stages it when the
+#: verify-time install produced one, so the baseline reproduces the verified state and
+#: CI can install with a frozen lockfile (#377, #378).
+TS_LOCKFILES: Final[dict[str, str]] = {
+    "npm": "package-lock.json",
+    "pnpm": "pnpm-lock.yaml",
+    "yarn": "yarn.lock",
+}
+
+#: pnpm ≥ 11 refuses to run dependency build scripts unless allowed, and then fails
+#: every later command with ERR_PNPM_IGNORED_BUILDS. vitest pulls in esbuild, whose
+#: postinstall must run, so a pnpm member ships this pre-approved (#377).
+PNPM_WORKSPACE_YAML: Final = "allowBuilds:\n  esbuild: true\n"
+
+#: Characters of captured stderr (falling back to stdout) kept on a failed
+#: CommandOutcome, so a not-green verify says *why* without flooding the JSON.
+OUTPUT_TAIL_CHARS: Final = 2000
+
 #: Template basenames stored without their leading dot, because npm-packlist always drops
 #: files named `.gitignore` from a published tarball (#359). Mapped back on emit.
 TEMPLATE_DOTFILE_RENAMES: Final[dict[str, str]] = {"gitignore": ".gitignore"}
@@ -558,6 +591,9 @@ def compose_member(
         # or named *.sh) so the scaffolded baseline passes verify (REQ-STACK-03).
         executable = rel.endswith(".sh") or text.startswith("#!")
         _write_artifact(target, rel_path, text, sentinel, executable=executable)
+    if member["stack"] == "typescript" and member["packageManager"] == "pnpm":
+        ws_rel = "pnpm-workspace.yaml" if not member_base else f"{member_base}/pnpm-workspace.yaml"
+        _write_artifact(target, ws_rel, PNPM_WORKSPACE_YAML, sentinel)
 
 
 def _resolve_commands(member: Member) -> tuple[str, str]:
@@ -802,6 +838,9 @@ def verify(target: Path, answers: Answers) -> VerifyResult:
     ``green`` predicate — toolchainPresent AND every outcome ok — is the single gate
     Mode B checks before launching the next stage (REQ-MODEB-04). Commands resolve
     from STACK_COMMANDS so they match references/stacks/*.md exactly (REQ-STACK-02).
+    A TypeScript member with no ``node_modules/`` first gets its dependency install
+    (TS_INSTALL_COMMANDS, recorded in ``lint``) — the scaffold's own devDependencies,
+    not a toolchain (#377). A failed outcome carries an ``output`` tail.
 
     Args:
         target: The project root being verified.
@@ -831,13 +870,23 @@ def verify(target: Path, answers: Answers) -> VerifyResult:
     for member in answers["members"]:
         lint_cmd, test_cmd = _resolve_commands(member)
         cwd = contained_path(target, member["path"])  # never run outside the target
-        for bucket, cmd in ((lint, lint_cmd), (test, test_cmd)):
+        steps: list[tuple[list[CommandOutcome], str]] = []
+        pm = member["packageManager"]
+        if member["stack"] == "typescript" and pm and not (cwd / "node_modules").is_dir():
+            steps.append((lint, TS_INSTALL_COMMANDS[pm]))
+        steps += [(lint, lint_cmd), (test, test_cmd)]
+        for bucket, cmd in steps:
             # STACK_COMMANDS templates with an allow-listed {pm} (see _validate_answers)
             # — split into an argv token list and run without a shell (no `sh -c`).
             proc = run(shlex.split(cmd), cwd=cwd, check=False)
-            bucket.append(
-                {"command": cmd, "ok": proc.returncode == 0, "member": member["path"]}
-            )
+            ok = proc.returncode == 0
+            tail = "" if ok else ((proc.stderr or "").strip() or (proc.stdout or "").strip())
+            bucket.append({
+                "command": cmd,
+                "ok": ok,
+                "member": member["path"],
+                "output": tail[-OUTPUT_TAIL_CHARS:],
+            })
     green = all(o["ok"] for o in (*lint, *test))
     return {"toolchainPresent": True, "lint": lint, "test": test, "green": green}
 
@@ -924,6 +973,15 @@ def commit(target: Path, answers: Answers, stage_only: bool) -> CommitResult:
             "no .forge-bootstrap.json sentinel to commit; run scaffold first"
         )
     staged = list(sentinel["artifactsWritten"])
+    # A verify-time install leaves a lockfile that is not a scaffold artifact; stage
+    # it by exact path so the baseline reproduces the verified state (#377).
+    for member in answers["members"]:
+        lockfile = TS_LOCKFILES.get(member["packageManager"] or "")
+        if member["stack"] != "typescript" or lockfile is None:
+            continue
+        rel = lockfile if member["path"] == "." else f"{member['path']}/{lockfile}"
+        if rel not in staged and contained_path(target, rel).is_file():
+            staged.append(rel)
 
     # OQ-T3: remove the sentinel BEFORE staging so it never enters history.
     (target / SENTINEL_FILENAME).unlink(missing_ok=True)

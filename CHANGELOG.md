@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipeline in order (forge-0-epic optional → forge-1-prd … forge-6-docs). A `license: none`
   README says "Copyright (c) <year> <author>. All rights reserved; no license is granted.", an
   unknown license id is refused up front, and the footer links the real repo.
+- **forge-bootstrap TypeScript baseline is green on pnpm 11** (#377). A pnpm member ships
+  `pnpm-workspace.yaml` pre-approving esbuild's build; `verify` installs a TS member's
+  dependencies when `node_modules/` is absent; `commit` stages the resulting lockfile; and
+  every failed `CommandOutcome` carries an `output` tail.
 
 ## [0.22.1] — 2026-11-22
 
