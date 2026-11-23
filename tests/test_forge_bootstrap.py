@@ -1553,50 +1553,120 @@ def _ci_steps(repo: Path) -> list[dict[str, Any]]:
     return doc["jobs"]["verify"]["steps"]
 
 
+def _scaffold_ci(run_bootstrap, tmp_path: Path, answers: dict[str, Any], **versions: str) -> Path:
+    """Scaffold into tmp_path/repo with PATH = fakes printing ``versions`` (+ git, sh).
+
+    Pins the local pnpm/yarn the CI composer reads, so the emitted workflow is
+    deterministic whatever the host has installed.
+    """
+    repo, bin_dir = tmp_path / "repo", tmp_path / "bin"
+    repo.mkdir()
+    bin_dir.mkdir()
+    for tool in ("git", "sh"):
+        (bin_dir / tool).symlink_to(shutil.which(tool))
+    for tool, version in versions.items():
+        f = bin_dir / tool
+        f.write_text(f"#!/bin/sh\necho {version}\n", encoding="utf-8")
+        f.chmod(0o755)
+    result = run_bootstrap(
+        "scaffold", ".", "--answers", json.dumps(answers), "--json",
+        cwd=repo, env={"PATH": str(bin_dir)},
+    )
+    assert result.returncode == 0, result.stderr
+    return repo
+
+
 def test_ci_ts_pnpm_member_sets_up_and_installs(run_bootstrap, tmp_path: Path) -> None:
-    """A TS/pnpm member gets pnpm + Node setup and a frozen install before its checks."""
+    """A TS/pnpm member gets pnpm (local major) + Node setup and an install before checks."""
     members = [
         _member("web", "apps/web", "typescript", "pnpm"),
         _member("api", "services/api", "generic", None),
     ]
-    _scaffold(run_bootstrap, tmp_path, _answers(layout="monorepo", members=members, ci=True))
-    steps = _ci_steps(tmp_path)
+    repo = _scaffold_ci(
+        run_bootstrap, tmp_path, _answers(layout="monorepo", members=members, ci=True),
+        pnpm="10.34.5",
+    )
+    steps = _ci_steps(repo)
     uses = [s.get("uses") for s in steps if "uses" in s]
     assert uses == ["actions/checkout@v4", "pnpm/action-setup@v4", "actions/setup-node@v4"]
+    assert steps[1]["with"] == {"version": "10"}
     names = [s["name"] for s in steps if "name" in s]
     assert names[:3] == ["web — install", "web — lint", "web — test"]
     install = next(s for s in steps if s.get("name") == "web — install")
     assert install == {
         "name": "web — install",
         "working-directory": "apps/web",
-        "run": "pnpm install --frozen-lockfile",
+        "run": (
+            "if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; "
+            "else pnpm install; fi"
+        ),
     }
-    # setup precedes every run step; the generic member needs no install.
     first_run = next(i for i, s in enumerate(steps) if "run" in s)
     assert all("uses" in s for s in steps[:first_run])
     assert "api — install" not in names
 
 
+def test_ci_pnpm_without_local_pnpm_uses_default_major(run_bootstrap, tmp_path: Path) -> None:
+    """No local pnpm → the default major (#378)."""
+    repo = _scaffold_ci(
+        run_bootstrap, tmp_path, _answers(members=[_member("demo", ".", "typescript", "pnpm")], ci=True),
+    )
+    assert _ci_steps(repo)[1]["with"] == {"version": "11"}
+
+
+def test_ci_install_falls_back_without_lockfile(bootstrap_module: ModuleType, tmp_path: Path) -> None:
+    """The emitted install works whether or not a lockfile was committed (#378)."""
+    m = bootstrap_module
+    cmd = m._ci_install_command({"name": "d", "path": ".", "stack": "typescript", "packageManager": "npm"})
+    log = tmp_path / "log"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "npm").write_text(f'#!/bin/sh\necho "npm $*" >> {log}\n')
+    (bin_dir / "npm").chmod(0o755)
+    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    subprocess.run(["sh", "-c", cmd], cwd=tmp_path, env=env, check=True)
+    (tmp_path / "package-lock.json").write_text("{}")
+    subprocess.run(["sh", "-c", cmd], cwd=tmp_path, env=env, check=True)
+    assert log.read_text().splitlines() == ["npm install", "npm ci"]
+
+
 @pytest.mark.parametrize(
-    ("stack", "pm", "setup", "install"),
+    ("stack", "pm", "versions", "setup", "install"),
     [
-        ("typescript", "npm", "actions/setup-node@v4", "npm ci"),
-        ("typescript", "yarn", "actions/setup-node@v4", "yarn install --frozen-lockfile"),
-        ("python", "uv", "actions/setup-python@v5", "python -m pip install -e '.[dev]'"),
-        ("go", None, "actions/setup-go@v5", None),
-        ("rust", None, None, None),
+        ("typescript", "npm", {}, ["actions/setup-node@v4"],
+         "if [ -f package-lock.json ]; then npm ci; else npm install; fi"),
+        ("typescript", "yarn", {"yarn": "1.22.22"}, ["actions/setup-node@v4"],
+         "if [ -f yarn.lock ]; then yarn install --frozen-lockfile; else yarn install; fi"),
+        ("python", "uv", {}, ["actions/setup-python@v5"], "python -m pip install -e '.[dev]'"),
+        ("go", None, {}, ["actions/setup-go@v5"], None),
+        ("rust", None, {}, [], None),
     ],
 )
 def test_ci_setup_per_stack(
-    run_bootstrap, tmp_path: Path, stack: str, pm: str | None, setup: str | None,
-    install: str | None,
+    run_bootstrap, tmp_path: Path, stack: str, pm: str | None, versions: dict[str, str],
+    setup: list[str], install: str | None,
 ) -> None:
     """Each stack gets its toolchain setup and (where needed) an install step (#378)."""
-    _scaffold(run_bootstrap, tmp_path, _answers(members=[_member("demo", ".", stack, pm)], ci=True))
-    steps = _ci_steps(tmp_path)
-    uses = [s["uses"] for s in steps if "uses" in s][1:]  # drop checkout
-    assert uses == ([setup] if setup else [])
+    repo = _scaffold_ci(
+        run_bootstrap, tmp_path, _answers(members=[_member("demo", ".", stack, pm)], ci=True),
+        **versions,
+    )
+    steps = _ci_steps(repo)
+    assert [s["uses"] for s in steps if "uses" in s][1:] == setup  # drop checkout
     if stack == "go":
-        assert steps[1]["with"] == {"go-version-file": "go.mod"}
+        assert steps[1]["with"] == {"go-version": "stable"}
     runs = {s["name"]: s["run"] for s in steps if "run" in s}
     assert runs.get("install") == install
+
+
+def test_ci_yarn_berry_activates_local_yarn(run_bootstrap, tmp_path: Path) -> None:
+    """A local Yarn Berry is activated in CI via corepack and installs --immutable (#378)."""
+    repo = _scaffold_ci(
+        run_bootstrap, tmp_path, _answers(members=[_member("demo", ".", "typescript", "yarn")], ci=True),
+        yarn="4.5.1",
+    )
+    runs = {s["name"]: s["run"] for s in _ci_steps(repo) if "run" in s}
+    assert runs["yarn — activate"] == "corepack enable && corepack prepare yarn@4.5.1 --activate"
+    assert runs["install"] == (
+        "if [ -f yarn.lock ]; then yarn install --immutable; else yarn install; fi"
+    )

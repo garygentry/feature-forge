@@ -745,17 +745,42 @@ def write_hygiene(answers: Answers, target: Path, sentinel: Sentinel) -> None:
         )
 
 
-#: pnpm major used by the generated CI (pnpm/action-setup needs an explicit version,
-#: since the template's package.json carries no ``packageManager`` field).
-CI_PNPM_VERSION: Final = "11"
+#: pnpm major the generated CI falls back to when no local pnpm reports a version
+#: (pnpm/action-setup needs an explicit one: the template's package.json carries no
+#: ``packageManager`` field). A local pnpm wins, so CI matches the lockfile's writer.
+CI_PNPM_DEFAULT_MAJOR: Final = "11"
 
-#: Frozen-lockfile install per TypeScript package manager, for CI (#378). The lockfile
-#: is committed by ``commit`` after a verify-time install (#377).
-CI_TS_INSTALL: Final[dict[str, str]] = {
-    "npm": "npm ci",
-    "pnpm": "pnpm install --frozen-lockfile",
-    "yarn": "yarn install --frozen-lockfile",
+#: CI install per TypeScript package manager: (lockfile, frozen install, plain install).
+#: The frozen form runs only when the lockfile is committed — ``commit`` stages it after a
+#: verify-time install (#377), but an unverified baseline has none (#378). Yarn Berry's
+#: frozen form is ``--immutable`` (see _ci_yarn_berry_version).
+CI_TS_INSTALL: Final[dict[str, tuple[str, str, str]]] = {
+    "npm": ("package-lock.json", "npm ci", "npm install"),
+    "pnpm": ("pnpm-lock.yaml", "pnpm install --frozen-lockfile", "pnpm install"),
+    "yarn": ("yarn.lock", "yarn install --frozen-lockfile", "yarn install"),
 }
+
+
+def _local_tool_version(tool: str) -> str | None:
+    """``<tool> --version`` on this machine, or None when absent or unreadable."""
+    if shutil.which(tool) is None:
+        return None
+    try:
+        proc = subprocess.run([tool, "--version"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    version = proc.stdout.strip()
+    return version if proc.returncode == 0 and re.fullmatch(r"\d+(\.\d+)*", version) else None
+
+
+def _ci_yarn_berry_version() -> str | None:
+    """The local Yarn version when it is Berry (≥ 2), else None (#378).
+
+    The runner's global yarn is Classic 1.x, which cannot read a Berry ``yarn.lock``; a
+    Berry lockfile therefore needs the same Berry activated in CI via corepack.
+    """
+    version = _local_tool_version("yarn")
+    return version if version and int(version.split(".")[0]) >= 2 else None
 
 
 def _ci_setup_steps(answers: Answers) -> list[dict[str, object]]:
@@ -769,15 +794,22 @@ def _ci_setup_steps(answers: Answers) -> list[dict[str, object]]:
     pms = {m["packageManager"] for m in answers["members"] if m["stack"] == "typescript"}
     steps: list[dict[str, object]] = []
     if "pnpm" in pms:
-        steps.append({"uses": "pnpm/action-setup@v4", "with": {"version": CI_PNPM_VERSION}})
+        local = _local_tool_version("pnpm")
+        major = local.split(".")[0] if local else CI_PNPM_DEFAULT_MAJOR
+        steps.append({"uses": "pnpm/action-setup@v4", "with": {"version": major}})
     if "typescript" in stacks:
         steps.append({"uses": "actions/setup-node@v4", "with": {"node-version": "22"}})
+    if "yarn" in pms and (berry := _ci_yarn_berry_version()) is not None:
+        steps.append({
+            "name": "yarn — activate",
+            "run": f"corepack enable && corepack prepare yarn@{berry} --activate",
+        })
     if "python" in stacks:
         steps.append({"uses": "actions/setup-python@v5", "with": {"python-version": "3.12"}})
-    go = next((m for m in answers["members"] if m["stack"] == "go"), None)
-    if go is not None:
-        gomod = "go.mod" if go["path"] == "." else f"{go['path']}/go.mod"
-        steps.append({"uses": "actions/setup-go@v5", "with": {"go-version-file": gomod}})
+    if "go" in stacks:
+        # Latest stable Go satisfies every member's go.mod `go` line (Go is backward
+        # compatible); pinning one member's go.mod would under-serve the others.
+        steps.append({"uses": "actions/setup-go@v5", "with": {"go-version": "stable"}})
     return steps
 
 
@@ -789,7 +821,11 @@ def _ci_install_command(member: Member) -> str | None:
     the bare ``mypy`` / ``pytest`` commands then run without activating a venv.
     """
     if member["stack"] == "typescript":
-        return CI_TS_INSTALL[member["packageManager"] or "npm"]
+        pm = member["packageManager"] or "npm"
+        lockfile, frozen, plain = CI_TS_INSTALL[pm]
+        if pm == "yarn" and _ci_yarn_berry_version() is not None:
+            frozen = "yarn install --immutable"
+        return f"if [ -f {lockfile} ]; then {frozen}; else {plain}; fi"
     if member["stack"] == "python":
         return "python -m pip install -e '.[dev]'"
     return None
@@ -817,6 +853,10 @@ def _compose_ci_workflow(answers: Answers) -> str:
     single = answers["layout"] == "single"
     lines: list[str] = []
     for step in _ci_setup_steps(answers):
+        if "run" in step:
+            lines.append(f"{indent}- name: {step['name']}")
+            lines.append(f"{indent}  run: {step['run']}")
+            continue
         lines.append(f"{indent}- uses: {step['uses']}")
         lines.append(f"{indent}  with:")
         for key, val in step["with"].items():  # type: ignore[union-attr]
