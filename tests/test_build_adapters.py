@@ -609,7 +609,10 @@ def test_loop_supervision_says_post_cards_as_chat_not_tool_output(fixture_copy):
             if "Background / monitoring (forge-5-loop)" not in text:
                 continue
             checked += 1
-            assert "as your own" in text, f"{agent}/{path.name}: cards must be posted as chat"
+            start = text.index("Background / monitoring (forge-5-loop)")
+            bullet = " ".join(text[start : text.find("\n- **", start)].split())
+            assert "post each card" in bullet.lower(), f"{agent}/{path.name}: no card-post rule"
+            assert "as your own" in bullet, f"{agent}/{path.name}: cards must be posted as chat"
         assert checked > 0, f"no {agent} skill carries the monitoring host note"
     copilot = (root / "adapters" / "copilot" / "skills" / "noarg" / "SKILL.md").read_text(
         encoding="utf-8"
@@ -622,7 +625,8 @@ def test_loop_supervision_says_post_cards_as_chat_not_tool_output(fixture_copy):
     assert "Post its card to the user as your own chat message" in " ".join(contract.split())
     flat = " ".join(contract.split())
     assert "post one heartbeat line" in flat
-    assert "then count again from zero" in flat  # one heartbeat per quiet stretch, not per wait
+    assert "Post the card it printed (the run's last word" in flat  # exit 11
+    assert "Then count again from zero" in flat  # one heartbeat per quiet stretch, not per wait
 
 
 def test_pi_agent_frontmatter_is_translated_to_the_subagent_schema(fixture_copy):

@@ -273,18 +273,20 @@ printed (or with no cursor, for new events only), repeat:
 Each call blocks at most 240 s (one shell call) and prints one **card**, then a
 `next: --since-seq N --run-id R` line — pass both back on the next call. Exit codes:
 
-- `0` — an event. **Post its card to the user as your own chat message, verbatim.** The
-  card in the command's output does not count: many hosts collapse tool output, so a card
-  only the tool printed is a card the user never sees. Cards from waits that returned at
-  once may share one message, but never start a wait that can block with a card unposted.
-  A `✓` card (item done) → wait again. Any other card → read
-  `{rendered statusJsonCommand}`, react per Step 3e, then wait again.
+- `0` — an event. **Post its card to the user as your own chat message, verbatim, before
+  the next wait.** The card in the command's output does not count: many hosts collapse
+  tool output, so a card only the tool printed is a card the user never sees. A `✓` card
+  (item done) → post it, then wait again. Any other card → read
+  `{rendered statusJsonCommand}` and react per Step 3e; that one message (card included)
+  is the post. Then wait again.
 - `10` — 240 s with nothing new; the loop is still running. Wait again. On every fifth
-  `10` in a row (about 20 quiet minutes), post one heartbeat line built from the timeout
-  line's own `done/total`, e.g. `still running — 7/26 done, ~20m quiet`, then count again
-  from zero. Any `0` also resets the count.
-- `11` — the loop has ended and you have seen every event. **Completion (Step 3f):** go to
-  Step 4.
+  `10` in a row (about 20 quiet minutes), post one heartbeat line, using the timeout line's
+  `done/total` when it has one (`still running — 7/26 done, ~20m quiet`) and
+  `still running, ~20m quiet` when it doesn't. Then count again from zero. Any `0` also
+  resets the count.
+- `11` — the loop has ended and you have seen every event. Post the card it printed (the
+  run's last word, often the error) as your own chat message, then **Completion
+  (Step 3f):** go to Step 4.
 
 **Never end your turn while the loop is running** — on this host nothing would wake you, and
 the loop would run unwatched until the user next types. Add `--notify-cmd 'notify-send rauf
