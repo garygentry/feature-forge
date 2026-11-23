@@ -4,8 +4,8 @@
 
 ## License
 
-This project is licensed under {{LICENSE}}.
+{{LICENSE_STATEMENT}}
 
 ---
 
-_Scaffolded by [forge-bootstrap](https://github.com/feature-forge/feature-forge)._
+_Scaffolded by [forge-bootstrap](https://github.com/garygentry/feature-forge)._

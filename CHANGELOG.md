@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **forge-bootstrap hygiene templates** (#379). The generated AGENTS.md/CLAUDE.md list the
+  pipeline in order (forge-0-epic optional → forge-1-prd … forge-6-docs). A `license: none`
+  README says "Copyright (c) <year> <author>. All rights reserved; no license is granted.", an
+  unknown license id is refused up front, and the footer links the real repo.
+
 ## [0.22.1] — 2026-11-22
 
 Installer 0.3.12. The Copilot loop works on current Copilot CLI, through rauf 0.19.2.
