@@ -115,19 +115,23 @@ procedure. Copilot also guarantees no per-agent persistent memory, so the verifi
 
 ## Asking questions and interaction mode
 
-Some Copilot hosts, such as the Copilot SDK in the VS Code agent host, expose a structured
-question tool (`ask_user`, with JSON-schema forms). The skills use it for interview questions
-when it is present, and otherwise ask in prose and wait (#381).
+Copilot hosts that expose a structured question tool (`ask_user`, with JSON-schema forms; seen
+in the Copilot SDK under the VS Code agent host) get it used for interview questions. On any
+host without one, the skills ask in prose and wait (#381).
 
 `forge-session.py doctor` cannot tell from a Copilot process tree whether anyone can answer:
 by design it never infers the interaction mode from the host. So its `interaction-mode` check
 reports `na` (mode `unknown`) and the skills judge the rung themselves. To state the mode,
-export it in the environment Copilot runs in:
+set it **per launch**, not in a shell profile. Nothing cross-checks the value on Copilot, so a
+stale `interactive` stamp on a headless run would make a skill wait on a question nobody can
+answer:
 
 ```bash
-export FORGE_INTERACTION=interactive       # a person is at the session
-export FORGE_INTERACTION=non-interactive   # headless; no one can answer
+FORGE_INTERACTION=interactive copilot          # a person is at the session
+FORGE_INTERACTION=non-interactive copilot -p … # headless; no one can answer
 ```
+
+rauf already stamps every loop child `non-interactive`.
 
 ## Where skills find their runtime
 
