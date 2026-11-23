@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pnpm-workspace.yaml` pre-approving esbuild's build (a yarn member pins the
   `node-modules` linker); `verify` installs a TS member's dependencies first; `commit` stages
   the resulting lockfile; and every failed `CommandOutcome` carries an `output` tail.
+- **forge-bootstrap CI passes on first push** (#378). The generated workflow sets up the
+  member toolchains (pnpm, Node, Python, Go) and installs dependencies from the committed
+  lockfile before each member's lint and test.
 
 ## [0.22.1] — 2026-11-22
 

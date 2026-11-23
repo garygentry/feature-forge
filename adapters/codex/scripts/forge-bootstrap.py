@@ -745,11 +745,99 @@ def write_hygiene(answers: Answers, target: Path, sentinel: Sentinel) -> None:
         )
 
 
+#: pnpm major the generated CI falls back to when no local pnpm reports a version
+#: (pnpm/action-setup needs an explicit one: the template's package.json carries no
+#: ``packageManager`` field). A local pnpm wins, so CI matches the lockfile's writer.
+CI_PNPM_DEFAULT_MAJOR: Final = "11"
+
+#: CI install per TypeScript package manager: (lockfile, frozen install, plain install).
+#: The frozen form runs only when the lockfile is committed — ``commit`` stages it after a
+#: verify-time install (#377), but an unverified baseline has none (#378). Yarn Berry's
+#: frozen form is ``--immutable`` (see _ci_yarn_berry_version).
+CI_TS_INSTALL: Final[dict[str, tuple[str, str, str]]] = {
+    "npm": ("package-lock.json", "npm ci", "npm install"),
+    "pnpm": ("pnpm-lock.yaml", "pnpm install --frozen-lockfile", "pnpm install"),
+    "yarn": ("yarn.lock", "yarn install --frozen-lockfile", "yarn install"),
+}
+
+
+def _local_tool_version(tool: str) -> str | None:
+    """``<tool> --version`` on this machine, or None when absent or unreadable."""
+    if shutil.which(tool) is None:
+        return None
+    try:
+        proc = subprocess.run([tool, "--version"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    version = proc.stdout.strip()
+    return version if proc.returncode == 0 and re.fullmatch(r"\d+(\.\d+)*", version) else None
+
+
+def _ci_yarn_berry_version() -> str | None:
+    """The local Yarn version when it is Berry (≥ 2), else None (#378).
+
+    The runner's global yarn is Classic 1.x, which cannot read a Berry ``yarn.lock``; a
+    Berry lockfile therefore needs the same Berry activated in CI via corepack.
+    """
+    version = _local_tool_version("yarn")
+    return version if version and int(version.split(".")[0]) >= 2 else None
+
+
+def _ci_setup_steps(answers: Answers) -> list[dict[str, object]]:
+    """Toolchain setup steps for the CI job, once per needed toolchain (#378).
+
+    A fresh runner has no pnpm, no project Node version and no ``go.mod``-pinned Go,
+    so the bare lint/test commands fail (``npx tsc`` even resolves the decoy ``tsc``
+    package). Rust (cargo + clippy) and ``sh`` ship on ubuntu-latest and need none.
+    """
+    stacks = [m["stack"] for m in answers["members"]]
+    pms = {m["packageManager"] for m in answers["members"] if m["stack"] == "typescript"}
+    steps: list[dict[str, object]] = []
+    if "pnpm" in pms:
+        local = _local_tool_version("pnpm")
+        major = local.split(".")[0] if local else CI_PNPM_DEFAULT_MAJOR
+        steps.append({"uses": "pnpm/action-setup@v4", "with": {"version": major}})
+    if "typescript" in stacks:
+        steps.append({"uses": "actions/setup-node@v4", "with": {"node-version": "22"}})
+    if "yarn" in pms and (berry := _ci_yarn_berry_version()) is not None:
+        steps.append({
+            "name": "yarn — activate",
+            "run": f"corepack enable && corepack prepare yarn@{berry} --activate",
+        })
+    if "python" in stacks:
+        steps.append({"uses": "actions/setup-python@v5", "with": {"python-version": "3.12"}})
+    if "go" in stacks:
+        # Latest stable Go satisfies every member's go.mod `go` line (Go is backward
+        # compatible); pinning one member's go.mod would under-serve the others.
+        steps.append({"uses": "actions/setup-go@v5", "with": {"go-version": "stable"}})
+    return steps
+
+
+def _ci_install_command(member: Member) -> str | None:
+    """A member's dependency-install command for CI, or None when it needs none (#378).
+
+    Python installs the template's ``[dev]`` extra (mypy + pytest) with pip whatever the
+    chosen package manager: the pyproject is PEP 621, so pip resolves it identically and
+    the bare ``mypy`` / ``pytest`` commands then run without activating a venv.
+    """
+    if member["stack"] == "typescript":
+        pm = member["packageManager"] or "npm"
+        lockfile, frozen, plain = CI_TS_INSTALL[pm]
+        if pm == "yarn" and _ci_yarn_berry_version() is not None:
+            frozen = "yarn install --immutable"
+        return f"if [ -f {lockfile} ]; then {frozen}; else {plain}; fi"
+    if member["stack"] == "python":
+        return "python -m pip install -e '.[dev]'"
+    return None
+
+
 def _compose_ci_workflow(answers: Answers) -> str:
     """Compose the CI workflow, injecting per-member lint+test steps (03 §9).
 
     Reads templates/ci/github-actions.yml and replaces the ``# <<MEMBER_STEPS>>``
-    marker with one lint step + one test step per member. For a single package
+    marker with the toolchain setup steps (:func:`_ci_setup_steps`), then per member an
+    install step where the stack needs one (:func:`_ci_install_command`, #378) and one
+    lint step + one test step. For a single package
     (one implicit member at '.') the steps carry no ``working-directory``; for a
     monorepo every member is pinned to its ``path`` so CI exercises EVERY member
     (REQ-MONO-04).
@@ -764,11 +852,23 @@ def _compose_ci_workflow(answers: Answers) -> str:
     indent = template[: template.index(marker)].rsplit("\n", 1)[-1]
     single = answers["layout"] == "single"
     lines: list[str] = []
+    for step in _ci_setup_steps(answers):
+        if "run" in step:
+            lines.append(f"{indent}- name: {step['name']}")
+            lines.append(f"{indent}  run: {step['run']}")
+            continue
+        lines.append(f"{indent}- uses: {step['uses']}")
+        lines.append(f"{indent}  with:")
+        for key, val in step["with"].items():  # type: ignore[union-attr]
+            lines.append(f'{indent}    {key}: "{val}"')
     for member in answers["members"]:
         lint, test = _resolve_commands(member)
         wd = None if single else member["path"]
         label = member["name"]
-        for kind, cmd in (("lint", lint), ("test", test)):
+        install = _ci_install_command(member)
+        commands = [("install", install)] if install else []
+        commands += [("lint", lint), ("test", test)]
+        for kind, cmd in commands:
             name = kind if single else f"{label} — {kind}"
             lines.append(f"{indent}- name: {name}")
             if wd is not None:
