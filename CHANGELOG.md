@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **doctor ignores an enclosing parent repo** (#382). A project with no `.git` of its own,
   inside a repo that ignores it, now reports `currentBranch: null` and a `branch-state`
   warning naming the enclosing repo, instead of that repo's branches.
+- **Copilot host notes allow `ask_user`** (#381). The generated Copilot notes no longer say
+  there is no structured question tool. They say to use one, such as `ask_user` in the Copilot
+  SDK / VS Code host, when present. `docs/agents/copilot.md` documents `FORGE_INTERACTION` for
+  doctor's `interaction-mode`.
 
 ## [0.22.1] — 2026-11-22
 

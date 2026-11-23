@@ -113,6 +113,22 @@ agents have no skill-dependency field, so `forge-verifier` embeds the complete `
 procedure. Copilot also guarantees no per-agent persistent memory, so the verifier does not keep a
 `MEMORY.md`.
 
+## Asking questions and interaction mode
+
+Some Copilot hosts, such as the Copilot SDK in the VS Code agent host, expose a structured
+question tool (`ask_user`, with JSON-schema forms). The skills use it for interview questions
+when it is present, and otherwise ask in prose and wait (#381).
+
+`forge-session.py doctor` cannot tell from a Copilot process tree whether anyone can answer:
+by design it never infers the interaction mode from the host. So its `interaction-mode` check
+reports `na` (mode `unknown`) and the skills judge the rung themselves. To state the mode,
+export it in the environment Copilot runs in:
+
+```bash
+export FORGE_INTERACTION=interactive       # a person is at the session
+export FORGE_INTERACTION=non-interactive   # headless; no one can answer
+```
+
 ## Where skills find their runtime
 
 Skills run helper scripts (`forge-session.py`, `epic-manifest.py`, …) from the complete runtime
