@@ -1,2 +1,18 @@
 *.log
 .forge-bootstrap.json
+
+# Build output and installed dependencies. A generic project has no stack
+# template, so this lists the usual ones; the loop's per-item commit stages
+# everything not ignored here (#389). A bare bin/ is left tracked (it often
+# holds hand-written scripts); only .NET's bin/**/Debug|Release/ is ignored.
+**/bin/**/Debug/
+**/bin/**/Release/
+obj/
+.vs/
+*.user
+TestResults/
+node_modules/
+dist/
+/target/
+__pycache__/
+*.tsbuildinfo

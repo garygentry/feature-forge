@@ -182,6 +182,18 @@ the user signal high and the noise low:
   runner sends only `itemId` and `title`; then report the title and a running tally).
   Where the host's supervisor already posted the card (Pi), don't repeat it. When several
   land together, report them in one message.
+- **`commit_warning`** (`⚠ <id> commit <sha>: …` card) → the item's commit adds build
+  output (`reasons` has `build_output`: `obj/`, `node_modules/`, `dist/`, .NET
+  `bin/…/Debug|Release/`, `*.dll`, …) or is oversized (`large_commit`, over the runner's
+  `options.commitWarnFileThreshold`, default 300). **Surface it now; don't just wait
+  again.** Every later item will commit rebuilt output too. Tell the user what got committed
+  (the event's `buildOutputSample`, or `git show --stat <sha>`) and the fix: add the paths
+  to `.gitignore`, then `git rm -r --cached <dir>` and commit. Do that between runs, or
+  once the user agrees, as a backlog item; never under the live loop. The loop keeps going.
+  An older runner without this event shows it only as a large file count on the `✓` card.
+  When a card shows hundreds of files, run `git show --stat <sha>`. Treat it the same way
+  only if most of those paths are added build output; a commit that mostly deletes
+  (that same cleanup) is fine.
 - **`needs_human`** (or `signal_parsed` with `signal: "needs_human"`) → **surface
   immediately** and flag it prominently to the user (`loop wait --notify-cmd` also pings their desktop) (an hours-long run means the user has
   likely stepped away). **Important — the loop is NOT paused:** the runner has set that

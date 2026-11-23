@@ -1408,6 +1408,47 @@ def test_templates_store_gitignore_dotless_for_npm() -> None:
     assert all((templates / s / "gitignore").is_file() for s in stacks)
 
 
+def _ignored(repo: Path, *rels: str) -> set[str]:
+    """The subset of `rels` that git would ignore in `repo` (`git check-ignore`)."""
+    if not (repo / ".git").exists():
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    # Only the repo's own rules: a developer's global excludes file must not leak in.
+    cmd = ["git", "-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", *rels]
+    out = subprocess.run(cmd, cwd=repo, capture_output=True, text=True)
+    return set(out.stdout.split())
+
+
+def test_generic_gitignore_ignores_build_output_not_sources(run_bootstrap, tmp_path: Path) -> None:
+    """The generic .gitignore ignores build output before any loop runs, and nothing else.
+
+    The loop's per-item commit stages everything not ignored. A .NET + Vite field run
+    got the generic template (`*.log` only), and item 001 committed 877 bin/obj files
+    (#389). A bare `bin/` stays tracked (hand-written scripts), as rauf's
+    commit_warning heuristic assumes.
+    """
+    answers = _answers(members=[_member("demo", ".", "generic", None)])
+    result = _scaffold(run_bootstrap, tmp_path, answers)
+    assert result.returncode == 0
+    written = sorted(result.json()["artifactsWritten"])
+    assert not _ignored(tmp_path, *written), "a scaffolded file must not be ignored"
+    output = [
+        "App/bin/Debug/net8.0/App.dll",
+        "App/bin/x64/Release/App.exe",
+        "App/obj/project.assets.json",
+        ".vs/App/v17/.suo",
+        "App/App.csproj.user",
+        "TestResults/run.trx",
+        "web/node_modules/vite/package.json",
+        "web/dist/index.html",
+        "target/debug/app",
+        "pkg/__pycache__/m.pyc",
+        "web/tsconfig.tsbuildinfo",
+    ]
+    assert _ignored(tmp_path, *output) == set(output)
+    sources = ["bin/deploy", "src/target/index.ts", "build/notes.md", "App/Program.cs"]
+    assert not _ignored(tmp_path, *sources), "hand-written files must stay tracked"
+
+
 # --------------------------------------------------------------------------- #
 # #377 — pnpm 11 build approval, verify-time dependency install, output tails,
 # lockfile staging.

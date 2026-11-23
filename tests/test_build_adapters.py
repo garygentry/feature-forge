@@ -629,6 +629,17 @@ def test_loop_supervision_says_post_cards_as_chat_not_tool_output(fixture_copy):
     assert "Then count again from zero" in flat  # one heartbeat per quiet stretch, not per wait
 
 
+def test_runner_contract_surfaces_commit_warning() -> None:
+    """forge-5-loop reacts to rauf's commit_warning instead of waiting again (#389)."""
+    contract = (
+        REPO_ROOT / "skills" / "forge-5-loop" / "references" / "runner-contract.md"
+    ).read_text(encoding="utf-8")
+    flat = " ".join(contract.split())
+    assert "**`commit_warning`**" in flat
+    assert "Surface it now; don't just wait again." in flat
+    assert "git rm -r --cached" in flat
+
+
 def test_pi_agent_frontmatter_is_translated_to_the_subagent_schema(fixture_copy):
     """Canon Claude agent frontmatter maps to pi-subagents' schema (W2), not drop-recorded.
 
