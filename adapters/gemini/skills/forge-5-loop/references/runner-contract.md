@@ -139,14 +139,16 @@ printed (or with no cursor, for new events only), repeat:
 Each call blocks at most 240 s (one shell call) and prints one **card**, then a
 `next: --since-seq N --run-id R` line — pass both back on the next call. Exit codes:
 
-- `0` — an event. **Post its card to the user as your own chat message, verbatim, before
-  the next `loop wait`.** The card in the command's output does not count: many hosts
-  collapse tool output, so a card only the tool printed is a card the user never sees. A
-  `✓` card (item done) → wait again. Any other card → read `{rendered statusJsonCommand}`,
-  react per Step 3e, then wait again.
-- `10` — 240 s with nothing new; the loop is still running. Wait again. After about 20
-  minutes of consecutive `10`s, post a one-line heartbeat (`still running — item 004, 22m`)
-  so a quiet stretch never reads as a stalled supervisor.
+- `0` — an event. **Post its card to the user as your own chat message, verbatim.** The
+  card in the command's output does not count: many hosts collapse tool output, so a card
+  only the tool printed is a card the user never sees. Cards from waits that returned at
+  once may share one message, but never start a wait that can block with a card unposted.
+  A `✓` card (item done) → wait again. Any other card → read
+  `{rendered statusJsonCommand}`, react per Step 3e, then wait again.
+- `10` — 240 s with nothing new; the loop is still running. Wait again. On every fifth
+  `10` in a row (about 20 quiet minutes), post one heartbeat line built from the timeout
+  line's own `done/total`, e.g. `still running — 7/26 done, ~20m quiet`, then count again
+  from zero. Any `0` also resets the count.
 - `11` — the loop has ended and you have seen every event. **Completion (Step 3f):** go to
   Step 4.
 
@@ -159,8 +161,9 @@ whether it is wired, and `npx @garygentry/feature-forge install -a codex --codex
 wires it (it edits `~/.codex/hooks.json`).
 
 **Runner without `loop wait`** (rauf < 0.18.0 per the Step 1c version gate, or another
-runner): poll `{rendered statusJsonCommand}` every 5–10 s instead, report `done/total` as it
-changes, and react per Step 3e when `loopState`, `backlogSummary.blocked` or
+runner): poll `{rendered statusJsonCommand}` every 5–10 s instead, post `done/total` to the
+user as a chat message as it changes (the poll's tool output is not a report), and react per
+Step 3e when `loopState`, `backlogSummary.blocked` or
 `backlogSummary.needsHuman` changes; a non-running `loopState` is completion (Step 3f).
 
 ## React to events as they land (Step 3e)
@@ -168,8 +171,8 @@ changes, and react per Step 3e when `loopState`, `backlogSummary.blocked` or
 Each event reaches you as a message (Step 3d says how, per host). React per type — but keep
 the user signal high and the noise low:
 
-- **`item_completed`** → post its one-line **card** as a chat message (tool output is not
-  a report — see Step 3d):
+- **`item_completed`** → post its one-line **card** as your own chat message (a card left
+  only in tool output is not a report):
   `[7/26] ✓ 008 <title> — <summary> · abc1234 · 5 files · 6m`. `loop wait` prints exactly
   this line; from a raw event, build it from the fields — `[doneCount/totalCount]`,
   `itemId`, `title`, the agent's `summary`, the first 7 chars of `commitSha`,

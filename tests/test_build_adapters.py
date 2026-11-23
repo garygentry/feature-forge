@@ -603,13 +603,14 @@ def test_loop_supervision_says_post_cards_as_chat_not_tool_output(fixture_copy):
     assert run_build(root).returncode == 0
 
     for agent in ("codex", "copilot", "cursor", "gemini"):
-        skills = sorted((root / "adapters" / agent / "skills").rglob("*.md*"))
-        assert skills, f"no {agent} skills built"
-        for path in skills:
+        checked = 0
+        for path in sorted((root / "adapters" / agent / "skills").rglob("*.md*")):
             text = path.read_text(encoding="utf-8")
             if "Background / monitoring (forge-5-loop)" not in text:
                 continue
+            checked += 1
             assert "as your own" in text, f"{agent}/{path.name}: cards must be posted as chat"
+        assert checked > 0, f"no {agent} skill carries the monitoring host note"
     copilot = (root / "adapters" / "copilot" / "skills" / "noarg" / "SKILL.md").read_text(
         encoding="utf-8"
     )
@@ -618,8 +619,10 @@ def test_loop_supervision_says_post_cards_as_chat_not_tool_output(fixture_copy):
     contract = (
         REPO_ROOT / "skills" / "forge-5-loop" / "references" / "runner-contract.md"
     ).read_text(encoding="utf-8")
-    assert "Post its card to the user as your own chat message" in contract
-    assert "post a one-line heartbeat" in contract
+    assert "Post its card to the user as your own chat message" in " ".join(contract.split())
+    flat = " ".join(contract.split())
+    assert "post one heartbeat line" in flat
+    assert "then count again from zero" in flat  # one heartbeat per quiet stretch, not per wait
 
 
 def test_pi_agent_frontmatter_is_translated_to_the_subagent_schema(fixture_copy):
