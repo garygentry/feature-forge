@@ -122,7 +122,8 @@ jobs:
             || { echo "::error::feature-forge --version produced no semver output — installed bin is a no-op"; exit 1; }
 
   # ---- Windows Phase 0 (#395): NON-BLOCKING evidence jobs ----------------------------------------
-  # Job-level continue-on-error: a red run here never fails the workflow or a PR. Every step
+  # Job-level continue-on-error: a red run here never fails the workflow, though its check still
+  # shows red on a PR (neither job is a required check). Every step
   # records its outcome and the run still reaches the summary and the artifact upload; the last
   # step turns the job red if anything failed, so the baseline stays visible.
   windows-suite:
@@ -150,8 +151,10 @@ jobs:
       # Q5 / Q7 context: line-ending config as the runner ships it, which Python names resolve,
       # and the stdio encodings Python picks.
       - name: Record environment
+        continue-on-error: true
         run: |
           mkdir -p win-logs
+          set +e +o pipefail # diagnostics only: one failing probe must not skip the baseline
           {
             echo "## versions"
             git --version; bash --version | head -n1; node --version
@@ -170,7 +173,7 @@ jobs:
             echo "## tracked files checked out with CRLF in the working tree"
             echo "all: $(git ls-files --eol | awk '$2 == "w/crlf"' | wc -l)"
             echo "*.sh: $(git ls-files --eol -- '*.sh' | awk '$2 == "w/crlf"' | wc -l)"
-          } 2>&1 | tee win-logs/environment.txt
+          } 2>&1 | tee win-logs/probe-environment.txt
 
       # The same full lock validate.sh provisions on Linux (pip adds pytest's Windows-only
       # colorama, which the lock deliberately leaves unpinned).
@@ -193,25 +196,41 @@ jobs:
         run: |
           python scripts/build-adapters.py 2>&1 | tee win-logs/generator-build.log
           {
-            echo "## adapters/ files git reports changed: $(git status --porcelain -- adapters | wc -l)"
+            echo "## adapters/ paths git reports changed or new: $(git status --porcelain -- adapters | wc -l)"
+            git status --porcelain -- adapters | head -n 40
             git diff --stat -- adapters | tail -n 40
-          } 2>&1 | tee win-logs/generator-diff.txt
-          git checkout -- adapters
+          } 2>&1 | tee win-logs/probe-generator-diff.txt
+
+      # Restore the committed adapters/ (tracked AND untracked) whatever the build did, so
+      # pytest and the dirty-tree probe below see the committed tree.
+      - name: Restore adapters/
+        if: always()
+        run: git checkout -- adapters && git clean -fdq -- adapters
 
       # Q7 smokeCommand portability: the repo's smokeCommand verbatim (python3), then via
-      # `python`, with stdout to a file (not a console) as a loop runner would capture it.
-      - name: Probe — forge-session.py doctor --json (Q7)
-        id: doctor
+      # `python`, each its own step and outcome. stdout goes to a file (not a console), as a
+      # loop runner captures it, and must parse as UTF-8 JSON.
+      - name: Probe — smokeCommand verbatim, python3 doctor --json (Q7)
+        id: doctor_python3
         continue-on-error: true
         run: |
           rc=0
           python3 scripts/forge-session.py doctor --json > win-logs/doctor-python3.json 2> win-logs/doctor-python3.err || rc=$?
-          echo "python3 exit=$rc"
-          rc2=0
-          python scripts/forge-session.py doctor --json > win-logs/doctor-python.json 2> win-logs/doctor-python.err || rc2=$?
-          echo "python exit=$rc2"
-          python -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8')); print('doctor JSON parses as UTF-8')" win-logs/doctor-python.json
-          [ "$rc2" -eq 0 ]
+          echo "python3 doctor exit=$rc" | tee win-logs/probe-q7-doctor-python3.txt
+          cat win-logs/doctor-python3.err >> win-logs/probe-q7-doctor-python3.txt
+          [ "$rc" -eq 0 ]
+          python -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" win-logs/doctor-python3.json
+
+      - name: Probe — python doctor --json (Q7)
+        id: doctor_python
+        continue-on-error: true
+        run: |
+          rc=0
+          python scripts/forge-session.py doctor --json > win-logs/doctor-python.json 2> win-logs/doctor-python.err || rc=$?
+          echo "python doctor exit=$rc" | tee win-logs/probe-q7-doctor-python.txt
+          cat win-logs/doctor-python.err >> win-logs/probe-q7-doctor-python.txt
+          [ "$rc" -eq 0 ]
+          python -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" win-logs/doctor-python.json
 
       - name: Test (pytest, JUnit)
         id: test
@@ -221,20 +240,17 @@ jobs:
           python -m pytest tests -q -rs -p no:cacheprovider \
             --junitxml=win-logs/junit-pytest.xml 2>&1 | tee win-logs/pytest.log
 
-      - name: Probe — dirty tree after the run (Q5)
+      - name: Probe — dirty tree after pytest (Q5)
         if: always()
-        run: |
-          git status --porcelain 2>&1 | tee win-logs/git-status-after.txt
-          echo "modified tracked files: $(git status --porcelain --untracked-files=no | wc -l)"
+        run: git status --porcelain -- . ':!win-logs' > win-logs/probe-q5-status-after-pytest.txt 2>&1 || true
 
       - name: Summarize
         if: always()
         env:
-          OUTCOME_DEPS: ${{ steps.deps.outcome }}
-          OUTCOME_GENERATOR_CHECK: ${{ steps.gen_check.outcome }}
-          OUTCOME_GENERATOR_BUILD: ${{ steps.gen_build.outcome }}
-          OUTCOME_DOCTOR: ${{ steps.doctor.outcome }}
-          OUTCOME_TEST: ${{ steps.test.outcome }}
+          OUTCOMES: >-
+            deps=${{ steps.deps.outcome }} generator-check=${{ steps.gen_check.outcome }}
+            generator-build=${{ steps.gen_build.outcome }} doctor-python3=${{ steps.doctor_python3.outcome }}
+            doctor-python=${{ steps.doctor_python.outcome }} test=${{ steps.test.outcome }}
         run: |
           node .github/scripts/windows-baseline-summary.mjs win-logs | tee win-logs/summary.md >> "$GITHUB_STEP_SUMMARY"
 
@@ -249,7 +265,7 @@ jobs:
         if: always()
         run: |
           for o in "${{ steps.deps.outcome }}" "${{ steps.gen_check.outcome }}" "${{ steps.gen_build.outcome }}" \
-                   "${{ steps.doctor.outcome }}" "${{ steps.test.outcome }}"; do
+                   "${{ steps.doctor_python3.outcome }}" "${{ steps.doctor_python.outcome }}" "${{ steps.test.outcome }}"; do
             [ "$o" = success ] || { echo "::warning::Windows baseline has failures; see the windows-suite-baseline artifact"; exit 1; }
           done
 
@@ -292,6 +308,11 @@ jobs:
           echo "installer exit=$rc"
           node -e "const r = JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')); console.log('raufError:', JSON.stringify(r.raufError ?? null))" "$LOGS/install.json" \
             | tee "$LOGS/rauf-error.txt" || echo "install.json is not JSON"
+          {
+            echo "# installer without --skip-rauf (Windows)"; echo
+            echo "installer exit: $rc"; echo
+            echo '```text'; cat "$LOGS/rauf-error.txt" "$LOGS/install.err" 2>/dev/null | head -n 40; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
 
       - uses: actions/upload-artifact@v4
