@@ -8,8 +8,9 @@
 # exact-pinned (from a fresh-venv `pip freeze`), so .venv-test cannot drift under an unchanged
 # file — and any bump changes validate.sh's fingerprint, which recreates the venv. Transitive
 # pins carry their upstream environment markers, so it installs as-is on Python 3.10–3.13.
-# rpds-py ships per-platform wheels; only the ubuntu quality gate installs this file (the
-# os-matrix legs do not), so pytest's Windows-only colorama is deliberately not pinned.
+# rpds-py ships per-platform wheels. The ubuntu quality gate installs this file, and so does the
+# non-blocking os-matrix `windows-suite` job (#395); pip resolves pytest's Windows-only colorama
+# there, so it is deliberately not pinned.
 -r requirements-adapters.txt
 
 # Direct.
