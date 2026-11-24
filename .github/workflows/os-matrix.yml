@@ -8,6 +8,12 @@
 # --skip-rauf is used on every leg as a deliberate CI choice: it keeps the matrix network-free and
 # scoped to the installer itself (no rauf registry preflight). rauf is published now (@garygentry/rauf),
 # so this is an isolation choice, not a workaround for an unpublished dependency. See 00 §7.
+#
+# Exception (Windows Phase 0, #395 / epic #394): the two NON-BLOCKING Windows jobs at the end of
+# this file. `windows-suite` runs pytest and the adapter generator on windows-latest;
+# `windows-installer-rauf` runs a real install WITHOUT --skip-rauf, so the rauf preflight runs
+# on Windows. Both are `continue-on-error` evidence jobs, not gates; promote them at M3
+# (PLAN-windows-native-support §7). The `installer` matrix above is unchanged.
 name: OS Matrix (installer)
 
 on:
@@ -114,3 +120,183 @@ jobs:
           # check — not the exit code — is what actually exercises the installed bin.
           echo "${OUT}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+' \
             || { echo "::error::feature-forge --version produced no semver output — installed bin is a no-op"; exit 1; }
+
+  # ---- Windows Phase 0 (#395): NON-BLOCKING evidence jobs ----------------------------------------
+  # Job-level continue-on-error: a red run here never fails the workflow or a PR. Every step
+  # records its outcome and the run still reaches the summary and the artifact upload; the last
+  # step turns the job red if anything failed, so the baseline stays visible.
+  windows-suite:
+    name: windows pytest + generator (non-blocking)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Full history, as in ci.yml: test_check_spec_purity reads a pre-fix revision via `git show`.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Q5 / Q7 context: line-ending config as the runner ships it, which Python names resolve,
+      # and the stdio encodings Python picks.
+      - name: Record environment
+        run: |
+          mkdir -p win-logs
+          {
+            echo "## versions"
+            git --version; bash --version | head -n1; node --version
+            pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' | sed 's/^/pwsh /'
+            echo "## python names on PATH (Q7)"
+            for c in python3 python py; do
+              printf '%s -> ' "$c"; command -v "$c" || { echo "(not found)"; continue; }
+              "$c" --version 2>&1 | head -n1 || echo "(failed: exit $?)"
+            done
+            echo "## python encodings: stdout piped from bash"
+            python -c "import sys, locale; print('stdout', sys.stdout.encoding, '| preferred', locale.getpreferredencoding(False), '| fs', sys.getfilesystemencoding())" | cat
+            echo "## python encodings: stdout piped from pwsh"
+            pwsh -NoProfile -Command "python -c \"import sys; print('stdout', sys.stdout.encoding)\" | Write-Output"
+            echo "## core.autocrlf (with origin) (Q5)"
+            git config --show-origin --get-all core.autocrlf || echo "(unset)"
+            echo "## tracked files checked out with CRLF in the working tree"
+            echo "all: $(git ls-files --eol | awk '$2 == "w/crlf"' | wc -l)"
+            echo "*.sh: $(git ls-files --eol -- '*.sh' | awk '$2 == "w/crlf"' | wc -l)"
+          } 2>&1 | tee win-logs/environment.txt
+
+      # The same full lock validate.sh provisions on Linux (pip adds pytest's Windows-only
+      # colorama, which the lock deliberately leaves unpinned).
+      - name: Install test deps
+        id: deps
+        continue-on-error: true
+        run: python -m pip install -r scripts/requirements-test.txt 2>&1 | tee win-logs/deps.log
+
+      # Q5 golden compare: does the generator, run on Windows, reproduce the committed adapters?
+      - name: Generator drift check (build-adapters.py --check)
+        id: gen_check
+        continue-on-error: true
+        run: python scripts/build-adapters.py --check 2>&1 | tee win-logs/generator-check.log
+
+      # Then regenerate in place and record what git sees as changed (content, after its own
+      # line-ending normalization) — the shape of any drift the check above reported.
+      - name: Generator build in place
+        id: gen_build
+        continue-on-error: true
+        run: |
+          python scripts/build-adapters.py 2>&1 | tee win-logs/generator-build.log
+          {
+            echo "## adapters/ files git reports changed: $(git status --porcelain -- adapters | wc -l)"
+            git diff --stat -- adapters | tail -n 40
+          } 2>&1 | tee win-logs/generator-diff.txt
+          git checkout -- adapters
+
+      # Q7 smokeCommand portability: the repo's smokeCommand verbatim (python3), then via
+      # `python`, with stdout to a file (not a console) as a loop runner would capture it.
+      - name: Probe — forge-session.py doctor --json (Q7)
+        id: doctor
+        continue-on-error: true
+        run: |
+          rc=0
+          python3 scripts/forge-session.py doctor --json > win-logs/doctor-python3.json 2> win-logs/doctor-python3.err || rc=$?
+          echo "python3 exit=$rc"
+          rc2=0
+          python scripts/forge-session.py doctor --json > win-logs/doctor-python.json 2> win-logs/doctor-python.err || rc2=$?
+          echo "python exit=$rc2"
+          python -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8')); print('doctor JSON parses as UTF-8')" win-logs/doctor-python.json
+          [ "$rc2" -eq 0 ]
+
+      - name: Test (pytest, JUnit)
+        id: test
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          python -m pytest tests -q -rs -p no:cacheprovider \
+            --junitxml=win-logs/junit-pytest.xml 2>&1 | tee win-logs/pytest.log
+
+      - name: Probe — dirty tree after the run (Q5)
+        if: always()
+        run: |
+          git status --porcelain 2>&1 | tee win-logs/git-status-after.txt
+          echo "modified tracked files: $(git status --porcelain --untracked-files=no | wc -l)"
+
+      - name: Summarize
+        if: always()
+        env:
+          OUTCOME_DEPS: ${{ steps.deps.outcome }}
+          OUTCOME_GENERATOR_CHECK: ${{ steps.gen_check.outcome }}
+          OUTCOME_GENERATOR_BUILD: ${{ steps.gen_build.outcome }}
+          OUTCOME_DOCTOR: ${{ steps.doctor.outcome }}
+          OUTCOME_TEST: ${{ steps.test.outcome }}
+        run: |
+          node .github/scripts/windows-baseline-summary.mjs win-logs | tee win-logs/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-suite-baseline
+          path: win-logs/
+          if-no-files-found: warn
+
+      - name: Fail if any step failed
+        if: always()
+        run: |
+          for o in "${{ steps.deps.outcome }}" "${{ steps.gen_check.outcome }}" "${{ steps.gen_build.outcome }}" \
+                   "${{ steps.doctor.outcome }}" "${{ steps.test.outcome }}"; do
+            [ "$o" = success ] || { echo "::warning::Windows baseline has failures; see the windows-suite-baseline artifact"; exit 1; }
+          done
+
+  # A real (not --dry-run) install WITHOUT --skip-rauf, so the rauf resolvability preflight
+  # (installer/src/rauf.ts `spawnSync("npm", ["view", …])`) actually runs on Windows. The
+  # preflight only fires for install/update with at least one target, so `--agent claude`
+  # names one. It writes into a throwaway project dir with an isolated home, never the checkout.
+  windows-installer-rauf:
+    name: installer install without --skip-rauf (windows, non-blocking)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Build installer
+        working-directory: installer
+        run: npm ci && npm run build
+
+      - name: install --agent claude --json (rauf preflight on)
+        run: |
+          set -uo pipefail
+          WORK="$(cygpath -u "$RUNNER_TEMP")/ff-rauf-leg"
+          mkdir -p "$WORK/project" "$WORK/home" win-logs
+          LOGS="$PWD/win-logs"
+          export HOME="$WORK/home" USERPROFILE="$(cygpath -w "$WORK/home")"
+          cd "$WORK/project" && git init -q
+          echo "npm on PATH: $(command -v npm) / $(command -v npm.cmd || echo 'no npm.cmd')"
+          rc=0
+          node "$GITHUB_WORKSPACE/installer/dist/cli.js" install --agent claude --json \
+            > "$LOGS/install.json" 2> "$LOGS/install.err" || rc=$?
+          cat "$LOGS/install.json" "$LOGS/install.err"
+          echo "installer exit=$rc"
+          node -e "const r = JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')); console.log('raufError:', JSON.stringify(r.raufError ?? null))" "$LOGS/install.json" \
+            | tee "$LOGS/rauf-error.txt" || echo "install.json is not JSON"
+          exit "$rc"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-installer-rauf
+          path: win-logs/
+          if-no-files-found: warn
